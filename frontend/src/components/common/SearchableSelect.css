@@ -1,0 +1,151 @@
+.searchable-select {
+  position: relative;
+  width: 100%;
+}
+
+.searchable-select.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.select-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  transition: all 0.3s;
+  cursor: pointer;
+}
+
+.select-input-wrapper:hover {
+  border-color: #4096ff;
+}
+
+.select-input-wrapper:focus-within {
+  border-color: #4096ff;
+  box-shadow: 0 0 0 2px rgba(64, 150, 255, 0.1);
+}
+
+.select-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  outline: none;
+  font-size: 14px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.select-input:disabled {
+  cursor: not-allowed;
+  background: #f5f5f5;
+}
+
+.select-actions {
+  display: flex;
+  align-items: center;
+  padding-right: 12px;
+  gap: 4px;
+}
+
+.clear-icon {
+  font-size: 16px;
+  color: #999;
+  cursor: pointer;
+  transition: color 0.3s;
+  padding: 0 4px;
+}
+
+.clear-icon:hover {
+  color: #333;
+}
+
+.arrow-icon {
+  font-size: 10px;
+  color: #999;
+  transition: transform 0.3s;
+}
+
+.arrow-icon.open {
+  transform: rotate(180deg);
+}
+
+.select-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  box-shadow: 0 6px 16px 0 rgba(0, 0, 0, 0.08),
+              0 3px 6px -4px rgba(0, 0, 0, 0.12),
+              0 9px 28px 8px rgba(0, 0, 0, 0.05);
+  z-index: 1000;
+  max-height: 256px;
+  overflow-y: auto;
+  animation: slideDown 0.2s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.select-options {
+  list-style: none;
+  padding: 4px 0;
+  margin: 0;
+}
+
+.select-option {
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  font-size: 14px;
+}
+
+.select-option:hover {
+  background-color: #f5f5f5;
+}
+
+.select-option.selected {
+  background-color: #e6f7ff;
+  color: #1890ff;
+  font-weight: 500;
+}
+
+.select-loading,
+.select-empty {
+  padding: 12px;
+  text-align: center;
+  color: #999;
+  font-size: 14px;
+}
+
+/* Scrollbar styling */
+.select-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.select-dropdown::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.select-dropdown::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 3px;
+}
+
+.select-dropdown::-webkit-scrollbar-thumb:hover {
+  background: #999;
+}

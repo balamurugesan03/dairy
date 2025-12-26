@@ -1,0 +1,129 @@
+.reports-dashboard-container {
+  padding: 20px;
+}
+
+.reports-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.report-card {
+  border-radius: 8px;
+  border: 1px solid #f0f0f0;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.report-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+.report-card-content {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.report-icon {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.report-icon svg {
+  width: 48px;
+  height: 48px;
+  stroke-width: 2;
+}
+
+.report-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.85);
+  margin: 16px 0 8px;
+}
+
+.report-description {
+  font-size: 14px;
+  color: rgba(0, 0, 0, 0.45);
+  margin: 0 0 16px;
+  line-height: 1.5;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background-color: #1890ff;
+  color: white;
+  border-color: #1890ff;
+}
+
+.btn-primary:hover {
+  background-color: #40a9ff;
+  border-color: #40a9ff;
+}
+
+/* Dark mode support */
+[data-theme='dark'] .report-card {
+  border-color: #434343;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+[data-theme='dark'] .report-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme='dark'] .report-title {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+[data-theme='dark'] .report-description {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .reports-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .report-card-content {
+    padding: 30px 16px;
+  }
+
+  .report-icon svg {
+    width: 40px;
+    height: 40px;
+  }
+
+  .report-title {
+    font-size: 16px;
+  }
+
+  .report-description {
+    font-size: 13px;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .reports-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

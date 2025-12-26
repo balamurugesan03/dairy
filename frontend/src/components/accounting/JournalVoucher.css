@@ -1,0 +1,218 @@
+.form-card {
+  background: var(--bg-elevated);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  padding: 24px;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.form-label.required::after {
+  content: ' *';
+  color: var(--danger-color);
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  transition: border-color 0.3s;
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.form-input.error,
+.form-select.error,
+.form-textarea.error {
+  border-color: var(--danger-color);
+}
+
+.form-error {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--danger-color);
+}
+
+.entry-card {
+  background: #f0f2f5;
+  border-radius: 4px;
+  padding: 16px;
+  margin: 16px 0;
+}
+
+.entry-card-title {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.entry-amounts {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.table-container {
+  margin: 16px 0;
+  overflow-x: auto;
+  background: white;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.voucher-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 600px;
+}
+
+.voucher-table thead {
+  background: #fafafa;
+}
+
+.voucher-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  color: #333;
+  border-bottom: 2px solid #e8e8e8;
+  font-size: 14px;
+}
+
+.voucher-table tbody tr:hover {
+  background-color: #f5f5f5;
+}
+
+.voucher-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e8e8e8;
+  color: #555;
+  font-size: 14px;
+}
+
+.voucher-table tfoot td {
+  padding: 12px 16px;
+  border-top: 2px solid #e8e8e8;
+  font-size: 14px;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.btn-delete {
+  color: #ff4d4f;
+}
+
+.btn-delete:hover {
+  color: #ff7875;
+  text-decoration: underline;
+}
+
+.alert {
+  padding: 12px 16px;
+  border-radius: 4px;
+  margin: 16px 0;
+}
+
+.alert-error {
+  background-color: #fff1f0;
+  border: 1px solid #ffccc7;
+  color: #cf1322;
+}
+
+.alert-success {
+  background-color: #f6ffed;
+  border: 1px solid #b7eb8f;
+  color: #389e0d;
+}
+
+.alert strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.alert p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.form-actions {
+  margin-top: 24px;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.btn-primary {
+  background-color: #1890ff;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #40a9ff;
+}
+
+.btn-primary:disabled {
+  background-color: #d9d9d9;
+  cursor: not-allowed;
+}
+
+.btn-default {
+  background-color: #f0f0f0;
+  color: #333;
+  border: 1px solid #d9d9d9;
+}
+
+.btn-default:hover {
+  background-color: #e0e0e0;
+  border-color: #40a9ff;
+  color: #40a9ff;
+}
+
+@media (max-width: 768px) {
+  .entry-amounts {
+    grid-template-columns: 1fr;
+  }
+}

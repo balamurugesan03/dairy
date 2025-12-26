@@ -1,0 +1,121 @@
+/* ==========================================
+   THEME TOGGLE Component
+   ========================================== */
+
+.theme-toggle {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  padding: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-toggle:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-hover);
+  transform: scale(1.05);
+  box-shadow: var(--shadow-md);
+}
+
+.theme-toggle:active {
+  transform: scale(0.95);
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+/* Icon Container */
+.theme-toggle-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  transition: all var(--transition-base);
+}
+
+.theme-toggle:hover .theme-toggle-icon {
+  color: var(--text-primary);
+}
+
+/* Icon Animation - Rotate when theme changes */
+.theme-toggle-icon.light {
+  animation: rotateIn var(--transition-base) var(--ease-smooth);
+}
+
+.theme-toggle-icon.dark {
+  animation: rotateIn var(--transition-base) var(--ease-smooth);
+}
+
+@keyframes rotateIn {
+  from {
+    transform: rotate(-180deg) scale(0.5);
+    opacity: 0;
+  }
+  to {
+    transform: rotate(0deg) scale(1);
+    opacity: 1;
+  }
+}
+
+/* Glow Effect on Hover */
+.theme-toggle::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 0;
+  height: 0;
+  background: var(--primary-color);
+  opacity: 0.1;
+  border-radius: 50%;
+  transition: all var(--transition-base);
+}
+
+.theme-toggle:hover::before {
+  width: 100%;
+  height: 100%;
+}
+
+/* Sun Icon specific styles */
+.theme-toggle-icon.light svg {
+  color: #faad14;
+}
+
+.theme-toggle:hover .theme-toggle-icon.light svg {
+  color: #ffc107;
+  filter: drop-shadow(0 0 4px rgba(255, 193, 7, 0.4));
+}
+
+/* Moon Icon specific styles */
+.theme-toggle-icon.dark svg {
+  color: #4a9eff;
+}
+
+.theme-toggle:hover .theme-toggle-icon.dark svg {
+  color: #6bb0ff;
+  filter: drop-shadow(0 0 4px rgba(74, 158, 255, 0.4));
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .theme-toggle {
+    width: 36px;
+    height: 36px;
+  }
+
+  .theme-toggle-icon svg {
+    width: 18px;
+    height: 18px;
+  }
+}

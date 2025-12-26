@@ -1,0 +1,249 @@
+.sales-list-container {
+  padding: 20px;
+}
+
+/* Filters */
+.filters-container {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.date-range-filter {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.date-range-filter label {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.date-range-filter input[type="date"] {
+  padding: 8px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.3s;
+}
+
+.date-range-filter input[type="date"]:hover {
+  border-color: #40a9ff;
+}
+
+.date-range-filter input[type="date"]:focus {
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+}
+
+.status-filter {
+  padding: 8px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 14px;
+  min-width: 150px;
+  outline: none;
+  transition: border-color 0.3s;
+  cursor: pointer;
+}
+
+.status-filter:hover {
+  border-color: #40a9ff;
+}
+
+.status-filter:focus {
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+}
+
+/* Table */
+.table-container {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow-x: auto;
+}
+
+.sales-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1400px;
+}
+
+.sales-table thead {
+  background-color: #fafafa;
+}
+
+.sales-table th {
+  padding: 16px;
+  text-align: left;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.85);
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 14px;
+}
+
+.sales-table td {
+  padding: 16px;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 14px;
+  color: rgba(0, 0, 0, 0.85);
+}
+
+.sales-table tbody tr:hover {
+  background-color: #fafafa;
+}
+
+.sales-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.no-data {
+  text-align: center !important;
+  color: rgba(0, 0, 0, 0.45);
+  padding: 40px !important;
+}
+
+/* Loading */
+.loading {
+  text-align: center;
+  padding: 40px;
+  font-size: 16px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+/* Tags/Badges */
+.tag {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+/* Status Tags */
+.status-paid {
+  background-color: #f6ffed;
+  color: #52c41a;
+  border: 1px solid #b7eb8f;
+}
+
+.status-partial {
+  background-color: #fffbe6;
+  color: #faad14;
+  border: 1px solid #ffe58f;
+}
+
+.status-pending {
+  background-color: #fff1f0;
+  color: #ff4d4f;
+  border: 1px solid #ffccc7;
+}
+
+.status-default {
+  background-color: #fafafa;
+  color: rgba(0, 0, 0, 0.85);
+  border: 1px solid #d9d9d9;
+}
+
+/* Customer Type Tags */
+.type-farmer {
+  background-color: #e6f7ff;
+  color: #1890ff;
+  border: 1px solid #91d5ff;
+}
+
+.type-retailer {
+  background-color: #f6ffed;
+  color: #52c41a;
+  border: 1px solid #b7eb8f;
+}
+
+/* Buttons */
+.btn {
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+  outline: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-primary {
+  background-color: #1890ff;
+  color: white;
+  border-color: #1890ff;
+}
+
+.btn-primary:hover {
+  background-color: #40a9ff;
+  border-color: #40a9ff;
+}
+
+.btn-primary:active {
+  background-color: #096dd9;
+  border-color: #096dd9;
+}
+
+.btn-link {
+  background: transparent;
+  color: #1890ff;
+  border: none;
+  padding: 4px 8px;
+  font-size: 14px;
+}
+
+.btn-link:hover {
+  color: #40a9ff;
+}
+
+.btn-link:active {
+  color: #096dd9;
+}
+
+.btn-danger {
+  color: #ff4d4f;
+}
+
+.btn-danger:hover {
+  color: #ff7875;
+}
+
+.btn-danger:active {
+  color: #d9363e;
+}
+
+/* Actions */
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .filters-container {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .date-range-filter {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .status-filter {
+    width: 100%;
+  }
+}
