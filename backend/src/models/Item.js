@@ -51,6 +51,18 @@ const itemSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  purchaseLedger: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Ledger'
+  },
+  salesLedger: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Ledger'
+  },
+  supplier: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Supplier'
+  },
   status: {
     type: String,
     enum: ['Active', 'Inactive'],

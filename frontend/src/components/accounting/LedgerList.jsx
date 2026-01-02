@@ -111,6 +111,41 @@ const LedgerList = () => {
 
   const getLedgerTypeColor = (type) => {
     const colorMap = {
+      // Income Types - Cyan/Green shades
+      'Sales A/c': 'tag-cyan',
+      'Trade Income': 'tag-cyan',
+      'Miscellaneous Income': 'tag-cyan',
+      'Other Revenue': 'tag-cyan',
+      'Grants & Aid': 'tag-cyan',
+      'Subsidies': 'tag-cyan',
+      // Expense Types - Red/Danger shades
+      'Purchases A/c': 'tag-danger',
+      'Trade Expenses': 'tag-danger',
+      'Establishment Charges': 'tag-danger',
+      'Miscellaneous Expenses': 'tag-danger',
+      // Party Types - Info
+      'Accounts Due To (Sundry Creditors)': 'tag-info',
+      // Liability Types - Magenta
+      'Other Payable': 'tag-magenta',
+      'Other Liabilities': 'tag-magenta',
+      'Deposit A/c': 'tag-magenta',
+      'Contingency Fund': 'tag-magenta',
+      'Education Fund': 'tag-magenta',
+      // Asset Types - Purple
+      'Fixed Assets': 'tag-purple',
+      'Movable Assets': 'tag-purple',
+      'Immovable Assets': 'tag-purple',
+      'Other Assets': 'tag-purple',
+      'Other Receivable': 'tag-purple',
+      // Investment Types - Blue
+      'Investment A/c': 'tag-blue',
+      'Other Investment': 'tag-blue',
+      'Government Securities': 'tag-blue',
+      // Capital Types - Blue
+      'Share Capital': 'tag-blue',
+      // Final Accounts - Warning
+      'Profit & Loss A/c': 'tag-warning',
+      // Legacy/Basic Types
       'Party': 'tag-info',
       'Bank': 'tag-success',
       'Cash': 'tag-warning',
@@ -165,14 +200,67 @@ const LedgerList = () => {
           onChange={(e) => setFilters(prev => ({ ...prev, ledgerType: e.target.value }))}
         >
           <option value="">All Types</option>
-          <option value="Party">Party</option>
-          <option value="Bank">Bank</option>
-          <option value="Cash">Cash</option>
-          <option value="Income">Income</option>
-          <option value="Expense">Expense</option>
-          <option value="Asset">Asset</option>
-          <option value="Liability">Liability</option>
-          <option value="Capital">Capital</option>
+
+          <optgroup label="Income">
+            <option value="Sales A/c">Sales A/c</option>
+            <option value="Trade Income">Trade Income</option>
+            <option value="Miscellaneous Income">Miscellaneous Income</option>
+            <option value="Other Revenue">Other Revenue</option>
+            <option value="Grants & Aid">Grants & Aid</option>
+            <option value="Subsidies">Subsidies</option>
+          </optgroup>
+
+          <optgroup label="Expense">
+            <option value="Purchases A/c">Purchases A/c</option>
+            <option value="Trade Expenses">Trade Expenses</option>
+            <option value="Establishment Charges">Establishment Charges</option>
+            <option value="Miscellaneous Expenses">Miscellaneous Expenses</option>
+          </optgroup>
+
+          <optgroup label="Party">
+            <option value="Accounts Due To (Sundry Creditors)">Accounts Due To (Sundry Creditors)</option>
+          </optgroup>
+
+          <optgroup label="Liability">
+            <option value="Other Payable">Other Payable</option>
+            <option value="Other Liabilities">Other Liabilities</option>
+            <option value="Deposit A/c">Deposit A/c</option>
+            <option value="Contingency Fund">Contingency Fund</option>
+            <option value="Education Fund">Education Fund</option>
+          </optgroup>
+
+          <optgroup label="Asset">
+            <option value="Fixed Assets">Fixed Assets</option>
+            <option value="Movable Assets">Movable Assets</option>
+            <option value="Immovable Assets">Immovable Assets</option>
+            <option value="Other Assets">Other Assets</option>
+            <option value="Other Receivable">Other Receivable</option>
+          </optgroup>
+
+          <optgroup label="Investment">
+            <option value="Investment A/c">Investment A/c</option>
+            <option value="Other Investment">Other Investment</option>
+            <option value="Government Securities">Government Securities</option>
+          </optgroup>
+
+          <optgroup label="Capital">
+            <option value="Share Capital">Share Capital</option>
+          </optgroup>
+
+          <optgroup label="Final Accounts">
+            <option value="Profit & Loss A/c">Profit & Loss A/c</option>
+          </optgroup>w
+
+          <optgroup label="Legacy/Basic Types">
+            <option value="Party">Party</option>
+            <option value="Bank">Bank</option>
+            <option value="Cash">Cash</option>
+            <option value="Income">Income</option>
+            <option value="Expense">Expense</option>
+            <option value="Asset">Asset</option>
+            <option value="Liability">Liability</option>
+            <option value="Capital">Capital</option>
+          </optgroup>
         </select>
       </div>
 
@@ -262,15 +350,53 @@ const LedgerList = () => {
                     value={formData.ledgerType}
                     onChange={handleChange}
                   >
-                    <option value="">Select ledger type</option>
-                    <option value="Party">Party</option>
-                    <option value="Bank">Bank</option>
-                    <option value="Cash">Cash</option>
-                    <option value="Income">Income</option>
-                    <option value="Expense">Expense</option>
-                    <option value="Asset">Asset</option>
-                    <option value="Liability">Liability</option>
-                    <option value="Capital">Capital</option>
+                   <option value="">Select Ledger</option>
+
+<option value="Sales A/c" data-type="Income">Sales A/c</option>
+<option value="Trade Income" data-type="Income">Trade Income</option>
+<option value="Miscellaneous Income" data-type="Income">Miscellaneous Income</option>
+<option value="Other Revenue" data-type="Income">Other Revenue</option>
+<option value="Grants & Aid" data-type="Income">Grants & Aid</option>
+<option value="Subsidies" data-type="Income">Subsidies</option>
+
+
+<option value="Purchases A/c" data-type="Expense">Purchases A/c</option>
+<option value="Trade Expenses" data-type="Expense">Trade Expenses</option>
+<option value="Establishment Charges" data-type="Expense">Establishment Charges</option>
+<option value="Miscellaneous Expenses" data-type="Expense">Miscellaneous Expenses</option>
+
+
+<option value="Accounts Due To (Sundry Creditors)" data-type="Party">
+  Accounts Due To (Sundry Creditors)
+</option>
+<option value="Other Payable" data-type="Liability">Other Payable</option>
+<option value="Other Liabilities" data-type="Liability">Other Liabilities</option>
+<option value="Deposit A/c" data-type="Liability">Deposit A/c</option>
+<option value="Contingency Fund" data-type="Liability">Contingency Fund</option>
+<option value="Education Fund" data-type="Liability">Education Fund</option>
+
+
+<option value="Fixed Assets" data-type="Asset">Fixed Assets</option>
+<option value="Movable Assets" data-type="Asset">Movable Assets</option>
+<option value="Immovable Assets" data-type="Asset">Immovable Assets</option>
+<option value="Other Assets" data-type="Asset">Other Assets</option>
+<option value="Other Receivable" data-type="Asset">Other Receivable</option>
+
+
+<option value="Investment A/c" data-type="Investment">Investment A/c</option>
+<option value="Other Investment" data-type="Investment">Other Investment</option>
+<option value="Government Securities" data-type="Investment">
+  Government Securities
+</option>
+
+
+<option value="Share Capital" data-type="Capital">Share Capital</option>
+
+
+<option value="Profit & Loss A/c" data-type="Final">
+  Profit & Loss A/c
+</option>
+
                   </select>
                   {errors.ledgerType && <div className="form-error">{errors.ledgerType}</div>}
                 </div>

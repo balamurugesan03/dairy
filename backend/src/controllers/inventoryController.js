@@ -82,6 +82,9 @@ export const getAllItems = async (req, res) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const items = await Item.find(query)
+      .populate('purchaseLedger', 'ledgerName ledgerType')
+      .populate('salesLedger', 'ledgerName ledgerType')
+      .populate('supplier', 'supplierId name phone')
       .sort({ itemName: 1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -109,7 +112,10 @@ export const getAllItems = async (req, res) => {
 // Get item by ID
 export const getItemById = async (req, res) => {
   try {
-    const item = await Item.findById(req.params.id);
+    const item = await Item.findById(req.params.id)
+      .populate('purchaseLedger', 'ledgerName ledgerType')
+      .populate('salesLedger', 'ledgerName ledgerType')
+      .populate('supplier', 'supplierId name phone');
 
     if (!item) {
       return res.status(404).json({

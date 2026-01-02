@@ -27,6 +27,7 @@ export const farmerAPI = {
   create: (data) => api.post('/farmers', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/farmers/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/farmers/${id}`).then(res => res.data).catch(handleError),
+  toggleMembership: (id) => api.patch(`/farmers/${id}/membership`).then(res => res.data).catch(handleError),
   search: (query) => {
     // Validate query parameter - must be non-empty string
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
@@ -50,6 +51,23 @@ export const customerAPI = {
       return Promise.reject({ message: 'Search query cannot be empty' });
     }
     return api.get('/customers/search', { params: { query: query.trim() } }).then(res => res.data).catch(handleError);
+  }
+};
+
+// SUPPLIER APIs
+export const supplierAPI = {
+  getAll: (params) => api.get('/suppliers', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/suppliers/${id}`).then(res => res.data).catch(handleError),
+  getBySupplierId: (supplierId) => api.get(`/suppliers/supplierId/${supplierId}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/suppliers', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/suppliers/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/suppliers/${id}`).then(res => res.data).catch(handleError),
+  search: (query) => {
+    // Validate query parameter - must be non-empty string
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return Promise.reject({ message: 'Search query cannot be empty' });
+    }
+    return api.get('/suppliers/search', { params: { query: query.trim() } }).then(res => res.data).catch(handleError);
   }
 };
 
@@ -157,6 +175,39 @@ export const promotionAPI = {
   create: (data) => api.post('/promotions', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/promotions/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/promotions/${id}`).then(res => res.data).catch(handleError)
+};
+
+// CLASSIFIED CASH BOOK APIs
+export const classifiedCashBookAPI = {
+  // Create receipt
+  createReceipt: (data) => api.post('/cashbook/receipts', data).then(res => res.data).catch(handleError),
+
+  // Create disbursement
+  createDisbursement: (data) => api.post('/cashbook/disbursements', data).then(res => res.data).catch(handleError),
+
+  // Get all transactions
+  getAllTransactions: (params) => api.get('/cashbook/transactions', { params }).then(res => res.data).catch(handleError),
+
+  // Get transaction by ID
+  getTransactionById: (id) => api.get(`/cashbook/transactions/${id}`).then(res => res.data).catch(handleError),
+
+  // Delete transaction
+  deleteTransaction: (id) => api.delete(`/cashbook/transactions/${id}`).then(res => res.data).catch(handleError),
+
+  // Get cash book report
+  getCashBookReport: (params) => api.get('/cashbook/cashbook-report', { params }).then(res => res.data).catch(handleError),
+
+  // Get classification report
+  getClassificationReport: (params) => api.get('/cashbook/classification-report', { params }).then(res => res.data).catch(handleError)
+};
+
+// SUBSIDY APIs
+export const subsidyAPI = {
+  getAll: (params) => api.get('/subsidies', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/subsidies/${id}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/subsidies', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/subsidies/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/subsidies/${id}`).then(res => res.data).catch(handleError)
 };
 
 export default api;

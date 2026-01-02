@@ -23,7 +23,9 @@ const MainLayout = () => {
         { key: '/farmers', label: 'Farmer List' },
         { key: '/farmers/add', label: 'Add Farmer' },
         { key: '/customers', label: 'Customer List' },
-        { key: '/customers/add', label: 'Add Customer' }
+        { key: '/customers/add', label: 'Add Customer' },
+        { key: '/suppliers', label: 'Supplier List' },
+        { key: '/suppliers/add', label: 'Add Supplier' }
       ]
     },
     {
@@ -57,6 +59,17 @@ const MainLayout = () => {
         { key: '/accounting/payment', label: 'Payment Voucher' },
         { key: '/accounting/journal', label: 'Journal Voucher' },
         { key: '/accounting/outstanding', label: 'Outstanding Report' }
+      ]
+    },
+    {
+      key: 'cashbook-menu',
+      icon: 'dollar',
+      label: 'Cash Book',
+      children: [
+        { key: '/cashbook/receipt', label: 'Classified Receipt' },
+        { key: '/cashbook/disbursement', label: 'Classified Disbursement' },
+        { key: '/cashbook/transactions', label: 'Cash Book View' },
+        { key: '/cashbook/reports', label: 'Classification Reports' }
       ]
     },
     {
@@ -118,6 +131,14 @@ const MainLayout = () => {
       children: [
         { key: '/promotions', label: 'Promotion List' },
         { key: '/promotions/add', label: 'Add Promotion' }
+      ]
+    },
+    {
+      key: 'subsidies-menu',
+      icon: 'dollar',
+      label: 'Subsidies',
+      children: [
+        { key: '/subsidies', label: 'Subsidy List' }
       ]
     }
   ];

@@ -47,6 +47,8 @@ const FarmerForm = () => {
         'identityDetails.pan': farmer.identityDetails?.pan,
         'identityDetails.welfareNo': farmer.identityDetails?.welfareNo,
         'identityDetails.ksheerasreeId': farmer.identityDetails?.ksheerasreeId,
+        'identityDetails.idCardNumber': farmer.identityDetails?.idCardNumber,
+        'identityDetails.issueDate': farmer.identityDetails?.issueDate || '',
         'bankDetails.accountNumber': farmer.bankDetails?.accountNumber,
         'bankDetails.bankName': farmer.bankDetails?.bankName,
         'bankDetails.branch': farmer.bankDetails?.branch,
@@ -59,6 +61,7 @@ const FarmerForm = () => {
         'documents.bankPassbook': farmer.documents?.bankPassbook,
         'documents.rationCard': farmer.documents?.rationCard,
         'documents.incomeProof': farmer.documents?.incomeProof,
+        'documents.additionalDocuments': farmer.documents?.additionalDocuments || [],
       };
 
       setFormData(formattedData);
@@ -93,6 +96,34 @@ const FarmerForm = () => {
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
+  };
+
+  const handleAdditionalDocumentChange = (index, file) => {
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData(prev => {
+          const additionalDocs = [...(prev['documents.additionalDocuments'] || [])];
+          additionalDocs[index] = reader.result;
+          return {
+            ...prev,
+            'documents.additionalDocuments': additionalDocs
+          };
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeAdditionalDocument = (index) => {
+    setFormData(prev => {
+      const additionalDocs = [...(prev['documents.additionalDocuments'] || [])];
+      additionalDocs.splice(index, 1);
+      return {
+        ...prev,
+        'documents.additionalDocuments': additionalDocs
+      };
+    });
   };
 
   const validateStep = (step) => {
@@ -190,6 +221,8 @@ const FarmerForm = () => {
           pan: formData['identityDetails.pan'],
           welfareNo: formData['identityDetails.welfareNo'],
           ksheerasreeId: formData['identityDetails.ksheerasreeId'],
+          idCardNumber: formData['identityDetails.idCardNumber'],
+          issueDate: formData['identityDetails.issueDate'] ? new Date(formData['identityDetails.issueDate']).toISOString() : null,
         },
         farmerType: formData.farmerType,
         cowType: formData.cowType,
@@ -210,6 +243,7 @@ const FarmerForm = () => {
           bankPassbook: formData['documents.bankPassbook'],
           rationCard: formData['documents.rationCard'],
           incomeProof: formData['documents.incomeProof'],
+          additionalDocuments: formData['documents.additionalDocuments'] || [],
         },
       };
 
@@ -341,6 +375,8 @@ const FarmerForm = () => {
             {renderFormField('identityDetails.pan', 'PAN Number', 'text', false, null, 'Enter PAN number')}
             {renderFormField('identityDetails.welfareNo', 'Welfare Number', 'text', false, null, 'Enter welfare number')}
             {renderFormField('identityDetails.ksheerasreeId', 'Ksheerasree ID', 'text', false, null, 'Enter Ksheerasree ID')}
+            {renderFormField('identityDetails.idCardNumber', 'ID Card Number', 'text', false, null, 'Enter ID card number')}
+            {renderFormField('identityDetails.issueDate', 'Issue Date', 'date', false)}
           </div>
         );
 
@@ -382,12 +418,65 @@ const FarmerForm = () => {
         );
 
       case 6:
+        const additionalDocs = formData['documents.additionalDocuments'] || [];
+        const canAddMore = additionalDocs.length < 5;
+
         return (
-          <div className="form-row">
-            {renderFileField('documents.aadhaar', 'Aadhaar Document', false)}
-            {renderFileField('documents.bankPassbook', 'Bank Passbook', false)}
-            {renderFileField('documents.rationCard', 'Ration Card', false)}
-            {renderFileField('documents.incomeProof', 'Income Proof', false)}
+          <div>
+            <div className="form-row">
+              {renderFileField('documents.aadhaar', 'Aadhaar Document', false)}
+              {renderFileField('documents.bankPassbook', 'Bank Passbook', false)}
+              {renderFileField('documents.rationCard', 'Ration Card', false)}
+              {renderFileField('documents.incomeProof', 'Income Proof', false)}
+            </div>
+
+            <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid var(--border-color)' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '16px', color: 'var(--text-primary)' }}>
+                Additional Documents (Max 5)
+              </h3>
+
+              {additionalDocs.map((doc, index) => (
+                <div key={index} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginBottom: '12px' }}>
+                  <div style={{ flex: 1 }}>
+                    <input
+                      type="file"
+                      className="form-input"
+                      onChange={(e) => handleAdditionalDocumentChange(index, e.target.files[0])}
+                      accept="image/*,.pdf"
+                    />
+                    {doc && (
+                      <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                        {doc.startsWith('data:') ? 'File selected' : 'Previously uploaded'}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-default"
+                    onClick={() => removeAdditionalDocument(index)}
+                    style={{ padding: '8px 12px', minWidth: 'auto' }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+
+              {canAddMore && (
+                <button
+                  type="button"
+                  className="btn btn-default"
+                  onClick={() => {
+                    setFormData(prev => ({
+                      ...prev,
+                      'documents.additionalDocuments': [...(prev['documents.additionalDocuments'] || []), '']
+                    }));
+                  }}
+                  style={{ marginTop: '8px' }}
+                >
+                  + Add Document ({additionalDocs.length}/5)
+                </button>
+              )}
+            </div>
           </div>
         );
 

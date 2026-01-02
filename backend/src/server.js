@@ -27,6 +27,7 @@ app.get('/', (req, res) => {
 // Import routes
 import farmerRoutes from './routes/farmerRoutes.js';
 import customerRoutes from './routes/customerRoutes.js';
+import supplierRoutes from './routes/supplierRoutes.js';
 import inventoryRoutes from './routes/inventoryRoutes.js';
 import salesRoutes from './routes/salesRoutes.js';
 import accountingRoutes from './routes/accountingRoutes.js';
@@ -34,15 +35,22 @@ import paymentRoutes from './routes/paymentRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
 import additionalRoutes from './routes/additionalRoutes.js';
 
+import ledgerRoutes from './routes/ledgerRoutes.js';
+import subsidyRoutes from './routes/subsidyRoutes.js';
+
 // Use routes
 app.use('/api/farmers', farmerRoutes);
 app.use('/api/customers', customerRoutes);
+app.use('/api/suppliers', supplierRoutes);
 app.use('/api', inventoryRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api', accountingRoutes);
 app.use('/api', paymentRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api', additionalRoutes);
+
+app.use('/api', ledgerRoutes);
+app.use('/api', subsidyRoutes);
 
 // 404 handler
 app.use((req, res, next) => {

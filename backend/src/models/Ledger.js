@@ -8,7 +8,51 @@ const ledgerSchema = new mongoose.Schema({
   },
   ledgerType: {
     type: String,
-    enum: ['Party', 'Bank', 'Cash', 'Income', 'Expense', 'Asset', 'Liability', 'Capital'],
+    enum: [
+      // Income Types
+      'Sales A/c',
+      'Trade Income',
+      'Miscellaneous Income',
+      'Other Revenue',
+      'Grants & Aid',
+      'Subsidies',
+      // Expense Types
+      'Purchases A/c',
+      'Trade Expenses',
+      'Establishment Charges',
+      'Miscellaneous Expenses',
+      // Party Types
+      'Accounts Due To (Sundry Creditors)',
+      // Liability Types
+      'Other Payable',
+      'Other Liabilities',
+      'Deposit A/c',
+      'Contingency Fund',
+      'Education Fund',
+      // Asset Types
+      'Fixed Assets',
+      'Movable Assets',
+      'Immovable Assets',
+      'Other Assets',
+      'Other Receivable',
+      // Investment Types
+      'Investment A/c',
+      'Other Investment',
+      'Government Securities',
+      // Capital Types
+      'Share Capital',
+      // Final/Special Types
+      'Profit & Loss A/c',
+      // Legacy/Basic Types (keeping for backward compatibility)
+      'Party',
+      'Bank',
+      'Cash',
+      'Income',
+      'Expense',
+      'Asset',
+      'Liability',
+      'Capital'
+    ],
     required: true
   },
   linkedEntity: {

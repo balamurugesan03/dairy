@@ -321,7 +321,7 @@ export const updateLedger = async (req, res) => {
 export const getOutstandingReport = async (req, res) => {
   try {
     const ledgers = await Ledger.find({
-      ledgerType: 'Party',
+      ledgerType: { $in: ['Party', 'Accounts Due To (Sundry Creditors)'] },
       status: 'Active',
       currentBalance: { $ne: 0 }
     }).sort({ ledgerName: 1 });

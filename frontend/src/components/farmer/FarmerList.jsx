@@ -64,6 +64,24 @@ const FarmerList = () => {
     });
   };
 
+  const handleMembershipToggle = async (id, currentStatus) => {
+    const action = currentStatus ? 'deactivate' : 'activate';
+    showConfirmDialog({
+      title: `${currentStatus ? 'Deactivate' : 'Activate'} Membership`,
+      content: `Are you sure you want to ${action} membership for this farmer?`,
+      type: currentStatus ? 'warning' : 'info',
+      onConfirm: async () => {
+        try {
+          await farmerAPI.toggleMembership(id);
+          message.success(`Membership ${action}d successfully`);
+          fetchFarmers();
+        } catch (error) {
+          message.error(error.message || `Failed to ${action} membership`);
+        }
+      }
+    });
+  };
+
   const handleSearch = (e) => {
     e.preventDefault();
     setFilters(prev => ({ ...prev, search: e.target.search.value }));
@@ -138,7 +156,7 @@ const FarmerList = () => {
       </div>
 
       <div style={{ overflowX: 'auto' }}>
-        <table className="billing-table" style={{ minWidth: '1200px' }}>
+        <table className="billing-table" style={{ minWidth: '1300px' }}>
           <thead>
             <tr>
               <th>Farmer No.</th>
@@ -147,6 +165,7 @@ const FarmerList = () => {
               <th>Phone</th>
               <th>Village</th>
               <th>Farmer Type</th>
+              <th>Membership</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
@@ -154,14 +173,14 @@ const FarmerList = () => {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan="8" style={{ textAlign: 'center', padding: '40px' }}>
+                <td colSpan="9" style={{ textAlign: 'center', padding: '40px' }}>
                   <div className="spinner"></div>
                   Loading...
                 </td>
               </tr>
             ) : farmers.length === 0 ? (
               <tr>
-                <td colSpan="8" className="table-empty">
+                <td colSpan="9" className="table-empty">
                   No farmers found
                 </td>
               </tr>
@@ -194,6 +213,20 @@ const FarmerList = () => {
                       borderRadius: '4px',
                       fontSize: '12px',
                       fontWeight: '500',
+                      background: farmer.isMembership ? '#52c41a20' : '#d9d9d920',
+                      color: farmer.isMembership ? '#52c41a' : '#8c8c8c',
+                      border: `1px solid ${farmer.isMembership ? '#52c41a' : '#d9d9d9'}`
+                    }}>
+                      {farmer.isMembership ? 'Member' : 'Non-Member'}
+                    </span>
+                  </td>
+                  <td>
+                    <span style={{
+                      display: 'inline-block',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      fontWeight: '500',
                       background: `${getTagColor('status', farmer.status)}20`,
                       color: getTagColor('status', farmer.status),
                       border: `1px solid ${getTagColor('status', farmer.status)}`
@@ -202,7 +235,7 @@ const FarmerList = () => {
                     </span>
                   </td>
                   <td>
-                    <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                       <button
                         className="btn btn-link"
                         onClick={() => navigate(`/farmers/view/${farmer._id}`)}
@@ -214,6 +247,13 @@ const FarmerList = () => {
                         onClick={() => navigate(`/farmers/edit/${farmer._id}`)}
                       >
                         Edit
+                      </button>
+                      <button
+                        className="btn btn-link"
+                        style={{ color: farmer.isMembership ? '#faad14' : '#1890ff' }}
+                        onClick={() => handleMembershipToggle(farmer._id, farmer.isMembership)}
+                      >
+                        {farmer.isMembership ? 'Remove Member' : 'Add Member'}
                       </button>
                       <button
                         className="btn btn-link"

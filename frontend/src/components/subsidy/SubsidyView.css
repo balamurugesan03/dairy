@@ -1,0 +1,133 @@
+.subsidy-view {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.view-actions {
+  margin-bottom: 20px;
+  display: flex;
+  gap: 12px;
+}
+
+.view-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.view-section {
+  padding: 24px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.view-section:last-child {
+  border-bottom: none;
+}
+
+.section-title {
+  margin: 0 0 20px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-item.full-width {
+  grid-column: span 2;
+}
+
+.detail-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.detail-value {
+  font-size: 14px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.tag {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.tag-success {
+  background-color: #f6ffed;
+  color: #52c41a;
+  border: 1px solid #b7eb8f;
+}
+
+.tag-info {
+  background-color: #e6f7ff;
+  color: #1890ff;
+  border: 1px solid #91d5ff;
+}
+
+.tag-blue {
+  background-color: #f0f5ff;
+  color: #2f54eb;
+  border: 1px solid #adc6ff;
+}
+
+.tag-danger {
+  background-color: #fff1f0;
+  color: #ff4d4f;
+  border: 1px solid #ffccc7;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-default {
+  background-color: #f0f0f0;
+  color: #333;
+  border: 1px solid #d9d9d9;
+}
+
+.btn-default:hover {
+  background-color: #e0e0e0;
+  border-color: #40a9ff;
+  color: #40a9ff;
+}
+
+@media (max-width: 768px) {
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-item.full-width {
+    grid-column: span 1;
+  }
+}

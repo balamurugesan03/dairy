@@ -72,6 +72,13 @@ const farmerSchema = new mongoose.Schema({
     ksheerasreeId: {
       type: String,
       trim: true
+    },
+    idCardNumber: {
+      type: String,
+      trim: true
+    },
+    issueDate: {
+      type: Date
     }
   },
   farmerType: {
@@ -133,12 +140,20 @@ const farmerSchema = new mongoose.Schema({
     incomeProof: {
       type: String,
       trim: true
-    }
+    },
+    additionalDocuments: [{
+      type: String,
+      trim: true
+    }]
   },
   status: {
     type: String,
     enum: ['Active', 'Inactive'],
     default: 'Active'
+  },
+  isMembership: {
+    type: Boolean,
+    default: false
   },
   ledgerId: {
     type: mongoose.Schema.Types.ObjectId,

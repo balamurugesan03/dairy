@@ -5,7 +5,8 @@ import {
   getFarmerById,
   updateFarmer,
   deleteFarmer,
-  searchFarmer
+  searchFarmer,
+  toggleMembership
 } from '../controllers/farmerController.js';
 
 const router = express.Router();
@@ -24,6 +25,9 @@ router.get('/:id', getFarmerById);
 
 // Update farmer
 router.put('/:id', updateFarmer);
+
+// Toggle membership status
+router.patch('/:id/membership', toggleMembership);
 
 // Delete/Deactivate farmer
 router.delete('/:id', deleteFarmer);

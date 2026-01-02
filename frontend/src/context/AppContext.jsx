@@ -15,6 +15,9 @@ const initialState = {
   machines: [],
   quotations: [],
   promotions: [],
+  classifiedTransactions: [],
+  cashBookReport: null,
+  classificationReport: null,
   loading: false,
   error: null
 };
@@ -32,6 +35,9 @@ export const ActionTypes = {
   SET_MACHINES: 'SET_MACHINES',
   SET_QUOTATIONS: 'SET_QUOTATIONS',
   SET_PROMOTIONS: 'SET_PROMOTIONS',
+  SET_CLASSIFIED_TRANSACTIONS: 'SET_CLASSIFIED_TRANSACTIONS',
+  SET_CASHBOOK_REPORT: 'SET_CASHBOOK_REPORT',
+  SET_CLASSIFICATION_REPORT: 'SET_CLASSIFICATION_REPORT',
   SET_LOADING: 'SET_LOADING',
   SET_ERROR: 'SET_ERROR',
   CLEAR_ERROR: 'CLEAR_ERROR'
@@ -62,6 +68,12 @@ const appReducer = (state, action) => {
       return { ...state, quotations: action.payload };
     case ActionTypes.SET_PROMOTIONS:
       return { ...state, promotions: action.payload };
+    case ActionTypes.SET_CLASSIFIED_TRANSACTIONS:
+      return { ...state, classifiedTransactions: action.payload };
+    case ActionTypes.SET_CASHBOOK_REPORT:
+      return { ...state, cashBookReport: action.payload };
+    case ActionTypes.SET_CLASSIFICATION_REPORT:
+      return { ...state, classificationReport: action.payload };
     case ActionTypes.SET_LOADING:
       return { ...state, loading: action.payload };
     case ActionTypes.SET_ERROR:

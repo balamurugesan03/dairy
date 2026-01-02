@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { itemAPI } from '../../services/api';
+import { itemAPI, ledgerAPI, supplierAPI } from '../../services/api';
 import PageHeader from '../common/PageHeader';
 import { showConfirmDialog } from '../common/ConfirmDialog';
 import { message } from '../../utils/toast';
@@ -11,10 +11,32 @@ const ItemList = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
+  const [ledgers, setLedgers] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
 
   useEffect(() => {
     fetchItems();
+    fetchLedgers();
+    fetchSuppliers();
   }, []);
+
+  const fetchLedgers = async () => {
+    try {
+      const response = await ledgerAPI.getAll({ status: 'Active' });
+      setLedgers(response.data || []);
+    } catch (error) {
+      console.error('Failed to fetch ledgers:', error);
+    }
+  };
+
+  const fetchSuppliers = async () => {
+    try {
+      const response = await supplierAPI.getAll({ active: 'true' });
+      setSuppliers(response.data || []);
+    } catch (error) {
+      console.error('Failed to fetch suppliers:', error);
+    }
+  };
 
   const fetchItems = async () => {
     setLoading(true);
@@ -37,7 +59,13 @@ const ItemList = () => {
 
   const handleEdit = (item) => {
     setEditingItem(item);
-    setFormData(item);
+    // Properly set ledger IDs and supplier ID for editing
+    setFormData({
+      ...item,
+      purchaseLedger: item.purchaseLedger?._id || '',
+      salesLedger: item.salesLedger?._id || '',
+      supplier: item.supplier?._id || ''
+    });
     setErrors({});
     setModalVisible(true);
   };
@@ -75,6 +103,12 @@ const ItemList = () => {
     if (!editingItem && !formData.openingBalance) newErrors.openingBalance = 'Opening balance is required';
     if (!formData.purchaseRate) newErrors.purchaseRate = 'Purchase rate is required';
     if (!formData.salesRate) newErrors.salesRate = 'Sales rate is required';
+
+    // Validate ledger fields when category is selected
+    if (formData.category) {
+      if (!formData.purchaseLedger) newErrors.purchaseLedger = 'Purchase ledger is required';
+      if (!formData.salesLedger) newErrors.salesLedger = 'Sales ledger is required';
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -145,7 +179,7 @@ const ItemList = () => {
       />
 
       <div style={{ overflowX: 'auto' }}>
-        <table className="billing-table" style={{ minWidth: '1200px' }}>
+        <table className="billing-table" style={{ minWidth: '1500px' }}>
           <thead>
             <tr>
               <th>Item Code</th>
@@ -155,6 +189,9 @@ const ItemList = () => {
               <th>Current Balance</th>
               <th>Purchase Rate</th>
               <th>Sales Rate</th>
+              <th>Supplier</th>
+              <th>Purchase Ledger</th>
+              <th>Sales Ledger</th>
               <th>GST %</th>
               <th>Status</th>
               <th>Actions</th>
@@ -163,14 +200,14 @@ const ItemList = () => {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan="10" style={{ textAlign: 'center', padding: '40px' }}>
+                <td colSpan="13" style={{ textAlign: 'center', padding: '40px' }}>
                   <div className="spinner"></div>
                   Loading...
                 </td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan="10" className="table-empty">
+                <td colSpan="13" className="table-empty">
                   No items found
                 </td>
               </tr>
@@ -184,6 +221,9 @@ const ItemList = () => {
                   <td>{renderTag(item.currentBalance, item.unit)}</td>
                   <td>₹{item.purchaseRate || 0}</td>
                   <td>₹{item.salesRate || 0}</td>
+                  <td>{item.supplier?.name || '-'}</td>
+                  <td>{item.purchaseLedger?.ledgerName || '-'}</td>
+                  <td>{item.salesLedger?.ledgerName || '-'}</td>
                   <td>{item.gstPercent || 0}%</td>
                   <td>
                     <span style={{
@@ -269,10 +309,12 @@ const ItemList = () => {
                       onChange={(e) => handleInputChange('category', e.target.value)}
                     >
                       <option value="">Select category</option>
-                      <option value="Feed">Feed</option>
+                      <option value="Feed">Feeds</option>
+                      <option value="CattleFeed">CattleFeed</option>
                       <option value="Medicine">Medicine</option>
                       <option value="Equipment">Equipment</option>
                       <option value="Dairy Products">Dairy Products</option>
+                      <option value="Minerals">Minerals</option>
                       <option value="Other">Other</option>
                     </select>
                     {errors.category && <div className="form-error">{errors.category}</div>}
@@ -295,6 +337,65 @@ const ItemList = () => {
                     {errors.unit && <div className="form-error">{errors.unit}</div>}
                   </div>
                 </div>
+
+                <div className="form-group">
+                  <label className="form-label">Supplier</label>
+                  <select
+                    className="form-select"
+                    value={formData.supplier || ''}
+                    onChange={(e) => handleInputChange('supplier', e.target.value)}
+                  >
+                    <option value="">Select supplier (Optional)</option>
+                    {suppliers.map((supplier) => (
+                      <option key={supplier._id} value={supplier._id}>
+                        {supplier.name} ({supplier.supplierId}) - {supplier.phone}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Show ledger fields when category is selected */}
+                {formData.category && (
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label required">
+                        {formData.category} Purchase Ledger
+                      </label>
+                      <select
+                        className={`form-select ${errors.purchaseLedger ? 'error' : ''}`}
+                        value={formData.purchaseLedger || ''}
+                        onChange={(e) => handleInputChange('purchaseLedger', e.target.value)}
+                      >
+                        <option value="">Select purchase ledger</option>
+                        {ledgers.map((ledger) => (
+                          <option key={ledger._id} value={ledger._id}>
+                            {ledger.ledgerName} ({ledger.ledgerType})
+                          </option>
+                        ))}
+                      </select>
+                      {errors.purchaseLedger && <div className="form-error">{errors.purchaseLedger}</div>}
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label required">
+                        {formData.category} Sales Ledger
+                      </label>
+                      <select
+                        className={`form-select ${errors.salesLedger ? 'error' : ''}`}
+                        value={formData.salesLedger || ''}
+                        onChange={(e) => handleInputChange('salesLedger', e.target.value)}
+                      >
+                        <option value="">Select sales ledger</option>
+                        {ledgers.map((ledger) => (
+                          <option key={ledger._id} value={ledger._id}>
+                            {ledger.ledgerName} ({ledger.ledgerType})
+                          </option>
+                        ))}
+                      </select>
+                      {errors.salesLedger && <div className="form-error">{errors.salesLedger}</div>}
+                    </div>
+                  </div>
+                )}
 
                 {!editingItem && (
                   <div className="form-group">

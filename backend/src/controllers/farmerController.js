@@ -249,11 +249,42 @@ export const searchFarmer = async (req, res) => {
   }
 };
 
+// Toggle farmer membership status
+export const toggleMembership = async (req, res) => {
+  try {
+    const farmer = await Farmer.findById(req.params.id);
+
+    if (!farmer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Farmer not found'
+      });
+    }
+
+    // Toggle membership status
+    farmer.isMembership = !farmer.isMembership;
+    await farmer.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Farmer membership ${farmer.isMembership ? 'activated' : 'deactivated'} successfully`,
+      data: farmer
+    });
+  } catch (error) {
+    console.error('Error toggling membership:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error toggling membership'
+    });
+  }
+};
+
 export default {
   createFarmer,
   getAllFarmers,
   getFarmerById,
   updateFarmer,
   deleteFarmer,
-  searchFarmer
+  searchFarmer,
+  toggleMembership
 };

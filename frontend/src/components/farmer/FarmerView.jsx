@@ -155,6 +155,8 @@ const FarmerView = () => {
             <DescriptionRow label="PAN Number" value={farmer.identityDetails?.pan || '-'} />
             <DescriptionRow label="Welfare Number" value={farmer.identityDetails?.welfareNo || '-'} />
             <DescriptionRow label="Ksheerasree ID" value={farmer.identityDetails?.ksheerasreeId || '-'} />
+            <DescriptionRow label="ID Card Number" value={farmer.identityDetails?.idCardNumber || '-'} />
+            <DescriptionRow label="Issue Date" value={farmer.identityDetails?.issueDate ? dayjs(farmer.identityDetails.issueDate).format('DD-MM-YYYY') : '-'} />
           </div>
         </div>
 
@@ -179,6 +181,25 @@ const FarmerView = () => {
             <DescriptionRow label="Admission Fee" value={`₹${farmer.financialDetails?.admissionFee || 0}`} />
             <DescriptionRow label="Resolution Number" value={farmer.financialDetails?.resolutionNo || '-'} />
             <DescriptionRow label="Resolution Date" value={farmer.financialDetails?.resolutionDate ? dayjs(farmer.financialDetails.resolutionDate).format('DD-MM-YYYY') : '-'} />
+          </div>
+        </div>
+
+        <div style={{ background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+          <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', fontWeight: '600', fontSize: '16px' }}>
+            Documents
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)' }}>
+            <DescriptionRow label="Aadhaar Document" value={farmer.documents?.aadhaar ? 'Uploaded' : '-'} />
+            <DescriptionRow label="Bank Passbook" value={farmer.documents?.bankPassbook ? 'Uploaded' : '-'} />
+            <DescriptionRow label="Ration Card" value={farmer.documents?.rationCard ? 'Uploaded' : '-'} />
+            <DescriptionRow label="Income Proof" value={farmer.documents?.incomeProof ? 'Uploaded' : '-'} />
+            {farmer.documents?.additionalDocuments && farmer.documents.additionalDocuments.length > 0 && (
+              <DescriptionRow
+                label="Additional Documents"
+                value={`${farmer.documents.additionalDocuments.length} document(s) uploaded`}
+                span={2}
+              />
+            )}
           </div>
         </div>
 

@@ -17,6 +17,11 @@ import CustomerList from './components/customer/CustomerList';
 import CustomerForm from './components/customer/CustomerForm';
 import CustomerView from './components/customer/CustomerView';
 
+// Supplier Components
+import SupplierList from './components/supplier/SupplierList';
+import SupplierForm from './components/supplier/SupplierForm';
+import SupplierView from './components/supplier/SupplierView';
+
 // Inventory Components
 import ItemList from './components/inventory/ItemList';
 import StockInForm from './components/inventory/StockInForm';
@@ -64,6 +69,16 @@ import PromotionList from './components/additional/PromotionList';
 import PromotionForm from './components/additional/PromotionForm';
 import PromotionView from './components/additional/PromotionView';
 
+// Cash Book Components
+import ClassifiedReceiptForm from './components/cashbook/ClassifiedReceiptForm';
+import ClassifiedDisbursementForm from './components/cashbook/ClassifiedDisbursementForm';
+import CashBookView from './components/cashbook/CashBookView';
+import ClassificationReports from './components/cashbook/ClassificationReports';
+
+// Subsidy Components
+import SubsidyList from './components/subsidy/SubsidyList';
+import SubsidyView from './components/subsidy/SubsidyView';
+
 function App() {
   return (
     <ThemeProvider>
@@ -88,6 +103,14 @@ function App() {
                 <Route path="add" element={<CustomerForm />} />
                 <Route path="edit/:id" element={<CustomerForm />} />
                 <Route path="view/:id" element={<CustomerView />} />
+              </Route>
+
+              {/* Supplier Management Routes */}
+              <Route path="suppliers">
+                <Route index element={<SupplierList />} />
+                <Route path="add" element={<SupplierForm />} />
+                <Route path="edit/:id" element={<SupplierForm />} />
+                <Route path="view/:id" element={<SupplierView />} />
               </Route>
 
               {/* Inventory Routes */}
@@ -166,6 +189,23 @@ function App() {
                 <Route path="add" element={<PromotionForm />} />
                 <Route path="edit/:id" element={<PromotionForm />} />
                 <Route path="view/:id" element={<PromotionView />} />
+              </Route>
+
+              {/* Cash Book Routes */}
+              <Route path="cashbook">
+                <Route index element={<CashBookView />} />
+                <Route path="transactions" element={<CashBookView />} />
+                <Route path="receipt" element={<ClassifiedReceiptForm />} />
+                <Route path="receipts/new" element={<ClassifiedReceiptForm />} />
+                <Route path="disbursement" element={<ClassifiedDisbursementForm />} />
+                <Route path="disbursements/new" element={<ClassifiedDisbursementForm />} />
+                <Route path="reports" element={<ClassificationReports />} />
+              </Route>
+
+              {/* Subsidy Routes */}
+              <Route path="subsidies">
+                <Route index element={<SubsidyList />} />
+                <Route path="view/:id" element={<SubsidyView />} />
               </Route>
             </Route>
           </Routes>
