@@ -1,4 +1,5 @@
 import Item from '../models/Item.js';
+import StockTransaction from '../models/StockTransaction.js';
 import {
   createStockTransaction,
   getItemStockHistory,
@@ -31,7 +32,7 @@ export const createItem = async (req, res) => {
         itemId: item._id,
         transactionType: 'Stock In',
         quantity: itemData.openingBalance,
-        rate: itemData.purchaseRate || 0,
+        rate: itemData.salesRate || 0,
         referenceType: 'Opening',
         notes: 'Opening Stock'
       });
@@ -179,12 +180,15 @@ export const deleteItem = async (req, res) => {
       });
     }
 
-    item.status = 'Inactive';
-    await item.save();
+    // Delete all related stock transactions
+    await StockTransaction.deleteMany({ itemId: req.params.id });
+
+    // Permanently delete the item
+    await Item.findByIdAndDelete(req.params.id);
 
     res.status(200).json({
       success: true,
-      message: 'Item deactivated successfully'
+      message: 'Item deleted successfully'
     });
   } catch (error) {
     console.error('Error deleting item:', error);
@@ -198,28 +202,62 @@ export const deleteItem = async (req, res) => {
 // Stock In
 export const stockIn = async (req, res) => {
   try {
-    const { itemId, quantity, rate, notes } = req.body;
+    const {
+      items, // Array of items
+      purchaseDate,
+      invoiceDate,
+      invoiceNumber,
+      issueCentre,
+      subsidyId,
+      subsidyAmount,
+      referenceType,
+      notes
+    } = req.body;
 
-    if (!itemId || !quantity || quantity <= 0) {
+    // Validate that items array exists and is not empty
+    if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Item ID and valid quantity are required'
+        message: 'At least one item is required'
       });
     }
 
-    const transaction = await createStockTransaction({
-      itemId,
-      transactionType: 'Stock In',
-      quantity,
-      rate: rate || 0,
-      referenceType: 'Purchase',
-      notes
-    });
+    // Validate each item
+    for (const item of items) {
+      if (!item.itemId || !item.quantity || item.quantity <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Each item must have a valid itemId and quantity'
+        });
+      }
+    }
+
+    const transactions = [];
+
+    // Create transaction for each item
+    for (const item of items) {
+      const transaction = await createStockTransaction({
+        itemId: item.itemId,
+        transactionType: 'Stock In',
+        quantity: parseFloat(item.quantity),
+        freeQty: parseFloat(item.freeQty) || 0,
+        rate: parseFloat(item.rate) || 0,
+        referenceType: referenceType || 'Purchase',
+        purchaseDate: purchaseDate ? new Date(purchaseDate) : null,
+        invoiceDate: invoiceDate ? new Date(invoiceDate) : null,
+        invoiceNumber: invoiceNumber || null,
+        issueCentre: issueCentre || null,
+        subsidyId: subsidyId || null,
+        subsidyAmount: parseFloat(subsidyAmount) || 0,
+        notes: notes || null
+      });
+      transactions.push(transaction);
+    }
 
     res.status(201).json({
       success: true,
       message: 'Stock added successfully',
-      data: transaction
+      data: transactions
     });
   } catch (error) {
     console.error('Error adding stock:', error);

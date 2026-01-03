@@ -16,6 +16,11 @@ const stockTransactionSchema = new mongoose.Schema({
     required: true,
     min: 0
   },
+  freeQty: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   rate: {
     type: Number,
     default: 0,
@@ -23,7 +28,7 @@ const stockTransactionSchema = new mongoose.Schema({
   },
   referenceType: {
     type: String,
-    enum: ['Purchase', 'Sale', 'Opening', 'Adjustment'],
+    enum: ['Purchase', 'Sale', 'Opening', 'Adjustment', 'Return'],
     required: true
   },
   referenceId: {
@@ -37,6 +42,29 @@ const stockTransactionSchema = new mongoose.Schema({
   date: {
     type: Date,
     default: Date.now
+  },
+  purchaseDate: {
+    type: Date
+  },
+  invoiceDate: {
+    type: Date
+  },
+  invoiceNumber: {
+    type: String,
+    trim: true
+  },
+  issueCentre: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CollectionCenter'
+  },
+  subsidyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Subsidy'
+  },
+  subsidyAmount: {
+    type: Number,
+    default: 0,
+    min: 0
   },
   notes: {
     type: String,

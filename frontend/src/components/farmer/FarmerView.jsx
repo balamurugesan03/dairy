@@ -11,9 +11,11 @@ const FarmerView = () => {
   const { id } = useParams();
   const [farmer, setFarmer] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [shareHistory, setShareHistory] = useState([]);
 
   useEffect(() => {
     fetchFarmer();
+    fetchShareHistory();
   }, [id]);
 
   const fetchFarmer = async () => {
@@ -25,6 +27,15 @@ const FarmerView = () => {
       message.error(error.message || 'Failed to fetch farmer details');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchShareHistory = async () => {
+    try {
+      const response = await farmerAPI.getShareHistory(id);
+      setShareHistory(response.data.shareHistory || []);
+    } catch (error) {
+      console.error('Failed to fetch share history:', error);
     }
   };
 
@@ -174,15 +185,99 @@ const FarmerView = () => {
 
         <div style={{ background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
           <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', fontWeight: '600', fontSize: '16px' }}>
-            Financial Details
+            Share Details
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)' }}>
+            <DescriptionRow label="Old Shares" value={farmer.financialDetails?.oldShares || 0} />
+            <DescriptionRow label="New Shares" value={farmer.financialDetails?.newShares || 0} />
+            <DescriptionRow
+              label="Total Shares"
+              value={
+                <span style={{ fontWeight: '600', color: '#1890ff', fontSize: '16px' }}>
+                  {farmer.financialDetails?.totalShares || 0}
+                </span>
+              }
+            />
             <DescriptionRow label="Share Value" value={`₹${farmer.financialDetails?.shareValue || 0}`} />
-            <DescriptionRow label="Admission Fee" value={`₹${farmer.financialDetails?.admissionFee || 0}`} />
+            <DescriptionRow label="Share Taken Date" value={farmer.financialDetails?.shareTakenDate ? dayjs(farmer.financialDetails.shareTakenDate).format('DD-MM-YYYY') : '-'} />
             <DescriptionRow label="Resolution Number" value={farmer.financialDetails?.resolutionNo || '-'} />
             <DescriptionRow label="Resolution Date" value={farmer.financialDetails?.resolutionDate ? dayjs(farmer.financialDetails.resolutionDate).format('DD-MM-YYYY') : '-'} />
+            <DescriptionRow label="Admission Fee" value={`₹${farmer.financialDetails?.admissionFee || 0}`} />
           </div>
         </div>
+
+        {shareHistory.length > 0 && (
+          <div style={{ background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+            <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', fontWeight: '600', fontSize: '16px' }}>
+              Share Transaction History
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+                    <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', fontSize: '13px' }}>Date</th>
+                    <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', fontSize: '13px' }}>Type</th>
+                    <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600', fontSize: '13px' }}>Shares</th>
+                    <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600', fontSize: '13px' }}>Share Value</th>
+                    <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600', fontSize: '13px' }}>Total Value</th>
+                    <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', fontSize: '13px' }}>Resolution No.</th>
+                    <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', fontSize: '13px' }}>Resolution Date</th>
+                    <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600', fontSize: '13px' }}>Old Total</th>
+                    <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600', fontSize: '13px' }}>New Total</th>
+                    <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', fontSize: '13px' }}>Remarks</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shareHistory.map((transaction, index) => (
+                    <tr key={index} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                      <td style={{ padding: '12px', fontSize: '13px' }}>
+                        {dayjs(transaction.transactionDate).format('DD-MM-YYYY')}
+                      </td>
+                      <td style={{ padding: '12px' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          fontWeight: '500',
+                          background: transaction.transactionType === 'Redemption' ? '#fff1f0' : '#e6f7ff',
+                          color: transaction.transactionType === 'Redemption' ? '#cf1322' : '#0958d9',
+                          border: `1px solid ${transaction.transactionType === 'Redemption' ? '#ffccc7' : '#91d5ff'}`
+                        }}>
+                          {transaction.transactionType}
+                        </span>
+                      </td>
+                      <td style={{ padding: '12px', textAlign: 'right', fontSize: '13px', fontWeight: '500' }}>
+                        {transaction.transactionType === 'Redemption' ? '-' : '+'}{transaction.shares}
+                      </td>
+                      <td style={{ padding: '12px', textAlign: 'right', fontSize: '13px' }}>
+                        ₹{transaction.shareValue}
+                      </td>
+                      <td style={{ padding: '12px', textAlign: 'right', fontSize: '13px', fontWeight: '500' }}>
+                        ₹{transaction.totalValue.toFixed(2)}
+                      </td>
+                      <td style={{ padding: '12px', fontSize: '13px' }}>
+                        {transaction.resolutionNo}
+                      </td>
+                      <td style={{ padding: '12px', fontSize: '13px' }}>
+                        {dayjs(transaction.resolutionDate).format('DD-MM-YYYY')}
+                      </td>
+                      <td style={{ padding: '12px', textAlign: 'right', fontSize: '13px' }}>
+                        {transaction.oldTotal}
+                      </td>
+                      <td style={{ padding: '12px', textAlign: 'right', fontSize: '13px', fontWeight: '600', color: '#1890ff' }}>
+                        {transaction.newTotal}
+                      </td>
+                      <td style={{ padding: '12px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                        {transaction.remarks || '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         <div style={{ background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
           <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', fontWeight: '600', fontSize: '16px' }}>

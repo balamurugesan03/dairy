@@ -35,7 +35,7 @@ export const createFarmer = async (req, res) => {
       openingBalanceType: 'Dr',
       currentBalance: 0,
       balanceType: 'Dr',
-      parentGroup: 'Sundry Debtors',
+      parentGroup: 'Advance / Due',
       status: 'Active'
     });
 
@@ -67,7 +67,17 @@ export const getAllFarmers = async (req, res) => {
       limit = 10,
       search = '',
       status = '',
-      farmerType = ''
+      farmerType = '',
+      cowType = '',
+      village = '',
+      panchayat = '',
+      ward = '',
+      isMembership = '',
+      collectionCenter = '',
+      admissionDateFrom = '',
+      admissionDateTo = '',
+      minShares = '',
+      maxShares = ''
     } = req.query;
 
     const query = {};
@@ -81,6 +91,7 @@ export const getAllFarmers = async (req, res) => {
       ];
     }
 
+    // Basic filters
     if (status) {
       query.status = status;
     }
@@ -89,13 +100,63 @@ export const getAllFarmers = async (req, res) => {
       query.farmerType = farmerType;
     }
 
+    if (cowType) {
+      query.cowType = cowType;
+    }
+
+    // Address filters
+    if (village) {
+      query['address.village'] = { $regex: village, $options: 'i' };
+    }
+
+    if (panchayat) {
+      query['address.panchayat'] = { $regex: panchayat, $options: 'i' };
+    }
+
+    if (ward) {
+      query['address.ward'] = { $regex: ward, $options: 'i' };
+    }
+
+    // Membership filter
+    if (isMembership !== '') {
+      query.isMembership = isMembership === 'true';
+    }
+
+    // Collection center filter
+    if (collectionCenter) {
+      query.collectionCenter = collectionCenter;
+    }
+
+    // Date range filter for admission date
+    if (admissionDateFrom || admissionDateTo) {
+      query.admissionDate = {};
+      if (admissionDateFrom) {
+        query.admissionDate.$gte = new Date(admissionDateFrom);
+      }
+      if (admissionDateTo) {
+        query.admissionDate.$lte = new Date(admissionDateTo);
+      }
+    }
+
+    // Share range filter
+    if (minShares || maxShares) {
+      query['financialDetails.totalShares'] = {};
+      if (minShares) {
+        query['financialDetails.totalShares'].$gte = parseInt(minShares);
+      }
+      if (maxShares) {
+        query['financialDetails.totalShares'].$lte = parseInt(maxShares);
+      }
+    }
+
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const farmers = await Farmer.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
-      .populate('ledgerId', 'ledgerName currentBalance balanceType');
+      .populate('ledgerId', 'ledgerName currentBalance balanceType')
+      .populate('collectionCenter', 'centerName centerType');
 
     const total = await Farmer.countDocuments(query);
 
@@ -121,7 +182,8 @@ export const getAllFarmers = async (req, res) => {
 export const getFarmerById = async (req, res) => {
   try {
     const farmer = await Farmer.findById(req.params.id)
-      .populate('ledgerId', 'ledgerName currentBalance balanceType');
+      .populate('ledgerId', 'ledgerName currentBalance balanceType')
+      .populate('collectionCenter', 'centerName centerType');
 
     if (!farmer) {
       return res.status(404).json({
@@ -234,6 +296,7 @@ export const searchFarmer = async (req, res) => {
       ],
       status: 'Active'
     }).populate('ledgerId', 'ledgerName currentBalance balanceType')
+      .populate('collectionCenter', 'centerName centerType')
       .limit(10);
 
     res.status(200).json({
@@ -279,6 +342,224 @@ export const toggleMembership = async (req, res) => {
   }
 };
 
+// Add shares to farmer
+export const addShareToFarmer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      shares,
+      shareValue,
+      resolutionNo,
+      resolutionDate,
+      transactionType,
+      remarks
+    } = req.body;
+
+    // Validate required fields
+    if (!shares || !shareValue || !resolutionNo || !resolutionDate || !transactionType) {
+      return res.status(400).json({
+        success: false,
+        message: 'All fields (shares, shareValue, resolutionNo, resolutionDate, transactionType) are required'
+      });
+    }
+
+    const farmer = await Farmer.findById(id);
+
+    if (!farmer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Farmer not found'
+      });
+    }
+
+    const oldTotal = farmer.financialDetails.totalShares || 0;
+    let newTotal;
+
+    // Calculate new total based on transaction type
+    if (transactionType === 'Redemption') {
+      if (shares > oldTotal) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot redeem more shares than available'
+        });
+      }
+      newTotal = oldTotal - shares;
+    } else {
+      newTotal = oldTotal + shares;
+    }
+
+    // Create share history entry
+    const shareHistoryEntry = {
+      transactionType,
+      shares,
+      shareValue,
+      totalValue: shares * shareValue,
+      resolutionNo,
+      resolutionDate,
+      oldTotal,
+      newTotal,
+      remarks,
+      transactionDate: new Date()
+    };
+
+    // Update farmer's share details
+    if (transactionType === 'Allotment' && oldTotal === 0) {
+      // Initial allotment
+      farmer.financialDetails.oldShares = shares;
+      farmer.financialDetails.newShares = 0;
+      farmer.financialDetails.shareTakenDate = new Date();
+      farmer.financialDetails.resolutionNo = resolutionNo;
+      farmer.financialDetails.resolutionDate = resolutionDate;
+    } else if (transactionType === 'Additional Allotment') {
+      // Additional allotment
+      farmer.financialDetails.newShares = (farmer.financialDetails.newShares || 0) + shares;
+    } else if (transactionType === 'Redemption') {
+      // Redemption - deduct from new shares first, then old shares
+      let remainingToRedeem = shares;
+
+      if (farmer.financialDetails.newShares > 0) {
+        const deductFromNew = Math.min(farmer.financialDetails.newShares, remainingToRedeem);
+        farmer.financialDetails.newShares -= deductFromNew;
+        remainingToRedeem -= deductFromNew;
+      }
+
+      if (remainingToRedeem > 0) {
+        farmer.financialDetails.oldShares -= remainingToRedeem;
+      }
+    }
+
+    farmer.financialDetails.totalShares = newTotal;
+    farmer.financialDetails.shareValue = shareValue;
+
+    // Add to share history
+    farmer.shareHistory.push(shareHistoryEntry);
+
+    await farmer.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Shares updated successfully',
+      data: farmer
+    });
+  } catch (error) {
+    console.error('Error adding shares:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error adding shares'
+    });
+  }
+};
+
+// Get share history for a farmer
+export const getShareHistory = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const farmer = await Farmer.findById(id).select('shareHistory personalDetails.name farmerNumber');
+
+    if (!farmer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Farmer not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        farmerName: farmer.personalDetails?.name,
+        farmerNumber: farmer.farmerNumber,
+        shareHistory: farmer.shareHistory.sort((a, b) => new Date(b.transactionDate) - new Date(a.transactionDate))
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching share history:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching share history'
+    });
+  }
+};
+
+// Terminate farmer membership
+export const terminateFarmer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      retirementDate,
+      resolutionNumber,
+      resolutionDate,
+      refundDate,
+      refundAmount,
+      refundReason,
+      description
+    } = req.body;
+
+    // Validate required fields
+    if (!retirementDate || !resolutionNumber || !resolutionDate || !refundDate || !refundReason) {
+      return res.status(400).json({
+        success: false,
+        message: 'All fields (retirementDate, resolutionNumber, resolutionDate, refundDate, refundReason) are required'
+      });
+    }
+
+    const farmer = await Farmer.findById(id);
+
+    if (!farmer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Farmer not found'
+      });
+    }
+
+    if (farmer.termination?.isTerminated) {
+      return res.status(400).json({
+        success: false,
+        message: 'Farmer membership is already terminated'
+      });
+    }
+
+    // Store old share amount before termination
+    const oldShareAmount = farmer.financialDetails?.totalShares || 0;
+    const shareValue = farmer.financialDetails?.shareValue || 0;
+    const calculatedRefundAmount = oldShareAmount * shareValue;
+
+    // Update termination details
+    farmer.termination = {
+      isTerminated: true,
+      retirementDate,
+      resolutionNumber,
+      resolutionDate,
+      refundDate,
+      refundAmount: refundAmount || calculatedRefundAmount,
+      oldShareAmount,
+      refundReason,
+      description,
+      terminatedAt: new Date()
+    };
+
+    // Remove membership status
+    farmer.isMembership = false;
+
+    // Optionally set status to Inactive
+    farmer.status = 'Inactive';
+
+    await farmer.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Farmer membership terminated successfully',
+      data: farmer
+    });
+  } catch (error) {
+    console.error('Error terminating farmer:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error terminating farmer'
+    });
+  }
+};
+
 export default {
   createFarmer,
   getAllFarmers,
@@ -286,5 +567,8 @@ export default {
   updateFarmer,
   deleteFarmer,
   searchFarmer,
-  toggleMembership
+  toggleMembership,
+  addShareToFarmer,
+  getShareHistory,
+  terminateFarmer
 };

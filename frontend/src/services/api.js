@@ -34,7 +34,10 @@ export const farmerAPI = {
       return Promise.reject({ message: 'Search query cannot be empty' });
     }
     return api.get('/farmers/search', { params: { query: query.trim() } }).then(res => res.data).catch(handleError);
-  }
+  },
+  addShares: (id, data) => api.post(`/farmers/${id}/shares`, data).then(res => res.data).catch(handleError),
+  getShareHistory: (id) => api.get(`/farmers/${id}/shares`).then(res => res.data).catch(handleError),
+  terminate: (id, data) => api.post(`/farmers/${id}/terminate`, data).then(res => res.data).catch(handleError)
 };
 
 // CUSTOMER APIs
@@ -208,6 +211,16 @@ export const subsidyAPI = {
   create: (data) => api.post('/subsidies', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/subsidies/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/subsidies/${id}`).then(res => res.data).catch(handleError)
+};
+
+// COLLECTION CENTER APIs
+export const collectionCenterAPI = {
+  getAll: (params) => api.get('/collection-centers', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/collection-centers/${id}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/collection-centers', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/collection-centers/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/collection-centers/${id}`).then(res => res.data).catch(handleError),
+  toggleStatus: (id) => api.patch(`/collection-centers/${id}/status`).then(res => res.data).catch(handleError)
 };
 
 export default api;

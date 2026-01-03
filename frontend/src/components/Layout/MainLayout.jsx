@@ -25,7 +25,9 @@ const MainLayout = () => {
         { key: '/customers', label: 'Customer List' },
         { key: '/customers/add', label: 'Add Customer' },
         { key: '/suppliers', label: 'Supplier List' },
-        { key: '/suppliers/add', label: 'Add Supplier' }
+        { key: '/suppliers/add', label: 'Add Supplier' },
+        { key: '/collection-centers', label: 'Collection Centers' },
+        { key: '/collection-centers/add', label: 'Add Collection Center' }
       ]
     },
     {

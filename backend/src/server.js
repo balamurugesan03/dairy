@@ -37,6 +37,7 @@ import additionalRoutes from './routes/additionalRoutes.js';
 
 import ledgerRoutes from './routes/ledgerRoutes.js';
 import subsidyRoutes from './routes/subsidyRoutes.js';
+import collectionCenterRoutes from './routes/collectionCenterRoutes.js';
 
 // Use routes
 app.use('/api/farmers', farmerRoutes);
@@ -51,6 +52,7 @@ app.use('/api', additionalRoutes);
 
 app.use('/api', ledgerRoutes);
 app.use('/api', subsidyRoutes);
+app.use('/api/collection-centers', collectionCenterRoutes);
 
 // 404 handler
 app.use((req, res, next) => {

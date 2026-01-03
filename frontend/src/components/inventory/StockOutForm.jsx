@@ -103,7 +103,7 @@ const StockOutForm = () => {
   };
 
   const itemOptions = items.map(item => ({
-    label: `${item.itemCode} - ${item.itemName} (Available: ${item.currentBalance} ${item.unit})`,
+    label: `${item.itemCode} - ${item.itemName} (Available: ${item.currentBalance} ${item.measurement})`,
     value: item._id
   }));
 
@@ -131,7 +131,7 @@ const StockOutForm = () => {
 
           {selectedItem && (
             <div className="info-card">
-              <p><strong>Current Balance:</strong> {selectedItem.currentBalance} {selectedItem.unit}</p>
+              <p><strong>Current Balance:</strong> {selectedItem.currentBalance} {selectedItem.measurement}</p>
               <p><strong>Sales Rate:</strong> ₹{selectedItem.salesRate}</p>
             </div>
           )}
@@ -139,7 +139,7 @@ const StockOutForm = () => {
           {isInsufficientStock && (
             <div className="alert alert-error">
               <strong>Insufficient Stock</strong>
-              <p>Available stock: {selectedItem.currentBalance} {selectedItem.unit}. Requested: {formData.quantity} {selectedItem.unit}</p>
+              <p>Available stock: {selectedItem.currentBalance} {selectedItem.measurement}. Requested: {formData.quantity} {selectedItem.measurement}</p>
             </div>
           )}
 
@@ -159,7 +159,7 @@ const StockOutForm = () => {
                 step="0.01"
                 required
               />
-              <span className="input-addon">{selectedItem?.unit || 'Unit'}</span>
+              <span className="input-addon">{selectedItem?.measurement || 'Unit'}</span>
             </div>
           </div>
 

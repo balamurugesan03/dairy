@@ -16,9 +16,13 @@ const itemSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
-  unit: {
+  measurement: {
     type: String,
     required: true,
+    trim: true
+  },
+  unit: {
+    type: String,
     trim: true
   },
   openingBalance: {
@@ -27,11 +31,6 @@ const itemSchema = new mongoose.Schema({
     min: 0
   },
   currentBalance: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-  purchaseRate: {
     type: Number,
     default: 0,
     min: 0

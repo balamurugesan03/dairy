@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { message } from '../../utils/toast';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
-import { itemAPI, stockAPI } from '../../services/api';
+import { itemAPI, stockAPI, collectionCenterAPI, subsidyAPI } from '../../services/api';
 import PageHeader from '../common/PageHeader';
 import SearchableSelect from '../common/SearchableSelect';
 import './StockInForm.css';
@@ -11,21 +11,37 @@ const StockInForm = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState([]);
-  const [selectedItem, setSelectedItem] = useState(null);
+  const [collectionCenters, setCollectionCenters] = useState([]);
+  const [subsidies, setSubsidies] = useState([]);
+  const [showSubsidy, setShowSubsidy] = useState(false);
   const [errors, setErrors] = useState({});
 
   const [formData, setFormData] = useState({
-    itemId: null,
-    quantity: '',
-    rate: '',
-    transactionDate: dayjs().format('YYYY-MM-DD'),
+    purchaseDate: dayjs().format('YYYY-MM-DD'),
+    invoiceDate: dayjs().format('YYYY-MM-DD'),
+    invoiceNumber: '',
+    issueCentre: null,
+    subsidyId: null,
+    subsidyAmount: '',
     referenceType: 'Purchase',
-    referenceNo: '',
     remarks: ''
   });
 
+  const [productRows, setProductRows] = useState([
+    {
+      id: Date.now(),
+      itemId: null,
+      quantity: '',
+      freeQty: '',
+      rate: '',
+      selectedItem: null
+    }
+  ]);
+
   useEffect(() => {
     fetchItems();
+    fetchCollectionCenters();
+    fetchSubsidies();
   }, []);
 
   const fetchItems = async () => {
@@ -37,47 +53,116 @@ const StockInForm = () => {
     }
   };
 
+  const fetchCollectionCenters = async () => {
+    try {
+      const response = await collectionCenterAPI.getAll({ status: 'Active', limit: 1000 });
+      setCollectionCenters(response.data || []);
+    } catch (error) {
+      message.error(error.message || 'Failed to fetch collection centers');
+    }
+  };
+
+  const fetchSubsidies = async () => {
+    try {
+      const response = await subsidyAPI.getAll({ status: 'Active', limit: 1000 });
+      setSubsidies(response.data || []);
+    } catch (error) {
+      message.error(error.message || 'Failed to fetch subsidies');
+    }
+  };
+
   const handleInputChange = (name, value) => {
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
-    // Clear error when user starts typing
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
   };
 
-  const handleItemChange = (itemId) => {
-    const item = items.find(i => i._id === itemId);
-    setSelectedItem(item);
-    if (item) {
-      setFormData(prev => ({
-        ...prev,
-        itemId: itemId,
-        rate: item.purchaseRate
-      }));
+  const handleProductChange = (index, field, value) => {
+    const updatedRows = [...productRows];
+    updatedRows[index][field] = value;
+
+    // If item is changed, update the selected item and rate
+    if (field === 'itemId') {
+      const item = items.find(i => i._id === value);
+      updatedRows[index].selectedItem = item;
+      updatedRows[index].rate = item?.salesRate || '';
     }
+
+    setProductRows(updatedRows);
+
+    // Clear error for this field
+    const errorKey = `product_${index}_${field}`;
+    if (errors[errorKey]) {
+      setErrors(prev => ({ ...prev, [errorKey]: '' }));
+    }
+  };
+
+  const addProductRow = () => {
+    setProductRows([
+      ...productRows,
+      {
+        id: Date.now(),
+        itemId: null,
+        quantity: '',
+        freeQty: '',
+        rate: '',
+        selectedItem: null
+      }
+    ]);
+  };
+
+  const removeProductRow = (index) => {
+    if (productRows.length === 1) {
+      message.error('At least one product is required');
+      return;
+    }
+    const updatedRows = productRows.filter((_, i) => i !== index);
+    setProductRows(updatedRows);
   };
 
   const validateForm = () => {
     const newErrors = {};
 
-    if (!formData.itemId) {
-      newErrors.itemId = 'Please select an item';
+    // Validate form fields
+    if (!formData.purchaseDate) {
+      newErrors.purchaseDate = 'Purchase date is required';
     }
-    if (!formData.quantity || parseFloat(formData.quantity) <= 0) {
-      newErrors.quantity = 'Please enter a valid quantity greater than 0';
+    if (!formData.invoiceDate) {
+      newErrors.invoiceDate = 'Invoice date is required';
     }
-    if (!formData.rate || parseFloat(formData.rate) < 0) {
-      newErrors.rate = 'Please enter a valid rate';
+    if (!formData.invoiceNumber || formData.invoiceNumber.trim() === '') {
+      newErrors.invoiceNumber = 'Invoice number is required';
     }
-    if (!formData.transactionDate) {
-      newErrors.transactionDate = 'Please select transaction date';
+    if (!formData.issueCentre) {
+      newErrors.issueCentre = 'Issue centre is required';
     }
-    if (!formData.referenceType) {
-      newErrors.referenceType = 'Please select reference type';
+
+    // Validate subsidy if shown
+    if (showSubsidy) {
+      if (!formData.subsidyId) {
+        newErrors.subsidyId = 'Please select a subsidy';
+      }
+      if (!formData.subsidyAmount || parseFloat(formData.subsidyAmount) <= 0) {
+        newErrors.subsidyAmount = 'Please enter a valid subsidy amount';
+      }
     }
+
+    // Validate product rows
+    productRows.forEach((row, index) => {
+      if (!row.itemId) {
+        newErrors[`product_${index}_itemId`] = 'Please select an item';
+      }
+      if (!row.quantity || parseFloat(row.quantity) <= 0) {
+        newErrors[`product_${index}_quantity`] = 'Please enter a valid quantity';
+      }
+      if (!row.rate || parseFloat(row.rate) < 0) {
+        newErrors[`product_${index}_rate`] = 'Please enter a valid rate';
+      }
+    });
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -94,13 +179,20 @@ const StockInForm = () => {
     setLoading(true);
     try {
       const payload = {
-        itemId: formData.itemId,
-        quantity: parseFloat(formData.quantity),
-        rate: parseFloat(formData.rate),
-        transactionDate: new Date(formData.transactionDate).toISOString(),
+        items: productRows.map(row => ({
+          itemId: row.itemId,
+          quantity: parseFloat(row.quantity),
+          freeQty: parseFloat(row.freeQty) || 0,
+          rate: parseFloat(row.rate)
+        })),
+        purchaseDate: new Date(formData.purchaseDate).toISOString(),
+        invoiceDate: new Date(formData.invoiceDate).toISOString(),
+        invoiceNumber: formData.invoiceNumber,
+        issueCentre: formData.issueCentre,
+        subsidyId: showSubsidy ? formData.subsidyId : null,
+        subsidyAmount: showSubsidy ? parseFloat(formData.subsidyAmount) : 0,
         referenceType: formData.referenceType,
-        referenceNo: formData.referenceNo,
-        remarks: formData.remarks
+        notes: formData.remarks
       };
 
       await stockAPI.stockIn(payload);
@@ -114,110 +206,268 @@ const StockInForm = () => {
   };
 
   const itemOptions = items.map(item => ({
-    label: `${item.itemCode} - ${item.itemName} (Current: ${item.currentBalance} ${item.unit})`,
+    label: `${item.itemCode} - ${item.itemName} (Current: ${item.currentBalance} ${item.measurement})`,
     value: item._id
+  }));
+
+  const collectionCenterOptions = collectionCenters.map(center => ({
+    label: `${center.centerName} (${center.centerType})`,
+    value: center._id
+  }));
+
+  const subsidyOptions = subsidies.map(subsidy => ({
+    label: `${subsidy.subsidyName} - ${subsidy.subsidyType}`,
+    value: subsidy._id
   }));
 
   return (
     <div className="stock-form-container">
       <PageHeader
-        title="Stock In"
+        title="Stock In / Purchase"
         subtitle="Add stock to inventory"
       />
 
       <div className="stock-card">
         <form onSubmit={handleSubmit} className="stock-form">
-          <div className="form-group">
-            <label className="form-label required">Select Item</label>
-            <SearchableSelect
-              options={itemOptions}
-              placeholder="Select an item"
-              value={formData.itemId}
-              onChange={handleItemChange}
-            />
-            {errors.itemId && <div className="form-error">{errors.itemId}</div>}
+          {/* Header Information */}
+          <div className="form-section">
+            <h3 className="section-title">Purchase Information</h3>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label required">Purchase Date</label>
+                <input
+                  type="date"
+                  className={`form-input ${errors.purchaseDate ? 'error' : ''}`}
+                  value={formData.purchaseDate}
+                  onChange={(e) => handleInputChange('purchaseDate', e.target.value)}
+                />
+                {errors.purchaseDate && <div className="form-error">{errors.purchaseDate}</div>}
+              </div>
+
+              <div className="form-group">
+                <label className="form-label required">Invoice Date</label>
+                <input
+                  type="date"
+                  className={`form-input ${errors.invoiceDate ? 'error' : ''}`}
+                  value={formData.invoiceDate}
+                  onChange={(e) => handleInputChange('invoiceDate', e.target.value)}
+                />
+                {errors.invoiceDate && <div className="form-error">{errors.invoiceDate}</div>}
+              </div>
+
+              <div className="form-group">
+                <label className="form-label required">Invoice Number</label>
+                <input
+                  type="text"
+                  className={`form-input ${errors.invoiceNumber ? 'error' : ''}`}
+                  placeholder="Enter invoice number"
+                  value={formData.invoiceNumber}
+                  onChange={(e) => handleInputChange('invoiceNumber', e.target.value)}
+                />
+                {errors.invoiceNumber && <div className="form-error">{errors.invoiceNumber}</div>}
+              </div>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label required">Issue Centre</label>
+                <SearchableSelect
+                  options={collectionCenterOptions}
+                  placeholder="Select collection center"
+                  value={formData.issueCentre}
+                  onChange={(value) => handleInputChange('issueCentre', value)}
+                />
+                {errors.issueCentre && <div className="form-error">{errors.issueCentre}</div>}
+              </div>
+
+              <div className="form-group">
+                <label className="form-label required">Reference Type</label>
+                <select
+                  className="form-select"
+                  value={formData.referenceType}
+                  onChange={(e) => handleInputChange('referenceType', e.target.value)}
+                >
+                  <option value="Purchase">Purchase</option>
+                  <option value="Opening">Opening Balance</option>
+                  <option value="Adjustment">Adjustment</option>
+                  <option value="Return">Return</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Subsidy Section */}
+            <div className="form-group">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={showSubsidy}
+                  onChange={(e) => {
+                    setShowSubsidy(e.target.checked);
+                    if (!e.target.checked) {
+                      setFormData(prev => ({
+                        ...prev,
+                        subsidyId: null,
+                        subsidyAmount: ''
+                      }));
+                      setErrors(prev => {
+                        const newErrors = { ...prev };
+                        delete newErrors.subsidyId;
+                        delete newErrors.subsidyAmount;
+                        return newErrors;
+                      });
+                    }
+                  }}
+                />
+                <span className="checkbox-text">Include Subsidy</span>
+              </label>
+            </div>
+
+            {showSubsidy && (
+              <div className="form-row subsidy-section">
+                <div className="form-group">
+                  <label className="form-label required">Subsidy</label>
+                  <SearchableSelect
+                    options={subsidyOptions}
+                    placeholder="Select subsidy"
+                    value={formData.subsidyId}
+                    onChange={(value) => handleInputChange('subsidyId', value)}
+                  />
+                  {errors.subsidyId && <div className="form-error">{errors.subsidyId}</div>}
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label required">Subsidy Amount</label>
+                  <div className="input-with-prefix">
+                    <span className="input-prefix">₹</span>
+                    <input
+                      type="number"
+                      className={`form-input ${errors.subsidyAmount ? 'error' : ''}`}
+                      placeholder="Enter subsidy amount"
+                      value={formData.subsidyAmount}
+                      onChange={(e) => handleInputChange('subsidyAmount', e.target.value)}
+                      min="0"
+                      step="0.01"
+                    />
+                  </div>
+                  {errors.subsidyAmount && <div className="form-error">{errors.subsidyAmount}</div>}
+                </div>
+              </div>
+            )}
           </div>
 
-          {selectedItem && (
-            <div className="info-card">
-              <p><strong>Current Balance:</strong> {selectedItem.currentBalance} {selectedItem.unit}</p>
-              <p><strong>Purchase Rate:</strong> ₹{selectedItem.purchaseRate}</p>
-            </div>
-          )}
-
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label required">Quantity</label>
-              <div className="input-with-suffix">
-                <input
-                  type="number"
-                  className={`form-input ${errors.quantity ? 'error' : ''}`}
-                  placeholder="Enter quantity"
-                  value={formData.quantity}
-                  onChange={(e) => handleInputChange('quantity', e.target.value)}
-                  min="0.01"
-                  step="0.01"
-                />
-                <span className="input-suffix">{selectedItem?.unit || 'Unit'}</span>
-              </div>
-              {errors.quantity && <div className="form-error">{errors.quantity}</div>}
-            </div>
-
-            <div className="form-group">
-              <label className="form-label required">Rate per Unit</label>
-              <div className="input-with-prefix">
-                <span className="input-prefix">₹</span>
-                <input
-                  type="number"
-                  className={`form-input ${errors.rate ? 'error' : ''}`}
-                  placeholder="Enter rate"
-                  value={formData.rate}
-                  onChange={(e) => handleInputChange('rate', e.target.value)}
-                  min="0"
-                  step="0.01"
-                />
-              </div>
-              {errors.rate && <div className="form-error">{errors.rate}</div>}
-            </div>
-          </div>
-
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label required">Transaction Date</label>
-              <input
-                type="date"
-                className={`form-input ${errors.transactionDate ? 'error' : ''}`}
-                value={formData.transactionDate}
-                onChange={(e) => handleInputChange('transactionDate', e.target.value)}
-              />
-              {errors.transactionDate && <div className="form-error">{errors.transactionDate}</div>}
-            </div>
-
-            <div className="form-group">
-              <label className="form-label required">Reference Type</label>
-              <select
-                className={`form-select ${errors.referenceType ? 'error' : ''}`}
-                value={formData.referenceType}
-                onChange={(e) => handleInputChange('referenceType', e.target.value)}
+          {/* Products Section */}
+          <div className="form-section">
+            <div className="section-header">
+              <h3 className="section-title">Products</h3>
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary"
+                onClick={addProductRow}
               >
-                <option value="Purchase">Purchase</option>
-                <option value="Opening">Opening Balance</option>
-                <option value="Adjustment">Adjustment</option>
-                <option value="Return">Return</option>
-              </select>
-              {errors.referenceType && <div className="form-error">{errors.referenceType}</div>}
+                <svg className="icon" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+                </svg>
+                Add Product
+              </button>
             </div>
-          </div>
 
-          <div className="form-group">
-            <label className="form-label">Reference Number</label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Enter reference number (e.g., Invoice No.)"
-              value={formData.referenceNo}
-              onChange={(e) => handleInputChange('referenceNo', e.target.value)}
-            />
+            {productRows.map((row, index) => (
+              <div key={row.id} className="product-row-card">
+                <div className="product-row-header">
+                  <span className="product-row-number">Product #{index + 1}</span>
+                  {productRows.length > 1 && (
+                    <button
+                      type="button"
+                      className="btn-icon btn-danger-icon"
+                      onClick={() => removeProductRow(index)}
+                      title="Remove product"
+                    >
+                      <svg className="icon" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                        <path fillRule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+                      </svg>
+                    </button>
+                  )}
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label required">Select Item</label>
+                  <SearchableSelect
+                    options={itemOptions}
+                    placeholder="Select an item"
+                    value={row.itemId}
+                    onChange={(value) => handleProductChange(index, 'itemId', value)}
+                  />
+                  {errors[`product_${index}_itemId`] && (
+                    <div className="form-error">{errors[`product_${index}_itemId`]}</div>
+                  )}
+                </div>
+
+                {row.selectedItem && (
+                  <div className="info-card">
+                    <p><strong>Current Balance:</strong> {row.selectedItem.currentBalance} {row.selectedItem.measurement}</p>
+                    <p><strong>Sale Price:</strong> ₹{row.selectedItem.salesRate}</p>
+                  </div>
+                )}
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label required">Quantity</label>
+                    <div className="input-with-suffix">
+                      <input
+                        type="number"
+                        className={`form-input ${errors[`product_${index}_quantity`] ? 'error' : ''}`}
+                        placeholder="Enter quantity"
+                        value={row.quantity}
+                        onChange={(e) => handleProductChange(index, 'quantity', e.target.value)}
+                        min="0.01"
+                        step="0.01"
+                      />
+                      <span className="input-suffix">{row.selectedItem?.measurement || 'Unit'}</span>
+                    </div>
+                    {errors[`product_${index}_quantity`] && (
+                      <div className="form-error">{errors[`product_${index}_quantity`]}</div>
+                    )}
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Free Quantity</label>
+                    <div className="input-with-suffix">
+                      <input
+                        type="number"
+                        className="form-input"
+                        placeholder="Enter free quantity"
+                        value={row.freeQty}
+                        onChange={(e) => handleProductChange(index, 'freeQty', e.target.value)}
+                        min="0"
+                        step="0.01"
+                      />
+                      <span className="input-suffix">{row.selectedItem?.measurement || 'Unit'}</span>
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label required">Rate per Unit</label>
+                    <div className="input-with-prefix">
+                      <span className="input-prefix">₹</span>
+                      <input
+                        type="number"
+                        className={`form-input ${errors[`product_${index}_rate`] ? 'error' : ''}`}
+                        placeholder="Enter rate"
+                        value={row.rate}
+                        onChange={(e) => handleProductChange(index, 'rate', e.target.value)}
+                        min="0"
+                        step="0.01"
+                      />
+                    </div>
+                    {errors[`product_${index}_rate`] && (
+                      <div className="form-error">{errors[`product_${index}_rate`]}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
 
           <div className="form-group">

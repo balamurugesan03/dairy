@@ -1,4 +1,18 @@
 import Subsidy from '../models/Subsidy.js';
+import Ledger from '../models/Ledger.js';
+
+// Helper function to map subsidy ledger group to ledger type
+const mapSubsidyLedgerGroupToLedgerType = (ledgerGroup) => {
+  const mapping = {
+    'Advance due to Society': 'Other Receivable',
+    'Advance due by Society': 'Other Payable',
+    'Contingencies': 'Contingency Fund',
+    'Trade Expenses': 'Trade Expenses',
+    'Trade Income': 'Trade Income',
+    'Miscellaneous Income': 'Miscellaneous Income'
+  };
+  return mapping[ledgerGroup] || 'Miscellaneous Income';
+};
 
 // Get all subsidies
 export const getAllSubsidies = async (req, res) => {
@@ -64,6 +78,25 @@ export const createSubsidy = async (req, res) => {
 
     const subsidy = new Subsidy(subsidyData);
     await subsidy.save();
+
+    // Auto-create ledger entry (account head) for the subsidy
+    try {
+      const ledgerType = mapSubsidyLedgerGroupToLedgerType(subsidyData.ledgerGroup);
+      const ledger = new Ledger({
+        ledgerName: subsidyData.subsidyName,
+        ledgerType: ledgerType,
+        openingBalance: 0,
+        openingBalanceType: 'Dr',
+        currentBalance: 0,
+        balanceType: 'Dr',
+        parentGroup: subsidyData.ledgerGroup,
+        status: 'Active'
+      });
+      await ledger.save();
+    } catch (ledgerError) {
+      console.error('Error creating ledger for subsidy:', ledgerError);
+      // Continue even if ledger creation fails
+    }
 
     res.status(201).json({
       success: true,

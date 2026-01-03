@@ -13,6 +13,7 @@ const customerSchema = new mongoose.Schema({
   pincode: { type: String },
   panNumber: { type: String },
   active: { type: Boolean, default: true },
+  ledgerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ledger' },
 
   documents: {
     aadhaar: { type: String },

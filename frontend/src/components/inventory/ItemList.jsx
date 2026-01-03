@@ -13,6 +13,7 @@ const ItemList = () => {
   const [errors, setErrors] = useState({});
   const [ledgers, setLedgers] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [showCustomMeasurement, setShowCustomMeasurement] = useState(false);
 
   useEffect(() => {
     fetchItems();
@@ -28,6 +29,16 @@ const ItemList = () => {
       console.error('Failed to fetch ledgers:', error);
     }
   };
+
+  // Filter ledgers for purchase (expense types)
+  const purchaseLedgers = ledgers.filter(ledger =>
+    ['Purchases A/c', 'Trade Expenses', 'Establishment Charges', 'Miscellaneous Expenses', 'Expense'].includes(ledger.ledgerType)
+  );
+
+  // Filter ledgers for sales (income types)
+  const salesLedgers = ledgers.filter(ledger =>
+    ['Sales A/c', 'Trade Income', 'Miscellaneous Income', 'Other Revenue', 'Grants & Aid', 'Subsidies', 'Income'].includes(ledger.ledgerType)
+  );
 
   const fetchSuppliers = async () => {
     try {
@@ -54,6 +65,7 @@ const ItemList = () => {
     setEditingItem(null);
     setFormData({});
     setErrors({});
+    setShowCustomMeasurement(false);
     setModalVisible(true);
   };
 
@@ -67,21 +79,24 @@ const ItemList = () => {
       supplier: item.supplier?._id || ''
     });
     setErrors({});
+    // Check if measurement is a custom value (not in predefined list)
+    const predefinedMeasurements = ['Kg', 'Ltr', 'Pcs', 'Box', 'Bag'];
+    setShowCustomMeasurement(item.measurement && !predefinedMeasurements.includes(item.measurement));
     setModalVisible(true);
   };
 
   const handleDelete = async (id) => {
     showConfirmDialog({
       title: 'Delete Item',
-      content: 'Are you sure you want to deactivate this item?',
+      content: 'Are you sure you want to permanently delete this item? This will also delete all stock transaction history.',
       type: 'danger',
       onConfirm: async () => {
         try {
           await itemAPI.delete(id);
-          message.success('Item deactivated successfully');
+          message.success('Item deleted successfully');
           fetchItems();
         } catch (error) {
-          message.error(error.message || 'Failed to deactivate item');
+          message.error(error.message || 'Failed to delete item');
         }
       }
     });
@@ -92,6 +107,16 @@ const ItemList = () => {
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
+
+    // Handle "Others" option for measurement
+    if (name === 'measurement') {
+      if (value === 'Others') {
+        setShowCustomMeasurement(true);
+        setFormData(prev => ({ ...prev, measurement: '' }));
+      } else {
+        setShowCustomMeasurement(false);
+      }
+    }
   };
 
   const validateForm = () => {
@@ -99,10 +124,9 @@ const ItemList = () => {
     if (!formData.itemCode) newErrors.itemCode = 'Item code is required';
     if (!formData.itemName) newErrors.itemName = 'Item name is required';
     if (!formData.category) newErrors.category = 'Category is required';
-    if (!formData.unit) newErrors.unit = 'Unit is required';
+    if (!formData.measurement) newErrors.measurement = 'Measurement is required';
     if (!editingItem && !formData.openingBalance) newErrors.openingBalance = 'Opening balance is required';
-    if (!formData.purchaseRate) newErrors.purchaseRate = 'Purchase rate is required';
-    if (!formData.salesRate) newErrors.salesRate = 'Sales rate is required';
+    if (!formData.salesRate) newErrors.salesRate = 'Sale price is required';
 
     // Validate ledger fields when category is selected
     if (formData.category) {
@@ -185,10 +209,10 @@ const ItemList = () => {
               <th>Item Code</th>
               <th>Item Name</th>
               <th>Category</th>
+              <th>Measurement</th>
               <th>Unit</th>
               <th>Current Balance</th>
-              <th>Purchase Rate</th>
-              <th>Sales Rate</th>
+              <th>Sale Price</th>
               <th>Supplier</th>
               <th>Purchase Ledger</th>
               <th>Sales Ledger</th>
@@ -217,9 +241,9 @@ const ItemList = () => {
                   <td>{item.itemCode}</td>
                   <td>{item.itemName}</td>
                   <td>{item.category}</td>
-                  <td>{item.unit}</td>
-                  <td>{renderTag(item.currentBalance, item.unit)}</td>
-                  <td>₹{item.purchaseRate || 0}</td>
+                  <td>{item.measurement}</td>
+                  <td>{item.unit || '-'}</td>
+                  <td>{renderTag(item.currentBalance, item.measurement)}</td>
                   <td>₹{item.salesRate || 0}</td>
                   <td>{item.supplier?.name || '-'}</td>
                   <td>{item.purchaseLedger?.ledgerName || '-'}</td>
@@ -321,21 +345,56 @@ const ItemList = () => {
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label required">Unit</label>
-                    <select
-                      className={`form-select ${errors.unit ? 'error' : ''}`}
-                      value={formData.unit || ''}
-                      onChange={(e) => handleInputChange('unit', e.target.value)}
-                    >
-                      <option value="">Select unit</option>
-                      <option value="Kg">Kg</option>
-                      <option value="Ltr">Ltr</option>
-                      <option value="Pcs">Pcs</option>
-                      <option value="Box">Box</option>
-                      <option value="Bag">Bag</option>
-                    </select>
-                    {errors.unit && <div className="form-error">{errors.unit}</div>}
+                    <label className="form-label required">Measurement</label>
+                    {!showCustomMeasurement ? (
+                      <select
+                        className={`form-select ${errors.measurement ? 'error' : ''}`}
+                        value={formData.measurement || ''}
+                        onChange={(e) => handleInputChange('measurement', e.target.value)}
+                      >
+                        <option value="">Select measurement</option>
+                        <option value="Kg">Kg</option>
+                        <option value="Ltr">Ltr</option>
+                        <option value="Pcs">Pcs</option>
+                        <option value="Box">Box</option>
+                        <option value="Bag">Bag</option>
+                        <option value="Others">Others</option>
+                      </select>
+                    ) : (
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input
+                          type="text"
+                          className={`form-input ${errors.measurement ? 'error' : ''}`}
+                          placeholder="Enter custom measurement"
+                          value={formData.measurement || ''}
+                          onChange={(e) => handleInputChange('measurement', e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-default"
+                          onClick={() => {
+                            setShowCustomMeasurement(false);
+                            setFormData(prev => ({ ...prev, measurement: '' }));
+                          }}
+                          style={{ whiteSpace: 'nowrap' }}
+                        >
+                          Back
+                        </button>
+                      </div>
+                    )}
+                    {errors.measurement && <div className="form-error">{errors.measurement}</div>}
                   </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Unit (Count/Number)</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Enter unit count (optional)"
+                    value={formData.unit || ''}
+                    onChange={(e) => handleInputChange('unit', e.target.value)}
+                  />
                 </div>
 
                 <div className="form-group">
@@ -358,16 +417,14 @@ const ItemList = () => {
                 {formData.category && (
                   <div className="form-row">
                     <div className="form-group">
-                      <label className="form-label required">
-                        {formData.category} Purchase Ledger
-                      </label>
+                      <label className="form-label required">Purchase Ledger</label>
                       <select
                         className={`form-select ${errors.purchaseLedger ? 'error' : ''}`}
                         value={formData.purchaseLedger || ''}
                         onChange={(e) => handleInputChange('purchaseLedger', e.target.value)}
                       >
                         <option value="">Select purchase ledger</option>
-                        {ledgers.map((ledger) => (
+                        {purchaseLedgers.map((ledger) => (
                           <option key={ledger._id} value={ledger._id}>
                             {ledger.ledgerName} ({ledger.ledgerType})
                           </option>
@@ -377,16 +434,14 @@ const ItemList = () => {
                     </div>
 
                     <div className="form-group">
-                      <label className="form-label required">
-                        {formData.category} Sales Ledger
-                      </label>
+                      <label className="form-label required">Sales Ledger</label>
                       <select
                         className={`form-select ${errors.salesLedger ? 'error' : ''}`}
                         value={formData.salesLedger || ''}
                         onChange={(e) => handleInputChange('salesLedger', e.target.value)}
                       >
                         <option value="">Select sales ledger</option>
-                        {ledgers.map((ledger) => (
+                        {salesLedgers.map((ledger) => (
                           <option key={ledger._id} value={ledger._id}>
                             {ledger.ledgerName} ({ledger.ledgerType})
                           </option>
@@ -397,41 +452,28 @@ const ItemList = () => {
                   </div>
                 )}
 
-                {!editingItem && (
-                  <div className="form-group">
-                    <label className="form-label required">Opening Balance</label>
-                    <input
-                      type="number"
-                      className={`form-input ${errors.openingBalance ? 'error' : ''}`}
-                      placeholder="Enter opening balance"
-                      value={formData.openingBalance || ''}
-                      onChange={(e) => handleInputChange('openingBalance', parseFloat(e.target.value))}
-                      min="0"
-                    />
-                    {errors.openingBalance && <div className="form-error">{errors.openingBalance}</div>}
-                  </div>
-                )}
-
                 <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label required">Purchase Rate</label>
-                    <input
-                      type="number"
-                      className={`form-input ${errors.purchaseRate ? 'error' : ''}`}
-                      placeholder="Enter purchase rate"
-                      value={formData.purchaseRate || ''}
-                      onChange={(e) => handleInputChange('purchaseRate', parseFloat(e.target.value))}
-                      min="0"
-                    />
-                    {errors.purchaseRate && <div className="form-error">{errors.purchaseRate}</div>}
-                  </div>
+                  {!editingItem && (
+                    <div className="form-group">
+                      <label className="form-label required">Opening Balance</label>
+                      <input
+                        type="number"
+                        className={`form-input ${errors.openingBalance ? 'error' : ''}`}
+                        placeholder="Enter opening balance"
+                        value={formData.openingBalance || ''}
+                        onChange={(e) => handleInputChange('openingBalance', parseFloat(e.target.value))}
+                        min="0"
+                      />
+                      {errors.openingBalance && <div className="form-error">{errors.openingBalance}</div>}
+                    </div>
+                  )}
 
                   <div className="form-group">
-                    <label className="form-label required">Sales Rate</label>
+                    <label className="form-label required">Sale Price</label>
                     <input
                       type="number"
                       className={`form-input ${errors.salesRate ? 'error' : ''}`}
-                      placeholder="Enter sales rate"
+                      placeholder="Enter sale price"
                       value={formData.salesRate || ''}
                       onChange={(e) => handleInputChange('salesRate', parseFloat(e.target.value))}
                       min="0"

@@ -1,4 +1,5 @@
 import Customer from '../models/Customer.js';
+import Ledger from '../models/Ledger.js';
 
 // Create new customer
 export const createCustomer = async (req, res) => {
@@ -31,6 +32,28 @@ export const createCustomer = async (req, res) => {
 
     // Create customer
     const customer = new Customer(customerData);
+    await customer.save();
+
+    // Auto-create ledger for customer with "Advance / Due" as default parent group
+    const ledger = new Ledger({
+      ledgerName: `${customerData.name} (${customerData.customerId})`,
+      ledgerType: 'Party',
+      linkedEntity: {
+        entityType: 'Customer',
+        entityId: customer._id
+      },
+      openingBalance: customerData.openingBalance || 0,
+      openingBalanceType: 'Dr',
+      currentBalance: customerData.openingBalance || 0,
+      balanceType: 'Dr',
+      parentGroup: 'Advance / Due',
+      status: 'Active'
+    });
+
+    await ledger.save();
+
+    // Link ledger to customer
+    customer.ledgerId = ledger._id;
     await customer.save();
 
     res.status(201).json({

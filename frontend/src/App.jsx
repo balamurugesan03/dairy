@@ -11,6 +11,7 @@ import Dashboard from './pages/Dashboard';
 import FarmerList from './components/farmer/FarmerList';
 import FarmerForm from './components/farmer/FarmerForm';
 import FarmerView from './components/farmer/FarmerView';
+import MemberList from './components/farmer/MemberList';
 
 // Customer Components
 import CustomerList from './components/customer/CustomerList';
@@ -69,15 +70,16 @@ import PromotionList from './components/additional/PromotionList';
 import PromotionForm from './components/additional/PromotionForm';
 import PromotionView from './components/additional/PromotionView';
 
-// Cash Book Components
-import ClassifiedReceiptForm from './components/cashbook/ClassifiedReceiptForm';
-import ClassifiedDisbursementForm from './components/cashbook/ClassifiedDisbursementForm';
-import CashBookView from './components/cashbook/CashBookView';
-import ClassificationReports from './components/cashbook/ClassificationReports';
+
 
 // Subsidy Components
 import SubsidyList from './components/subsidy/SubsidyList';
 import SubsidyView from './components/subsidy/SubsidyView';
+
+// Collection Center Components
+import CollectionCenterList from './components/collectioncenter/CollectionCenterList';
+import CollectionCenterForm from './components/collectioncenter/CollectionCenterForm';
+import CollectionCenterView from './components/collectioncenter/CollectionCenterView';
 
 function App() {
   return (
@@ -95,6 +97,7 @@ function App() {
                 <Route path="add" element={<FarmerForm />} />
                 <Route path="edit/:id" element={<FarmerForm />} />
                 <Route path="view/:id" element={<FarmerView />} />
+                <Route path="members" element={<MemberList />} />
               </Route>
 
               {/* Customer Management Routes */}
@@ -191,21 +194,20 @@ function App() {
                 <Route path="view/:id" element={<PromotionView />} />
               </Route>
 
-              {/* Cash Book Routes */}
-              <Route path="cashbook">
-                <Route index element={<CashBookView />} />
-                <Route path="transactions" element={<CashBookView />} />
-                <Route path="receipt" element={<ClassifiedReceiptForm />} />
-                <Route path="receipts/new" element={<ClassifiedReceiptForm />} />
-                <Route path="disbursement" element={<ClassifiedDisbursementForm />} />
-                <Route path="disbursements/new" element={<ClassifiedDisbursementForm />} />
-                <Route path="reports" element={<ClassificationReports />} />
-              </Route>
+       
 
               {/* Subsidy Routes */}
               <Route path="subsidies">
                 <Route index element={<SubsidyList />} />
                 <Route path="view/:id" element={<SubsidyView />} />
+              </Route>
+
+              {/* Collection Center Routes */}
+              <Route path="collection-centers">
+                <Route index element={<CollectionCenterList />} />
+                <Route path="add" element={<CollectionCenterForm />} />
+                <Route path="edit/:id" element={<CollectionCenterForm />} />
+                <Route path="view/:id" element={<CollectionCenterView />} />
               </Route>
             </Route>
           </Routes>

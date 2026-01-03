@@ -1,4 +1,5 @@
 import Supplier from '../models/Supplier.js';
+import Ledger from '../models/Ledger.js';
 
 // Create new supplier
 export const createSupplier = async (req, res) => {
@@ -32,6 +33,28 @@ export const createSupplier = async (req, res) => {
     // Create supplier
     const supplier = new Supplier(supplierData);
     await supplier.save();
+
+    // Auto-create ledger entry (account head) for the supplier
+    try {
+      const ledger = new Ledger({
+        ledgerName: supplierData.name,
+        ledgerType: 'Accounts Due To (Sundry Creditors)',
+        linkedEntity: {
+          entityType: 'Supplier',
+          entityId: supplier._id
+        },
+        openingBalance: supplierData.openingBalance || 0,
+        openingBalanceType: supplierData.openingBalance >= 0 ? 'Cr' : 'Dr',
+        currentBalance: supplierData.openingBalance || 0,
+        balanceType: supplierData.openingBalance >= 0 ? 'Cr' : 'Dr',
+        parentGroup: 'Advance / Due',
+        status: 'Active'
+      });
+      await ledger.save();
+    } catch (ledgerError) {
+      console.error('Error creating ledger for supplier:', ledgerError);
+      // Continue even if ledger creation fails
+    }
 
     res.status(201).json({
       success: true,

@@ -89,6 +89,13 @@ const farmerSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  collectionCenter: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CollectionCenter'
+  },
+  admissionDate: {
+    type: Date
+  },
   bankDetails: {
     accountNumber: {
       type: String,
@@ -108,9 +115,27 @@ const farmerSchema = new mongoose.Schema({
     }
   },
   financialDetails: {
+    oldShares: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    newShares: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    totalShares: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
     shareValue: {
       type: Number,
       default: 0
+    },
+    shareTakenDate: {
+      type: Date
     },
     resolutionNo: {
       type: String,
@@ -124,6 +149,51 @@ const farmerSchema = new mongoose.Schema({
       default: 0
     }
   },
+  shareHistory: [{
+    transactionType: {
+      type: String,
+      enum: ['Allotment', 'Additional Allotment', 'Redemption'],
+      required: true
+    },
+    shares: {
+      type: Number,
+      required: true,
+      min: 0
+    },
+    shareValue: {
+      type: Number,
+      required: true
+    },
+    totalValue: {
+      type: Number,
+      required: true
+    },
+    resolutionNo: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    resolutionDate: {
+      type: Date,
+      required: true
+    },
+    oldTotal: {
+      type: Number,
+      default: 0
+    },
+    newTotal: {
+      type: Number,
+      required: true
+    },
+    remarks: {
+      type: String,
+      trim: true
+    },
+    transactionDate: {
+      type: Date,
+      default: Date.now
+    }
+  }],
   documents: {
     aadhaar: {
       type: String,
@@ -158,6 +228,49 @@ const farmerSchema = new mongoose.Schema({
   ledgerId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Ledger'
+  },
+  termination: {
+    isTerminated: {
+      type: Boolean,
+      default: false
+    },
+    retirementDate: {
+      type: Date
+    },
+    resolutionNumber: {
+      type: String,
+      trim: true
+    },
+    resolutionDate: {
+      type: Date
+    },
+    refundDate: {
+      type: Date
+    },
+    refundAmount: {
+      type: Number,
+      min: 0
+    },
+    oldShareAmount: {
+      type: Number,
+      min: 0
+    },
+    refundReason: {
+      type: String,
+      enum: ['Voluntary', 'Banned', 'Dead', 'Others'],
+      trim: true
+    },
+    description: {
+      type: String,
+      trim: true
+    },
+    terminatedBy: {
+      type: String,
+      trim: true
+    },
+    terminatedAt: {
+      type: Date
+    }
   }
 }, {
   timestamps: true

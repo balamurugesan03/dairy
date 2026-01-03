@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import dayjs from 'dayjs';
-import { farmerAPI } from '../../services/api';
+import { farmerAPI, collectionCenterAPI } from '../../services/api';
 import PageHeader from '../common/PageHeader';
 import { message } from '../../utils/toast';
 
@@ -12,14 +12,25 @@ const FarmerForm = () => {
   const [currentStep, setCurrentStep] = useState(0);
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
+  const [collectionCenters, setCollectionCenters] = useState([]);
 
   const isEditMode = Boolean(id);
 
   useEffect(() => {
+    fetchCollectionCenters();
     if (isEditMode) {
       fetchFarmer();
     }
   }, [id]);
+
+  const fetchCollectionCenters = async () => {
+    try {
+      const response = await collectionCenterAPI.getAll({ status: 'Active', limit: 100 });
+      setCollectionCenters(response.data || []);
+    } catch (error) {
+      console.error('Failed to fetch collection centers:', error);
+    }
+  };
 
   const fetchFarmer = async () => {
     setLoading(true);
@@ -33,6 +44,8 @@ const FarmerForm = () => {
         memberId: farmer.memberId,
         farmerType: farmer.farmerType,
         cowType: farmer.cowType,
+        collectionCenter: farmer.collectionCenter?._id || '',
+        admissionDate: farmer.admissionDate || '',
         'personalDetails.name': farmer.personalDetails?.name,
         'personalDetails.fatherName': farmer.personalDetails?.fatherName,
         'personalDetails.age': farmer.personalDetails?.age,
@@ -53,6 +66,7 @@ const FarmerForm = () => {
         'bankDetails.bankName': farmer.bankDetails?.bankName,
         'bankDetails.branch': farmer.bankDetails?.branch,
         'bankDetails.ifsc': farmer.bankDetails?.ifsc,
+        'financialDetails.numberOfShares': farmer.financialDetails?.numberOfShares || 0,
         'financialDetails.shareValue': farmer.financialDetails?.shareValue,
         'financialDetails.resolutionNo': farmer.financialDetails?.resolutionNo,
         'financialDetails.resolutionDate': farmer.financialDetails?.resolutionDate || '',
@@ -73,10 +87,21 @@ const FarmerForm = () => {
   };
 
   const handleInputChange = (name, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    // If numberOfShares is changed, automatically calculate shareValue
+    if (name === 'financialDetails.numberOfShares') {
+      const shares = parseFloat(value) || 0;
+      const calculatedShareValue = shares * 10;
+      setFormData(prev => ({
+        ...prev,
+        [name]: value,
+        'financialDetails.shareValue': calculatedShareValue
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
@@ -132,24 +157,22 @@ const FarmerForm = () => {
     switch (step) {
       case 0: // Personal Details
         if (!formData.farmerNumber) newErrors.farmerNumber = 'Farmer number is required';
+        if (!formData.memberId) newErrors.memberId = 'Member ID is required';
         if (!formData['personalDetails.name']) newErrors['personalDetails.name'] = 'Name is required';
-        if (!formData['personalDetails.age']) newErrors['personalDetails.age'] = 'Age is required';
-        if (!formData['personalDetails.gender']) newErrors['personalDetails.gender'] = 'Gender is required';
+        // Optional field validation - only validate format if value is provided
         if (formData['personalDetails.phone'] && !/^[0-9]{10}$/.test(formData['personalDetails.phone'])) {
           newErrors['personalDetails.phone'] = 'Please enter valid 10-digit phone number';
         }
         break;
       case 1: // Address
-        if (!formData['address.pin']) {
-          newErrors['address.pin'] = 'PIN code is required';
-        } else if (!/^[0-9]{6}$/.test(formData['address.pin'])) {
+        // Optional field validation - only validate format if value is provided
+        if (formData['address.pin'] && !/^[0-9]{6}$/.test(formData['address.pin'])) {
           newErrors['address.pin'] = 'Please enter valid 6-digit PIN code';
         }
         break;
       case 2: // Identity Details
-        if (!formData['identityDetails.aadhaar']) {
-          newErrors['identityDetails.aadhaar'] = 'Aadhaar is required';
-        } else if (!/^[0-9]{12}$/.test(formData['identityDetails.aadhaar'])) {
+        // Optional field validation - only validate format if value is provided
+        if (formData['identityDetails.aadhaar'] && !/^[0-9]{12}$/.test(formData['identityDetails.aadhaar'])) {
           newErrors['identityDetails.aadhaar'] = 'Please enter valid 12-digit Aadhaar number';
         }
         if (formData['identityDetails.pan'] && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(formData['identityDetails.pan'])) {
@@ -157,19 +180,16 @@ const FarmerForm = () => {
         }
         break;
       case 3: // Farmer Type
-        if (!formData.farmerType) newErrors.farmerType = 'Farmer type is required';
-        if (!formData.cowType) newErrors.cowType = 'Cow type is required';
+        // All fields are optional now
         break;
       case 4: // Bank Details
-        if (!formData['bankDetails.accountNumber']) newErrors['bankDetails.accountNumber'] = 'Account number is required';
-        if (!formData['bankDetails.bankName']) newErrors['bankDetails.bankName'] = 'Bank name is required';
-        if (!formData['bankDetails.branch']) newErrors['bankDetails.branch'] = 'Branch is required';
+        // Optional field validation - only validate format if value is provided
         if (formData['bankDetails.ifsc'] && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(formData['bankDetails.ifsc'])) {
           newErrors['bankDetails.ifsc'] = 'Please enter valid IFSC code';
         }
         break;
       case 5: // Financial Details
-        if (!formData['financialDetails.shareValue']) newErrors['financialDetails.shareValue'] = 'Share value is required';
+        // All fields are optional now
         break;
     }
 
@@ -226,6 +246,8 @@ const FarmerForm = () => {
         },
         farmerType: formData.farmerType,
         cowType: formData.cowType,
+        collectionCenter: formData.collectionCenter || null,
+        admissionDate: formData.admissionDate ? new Date(formData.admissionDate).toISOString() : null,
         bankDetails: {
           accountNumber: formData['bankDetails.accountNumber'],
           bankName: formData['bankDetails.bankName'],
@@ -233,7 +255,8 @@ const FarmerForm = () => {
           ifsc: formData['bankDetails.ifsc'],
         },
         financialDetails: {
-          shareValue: parseFloat(formData['financialDetails.shareValue']),
+          numberOfShares: parseFloat(formData['financialDetails.numberOfShares']) || 0,
+          shareValue: parseFloat(formData['financialDetails.shareValue']) || 0,
           resolutionNo: formData['financialDetails.resolutionNo'],
           resolutionDate: formData['financialDetails.resolutionDate'] ? new Date(formData['financialDetails.resolutionDate']).toISOString() : null,
           admissionFee: parseFloat(formData['financialDetails.admissionFee']) || 0,
@@ -344,12 +367,12 @@ const FarmerForm = () => {
         return (
           <div className="form-row">
             {renderFormField('farmerNumber', 'Farmer Number', 'text', true, null, 'Enter farmer number')}
-            {renderFormField('memberId', 'Member ID', 'text', false, null, 'Enter member ID')}
+            {renderFormField('memberId', 'Member ID', 'text', true, null, 'Enter member ID')}
             {renderFormField('personalDetails.name', 'Name', 'text', true, null, 'Enter name')}
             {renderFormField('personalDetails.fatherName', "Father's Name", 'text', false, null, "Enter father's name")}
-            {renderFormField('personalDetails.age', 'Age', 'number', true, null, 'Enter age')}
+            {renderFormField('personalDetails.age', 'Age', 'number', false, null, 'Enter age')}
             {renderFormField('personalDetails.dob', 'Date of Birth', 'date', false)}
-            {renderFormField('personalDetails.gender', 'Gender', 'select', true, [
+            {renderFormField('personalDetails.gender', 'Gender', 'select', false, [
               { value: 'Male', label: 'Male' },
               { value: 'Female', label: 'Female' },
               { value: 'Other', label: 'Other' }
@@ -364,14 +387,14 @@ const FarmerForm = () => {
             {renderFormField('address.ward', 'Ward', 'text', false, null, 'Enter ward')}
             {renderFormField('address.village', 'Village', 'text', false, null, 'Enter village')}
             {renderFormField('address.panchayat', 'Panchayat', 'text', false, null, 'Enter panchayat')}
-            {renderFormField('address.pin', 'PIN Code', 'text', true, null, 'Enter PIN code')}
+            {renderFormField('address.pin', 'PIN Code', 'text', false, null, 'Enter PIN code')}
           </div>
         );
 
       case 2:
         return (
           <div className="form-row">
-            {renderFormField('identityDetails.aadhaar', 'Aadhaar Number', 'text', true, null, 'Enter Aadhaar number')}
+            {renderFormField('identityDetails.aadhaar', 'Aadhaar Number', 'text', false, null, 'Enter Aadhaar number')}
             {renderFormField('identityDetails.pan', 'PAN Number', 'text', false, null, 'Enter PAN number')}
             {renderFormField('identityDetails.welfareNo', 'Welfare Number', 'text', false, null, 'Enter welfare number')}
             {renderFormField('identityDetails.ksheerasreeId', 'Ksheerasree ID', 'text', false, null, 'Enter Ksheerasree ID')}
@@ -383,26 +406,33 @@ const FarmerForm = () => {
       case 3:
         return (
           <div className="form-row">
-            {renderFormField('farmerType', 'Farmer Type', 'select', true, [
+            {renderFormField('farmerType', 'Farmer Type', 'select', false, [
               { value: 'A', label: 'Type A' },
               { value: 'B', label: 'Type B' },
               { value: 'C', label: 'Type C' }
             ])}
-            {renderFormField('cowType', 'Cow Type', 'select', true, [
+            {renderFormField('cowType', 'Cow Type', 'select', false, [
               { value: 'Desi', label: 'Desi' },
               { value: 'Crossbreed', label: 'Crossbreed' },
               { value: 'Jersey', label: 'Jersey' },
               { value: 'HF', label: 'HF (Holstein Friesian)' }
             ])}
+            {renderFormField('collectionCenter', 'Collection Center', 'select', false,
+              collectionCenters.map(center => ({
+                value: center._id,
+                label: `${center.centerName} (${center.centerType})`
+              }))
+            )}
+            {renderFormField('admissionDate', 'Admission Date', 'date', false)}
           </div>
         );
 
       case 4:
         return (
           <div className="form-row">
-            {renderFormField('bankDetails.accountNumber', 'Account Number', 'text', true, null, 'Enter account number')}
-            {renderFormField('bankDetails.bankName', 'Bank Name', 'text', true, null, 'Enter bank name')}
-            {renderFormField('bankDetails.branch', 'Branch', 'text', true, null, 'Enter branch')}
+            {renderFormField('bankDetails.accountNumber', 'Account Number', 'text', false, null, 'Enter account number')}
+            {renderFormField('bankDetails.bankName', 'Bank Name', 'text', false, null, 'Enter bank name')}
+            {renderFormField('bankDetails.branch', 'Branch', 'text', false, null, 'Enter branch')}
             {renderFormField('bankDetails.ifsc', 'IFSC Code', 'text', false, null, 'Enter IFSC code')}
           </div>
         );
@@ -410,7 +440,21 @@ const FarmerForm = () => {
       case 5:
         return (
           <div className="form-row">
-            {renderFormField('financialDetails.shareValue', 'Share Value', 'number', true, null, 'Enter share value')}
+            {renderFormField('financialDetails.numberOfShares', 'Number of Shares', 'number', false, null, 'Enter number of shares')}
+            <div className="form-group">
+              <label className="form-label">Share Value (Auto-calculated)</label>
+              <input
+                type="number"
+                className="form-input"
+                value={formData['financialDetails.shareValue'] || 0}
+                readOnly
+                disabled
+                style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'not-allowed' }}
+              />
+              <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                Calculated as: Number of Shares × 10
+              </div>
+            </div>
             {renderFormField('financialDetails.admissionFee', 'Admission Fee', 'number', false, null, 'Enter admission fee')}
             {renderFormField('financialDetails.resolutionNo', 'Resolution Number', 'text', false, null, 'Enter resolution number')}
             {renderFormField('financialDetails.resolutionDate', 'Resolution Date', 'date', false)}

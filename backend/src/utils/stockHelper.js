@@ -3,7 +3,22 @@ import StockTransaction from '../models/StockTransaction.js';
 
 // Create stock transaction and update item balance
 export const createStockTransaction = async (transactionData, session = null) => {
-  const { itemId, transactionType, quantity, rate, referenceType, referenceId, notes } = transactionData;
+  const {
+    itemId,
+    transactionType,
+    quantity,
+    freeQty,
+    rate,
+    referenceType,
+    referenceId,
+    purchaseDate,
+    invoiceDate,
+    invoiceNumber,
+    issueCentre,
+    subsidyId,
+    subsidyAmount,
+    notes
+  } = transactionData;
 
   // Get current item
   const item = await Item.findById(itemId);
@@ -11,10 +26,11 @@ export const createStockTransaction = async (transactionData, session = null) =>
     throw new Error('Item not found');
   }
 
-  // Calculate new balance
+  // Calculate new balance (including free quantity for Stock In)
   let newBalance;
   if (transactionType === 'Stock In') {
-    newBalance = item.currentBalance + quantity;
+    const totalQuantity = quantity + (freeQty || 0);
+    newBalance = item.currentBalance + totalQuantity;
   } else if (transactionType === 'Stock Out') {
     if (item.currentBalance < quantity) {
       throw new Error(`Insufficient stock. Available: ${item.currentBalance}, Required: ${quantity}`);
@@ -29,11 +45,18 @@ export const createStockTransaction = async (transactionData, session = null) =>
     itemId,
     transactionType,
     quantity,
+    freeQty: freeQty || 0,
     rate: rate || 0,
     referenceType,
     referenceId,
     balanceAfter: newBalance,
     date: new Date(),
+    purchaseDate: purchaseDate || null,
+    invoiceDate: invoiceDate || null,
+    invoiceNumber: invoiceNumber || null,
+    issueCentre: issueCentre || null,
+    subsidyId: subsidyId || null,
+    subsidyAmount: subsidyAmount || 0,
     notes
   });
 
