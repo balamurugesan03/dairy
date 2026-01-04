@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useReactToPrint } from 'react-to-print';
 import dayjs from 'dayjs';
-import { farmerAPI, itemAPI, salesAPI, customerAPI } from '../../services/api';
+import { farmerAPI, itemAPI, salesAPI, customerAPI, collectionCenterAPI, subsidyAPI } from '../../services/api';
 import PageHeader from '../common/PageHeader';
 import SearchableSelect from '../common/SearchableSelect';
 import { message as toast } from '../../utils/toast';
@@ -15,6 +15,8 @@ const BillingForm = () => {
   const [items, setItems] = useState([]);
   const [farmers, setFarmers] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [collectionCenters, setCollectionCenters] = useState([]);
+  const [subsidies, setSubsidies] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [selectedFarmerNumber, setSelectedFarmerNumber] = useState('');
   const [billItems, setBillItems] = useState([]);
@@ -27,6 +29,8 @@ const BillingForm = () => {
     customerPhone: '',
     itemId: null,
     quantity: '',
+    collectionCenterId: null,
+    subsidyId: null,
     paymentMode: 'Cash',
     paidAmount: ''
   });
@@ -44,6 +48,8 @@ const BillingForm = () => {
     fetchItems();
     fetchFarmers();
     fetchCustomers();
+    fetchCollectionCenters();
+    fetchSubsidies();
   }, []);
 
   const fetchItems = async () => {
@@ -70,6 +76,24 @@ const BillingForm = () => {
       setCustomers(response.data.filter(customer => customer.active === true));
     } catch (error) {
       toast.error(error.message || 'Failed to fetch customers');
+    }
+  };
+
+  const fetchCollectionCenters = async () => {
+    try {
+      const response = await collectionCenterAPI.getAll();
+      setCollectionCenters(response.data.filter(center => center.status === 'Active'));
+    } catch (error) {
+      toast.error(error.message || 'Failed to fetch collection centers');
+    }
+  };
+
+  const fetchSubsidies = async () => {
+    try {
+      const response = await subsidyAPI.getAll();
+      setSubsidies(response.data.filter(subsidy => subsidy.status === 'Active'));
+    } catch (error) {
+      toast.error(error.message || 'Failed to fetch subsidies');
     }
   };
 
@@ -296,6 +320,8 @@ const BillingForm = () => {
         grandTotal: calculations.grandTotal,
         oldBalance: calculations.oldBalance,
         totalDue: calculations.totalDue,
+        collectionCenterId: formData.collectionCenterId || null,
+        subsidyId: formData.subsidyId || null,
         paymentMode: formData.paymentMode,
         paidAmount: parseFloat(formData.paidAmount) || 0,
         balanceAmount: calculations.totalDue - (parseFloat(formData.paidAmount) || 0)
@@ -659,6 +685,39 @@ const BillingForm = () => {
           {/* Payment Section */}
           <div className="form-row">
             <div className="form-group">
+              <label className="form-label">Collection Center</label>
+              <select
+                className="form-select"
+                value={formData.collectionCenterId || ''}
+                onChange={(e) => handleInputChange('collectionCenterId', e.target.value)}
+              >
+                <option value="">-- Select Collection Center --</option>
+                {collectionCenters.map(center => (
+                  <option key={center._id} value={center._id}>
+                    {center.centerName} ({center.centerType})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Subsidy</label>
+              <select
+                className="form-select"
+                value={formData.subsidyId || ''}
+                onChange={(e) => handleInputChange('subsidyId', e.target.value)}
+              >
+                <option value="">-- Select Subsidy --</option>
+                {subsidies.map(subsidy => (
+                  <option key={subsidy._id} value={subsidy._id}>
+                    {subsidy.subsidyName} ({subsidy.subsidyType})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
               <label className="form-label required">Payment Mode</label>
               <select
                 className="form-select"
@@ -666,8 +725,8 @@ const BillingForm = () => {
                 onChange={(e) => handleInputChange('paymentMode', e.target.value)}
               >
                 <option value="Cash">Cash</option>
+                <option value="Credit">Credit</option>
                 <option value="Bank">Bank</option>
-                <option value="Advance">Advance</option>
               </select>
             </div>
             <div className="form-group">

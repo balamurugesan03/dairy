@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { message } from '../../utils/toast';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
-import { itemAPI, stockAPI, collectionCenterAPI, subsidyAPI } from '../../services/api';
+import { itemAPI, stockAPI, collectionCenterAPI, subsidyAPI, supplierAPI } from '../../services/api';
 import PageHeader from '../common/PageHeader';
 import SearchableSelect from '../common/SearchableSelect';
 import './StockInForm.css';
@@ -13,6 +13,7 @@ const StockInForm = () => {
   const [items, setItems] = useState([]);
   const [collectionCenters, setCollectionCenters] = useState([]);
   const [subsidies, setSubsidies] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [showSubsidy, setShowSubsidy] = useState(false);
   const [errors, setErrors] = useState({});
 
@@ -24,7 +25,10 @@ const StockInForm = () => {
     subsidyId: null,
     subsidyAmount: '',
     referenceType: 'Purchase',
-    remarks: ''
+    remarks: '',
+    supplierId: null,
+    paymentMode: 'Adjustment',
+    paidAmount: ''
   });
 
   const [productRows, setProductRows] = useState([
@@ -42,6 +46,7 @@ const StockInForm = () => {
     fetchItems();
     fetchCollectionCenters();
     fetchSubsidies();
+    fetchSuppliers();
   }, []);
 
   const fetchItems = async () => {
@@ -68,6 +73,15 @@ const StockInForm = () => {
       setSubsidies(response.data || []);
     } catch (error) {
       message.error(error.message || 'Failed to fetch subsidies');
+    }
+  };
+
+  const fetchSuppliers = async () => {
+    try {
+      const response = await supplierAPI.getAll({ status: 'Active', limit: 1000 });
+      setSuppliers(response.data || []);
+    } catch (error) {
+      message.error(error.message || 'Failed to fetch suppliers');
     }
   };
 
@@ -192,11 +206,19 @@ const StockInForm = () => {
         subsidyId: showSubsidy ? formData.subsidyId : null,
         subsidyAmount: showSubsidy ? parseFloat(formData.subsidyAmount) : 0,
         referenceType: formData.referenceType,
-        notes: formData.remarks
+        notes: formData.remarks,
+        supplierId: formData.supplierId,
+        paymentMode: formData.paymentMode,
+        paidAmount: parseFloat(formData.paidAmount) || 0
       };
 
-      await stockAPI.stockIn(payload);
-      message.success('Stock added successfully');
+      const response = await stockAPI.stockIn(payload);
+
+      if (response.data?.voucher) {
+        message.success(`Stock added successfully! Voucher created: ${response.data.voucher.voucherNumber}`);
+      } else {
+        message.success('Stock added successfully');
+      }
       navigate('/inventory/stock-report');
     } catch (error) {
       message.error(error.message || 'Failed to add stock');
@@ -219,6 +241,18 @@ const StockInForm = () => {
     label: `${subsidy.subsidyName} - ${subsidy.subsidyType}`,
     value: subsidy._id
   }));
+
+  const supplierOptions = suppliers.map(supplier => ({
+    label: `${supplier.supplierId} - ${supplier.name}`,
+    value: supplier._id
+  }));
+
+  // Calculate total amount
+  const totalAmount = productRows.reduce((sum, row) => {
+    const quantity = parseFloat(row.quantity) || 0;
+    const rate = parseFloat(row.rate) || 0;
+    return sum + (quantity * rate);
+  }, 0);
 
   return (
     <div className="stock-form-container">
@@ -351,6 +385,60 @@ const StockInForm = () => {
                     />
                   </div>
                   {errors.subsidyAmount && <div className="form-error">{errors.subsidyAmount}</div>}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Supplier & Payment Section */}
+          <div className="form-section">
+            <h3 className="section-title">Supplier & Payment Details</h3>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Supplier</label>
+                <SearchableSelect
+                  options={supplierOptions}
+                  placeholder="Select supplier (optional)"
+                  value={formData.supplierId}
+                  onChange={(value) => handleInputChange('supplierId', value)}
+                />
+                <p className="form-help">Select supplier to enable automatic accounting</p>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Payment Mode</label>
+                <select
+                  className="form-select"
+                  value={formData.paymentMode}
+                  onChange={(e) => handleInputChange('paymentMode', e.target.value)}
+                >
+                  <option value="Adjustment">Credit Purchase (Adjustment)</option>
+                  <option value="Cash">Cash Payment</option>
+                </select>
+              </div>
+            </div>
+
+            {formData.paymentMode === 'Cash' && (
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Paid Amount</label>
+                  <div className="input-with-prefix">
+                    <span className="input-prefix">₹</span>
+                    <input
+                      type="number"
+                      className="form-input"
+                      placeholder="Enter paid amount"
+                      value={formData.paidAmount}
+                      onChange={(e) => handleInputChange('paidAmount', e.target.value)}
+                      min="0"
+                      step="0.01"
+                    />
+                  </div>
+                  <p className="form-help">
+                    Total Amount: ₹{totalAmount.toFixed(2)} |
+                    Balance: ₹{(totalAmount - (parseFloat(formData.paidAmount) || 0)).toFixed(2)}
+                  </p>
                 </div>
               </div>
             )}

@@ -115,6 +115,7 @@ export const ledgerAPI = {
   getById: (id, params) => api.get(`/ledgers/${id}`, { params }).then(res => res.data).catch(handleError),
   create: (data) => api.post('/ledgers', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/ledgers/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/ledgers/${id}`).then(res => res.data).catch(handleError),
   getOutstanding: (id) => api.get(`/ledgers/${id}/outstanding`).then(res => res.data).catch(handleError)
 };
 
@@ -221,6 +222,11 @@ export const collectionCenterAPI = {
   update: (id, data) => api.put(`/collection-centers/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/collection-centers/${id}`).then(res => res.data).catch(handleError),
   toggleStatus: (id) => api.patch(`/collection-centers/${id}/status`).then(res => res.data).catch(handleError)
+};
+
+// DAY BOOK APIs
+export const dayBookAPI = {
+  get: (params) => api.get('/reports/day-book', { params }).then(res => res.data).catch(handleError)
 };
 
 export default api;

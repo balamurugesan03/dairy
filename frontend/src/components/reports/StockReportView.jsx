@@ -3,6 +3,9 @@ import { message } from '../../utils/toast';
 import { reportAPI } from '../../services/api';
 import PageHeader from '../common/PageHeader';
 import ExportButton from '../common/ExportButton';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
+import dayjs from 'dayjs';
 import './StockReportView.css';
 
 const StockReportView = () => {
@@ -13,6 +16,12 @@ const StockReportView = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [selectedCategory, setSelectedCategory] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [stockStatusFilter, setStockStatusFilter] = useState('');
+  const [minBalance, setMinBalance] = useState('');
+  const [maxBalance, setMaxBalance] = useState('');
 
   useEffect(() => {
     fetchStockReport();
@@ -21,6 +30,7 @@ const StockReportView = () => {
   useEffect(() => {
     let filtered = stockData;
 
+    // Text search filter
     if (searchText) {
       filtered = filtered.filter(item =>
         item.itemName?.toLowerCase().includes(searchText.toLowerCase()) ||
@@ -29,13 +39,43 @@ const StockReportView = () => {
       );
     }
 
+    // Category filter
     if (selectedCategory) {
       filtered = filtered.filter(item => item.category === selectedCategory);
     }
 
+    // Date range filter
+    if (fromDate || toDate) {
+      filtered = filtered.filter(item => {
+        if (!item.updatedAt && !item.createdAt) return true;
+        const itemDate = dayjs(item.updatedAt || item.createdAt);
+        if (fromDate && itemDate.isBefore(dayjs(fromDate), 'day')) return false;
+        if (toDate && itemDate.isAfter(dayjs(toDate), 'day')) return false;
+        return true;
+      });
+    }
+
+    // Stock status filter
+    if (stockStatusFilter) {
+      filtered = filtered.filter(item => {
+        const status = getStockStatus(item.currentBalance).text;
+        return status === stockStatusFilter;
+      });
+    }
+
+    // Balance range filter
+    if (minBalance !== '' || maxBalance !== '') {
+      filtered = filtered.filter(item => {
+        const balance = item.currentBalance || 0;
+        if (minBalance !== '' && balance < Number(minBalance)) return false;
+        if (maxBalance !== '' && balance > Number(maxBalance)) return false;
+        return true;
+      });
+    }
+
     setFilteredData(filtered);
     setCurrentPage(1);
-  }, [searchText, selectedCategory, stockData]);
+  }, [searchText, selectedCategory, stockData, fromDate, toDate, stockStatusFilter, minBalance, maxBalance]);
 
   const fetchStockReport = async () => {
     setLoading(true);
@@ -80,6 +120,98 @@ const StockReportView = () => {
     (sum, item) => sum + ((item.currentBalance || 0) * (item.purchaseRate || 0)),
     0
   ) : 0;
+
+  const exportToPDF = () => {
+    const doc = new jsPDF();
+
+    // Add title
+    doc.setFontSize(18);
+    doc.text('Stock Report', 14, 20);
+
+    // Add date range if applied
+    doc.setFontSize(10);
+    let yPosition = 30;
+    if (fromDate || toDate) {
+      const dateRange = `Date Range: ${fromDate ? dayjs(fromDate).format('DD/MM/YYYY') : 'Start'} - ${toDate ? dayjs(toDate).format('DD/MM/YYYY') : 'End'}`;
+      doc.text(dateRange, 14, yPosition);
+      yPosition += 6;
+    }
+
+    // Add filters info
+    if (selectedCategory) {
+      doc.text(`Category: ${selectedCategory}`, 14, yPosition);
+      yPosition += 6;
+    }
+    if (stockStatusFilter) {
+      doc.text(`Status: ${stockStatusFilter}`, 14, yPosition);
+      yPosition += 6;
+    }
+
+    doc.text(`Generated: ${dayjs().format('DD/MM/YYYY HH:mm')}`, 14, yPosition);
+    yPosition += 10;
+
+    // Prepare table data
+    const tableData = filteredData.map(item => [
+      item.itemCode,
+      item.itemName,
+      item.category,
+      item.unit,
+      item.openingBalance || 0,
+      item.stockIn || 0,
+      item.stockOut || 0,
+      item.currentBalance || 0,
+      `₹${((item.currentBalance || 0) * (item.purchaseRate || 0)).toFixed(2)}`,
+      getStockStatus(item.currentBalance).text
+    ]);
+
+    // Add table
+    doc.autoTable({
+      head: [[
+        'Item Code',
+        'Item Name',
+        'Category',
+        'Unit',
+        'Opening',
+        'Stock In',
+        'Stock Out',
+        'Current',
+        'Value',
+        'Status'
+      ]],
+      body: tableData,
+      startY: yPosition,
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [41, 128, 185], textColor: 255 },
+      columnStyles: {
+        4: { halign: 'right' },
+        5: { halign: 'right' },
+        6: { halign: 'right' },
+        7: { halign: 'right' },
+        8: { halign: 'right' }
+      },
+      foot: [[
+        { content: 'Total Stock Value:', colSpan: 8, styles: { halign: 'right', fontStyle: 'bold' } },
+        { content: `₹${totalStockValue.toFixed(2)}`, styles: { fontStyle: 'bold' } },
+        ''
+      ]],
+      footStyles: { fillColor: [240, 240, 240], textColor: 0 }
+    });
+
+    // Save the PDF
+    const filename = `stock_report_${dayjs().format('YYYYMMDD_HHmmss')}.pdf`;
+    doc.save(filename);
+    message.success('PDF exported successfully');
+  };
+
+  const clearAllFilters = () => {
+    setSearchText('');
+    setSelectedCategory('');
+    setFromDate('');
+    setToDate('');
+    setStockStatusFilter('');
+    setMinBalance('');
+    setMaxBalance('');
+  };
 
   const totalPages = Math.ceil((filteredData?.length || 0) / pageSize);
   const startIndex = (currentPage - 1) * pageSize;
@@ -131,11 +263,101 @@ const StockReportView = () => {
               {loading ? 'Loading...' : '↻ Refresh'}
             </button>
           </div>
-          <ExportButton
-            data={exportData}
-            filename="stock_report"
-            buttonText="Export to Excel"
-          />
+          <div className="export-buttons">
+            <ExportButton
+              data={exportData}
+              filename="stock_report"
+              buttonText="Export to Excel"
+            />
+            <button
+              className="refresh-button"
+              onClick={exportToPDF}
+              style={{ marginLeft: '10px' }}
+            >
+              Export to PDF
+            </button>
+          </div>
+        </div>
+
+        <div className="date-filter-row">
+          <div className="date-filter">
+            <label>From Date:</label>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="date-input"
+            />
+          </div>
+          <div className="date-filter">
+            <label>To Date:</label>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="date-input"
+            />
+          </div>
+          <button
+            className="filter-toggle-button"
+            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+          >
+            {showAdvancedFilters ? '▼' : '▶'} Advanced Filters
+          </button>
+          {(fromDate || toDate || selectedCategory || searchText || stockStatusFilter || minBalance || maxBalance) && (
+            <button
+              className="clear-all-button"
+              onClick={clearAllFilters}
+            >
+              Clear All Filters
+            </button>
+          )}
+        </div>
+
+        {showAdvancedFilters && (
+          <div className="advanced-filters-panel">
+            <div className="filter-group">
+              <label>Stock Status:</label>
+              <select
+                value={stockStatusFilter}
+                onChange={(e) => setStockStatusFilter(e.target.value)}
+                className="filter-select"
+              >
+                <option value="">All Status</option>
+                <option value="Out of Stock">Out of Stock</option>
+                <option value="Low Stock">Low Stock</option>
+                <option value="Normal">Normal</option>
+                <option value="In Stock">In Stock</option>
+              </select>
+            </div>
+            <div className="filter-group">
+              <label>Min Balance:</label>
+              <input
+                type="number"
+                value={minBalance}
+                onChange={(e) => setMinBalance(e.target.value)}
+                placeholder="Min"
+                className="filter-input"
+              />
+            </div>
+            <div className="filter-group">
+              <label>Max Balance:</label>
+              <input
+                type="number"
+                value={maxBalance}
+                onChange={(e) => setMaxBalance(e.target.value)}
+                placeholder="Max"
+                className="filter-input"
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="results-summary">
+          Showing {filteredData?.length || 0} of {stockData?.length || 0} items
+          {totalStockValue > 0 && (
+            <span className="total-value"> | Total Value: ₹{totalStockValue.toFixed(2)}</span>
+          )}
         </div>
 
         {loading ? (

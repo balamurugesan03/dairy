@@ -84,6 +84,15 @@
   text-decoration: underline;
 }
 
+.btn-delete {
+  color: #ff4d4f;
+}
+
+.btn-delete:hover {
+  color: #ff7875;
+  text-decoration: underline;
+}
+
 .tag {
   display: inline-block;
   padding: 4px 12px;
@@ -305,6 +314,63 @@
   font-size: 14px;
 }
 
+/* Pagination Styles */
+.pagination-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pagination-info {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.pagination-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.btn-pagination {
+  padding: 6px 12px;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 14px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  min-width: 36px;
+}
+
+.btn-pagination:hover:not(:disabled) {
+  background-color: var(--bg-hover);
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.btn-pagination.active {
+  background-color: #1890ff;
+  color: white;
+  border-color: #1890ff;
+}
+
+.btn-pagination:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pagination-controls span {
+  color: var(--text-tertiary);
+  padding: 0 4px;
+}
+
 @media (max-width: 768px) {
   .filters-container {
     flex-direction: column;
@@ -318,5 +384,19 @@
   .modal-content {
     width: 95%;
     margin: 10px;
+  }
+
+  .pagination-container {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pagination-info {
+    text-align: center;
+  }
+
+  .pagination-controls {
+    justify-content: center;
+    flex-wrap: wrap;
   }
 }

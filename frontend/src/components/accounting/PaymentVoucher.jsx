@@ -100,20 +100,7 @@ const PaymentVoucher = () => {
     }
   };
 
-  const partyExpenseLedgers = ledgers.filter(l =>
-    l.ledgerType === 'Party' || l.ledgerType === 'Expense'
-  );
-
-  const cashBankLedgers = ledgers.filter(l =>
-    l.ledgerType === 'Cash' || l.ledgerType === 'Bank'
-  );
-
-  const debitOptions = partyExpenseLedgers.map(ledger => ({
-    label: `${ledger.ledgerName} (${ledger.ledgerType})`,
-    value: ledger._id
-  }));
-
-  const creditOptions = cashBankLedgers.map(ledger => ({
+  const ledgerOptions = ledgers.map(ledger => ({
     label: `${ledger.ledgerName} (${ledger.ledgerType})`,
     value: ledger._id
   }));
@@ -142,8 +129,8 @@ const PaymentVoucher = () => {
           <div className="form-group">
             <label className="form-label required">Debit (Party/Expense Account)</label>
             <SearchableSelect
-              options={debitOptions}
-              placeholder="Select party or expense account"
+              options={ledgerOptions}
+              placeholder="Select ledger"
               value={formData.debitLedgerId}
               onChange={(value) => {
                 setFormData(prev => ({ ...prev, debitLedgerId: value }));
@@ -159,8 +146,8 @@ const PaymentVoucher = () => {
           <div className="form-group">
             <label className="form-label required">Credit (Cash/Bank Paid From)</label>
             <SearchableSelect
-              options={creditOptions}
-              placeholder="Select cash or bank account"
+              options={ledgerOptions}
+              placeholder="Select ledger"
               value={formData.creditLedgerId}
               onChange={(value) => {
                 setFormData(prev => ({ ...prev, creditLedgerId: value }));

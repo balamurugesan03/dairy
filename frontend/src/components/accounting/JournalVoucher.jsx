@@ -15,9 +15,10 @@ const JournalVoucher = () => {
   const [totals, setTotals] = useState({ debit: 0, credit: 0 });
   const [formData, setFormData] = useState({
     voucherDate: dayjs().format('YYYY-MM-DD'),
-    ledgerId: '',
-    debitAmount: '',
-    creditAmount: '',
+    referenceNumber: '',
+    debitLedgerId: '',
+    creditLedgerId: '',
+    amount: '',
     entryNarration: '',
     narration: ''
   });
@@ -45,45 +46,61 @@ const JournalVoucher = () => {
   };
 
   const handleAddEntry = () => {
-    const { ledgerId, debitAmount, creditAmount, entryNarration } = formData;
-    const debit = parseFloat(debitAmount) || 0;
-    const credit = parseFloat(creditAmount) || 0;
+    const { debitLedgerId, creditLedgerId, amount, entryNarration } = formData;
+    const entryAmount = parseFloat(amount) || 0;
 
-    if (!ledgerId) {
-      message.error('Please select a ledger');
+    if (!debitLedgerId) {
+      message.error('Please select debit ledger');
       return;
     }
 
-    if (debit === 0 && credit === 0) {
-      message.error('Please enter either debit or credit amount');
+    if (!creditLedgerId) {
+      message.error('Please select credit ledger');
       return;
     }
 
-    if (debit > 0 && credit > 0) {
-      message.error('Please enter either debit or credit amount, not both');
+    if (entryAmount <= 0) {
+      message.error('Please enter a valid amount');
       return;
     }
 
-    const ledger = ledgers.find(l => l._id === ledgerId);
-    if (!ledger) return;
+    if (debitLedgerId === creditLedgerId) {
+      message.error('Debit and credit ledgers cannot be the same');
+      return;
+    }
 
-    const newEntry = {
-      ledgerId: ledger._id,
-      ledgerName: ledger.ledgerName,
-      debitAmount: debit,
-      creditAmount: credit,
+    const debitLedger = ledgers.find(l => l._id === debitLedgerId);
+    const creditLedger = ledgers.find(l => l._id === creditLedgerId);
+
+    if (!debitLedger || !creditLedger) return;
+
+    // Add debit entry
+    const debitEntry = {
+      ledgerId: debitLedger._id,
+      ledgerName: debitLedger.ledgerName,
+      debitAmount: entryAmount,
+      creditAmount: 0,
       narration: entryNarration
     };
 
-    const updatedEntries = [...entries, newEntry];
+    // Add credit entry
+    const creditEntry = {
+      ledgerId: creditLedger._id,
+      ledgerName: creditLedger.ledgerName,
+      debitAmount: 0,
+      creditAmount: entryAmount,
+      narration: entryNarration
+    };
+
+    const updatedEntries = [...entries, debitEntry, creditEntry];
     setEntries(updatedEntries);
     calculateTotals(updatedEntries);
 
     setFormData(prev => ({
       ...prev,
-      ledgerId: '',
-      debitAmount: '',
-      creditAmount: '',
+      debitLedgerId: '',
+      creditLedgerId: '',
+      amount: '',
       entryNarration: ''
     }));
   };
@@ -103,6 +120,7 @@ const JournalVoucher = () => {
   const validateForm = () => {
     const newErrors = {};
     if (!formData.voucherDate) newErrors.voucherDate = 'Voucher date is required';
+    if (!formData.referenceNumber) newErrors.referenceNumber = 'Reference number is required';
     if (!formData.narration) newErrors.narration = 'Narration is required';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -134,6 +152,7 @@ const JournalVoucher = () => {
         totalDebit: totals.debit,
         totalCredit: totals.credit,
         referenceType: 'Manual',
+        referenceNumber: formData.referenceNumber,
         narration: formData.narration
       };
 
@@ -163,59 +182,68 @@ const JournalVoucher = () => {
 
       <div className="form-card">
         <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label required">Voucher Date</label>
-            <input
-              type="date"
-              name="voucherDate"
-              className={`form-input ${errors.voucherDate ? 'error' : ''}`}
-              value={formData.voucherDate}
-              onChange={handleChange}
-            />
-            {errors.voucherDate && <div className="form-error">{errors.voucherDate}</div>}
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label required">Voucher Date</label>
+              <input
+                type="date"
+                name="voucherDate"
+                className={`form-input ${errors.voucherDate ? 'error' : ''}`}
+                value={formData.voucherDate}
+                onChange={handleChange}
+              />
+              {errors.voucherDate && <div className="form-error">{errors.voucherDate}</div>}
+            </div>
+
+            <div className="form-group">
+              <label className="form-label required">Reference Number</label>
+              <input
+                type="text"
+                name="referenceNumber"
+                className={`form-input ${errors.referenceNumber ? 'error' : ''}`}
+                placeholder="Enter reference number"
+                value={formData.referenceNumber}
+                onChange={handleChange}
+              />
+              {errors.referenceNumber && <div className="form-error">{errors.referenceNumber}</div>}
+            </div>
           </div>
 
           <div className="entry-card">
             <h3 className="entry-card-title">Add Entries</h3>
 
             <div className="form-group">
-              <label className="form-label">Select Ledger</label>
+              <label className="form-label required">Debit Ledger</label>
               <SearchableSelect
                 options={ledgerOptions}
-                placeholder="Select ledger"
-                value={formData.ledgerId}
-                onChange={(value) => setFormData(prev => ({ ...prev, ledgerId: value }))}
+                placeholder="Select debit ledger"
+                value={formData.debitLedgerId}
+                onChange={(value) => setFormData(prev => ({ ...prev, debitLedgerId: value }))}
               />
             </div>
 
-            <div className="entry-amounts">
-              <div className="form-group">
-                <label className="form-label">Debit Amount</label>
-                <input
-                  type="number"
-                  name="debitAmount"
-                  className="form-input"
-                  placeholder="Enter debit amount"
-                  value={formData.debitAmount}
-                  onChange={handleChange}
-                  min="0"
-                  step="0.01"
-                />
-              </div>
+            <div className="form-group">
+              <label className="form-label required">Credit Ledger</label>
+              <SearchableSelect
+                options={ledgerOptions}
+                placeholder="Select credit ledger"
+                value={formData.creditLedgerId}
+                onChange={(value) => setFormData(prev => ({ ...prev, creditLedgerId: value }))}
+              />
+            </div>
 
-              <div className="form-group">
-                <label className="form-label">Credit Amount</label>
-                <input
-                  type="number"
-                  name="creditAmount"
-                  className="form-input"
-                  placeholder="Enter credit amount"
-                  value={formData.creditAmount}
-                  onChange={handleChange}
-                  min="0"
-                  step="0.01"
-                />
-              </div>
+            <div className="form-group">
+              <label className="form-label required">Amount</label>
+              <input
+                type="number"
+                name="amount"
+                className="form-input"
+                placeholder="Enter amount"
+                value={formData.amount}
+                onChange={handleChange}
+                min="0"
+                step="0.01"
+              />
             </div>
 
             <div className="form-group">

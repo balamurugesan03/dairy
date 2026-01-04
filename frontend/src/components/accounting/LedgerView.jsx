@@ -105,7 +105,7 @@ const LedgerView = () => {
             <span className="info-value">{ledger.ledgerName}</span>
           </div>
           <div className="info-item">
-            <span className="info-label">Ledger Type</span>
+            <span className="info-label">Account Group</span>
             <span className="info-value">
               <span className="tag tag-info">{ledger.ledgerType}</span>
             </span>

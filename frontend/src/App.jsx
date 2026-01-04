@@ -55,6 +55,7 @@ import FinancialReports from './components/reports/FinancialReports';
 import SalesReportView from './components/reports/SalesReportView';
 import StockReportView from './components/reports/StockReportView';
 import SubsidyReport from './components/reports/SubsidyReport';
+import DayBook from './components/reports/DayBook';
 
 // Additional Module Components
 import WarrantyList from './components/additional/WarrantyList';
@@ -160,6 +161,7 @@ function App() {
                 <Route path="sales" element={<SalesReportView />} />
                 <Route path="stock" element={<StockReportView />} />
                 <Route path="subsidy" element={<SubsidyReport />} />
+                <Route path="daybook" element={<DayBook />} />
               </Route>
 
               {/* Warranty Routes */}

@@ -23,6 +23,8 @@ const LedgerList = () => {
     search: '',
     ledgerType: ''
   });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10);
 
   useEffect(() => {
     fetchLedgers();
@@ -77,7 +79,7 @@ const LedgerList = () => {
   const validateForm = () => {
     const newErrors = {};
     if (!formData.ledgerName) newErrors.ledgerName = 'Ledger name is required';
-    if (!formData.ledgerType) newErrors.ledgerType = 'Ledger type is required';
+    if (!formData.ledgerType) newErrors.ledgerType = 'Account group is required';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -106,6 +108,18 @@ const LedgerList = () => {
       fetchLedgers();
     } catch (error) {
       message.error(error.message || 'Failed to save ledger');
+    }
+  };
+
+  const handleDelete = async (ledger) => {
+    if (window.confirm(`Are you sure you want to delete ledger "${ledger.ledgerName}"? This will deactivate the ledger.`)) {
+      try {
+        await ledgerAPI.delete(ledger._id);
+        message.success('Ledger deleted successfully');
+        fetchLedgers();
+      } catch (error) {
+        message.error(error.message || 'Failed to delete ledger');
+      }
     }
   };
 
@@ -168,6 +182,21 @@ const LedgerList = () => {
     return true;
   });
 
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredLedgers.length / itemsPerPage);
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentLedgers = filteredLedgers.slice(indexOfFirstItem, indexOfLastItem);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters.search, filters.ledgerType]);
+
+  const handlePageChange = (pageNumber) => {
+    setCurrentPage(pageNumber);
+  };
+
   return (
     <div>
       <PageHeader
@@ -199,7 +228,7 @@ const LedgerList = () => {
           value={filters.ledgerType}
           onChange={(e) => setFilters(prev => ({ ...prev, ledgerType: e.target.value }))}
         >
-          <option value="">All Types</option>
+          <option value="">All Account Groups</option>
 
           <optgroup label="Income">
             <option value="Sales A/c">Sales A/c</option>
@@ -274,7 +303,7 @@ const LedgerList = () => {
             <thead>
               <tr>
                 <th>Ledger Name</th>
-                <th>Ledger Type</th>
+                <th>Account Group</th>
                 <th>Opening Balance</th>
                 <th>Current Balance</th>
                 <th>Linked Entity</th>
@@ -282,7 +311,7 @@ const LedgerList = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredLedgers.map((ledger) => (
+              {currentLedgers.map((ledger) => (
                 <tr key={ledger._id}>
                   <td>{ledger.ledgerName}</td>
                   <td>
@@ -311,12 +340,69 @@ const LedgerList = () => {
                       >
                         Edit
                       </button>
+                      <button
+                        className="btn-link btn-delete"
+                        onClick={() => handleDelete(ledger)}
+                      >
+                        Delete
+                      </button>
                     </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        )}
+
+        {!loading && filteredLedgers.length > 0 && (
+          <div className="pagination-container">
+            <div className="pagination-info">
+              Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, filteredLedgers.length)} of {filteredLedgers.length} ledgers
+            </div>
+            <div className="pagination-controls">
+              <button
+                className="btn-pagination"
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </button>
+
+              {[...Array(totalPages)].map((_, index) => {
+                const pageNumber = index + 1;
+                // Show first page, last page, current page, and pages around current
+                if (
+                  pageNumber === 1 ||
+                  pageNumber === totalPages ||
+                  (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 1)
+                ) {
+                  return (
+                    <button
+                      key={pageNumber}
+                      className={`btn-pagination ${currentPage === pageNumber ? 'active' : ''}`}
+                      onClick={() => handlePageChange(pageNumber)}
+                    >
+                      {pageNumber}
+                    </button>
+                  );
+                } else if (
+                  pageNumber === currentPage - 2 ||
+                  pageNumber === currentPage + 2
+                ) {
+                  return <span key={pageNumber}>...</span>;
+                }
+                return null;
+              })}
+
+              <button
+                className="btn-pagination"
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+              >
+                Next
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
@@ -343,7 +429,7 @@ const LedgerList = () => {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label required">Ledger Type</label>
+                  <label className="form-label required">Account Group</label>
                   <select
                     name="ledgerType"
                     className={`form-select ${errors.ledgerType ? 'error' : ''}`}
@@ -401,35 +487,31 @@ const LedgerList = () => {
                   {errors.ledgerType && <div className="form-error">{errors.ledgerType}</div>}
                 </div>
 
-                {!editingLedger && (
-                  <>
-                    <div className="form-group">
-                      <label className="form-label">Opening Balance</label>
-                      <input
-                        type="number"
-                        name="openingBalance"
-                        className="form-input"
-                        placeholder="Enter opening balance"
-                        value={formData.openingBalance}
-                        onChange={handleChange}
-                        step="0.01"
-                      />
-                    </div>
+                <div className="form-group">
+                  <label className="form-label">Opening Balance</label>
+                  <input
+                    type="number"
+                    name="openingBalance"
+                    className="form-input"
+                    placeholder="Enter opening balance"
+                    value={formData.openingBalance}
+                    onChange={handleChange}
+                    step="0.01"
+                  />
+                </div>
 
-                    <div className="form-group">
-                      <label className="form-label">Opening Balance Type</label>
-                      <select
-                        name="openingBalanceType"
-                        className="form-select"
-                        value={formData.openingBalanceType}
-                        onChange={handleChange}
-                      >
-                        <option value="Dr">Debit (Dr)</option>
-                        <option value="Cr">Credit (Cr)</option>
-                      </select>
-                    </div>
-                  </>
-                )}
+                <div className="form-group">
+                  <label className="form-label">Opening Balance Type</label>
+                  <select
+                    name="openingBalanceType"
+                    className="form-select"
+                    value={formData.openingBalanceType}
+                    onChange={handleChange}
+                  >
+                    <option value="Dr">Debit (Dr)</option>
+                    <option value="Cr">Credit (Cr)</option>
+                  </select>
+                </div>
 
                 <div className="form-group">
                   <label className="form-label">Parent Group</label>

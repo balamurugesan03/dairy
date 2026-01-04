@@ -100,20 +100,7 @@ const ReceiptVoucher = () => {
     }
   };
 
-  const cashBankLedgers = ledgers.filter(l =>
-    l.ledgerType === 'Cash' || l.ledgerType === 'Bank'
-  );
-
-  const partyLedgers = ledgers.filter(l =>
-    l.ledgerType === 'Party' || l.ledgerType === 'Income'
-  );
-
-  const debitOptions = cashBankLedgers.map(ledger => ({
-    label: `${ledger.ledgerName} (${ledger.ledgerType})`,
-    value: ledger._id
-  }));
-
-  const creditOptions = partyLedgers.map(ledger => ({
+  const ledgerOptions = ledgers.map(ledger => ({
     label: `${ledger.ledgerName} (${ledger.ledgerType})`,
     value: ledger._id
   }));
@@ -142,8 +129,8 @@ const ReceiptVoucher = () => {
           <div className="form-group">
             <label className="form-label required">Debit (Cash/Bank Received In)</label>
             <SearchableSelect
-              options={debitOptions}
-              placeholder="Select cash or bank account"
+              options={ledgerOptions}
+              placeholder="Select ledger"
               value={formData.debitLedgerId}
               onChange={(value) => {
                 setFormData(prev => ({ ...prev, debitLedgerId: value }));
@@ -159,8 +146,8 @@ const ReceiptVoucher = () => {
           <div className="form-group">
             <label className="form-label required">Credit (Party/Income Account)</label>
             <SearchableSelect
-              options={creditOptions}
-              placeholder="Select party or income account"
+              options={ledgerOptions}
+              placeholder="Select ledger"
               value={formData.creditLedgerId}
               onChange={(value) => {
                 setFormData(prev => ({ ...prev, creditLedgerId: value }));

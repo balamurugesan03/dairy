@@ -54,7 +54,7 @@ const OutstandingReport = () => {
 
   const exportData = ledgers.map(ledger => ({
     'Ledger Name': ledger.ledgerName,
-    'Ledger Type': ledger.ledgerType,
+    'Account Group': ledger.ledgerType,
     'Balance Type': ledger.balanceType === 'Dr' ? 'Receivable' : 'Payable',
     'Outstanding Amount': ledger.currentBalance,
     'Contact': ledger.linkedEntity?.entityType || '-'
@@ -107,7 +107,7 @@ const OutstandingReport = () => {
               <thead>
                 <tr>
                   <th>Ledger Name</th>
-                  <th>Ledger Type</th>
+                  <th>Account Group</th>
                   <th>Balance Type</th>
                   <th style={{ textAlign: 'right' }}>Outstanding Amount</th>
                   <th>Contact</th>

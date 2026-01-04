@@ -90,6 +90,7 @@ const MainLayout = () => {
       icon: 'file',
       label: 'Reports',
       children: [
+        { key: '/reports/daybook', label: 'Day Book' },
         { key: '/reports/rd', label: 'Receipts & Disbursement' },
         { key: '/reports/trading', label: 'Trading Account' },
         { key: '/reports/pl', label: 'Profit & Loss' },
