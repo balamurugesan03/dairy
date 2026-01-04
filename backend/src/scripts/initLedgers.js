@@ -56,6 +56,19 @@ const defaultLedgers = [
     balanceType: 'Dr',
     parentGroup: 'Direct Expenses',
     status: 'Active'
+  },
+  {
+    ledgerName: 'GST Input',
+    ledgerType: 'Other Receivable',
+    linkedEntity: {
+      entityType: 'None'
+    },
+    openingBalance: 0,
+    openingBalanceType: 'Dr',
+    currentBalance: 0,
+    balanceType: 'Dr',
+    parentGroup: 'Tax Credits',
+    status: 'Active'
   }
 ];
 

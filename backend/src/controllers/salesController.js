@@ -1,5 +1,6 @@
 import Sales from '../models/Sales.js';
 import Farmer from '../models/Farmer.js';
+import Customer from '../models/Customer.js';
 import mongoose from 'mongoose';
 import { createBulkStockTransactions, reverseStockTransaction } from '../utils/stockHelper.js';
 import { createSalesVoucher } from '../utils/accountingHelper.js';
@@ -31,13 +32,28 @@ export const createSale = async (req, res) => {
     // Generate bill number
     saleData.billNumber = await generateBillNumber();
 
-    // Get old balance if customer is a farmer
-    if (saleData.customerId) {
-      const farmer = await Farmer.findById(saleData.customerId).populate('ledgerId');
-      if (farmer && farmer.ledgerId) {
-        saleData.oldBalance = farmer.ledgerId.currentBalance;
-        saleData.customerName = farmer.personalDetails.name;
-        saleData.customerPhone = farmer.personalDetails.phone;
+    // Set customerModel based on customerType
+    if (saleData.customerType === 'Farmer') {
+      saleData.customerModel = 'Farmer';
+      // Get old balance if customer is a farmer
+      if (saleData.customerId) {
+        const farmer = await Farmer.findById(saleData.customerId).populate('ledgerId');
+        if (farmer && farmer.ledgerId) {
+          saleData.oldBalance = farmer.ledgerId.currentBalance;
+          saleData.customerName = farmer.personalDetails.name;
+          saleData.customerPhone = farmer.personalDetails.phone;
+        }
+      }
+    } else if (saleData.customerType === 'Customer') {
+      saleData.customerModel = 'Customer';
+      // Get old balance if customer is a registered customer
+      if (saleData.customerId) {
+        const customer = await Customer.findById(saleData.customerId);
+        if (customer) {
+          saleData.oldBalance = customer.openingBalance || 0;
+          saleData.customerName = customer.name;
+          saleData.customerPhone = customer.phone;
+        }
       }
     }
 
@@ -135,7 +151,9 @@ export const getAllSales = async (req, res) => {
       .sort({ billDate: -1 })
       .skip(skip)
       .limit(parseInt(limit))
-      .populate('customerId', 'farmerId farmerNumber personalDetails');
+      .populate('customerId', 'farmerId farmerNumber personalDetails customerId name phone')
+      .populate('collectionCenterId', 'centerName centerType')
+      .populate('subsidyId', 'subsidyName subsidyType');
 
     const total = await Sales.countDocuments(query);
 
@@ -163,7 +181,9 @@ export const getSaleById = async (req, res) => {
     const sale = await Sales.findById(req.params.id)
       .populate('customerId')
       .populate('items.itemId')
-      .populate('ledgerEntries');
+      .populate('ledgerEntries')
+      .populate('collectionCenterId')
+      .populate('subsidyId');
 
     if (!sale) {
       return res.status(404).json({

@@ -14,12 +14,16 @@ const salesSchema = new mongoose.Schema({
   },
   customerType: {
     type: String,
-    enum: ['Farmer', 'Other'],
+    enum: ['Farmer', 'Customer', 'Other'],
     default: 'Other'
   },
   customerId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Farmer'
+    refPath: 'customerModel'
+  },
+  customerModel: {
+    type: String,
+    enum: ['Farmer', 'Customer']
   },
   customerName: {
     type: String,
@@ -84,9 +88,17 @@ const salesSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  collectionCenterId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CollectionCenter'
+  },
+  subsidyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Subsidy'
+  },
   paymentMode: {
     type: String,
-    enum: ['Cash', 'Bank', 'Advance'],
+    enum: ['Cash', 'Credit', 'Bank'],
     default: 'Cash'
   },
   paidAmount: {

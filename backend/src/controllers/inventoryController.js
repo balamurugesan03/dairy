@@ -1,10 +1,13 @@
 import Item from '../models/Item.js';
 import StockTransaction from '../models/StockTransaction.js';
+import Ledger from '../models/Ledger.js';
+import Supplier from '../models/Supplier.js';
 import {
   createStockTransaction,
   getItemStockHistory,
   getStockReport
 } from '../utils/stockHelper.js';
+import { createPurchaseVoucher } from '../utils/accountingHelper.js';
 
 // Create new item
 export const createItem = async (req, res) => {
@@ -22,6 +25,25 @@ export const createItem = async (req, res) => {
 
     // Set currentBalance same as openingBalance initially
     itemData.currentBalance = itemData.openingBalance || 0;
+
+    // Auto-create purchase ledger for this item
+    const purchaseLedger = new Ledger({
+      ledgerName: `${itemData.itemName} Purchase A/c`,
+      ledgerType: 'Purchases A/c',
+      linkedEntity: {
+        entityType: 'None'
+      },
+      openingBalance: 0,
+      openingBalanceType: 'Dr',
+      currentBalance: 0,
+      balanceType: 'Dr',
+      parentGroup: 'Purchase Accounts',
+      status: 'Active'
+    });
+    await purchaseLedger.save();
+
+    // Link the purchase ledger to the item
+    itemData.purchaseLedger = purchaseLedger._id;
 
     const item = new Item(itemData);
     await item.save();
@@ -211,7 +233,11 @@ export const stockIn = async (req, res) => {
       subsidyId,
       subsidyAmount,
       referenceType,
-      notes
+      notes,
+      // New fields for accounting
+      supplierId,
+      paymentMode, // 'Cash' or 'Adjustment'
+      paidAmount
     } = req.body;
 
     // Validate that items array exists and is not empty
@@ -232,7 +258,23 @@ export const stockIn = async (req, res) => {
       }
     }
 
+    // Fetch supplier details if provided
+    let supplierName = '';
+    if (supplierId) {
+      const supplier = await Supplier.findById(supplierId);
+      if (supplier) {
+        supplierName = supplier.name;
+      }
+    }
+
+    // Calculate total amount
+    let totalAmount = 0;
+    for (const item of items) {
+      totalAmount += parseFloat(item.quantity) * parseFloat(item.rate || 0);
+    }
+
     const transactions = [];
+    let voucher = null;
 
     // Create transaction for each item
     for (const item of items) {
@@ -249,15 +291,57 @@ export const stockIn = async (req, res) => {
         issueCentre: issueCentre || null,
         subsidyId: subsidyId || null,
         subsidyAmount: parseFloat(subsidyAmount) || 0,
+        supplierId: supplierId || null,
+        supplierName: supplierName,
+        paymentMode: paymentMode || 'N/A',
+        paidAmount: parseFloat(paidAmount) || 0,
+        totalAmount: totalAmount,
         notes: notes || null
       });
       transactions.push(transaction);
     }
 
+    // Create accounting voucher if supplier and payment mode are provided
+    if (supplierId && paymentMode && paymentMode !== 'N/A') {
+      try {
+        voucher = await createPurchaseVoucher({
+          items: items.map(item => ({
+            itemId: item.itemId,
+            quantity: parseFloat(item.quantity),
+            rate: parseFloat(item.rate) || 0
+          })),
+          supplierId,
+          supplierName,
+          paymentMode,
+          paidAmount: parseFloat(paidAmount) || 0,
+          totalAmount,
+          purchaseDate: purchaseDate ? new Date(purchaseDate) : new Date(),
+          invoiceNumber,
+          referenceId: transactions[0]._id // Link to first transaction
+        });
+
+        // Update transactions with voucher reference
+        for (const transaction of transactions) {
+          transaction.voucherId = voucher._id;
+          await transaction.save();
+        }
+      } catch (voucherError) {
+        console.error('Error creating voucher:', voucherError);
+        // Continue even if voucher creation fails
+      }
+    }
+
     res.status(201).json({
       success: true,
       message: 'Stock added successfully',
-      data: transactions
+      data: {
+        transactions,
+        voucher: voucher ? {
+          _id: voucher._id,
+          voucherNumber: voucher.voucherNumber,
+          voucherType: voucher.voucherType
+        } : null
+      }
     });
   } catch (error) {
     console.error('Error adding stock:', error);

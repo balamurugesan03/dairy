@@ -66,6 +66,35 @@ const stockTransactionSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
+  // Supplier and Payment Info (for Purchase transactions)
+  supplierId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Supplier'
+  },
+  supplierName: {
+    type: String,
+    trim: true
+  },
+  paymentMode: {
+    type: String,
+    enum: ['Cash', 'Adjustment', 'N/A'],
+    default: 'N/A'
+  },
+  paidAmount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  totalAmount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  // Accounting Integration
+  voucherId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Voucher'
+  },
   notes: {
     type: String,
     trim: true
