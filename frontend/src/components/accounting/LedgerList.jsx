@@ -3,7 +3,27 @@ import { message } from '../../utils/toast';
 import { useNavigate } from 'react-router-dom';
 import { ledgerAPI } from '../../services/api';
 import PageHeader from '../common/PageHeader';
-import './LedgerList.css';
+import {
+  Box,
+  Button,
+  Group,
+  TextInput,
+  Select,
+  Table,
+  Paper,
+  Text,
+  LoadingOverlay,
+  Modal,
+  Badge,
+  Pagination,
+  Grid,
+  Stack,
+  Divider,
+  Title,
+  Container
+} from '@mantine/core';
+import { useForm } from '@mantine/form';
+import { IconSearch, IconPlus, IconEye, IconEdit, IconTrash, IconFilter } from '@tabler/icons-react';
 
 const LedgerList = () => {
   const navigate = useNavigate();
@@ -11,20 +31,26 @@ const LedgerList = () => {
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingLedger, setEditingLedger] = useState(null);
-  const [formData, setFormData] = useState({
-    ledgerName: '',
-    ledgerType: '',
-    openingBalance: '',
-    openingBalanceType: 'Dr',
-    parentGroup: ''
-  });
-  const [errors, setErrors] = useState({});
   const [filters, setFilters] = useState({
     search: '',
     ledgerType: ''
   });
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
+
+  const form = useForm({
+    initialValues: {
+      ledgerName: '',
+      ledgerType: '',
+      openingBalance: '',
+      openingBalanceType: 'Dr',
+      parentGroup: ''
+    },
+    validate: {
+      ledgerName: (value) => value.trim().length === 0 ? 'Ledger name is required' : null,
+      ledgerType: (value) => value.trim().length === 0 ? 'Account group is required' : null,
+    }
+  });
 
   useEffect(() => {
     fetchLedgers();
@@ -44,57 +70,27 @@ const LedgerList = () => {
 
   const handleAdd = () => {
     setEditingLedger(null);
-    setFormData({
-      ledgerName: '',
-      ledgerType: '',
-      openingBalance: '',
-      openingBalanceType: 'Dr',
-      parentGroup: ''
-    });
-    setErrors({});
+    form.reset();
     setModalVisible(true);
   };
 
   const handleEdit = (ledger) => {
     setEditingLedger(ledger);
-    setFormData({
+    form.setValues({
       ledgerName: ledger.ledgerName || '',
       ledgerType: ledger.ledgerType || '',
-      openingBalance: ledger.openingBalance || '',
+      openingBalance: ledger.openingBalance?.toString() || '',
       openingBalanceType: ledger.openingBalanceType || 'Dr',
       parentGroup: ledger.parentGroup || ''
     });
-    setErrors({});
     setModalVisible(true);
   };
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
-    }
-  };
-
-  const validateForm = () => {
-    const newErrors = {};
-    if (!formData.ledgerName) newErrors.ledgerName = 'Ledger name is required';
-    if (!formData.ledgerType) newErrors.ledgerType = 'Account group is required';
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!validateForm()) {
-      return;
-    }
-
+  const handleSubmit = async (values) => {
     try {
       const payload = {
-        ...formData,
-        openingBalance: formData.openingBalance ? parseFloat(formData.openingBalance) : 0
+        ...values,
+        openingBalance: values.openingBalance ? parseFloat(values.openingBalance) : 0
       };
 
       if (editingLedger) {
@@ -125,52 +121,99 @@ const LedgerList = () => {
 
   const getLedgerTypeColor = (type) => {
     const colorMap = {
-      // Income Types - Cyan/Green shades
-      'Sales A/c': 'tag-cyan',
-      'Trade Income': 'tag-cyan',
-      'Miscellaneous Income': 'tag-cyan',
-      'Other Revenue': 'tag-cyan',
-      'Grants & Aid': 'tag-cyan',
-      'Subsidies': 'tag-cyan',
-      // Expense Types - Red/Danger shades
-      'Purchases A/c': 'tag-danger',
-      'Trade Expenses': 'tag-danger',
-      'Establishment Charges': 'tag-danger',
-      'Miscellaneous Expenses': 'tag-danger',
-      // Party Types - Info
-      'Accounts Due To (Sundry Creditors)': 'tag-info',
-      // Liability Types - Magenta
-      'Other Payable': 'tag-magenta',
-      'Other Liabilities': 'tag-magenta',
-      'Deposit A/c': 'tag-magenta',
-      'Contingency Fund': 'tag-magenta',
-      'Education Fund': 'tag-magenta',
-      // Asset Types - Purple
-      'Fixed Assets': 'tag-purple',
-      'Movable Assets': 'tag-purple',
-      'Immovable Assets': 'tag-purple',
-      'Other Assets': 'tag-purple',
-      'Other Receivable': 'tag-purple',
-      // Investment Types - Blue
-      'Investment A/c': 'tag-blue',
-      'Other Investment': 'tag-blue',
-      'Government Securities': 'tag-blue',
-      // Capital Types - Blue
-      'Share Capital': 'tag-blue',
-      // Final Accounts - Warning
-      'Profit & Loss A/c': 'tag-warning',
-      // Legacy/Basic Types
-      'Party': 'tag-info',
-      'Bank': 'tag-success',
-      'Cash': 'tag-warning',
-      'Income': 'tag-cyan',
-      'Expense': 'tag-danger',
-      'Asset': 'tag-purple',
-      'Liability': 'tag-magenta',
-      'Capital': 'tag-blue'
+      'Sales A/c': 'cyan',
+      'Trade Income': 'teal',
+      'Miscellaneous Income': 'green',
+      'Other Revenue': 'lime',
+      'Grants & Aid': 'teal',
+      'Subsidies': 'green',
+      'Purchases A/c': 'red',
+      'Trade Expenses': 'orange',
+      'Establishment Charges': 'pink',
+      'Miscellaneous Expenses': 'red',
+      'Accounts Due To (Sundry Creditors)': 'blue',
+      'Other Payable': 'violet',
+      'Other Liabilities': 'grape',
+      'Deposit A/c': 'violet',
+      'Contingency Fund': 'grape',
+      'Education Fund': 'violet',
+      'Fixed Assets': 'grape',
+      'Movable Assets': 'violet',
+      'Immovable Assets': 'grape',
+      'Other Assets': 'violet',
+      'Other Receivable': 'grape',
+      'Investment A/c': 'indigo',
+      'Other Investment': 'blue',
+      'Government Securities': 'indigo',
+      'Share Capital': 'blue',
+      'Profit & Loss A/c': 'yellow',
+      'Party': 'blue',
+      'Bank': 'green',
+      'Cash': 'yellow',
+      'Income': 'teal',
+      'Expense': 'red',
+      'Asset': 'grape',
+      'Liability': 'violet',
+      'Capital': 'blue'
     };
-    return colorMap[type] || 'tag-default';
+    return colorMap[type] || 'gray';
   };
+
+  const ledgerTypeOptions = [
+    { value: '', label: 'All Account Groups' },
+    { group: 'Income', items: [
+      { value: 'Sales A/c', label: 'Sales A/c' },
+      { value: 'Trade Income', label: 'Trade Income' },
+      { value: 'Miscellaneous Income', label: 'Miscellaneous Income' },
+      { value: 'Other Revenue', label: 'Other Revenue' },
+      { value: 'Grants & Aid', label: 'Grants & Aid' },
+      { value: 'Subsidies', label: 'Subsidies' }
+    ]},
+    { group: 'Expense', items: [
+      { value: 'Purchases A/c', label: 'Purchases A/c' },
+      { value: 'Trade Expenses', label: 'Trade Expenses' },
+      { value: 'Establishment Charges', label: 'Establishment Charges' },
+      { value: 'Miscellaneous Expenses', label: 'Miscellaneous Expenses' }
+    ]},
+    { group: 'Party', items: [
+      { value: 'Accounts Due To (Sundry Creditors)', label: 'Accounts Due To (Sundry Creditors)' }
+    ]},
+    { group: 'Liability', items: [
+      { value: 'Other Payable', label: 'Other Payable' },
+      { value: 'Other Liabilities', label: 'Other Liabilities' },
+      { value: 'Deposit A/c', label: 'Deposit A/c' },
+      { value: 'Contingency Fund', label: 'Contingency Fund' },
+      { value: 'Education Fund', label: 'Education Fund' }
+    ]},
+    { group: 'Asset', items: [
+      { value: 'Fixed Assets', label: 'Fixed Assets' },
+      { value: 'Movable Assets', label: 'Movable Assets' },
+      { value: 'Immovable Assets', label: 'Immovable Assets' },
+      { value: 'Other Assets', label: 'Other Assets' },
+      { value: 'Other Receivable', label: 'Other Receivable' }
+    ]},
+    { group: 'Investment', items: [
+      { value: 'Investment A/c', label: 'Investment A/c' },
+      { value: 'Other Investment', label: 'Other Investment' },
+      { value: 'Government Securities', label: 'Government Securities' }
+    ]},
+    { group: 'Capital', items: [
+      { value: 'Share Capital', label: 'Share Capital' }
+    ]},
+    { group: 'Final Accounts', items: [
+      { value: 'Profit & Loss A/c', label: 'Profit & Loss A/c' }
+    ]},
+    { group: 'Legacy/Basic Types', items: [
+      { value: 'Party', label: 'Party' },
+      { value: 'Bank', label: 'Bank' },
+      { value: 'Cash', label: 'Cash' },
+      { value: 'Income', label: 'Income' },
+      { value: 'Expense', label: 'Expense' },
+      { value: 'Asset', label: 'Asset' },
+      { value: 'Liability', label: 'Liability' },
+      { value: 'Capital', label: 'Capital' }
+    ]}
+  ];
 
   const filteredLedgers = ledgers.filter(ledger => {
     if (filters.search && !ledger.ledgerName.toLowerCase().includes(filters.search.toLowerCase())) {
@@ -182,367 +225,261 @@ const LedgerList = () => {
     return true;
   });
 
-  // Pagination calculations
   const totalPages = Math.ceil(filteredLedgers.length / itemsPerPage);
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentLedgers = filteredLedgers.slice(indexOfFirstItem, indexOfLastItem);
 
-  // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [filters.search, filters.ledgerType]);
 
-  const handlePageChange = (pageNumber) => {
-    setCurrentPage(pageNumber);
-  };
+  const rows = currentLedgers.map((ledger) => (
+    <tr key={ledger._id}>
+      <td>{ledger.ledgerName}</td>
+      <td>
+        <Badge color={getLedgerTypeColor(ledger.ledgerType)} variant="light">
+          {ledger.ledgerType}
+        </Badge>
+      </td>
+      <td>
+        ₹{ledger.openingBalance?.toFixed(2) || 0} {ledger.openingBalanceType || ''}
+      </td>
+      <td>
+        <Badge color={ledger.balanceType === 'Dr' ? 'red' : 'green'} variant="light">
+          ₹{ledger.currentBalance?.toFixed(2) || 0} {ledger.balanceType || ''}
+        </Badge>
+      </td>
+      <td>{ledger.linkedEntity?.entityType || '-'}</td>
+      <td>
+        <Group spacing="xs">
+          <Button
+            size="xs"
+            variant="subtle"
+            color="blue"
+            leftSection={<IconEye size={14} />}
+            onClick={() => navigate(`/accounting/ledgers/view/${ledger._id}`)}
+          >
+            View
+          </Button>
+          <Button
+            size="xs"
+            variant="subtle"
+            color="yellow"
+            leftSection={<IconEdit size={14} />}
+            onClick={() => handleEdit(ledger)}
+          >
+            Edit
+          </Button>
+          <Button
+            size="xs"
+            variant="subtle"
+            color="red"
+            leftSection={<IconTrash size={14} />}
+            onClick={() => handleDelete(ledger)}
+          >
+            Delete
+          </Button>
+        </Group>
+      </td>
+    </tr>
+  ));
 
   return (
-    <div>
+    <Container size="xl" py="md">
       <PageHeader
         title="Ledger Management"
         subtitle="View and manage accounting ledgers"
       />
 
-      <div className="ledger-actions">
-        <button
-          className="btn btn-primary"
-          onClick={handleAdd}
-        >
-          + Add Ledger
-        </button>
-      </div>
+      <Paper p="md" mb="md" withBorder>
+        <Group position="apart" mb="md">
+          <Button
+            leftSection={<IconPlus size={16} />}
+            onClick={handleAdd}
+            color="blue"
+          >
+            Add Ledger
+          </Button>
+        </Group>
 
-      <div className="filters-container">
-        <div className="search-container">
-          <input
-            type="text"
-            className="form-input"
-            placeholder="Search by ledger name"
-            value={filters.search}
-            onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-          />
-        </div>
-        <select
-          className="form-select"
-          value={filters.ledgerType}
-          onChange={(e) => setFilters(prev => ({ ...prev, ledgerType: e.target.value }))}
-        >
-          <option value="">All Account Groups</option>
+        <Grid gutter="md" mb="md">
+          <Grid.Col xs={12} md={6}>
+            <TextInput
+              placeholder="Search by ledger name"
+              value={filters.search}
+              onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+              icon={<IconSearch size={16} />}
+            />
+          </Grid.Col>
+          <Grid.Col xs={12} md={6}>
+            <Select
+              placeholder="Filter by account group"
+              data={ledgerTypeOptions.flatMap(opt => 
+                opt.group 
+                  ? [{ group: opt.group, items: opt.items }]
+                  : [{ value: opt.value, label: opt.label }]
+              )}
+              value={filters.ledgerType}
+              onChange={(value) => setFilters(prev => ({ ...prev, ledgerType: value }))}
+              icon={<IconFilter size={16} />}
+              clearable
+            />
+          </Grid.Col>
+        </Grid>
 
-          <optgroup label="Income">
-            <option value="Sales A/c">Sales A/c</option>
-            <option value="Trade Income">Trade Income</option>
-            <option value="Miscellaneous Income">Miscellaneous Income</option>
-            <option value="Other Revenue">Other Revenue</option>
-            <option value="Grants & Aid">Grants & Aid</option>
-            <option value="Subsidies">Subsidies</option>
-          </optgroup>
+        <Paper withBorder>
+          <LoadingOverlay visible={loading} overlayProps={{ blur: 2 }} />
+          
+          {!loading && filteredLedgers.length === 0 ? (
+            <Box p="xl" ta="center">
+              <Text color="dimmed">No ledgers found</Text>
+            </Box>
+          ) : (
+            <>
+              <Table striped highlightOnHover>
+                <thead>
+                  <tr>
+                    <th>Ledger Name</th>
+                    <th>Account Group</th>
+                    <th>Opening Balance</th>
+                    <th>Current Balance</th>
+                    <th>Linked Entity</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>{rows}</tbody>
+              </Table>
 
-          <optgroup label="Expense">
-            <option value="Purchases A/c">Purchases A/c</option>
-            <option value="Trade Expenses">Trade Expenses</option>
-            <option value="Establishment Charges">Establishment Charges</option>
-            <option value="Miscellaneous Expenses">Miscellaneous Expenses</option>
-          </optgroup>
+              {totalPages > 1 && (
+                <Box p="md">
+                  <Group position="apart">
+                    <Text size="sm" color="dimmed">
+                      Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, filteredLedgers.length)} of {filteredLedgers.length} ledgers
+                    </Text>
+                    <Pagination
+                      value={currentPage}
+                      onChange={setCurrentPage}
+                      total={totalPages}
+                      size="sm"
+                    />
+                  </Group>
+                </Box>
+              )}
+            </>
+          )}
+        </Paper>
+      </Paper>
 
-          <optgroup label="Party">
-            <option value="Accounts Due To (Sundry Creditors)">Accounts Due To (Sundry Creditors)</option>
-          </optgroup>
+      <Modal
+        opened={modalVisible}
+        onClose={() => setModalVisible(false)}
+        title={<Title order={3}>{editingLedger ? 'Edit Ledger' : 'Add Ledger'}</Title>}
+        size="lg"
+      >
+        <form onSubmit={form.onSubmit(handleSubmit)}>
+          <Stack spacing="md">
+            <TextInput
+              label="Ledger Name"
+              placeholder="Enter ledger name"
+              required
+              {...form.getInputProps('ledgerName')}
+            />
 
-          <optgroup label="Liability">
-            <option value="Other Payable">Other Payable</option>
-            <option value="Other Liabilities">Other Liabilities</option>
-            <option value="Deposit A/c">Deposit A/c</option>
-            <option value="Contingency Fund">Contingency Fund</option>
-            <option value="Education Fund">Education Fund</option>
-          </optgroup>
+            <Select
+              label="Account Group"
+              placeholder="Select ledger type"
+              required
+              data={[
+                { value: '', label: 'Select Ledger' },
+                { group: 'Income', items: [
+                  { value: 'Sales A/c', label: 'Sales A/c' },
+                  { value: 'Trade Income', label: 'Trade Income' },
+                  { value: 'Miscellaneous Income', label: 'Miscellaneous Income' },
+                  { value: 'Other Revenue', label: 'Other Revenue' },
+                  { value: 'Grants & Aid', label: 'Grants & Aid' },
+                  { value: 'Subsidies', label: 'Subsidies' }
+                ]},
+                { group: 'Expense', items: [
+                  { value: 'Purchases A/c', label: 'Purchases A/c' },
+                  { value: 'Trade Expenses', label: 'Trade Expenses' },
+                  { value: 'Establishment Charges', label: 'Establishment Charges' },
+                  { value: 'Miscellaneous Expenses', label: 'Miscellaneous Expenses' }
+                ]},
+                { group: 'Party', items: [
+                  { value: 'Accounts Due To (Sundry Creditors)', label: 'Accounts Due To (Sundry Creditors)' }
+                ]},
+                { group: 'Liability', items: [
+                  { value: 'Other Payable', label: 'Other Payable' },
+                  { value: 'Other Liabilities', label: 'Other Liabilities' },
+                  { value: 'Deposit A/c', label: 'Deposit A/c' },
+                  { value: 'Contingency Fund', label: 'Contingency Fund' },
+                  { value: 'Education Fund', label: 'Education Fund' }
+                ]},
+                { group: 'Asset', items: [
+                  { value: 'Fixed Assets', label: 'Fixed Assets' },
+                  { value: 'Movable Assets', label: 'Movable Assets' },
+                  { value: 'Immovable Assets', label: 'Immovable Assets' },
+                  { value: 'Other Assets', label: 'Other Assets' },
+                  { value: 'Other Receivable', label: 'Other Receivable' }
+                ]},
+                { group: 'Investment', items: [
+                  { value: 'Investment A/c', label: 'Investment A/c' },
+                  { value: 'Other Investment', label: 'Other Investment' },
+                  { value: 'Government Securities', label: 'Government Securities' }
+                ]},
+                { group: 'Capital', items: [
+                  { value: 'Share Capital', label: 'Share Capital' }
+                ]},
+                { group: 'Final Accounts', items: [
+                  { value: 'Profit & Loss A/c', label: 'Profit & Loss A/c' }
+                ]}
+              ]}
+              {...form.getInputProps('ledgerType')}
+            />
 
-          <optgroup label="Asset">
-            <option value="Fixed Assets">Fixed Assets</option>
-            <option value="Movable Assets">Movable Assets</option>
-            <option value="Immovable Assets">Immovable Assets</option>
-            <option value="Other Assets">Other Assets</option>
-            <option value="Other Receivable">Other Receivable</option>
-          </optgroup>
+            <Grid>
+              <Grid.Col span={8}>
+                <TextInput
+                  label="Opening Balance"
+                  placeholder="Enter opening balance"
+                  type="number"
+                  step="0.01"
+                  {...form.getInputProps('openingBalance')}
+                />
+              </Grid.Col>
+              <Grid.Col span={4}>
+                <Select
+                  label="Type"
+                  data={[
+                    { value: 'Dr', label: 'Debit (Dr)' },
+                    { value: 'Cr', label: 'Credit (Cr)' }
+                  ]}
+                  {...form.getInputProps('openingBalanceType')}
+                />
+              </Grid.Col>
+            </Grid>
 
-          <optgroup label="Investment">
-            <option value="Investment A/c">Investment A/c</option>
-            <option value="Other Investment">Other Investment</option>
-            <option value="Government Securities">Government Securities</option>
-          </optgroup>
+            <TextInput
+              label="Parent Group"
+              placeholder="Enter parent group (optional)"
+              {...form.getInputProps('parentGroup')}
+            />
 
-          <optgroup label="Capital">
-            <option value="Share Capital">Share Capital</option>
-          </optgroup>
+            <Divider />
 
-          <optgroup label="Final Accounts">
-            <option value="Profit & Loss A/c">Profit & Loss A/c</option>
-          </optgroup>w
-
-          <optgroup label="Legacy/Basic Types">
-            <option value="Party">Party</option>
-            <option value="Bank">Bank</option>
-            <option value="Cash">Cash</option>
-            <option value="Income">Income</option>
-            <option value="Expense">Expense</option>
-            <option value="Asset">Asset</option>
-            <option value="Liability">Liability</option>
-            <option value="Capital">Capital</option>
-          </optgroup>
-        </select>
-      </div>
-
-      <div className="table-container">
-        {loading ? (
-          <div className="loading">Loading...</div>
-        ) : filteredLedgers.length === 0 ? (
-          <div className="no-data">No ledgers found</div>
-        ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Ledger Name</th>
-                <th>Account Group</th>
-                <th>Opening Balance</th>
-                <th>Current Balance</th>
-                <th>Linked Entity</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {currentLedgers.map((ledger) => (
-                <tr key={ledger._id}>
-                  <td>{ledger.ledgerName}</td>
-                  <td>
-                    <span className={`tag ${getLedgerTypeColor(ledger.ledgerType)}`}>
-                      {ledger.ledgerType}
-                    </span>
-                  </td>
-                  <td>₹{ledger.openingBalance?.toFixed(2) || 0} {ledger.openingBalanceType || ''}</td>
-                  <td>
-                    <span className={`tag ${ledger.balanceType === 'Dr' ? 'tag-danger' : 'tag-success'}`}>
-                      ₹{ledger.currentBalance?.toFixed(2) || 0} {ledger.balanceType || ''}
-                    </span>
-                  </td>
-                  <td>{ledger.linkedEntity?.entityType || '-'}</td>
-                  <td>
-                    <div className="action-buttons">
-                      <button
-                        className="btn-link btn-view"
-                        onClick={() => navigate(`/accounting/ledgers/view/${ledger._id}`)}
-                      >
-                        View
-                      </button>
-                      <button
-                        className="btn-link btn-edit"
-                        onClick={() => handleEdit(ledger)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="btn-link btn-delete"
-                        onClick={() => handleDelete(ledger)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        {!loading && filteredLedgers.length > 0 && (
-          <div className="pagination-container">
-            <div className="pagination-info">
-              Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, filteredLedgers.length)} of {filteredLedgers.length} ledgers
-            </div>
-            <div className="pagination-controls">
-              <button
-                className="btn-pagination"
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-              >
-                Previous
-              </button>
-
-              {[...Array(totalPages)].map((_, index) => {
-                const pageNumber = index + 1;
-                // Show first page, last page, current page, and pages around current
-                if (
-                  pageNumber === 1 ||
-                  pageNumber === totalPages ||
-                  (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 1)
-                ) {
-                  return (
-                    <button
-                      key={pageNumber}
-                      className={`btn-pagination ${currentPage === pageNumber ? 'active' : ''}`}
-                      onClick={() => handlePageChange(pageNumber)}
-                    >
-                      {pageNumber}
-                    </button>
-                  );
-                } else if (
-                  pageNumber === currentPage - 2 ||
-                  pageNumber === currentPage + 2
-                ) {
-                  return <span key={pageNumber}>...</span>;
-                }
-                return null;
-              })}
-
-              <button
-                className="btn-pagination"
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {modalVisible && (
-        <div className="modal-overlay" onClick={() => setModalVisible(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>{editingLedger ? 'Edit Ledger' : 'Add Ledger'}</h2>
-              <button className="modal-close" onClick={() => setModalVisible(false)}>&times;</button>
-            </div>
-            <form onSubmit={handleSubmit}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label required">Ledger Name</label>
-                  <input
-                    type="text"
-                    name="ledgerName"
-                    className={`form-input ${errors.ledgerName ? 'error' : ''}`}
-                    placeholder="Enter ledger name"
-                    value={formData.ledgerName}
-                    onChange={handleChange}
-                  />
-                  {errors.ledgerName && <div className="form-error">{errors.ledgerName}</div>}
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label required">Account Group</label>
-                  <select
-                    name="ledgerType"
-                    className={`form-select ${errors.ledgerType ? 'error' : ''}`}
-                    value={formData.ledgerType}
-                    onChange={handleChange}
-                  >
-                   <option value="">Select Ledger</option>
-
-<option value="Sales A/c" data-type="Income">Sales A/c</option>
-<option value="Trade Income" data-type="Income">Trade Income</option>
-<option value="Miscellaneous Income" data-type="Income">Miscellaneous Income</option>
-<option value="Other Revenue" data-type="Income">Other Revenue</option>
-<option value="Grants & Aid" data-type="Income">Grants & Aid</option>
-<option value="Subsidies" data-type="Income">Subsidies</option>
-
-
-<option value="Purchases A/c" data-type="Expense">Purchases A/c</option>
-<option value="Trade Expenses" data-type="Expense">Trade Expenses</option>
-<option value="Establishment Charges" data-type="Expense">Establishment Charges</option>
-<option value="Miscellaneous Expenses" data-type="Expense">Miscellaneous Expenses</option>
-
-
-<option value="Accounts Due To (Sundry Creditors)" data-type="Party">
-  Accounts Due To (Sundry Creditors)
-</option>
-<option value="Other Payable" data-type="Liability">Other Payable</option>
-<option value="Other Liabilities" data-type="Liability">Other Liabilities</option>
-<option value="Deposit A/c" data-type="Liability">Deposit A/c</option>
-<option value="Contingency Fund" data-type="Liability">Contingency Fund</option>
-<option value="Education Fund" data-type="Liability">Education Fund</option>
-
-
-<option value="Fixed Assets" data-type="Asset">Fixed Assets</option>
-<option value="Movable Assets" data-type="Asset">Movable Assets</option>
-<option value="Immovable Assets" data-type="Asset">Immovable Assets</option>
-<option value="Other Assets" data-type="Asset">Other Assets</option>
-<option value="Other Receivable" data-type="Asset">Other Receivable</option>
-
-
-<option value="Investment A/c" data-type="Investment">Investment A/c</option>
-<option value="Other Investment" data-type="Investment">Other Investment</option>
-<option value="Government Securities" data-type="Investment">
-  Government Securities
-</option>
-
-
-<option value="Share Capital" data-type="Capital">Share Capital</option>
-
-
-<option value="Profit & Loss A/c" data-type="Final">
-  Profit & Loss A/c
-</option>
-
-                  </select>
-                  {errors.ledgerType && <div className="form-error">{errors.ledgerType}</div>}
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Opening Balance</label>
-                  <input
-                    type="number"
-                    name="openingBalance"
-                    className="form-input"
-                    placeholder="Enter opening balance"
-                    value={formData.openingBalance}
-                    onChange={handleChange}
-                    step="0.01"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Opening Balance Type</label>
-                  <select
-                    name="openingBalanceType"
-                    className="form-select"
-                    value={formData.openingBalanceType}
-                    onChange={handleChange}
-                  >
-                    <option value="Dr">Debit (Dr)</option>
-                    <option value="Cr">Credit (Cr)</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Parent Group</label>
-                  <input
-                    type="text"
-                    name="parentGroup"
-                    className="form-input"
-                    placeholder="Enter parent group (optional)"
-                    value={formData.parentGroup}
-                    onChange={handleChange}
-                  />
-                </div>
-              </div>
-
-              <div className="modal-footer">
-                <button type="submit" className="btn btn-primary">
-                  {editingLedger ? 'Update' : 'Save'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-default"
-                  onClick={() => setModalVisible(false)}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
+            <Group position="right">
+              <Button variant="default" onClick={() => setModalVisible(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" color="blue">
+                {editingLedger ? 'Update' : 'Save'}
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
+    </Container>
   );
 };
 

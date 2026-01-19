@@ -39,6 +39,17 @@ import ledgerRoutes from './routes/ledgerRoutes.js';
 import subsidyRoutes from './routes/subsidyRoutes.js';
 import collectionCenterRoutes from './routes/collectionCenterRoutes.js';
 
+// HRM routes
+import employeeRoutes from './routes/employeeRoutes.js';
+import attendanceRoutes from './routes/attendanceRoutes.js';
+import salaryRoutes from './routes/salaryRoutes.js';
+import leaveRoutes from './routes/leaveRoutes.js';
+import departmentRoutes from './routes/departmentRoutes.js';
+import designationRoutes from './routes/designationRoutes.js';
+
+// Company routes
+import companyRoutes from './routes/companyRoutes.js';
+
 // Use routes
 app.use('/api/farmers', farmerRoutes);
 app.use('/api/customers', customerRoutes);
@@ -53,6 +64,17 @@ app.use('/api', additionalRoutes);
 app.use('/api', ledgerRoutes);
 app.use('/api', subsidyRoutes);
 app.use('/api/collection-centers', collectionCenterRoutes);
+
+// HRM routes
+app.use('/api/employees', employeeRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/salary', salaryRoutes);
+app.use('/api/leaves', leaveRoutes);
+app.use('/api/departments', departmentRoutes);
+app.use('/api/designations', designationRoutes);
+
+// Company routes
+app.use('/api/companies', companyRoutes);
 
 // 404 handler
 app.use((req, res, next) => {

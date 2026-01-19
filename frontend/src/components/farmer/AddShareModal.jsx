@@ -1,263 +1,269 @@
 import { useState, useEffect } from 'react';
 import dayjs from 'dayjs';
-import { message } from '../../utils/toast';
+import {
+  Modal,
+  Text,
+  Title,
+  Button,
+  Group,
+  Select,
+  TextInput,
+  NumberInput,
+  Textarea,
+  SimpleGrid,
+  Paper,
+  Stack,
+  Alert,
+  Badge,
+  Loader,
+  Card,
+  Divider
+} from '@mantine/core';
+import { useForm } from '@mantine/form';
+import { notifications } from '@mantine/notifications';
+import {
+  IconX,
+  IconAlertCircle,
+  IconCoin,
+  IconFileCertificate,
+  IconCalendar,
+  IconNote
+} from '@tabler/icons-react';
 import { farmerAPI } from '../../services/api';
 
-const AddShareModal = ({ farmer, onClose, onSuccess }) => {
-  const [formData, setFormData] = useState({
-    transactionType: 'Allotment',
-    shares: '',
-    shareValue: '',
-    resolutionNo: '',
-    resolutionDate: '',
-    remarks: ''
-  });
+const AddShareModal = ({ opened, onClose, onSuccess, farmer }) => {
   const [loading, setLoading] = useState(false);
 
+  const form = useForm({
+    initialValues: {
+      transactionType: farmer?.financialDetails?.totalShares > 0 ? 'Additional Allotment' : 'Allotment',
+      shares: '',
+      shareValue: '',
+      resolutionNo: '',
+      resolutionDate: '',
+      remarks: ''
+    },
+
+    validate: {
+      shares: (value) => {
+        if (!value) return 'Number of shares is required';
+        if (parseFloat(value) <= 0) return 'Please enter a valid number of shares';
+        return null;
+      },
+      shareValue: (value) => {
+        if (!value) return 'Share value is required';
+        if (parseFloat(value) <= 0) return 'Please enter a valid share value';
+        return null;
+      },
+      resolutionNo: (value) => !value ? 'Resolution number is required' : null,
+      resolutionDate: (value) => !value ? 'Resolution date is required' : null,
+    }
+  });
+
   useEffect(() => {
-    // Set default transaction type based on current shares
-    if (farmer?.financialDetails?.totalShares > 0) {
-      setFormData(prev => ({ ...prev, transactionType: 'Additional Allotment' }));
+    if (farmer) {
+      form.setFieldValue('transactionType', farmer.financialDetails?.totalShares > 0 ? 'Additional Allotment' : 'Allotment');
     }
   }, [farmer]);
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    // Validation
-    if (!formData.shares || parseFloat(formData.shares) <= 0) {
-      message.error('Please enter a valid number of shares');
-      return;
-    }
-
-    if (!formData.shareValue || parseFloat(formData.shareValue) <= 0) {
-      message.error('Please enter a valid share value');
-      return;
-    }
-
-    if (!formData.resolutionNo) {
-      message.error('Resolution number is required');
-      return;
-    }
-
-    if (!formData.resolutionDate) {
-      message.error('Resolution date is required');
-      return;
-    }
-
+  const handleSubmit = async (values) => {
     setLoading(true);
     try {
       await farmerAPI.addShares(farmer._id, {
-        ...formData,
-        shares: parseFloat(formData.shares),
-        shareValue: parseFloat(formData.shareValue)
+        ...values,
+        shares: parseFloat(values.shares),
+        shareValue: parseFloat(values.shareValue)
       });
 
-      message.success('Shares updated successfully');
+      notifications.show({
+        title: 'Success',
+        message: 'Shares updated successfully',
+        color: 'green'
+      });
+      
+      form.reset();
       onSuccess();
-      onClose();
     } catch (error) {
-      message.error(error.message || 'Failed to update shares');
+      notifications.show({
+        title: 'Error',
+        message: error.message || 'Failed to update shares',
+        color: 'red'
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const totalValue = (parseFloat(formData.shares) || 0) * (parseFloat(formData.shareValue) || 0);
+  const totalValue = (parseFloat(form.values.shares) || 0) * (parseFloat(form.values.shareValue) || 0);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal modal-large" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h3>Add Shares</h3>
-          <button className="btn-icon" onClick={onClose}>
-            <svg viewBox="0 0 16 16" fill="currentColor">
-              <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
-            </svg>
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit}>
-          <div className="modal-body">
-            <div style={{
-              background: 'var(--bg-secondary)',
-              padding: '16px',
-              borderRadius: '8px',
-              marginBottom: '24px',
-              border: '1px solid var(--border-color)'
-            }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
-                <div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                    Old Shares
-                  </div>
-                  <div style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-primary)' }}>
-                    {farmer?.financialDetails?.oldShares || 0}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                    New Shares
-                  </div>
-                  <div style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-primary)' }}>
-                    {farmer?.financialDetails?.newShares || 0}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                    Total Shares
-                  </div>
-                  <div style={{ fontSize: '18px', fontWeight: '600', color: '#1890ff' }}>
-                    {farmer?.financialDetails?.totalShares || 0}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
-              <div className="form-group">
-                <label className="form-label required">Transaction Type</label>
-                <select
-                  name="transactionType"
-                  value={formData.transactionType}
-                  onChange={handleChange}
-                  className="form-control"
-                  required
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      title={
+        <Title order={3}>
+          <Group spacing="xs">
+            <IconCoin size={20} />
+            Add Shares
+          </Group>
+        </Title>
+      }
+      size="lg"
+      centered
+      overlayProps={{
+        blur: 3,
+        opacity: 0.55,
+      }}
+    >
+      <form onSubmit={form.onSubmit(handleSubmit)}>
+        <Stack spacing="md">
+          {/* Current Shares Summary */}
+          <Paper p="md" withBorder>
+            <SimpleGrid cols={3} spacing="md">
+              <div>
+                <Text size="sm" color="dimmed" mb={4}>
+                  Old Shares
+                </Text>
+                <Badge
+                  size="lg"
+                  variant="light"
+                  color="gray"
+                  fullWidth
                 >
-                  <option value="Allotment">Allotment</option>
-                  <option value="Additional Allotment">Additional Allotment</option>
-                  <option value="Redemption">Redemption</option>
-                </select>
+                  {farmer?.financialDetails?.oldShares || 0}
+                </Badge>
               </div>
-
-              <div className="form-group">
-                <label className="form-label required">Number of Shares</label>
-                <input
-                  type="number"
-                  name="shares"
-                  value={formData.shares}
-                  onChange={handleChange}
-                  className="form-control"
-                  placeholder="Enter number of shares"
-                  min="1"
-                  step="1"
-                  required
-                />
+              <div>
+                <Text size="sm" color="dimmed" mb={4}>
+                  New Shares
+                </Text>
+                <Badge
+                  size="lg"
+                  variant="light"
+                  color="blue"
+                  fullWidth
+                >
+                  {farmer?.financialDetails?.newShares || 0}
+                </Badge>
               </div>
-
-              <div className="form-group">
-                <label className="form-label required">Share Value (per share)</label>
-                <input
-                  type="number"
-                  name="shareValue"
-                  value={formData.shareValue}
-                  onChange={handleChange}
-                  className="form-control"
-                  placeholder="Enter share value"
-                  min="0.01"
-                  step="0.01"
-                  required
-                />
+              <div>
+                <Text size="sm" color="dimmed" mb={4}>
+                  Total Shares
+                </Text>
+                <Badge
+                  size="lg"
+                  variant="filled"
+                  color="blue"
+                  fullWidth
+                >
+                  {farmer?.financialDetails?.totalShares || 0}
+                </Badge>
               </div>
+            </SimpleGrid>
+          </Paper>
 
-              <div className="form-group">
-                <label className="form-label">Total Value</label>
-                <input
-                  type="text"
-                  value={`₹${totalValue.toFixed(2)}`}
-                  className="form-control"
-                  disabled
-                  style={{ background: 'var(--bg-secondary)', cursor: 'not-allowed' }}
-                />
-              </div>
+          {/* Form Fields */}
+          <SimpleGrid cols={2} spacing="md">
+            <Select
+              label="Transaction Type"
+              withAsterisk
+              data={[
+                { value: 'Allotment', label: 'Allotment' },
+                { value: 'Additional Allotment', label: 'Additional Allotment' },
+                { value: 'Redemption', label: 'Redemption' }
+              ]}
+              icon={<IconCoin size={16} />}
+              {...form.getInputProps('transactionType')}
+            />
 
-              <div className="form-group">
-                <label className="form-label required">Resolution Number</label>
-                <input
-                  type="text"
-                  name="resolutionNo"
-                  value={formData.resolutionNo}
-                  onChange={handleChange}
-                  className="form-control"
-                  placeholder="Enter resolution number"
-                  required
-                />
-              </div>
+            <NumberInput
+              label="Number of Shares"
+              withAsterisk
+              placeholder="Enter number of shares"
+              min={1}
+              step={1}
+              icon={<IconCoin size={16} />}
+              {...form.getInputProps('shares')}
+            />
 
-              <div className="form-group">
-                <label className="form-label required">Resolution Date</label>
-                <input
-                  type="date"
-                  name="resolutionDate"
-                  value={formData.resolutionDate}
-                  onChange={handleChange}
-                  className="form-control"
-                  required
-                />
-              </div>
+            <NumberInput
+              label="Share Value (per share)"
+              withAsterisk
+              placeholder="Enter share value"
+              min={0.01}
+              step={0.01}
+              precision={2}
+              icon="₹"
+              {...form.getInputProps('shareValue')}
+            />
 
-              <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                <label className="form-label">Remarks</label>
-                <textarea
-                  name="remarks"
-                  value={formData.remarks}
-                  onChange={handleChange}
-                  className="form-control"
-                  placeholder="Enter remarks (optional)"
-                  rows="3"
-                />
-              </div>
-            </div>
+            <TextInput
+              label="Total Value"
+              value={`₹${totalValue.toFixed(2)}`}
+              disabled
+              styles={{
+                input: {
+                  backgroundColor: 'var(--mantine-color-gray-0)',
+                  cursor: 'not-allowed'
+                }
+              }}
+            />
 
-            {formData.transactionType === 'Redemption' && (
-              <div style={{
-                background: '#fff7e6',
-                border: '1px solid #ffd591',
-                borderRadius: '8px',
-                padding: '12px',
-                marginTop: '16px',
-                display: 'flex',
-                gap: '8px'
-              }}>
-                <svg style={{ width: '20px', height: '20px', color: '#fa8c16', flexShrink: 0 }} viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
-                  <path d="M7.002 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0zM7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 4.995z"/>
-                </svg>
-                <div style={{ fontSize: '13px', color: '#ad6800' }}>
-                  <strong>Note:</strong> Shares will be redeemed from new shares first, then from old shares.
-                </div>
-              </div>
-            )}
-          </div>
+            <TextInput
+              label="Resolution Number"
+              withAsterisk
+              placeholder="Enter resolution number"
+              icon={<IconFileCertificate size={16} />}
+              {...form.getInputProps('resolutionNo')}
+            />
 
-          <div className="modal-footer">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={onClose}
-              disabled={loading}
+            <TextInput
+              label="Resolution Date"
+              withAsterisk
+              type="date"
+              icon={<IconCalendar size={16} />}
+              {...form.getInputProps('resolutionDate')}
+            />
+          </SimpleGrid>
+
+          {/* Remarks */}
+          <Textarea
+            label="Remarks"
+            placeholder="Enter remarks (optional)"
+            icon={<IconNote size={16} />}
+            rows={3}
+            {...form.getInputProps('remarks')}
+          />
+
+          {/* Redemption Warning */}
+          {form.values.transactionType === 'Redemption' && (
+            <Alert
+              icon={<IconAlertCircle size={16} />}
+              title="Important Note"
+              color="orange"
+              variant="light"
             >
+              Shares will be redeemed from new shares first, then from old shares.
+            </Alert>
+          )}
+
+          {/* Modal Footer */}
+          <Group position="right" mt="md">
+            <Button variant="default" onClick={onClose} disabled={loading}>
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
-              className="btn btn-primary"
-              disabled={loading}
+              color="blue"
+              loading={loading}
+              leftSection={!loading && <IconCoin size={16} />}
             >
               {loading ? 'Saving...' : 'Save Shares'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+            </Button>
+          </Group>
+        </Stack>
+      </form>
+    </Modal>
   );
 };
 

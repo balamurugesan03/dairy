@@ -3,7 +3,6 @@ import mongoose from 'mongoose';
 const itemSchema = new mongoose.Schema({
   itemCode: {
     type: String,
-    required: true,
     unique: true,
     trim: true
   },
@@ -36,6 +35,16 @@ const itemSchema = new mongoose.Schema({
     min: 0
   },
   salesRate: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  wholesalePrice: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  retailPrice: {
     type: Number,
     default: 0,
     min: 0

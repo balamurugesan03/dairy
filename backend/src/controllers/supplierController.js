@@ -1,10 +1,49 @@
 import Supplier from '../models/Supplier.js';
 import Ledger from '../models/Ledger.js';
 
+// Generate next supplier ID (SUP0001 format)
+const generateSupplierId = async () => {
+  const lastSupplier = await Supplier.findOne({
+    supplierId: { $regex: /^SUP\d+$/ }
+  }).sort({ supplierId: -1 });
+
+  let nextNumber = 1;
+  if (lastSupplier && lastSupplier.supplierId) {
+    const match = lastSupplier.supplierId.match(/^SUP(\d+)$/);
+    if (match) {
+      nextNumber = parseInt(match[1]) + 1;
+    }
+  }
+
+  return `SUP${String(nextNumber).padStart(4, '0')}`;
+};
+
+// Get next supplier ID for frontend
+export const getNextSupplierId = async (req, res) => {
+  try {
+    const nextId = await generateSupplierId();
+    res.status(200).json({
+      success: true,
+      data: { supplierId: nextId }
+    });
+  } catch (error) {
+    console.error('Error generating supplier ID:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error generating supplier ID'
+    });
+  }
+};
+
 // Create new supplier
 export const createSupplier = async (req, res) => {
   try {
     const supplierData = req.body;
+
+    // Auto-generate supplier ID if not provided
+    if (!supplierData.supplierId) {
+      supplierData.supplierId = await generateSupplierId();
+    }
 
     // Check for duplicate supplierId
     const existingSupplier = await Supplier.findOne({
@@ -34,31 +73,55 @@ export const createSupplier = async (req, res) => {
     const supplier = new Supplier(supplierData);
     await supplier.save();
 
-    // Auto-create ledger entry (account head) for the supplier
+    // Auto-create both ledger entries for the supplier
     try {
-      const ledger = new Ledger({
-        ledgerName: supplierData.name,
+      // 1. Accounts Due By (Sundry Debtors) - when supplier owes us (Asset)
+      const dueByLedger = new Ledger({
+        ledgerName: `${supplierData.name} - Due By (${supplierData.supplierId})`,
+        ledgerType: 'Other Receivable',
+        linkedEntity: {
+          entityType: 'Supplier',
+          entityId: supplier._id
+        },
+        openingBalance: 0,
+        openingBalanceType: 'Dr',
+        currentBalance: 0,
+        balanceType: 'Dr',
+        parentGroup: 'Sundry Debtors',
+        status: 'Active'
+      });
+      await dueByLedger.save();
+
+      // 2. Accounts Due To (Sundry Creditors) - when we owe supplier (Liability)
+      const dueToLedger = new Ledger({
+        ledgerName: `${supplierData.name} - Due To (${supplierData.supplierId})`,
         ledgerType: 'Accounts Due To (Sundry Creditors)',
         linkedEntity: {
           entityType: 'Supplier',
           entityId: supplier._id
         },
         openingBalance: supplierData.openingBalance || 0,
-        openingBalanceType: supplierData.openingBalance >= 0 ? 'Cr' : 'Dr',
+        openingBalanceType: 'Cr',
         currentBalance: supplierData.openingBalance || 0,
-        balanceType: supplierData.openingBalance >= 0 ? 'Cr' : 'Dr',
-        parentGroup: 'Advance / Due',
+        balanceType: 'Cr',
+        parentGroup: 'Sundry Creditors',
         status: 'Active'
       });
-      await ledger.save();
+      await dueToLedger.save();
+
+      // Update supplier with ledger references
+      supplier.dueByLedgerId = dueByLedger._id;
+      supplier.dueToLedgerId = dueToLedger._id;
+      await supplier.save();
+
     } catch (ledgerError) {
-      console.error('Error creating ledger for supplier:', ledgerError);
+      console.error('Error creating ledgers for supplier:', ledgerError);
       // Continue even if ledger creation fails
     }
 
     res.status(201).json({
       success: true,
-      message: 'Supplier created successfully',
+      message: 'Supplier created successfully with ledgers',
       data: supplier
     });
   } catch (error) {

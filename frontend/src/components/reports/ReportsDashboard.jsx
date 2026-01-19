@@ -32,6 +32,31 @@ const ReportsDashboard = () => {
       color: '#f6ffed'
     },
     {
+      title: 'Stock Register',
+      description: 'Day-wise, Month-wise & From-To Date stock movement report',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="#13c2c2">
+          <path d="M4 7h16M4 12h16M4 17h16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <rect x="2" y="3" width="20" height="18" rx="2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      ),
+      path: '/reports/stock-register',
+      color: '#e6fffb'
+    },
+    {
+      title: 'Purchase Register',
+      description: 'Inventory Purchase Checklist - Audit Ready A4 Landscape Format',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="#389e0d">
+          <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <rect x="9" y="3" width="6" height="4" rx="1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M9 12l2 2 4-4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      ),
+      path: '/reports/purchase-register',
+      color: '#f6ffed'
+    },
+    {
       title: 'Financial Reports',
       description: 'Profit & Loss, Balance Sheet, and Trading Account',
       icon: (
@@ -71,6 +96,99 @@ const ReportsDashboard = () => {
       ),
       path: '/reports/receipts-disbursement',
       color: '#fff0f6'
+    },
+    {
+      title: 'Cash Book',
+      description: 'Detailed cash transactions with running balance',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="#13c2c2">
+          <rect x="2" y="5" width="20" height="14" rx="2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <line x1="2" y1="10" x2="22" y2="10" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      ),
+      path: '/reports/cash-book',
+      color: '#e6fffb'
+    },
+    {
+      title: 'Day Book',
+      description: 'Daily transaction register with receipts and payments',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fa8c16">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <line x1="16" y1="2" x2="16" y2="6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <line x1="8" y1="2" x2="8" y2="6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <line x1="3" y1="10" x2="21" y2="10" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      ),
+      path: '/reports/daybook',
+      color: '#fff7e6'
+    },
+    {
+      title: 'General Ledger',
+      description: 'Ledger-wise detailed account statement with selection',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="#2f54eb">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      ),
+      path: '/reports/general-ledger',
+      color: '#f0f5ff'
+    },
+    {
+      title: 'Ledger Abstract',
+      description: 'Summary of all ledgers with opening/closing balances',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="#9254de">
+          <path d="M3 3v18h18" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      ),
+      path: '/reports/ledger-abstract',
+      color: '#f9f0ff'
+    },
+    {
+      title: 'R&D Enhanced',
+      description: 'Receipts & Disbursement: Single | Three Column | Classified',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="#f5222d">
+          <line x1="8" y1="6" x2="21" y2="6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <line x1="8" y1="12" x2="21" y2="12" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <line x1="8" y1="18" x2="21" y2="18" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <line x1="3" y1="6" x2="3.01" y2="6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <line x1="3" y1="12" x2="3.01" y2="12" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <line x1="3" y1="18" x2="3.01" y2="18" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      ),
+      path: '/reports/rd-enhanced',
+      color: '#fff1f0'
+    },
+    {
+      title: 'Final Accounts',
+      description: 'Trading Account, Profit & Loss, Balance Sheet - Combined View',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="#52c41a">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      ),
+      path: '/reports/final-accounts',
+      color: '#f6ffed'
+    },
+    {
+      title: 'Vyapar Reports',
+      description: '16 comprehensive business reports: Sales, Purchases, Profit Analysis, Accounting & More',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="#1890ff">
+          <rect x="2" y="3" width="20" height="18" rx="2" ry="2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <line x1="8" y1="3" x2="8" y2="21" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <line x1="2" y1="9" x2="22" y2="9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <line x1="2" y1="15" x2="8" y2="15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="14" cy="12" r="2" fill="#1890ff"/>
+          <circle cx="18" cy="12" r="2" fill="#52c41a"/>
+        </svg>
+      ),
+      path: '/reports/vyapar',
+      color: '#e6f7ff'
     }
   ];
 

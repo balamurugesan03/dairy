@@ -14,6 +14,10 @@ const supplierSchema = new mongoose.Schema({
   panNumber: { type: String },
   active: { type: Boolean, default: true },
 
+  // Ledger references for accounting
+  dueByLedgerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ledger' }, // Accounts Due By (Sundry Debtors) - when supplier owes us
+  dueToLedgerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ledger' }, // Accounts Due To (Sundry Creditors) - when we owe supplier
+
   documents: {
     aadhaar: { type: String },
     passbook: { type: String },

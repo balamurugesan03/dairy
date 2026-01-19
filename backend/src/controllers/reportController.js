@@ -3,6 +3,19 @@ import Ledger from '../models/Ledger.js';
 import Sales from '../models/Sales.js';
 import Item from '../models/Item.js';
 import FarmerPayment from '../models/FarmerPayment.js';
+import { getDateRange } from '../utils/dateFilters.js';
+
+// Helper function to get financial year string (e.g., "2024-25")
+const getFinancialYear = (date) => {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+
+  if (month >= 3) { // April (3) to December (11)
+    return `${year}-${(year + 1).toString().slice(2)}`;
+  } else { // January (0) to March (2)
+    return `${year - 1}-${year.toString().slice(2)}`;
+  }
+};
 
 // Receipts & Disbursement Report
 export const getReceiptsDisbursementReport = async (req, res) => {
@@ -70,69 +83,253 @@ export const getReceiptsDisbursementReport = async (req, res) => {
 // Trading Account
 export const getTradingAccount = async (req, res) => {
   try {
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, filterType, customStart, customEnd } = req.query;
 
-    // Get opening stock
-    const openingStock = await Item.aggregate([
-      { $group: { _id: null, total: { $sum: { $multiply: ['$openingBalance', '$purchaseRate'] } } } }
-    ]);
+    // Get date range (default to financial year)
+    let dateFilter;
+    if (filterType) {
+      dateFilter = getDateRange(filterType, customStart, customEnd);
+    } else if (startDate && endDate) {
+      dateFilter = {
+        startDate: new Date(startDate),
+        endDate: new Date(endDate)
+      };
+    } else {
+      // Default to current financial year
+      dateFilter = getDateRange('financialYear');
+    }
 
-    // Get purchases in period
-    const purchases = await Voucher.aggregate([
-      {
-        $match: {
-          voucherDate: {
-            $gte: new Date(startDate),
-            $lte: new Date(endDate)
-          },
-          'entries.ledgerName': /purchase/i
-        }
+    const financialYear = getFinancialYear(dateFilter.startDate);
+
+    // Calculate Opening Stock
+    const items = await Item.find({ status: 'Active' });
+    const openingStockTotal = items.reduce((sum, item) => {
+      return sum + (item.openingBalance || 0) * (item.salesRate || 0);
+    }, 0);
+
+    // Calculate Closing Stock (grouped by category)
+    const closingStockGrouped = {};
+    let closingStockTotal = 0;
+
+    items.forEach(item => {
+      const value = (item.currentBalance || 0) * (item.salesRate || 0);
+      const category = item.category || 'Others';
+
+      if (!closingStockGrouped[category]) {
+        closingStockGrouped[category] = 0;
+      }
+      closingStockGrouped[category] += value;
+      closingStockTotal += value;
+    });
+
+    const closingStockItems = Object.entries(closingStockGrouped).map(([category, amount]) => ({
+      category,
+      amount
+    }));
+
+    // Get Purchases (all ledgers with type "Purchases A/c")
+    const purchaseLedgers = await Ledger.find({
+      ledgerType: 'Purchases A/c',
+      status: 'Active'
+    });
+
+    const purchaseLedgerIds = purchaseLedgers.map(l => l._id);
+    const purchaseVouchers = await Voucher.find({
+      voucherDate: {
+        $gte: dateFilter.startDate,
+        $lte: dateFilter.endDate
       },
-      { $unwind: '$entries' },
-      { $match: { 'entries.ledgerName': /purchase/i } },
-      { $group: { _id: null, total: { $sum: '$entries.creditAmount' } } }
-    ]);
+      'entries.ledgerId': { $in: purchaseLedgerIds }
+    }).populate('entries.ledgerId', 'ledgerName ledgerType');
 
-    // Get sales in period
-    const sales = await Sales.aggregate([
-      {
-        $match: {
-          billDate: {
-            $gte: new Date(startDate),
-            $lte: new Date(endDate)
+    const purchaseGrouped = {};
+    purchaseVouchers.forEach(voucher => {
+      voucher.entries.forEach(entry => {
+        const ledgerIdStr = entry.ledgerId?._id?.toString();
+        if (purchaseLedgerIds.some(id => id.toString() === ledgerIdStr) && entry.creditAmount > 0) {
+          const ledgerName = entry.ledgerId.ledgerName;
+          if (!purchaseGrouped[ledgerName]) {
+            purchaseGrouped[ledgerName] = 0;
           }
+          purchaseGrouped[ledgerName] += entry.creditAmount;
         }
+      });
+    });
+
+    const purchaseItems = Object.entries(purchaseGrouped).map(([ledgerName, amount]) => ({
+      ledgerName,
+      amount
+    }));
+    const purchaseTotal = purchaseItems.reduce((sum, item) => sum + item.amount, 0);
+
+    // Get Trade Expenses (all ledgers with type "Trade Expenses")
+    const expenseLedgers = await Ledger.find({
+      ledgerType: 'Trade Expenses',
+      status: 'Active'
+    });
+
+    const expenseLedgerIds = expenseLedgers.map(l => l._id);
+    const expenseVouchers = await Voucher.find({
+      voucherDate: {
+        $gte: dateFilter.startDate,
+        $lte: dateFilter.endDate
       },
-      { $group: { _id: null, total: { $sum: '$grandTotal' } } }
-    ]);
+      'entries.ledgerId': { $in: expenseLedgerIds }
+    }).populate('entries.ledgerId', 'ledgerName ledgerType');
 
-    // Get closing stock
-    const closingStock = await Item.aggregate([
-      { $group: { _id: null, total: { $sum: { $multiply: ['$currentBalance', '$purchaseRate'] } } } }
-    ]);
+    const expenseGrouped = {};
+    expenseVouchers.forEach(voucher => {
+      voucher.entries.forEach(entry => {
+        const ledgerIdStr = entry.ledgerId?._id?.toString();
+        if (expenseLedgerIds.some(id => id.toString() === ledgerIdStr) && entry.debitAmount > 0) {
+          const ledgerName = entry.ledgerId.ledgerName;
+          if (!expenseGrouped[ledgerName]) {
+            expenseGrouped[ledgerName] = 0;
+          }
+          expenseGrouped[ledgerName] += entry.debitAmount;
+        }
+      });
+    });
 
-    const openingStockValue = openingStock[0]?.total || 0;
-    const purchasesValue = purchases[0]?.total || 0;
-    const salesValue = sales[0]?.total || 0;
-    const closingStockValue = closingStock[0]?.total || 0;
+    const expenseItems = Object.entries(expenseGrouped).map(([ledgerName, amount]) => ({
+      ledgerName,
+      amount
+    }));
+    const expenseTotal = expenseItems.reduce((sum, item) => sum + item.amount, 0);
 
-    const grossProfit = salesValue - (openingStockValue + purchasesValue - closingStockValue);
+    // Get Sales (all ledgers with type "Sales A/c")
+    const salesLedgers = await Ledger.find({
+      ledgerType: 'Sales A/c',
+      status: 'Active'
+    });
 
+    const salesLedgerIds = salesLedgers.map(l => l._id);
+    const salesVouchers = await Voucher.find({
+      voucherDate: {
+        $gte: dateFilter.startDate,
+        $lte: dateFilter.endDate
+      },
+      'entries.ledgerId': { $in: salesLedgerIds }
+    }).populate('entries.ledgerId', 'ledgerName ledgerType');
+
+    const salesGrouped = {};
+    salesVouchers.forEach(voucher => {
+      voucher.entries.forEach(entry => {
+        const ledgerIdStr = entry.ledgerId?._id?.toString();
+        if (salesLedgerIds.some(id => id.toString() === ledgerIdStr) && entry.creditAmount > 0) {
+          const ledgerName = entry.ledgerId.ledgerName;
+          if (!salesGrouped[ledgerName]) {
+            salesGrouped[ledgerName] = 0;
+          }
+          salesGrouped[ledgerName] += entry.creditAmount;
+        }
+      });
+    });
+
+    const salesItems = Object.entries(salesGrouped).map(([ledgerName, amount]) => ({
+      ledgerName,
+      amount
+    }));
+    const salesTotal = salesItems.reduce((sum, item) => sum + item.amount, 0);
+
+    // Get Trade Income (all ledgers with type "Trade Income")
+    const incomeLedgers = await Ledger.find({
+      ledgerType: 'Trade Income',
+      status: 'Active'
+    });
+
+    const incomeLedgerIds = incomeLedgers.map(l => l._id);
+    const incomeVouchers = await Voucher.find({
+      voucherDate: {
+        $gte: dateFilter.startDate,
+        $lte: dateFilter.endDate
+      },
+      'entries.ledgerId': { $in: incomeLedgerIds }
+    }).populate('entries.ledgerId', 'ledgerName ledgerType');
+
+    const incomeGrouped = {};
+    incomeVouchers.forEach(voucher => {
+      voucher.entries.forEach(entry => {
+        const ledgerIdStr = entry.ledgerId?._id?.toString();
+        if (incomeLedgerIds.some(id => id.toString() === ledgerIdStr) && entry.creditAmount > 0) {
+          const ledgerName = entry.ledgerId.ledgerName;
+          if (!incomeGrouped[ledgerName]) {
+            incomeGrouped[ledgerName] = 0;
+          }
+          incomeGrouped[ledgerName] += entry.creditAmount;
+        }
+      });
+    });
+
+    const incomeItems = Object.entries(incomeGrouped).map(([ledgerName, amount]) => ({
+      ledgerName,
+      amount
+    }));
+    const incomeTotal = incomeItems.reduce((sum, item) => sum + item.amount, 0);
+
+    // Calculate totals
+    const debitTotal = openingStockTotal + purchaseTotal + expenseTotal;
+    const creditTotal = salesTotal + incomeTotal + closingStockTotal;
+
+    // Calculate Gross Profit or Loss
+    let grossProfit = 0;
+    let grossLoss = 0;
+
+    if (creditTotal > debitTotal) {
+      grossProfit = creditTotal - debitTotal;
+    } else if (debitTotal > creditTotal) {
+      grossLoss = debitTotal - creditTotal;
+    }
+
+    // Prepare response
     res.status(200).json({
       success: true,
       data: {
-        openingStock: openingStockValue,
-        purchases: purchasesValue,
-        sales: salesValue,
-        closingStock: closingStockValue,
-        grossProfit
+        period: {
+          startDate: dateFilter.startDate,
+          endDate: dateFilter.endDate,
+          financialYear
+        },
+        debitSide: {
+          openingStock: {
+            total: openingStockTotal
+          },
+          purchases: {
+            items: purchaseItems,
+            total: purchaseTotal
+          },
+          tradeExpenses: {
+            items: expenseItems,
+            total: expenseTotal
+          },
+          grossProfit
+        },
+        creditSide: {
+          sales: {
+            items: salesItems,
+            total: salesTotal
+          },
+          tradeIncome: {
+            items: incomeItems,
+            total: incomeTotal
+          },
+          closingStock: {
+            items: closingStockItems,
+            total: closingStockTotal
+          },
+          grossLoss
+        },
+        totals: {
+          debitTotal: debitTotal + grossProfit,
+          creditTotal: creditTotal + grossLoss
+        }
       }
     });
   } catch (error) {
     console.error('Error generating trading account:', error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Error generating report'
+      message: error.message || 'Error generating trading account'
     });
   }
 };
@@ -332,6 +529,313 @@ export const getSubsidyReport = async (req, res) => {
   }
 };
 
+// Stock Register Report (Day-wise, Month-wise, From-To Date)
+export const getStockRegister = async (req, res) => {
+  try {
+    const { startDate, endDate, mode = 'day' } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Start date and end date are required'
+      });
+    }
+
+    const start = new Date(startDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+
+    const financialYear = getFinancialYear(start);
+
+    // Get all active items
+    const items = await Item.find({ status: 'Active' })
+      .select('itemCode itemName category unit salesRate openingBalance currentBalance')
+      .sort({ itemName: 1 });
+
+    // Import StockTransaction model
+    const StockTransaction = (await import('../models/StockTransaction.js')).default;
+
+    // Get all stock transactions in the date range
+    const transactions = await StockTransaction.find({
+      date: { $gte: start, $lte: end }
+    })
+      .populate('itemId', 'itemCode itemName unit salesRate')
+      .sort({ date: 1 });
+
+    // Group transactions based on mode
+    let reportData = [];
+
+    if (mode === 'day') {
+      // Day-wise grouping
+      const dayGroups = {};
+
+      // Group transactions by date and item
+      transactions.forEach(trans => {
+        if (!trans.itemId) return;
+
+        const dateKey = trans.date.toISOString().split('T')[0];
+        const itemId = trans.itemId._id.toString();
+        const key = `${dateKey}_${itemId}`;
+
+        if (!dayGroups[key]) {
+          dayGroups[key] = {
+            date: trans.date,
+            itemId: trans.itemId._id,
+            itemName: trans.itemId.itemName,
+            unit: trans.itemId.unit,
+            rate: trans.itemId.salesRate,
+            purchase: 0,
+            salesReturn: 0,
+            sales: 0,
+            purchaseReturn: 0
+          };
+        }
+
+        if (trans.transactionType === 'Stock In') {
+          if (trans.referenceType === 'Return') {
+            dayGroups[key].salesReturn += trans.quantity;
+          } else {
+            dayGroups[key].purchase += trans.quantity;
+          }
+        } else if (trans.transactionType === 'Stock Out') {
+          if (trans.referenceType === 'Return') {
+            dayGroups[key].purchaseReturn += trans.quantity;
+          } else {
+            dayGroups[key].sales += trans.quantity;
+          }
+        }
+      });
+
+      // Calculate opening balance for each day-item combination
+      const sortedGroups = Object.values(dayGroups).sort((a, b) => {
+        const dateCompare = a.date - b.date;
+        if (dateCompare !== 0) return dateCompare;
+        return a.itemName.localeCompare(b.itemName);
+      });
+
+      // Track opening balance per item
+      const itemBalances = {};
+
+      // Initialize with opening balances from items
+      items.forEach(item => {
+        itemBalances[item._id.toString()] = item.openingBalance || 0;
+      });
+
+      // Calculate balances for each row
+      sortedGroups.forEach(group => {
+        const itemId = group.itemId.toString();
+        const ob = itemBalances[itemId] || 0;
+        const total = ob + group.purchase + group.salesReturn;
+        const closingStock = total - group.sales - group.purchaseReturn;
+
+        reportData.push({
+          date: group.date,
+          itemName: `${group.itemName} @ ${parseFloat(group.rate || 0).toFixed(2)} (${group.unit || 'OTHERS'})`,
+          ob: parseFloat(ob).toFixed(2),
+          purchase: parseFloat(group.purchase).toFixed(2),
+          salesReturn: parseFloat(group.salesReturn).toFixed(2),
+          total: parseFloat(total).toFixed(2),
+          sales: parseFloat(group.sales).toFixed(2),
+          purchaseReturn: parseFloat(group.purchaseReturn).toFixed(2),
+          closingStock: parseFloat(closingStock).toFixed(2),
+          stockValue: parseFloat(closingStock * (group.rate || 0)).toFixed(2)
+        });
+
+        // Update balance for next day
+        itemBalances[itemId] = closingStock;
+      });
+
+    } else if (mode === 'month') {
+      // Month-wise grouping
+      const monthGroups = {};
+
+      transactions.forEach(trans => {
+        if (!trans.itemId) return;
+
+        const date = new Date(trans.date);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        const itemId = trans.itemId._id.toString();
+        const key = `${monthKey}_${itemId}`;
+
+        if (!monthGroups[key]) {
+          monthGroups[key] = {
+            month: monthKey,
+            date: date,
+            itemId: trans.itemId._id,
+            itemName: trans.itemId.itemName,
+            unit: trans.itemId.unit,
+            rate: trans.itemId.salesRate,
+            purchase: 0,
+            salesReturn: 0,
+            sales: 0,
+            purchaseReturn: 0
+          };
+        }
+
+        if (trans.transactionType === 'Stock In') {
+          if (trans.referenceType === 'Return') {
+            monthGroups[key].salesReturn += trans.quantity;
+          } else {
+            monthGroups[key].purchase += trans.quantity;
+          }
+        } else if (trans.transactionType === 'Stock Out') {
+          if (trans.referenceType === 'Return') {
+            monthGroups[key].purchaseReturn += trans.quantity;
+          } else {
+            monthGroups[key].sales += trans.quantity;
+          }
+        }
+      });
+
+      // Sort by month and item
+      const sortedGroups = Object.values(monthGroups).sort((a, b) => {
+        const monthCompare = a.month.localeCompare(b.month);
+        if (monthCompare !== 0) return monthCompare;
+        return a.itemName.localeCompare(b.itemName);
+      });
+
+      // Track opening balance per item
+      const itemBalances = {};
+      items.forEach(item => {
+        itemBalances[item._id.toString()] = item.openingBalance || 0;
+      });
+
+      // Format month names
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+      sortedGroups.forEach(group => {
+        const itemId = group.itemId.toString();
+        const ob = itemBalances[itemId] || 0;
+        const total = ob + group.purchase + group.salesReturn;
+        const closingStock = total - group.sales - group.purchaseReturn;
+
+        // Format month as "Apr-2024"
+        const [year, month] = group.month.split('-');
+        const monthName = monthNames[parseInt(month) - 1];
+        const formattedMonth = `${monthName}-${year}`;
+
+        reportData.push({
+          month: formattedMonth,
+          itemName: `${group.itemName} @ ${parseFloat(group.rate || 0).toFixed(2)} (${group.unit || 'OTHERS'})`,
+          ob: parseFloat(ob).toFixed(2),
+          purchase: parseFloat(group.purchase).toFixed(2),
+          salesReturn: parseFloat(group.salesReturn).toFixed(2),
+          total: parseFloat(total).toFixed(2),
+          sales: parseFloat(group.sales).toFixed(2),
+          purchaseReturn: parseFloat(group.purchaseReturn).toFixed(2),
+          closingStock: parseFloat(closingStock).toFixed(2),
+          stockValue: parseFloat(closingStock * (group.rate || 0)).toFixed(2)
+        });
+
+        itemBalances[itemId] = closingStock;
+      });
+
+    } else if (mode === 'range') {
+      // From-To Date mode - consolidated per product
+      const itemGroups = {};
+
+      transactions.forEach(trans => {
+        if (!trans.itemId) return;
+
+        const itemId = trans.itemId._id.toString();
+
+        if (!itemGroups[itemId]) {
+          itemGroups[itemId] = {
+            itemId: trans.itemId._id,
+            itemName: trans.itemId.itemName,
+            unit: trans.itemId.unit,
+            rate: trans.itemId.salesRate,
+            purchase: 0,
+            salesReturn: 0,
+            sales: 0,
+            purchaseReturn: 0
+          };
+        }
+
+        if (trans.transactionType === 'Stock In') {
+          if (trans.referenceType === 'Return') {
+            itemGroups[itemId].salesReturn += trans.quantity;
+          } else {
+            itemGroups[itemId].purchase += trans.quantity;
+          }
+        } else if (trans.transactionType === 'Stock Out') {
+          if (trans.referenceType === 'Return') {
+            itemGroups[itemId].purchaseReturn += trans.quantity;
+          } else {
+            itemGroups[itemId].sales += trans.quantity;
+          }
+        }
+      });
+
+      // Get items with transactions or opening balance
+      items.forEach(item => {
+        const itemId = item._id.toString();
+        const hasTransactions = itemGroups[itemId];
+        const hasOpeningBalance = item.openingBalance > 0;
+
+        if (hasTransactions || hasOpeningBalance) {
+          const group = itemGroups[itemId] || {
+            purchase: 0,
+            salesReturn: 0,
+            sales: 0,
+            purchaseReturn: 0
+          };
+
+          const ob = item.openingBalance || 0;
+          const total = ob + group.purchase + group.salesReturn;
+          const closingStock = total - group.sales - group.purchaseReturn;
+
+          reportData.push({
+            itemName: `${item.itemName} @ ${parseFloat(item.salesRate || 0).toFixed(2)} (${item.unit || 'OTHERS'})`,
+            ob: parseFloat(ob).toFixed(2),
+            purchase: parseFloat(group.purchase).toFixed(2),
+            salesReturn: parseFloat(group.salesReturn).toFixed(2),
+            total: parseFloat(total).toFixed(2),
+            sales: parseFloat(group.sales).toFixed(2),
+            purchaseReturn: parseFloat(group.purchaseReturn).toFixed(2),
+            closingStock: parseFloat(closingStock).toFixed(2),
+            stockValue: parseFloat(closingStock * (item.salesRate || 0)).toFixed(2)
+          });
+        }
+      });
+
+      // Sort by item name
+      reportData.sort((a, b) => a.itemName.localeCompare(b.itemName));
+    }
+
+    // Calculate grand totals
+    const grandTotal = {
+      ob: reportData.reduce((sum, row) => sum + parseFloat(row.ob), 0).toFixed(2),
+      purchase: reportData.reduce((sum, row) => sum + parseFloat(row.purchase), 0).toFixed(2),
+      salesReturn: reportData.reduce((sum, row) => sum + parseFloat(row.salesReturn), 0).toFixed(2),
+      total: reportData.reduce((sum, row) => sum + parseFloat(row.total), 0).toFixed(2),
+      sales: reportData.reduce((sum, row) => sum + parseFloat(row.sales), 0).toFixed(2),
+      purchaseReturn: reportData.reduce((sum, row) => sum + parseFloat(row.purchaseReturn), 0).toFixed(2),
+      closingStock: reportData.reduce((sum, row) => sum + parseFloat(row.closingStock), 0).toFixed(2),
+      stockValue: reportData.reduce((sum, row) => sum + parseFloat(row.stockValue), 0).toFixed(2)
+    };
+
+    res.status(200).json({
+      success: true,
+      data: {
+        financialYear,
+        startDate: start,
+        endDate: end,
+        mode,
+        rows: reportData,
+        grandTotal
+      }
+    });
+  } catch (error) {
+    console.error('Error generating stock register:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error generating stock register'
+    });
+  }
+};
+
 export default {
   getReceiptsDisbursementReport,
   getTradingAccount,
@@ -339,5 +843,6 @@ export default {
   getBalanceSheet,
   getSalesReport,
   getStockReport,
-  getSubsidyReport
+  getSubsidyReport,
+  getStockRegister
 };

@@ -1,27 +1,23 @@
 import React from 'react';
-import './LoadingSpinner.css';
+import { Loader, Center, LoadingOverlay } from '@mantine/core';
 
 const LoadingSpinner = ({
   tip = 'Loading...',
-  size = 'large',
+  size = 'lg',
   fullScreen = false
 }) => {
-  const spinnerClass = size === 'small' ? 'spinner-sm' : size === 'large' ? 'spinner-lg' : '';
+  // Map sizes to Mantine sizes: 'small' -> 'sm', 'large' -> 'lg'
+  const mantineSize = size === 'small' ? 'sm' : size === 'large' ? 'lg' : 'md';
 
   if (fullScreen) {
-    return (
-      <div className="loading-container loading-fullscreen">
-        <div className={`spinner ${spinnerClass}`}></div>
-        {tip && <p className="loading-text">{tip}</p>}
-      </div>
-    );
+    return <LoadingOverlay visible={true} overlayProps={{ blur: 2 }} loaderProps={{ size: mantineSize, children: tip }} />;
   }
 
   return (
-    <div className="loading-container">
-      <div className={`spinner ${spinnerClass}`}></div>
-      {tip && <p className="loading-text">{tip}</p>}
-    </div>
+    <Center style={{ minHeight: '200px', flexDirection: 'column', gap: '16px' }}>
+      <Loader size={mantineSize} />
+      {tip && <div style={{ color: 'var(--mantine-color-dimmed)' }}>{tip}</div>}
+    </Center>
   );
 };
 

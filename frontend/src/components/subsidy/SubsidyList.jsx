@@ -3,7 +3,45 @@ import { message } from '../../utils/toast';
 import { useNavigate } from 'react-router-dom';
 import { subsidyAPI } from '../../services/api';
 import PageHeader from '../common/PageHeader';
-import './SubsidyList.css';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
+import {
+  Container,
+  Card,
+  Table,
+  Button,
+  Group,
+  TextInput,
+  Select,
+  Modal,
+  Checkbox,
+  Textarea,
+  Radio,
+  Badge,
+  LoadingOverlay,
+  Text,
+  ActionIcon,
+  Menu,
+  Stack,
+  Divider,
+  Paper,
+  Title,
+  ScrollArea,
+  Pagination
+} from '@mantine/core';
+import {
+  IconSearch,
+  IconPlus,
+  IconEye,
+  IconEdit,
+  IconTrash,
+  IconFilter,
+  IconDotsVertical,
+  IconDownload,
+  IconFileSpreadsheet,
+  IconFileTypePdf
+} from '@tabler/icons-react';
 
 const SubsidyList = () => {
   const navigate = useNavigate();
@@ -24,6 +62,8 @@ const SubsidyList = () => {
     subsidyType: '',
     ledgerGroup: ''
   });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     fetchSubsidies();
@@ -67,13 +107,8 @@ const SubsidyList = () => {
     setModalVisible(true);
   };
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    if (type === 'checkbox') {
-      setFormData(prev => ({ ...prev, [name]: checked ? 'Active' : 'Inactive' }));
-    } else {
-      setFormData(prev => ({ ...prev, [name]: value }));
-    }
+  const handleChange = (name, value) => {
+    setFormData(prev => ({ ...prev, [name]: value }));
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
@@ -81,7 +116,7 @@ const SubsidyList = () => {
 
   const validateForm = () => {
     const newErrors = {};
-    if (!formData.subsidyName) newErrors.subsidyName = 'Subsidy name is required';
+    if (!formData.subsidyName.trim()) newErrors.subsidyName = 'Subsidy name is required';
     if (!formData.subsidyType) newErrors.subsidyType = 'Subsidy type is required';
     if (!formData.ledgerGroup) newErrors.ledgerGroup = 'Ledger group is required';
     setErrors(newErrors);
@@ -123,19 +158,19 @@ const SubsidyList = () => {
   };
 
   const getSubsidyTypeColor = (type) => {
-    return type === 'Subsidy' ? 'tag-success' : 'tag-info';
+    return type === 'Subsidy' ? 'green' : 'blue';
   };
 
   const getLedgerGroupColor = (group) => {
     const colorMap = {
-      'Advance due to Society': 'tag-blue',
-      'Advance due by Society': 'tag-cyan',
-      'Contingencies': 'tag-warning',
-      'Trade Expenses': 'tag-danger',
-      'Trade Income': 'tag-success',
-      'Miscellaneous Income': 'tag-purple'
+      'Advance due to Society': 'blue',
+      'Advance due by Society': 'cyan',
+      'Contingencies': 'yellow',
+      'Trade Expenses': 'red',
+      'Trade Income': 'green',
+      'Miscellaneous Income': 'violet'
     };
-    return colorMap[group] || 'tag-default';
+    return colorMap[group] || 'gray';
   };
 
   const filteredSubsidies = subsidies.filter(subsidy => {
@@ -151,232 +186,353 @@ const SubsidyList = () => {
     return true;
   });
 
+  // Pagination logic
+  const totalPages = Math.ceil(filteredSubsidies.length / pageSize);
+  const paginatedSubsidies = filteredSubsidies.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters, pageSize]);
+
+  // Export to Excel
+  const exportToExcel = () => {
+    const exportData = filteredSubsidies.map((subsidy, index) => ({
+      'S.No': index + 1,
+      'Subsidy Name': subsidy.subsidyName,
+      'Type': subsidy.subsidyType,
+      'Ledger Group': subsidy.ledgerGroup,
+      'Status': subsidy.status,
+      'Description': subsidy.description || '-'
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Subsidies');
+
+    // Auto-width columns
+    const colWidths = [
+      { wch: 6 },
+      { wch: 25 },
+      { wch: 12 },
+      { wch: 25 },
+      { wch: 10 },
+      { wch: 40 }
+    ];
+    worksheet['!cols'] = colWidths;
+
+    XLSX.writeFile(workbook, `Subsidies_${new Date().toLocaleDateString('en-IN').replace(/\//g, '-')}.xlsx`);
+    message.success('Excel exported successfully');
+  };
+
+  // Export to PDF
+  const exportToPDF = () => {
+    const doc = new jsPDF();
+
+    // Title
+    doc.setFontSize(16);
+    doc.text('Subsidy List', 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Generated on: ${new Date().toLocaleDateString('en-IN')}`, 14, 22);
+
+    // Table data
+    const tableData = filteredSubsidies.map((subsidy, index) => [
+      index + 1,
+      subsidy.subsidyName,
+      subsidy.subsidyType,
+      subsidy.ledgerGroup,
+      subsidy.status,
+      subsidy.description || '-'
+    ]);
+
+    doc.autoTable({
+      head: [['S.No', 'Subsidy Name', 'Type', 'Ledger Group', 'Status', 'Description']],
+      body: tableData,
+      startY: 28,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [41, 128, 185] },
+      alternateRowStyles: { fillColor: [245, 245, 245] }
+    });
+
+    doc.save(`Subsidies_${new Date().toLocaleDateString('en-IN').replace(/\//g, '-')}.pdf`);
+    message.success('PDF exported successfully');
+  };
+
+  const ledgerGroupOptions = [
+    'Advance due to Society',
+    'Advance due by Society',
+    'Contingencies',
+    'Trade Expenses',
+    'Trade Income',
+    'Miscellaneous Income'
+  ].map(group => ({ value: group, label: group }));
+
   return (
-    <div>
-      <PageHeader
-        title="Subsidy Management"
-        subtitle="View and manage subsidies and discounts"
-      />
+    <Container size="xl" py="md">
+      <Stack spacing="md">
+        <PageHeader
+          title="Subsidy Management"
+          subtitle="View and manage subsidies and discounts"
+        />
 
-      <div className="subsidy-actions">
-        <button
-          className="btn btn-primary"
-          onClick={handleAdd}
-        >
-          + Add Subsidy
-        </button>
-      </div>
-
-      <div className="filters-container">
-        <div className="search-container">
-          <input
-            type="text"
-            className="form-input"
-            placeholder="Search by subsidy name"
-            value={filters.search}
-            onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-          />
-        </div>
-        <select
-          className="form-select"
-          value={filters.subsidyType}
-          onChange={(e) => setFilters(prev => ({ ...prev, subsidyType: e.target.value }))}
-        >
-          <option value="">All Types</option>
-          <option value="Subsidy">Subsidy</option>
-          <option value="Discount">Discount</option>
-        </select>
-        <select
-          className="form-select"
-          value={filters.ledgerGroup}
-          onChange={(e) => setFilters(prev => ({ ...prev, ledgerGroup: e.target.value }))}
-        >
-          <option value="">All Ledger Groups</option>
-          <option value="Advance due to Society">Advance due to Society</option>
-          <option value="Advance due by Society">Advance due by Society</option>
-          <option value="Contingencies">Contingencies</option>
-          <option value="Trade Expenses">Trade Expenses</option>
-          <option value="Trade Income">Trade Income</option>
-          <option value="Miscellaneous Income">Miscellaneous Income</option>
-        </select>
-      </div>
-
-      <div className="table-container">
-        {loading ? (
-          <div className="loading">Loading...</div>
-        ) : filteredSubsidies.length === 0 ? (
-          <div className="no-data">No subsidies found</div>
-        ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Subsidy Name</th>
-                <th>Type</th>
-                <th>Ledger Group</th>
-                <th>Status</th>
-                <th>Description</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredSubsidies.map((subsidy) => (
-                <tr key={subsidy._id}>
-                  <td>{subsidy.subsidyName}</td>
-                  <td>
-                    <span className={`tag ${getSubsidyTypeColor(subsidy.subsidyType)}`}>
-                      {subsidy.subsidyType}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`tag ${getLedgerGroupColor(subsidy.ledgerGroup)}`}>
-                      {subsidy.ledgerGroup}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`tag ${subsidy.status === 'Active' ? 'tag-success' : 'tag-danger'}`}>
-                      {subsidy.status}
-                    </span>
-                  </td>
-                  <td>{subsidy.description || '-'}</td>
-                  <td>
-                    <div className="action-buttons">
-                      <button
-                        className="btn-link btn-view"
-                        onClick={() => navigate(`/subsidies/view/${subsidy._id}`)}
-                      >
-                        View
-                      </button>
-                      <button
-                        className="btn-link btn-edit"
-                        onClick={() => handleEdit(subsidy)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="btn-link btn-delete"
-                        onClick={() => handleDelete(subsidy._id)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {modalVisible && (
-        <div className="modal-overlay" onClick={() => setModalVisible(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>{editingSubsidy ? 'Edit Subsidy' : 'Add Subsidy'}</h2>
-              <button className="modal-close" onClick={() => setModalVisible(false)}>&times;</button>
-            </div>
-            <form onSubmit={handleSubmit}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label required">Subsidy Name</label>
-                  <input
-                    type="text"
-                    name="subsidyName"
-                    className={`form-input ${errors.subsidyName ? 'error' : ''}`}
-                    placeholder="Enter subsidy name"
-                    value={formData.subsidyName}
-                    onChange={handleChange}
-                  />
-                  {errors.subsidyName && <div className="form-error">{errors.subsidyName}</div>}
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label required">Subsidy Type</label>
-                  <div className="radio-group">
-                    <label className="radio-label">
-                      <input
-                        type="radio"
-                        name="subsidyType"
-                        value="Subsidy"
-                        checked={formData.subsidyType === 'Subsidy'}
-                        onChange={handleChange}
-                      />
-                      <span>Subsidy</span>
-                    </label>
-                    <label className="radio-label">
-                      <input
-                        type="radio"
-                        name="subsidyType"
-                        value="Discount"
-                        checked={formData.subsidyType === 'Discount'}
-                        onChange={handleChange}
-                      />
-                      <span>Discount</span>
-                    </label>
-                  </div>
-                  {errors.subsidyType && <div className="form-error">{errors.subsidyType}</div>}
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label required">Ledger Group</label>
-                  <select
-                    name="ledgerGroup"
-                    className={`form-select ${errors.ledgerGroup ? 'error' : ''}`}
-                    value={formData.ledgerGroup}
-                    onChange={handleChange}
+        <Card shadow="sm" padding="lg" radius="md">
+          <Group position="apart" mb="md">
+            <Group>
+              <Button
+                leftSection={<IconPlus size={16} />}
+                onClick={handleAdd}
+                radius="md"
+              >
+                Add Subsidy
+              </Button>
+              <Menu shadow="md" width={150}>
+                <Menu.Target>
+                  <Button variant="outline" leftSection={<IconDownload size={16} />} radius="md">
+                    Export
+                  </Button>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Item
+                    leftSection={<IconFileSpreadsheet size={16} color="green" />}
+                    onClick={exportToExcel}
                   >
-                    <option value="">Select Ledger Group</option>
-                    <option value="Advance due to Society">Advance due to Society</option>
-                    <option value="Advance due by Society">Advance due by Society</option>
-                    <option value="Contingencies">Contingencies</option>
-                    <option value="Trade Expenses">Trade Expenses</option>
-                    <option value="Trade Income">Trade Income</option>
-                    <option value="Miscellaneous Income">Miscellaneous Income</option>
-                  </select>
-                  {errors.ledgerGroup && <div className="form-error">{errors.ledgerGroup}</div>}
-                </div>
+                    Export Excel
+                  </Menu.Item>
+                  <Menu.Item
+                    leftSection={<IconFileTypePdf size={16} color="red" />}
+                    onClick={exportToPDF}
+                  >
+                    Export PDF
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            </Group>
 
-                <div className="form-group">
-                  <label className="form-label">
-                    <input
-                      type="checkbox"
-                      name="status"
-                      checked={formData.status === 'Active'}
-                      onChange={handleChange}
-                    />
-                    <span style={{ marginLeft: '8px' }}>Active</span>
-                  </label>
-                </div>
+            <Group>
+              <TextInput
+                placeholder="Search by subsidy name"
+                leftSection={<IconSearch size={16} />}
+                value={filters.search}
+                onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+                radius="md"
+              />
+              <Select
+                placeholder="All Types"
+                data={[
+                  { value: '', label: 'All Types' },
+                  { value: 'Subsidy', label: 'Subsidy' },
+                  { value: 'Discount', label: 'Discount' }
+                ]}
+                value={filters.subsidyType}
+                onChange={(value) => setFilters(prev => ({ ...prev, subsidyType: value }))}
+                radius="md"
+              />
+              <Select
+                placeholder="All Ledger Groups"
+                data={[{ value: '', label: 'All Ledger Groups' }, ...ledgerGroupOptions]}
+                value={filters.ledgerGroup}
+                onChange={(value) => setFilters(prev => ({ ...prev, ledgerGroup: value }))}
+                radius="md"
+              />
+            </Group>
+          </Group>
 
-                <div className="form-group">
-                  <label className="form-label">Description</label>
-                  <textarea
-                    name="description"
-                    className="form-textarea"
-                    placeholder="Enter description (optional)"
-                    value={formData.description}
-                    onChange={handleChange}
-                    rows="4"
-                  />
-                </div>
-              </div>
+          <Divider my="sm" />
 
-              <div className="modal-footer">
-                <button type="submit" className="btn btn-primary">
-                  {editingSubsidy ? 'Update' : 'Save'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-default"
-                  onClick={() => setModalVisible(false)}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
+          <ScrollArea>
+            <Table highlightOnHover>
+              <thead>
+                <tr>
+                  <th>Subsidy Name</th>
+                  <th>Type</th>
+                  <th>Ledger Group</th>
+                  <th>Status</th>
+                  <th>Description</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedSubsidies.map((subsidy) => (
+                  <tr key={subsidy._id}>
+                    <td>{subsidy.subsidyName}</td>
+                    <td>
+                      <Badge color={getSubsidyTypeColor(subsidy.subsidyType)} variant="light">
+                        {subsidy.subsidyType}
+                      </Badge>
+                    </td>
+                    <td>
+                      <Badge color={getLedgerGroupColor(subsidy.ledgerGroup)} variant="light">
+                        {subsidy.ledgerGroup}
+                      </Badge>
+                    </td>
+                    <td>
+                      <Badge color={subsidy.status === 'Active' ? 'green' : 'red'} variant="light">
+                        {subsidy.status}
+                      </Badge>
+                    </td>
+                    <td>
+                      <Text lineClamp={1}>
+                        {subsidy.description || '-'}
+                      </Text>
+                    </td>
+                    <td>
+                      <Group spacing="xs">
+                        <ActionIcon
+                          color="blue"
+                          variant="subtle"
+                          onClick={() => navigate(`/subsidies/view/${subsidy._id}`)}
+                          title="View"
+                        >
+                          <IconEye size={16} />
+                        </ActionIcon>
+                        <ActionIcon
+                          color="yellow"
+                          variant="subtle"
+                          onClick={() => handleEdit(subsidy)}
+                          title="Edit"
+                        >
+                          <IconEdit size={16} />
+                        </ActionIcon>
+                        <ActionIcon
+                          color="red"
+                          variant="subtle"
+                          onClick={() => handleDelete(subsidy._id)}
+                          title="Delete"
+                        >
+                          <IconTrash size={16} />
+                        </ActionIcon>
+                      </Group>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </ScrollArea>
+
+          {filteredSubsidies.length === 0 && !loading && (
+            <Paper withBorder p="xl" mt="md">
+              <Text align="center" color="dimmed">
+                No subsidies found
+              </Text>
+            </Paper>
+          )}
+
+          {filteredSubsidies.length > 0 && (
+            <Group position="apart" mt="md">
+              <Group spacing="xs">
+                <Text size="sm" color="dimmed">Show</Text>
+                <Select
+                  value={String(pageSize)}
+                  onChange={(value) => setPageSize(Number(value))}
+                  data={[
+                    { value: '10', label: '10' },
+                    { value: '20', label: '20' },
+                    { value: '50', label: '50' },
+                    { value: '100', label: '100' }
+                  ]}
+                  size="xs"
+                  w={70}
+                  radius="md"
+                />
+                <Text size="sm" color="dimmed">per page</Text>
+                <Text size="sm" color="dimmed" ml="md">
+                  Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, filteredSubsidies.length)} of {filteredSubsidies.length} entries
+                </Text>
+              </Group>
+              <Pagination
+                value={currentPage}
+                onChange={setCurrentPage}
+                total={totalPages}
+                size="sm"
+                radius="md"
+              />
+            </Group>
+          )}
+        </Card>
+      </Stack>
+
+      <Modal
+        opened={modalVisible}
+        onClose={() => setModalVisible(false)}
+        title={editingSubsidy ? 'Edit Subsidy' : 'Add Subsidy'}
+        size="lg"
+        radius="md"
+      >
+        <form onSubmit={handleSubmit}>
+          <Stack spacing="md">
+            <TextInput
+              label="Subsidy Name"
+              placeholder="Enter subsidy name"
+              required
+              value={formData.subsidyName}
+              onChange={(e) => handleChange('subsidyName', e.target.value)}
+              error={errors.subsidyName}
+              radius="md"
+            />
+
+            <div>
+              <Text size="sm" fw={500} mb="xs" required>
+                Subsidy Type
+              </Text>
+              <Radio.Group
+                value={formData.subsidyType}
+                onChange={(value) => handleChange('subsidyType', value)}
+                error={errors.subsidyType}
+              >
+                <Group mt="xs">
+                  <Radio value="Subsidy" label="Subsidy" />
+                  <Radio value="Discount" label="Discount" />
+                </Group>
+              </Radio.Group>
+            </div>
+
+            <Select
+              label="Ledger Group"
+              placeholder="Select Ledger Group"
+              required
+              data={ledgerGroupOptions}
+              value={formData.ledgerGroup}
+              onChange={(value) => handleChange('ledgerGroup', value)}
+              error={errors.ledgerGroup}
+              radius="md"
+            />
+
+            <Checkbox
+              label="Active"
+              checked={formData.status === 'Active'}
+              onChange={(e) => handleChange('status', e.target.checked ? 'Active' : 'Inactive')}
+            />
+
+            <Textarea
+              label="Description"
+              placeholder="Enter description (optional)"
+              value={formData.description}
+              onChange={(e) => handleChange('description', e.target.value)}
+              minRows={4}
+              radius="md"
+            />
+
+            <Group position="right" mt="md">
+              <Button
+                variant="default"
+                onClick={() => setModalVisible(false)}
+                radius="md"
+              >
+                Cancel
+              </Button>
+              <Button type="submit" radius="md">
+                {editingSubsidy ? 'Update' : 'Save'}
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
+
+      <LoadingOverlay visible={loading} />
+    </Container>
   );
 };
 

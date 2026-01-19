@@ -1,20 +1,121 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import dayjs from 'dayjs';
+import {
+  Container,
+  Title,
+  Text,
+  Button,
+  Group,
+  Stepper,
+  TextInput,
+  Select,
+  NumberInput,
+  FileInput,
+  Stack,
+  Grid,
+  Paper,
+  Box,
+  rem
+} from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
+import { useForm } from '@mantine/form';
+import { IconArrowLeft, IconDeviceFloppy, IconUpload, IconTrash } from '@tabler/icons-react';
 import { farmerAPI, collectionCenterAPI } from '../../services/api';
-import PageHeader from '../common/PageHeader';
 import { message } from '../../utils/toast';
 
 const FarmerForm = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const [loading, setLoading] = useState(false);
-  const [currentStep, setCurrentStep] = useState(0);
-  const [formData, setFormData] = useState({});
-  const [errors, setErrors] = useState({});
+  const [active, setActive] = useState(0);
   const [collectionCenters, setCollectionCenters] = useState([]);
+  const [additionalDocs, setAdditionalDocs] = useState([]);
 
   const isEditMode = Boolean(id);
+
+  const form = useForm({
+    initialValues: {
+      farmerNumber: '',
+      memberId: '',
+      farmerType: '',
+      cowType: '',
+      collectionCenter: '',
+      admissionDate: null,
+      personalDetails: {
+        name: '',
+        fatherName: '',
+        age: '',
+        dob: null,
+        gender: '',
+        phone: ''
+      },
+      address: {
+        ward: '',
+        village: '',
+        panchayat: '',
+        pin: ''
+      },
+      identityDetails: {
+        aadhaar: '',
+        pan: '',
+        welfareNo: '',
+        ksheerasreeId: '',
+        idCardNumber: '',
+        issueDate: null
+      },
+      bankDetails: {
+        accountNumber: '',
+        bankName: '',
+        branch: '',
+        ifsc: ''
+      },
+      financialDetails: {
+        numberOfShares: 0,
+        shareValue: 0,
+        resolutionNo: '',
+        resolutionDate: null,
+        admissionFee: 0
+      },
+      documents: {
+        aadhaar: null,
+        bankPassbook: null,
+        rationCard: null,
+        incomeProof: null
+      }
+    },
+    validate: (values) => {
+      if (active === 0) {
+        return {
+          farmerNumber: !values.farmerNumber ? 'Farmer number is required' : null,
+          memberId: !values.memberId ? 'Member ID is required' : null,
+          'personalDetails.name': !values.personalDetails.name ? 'Name is required' : null,
+          'personalDetails.phone': values.personalDetails.phone && !/^[0-9]{10}$/.test(values.personalDetails.phone)
+            ? 'Please enter valid 10-digit phone number' : null
+        };
+      }
+      if (active === 1) {
+        return {
+          'address.pin': values.address.pin && !/^[0-9]{6}$/.test(values.address.pin)
+            ? 'Please enter valid 6-digit PIN code' : null
+        };
+      }
+      if (active === 2) {
+        return {
+          'identityDetails.aadhaar': values.identityDetails.aadhaar && !/^[0-9]{12}$/.test(values.identityDetails.aadhaar)
+            ? 'Please enter valid 12-digit Aadhaar number' : null,
+          'identityDetails.pan': values.identityDetails.pan && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(values.identityDetails.pan)
+            ? 'Please enter valid PAN number' : null
+        };
+      }
+      if (active === 4) {
+        return {
+          'bankDetails.ifsc': values.bankDetails.ifsc && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(values.bankDetails.ifsc)
+            ? 'Please enter valid IFSC code' : null
+        };
+      }
+      return {};
+    }
+  });
 
   useEffect(() => {
     fetchCollectionCenters();
@@ -38,47 +139,59 @@ const FarmerForm = () => {
       const response = await farmerAPI.getById(id);
       const farmer = response.data;
 
-      const formattedData = {
-        ...farmer,
+      form.setValues({
         farmerNumber: farmer.farmerNumber,
         memberId: farmer.memberId,
         farmerType: farmer.farmerType,
         cowType: farmer.cowType,
         collectionCenter: farmer.collectionCenter?._id || '',
-        admissionDate: farmer.admissionDate || '',
-        'personalDetails.name': farmer.personalDetails?.name,
-        'personalDetails.fatherName': farmer.personalDetails?.fatherName,
-        'personalDetails.age': farmer.personalDetails?.age,
-        'personalDetails.dob': farmer.personalDetails?.dob || '',
-        'personalDetails.gender': farmer.personalDetails?.gender,
-        'personalDetails.phone': farmer.personalDetails?.phone,
-        'address.ward': farmer.address?.ward,
-        'address.village': farmer.address?.village,
-        'address.panchayat': farmer.address?.panchayat,
-        'address.pin': farmer.address?.pin,
-        'identityDetails.aadhaar': farmer.identityDetails?.aadhaar,
-        'identityDetails.pan': farmer.identityDetails?.pan,
-        'identityDetails.welfareNo': farmer.identityDetails?.welfareNo,
-        'identityDetails.ksheerasreeId': farmer.identityDetails?.ksheerasreeId,
-        'identityDetails.idCardNumber': farmer.identityDetails?.idCardNumber,
-        'identityDetails.issueDate': farmer.identityDetails?.issueDate || '',
-        'bankDetails.accountNumber': farmer.bankDetails?.accountNumber,
-        'bankDetails.bankName': farmer.bankDetails?.bankName,
-        'bankDetails.branch': farmer.bankDetails?.branch,
-        'bankDetails.ifsc': farmer.bankDetails?.ifsc,
-        'financialDetails.numberOfShares': farmer.financialDetails?.numberOfShares || 0,
-        'financialDetails.shareValue': farmer.financialDetails?.shareValue,
-        'financialDetails.resolutionNo': farmer.financialDetails?.resolutionNo,
-        'financialDetails.resolutionDate': farmer.financialDetails?.resolutionDate || '',
-        'financialDetails.admissionFee': farmer.financialDetails?.admissionFee,
-        'documents.aadhaar': farmer.documents?.aadhaar,
-        'documents.bankPassbook': farmer.documents?.bankPassbook,
-        'documents.rationCard': farmer.documents?.rationCard,
-        'documents.incomeProof': farmer.documents?.incomeProof,
-        'documents.additionalDocuments': farmer.documents?.additionalDocuments || [],
-      };
+        admissionDate: farmer.admissionDate ? new Date(farmer.admissionDate) : null,
+        personalDetails: {
+          name: farmer.personalDetails?.name || '',
+          fatherName: farmer.personalDetails?.fatherName || '',
+          age: farmer.personalDetails?.age || '',
+          dob: farmer.personalDetails?.dob ? new Date(farmer.personalDetails.dob) : null,
+          gender: farmer.personalDetails?.gender || '',
+          phone: farmer.personalDetails?.phone || ''
+        },
+        address: {
+          ward: farmer.address?.ward || '',
+          village: farmer.address?.village || '',
+          panchayat: farmer.address?.panchayat || '',
+          pin: farmer.address?.pin || ''
+        },
+        identityDetails: {
+          aadhaar: farmer.identityDetails?.aadhaar || '',
+          pan: farmer.identityDetails?.pan || '',
+          welfareNo: farmer.identityDetails?.welfareNo || '',
+          ksheerasreeId: farmer.identityDetails?.ksheerasreeId || '',
+          idCardNumber: farmer.identityDetails?.idCardNumber || '',
+          issueDate: farmer.identityDetails?.issueDate ? new Date(farmer.identityDetails.issueDate) : null
+        },
+        bankDetails: {
+          accountNumber: farmer.bankDetails?.accountNumber || '',
+          bankName: farmer.bankDetails?.bankName || '',
+          branch: farmer.bankDetails?.branch || '',
+          ifsc: farmer.bankDetails?.ifsc || ''
+        },
+        financialDetails: {
+          numberOfShares: farmer.financialDetails?.numberOfShares || 0,
+          shareValue: farmer.financialDetails?.shareValue || 0,
+          resolutionNo: farmer.financialDetails?.resolutionNo || '',
+          resolutionDate: farmer.financialDetails?.resolutionDate ? new Date(farmer.financialDetails.resolutionDate) : null,
+          admissionFee: farmer.financialDetails?.admissionFee || 0
+        },
+        documents: {
+          aadhaar: farmer.documents?.aadhaar || null,
+          bankPassbook: farmer.documents?.bankPassbook || null,
+          rationCard: farmer.documents?.rationCard || null,
+          incomeProof: farmer.documents?.incomeProof || null
+        }
+      });
 
-      setFormData(formattedData);
+      if (farmer.documents?.additionalDocuments) {
+        setAdditionalDocs(farmer.documents.additionalDocuments);
+      }
     } catch (error) {
       message.error(error.message || 'Failed to fetch farmer details');
     } finally {
@@ -86,188 +199,91 @@ const FarmerForm = () => {
     }
   };
 
-  const handleInputChange = (name, value) => {
-    // If numberOfShares is changed, automatically calculate shareValue
-    if (name === 'financialDetails.numberOfShares') {
-      const shares = parseFloat(value) || 0;
-      const calculatedShareValue = shares * 10;
-      setFormData(prev => ({
-        ...prev,
-        [name]: value,
-        'financialDetails.shareValue': calculatedShareValue
-      }));
-    } else {
-      setFormData(prev => ({
-        ...prev,
-        [name]: value
-      }));
-    }
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
-    }
-  };
-
-  const handleFileChange = (name, file) => {
-    if (file) {
+  const handleFileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({
-          ...prev,
-          [name]: reader.result
-        }));
-      };
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
       reader.readAsDataURL(file);
-    }
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
-    }
-  };
-
-  const handleAdditionalDocumentChange = (index, file) => {
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => {
-          const additionalDocs = [...(prev['documents.additionalDocuments'] || [])];
-          additionalDocs[index] = reader.result;
-          return {
-            ...prev,
-            'documents.additionalDocuments': additionalDocs
-          };
-        });
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const removeAdditionalDocument = (index) => {
-    setFormData(prev => {
-      const additionalDocs = [...(prev['documents.additionalDocuments'] || [])];
-      additionalDocs.splice(index, 1);
-      return {
-        ...prev,
-        'documents.additionalDocuments': additionalDocs
-      };
     });
   };
 
-  const validateStep = (step) => {
-    const newErrors = {};
-
-    switch (step) {
-      case 0: // Personal Details
-        if (!formData.farmerNumber) newErrors.farmerNumber = 'Farmer number is required';
-        if (!formData.memberId) newErrors.memberId = 'Member ID is required';
-        if (!formData['personalDetails.name']) newErrors['personalDetails.name'] = 'Name is required';
-        // Optional field validation - only validate format if value is provided
-        if (formData['personalDetails.phone'] && !/^[0-9]{10}$/.test(formData['personalDetails.phone'])) {
-          newErrors['personalDetails.phone'] = 'Please enter valid 10-digit phone number';
-        }
-        break;
-      case 1: // Address
-        // Optional field validation - only validate format if value is provided
-        if (formData['address.pin'] && !/^[0-9]{6}$/.test(formData['address.pin'])) {
-          newErrors['address.pin'] = 'Please enter valid 6-digit PIN code';
-        }
-        break;
-      case 2: // Identity Details
-        // Optional field validation - only validate format if value is provided
-        if (formData['identityDetails.aadhaar'] && !/^[0-9]{12}$/.test(formData['identityDetails.aadhaar'])) {
-          newErrors['identityDetails.aadhaar'] = 'Please enter valid 12-digit Aadhaar number';
-        }
-        if (formData['identityDetails.pan'] && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(formData['identityDetails.pan'])) {
-          newErrors['identityDetails.pan'] = 'Please enter valid PAN number';
-        }
-        break;
-      case 3: // Farmer Type
-        // All fields are optional now
-        break;
-      case 4: // Bank Details
-        // Optional field validation - only validate format if value is provided
-        if (formData['bankDetails.ifsc'] && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(formData['bankDetails.ifsc'])) {
-          newErrors['bankDetails.ifsc'] = 'Please enter valid IFSC code';
-        }
-        break;
-      case 5: // Financial Details
-        // All fields are optional now
-        break;
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleNext = () => {
-    if (validateStep(currentStep)) {
-      setCurrentStep(currentStep + 1);
-    } else {
-      message.error('Please fill all required fields');
+  const nextStep = () => {
+    const validation = form.validate();
+    if (!validation.hasErrors) {
+      setActive((current) => (current < 6 ? current + 1 : current));
     }
   };
 
-  const handlePrevious = () => {
-    setCurrentStep(currentStep - 1);
-  };
+  const prevStep = () => setActive((current) => (current > 0 ? current - 1 : current));
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!validateStep(currentStep)) {
+  const handleSubmit = async () => {
+    const validation = form.validate();
+    if (validation.hasErrors) {
       message.error('Please fill all required fields');
       return;
     }
 
     setLoading(true);
     try {
+      const values = form.values;
+
+      // Convert file objects to base64
+      const documents = {};
+      for (const key in values.documents) {
+        if (values.documents[key] instanceof File) {
+          documents[key] = await handleFileToBase64(values.documents[key]);
+        } else {
+          documents[key] = values.documents[key];
+        }
+      }
+
       const payload = {
-        farmerNumber: formData.farmerNumber,
-        memberId: formData.memberId,
+        farmerNumber: values.farmerNumber,
+        memberId: values.memberId,
         personalDetails: {
-          name: formData['personalDetails.name'],
-          fatherName: formData['personalDetails.fatherName'],
-          age: parseInt(formData['personalDetails.age']),
-          dob: formData['personalDetails.dob'] ? new Date(formData['personalDetails.dob']).toISOString() : null,
-          gender: formData['personalDetails.gender'],
-          phone: formData['personalDetails.phone'],
+          name: values.personalDetails.name,
+          fatherName: values.personalDetails.fatherName,
+          age: parseInt(values.personalDetails.age) || null,
+          dob: values.personalDetails.dob ? values.personalDetails.dob.toISOString() : null,
+          gender: values.personalDetails.gender,
+          phone: values.personalDetails.phone
         },
         address: {
-          ward: formData['address.ward'],
-          village: formData['address.village'],
-          panchayat: formData['address.panchayat'],
-          pin: formData['address.pin'],
+          ward: values.address.ward,
+          village: values.address.village,
+          panchayat: values.address.panchayat,
+          pin: values.address.pin
         },
         identityDetails: {
-          aadhaar: formData['identityDetails.aadhaar'],
-          pan: formData['identityDetails.pan'],
-          welfareNo: formData['identityDetails.welfareNo'],
-          ksheerasreeId: formData['identityDetails.ksheerasreeId'],
-          idCardNumber: formData['identityDetails.idCardNumber'],
-          issueDate: formData['identityDetails.issueDate'] ? new Date(formData['identityDetails.issueDate']).toISOString() : null,
+          aadhaar: values.identityDetails.aadhaar,
+          pan: values.identityDetails.pan,
+          welfareNo: values.identityDetails.welfareNo,
+          ksheerasreeId: values.identityDetails.ksheerasreeId,
+          idCardNumber: values.identityDetails.idCardNumber,
+          issueDate: values.identityDetails.issueDate ? values.identityDetails.issueDate.toISOString() : null
         },
-        farmerType: formData.farmerType,
-        cowType: formData.cowType,
-        collectionCenter: formData.collectionCenter || null,
-        admissionDate: formData.admissionDate ? new Date(formData.admissionDate).toISOString() : null,
+        farmerType: values.farmerType,
+        cowType: values.cowType,
+        collectionCenter: values.collectionCenter || null,
+        admissionDate: values.admissionDate ? values.admissionDate.toISOString() : null,
         bankDetails: {
-          accountNumber: formData['bankDetails.accountNumber'],
-          bankName: formData['bankDetails.bankName'],
-          branch: formData['bankDetails.branch'],
-          ifsc: formData['bankDetails.ifsc'],
+          accountNumber: values.bankDetails.accountNumber,
+          bankName: values.bankDetails.bankName,
+          branch: values.bankDetails.branch,
+          ifsc: values.bankDetails.ifsc
         },
         financialDetails: {
-          numberOfShares: parseFloat(formData['financialDetails.numberOfShares']) || 0,
-          shareValue: parseFloat(formData['financialDetails.shareValue']) || 0,
-          resolutionNo: formData['financialDetails.resolutionNo'],
-          resolutionDate: formData['financialDetails.resolutionDate'] ? new Date(formData['financialDetails.resolutionDate']).toISOString() : null,
-          admissionFee: parseFloat(formData['financialDetails.admissionFee']) || 0,
+          numberOfShares: parseFloat(values.financialDetails.numberOfShares) || 0,
+          shareValue: parseFloat(values.financialDetails.shareValue) || 0,
+          resolutionNo: values.financialDetails.resolutionNo,
+          resolutionDate: values.financialDetails.resolutionDate ? values.financialDetails.resolutionDate.toISOString() : null,
+          admissionFee: parseFloat(values.financialDetails.admissionFee) || 0
         },
         documents: {
-          aadhaar: formData['documents.aadhaar'],
-          bankPassbook: formData['documents.bankPassbook'],
-          rationCard: formData['documents.rationCard'],
-          incomeProof: formData['documents.incomeProof'],
-          additionalDocuments: formData['documents.additionalDocuments'] || [],
-        },
+          ...documents,
+          additionalDocuments: additionalDocs
+        }
       };
 
       if (isEditMode) {
@@ -285,354 +301,455 @@ const FarmerForm = () => {
     }
   };
 
-  const steps = [
-    { title: 'Personal Details' },
-    { title: 'Address' },
-    { title: 'Identity Details' },
-    { title: 'Farmer Type' },
-    { title: 'Bank Details' },
-    { title: 'Financial Details' },
-    { title: 'Documents' },
-  ];
+  const handleSharesChange = (value) => {
+    const shares = parseFloat(value) || 0;
+    const calculatedShareValue = shares * 10;
+    form.setFieldValue('financialDetails.numberOfShares', value);
+    form.setFieldValue('financialDetails.shareValue', calculatedShareValue);
+  };
 
-  const renderFormField = (name, label, type = 'text', required = false, options = null, placeholder = '') => {
-    const value = formData[name] || '';
-    const error = errors[name];
-
-    if (type === 'select') {
-      return (
-        <div className="form-group">
-          <label className={`form-label ${required ? 'required' : ''}`}>{label}</label>
-          <select
-            className={`form-select ${error ? 'error' : ''}`}
-            value={value}
-            onChange={(e) => handleInputChange(name, e.target.value)}
-          >
-            <option value="">Select {label.toLowerCase()}</option>
-            {options && options.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-          {error && <div className="form-error">{error}</div>}
-        </div>
-      );
+  const addAdditionalDocument = () => {
+    if (additionalDocs.length < 5) {
+      setAdditionalDocs([...additionalDocs, '']);
     }
-
-    return (
-      <div className="form-group">
-        <label className={`form-label ${required ? 'required' : ''}`}>{label}</label>
-        <input
-          type={type}
-          className={`form-input ${error ? 'error' : ''}`}
-          value={value}
-          onChange={(e) => handleInputChange(name, e.target.value)}
-          placeholder={placeholder}
-          disabled={name === 'farmerNumber' && isEditMode}
-          min={type === 'number' ? 0 : undefined}
-          max={type === 'number' && name === 'personalDetails.age' ? 100 : undefined}
-          maxLength={name === 'personalDetails.phone' ? 10 : name === 'address.pin' ? 6 : name === 'identityDetails.aadhaar' ? 12 : name === 'identityDetails.pan' ? 10 : name === 'bankDetails.ifsc' ? 11 : undefined}
-          style={name === 'identityDetails.pan' || name === 'bankDetails.ifsc' ? { textTransform: 'uppercase' } : {}}
-        />
-        {error && <div className="form-error">{error}</div>}
-      </div>
-    );
   };
 
-  const renderFileField = (name, label, required = false) => {
-    const value = formData[name] || '';
-    const error = errors[name];
-
-    return (
-      <div className="form-group">
-        <label className={`form-label ${required ? 'required' : ''}`}>{label}</label>
-        <input
-          type="file"
-          className={`form-input ${error ? 'error' : ''}`}
-          onChange={(e) => handleFileChange(name, e.target.files[0])}
-          accept="image/*,.pdf"
-        />
-        {value && (
-          <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-            {value.startsWith('data:') ? 'File selected' : 'Previously uploaded'}
-          </div>
-        )}
-        {error && <div className="form-error">{error}</div>}
-      </div>
-    );
+  const removeAdditionalDocument = (index) => {
+    const newDocs = [...additionalDocs];
+    newDocs.splice(index, 1);
+    setAdditionalDocs(newDocs);
   };
 
-  const renderStepContent = () => {
-    switch (currentStep) {
-      case 0:
-        return (
-          <div className="form-row">
-            {renderFormField('farmerNumber', 'Farmer Number', 'text', true, null, 'Enter farmer number')}
-            {renderFormField('memberId', 'Member ID', 'text', true, null, 'Enter member ID')}
-            {renderFormField('personalDetails.name', 'Name', 'text', true, null, 'Enter name')}
-            {renderFormField('personalDetails.fatherName', "Father's Name", 'text', false, null, "Enter father's name")}
-            {renderFormField('personalDetails.age', 'Age', 'number', false, null, 'Enter age')}
-            {renderFormField('personalDetails.dob', 'Date of Birth', 'date', false)}
-            {renderFormField('personalDetails.gender', 'Gender', 'select', false, [
-              { value: 'Male', label: 'Male' },
-              { value: 'Female', label: 'Female' },
-              { value: 'Other', label: 'Other' }
-            ])}
-            {renderFormField('personalDetails.phone', 'Phone', 'text', false, null, 'Enter phone number')}
-          </div>
-        );
-
-      case 1:
-        return (
-          <div className="form-row">
-            {renderFormField('address.ward', 'Ward', 'text', false, null, 'Enter ward')}
-            {renderFormField('address.village', 'Village', 'text', false, null, 'Enter village')}
-            {renderFormField('address.panchayat', 'Panchayat', 'text', false, null, 'Enter panchayat')}
-            {renderFormField('address.pin', 'PIN Code', 'text', false, null, 'Enter PIN code')}
-          </div>
-        );
-
-      case 2:
-        return (
-          <div className="form-row">
-            {renderFormField('identityDetails.aadhaar', 'Aadhaar Number', 'text', false, null, 'Enter Aadhaar number')}
-            {renderFormField('identityDetails.pan', 'PAN Number', 'text', false, null, 'Enter PAN number')}
-            {renderFormField('identityDetails.welfareNo', 'Welfare Number', 'text', false, null, 'Enter welfare number')}
-            {renderFormField('identityDetails.ksheerasreeId', 'Ksheerasree ID', 'text', false, null, 'Enter Ksheerasree ID')}
-            {renderFormField('identityDetails.idCardNumber', 'ID Card Number', 'text', false, null, 'Enter ID card number')}
-            {renderFormField('identityDetails.issueDate', 'Issue Date', 'date', false)}
-          </div>
-        );
-
-      case 3:
-        return (
-          <div className="form-row">
-            {renderFormField('farmerType', 'Farmer Type', 'select', false, [
-              { value: 'A', label: 'Type A' },
-              { value: 'B', label: 'Type B' },
-              { value: 'C', label: 'Type C' }
-            ])}
-            {renderFormField('cowType', 'Cow Type', 'select', false, [
-              { value: 'Desi', label: 'Desi' },
-              { value: 'Crossbreed', label: 'Crossbreed' },
-              { value: 'Jersey', label: 'Jersey' },
-              { value: 'HF', label: 'HF (Holstein Friesian)' }
-            ])}
-            {renderFormField('collectionCenter', 'Collection Center', 'select', false,
-              collectionCenters.map(center => ({
-                value: center._id,
-                label: `${center.centerName} (${center.centerType})`
-              }))
-            )}
-            {renderFormField('admissionDate', 'Admission Date', 'date', false)}
-          </div>
-        );
-
-      case 4:
-        return (
-          <div className="form-row">
-            {renderFormField('bankDetails.accountNumber', 'Account Number', 'text', false, null, 'Enter account number')}
-            {renderFormField('bankDetails.bankName', 'Bank Name', 'text', false, null, 'Enter bank name')}
-            {renderFormField('bankDetails.branch', 'Branch', 'text', false, null, 'Enter branch')}
-            {renderFormField('bankDetails.ifsc', 'IFSC Code', 'text', false, null, 'Enter IFSC code')}
-          </div>
-        );
-
-      case 5:
-        return (
-          <div className="form-row">
-            {renderFormField('financialDetails.numberOfShares', 'Number of Shares', 'number', false, null, 'Enter number of shares')}
-            <div className="form-group">
-              <label className="form-label">Share Value (Auto-calculated)</label>
-              <input
-                type="number"
-                className="form-input"
-                value={formData['financialDetails.shareValue'] || 0}
-                readOnly
-                disabled
-                style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'not-allowed' }}
-              />
-              <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                Calculated as: Number of Shares × 10
-              </div>
-            </div>
-            {renderFormField('financialDetails.admissionFee', 'Admission Fee', 'number', false, null, 'Enter admission fee')}
-            {renderFormField('financialDetails.resolutionNo', 'Resolution Number', 'text', false, null, 'Enter resolution number')}
-            {renderFormField('financialDetails.resolutionDate', 'Resolution Date', 'date', false)}
-          </div>
-        );
-
-      case 6:
-        const additionalDocs = formData['documents.additionalDocuments'] || [];
-        const canAddMore = additionalDocs.length < 5;
-
-        return (
-          <div>
-            <div className="form-row">
-              {renderFileField('documents.aadhaar', 'Aadhaar Document', false)}
-              {renderFileField('documents.bankPassbook', 'Bank Passbook', false)}
-              {renderFileField('documents.rationCard', 'Ration Card', false)}
-              {renderFileField('documents.incomeProof', 'Income Proof', false)}
-            </div>
-
-            <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid var(--border-color)' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '16px', color: 'var(--text-primary)' }}>
-                Additional Documents (Max 5)
-              </h3>
-
-              {additionalDocs.map((doc, index) => (
-                <div key={index} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginBottom: '12px' }}>
-                  <div style={{ flex: 1 }}>
-                    <input
-                      type="file"
-                      className="form-input"
-                      onChange={(e) => handleAdditionalDocumentChange(index, e.target.files[0])}
-                      accept="image/*,.pdf"
-                    />
-                    {doc && (
-                      <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                        {doc.startsWith('data:') ? 'File selected' : 'Previously uploaded'}
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-default"
-                    onClick={() => removeAdditionalDocument(index)}
-                    style={{ padding: '8px 12px', minWidth: 'auto' }}
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-
-              {canAddMore && (
-                <button
-                  type="button"
-                  className="btn btn-default"
-                  onClick={() => {
-                    setFormData(prev => ({
-                      ...prev,
-                      'documents.additionalDocuments': [...(prev['documents.additionalDocuments'] || []), '']
-                    }));
-                  }}
-                  style={{ marginTop: '8px' }}
-                >
-                  + Add Document ({additionalDocs.length}/5)
-                </button>
-              )}
-            </div>
-          </div>
-        );
-
-      default:
-        return null;
+  const handleAdditionalDocChange = async (index, file) => {
+    if (file) {
+      const base64 = await handleFileToBase64(file);
+      const newDocs = [...additionalDocs];
+      newDocs[index] = base64;
+      setAdditionalDocs(newDocs);
     }
   };
 
   return (
-    <div>
-      <PageHeader
-        title={isEditMode ? 'Edit Farmer' : 'Add Farmer'}
-        subtitle={isEditMode ? 'Update farmer information' : 'Register new farmer'}
-      />
+    <Container fluid>
+      <Stack gap="lg">
+        <Group justify="space-between" align="flex-start">
+          <Box>
+            <Title order={2}>{isEditMode ? 'Edit Farmer' : 'Add Farmer'}</Title>
+            <Text c="dimmed" size="sm">
+              {isEditMode ? 'Update farmer information' : 'Register new farmer'}
+            </Text>
+          </Box>
+          <Button
+            variant="default"
+            leftSection={<IconArrowLeft size={16} />}
+            onClick={() => navigate('/farmers')}
+          >
+            Back
+          </Button>
+        </Group>
 
-      <div style={{ background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-color)', padding: '24px' }}>
-        {/* Steps indicator */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '32px', position: 'relative' }}>
-          {steps.map((step, index) => (
-            <div key={index} style={{ flex: 1, textAlign: 'center', position: 'relative', zIndex: 1 }}>
-              <div style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%',
-                background: index <= currentStep ? 'var(--primary-color)' : 'var(--bg-secondary)',
-                color: index <= currentStep ? '#fff' : 'var(--text-secondary)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto 8px',
-                border: '2px solid',
-                borderColor: index <= currentStep ? 'var(--primary-color)' : 'var(--border-color)',
-                fontWeight: '600'
-              }}>
-                {index + 1}
-              </div>
-              <div style={{
-                fontSize: '12px',
-                color: index <= currentStep ? 'var(--text-primary)' : 'var(--text-secondary)',
-                fontWeight: index === currentStep ? '600' : '400'
-              }}>
-                {step.title}
-              </div>
-              {index < steps.length - 1 && (
-                <div style={{
-                  position: 'absolute',
-                  top: '16px',
-                  left: 'calc(50% + 16px)',
-                  width: 'calc(100% - 32px)',
-                  height: '2px',
-                  background: index < currentStep ? 'var(--primary-color)' : 'var(--border-color)',
-                  zIndex: 0
-                }} />
+        <Paper p="lg" withBorder>
+          <Stepper active={active} onStepClick={setActive} breakpoint="sm">
+            <Stepper.Step label="Personal Details" description="Basic information">
+              <Stack gap="md" mt="md">
+                <Grid>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Farmer Number"
+                      placeholder="Enter farmer number"
+                      required
+                      disabled={isEditMode}
+                      {...form.getInputProps('farmerNumber')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Member ID"
+                      placeholder="Enter member ID"
+                      required
+                      {...form.getInputProps('memberId')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Name"
+                      placeholder="Enter name"
+                      required
+                      {...form.getInputProps('personalDetails.name')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Father's Name"
+                      placeholder="Enter father's name"
+                      {...form.getInputProps('personalDetails.fatherName')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <NumberInput
+                      label="Age"
+                      placeholder="Enter age"
+                      min={0}
+                      max={100}
+                      {...form.getInputProps('personalDetails.age')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <DatePickerInput
+                      label="Date of Birth"
+                      placeholder="Select date"
+                      {...form.getInputProps('personalDetails.dob')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <Select
+                      label="Gender"
+                      placeholder="Select gender"
+                      data={[
+                        { value: 'Male', label: 'Male' },
+                        { value: 'Female', label: 'Female' },
+                        { value: 'Other', label: 'Other' }
+                      ]}
+                      {...form.getInputProps('personalDetails.gender')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Phone"
+                      placeholder="Enter phone number"
+                      maxLength={10}
+                      {...form.getInputProps('personalDetails.phone')}
+                    />
+                  </Grid.Col>
+                </Grid>
+              </Stack>
+            </Stepper.Step>
+
+            <Stepper.Step label="Address" description="Location details">
+              <Stack gap="md" mt="md">
+                <Grid>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Ward"
+                      placeholder="Enter ward"
+                      {...form.getInputProps('address.ward')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Village"
+                      placeholder="Enter village"
+                      {...form.getInputProps('address.village')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Panchayat"
+                      placeholder="Enter panchayat"
+                      {...form.getInputProps('address.panchayat')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="PIN Code"
+                      placeholder="Enter PIN code"
+                      maxLength={6}
+                      {...form.getInputProps('address.pin')}
+                    />
+                  </Grid.Col>
+                </Grid>
+              </Stack>
+            </Stepper.Step>
+
+            <Stepper.Step label="Identity Details" description="ID information">
+              <Stack gap="md" mt="md">
+                <Grid>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Aadhaar Number"
+                      placeholder="Enter Aadhaar number"
+                      maxLength={12}
+                      {...form.getInputProps('identityDetails.aadhaar')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="PAN Number"
+                      placeholder="Enter PAN number"
+                      maxLength={10}
+                      style={{ textTransform: 'uppercase' }}
+                      {...form.getInputProps('identityDetails.pan')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Welfare Number"
+                      placeholder="Enter welfare number"
+                      {...form.getInputProps('identityDetails.welfareNo')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Ksheerasree ID"
+                      placeholder="Enter Ksheerasree ID"
+                      {...form.getInputProps('identityDetails.ksheerasreeId')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="ID Card Number"
+                      placeholder="Enter ID card number"
+                      {...form.getInputProps('identityDetails.idCardNumber')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <DatePickerInput
+                      label="Issue Date"
+                      placeholder="Select date"
+                      {...form.getInputProps('identityDetails.issueDate')}
+                    />
+                  </Grid.Col>
+                </Grid>
+              </Stack>
+            </Stepper.Step>
+
+            <Stepper.Step label="Farmer Type" description="Classification">
+              <Stack gap="md" mt="md">
+                <Grid>
+                  <Grid.Col span={6}>
+                    <Select
+                      label="Farmer Type"
+                      placeholder="Select farmer type"
+                      data={[
+                        { value: 'A', label: 'Individual Farmer' },
+                        { value: 'B', label: 'Farm' },
+                        { value: 'C', label: 'Institution' },
+                        { value: 'D', label: 'SHG' },
+                        { value: 'E', label: 'Others' }
+                      ]}
+                      {...form.getInputProps('farmerType')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <Select
+                      label="Cow Type"
+                      placeholder="Select cow type"
+                      data={[
+                        { value: 'Desi', label: 'Desi' },
+                        { value: 'Crossbreed', label: 'Crossbreed' },
+                        { value: 'Jersey', label: 'Jersey' },
+                        { value: 'HF', label: 'HF (Holstein Friesian)' }
+                      ]}
+                      {...form.getInputProps('cowType')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <Select
+                      label="Collection Center"
+                      placeholder="Select collection center"
+                      data={collectionCenters.map(c => ({
+                        value: c._id,
+                        label: `${c.centerName} (${c.centerType})`
+                      }))}
+                      searchable
+                      {...form.getInputProps('collectionCenter')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <DatePickerInput
+                      label="Admission Date"
+                      placeholder="Select date"
+                      {...form.getInputProps('admissionDate')}
+                    />
+                  </Grid.Col>
+                </Grid>
+              </Stack>
+            </Stepper.Step>
+
+            <Stepper.Step label="Bank Details" description="Banking information">
+              <Stack gap="md" mt="md">
+                <Grid>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Account Number"
+                      placeholder="Enter account number"
+                      {...form.getInputProps('bankDetails.accountNumber')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Bank Name"
+                      placeholder="Enter bank name"
+                      {...form.getInputProps('bankDetails.bankName')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Branch"
+                      placeholder="Enter branch"
+                      {...form.getInputProps('bankDetails.branch')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="IFSC Code"
+                      placeholder="Enter IFSC code"
+                      maxLength={11}
+                      style={{ textTransform: 'uppercase' }}
+                      {...form.getInputProps('bankDetails.ifsc')}
+                    />
+                  </Grid.Col>
+                </Grid>
+              </Stack>
+            </Stepper.Step>
+
+            <Stepper.Step label="Financial Details" description="Shares information">
+              <Stack gap="md" mt="md">
+                <Grid>
+                  <Grid.Col span={6}>
+                    <NumberInput
+                      label="Number of Shares"
+                      placeholder="Enter number of shares"
+                      min={0}
+                      value={form.values.financialDetails.numberOfShares}
+                      onChange={handleSharesChange}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <NumberInput
+                      label="Share Value (Auto-calculated)"
+                      value={form.values.financialDetails.shareValue}
+                      disabled
+                      description="Calculated as: Number of Shares × 10"
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <NumberInput
+                      label="Admission Fee"
+                      placeholder="Enter admission fee"
+                      min={0}
+                      {...form.getInputProps('financialDetails.admissionFee')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Resolution Number"
+                      placeholder="Enter resolution number"
+                      {...form.getInputProps('financialDetails.resolutionNo')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <DatePickerInput
+                      label="Resolution Date"
+                      placeholder="Select date"
+                      {...form.getInputProps('financialDetails.resolutionDate')}
+                    />
+                  </Grid.Col>
+                </Grid>
+              </Stack>
+            </Stepper.Step>
+
+            <Stepper.Step label="Documents" description="Upload files">
+              <Stack gap="md" mt="md">
+                <Grid>
+                  <Grid.Col span={6}>
+                    <FileInput
+                      label="Aadhaar Document"
+                      placeholder="Upload file"
+                      leftSection={<IconUpload size={rem(14)} />}
+                      accept="image/*,.pdf"
+                      {...form.getInputProps('documents.aadhaar')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <FileInput
+                      label="Bank Passbook"
+                      placeholder="Upload file"
+                      leftSection={<IconUpload size={rem(14)} />}
+                      accept="image/*,.pdf"
+                      {...form.getInputProps('documents.bankPassbook')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <FileInput
+                      label="Ration Card"
+                      placeholder="Upload file"
+                      leftSection={<IconUpload size={rem(14)} />}
+                      accept="image/*,.pdf"
+                      {...form.getInputProps('documents.rationCard')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <FileInput
+                      label="Income Proof"
+                      placeholder="Upload file"
+                      leftSection={<IconUpload size={rem(14)} />}
+                      accept="image/*,.pdf"
+                      {...form.getInputProps('documents.incomeProof')}
+                    />
+                  </Grid.Col>
+                </Grid>
+
+                <Box mt="md">
+                  <Group justify="space-between" mb="sm">
+                    <Text fw={500}>Additional Documents (Max 5)</Text>
+                    {additionalDocs.length < 5 && (
+                      <Button size="xs" variant="light" onClick={addAdditionalDocument}>
+                        Add Document ({additionalDocs.length}/5)
+                      </Button>
+                    )}
+                  </Group>
+
+                  <Stack gap="xs">
+                    {additionalDocs.map((doc, index) => (
+                      <Group key={index}>
+                        <FileInput
+                          placeholder="Upload file"
+                          leftSection={<IconUpload size={rem(14)} />}
+                          accept="image/*,.pdf"
+                          onChange={(file) => handleAdditionalDocChange(index, file)}
+                          style={{ flex: 1 }}
+                        />
+                        <Button
+                          color="red"
+                          variant="subtle"
+                          onClick={() => removeAdditionalDocument(index)}
+                          leftSection={<IconTrash size={rem(14)} />}
+                        >
+                          Remove
+                        </Button>
+                      </Group>
+                    ))}
+                  </Stack>
+                </Box>
+              </Stack>
+            </Stepper.Step>
+          </Stepper>
+
+          <Group justify="space-between" mt="xl">
+            <Button variant="default" onClick={prevStep} disabled={active === 0}>
+              Previous
+            </Button>
+            <Group>
+              <Button variant="default" onClick={() => navigate('/farmers')}>
+                Cancel
+              </Button>
+              {active < 6 ? (
+                <Button onClick={nextStep}>Next</Button>
+              ) : (
+                <Button
+                  onClick={handleSubmit}
+                  loading={loading}
+                  leftSection={<IconDeviceFloppy size={16} />}
+                >
+                  {isEditMode ? 'Update' : 'Save'}
+                </Button>
               )}
-            </div>
-          ))}
-        </div>
-
-        <form onSubmit={handleSubmit}>
-          {renderStepContent()}
-
-          <div style={{ marginTop: '24px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-            {currentStep > 0 && (
-              <button
-                type="button"
-                className="btn btn-default"
-                onClick={handlePrevious}
-              >
-                Previous
-              </button>
-            )}
-            {currentStep < steps.length - 1 && (
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={handleNext}
-              >
-                Next
-              </button>
-            )}
-            {currentStep === steps.length - 1 && (
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={loading}
-              >
-                {loading ? (
-                  <>
-                    <div className="spinner"></div>
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <svg className="icon" viewBox="0 0 16 16" fill="currentColor">
-                      <path d="M2 1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H9.5a1 1 0 0 0-1 1v7.293l2.646-2.647a.5.5 0 0 1 .708.708l-3.5 3.5a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L7.5 9.293V2a2 2 0 0 1 2-2H14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h2.5a.5.5 0 0 1 0 1H2z"/>
-                    </svg>
-                    {isEditMode ? 'Update' : 'Save'}
-                  </>
-                )}
-              </button>
-            )}
-            <button
-              type="button"
-              className="btn btn-default"
-              onClick={() => navigate('/farmers')}
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+            </Group>
+          </Group>
+        </Paper>
+      </Stack>
+    </Container>
   );
 };
 

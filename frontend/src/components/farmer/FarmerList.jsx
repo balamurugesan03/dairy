@@ -1,11 +1,36 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import dayjs from 'dayjs';
-import { farmerAPI, collectionCenterAPI } from '../../services/api';
-import PageHeader from '../common/PageHeader';
+import {
+  Container,
+  Title,
+  Text,
+  Button,
+  TextInput,
+  Select,
+  Group,
+  Stack,
+  Paper,
+  Badge,
+  ActionIcon,
+  Menu,
+  Grid,
+  Box,
+  Pagination
+} from '@mantine/core';
+import {
+  IconPlus,
+  IconSearch,
+  IconDots,
+  IconEdit,
+  IconTrash,
+  IconEye,
+  IconUsers,
+  IconUserMinus
+} from '@tabler/icons-react';
+import { DataTable } from 'mantine-datatable';
+import { farmerAPI } from '../../services/api';
 import { showConfirmDialog } from '../common/ConfirmDialog';
 import { message } from '../../utils/toast';
-import AddShareModal from './AddShareModal';
 
 const FarmerList = () => {
   const navigate = useNavigate();
@@ -13,63 +38,25 @@ const FarmerList = () => {
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({
     current: 1,
-    pageSize: 6,
+    pageSize: 10,
     total: 0
   });
+
   const [filters, setFilters] = useState({
     search: '',
     status: 'Active',
     farmerType: '',
-    cowType: '',
-    village: '',
-    panchayat: '',
-    ward: '',
-    isMembership: '',
-    collectionCenter: '',
-    admissionDateFrom: '',
-    admissionDateTo: '',
-    minShares: '',
-    maxShares: ''
+    isMembership: ''
   });
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [selectedFarmer, setSelectedFarmer] = useState(null);
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const [collectionCenters, setCollectionCenters] = useState([]);
-  const [villages, setVillages] = useState([]);
-  const [panchayats, setPanchayats] = useState([]);
+
+  const [sortStatus, setSortStatus] = useState({
+    columnAccessor: 'farmerNumber',
+    direction: 'asc'
+  });
 
   useEffect(() => {
     fetchFarmers();
   }, [pagination.current, pagination.pageSize, filters]);
-
-  useEffect(() => {
-    fetchCollectionCenters();
-    fetchFilterOptions();
-  }, []);
-
-  const fetchCollectionCenters = async () => {
-    try {
-      const response = await collectionCenterAPI.getAll({ status: 'Active', limit: 100 });
-      setCollectionCenters(response.data || []);
-    } catch (error) {
-      console.error('Failed to fetch collection centers:', error);
-    }
-  };
-
-  const fetchFilterOptions = async () => {
-    try {
-      const response = await farmerAPI.getAll({ limit: 1000 });
-      const allFarmers = response.data || [];
-
-      const uniqueVillages = [...new Set(allFarmers.map(f => f.address?.village).filter(Boolean))];
-      const uniquePanchayats = [...new Set(allFarmers.map(f => f.address?.panchayat).filter(Boolean))];
-
-      setVillages(uniqueVillages.sort());
-      setPanchayats(uniquePanchayats.sort());
-    } catch (error) {
-      console.error('Failed to fetch filter options:', error);
-    }
-  };
 
   const fetchFarmers = async () => {
     setLoading(true);
@@ -79,16 +66,7 @@ const FarmerList = () => {
         limit: pagination.pageSize,
         status: filters.status,
         farmerType: filters.farmerType,
-        cowType: filters.cowType,
-        village: filters.village,
-        panchayat: filters.panchayat,
-        ward: filters.ward,
         isMembership: filters.isMembership,
-        collectionCenter: filters.collectionCenter,
-        admissionDateFrom: filters.admissionDateFrom,
-        admissionDateTo: filters.admissionDateTo,
-        minShares: filters.minShares,
-        maxShares: filters.maxShares,
         search: filters.search
       };
 
@@ -146,535 +124,231 @@ const FarmerList = () => {
     });
   };
 
-  const handleAddShare = (farmer) => {
-    setSelectedFarmer(farmer);
-    setShowShareModal(true);
-  };
-
-  const handleShareSuccess = () => {
-    fetchFarmers();
-    setShowShareModal(false);
-    setSelectedFarmer(null);
-  };
-
-  const handleSearch = (e) => {
-    e.preventDefault();
-    setFilters(prev => ({ ...prev, search: e.target.search.value }));
-    setPagination(prev => ({ ...prev, current: 1 }));
-  };
-
-  const handleClearFilters = () => {
-    setFilters({
-      search: '',
-      status: '',
-      farmerType: '',
-      cowType: '',
-      village: '',
-      panchayat: '',
-      ward: '',
-      isMembership: '',
-      collectionCenter: '',
-      admissionDateFrom: '',
-      admissionDateTo: '',
-      minShares: '',
-      maxShares: ''
-    });
-    setPagination(prev => ({ ...prev, current: 1 }));
-    message.success('Filters cleared');
-  };
-
-  const getActiveFilterCount = () => {
-    return Object.entries(filters).filter(([key, value]) => value !== '' && key !== 'status').length;
-  };
-
-  const handleExportToCSV = () => {
-    if (farmers.length === 0) {
-      message.warning('No data to export');
-      return;
+  const columns = [
+    {
+      accessor: 'farmerNumber',
+      title: 'Farmer No.',
+      width: 120,
+      sortable: true
+    },
+    {
+      accessor: 'memberId',
+      title: 'Member ID',
+      width: 120,
+      render: (farmer) => farmer.memberId || '-'
+    },
+    {
+      accessor: 'name',
+      title: 'Name',
+      sortable: true,
+      render: (farmer) => farmer.personalDetails?.name || '-'
+    },
+    {
+      accessor: 'phone',
+      title: 'Phone',
+      width: 130,
+      render: (farmer) => farmer.personalDetails?.phone || '-'
+    },
+    {
+      accessor: 'village',
+      title: 'Village',
+      sortable: true,
+      render: (farmer) => farmer.address?.village || '-'
+    },
+    {
+      accessor: 'farmerType',
+      title: 'Type',
+      width: 100,
+      render: (farmer) => (
+        <Badge color={farmer.farmerType === 'A' ? 'blue' : farmer.farmerType === 'B' ? 'green' : 'orange'}>
+          {farmer.farmerType || '-'}
+        </Badge>
+      )
+    },
+    {
+      accessor: 'isMembership',
+      title: 'Membership',
+      width: 120,
+      render: (farmer) => (
+        <Badge color={farmer.isMembership ? 'green' : 'gray'}>
+          {farmer.isMembership ? 'Member' : 'Non-Member'}
+        </Badge>
+      )
+    },
+    {
+      accessor: 'status',
+      title: 'Status',
+      width: 100,
+      render: (farmer) => (
+        <Badge color={farmer.status === 'Active' ? 'green' : 'red'}>
+          {farmer.status}
+        </Badge>
+      )
+    },
+    {
+      accessor: 'actions',
+      title: 'Actions',
+      width: 80,
+      textAlign: 'center',
+      render: (farmer) => (
+        <Menu shadow="md" width={200}>
+          <Menu.Target>
+            <ActionIcon variant="subtle" color="gray">
+              <IconDots size={16} />
+            </ActionIcon>
+          </Menu.Target>
+          <Menu.Dropdown>
+            <Menu.Item
+              leftSection={<IconEye size={14} />}
+              onClick={() => navigate(`/farmers/view/${farmer._id}`)}
+            >
+              View Details
+            </Menu.Item>
+            <Menu.Item
+              leftSection={<IconEdit size={14} />}
+              onClick={() => navigate(`/farmers/edit/${farmer._id}`)}
+            >
+              Edit
+            </Menu.Item>
+            <Menu.Item
+              leftSection={farmer.isMembership ? <IconUserMinus size={14} /> : <IconUsers size={14} />}
+              onClick={() => handleMembershipToggle(farmer._id, farmer.isMembership)}
+            >
+              {farmer.isMembership ? 'Remove' : 'Add'} Membership
+            </Menu.Item>
+            <Menu.Divider />
+            <Menu.Item
+              color="red"
+              leftSection={<IconTrash size={14} />}
+              onClick={() => handleDelete(farmer._id)}
+            >
+              Delete
+            </Menu.Item>
+          </Menu.Dropdown>
+        </Menu>
+      )
     }
-
-    const headers = [
-      'Farmer No', 'Member ID', 'Name', 'Father Name', 'Phone', 'Age', 'Gender',
-      'Village', 'Panchayat', 'Ward', 'PIN', 'Farmer Type', 'Cow Type',
-      'Membership', 'Status', 'Total Shares', 'Share Value', 'Admission Fee',
-      'Bank Name', 'Account Number', 'IFSC', 'Aadhaar', 'PAN'
-    ];
-
-    const csvData = farmers.map(farmer => [
-      farmer.farmerNumber || '',
-      farmer.memberId || '',
-      farmer.personalDetails?.name || '',
-      farmer.personalDetails?.fatherName || '',
-      farmer.personalDetails?.phone || '',
-      farmer.personalDetails?.age || '',
-      farmer.personalDetails?.gender || '',
-      farmer.address?.village || '',
-      farmer.address?.panchayat || '',
-      farmer.address?.ward || '',
-      farmer.address?.pin || '',
-      farmer.farmerType || '',
-      farmer.cowType || '',
-      farmer.isMembership ? 'Member' : 'Non-Member',
-      farmer.status || '',
-      farmer.financialDetails?.totalShares || 0,
-      farmer.financialDetails?.shareValue || 0,
-      farmer.financialDetails?.admissionFee || 0,
-      farmer.bankDetails?.bankName || '',
-      farmer.bankDetails?.accountNumber || '',
-      farmer.bankDetails?.ifsc || '',
-      farmer.identityDetails?.aadhaar || '',
-      farmer.identityDetails?.pan || ''
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...csvData.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `farmers_report_${dayjs().format('YYYY-MM-DD_HH-mm')}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    message.success('Report exported successfully');
-  };
-
-  const getTagColor = (type, value) => {
-    if (type === 'farmerType') {
-      return value === 'A' ? '#1890ff' : value === 'B' ? '#52c41a' : '#faad14';
-    }
-    return value === 'Active' ? '#52c41a' : '#ff4d4f';
-  };
+  ];
 
   return (
-    <div>
-      <PageHeader
-        title="Farmer Management"
-        subtitle="Manage dairy cooperative farmers"
-        extra={[
-          <button
-            key="members"
-            className="btn btn-default"
-            onClick={() => navigate('/farmers/members')}
-            style={{ marginRight: '8px' }}
-          >
-            <svg className="icon" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M7 14s-1 0-1-1 1-4 5-4 5 3 5 4-1 1-1 1H7zm4-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>
-              <path fillRule="evenodd" d="M5.216 14A2.238 2.238 0 0 1 5 13c0-1.355.68-2.75 1.936-3.72A6.325 6.325 0 0 0 5 9c-4 0-5 3-5 4s1 1 1 1h4.216z"/>
-              <path d="M4.5 8a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/>
-            </svg>
-            View Members
-          </button>,
-          <button
-            key="add"
-            className="btn btn-primary"
-            onClick={() => navigate('/farmers/add')}
-          >
-            <svg className="icon" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
-            </svg>
+    <Container fluid>
+      <Stack gap="lg">
+        <Group justify="space-between" align="flex-start">
+          <Box>
+            <Title order={2}>Farmer Management</Title>
+            <Text c="dimmed" size="sm">Manage dairy cooperative farmers</Text>
+          </Box>
+          <Button leftSection={<IconPlus size={16} />} onClick={() => navigate('/farmers/add')}>
             Add Farmer
-          </button>
-        ]}
-      />
+          </Button>
+        </Group>
 
-      <div style={{ marginBottom: '16px' }}>
-        {/* Quick Filters */}
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
-          <form onSubmit={handleSearch} style={{ display: 'flex', gap: '8px' }}>
-            <input
-              type="text"
-              name="search"
-              className="form-input"
-              placeholder="Search by farmer number, name, or phone"
-              style={{ width: '350px' }}
-            />
-            <button type="submit" className="btn btn-default">
-              <svg className="icon" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
-              </svg>
-              Search
-            </button>
-          </form>
+        <Paper p="md" withBorder>
+          <Grid>
+            <Grid.Col span={{ base: 12, md: 4 }}>
+              <TextInput
+                placeholder="Search farmers..."
+                leftSection={<IconSearch size={16} />}
+                value={filters.search}
+                onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+              />
+            </Grid.Col>
 
-          <select
-            className="form-select"
-            value={filters.status}
-            onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-            style={{ width: '130px' }}
-          >
-            <option value="">All Status</option>
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-          </select>
+            <Grid.Col span={{ base: 12, sm: 6, md: 2 }}>
+              <Select
+                placeholder="Status"
+                data={[
+                  { value: '', label: 'All Status' },
+                  { value: 'Active', label: 'Active' },
+                  { value: 'Inactive', label: 'Inactive' }
+                ]}
+                value={filters.status}
+                onChange={(value) => setFilters(prev => ({ ...prev, status: value }))}
+              />
+            </Grid.Col>
 
-          <select
-            className="form-select"
-            value={filters.farmerType}
-            onChange={(e) => setFilters(prev => ({ ...prev, farmerType: e.target.value }))}
-            style={{ width: '130px' }}
-          >
-            <option value="">All Types</option>
-            <option value="A">Type A</option>
-            <option value="B">Type B</option>
-            <option value="C">Type C</option>
-          </select>
+            <Grid.Col span={{ base: 12, sm: 6, md: 2 }}>
+              <Select
+                placeholder="Farmer Type"
+                data={[
+                  { value: '', label: 'All Types' },
+                  { value: 'A', label: 'Type A' },
+                  { value: 'B', label: 'Type B' },
+                  { value: 'C', label: 'Type C' }
+                ]}
+                value={filters.farmerType}
+                onChange={(value) => setFilters(prev => ({ ...prev, farmerType: value }))}
+              />
+            </Grid.Col>
 
-          <button
-            className="btn btn-default"
-            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-            style={{ marginLeft: 'auto' }}
-          >
-            <svg className="icon" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M6 10.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5zm-2-3a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zm-2-3a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5z"/>
-            </svg>
-            Advanced Filters {getActiveFilterCount() > 0 && `(${getActiveFilterCount()})`}
-          </button>
+            <Grid.Col span={{ base: 12, sm: 6, md: 2 }}>
+              <Select
+                placeholder="Membership"
+                data={[
+                  { value: '', label: 'All' },
+                  { value: 'true', label: 'Members' },
+                  { value: 'false', label: 'Non-Members' }
+                ]}
+                value={filters.isMembership}
+                onChange={(value) => setFilters(prev => ({ ...prev, isMembership: value }))}
+              />
+            </Grid.Col>
 
-          <button
-            className="btn btn-default"
-            onClick={handleExportToCSV}
-            title="Export to CSV"
-          >
-            <svg className="icon" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
-              <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
-            </svg>
-            Export
-          </button>
-        </div>
+            <Grid.Col span={{ base: 12, md: 2 }}>
+              <Text size="sm" c="dimmed" style={{ lineHeight: '36px' }}>
+                {pagination.total} Total
+              </Text>
+            </Grid.Col>
+          </Grid>
+        </Paper>
 
-        {/* Advanced Filters Panel */}
-        {showAdvancedFilters && (
-          <div style={{
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '8px',
-            padding: '16px',
-            marginBottom: '12px'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ fontSize: '14px', fontWeight: '600', margin: 0 }}>Advanced Filters</h3>
-              <button
-                className="btn btn-link"
-                onClick={handleClearFilters}
-                style={{ padding: '4px 8px', fontSize: '13px' }}
-              >
-                Clear All Filters
-              </button>
-            </div>
+        <Paper withBorder>
+          <DataTable
+            columns={columns}
+            records={farmers}
+            fetching={loading}
+            minHeight={400}
+            noRecordsText="No farmers found"
+            striped
+            highlightOnHover
+            verticalSpacing="sm"
+            sortStatus={sortStatus}
+            onSortStatusChange={setSortStatus}
+          />
+        </Paper>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-              {/* Membership Filter */}
-              <div>
-                <label className="form-label" style={{ fontSize: '13px', marginBottom: '4px' }}>Membership</label>
-                <select
-                  className="form-select"
-                  value={filters.isMembership}
-                  onChange={(e) => setFilters(prev => ({ ...prev, isMembership: e.target.value }))}
-                >
-                  <option value="">All</option>
-                  <option value="true">Members</option>
-                  <option value="false">Non-Members</option>
-                </select>
-              </div>
-
-              {/* Cow Type Filter */}
-              <div>
-                <label className="form-label" style={{ fontSize: '13px', marginBottom: '4px' }}>Cow Type</label>
-                <select
-                  className="form-select"
-                  value={filters.cowType}
-                  onChange={(e) => setFilters(prev => ({ ...prev, cowType: e.target.value }))}
-                >
-                  <option value="">All</option>
-                  <option value="Desi">Desi</option>
-                  <option value="Crossbreed">Crossbreed</option>
-                  <option value="Jersey">Jersey</option>
-                  <option value="HF">HF (Holstein Friesian)</option>
-                </select>
-              </div>
-
-              {/* Village Filter */}
-              <div>
-                <label className="form-label" style={{ fontSize: '13px', marginBottom: '4px' }}>Village</label>
-                <select
-                  className="form-select"
-                  value={filters.village}
-                  onChange={(e) => setFilters(prev => ({ ...prev, village: e.target.value }))}
-                >
-                  <option value="">All Villages</option>
-                  {villages.map(village => (
-                    <option key={village} value={village}>{village}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Panchayat Filter */}
-              <div>
-                <label className="form-label" style={{ fontSize: '13px', marginBottom: '4px' }}>Panchayat</label>
-                <select
-                  className="form-select"
-                  value={filters.panchayat}
-                  onChange={(e) => setFilters(prev => ({ ...prev, panchayat: e.target.value }))}
-                >
-                  <option value="">All Panchayats</option>
-                  {panchayats.map(panchayat => (
-                    <option key={panchayat} value={panchayat}>{panchayat}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Ward Filter */}
-              <div>
-                <label className="form-label" style={{ fontSize: '13px', marginBottom: '4px' }}>Ward</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="Enter ward"
-                  value={filters.ward}
-                  onChange={(e) => setFilters(prev => ({ ...prev, ward: e.target.value }))}
-                />
-              </div>
-
-              {/* Collection Center Filter */}
-              <div>
-                <label className="form-label" style={{ fontSize: '13px', marginBottom: '4px' }}>Collection Center</label>
-                <select
-                  className="form-select"
-                  value={filters.collectionCenter}
-                  onChange={(e) => setFilters(prev => ({ ...prev, collectionCenter: e.target.value }))}
-                >
-                  <option value="">All Centers</option>
-                  {collectionCenters.map(center => (
-                    <option key={center._id} value={center._id}>
-                      {center.centerName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Admission Date From */}
-              <div>
-                <label className="form-label" style={{ fontSize: '13px', marginBottom: '4px' }}>Admission From</label>
-                <input
-                  type="date"
-                  className="form-input"
-                  value={filters.admissionDateFrom}
-                  onChange={(e) => setFilters(prev => ({ ...prev, admissionDateFrom: e.target.value }))}
-                />
-              </div>
-
-              {/* Admission Date To */}
-              <div>
-                <label className="form-label" style={{ fontSize: '13px', marginBottom: '4px' }}>Admission To</label>
-                <input
-                  type="date"
-                  className="form-input"
-                  value={filters.admissionDateTo}
-                  onChange={(e) => setFilters(prev => ({ ...prev, admissionDateTo: e.target.value }))}
-                />
-              </div>
-
-              {/* Min Shares */}
-              <div>
-                <label className="form-label" style={{ fontSize: '13px', marginBottom: '4px' }}>Min Shares</label>
-                <input
-                  type="number"
-                  className="form-input"
-                  placeholder="Min shares"
-                  value={filters.minShares}
-                  onChange={(e) => setFilters(prev => ({ ...prev, minShares: e.target.value }))}
-                  min="0"
-                />
-              </div>
-
-              {/* Max Shares */}
-              <div>
-                <label className="form-label" style={{ fontSize: '13px', marginBottom: '4px' }}>Max Shares</label>
-                <input
-                  type="number"
-                  className="form-input"
-                  placeholder="Max shares"
-                  value={filters.maxShares}
-                  onChange={(e) => setFilters(prev => ({ ...prev, maxShares: e.target.value }))}
-                  min="0"
-                />
-              </div>
-            </div>
-
-            {/* Active Filters Summary */}
-            {getActiveFilterCount() > 0 && (
-              <div style={{ marginTop: '12px', padding: '8px 12px', background: 'var(--bg-secondary)', borderRadius: '4px', fontSize: '13px' }}>
-                <strong>{getActiveFilterCount()}</strong> filter{getActiveFilterCount() > 1 ? 's' : ''} active
-              </div>
-            )}
-          </div>
+        {pagination.total > 0 && (
+          <Group justify="space-between">
+            <Text size="sm" c="dimmed">
+              Showing {(pagination.current - 1) * pagination.pageSize + 1}-
+              {Math.min(pagination.current * pagination.pageSize, pagination.total)} of {pagination.total}
+            </Text>
+            <Group>
+              <Select
+                value={String(pagination.pageSize)}
+                onChange={(value) => setPagination(prev => ({
+                  ...prev,
+                  pageSize: parseInt(value),
+                  current: 1
+                }))}
+                data={[
+                  { value: '10', label: '10/page' },
+                  { value: '20', label: '20/page' },
+                  { value: '50', label: '50/page' },
+                  { value: '100', label: '100/page' }
+                ]}
+                w={120}
+              />
+              <Pagination
+                value={pagination.current}
+                onChange={(value) => setPagination(prev => ({ ...prev, current: value }))}
+                total={Math.ceil(pagination.total / pagination.pageSize)}
+              />
+            </Group>
+          </Group>
         )}
-      </div>
-
-      <div style={{ overflowX: 'auto' }}>
-        <table className="billing-table" style={{ minWidth: '1300px' }}>
-          <thead>
-            <tr>
-              <th>Farmer No.</th>
-              <th>Member ID</th>
-              <th>Name</th>
-              <th>Phone</th>
-              <th>Village</th>
-              <th>Farmer Type</th>
-              <th>Membership</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan="9" style={{ textAlign: 'center', padding: '40px' }}>
-                  <div className="spinner"></div>
-                  Loading...
-                </td>
-              </tr>
-            ) : farmers.length === 0 ? (
-              <tr>
-                <td colSpan="9" className="table-empty">
-                  No farmers found
-                </td>
-              </tr>
-            ) : (
-              farmers.map((farmer) => (
-                <tr key={farmer._id}>
-                  <td>{farmer.farmerNumber}</td>
-                  <td>{farmer.memberId || '-'}</td>
-                  <td>{farmer.personalDetails?.name || '-'}</td>
-                  <td>{farmer.personalDetails?.phone || '-'}</td>
-                  <td>{farmer.address?.village || '-'}</td>
-                  <td>
-                    <span style={{
-                      display: 'inline-block',
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      fontSize: '12px',
-                      fontWeight: '500',
-                      background: `${getTagColor('farmerType', farmer.farmerType)}20`,
-                      color: getTagColor('farmerType', farmer.farmerType),
-                      border: `1px solid ${getTagColor('farmerType', farmer.farmerType)}`
-                    }}>
-                      {farmer.farmerType}
-                    </span>
-                  </td>
-                  <td>
-                    <span style={{
-                      display: 'inline-block',
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      fontSize: '12px',
-                      fontWeight: '500',
-                      background: farmer.isMembership ? '#52c41a20' : '#d9d9d920',
-                      color: farmer.isMembership ? '#52c41a' : '#8c8c8c',
-                      border: `1px solid ${farmer.isMembership ? '#52c41a' : '#d9d9d9'}`
-                    }}>
-                      {farmer.isMembership ? 'Member' : 'Non-Member'}
-                    </span>
-                  </td>
-                  <td>
-                    <span style={{
-                      display: 'inline-block',
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      fontSize: '12px',
-                      fontWeight: '500',
-                      background: `${getTagColor('status', farmer.status)}20`,
-                      color: getTagColor('status', farmer.status),
-                      border: `1px solid ${getTagColor('status', farmer.status)}`
-                    }}>
-                      {farmer.status}
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      <button
-                        className="btn btn-link"
-                        onClick={() => navigate(`/farmers/view/${farmer._id}`)}
-                      >
-                        View
-                      </button>
-                      <button
-                        className="btn btn-link"
-                        onClick={() => navigate(`/farmers/edit/${farmer._id}`)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="btn btn-link"
-                        style={{ color: '#1890ff' }}
-                        onClick={() => handleAddShare(farmer)}
-                      >
-                        Add Share
-                      </button>
-                      <button
-                        className="btn btn-link"
-                        style={{ color: farmer.isMembership ? '#faad14' : '#1890ff' }}
-                        onClick={() => handleMembershipToggle(farmer._id, farmer.isMembership)}
-                      >
-                        {farmer.isMembership ? 'Remove Member' : 'Add Member'}
-                      </button>
-                      <button
-                        className="btn btn-link"
-                        style={{ color: '#ff4d4f' }}
-                        onClick={() => handleDelete(farmer._id)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {pagination.total > pagination.pageSize && (
-        <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            Showing {(pagination.current - 1) * pagination.pageSize + 1} to {Math.min(pagination.current * pagination.pageSize, pagination.total)} of {pagination.total} entries
-          </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button
-              className="btn btn-default"
-              disabled={pagination.current === 1}
-              onClick={() => setPagination(prev => ({ ...prev, current: prev.current - 1 }))}
-            >
-              Previous
-            </button>
-            <button
-              className="btn btn-default"
-              disabled={pagination.current * pagination.pageSize >= pagination.total}
-              onClick={() => setPagination(prev => ({ ...prev, current: prev.current + 1 }))}
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      )}
-
-      {showShareModal && selectedFarmer && (
-        <AddShareModal
-          farmer={selectedFarmer}
-          onClose={() => {
-            setShowShareModal(false);
-            setSelectedFarmer(null);
-          }}
-          onSuccess={handleShareSuccess}
-        />
-      )}
-    </div>
+      </Stack>
+    </Container>
   );
 };
 

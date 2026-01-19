@@ -1,0 +1,207 @@
+.export-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.export-menu .btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 14px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  background: white;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.export-menu .btn:hover:not(:disabled) {
+  background: #f8f9fa;
+  border-color: #ccc;
+}
+
+.export-menu .btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.export-menu .btn svg {
+  flex-shrink: 0;
+}
+
+.export-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 250px;
+  z-index: 1000;
+  animation: slideDown 0.2s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.export-dropdown-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid #eee;
+  font-weight: 600;
+  font-size: 13px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.export-dropdown-header .badge {
+  background: #007bff;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.export-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  transition: background 0.2s;
+  text-align: left;
+}
+
+.export-option:hover {
+  background: #f8f9fa;
+}
+
+.export-option:first-of-type {
+  border-top: none;
+}
+
+.export-option:last-of-type {
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.export-option-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.export-option-icon.excel {
+  background: rgba(33, 150, 83, 0.1);
+  color: #219653;
+}
+
+.export-option-icon.csv {
+  background: rgba(52, 152, 219, 0.1);
+  color: #3498db;
+}
+
+.export-option-icon.pdf {
+  background: rgba(231, 76, 60, 0.1);
+  color: #e74c3c;
+}
+
+.export-option-text {
+  flex: 1;
+}
+
+.export-option-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 2px;
+}
+
+.export-option-desc {
+  font-size: 12px;
+  color: #666;
+}
+
+.spinner-border {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  vertical-align: text-bottom;
+  border: 0.15em solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spinner-border 0.75s linear infinite;
+}
+
+.spinner-border-sm {
+  width: 0.875rem;
+  height: 0.875rem;
+  border-width: 0.1em;
+}
+
+@keyframes spinner-border {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .export-menu .btn {
+    background: #2a2a2a;
+    color: #e0e0e0;
+    border-color: #444;
+  }
+
+  .export-menu .btn:hover:not(:disabled) {
+    background: #333;
+    border-color: #555;
+  }
+
+  .export-dropdown {
+    background: #2a2a2a;
+    border-color: #444;
+  }
+
+  .export-dropdown-header {
+    border-bottom-color: #444;
+    color: #aaa;
+  }
+
+  .export-option:hover {
+    background: #333;
+  }
+
+  .export-option-title {
+    color: #e0e0e0;
+  }
+
+  .export-option-desc {
+    color: #aaa;
+  }
+}

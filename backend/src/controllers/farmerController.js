@@ -560,6 +560,149 @@ export const terminateFarmer = async (req, res) => {
   }
 };
 
+// Bulk import farmers
+export const bulkImportFarmers = async (req, res) => {
+  try {
+    const { farmers } = req.body;
+
+    // Validate input
+    if (!farmers || !Array.isArray(farmers) || farmers.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Farmers array is required and cannot be empty'
+      });
+    }
+
+    const results = {
+      total: farmers.length,
+      created: 0,
+      updated: 0,
+      errors: [],
+      createdFarmers: [],
+      updatedFarmers: []
+    };
+
+    // Process each farmer
+    for (let i = 0; i < farmers.length; i++) {
+      const farmerData = farmers[i];
+      const rowNumber = i + 2; // Excel row (header is row 1)
+
+      try {
+        // Validate required fields
+        if (!farmerData.farmerNumber || !farmerData.memberId ||
+            !farmerData.name || !farmerData.phone) {
+          results.errors.push({
+            row: rowNumber,
+            farmerNumber: farmerData.farmerNumber || 'N/A',
+            message: 'Missing required fields (farmerNumber, memberId, name, or phone)'
+          });
+          continue;
+        }
+
+        // Validate and clean phone number
+        const phoneStr = String(farmerData.phone).replace(/\D/g, '');
+        if (phoneStr.length !== 10) {
+          results.errors.push({
+            row: rowNumber,
+            farmerNumber: farmerData.farmerNumber,
+            message: 'Phone number must be exactly 10 digits'
+          });
+          continue;
+        }
+
+        // Check if farmer exists
+        const existingFarmer = await Farmer.findOne({
+          farmerNumber: farmerData.farmerNumber
+        });
+
+        if (existingFarmer) {
+          // UPDATE existing farmer
+          existingFarmer.memberId = farmerData.memberId;
+          existingFarmer.personalDetails.name = farmerData.name;
+          existingFarmer.personalDetails.phone = phoneStr;
+
+          await existingFarmer.save();
+
+          // Update linked ledger name
+          if (existingFarmer.ledgerId) {
+            await Ledger.findByIdAndUpdate(existingFarmer.ledgerId, {
+              ledgerName: `${farmerData.name} (${farmerData.farmerNumber})`
+            });
+          }
+
+          results.updated++;
+          results.updatedFarmers.push({
+            farmerNumber: farmerData.farmerNumber,
+            name: farmerData.name
+          });
+        } else {
+          // CREATE new farmer
+          const newFarmer = new Farmer({
+            farmerNumber: farmerData.farmerNumber,
+            memberId: farmerData.memberId,
+            personalDetails: {
+              name: farmerData.name,
+              phone: phoneStr
+            },
+            status: 'Active',
+            isMembership: false
+          });
+
+          await newFarmer.save();
+
+          // Auto-create ledger for new farmer
+          const ledger = new Ledger({
+            ledgerName: `${farmerData.name} (${farmerData.farmerNumber})`,
+            ledgerType: 'Party',
+            linkedEntity: {
+              entityType: 'Farmer',
+              entityId: newFarmer._id
+            },
+            openingBalance: 0,
+            openingBalanceType: 'Dr',
+            currentBalance: 0,
+            balanceType: 'Dr',
+            parentGroup: 'Advance / Due',
+            status: 'Active'
+          });
+
+          await ledger.save();
+
+          // Link ledger to farmer
+          newFarmer.ledgerId = ledger._id;
+          await newFarmer.save();
+
+          results.created++;
+          results.createdFarmers.push({
+            farmerNumber: farmerData.farmerNumber,
+            name: farmerData.name
+          });
+        }
+      } catch (error) {
+        results.errors.push({
+          row: rowNumber,
+          farmerNumber: farmerData.farmerNumber || 'N/A',
+          message: error.message || 'Failed to process farmer'
+        });
+      }
+    }
+
+    // Return results
+    res.status(200).json({
+      success: true,
+      message: `Import completed: ${results.created} created, ${results.updated} updated, ${results.errors.length} errors`,
+      data: results
+    });
+
+  } catch (error) {
+    console.error('Bulk import error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Bulk import failed'
+    });
+  }
+};
+
 export default {
   createFarmer,
   getAllFarmers,
@@ -570,5 +713,6 @@ export default {
   toggleMembership,
   addShareToFarmer,
   getShareHistory,
-  terminateFarmer
+  terminateFarmer,
+  bulkImportFarmers
 };

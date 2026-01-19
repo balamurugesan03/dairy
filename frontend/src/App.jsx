@@ -1,112 +1,191 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import { AppProvider } from './context/AppContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { CompanyProvider, useCompany } from './context/CompanyContext';
 import MainLayout from './components/Layout/MainLayout';
+import CompanySelection from './components/company/CompanySelection';
 import './styles/theme.css';
 
-// Pages
-import Dashboard from './pages/Dashboard';
+// Loading fallback component
+const LoadingFallback = () => (
+  <div style={{
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: '80vh',
+    background: 'var(--bg-base)'
+  }}>
+    <div style={{
+      width: '40px',
+      height: '40px',
+      border: '3px solid var(--border-color)',
+      borderTopColor: 'var(--primary-color)',
+      borderRadius: '50%',
+      animation: 'spin 0.8s linear infinite'
+    }}></div>
+    <style>{`
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    `}</style>
+  </div>
+);
+
+// Lazy load all page components
+const Dashboard = lazy(() => import('./pages/Dashboard'));
 
 // Farmer Components
-import FarmerList from './components/farmer/FarmerList';
-import FarmerForm from './components/farmer/FarmerForm';
-import FarmerView from './components/farmer/FarmerView';
-import MemberList from './components/farmer/MemberList';
+const FarmerManagement = lazy(() => import('./components/farmer/FarmerManagement'));
+const FarmerView = lazy(() => import('./components/farmer/FarmerView'));
+const MemberList = lazy(() => import('./components/farmer/MemberList'));
 
 // Customer Components
-import CustomerList from './components/customer/CustomerList';
-import CustomerForm from './components/customer/CustomerForm';
-import CustomerView from './components/customer/CustomerView';
+const CustomerManagement = lazy(() => import('./components/customer/CustomerManagement'));
 
 // Supplier Components
-import SupplierList from './components/supplier/SupplierList';
-import SupplierForm from './components/supplier/SupplierForm';
-import SupplierView from './components/supplier/SupplierView';
+const SupplierList = lazy(() => import('./components/supplier/SupplierList'));
+const SupplierForm = lazy(() => import('./components/supplier/SupplierForm'));
+const SupplierView = lazy(() => import('./components/supplier/SupplierView'));
 
 // Inventory Components
-import ItemList from './components/inventory/ItemList';
-import StockInForm from './components/inventory/StockInForm';
-import StockOutForm from './components/inventory/StockOutForm';
-import StockReport from './components/inventory/StockReport';
+const ItemList = lazy(() => import('./components/inventory/ItemList'));
+const StockInManagement = lazy(() => import('./components/inventory/StockInManagement'));
+const StockOutManagement = lazy(() => import('./components/inventory/StockOutManagement'));
+const StockReport = lazy(() => import('./components/inventory/StockReport'));
+const StockDashboard = lazy(() => import('./components/inventory/StockDashboard'));
 
 // Sales Components
-import BillingForm from './components/sales/BillingForm';
-import SalesList from './components/sales/SalesList';
-import SalesView from './components/sales/SalesView';
+const BillingForm = lazy(() => import('./components/sales/BillingForm'));
+const SalesList = lazy(() => import('./components/sales/SalesList'));
+const SalesView = lazy(() => import('./components/sales/SalesView'));
 
 // Accounting Components
-import VoucherList from './components/accounting/VoucherList';
-import LedgerList from './components/accounting/LedgerList';
-import LedgerView from './components/accounting/LedgerView';
-import ReceiptVoucher from './components/accounting/ReceiptVoucher';
-import PaymentVoucher from './components/accounting/PaymentVoucher';
-import JournalVoucher from './components/accounting/JournalVoucher';
-import OutstandingReport from './components/accounting/OutstandingReport';
+const VoucherList = lazy(() => import('./components/accounting/VoucherList'));
+const LedgerList = lazy(() => import('./components/accounting/LedgerList'));
+const LedgerView = lazy(() => import('./components/accounting/LedgerView'));
+const ReceiptVoucher = lazy(() => import('./components/accounting/ReceiptVoucher'));
+const PaymentVoucher = lazy(() => import('./components/accounting/PaymentVoucher'));
+const JournalVoucher = lazy(() => import('./components/accounting/JournalVoucher'));
+const OutstandingReport = lazy(() => import('./components/accounting/OutstandingReport'));
 
 // Payment Components
-import MilkPaymentForm from './components/payments/MilkPaymentForm';
-import AdvanceForm from './components/payments/AdvanceForm';
-import AdvanceView from './components/payments/AdvanceView';
-import PaymentHistory from './components/payments/PaymentHistory';
-import AdvanceList from './components/payments/AdvanceList';
+const MilkPaymentForm = lazy(() => import('./components/payments/MilkPaymentForm'));
+const AdvanceForm = lazy(() => import('./components/payments/AdvanceForm'));
+const AdvanceView = lazy(() => import('./components/payments/AdvanceView'));
+const PaymentHistory = lazy(() => import('./components/payments/PaymentHistory'));
+const AdvanceList = lazy(() => import('./components/payments/AdvanceList'));
 
 // Report Components
-import FinancialReports from './components/reports/FinancialReports';
-import SalesReportView from './components/reports/SalesReportView';
-import StockReportView from './components/reports/StockReportView';
-import SubsidyReport from './components/reports/SubsidyReport';
-import DayBook from './components/reports/DayBook';
+const ReportsDashboard = lazy(() => import('./components/reports/ReportsDashboard'));
+const FinancialReports = lazy(() => import('./components/reports/FinancialReports'));
+const SalesReportView = lazy(() => import('./components/reports/SalesReportView'));
+const StockReportView = lazy(() => import('./components/reports/StockReportView'));
+const SubsidyReport = lazy(() => import('./components/reports/SubsidyReport'));
+const DayBook = lazy(() => import('./components/reports/DayBook'));
+const CashBook = lazy(() => import('./components/reports/CashBook'));
+const GeneralLedger = lazy(() => import('./components/reports/GeneralLedger'));
+const LedgerAbstract = lazy(() => import('./components/reports/LedgerAbstract'));
+const ReceiptsDisbursement = lazy(() => import('./components/reports/ReceiptsDisbursement'));
+const FinalAccounts = lazy(() => import('./components/reports/FinalAccounts'));
+const BalanceSheet = lazy(() => import('./components/reports/BalanceSheet'));
+const StockRegister = lazy(() => import('./components/reports/StockRegister'));
+const InventoryPurchaseRegister = lazy(() => import('./components/reports/InventoryPurchaseRegister'));
+
+// Vyapar Report Components - Private Firm
+const VyaparReportsHub = lazy(() => import('./components/reports/vyapar/VyaparReportsHub'));
+const VyaparSaleReport = lazy(() => import('./components/reports/vyapar/VyaparSaleReport'));
+const VyaparLowStockSummary = lazy(() => import('./components/reports/vyapar/VyaparLowStockSummary'));
+const VyaparPartyStatement = lazy(() => import('./components/reports/vyapar/VyaparPartyStatement'));
+const VyaparAllParties = lazy(() => import('./components/reports/vyapar/VyaparAllParties'));
+const VyaparProfitLoss = lazy(() => import('./components/reports/vyapar/VyaparProfitLoss'));
+const VyaparPurchaseReport = lazy(() => import('./components/reports/vyapar/VyaparPurchaseReport'));
+const VyaparCashflowReport = lazy(() => import('./components/reports/vyapar/VyaparCashflowReport'));
+const VyaparAllTransactions = lazy(() => import('./components/reports/vyapar/VyaparAllTransactions'));
+const VyaparBalanceSheet = lazy(() => import('./components/reports/vyapar/VyaparBalanceSheet'));
+const VyaparBillWiseProfit = lazy(() => import('./components/reports/vyapar/VyaparBillWiseProfit'));
+const VyaparPartyWiseProfit = lazy(() => import('./components/reports/vyapar/VyaparPartyWiseProfit'));
+const VyaparTrialBalance = lazy(() => import('./components/reports/vyapar/VyaparTrialBalance'));
+const VyaparStockSummary = lazy(() => import('./components/reports/vyapar/VyaparStockSummary'));
+const VyaparItemReportByParty = lazy(() => import('./components/reports/vyapar/VyaparItemReportByParty'));
+const VyaparItemWiseProfit = lazy(() => import('./components/reports/vyapar/VyaparItemWiseProfit'));
+const VyaparBankStatement = lazy(() => import('./components/reports/vyapar/VyaparBankStatement'));
 
 // Additional Module Components
-import WarrantyList from './components/additional/WarrantyList';
-import WarrantyForm from './components/additional/WarrantyForm';
-import WarrantyView from './components/additional/WarrantyView';
-import MachineList from './components/additional/MachineList';
-import MachineForm from './components/additional/MachineForm';
-import MachineView from './components/additional/MachineView';
-import QuotationList from './components/additional/QuotationList';
-import QuotationForm from './components/additional/QuotationForm';
-import QuotationView from './components/additional/QuotationView';
-import PromotionList from './components/additional/PromotionList';
-import PromotionForm from './components/additional/PromotionForm';
-import PromotionView from './components/additional/PromotionView';
-
-
+const WarrantyList = lazy(() => import('./components/additional/WarrantyList'));
+const WarrantyForm = lazy(() => import('./components/additional/WarrantyForm'));
+const WarrantyView = lazy(() => import('./components/additional/WarrantyView'));
+const MachineList = lazy(() => import('./components/additional/MachineList'));
+const MachineForm = lazy(() => import('./components/additional/MachineForm'));
+const MachineView = lazy(() => import('./components/additional/MachineView'));
+const QuotationList = lazy(() => import('./components/additional/QuotationList'));
+const QuotationForm = lazy(() => import('./components/additional/QuotationForm'));
+const QuotationView = lazy(() => import('./components/additional/QuotationView'));
+const PromotionList = lazy(() => import('./components/additional/PromotionList'));
+const PromotionForm = lazy(() => import('./components/additional/PromotionForm'));
+const PromotionView = lazy(() => import('./components/additional/PromotionView'));
 
 // Subsidy Components
-import SubsidyList from './components/subsidy/SubsidyList';
-import SubsidyView from './components/subsidy/SubsidyView';
+const SubsidyList = lazy(() => import('./components/subsidy/SubsidyList'));
+const SubsidyView = lazy(() => import('./components/subsidy/SubsidyView'));
 
 // Collection Center Components
-import CollectionCenterList from './components/collectioncenter/CollectionCenterList';
-import CollectionCenterForm from './components/collectioncenter/CollectionCenterForm';
-import CollectionCenterView from './components/collectioncenter/CollectionCenterView';
+const CollectionCenterManagement = lazy(() => import('./components/collectioncenter/CollectionCenterManagement'));
 
-function App() {
+// HRM Components
+const EmployeeList = lazy(() => import('./components/hrm/EmployeeList'));
+const EmployeeForm = lazy(() => import('./components/hrm/EmployeeForm'));
+const EmployeeView = lazy(() => import('./components/hrm/EmployeeView'));
+const DepartmentList = lazy(() => import('./components/hrm/DepartmentList'));
+const DesignationList = lazy(() => import('./components/hrm/DesignationList'));
+const AttendanceList = lazy(() => import('./components/hrm/AttendanceList'));
+const MarkAttendance = lazy(() => import('./components/hrm/MarkAttendance'));
+const LeaveList = lazy(() => import('./components/hrm/LeaveList'));
+const SalaryList = lazy(() => import('./components/hrm/SalaryList'));
+
+// App content component that uses company context
+const AppContent = () => {
+  const { selectedCompany, selectedBusinessType, loading } = useCompany();
+
+  // Show loading state while checking for saved company
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        background: 'var(--bg-base)'
+      }}>
+        <div className="spinner" style={{ width: '40px', height: '40px', border: '3px solid var(--border-color)', borderTopColor: 'var(--primary-color)', borderRadius: '50%' }}></div>
+      </div>
+    );
+  }
+
+  // If no company is selected, show company selection screen
+  if (!selectedCompany || !selectedBusinessType) {
+    return <CompanySelection />;
+  }
+
+  // Otherwise, show the main app
   return (
-    <ThemeProvider>
-      <AppProvider>
-        <Router>
-            <Routes>
-              <Route path="/" element={<MainLayout />}>
+    <Router>
+      <Suspense fallback={<LoadingFallback />}>
+        <Routes>
+          <Route path="/" element={<MainLayout />}>
               {/* Dashboard */}
               <Route index element={<Dashboard />} />
 
               {/* Farmer Management Routes */}
               <Route path="farmers">
-                <Route index element={<FarmerList />} />
-                <Route path="add" element={<FarmerForm />} />
-                <Route path="edit/:id" element={<FarmerForm />} />
+                <Route index element={<FarmerManagement />} />
                 <Route path="view/:id" element={<FarmerView />} />
                 <Route path="members" element={<MemberList />} />
               </Route>
 
               {/* Customer Management Routes */}
               <Route path="customers">
-                <Route index element={<CustomerList />} />
-                <Route path="add" element={<CustomerForm />} />
-                <Route path="edit/:id" element={<CustomerForm />} />
-                <Route path="view/:id" element={<CustomerView />} />
+                <Route index element={<CustomerManagement />} />
               </Route>
 
               {/* Supplier Management Routes */}
@@ -119,9 +198,10 @@ function App() {
 
               {/* Inventory Routes */}
               <Route path="inventory">
+                <Route index element={<StockDashboard />} />
                 <Route path="items" element={<ItemList />} />
-                <Route path="stock-in" element={<StockInForm />} />
-                <Route path="stock-out" element={<StockOutForm />} />
+                <Route path="stock-in" element={<StockInManagement />} />
+                <Route path="stock-out" element={<StockOutManagement />} />
                 <Route path="report" element={<StockReport />} />
               </Route>
 
@@ -154,14 +234,43 @@ function App() {
 
               {/* Reports Routes */}
               <Route path="reports">
+                <Route index element={<ReportsDashboard />} />
+                {/* Vyapar Reports Hub and Individual Reports - Private Firm */}
+                <Route path="vyapar" element={<VyaparReportsHub />} />
+                <Route path="vyapar/sale-report" element={<VyaparSaleReport />} />
+                <Route path="vyapar/purchase-report" element={<VyaparPurchaseReport />} />
+                <Route path="vyapar/low-stock" element={<VyaparLowStockSummary />} />
+                <Route path="vyapar/party-statement" element={<VyaparPartyStatement />} />
+                <Route path="vyapar/all-parties" element={<VyaparAllParties />} />
+                <Route path="vyapar/profit-loss" element={<VyaparProfitLoss />} />
+                <Route path="vyapar/cashflow" element={<VyaparCashflowReport />} />
+                <Route path="vyapar/all-transactions" element={<VyaparAllTransactions />} />
+                <Route path="vyapar/balance-sheet" element={<VyaparBalanceSheet />} />
+                <Route path="vyapar/bill-profit" element={<VyaparBillWiseProfit />} />
+                <Route path="vyapar/party-profit" element={<VyaparPartyWiseProfit />} />
+                <Route path="vyapar/trial-balance" element={<VyaparTrialBalance />} />
+                <Route path="vyapar/stock-summary" element={<VyaparStockSummary />} />
+                <Route path="vyapar/item-by-party" element={<VyaparItemReportByParty />} />
+                <Route path="vyapar/item-profit" element={<VyaparItemWiseProfit />} />
+                <Route path="vyapar/bank-statement" element={<VyaparBankStatement />} />
+
+
+                {/* Dairy Society Reports */}
+                <Route path="cash-book" element={<CashBook />} />
+                <Route path="general-ledger" element={<GeneralLedger />} />
+                <Route path="ledger-abstract" element={<LedgerAbstract />} />
+                <Route path="rd-enhanced" element={<ReceiptsDisbursement />} />
+                <Route path="final-accounts" element={<FinalAccounts />} />
+                <Route path="daybook" element={<DayBook />} />
                 <Route path="rd" element={<FinancialReports reportType="rd" />} />
                 <Route path="trading" element={<FinancialReports reportType="trading" />} />
                 <Route path="pl" element={<FinancialReports reportType="pl" />} />
-                <Route path="balance-sheet" element={<FinancialReports reportType="balance-sheet" />} />
+                <Route path="balance-sheet" element={<BalanceSheet />} />
                 <Route path="sales" element={<SalesReportView />} />
                 <Route path="stock" element={<StockReportView />} />
                 <Route path="subsidy" element={<SubsidyReport />} />
-                <Route path="daybook" element={<DayBook />} />
+                <Route path="stock-register" element={<StockRegister />} />
+                <Route path="purchase-register" element={<InventoryPurchaseRegister />} />
               </Route>
 
               {/* Warranty Routes */}
@@ -206,15 +315,61 @@ function App() {
 
               {/* Collection Center Routes */}
               <Route path="collection-centers">
-                <Route index element={<CollectionCenterList />} />
-                <Route path="add" element={<CollectionCenterForm />} />
-                <Route path="edit/:id" element={<CollectionCenterForm />} />
-                <Route path="view/:id" element={<CollectionCenterView />} />
+                <Route index element={<CollectionCenterManagement />} />
+              </Route>
+
+              {/* HRM Routes */}
+              <Route path="hrm">
+                {/* Employee Routes */}
+                <Route path="employees">
+                  <Route index element={<EmployeeList />} />
+                  <Route path="add" element={<EmployeeForm />} />
+                  <Route path=":id" element={<EmployeeView />} />
+                  <Route path=":id/edit" element={<EmployeeForm />} />
+                </Route>
+
+                {/* Department Routes */}
+                <Route path="departments">
+                  <Route index element={<DepartmentList />} />
+                </Route>
+
+                {/* Designation Routes */}
+                <Route path="designations">
+                  <Route index element={<DesignationList />} />
+                </Route>
+
+                {/* Attendance Routes */}
+                <Route path="attendance">
+                  <Route index element={<AttendanceList />} />
+                  <Route path="mark" element={<MarkAttendance />} />
+                </Route>
+
+                {/* Leave Routes */}
+                <Route path="leaves">
+                  <Route index element={<LeaveList />} />
+                </Route>
+
+                {/* Salary Routes */}
+                <Route path="salary">
+                  <Route index element={<SalaryList />} />
+                </Route>
               </Route>
             </Route>
-          </Routes>
-        </Router>
-      </AppProvider>
+        </Routes>
+      </Suspense>
+    </Router>
+  );
+};
+
+// Main App component with providers
+function App() {
+  return (
+    <ThemeProvider>
+      <CompanyProvider>
+        <AppProvider>
+          <AppContent />
+        </AppProvider>
+      </CompanyProvider>
     </ThemeProvider>
   );
 }

@@ -1,0 +1,104 @@
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  min-height: 300px;
+}
+
+.empty-state-icon {
+  font-size: 64px;
+  color: #ccc;
+  margin-bottom: 20px;
+  opacity: 0.6;
+}
+
+.empty-state-icon svg {
+  width: 80px;
+  height: 80px;
+  stroke: #ccc;
+  fill: none;
+}
+
+.empty-state-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 10px;
+}
+
+.empty-state-message {
+  font-size: 16px;
+  color: #666;
+  max-width: 500px;
+  margin-bottom: 25px;
+  line-height: 1.5;
+}
+
+.empty-state-action {
+  margin-bottom: 30px;
+}
+
+.empty-state-tips {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 20px;
+  max-width: 600px;
+  width: 100%;
+}
+
+.empty-state-tips h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 12px;
+  text-align: left;
+}
+
+.empty-state-tips ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+}
+
+.empty-state-tips li {
+  font-size: 14px;
+  color: #666;
+  padding: 8px 0;
+  padding-left: 24px;
+  position: relative;
+}
+
+.empty-state-tips li:before {
+  content: '•';
+  position: absolute;
+  left: 8px;
+  color: #007bff;
+  font-weight: bold;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .empty-state-title {
+    color: #e0e0e0;
+  }
+
+  .empty-state-message {
+    color: #aaa;
+  }
+
+  .empty-state-tips {
+    background: #2a2a2a;
+  }
+
+  .empty-state-tips h4 {
+    color: #ccc;
+  }
+
+  .empty-state-tips li {
+    color: #aaa;
+  }
+}

@@ -1,82 +1,80 @@
 import { useState } from 'react';
 import { useNavigate, Outlet, useLocation } from 'react-router-dom';
+import { AppShell, Group, Text, Menu, Button, Drawer } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
+import {
+  IconHome, IconUsers, IconBox, IconShoppingCart, IconBook,
+  IconCash, IconFileReport, IconShield, IconTool, IconSearch,
+  IconSpeakerphone, IconBriefcase, IconChevronDown, IconMenu2
+} from '@tabler/icons-react';
+import { useCompany } from '../../context/CompanyContext';
 import ThemeToggle from '../common/ThemeToggle';
-import './MainLayout.css';
+import CompanySwitcher from '../company/CompanySwitcher';
 
 const MainLayout = () => {
-  const [collapsed, setCollapsed] = useState(false);
-  const [openMenus, setOpenMenus] = useState(['party-menu']);
+  const [mobileOpened, { toggle: toggleMobile }] = useDisclosure();
   const navigate = useNavigate();
   const location = useLocation();
+  const { selectedBusinessType } = useCompany();
 
-  const menuItems = [
+  // Function to filter menu items based on business type
+  const getFilteredMenuItems = () => {
+    const allMenuItems = [
     {
       key: '/',
-      icon: 'home',
+      icon: <IconHome size={20} />,
       label: 'Dashboard'
     },
     {
       key: 'party-menu',
-      icon: 'users',
+      icon: <IconUsers size={20} />,
       label: 'Party Creation',
       children: [
-        { key: '/farmers', label: 'Farmer List' },
-        { key: '/farmers/add', label: 'Add Farmer' },
-        { key: '/customers', label: 'Customer List' },
-        { key: '/customers/add', label: 'Add Customer' },
-        { key: '/suppliers', label: 'Supplier List' },
-        { key: '/suppliers/add', label: 'Add Supplier' },
-        { key: '/collection-centers', label: 'Collection Centers' },
-        { key: '/collection-centers/add', label: 'Add Collection Center' }
+        { key: '/farmers', label: 'Farmer Management' },
+        { key: '/customers', label: 'Customer Management' },
+        { key: '/suppliers', label: 'Supplier Management' },
+        { key: '/collection-centers', label: 'Collection Centre Management' },
+        { key: '/subsidies', label: 'Subsidy Management' }
       ]
     },
     {
       key: 'inventory-menu',
-      icon: 'inbox',
+      icon: <IconBox size={20} />,
       label: 'Inventory',
       children: [
         { key: '/inventory/items', label: 'Item Master' },
-        { key: '/inventory/stock-in', label: 'Stock In' },
-        { key: '/inventory/stock-out', label: 'Stock Out' },
+        { key: '/inventory/stock-in', label: 'Stock In/ Purchase' },
+        { key: '/inventory/stock-out', label: 'Stock Out / Sale' },
         { key: '/inventory/report', label: 'Stock Report' }
       ]
     },
     {
       key: 'sales-menu',
-      icon: 'cart',
+      icon: <IconShoppingCart size={20} />,
       label: 'Sales & Billing',
       children: [
-        { key: '/sales/new', label: 'New Bill' },
-        { key: '/sales/list', label: 'Sales List' }
+        { key: '/sales/new', label: 'Sales Bill' },
+        { key: '/sales/list', label: 'Sales Report' }
       ]
     },
     {
       key: 'accounting-menu',
-      icon: 'book',
+      icon: <IconBook size={20} />,
       label: 'Accounting',
       children: [
-        { key: '/accounting/vouchers', label: 'Vouchers' },
+        
         { key: '/accounting/ledgers', label: 'Ledgers' },
         { key: '/accounting/receipt', label: 'Receipt Voucher' },
         { key: '/accounting/payment', label: 'Payment Voucher' },
         { key: '/accounting/journal', label: 'Journal Voucher' },
+        { key: '/accounting/vouchers', label: 'Vouchers Management' },
         { key: '/accounting/outstanding', label: 'Outstanding Report' }
       ]
     },
-    {
-      key: 'cashbook-menu',
-      icon: 'dollar',
-      label: 'Cash Book',
-      children: [
-        { key: '/cashbook/receipt', label: 'Classified Receipt' },
-        { key: '/cashbook/disbursement', label: 'Classified Disbursement' },
-        { key: '/cashbook/transactions', label: 'Cash Book View' },
-        { key: '/cashbook/reports', label: 'Classification Reports' }
-      ]
-    },
+   
     {
       key: 'payments-menu',
-      icon: 'dollar',
+      icon: <IconCash size={20} />,
       label: 'Farmer Payments',
       children: [
         { key: '/payments/milk', label: 'Milk Payment' },
@@ -87,22 +85,46 @@ const MainLayout = () => {
     },
     {
       key: 'reports-menu',
-      icon: 'file',
+      icon: <IconFileReport size={20} />,
       label: 'Reports',
-      children: [
-        { key: '/reports/daybook', label: 'Day Book' },
-        { key: '/reports/rd', label: 'Receipts & Disbursement' },
-        { key: '/reports/trading', label: 'Trading Account' },
-        { key: '/reports/pl', label: 'Profit & Loss' },
-        { key: '/reports/balance-sheet', label: 'Balance Sheet' },
-        { key: '/reports/sales', label: 'Sales Report' },
-        { key: '/reports/stock', label: 'Stock Report' },
-        { key: '/reports/subsidy', label: 'Subsidy Report' }
-      ]
+      children: selectedBusinessType === 'Private Firm'
+        ? [
+            { key: '/reports/vyapar/sale-report', label: 'Sale Report' },
+            { key: '/reports/vyapar/purchase-report', label: 'Purchase Report' },
+            { key: '/reports/vyapar/party-statement', label: 'Party Statement' },
+            { key: '/reports/vyapar/cashflow', label: 'Cashflow' },
+            { key: '/reports/vyapar/all-transactions', label: 'All Transactions' },
+            { key: '/reports/vyapar/profit-loss', label: 'Profit & Loss' },
+            { key: '/reports/vyapar/balance-sheet', label: 'Balance Sheet' },
+            { key: '/reports/vyapar/bill-profit', label: 'Bill Wise Profit' },
+            { key: '/reports/vyapar/party-profit', label: 'Party Wise Profit' },
+            { key: '/reports/vyapar/trial-balance', label: 'Trial Balance' },
+            { key: '/reports/vyapar/stock-summary', label: 'Stock Summary' },
+            { key: '/reports/vyapar/item-by-party', label: 'Item by Party' },
+            { key: '/reports/vyapar/item-profit', label: 'Item Wise Profit' },
+            { key: '/reports/vyapar/low-stock', label: 'Low Stock' },
+            { key: '/reports/vyapar/bank-statement', label: 'Bank Statement' },
+            { key: '/reports/vyapar/all-parties', label: 'All Parties' }
+          ]
+        : [
+            { key: '/reports/cash-book', label: 'Cash Book' },
+            { key: '/reports/daybook', label: 'Day Book' },
+            { key: '/reports/general-ledger', label: 'General Ledger' },
+            { key: '/reports/ledger-abstract', label: 'Ledger Abstract' },
+            { key: '/reports/rd-enhanced', label: 'R&D Enhanced' },
+            { key: '/reports/final-accounts', label: 'Final Accounts' },
+            // { key: '/reports/trading', label: 'Trading Account' },
+            // { key: '/reports/pl', label: 'Profit & Loss' },
+            { key: '/reports/balance-sheet', label: 'Balance Sheet' },
+            { key: '/reports/sales', label: 'Sales Report' },
+            { key: '/reports/stock', label: 'Stock Report' },
+            { key: '/reports/subsidy', label: 'Subsidy Report' },
+            { key: '/reports/purchase-register', label: 'Purchase Register' }
+          ]
     },
     {
       key: 'warranty-menu',
-      icon: 'shield',
+      icon: <IconShield size={20} />,
       label: 'Warranty',
       children: [
         { key: '/warranty', label: 'Warranty List' },
@@ -111,7 +133,7 @@ const MainLayout = () => {
     },
     {
       key: 'machines-menu',
-      icon: 'tool',
+      icon: <IconTool size={20} />,
       label: 'Machines',
       children: [
         { key: '/machines', label: 'Machine List' },
@@ -120,7 +142,7 @@ const MainLayout = () => {
     },
     {
       key: 'quotations-menu',
-      icon: 'search',
+      icon: <IconSearch size={20} />,
       label: 'Quotations',
       children: [
         { key: '/quotations', label: 'Quotation List' },
@@ -129,207 +151,216 @@ const MainLayout = () => {
     },
     {
       key: 'promotions-menu',
-      icon: 'megaphone',
+      icon: <IconSpeakerphone size={20} />,
       label: 'Promotions',
       children: [
         { key: '/promotions', label: 'Promotion List' },
         { key: '/promotions/add', label: 'Add Promotion' }
       ]
     },
+    
     {
-      key: 'subsidies-menu',
-      icon: 'dollar',
-      label: 'Subsidies',
+      key: 'hrm-menu',
+      icon: <IconBriefcase size={20} />,
+      label: 'Human Resources',
       children: [
-        { key: '/subsidies', label: 'Subsidy List' }
+        { key: '/hrm/employees', label: 'Employees' },
+        { key: '/hrm/departments', label: 'Departments' },
+        { key: '/hrm/designations', label: 'Designations' },
+        { key: '/hrm/attendance', label: 'Attendance' },
+        { key: '/hrm/leaves', label: 'Leave Management' },
+        { key: '/hrm/salary', label: 'Salary Management' }
       ]
     }
-  ];
+    ];
+
+    // Filter menu items based on selected business type
+    if (selectedBusinessType === 'Dairy Cooperative Society') {
+      return allMenuItems.filter(item => {
+        const allowedKeys = [
+          '/',
+          'party-menu',
+          'inventory-menu',
+          'sales-menu',
+          'accounting-menu',
+          'cashbook-menu',
+          'payments-menu',
+          'reports-menu',
+          'subsidies-menu',
+          'hrm-menu'
+        ];
+        return allowedKeys.includes(item.key);
+      });
+    } else if (selectedBusinessType === 'Private Firm') {
+      return allMenuItems.filter(item => {
+        const allowedKeys = [
+          '/',
+          'party-menu',
+          'inventory-menu',
+          'sales-menu',
+          'accounting-menu',
+          'cashbook-menu',
+          'reports-menu',
+          'warranty-menu',
+          'machines-menu',
+          'quotations-menu',
+          'promotions-menu',
+          'hrm-menu'
+        ];
+        return allowedKeys.includes(item.key);
+      });
+    }
+
+    return allMenuItems;
+  };
+
+  const menuItems = getFilteredMenuItems();
 
   const handleMenuClick = (key) => {
     navigate(key);
+    if (mobileOpened) {
+      toggleMobile();
+    }
   };
 
-  const toggleSubmenu = (key) => {
-    setOpenMenus(prev =>
-      prev.includes(key)
-        ? prev.filter(k => k !== key)
-        : [...prev, key]
+  const renderHorizontalMenuItem = (item) => {
+    if (item.children) {
+      return (
+        <Menu key={item.key} trigger="click" closeOnItemClick={true}>
+          <Menu.Target>
+            <Button
+              variant="subtle"
+              leftSection={item.icon}
+              rightSection={<IconChevronDown size={16} />}
+              size="sm"
+              styles={{
+                root: {
+                  color: 'inherit',
+                  '&:hover': {
+                    backgroundColor: 'var(--mantine-color-gray-1)',
+                  },
+                },
+              }}
+            >
+              {item.label}
+            </Button>
+          </Menu.Target>
+          <Menu.Dropdown>
+            {item.children.map((child) => (
+              <Menu.Item
+                key={child.key}
+                onClick={() => handleMenuClick(child.key)}
+                style={{
+                  backgroundColor: location.pathname === child.key ? 'var(--mantine-color-blue-1)' : undefined,
+                }}
+              >
+                {child.label}
+              </Menu.Item>
+            ))}
+          </Menu.Dropdown>
+        </Menu>
+      );
+    }
+
+    return (
+      <Button
+        key={item.key}
+        variant={location.pathname === item.key ? 'light' : 'subtle'}
+        leftSection={item.icon}
+        onClick={() => handleMenuClick(item.key)}
+        size="sm"
+        styles={{
+          root: {
+            color: 'inherit',
+          },
+        }}
+      >
+        {item.label}
+      </Button>
     );
   };
 
-  const getIcon = (iconName) => {
-    const icons = {
-      home: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <polyline points="9 22 9 12 15 12 15 22" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      ),
-      user: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <circle cx="12" cy="7" r="4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      ),
-      users: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <circle cx="9" cy="7" r="4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <path d="M23 21v-2a4 4 0 0 0-3-3.87" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <path d="M16 3.13a4 4 0 0 1 0 7.75" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      ),
-      inbox: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path d="M21 16V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <polyline points="3 10 12 13 21 10" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      ),
-      cart: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <circle cx="9" cy="21" r="1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <circle cx="20" cy="21" r="1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      ),
-      book: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      ),
-      dollar: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <line x1="12" y1="1" x2="12" y2="23" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      ),
-      file: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <polyline points="14 2 14 8 20 8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <line x1="16" y1="13" x2="8" y2="13" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <line x1="16" y1="17" x2="8" y2="17" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      ),
-      shield: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      ),
-      tool: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      ),
-      search: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <circle cx="11" cy="11" r="8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <path d="m21 21-4.35-4.35" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      ),
-      megaphone: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path d="M3 11l18-5v12L3 13v-2z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      )
-    };
-    return icons[iconName] || icons.file;
-  };
-
   return (
-    <div className="layout">
-      <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
-        <div className="sidebar-header">
-          <div className="sidebar-logo">
-            {collapsed ? 'DMS' : 'Dairy Management'}
-          </div>
-          <button
-            className="sidebar-toggle"
-            onClick={() => setCollapsed(!collapsed)}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              {collapsed ? (
-                <path d="M9 18l6-6-6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              ) : (
-                <path d="M15 18l-6-6 6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              )}
-            </svg>
-          </button>
+    <AppShell header={{ height: 110 }} padding="md">
+      <AppShell.Header>
+        <div style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}>
+          <Group h={60} px="md" justify="space-between">
+            <Group>
+              <Button
+                variant="subtle"
+                onClick={toggleMobile}
+                hiddenFrom="md"
+                size="sm"
+                leftSection={<IconMenu2 size={18} />}
+              >
+                Menu
+              </Button>
+              <Text fw={600} size="lg">Dairy Cooperative Management System</Text>
+            </Group>
+            <Group gap="md">
+              <CompanySwitcher />
+              <ThemeToggle />
+            </Group>
+          </Group>
         </div>
 
-        <nav className="sidebar-nav">
-          {menuItems.map((item) => (
-            <div key={item.key} className="menu-item-wrapper">
-              {item.children ? (
-                <>
-                  <button
-                    className={`menu-item ${openMenus.includes(item.key) ? 'active' : ''}`}
-                    onClick={() => toggleSubmenu(item.key)}
-                  >
-                    <span className="menu-icon">{getIcon(item.icon)}</span>
-                    {!collapsed && (
-                      <>
-                        <span className="menu-label">{item.label}</span>
-                        <svg
-                          className={`menu-arrow ${openMenus.includes(item.key) ? 'open' : ''}`}
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                        >
-                          <path d="M6 9l6 6 6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      </>
-                    )}
-                  </button>
-                  {!collapsed && openMenus.includes(item.key) && (
-                    <div className="submenu">
-                      {item.children.map((child) => (
-                        <button
-                          key={child.key}
-                          className={`submenu-item ${location.pathname === child.key ? 'active' : ''}`}
-                          onClick={() => handleMenuClick(child.key)}
-                        >
-                          {child.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <button
-                  className={`menu-item ${location.pathname === item.key ? 'active' : ''}`}
-                  onClick={() => handleMenuClick(item.key)}
-                >
-                  <span className="menu-icon">{getIcon(item.icon)}</span>
-                  {!collapsed && <span className="menu-label">{item.label}</span>}
-                </button>
-              )}
-            </div>
-          ))}
-        </nav>
-      </aside>
+        <Group h={50} px="md" gap="xs" visibleFrom="md" style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
+          {menuItems.map(renderHorizontalMenuItem)}
+        </Group>
+      </AppShell.Header>
 
-      <div className="layout-main">
-        <header className="layout-header">
-          <div className="header-title">
-            Dairy Cooperative Management System
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div className="header-info">
-              No Authentication Required
-            </div>
-            <ThemeToggle />
-          </div>
-        </header>
+      <Drawer
+        opened={mobileOpened}
+        onClose={toggleMobile}
+        title="Menu"
+        hiddenFrom="md"
+        size="sm"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {menuItems.map((item) => {
+            if (item.children) {
+              return (
+                <div key={item.key}>
+                  <Text size="sm" fw={600} mb="xs" c="dimmed">
+                    {item.label}
+                  </Text>
+                  {item.children.map((child) => (
+                    <Button
+                      key={child.key}
+                      variant={location.pathname === child.key ? 'light' : 'subtle'}
+                      onClick={() => handleMenuClick(child.key)}
+                      fullWidth
+                      justify="flex-start"
+                      size="sm"
+                      mb={4}
+                    >
+                      {child.label}
+                    </Button>
+                  ))}
+                </div>
+              );
+            }
+            return (
+              <Button
+                key={item.key}
+                variant={location.pathname === item.key ? 'light' : 'subtle'}
+                leftSection={item.icon}
+                onClick={() => handleMenuClick(item.key)}
+                fullWidth
+                justify="flex-start"
+                size="sm"
+              >
+                {item.label}
+              </Button>
+            );
+          })}
+        </div>
+      </Drawer>
 
-        <main className="layout-content">
-          <Outlet />
-        </main>
-      </div>
-    </div>
+      <AppShell.Main>
+        <Outlet />
+      </AppShell.Main>
+    </AppShell>
   );
 };
 

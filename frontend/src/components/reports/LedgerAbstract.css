@@ -1,0 +1,324 @@
+/* Professional Accounting Ledger Abstract */
+.ledger-abstract-container {
+  padding: 20px;
+  max-width: 1600px;
+  margin: 0 auto;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Report Header */
+.report-header-card {
+  background: #ffffff;
+  padding: 30px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  margin-bottom: 24px;
+  text-align: center;
+  border: 1px solid #e8e8e8;
+}
+
+.report-title {
+  margin: 0 0 12px 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: #1a1a1a;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.report-period {
+  margin: 0;
+  font-size: 14px;
+  color: #666;
+  font-weight: 500;
+}
+
+/* Abstract Table Container */
+.abstract-table-container {
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  overflow-x: auto;
+  margin-bottom: 24px;
+  border: 1px solid #e8e8e8;
+}
+
+/* Professional Table */
+.abstract-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+/* Table Headers */
+.abstract-table thead tr:first-child {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.abstract-table thead tr:last-child {
+  background: #f5f5f7;
+}
+
+.ledger-name-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #ffffff !important;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 14px 16px !important;
+  text-align: left;
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
+  vertical-align: middle;
+}
+
+.section-header {
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 12px 16px;
+  text-align: center;
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.section-header:last-child {
+  border-right: none;
+}
+
+.sub-header {
+  font-weight: 600;
+  color: #333;
+  font-size: 12px;
+  padding: 10px 12px;
+  text-align: right;
+  border-right: 1px solid #e8e8e8;
+  background: #f5f5f7;
+}
+
+.sub-header:first-child {
+  text-align: left;
+  border-left: 1px solid #e8e8e8;
+}
+
+/* Group Header Row */
+.group-header-row {
+  background: #f9fafb;
+  border-top: 2px solid #d1d5db;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.group-header {
+  font-weight: 700;
+  font-size: 13px;
+  color: #1f2937;
+  padding: 12px 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Ledger Rows */
+.ledger-row {
+  border-bottom: 1px solid #f0f0f0;
+  transition: background-color 0.15s ease;
+}
+
+.ledger-row:hover {
+  background-color: #fafafa;
+}
+
+.ledger-name {
+  padding: 10px 16px;
+  font-weight: 500;
+  color: #333;
+  font-size: 13px;
+  text-align: left;
+}
+
+.amount-cell {
+  padding: 10px 12px;
+  text-align: right;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  color: #4b5563;
+  white-space: nowrap;
+}
+
+/* Empty cells should show dash */
+.amount-cell:empty::before {
+  content: '—';
+  color: #d1d5db;
+}
+
+/* Group Total Row */
+.group-total-row {
+  background: #f3f4f6;
+  border-top: 1px solid #d1d5db;
+  border-bottom: 2px solid #9ca3af;
+}
+
+.total-label {
+  padding: 12px 16px;
+  font-weight: 700;
+  color: #1f2937;
+  font-size: 13px;
+  text-align: left;
+}
+
+.total-amount {
+  font-weight: 700;
+  color: #1f2937;
+  background: #f3f4f6;
+}
+
+/* Grand Total Row */
+.grand-total-row {
+  background: #e5e7eb;
+  border-top: 3px double #6b7280;
+  border-bottom: 3px double #6b7280;
+}
+
+.grand-total-label {
+  padding: 14px 16px;
+  font-weight: 800;
+  color: #111827;
+  font-size: 14px;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.grand-total-amount {
+  font-weight: 800;
+  color: #111827;
+  font-size: 14px;
+  background: #e5e7eb;
+}
+
+/* Export Section */
+.export-section {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.print-button {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+}
+
+.print-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(102, 126, 234, 0.4);
+}
+
+.print-button:active {
+  transform: translateY(0);
+}
+
+.loading-message,
+.no-data-message {
+  text-align: center;
+  padding: 60px 20px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  color: #999;
+  font-size: 16px;
+}
+
+/* Print Styles */
+@media print {
+  .ledger-abstract-container {
+    padding: 0;
+    max-width: 100%;
+  }
+
+  .export-section,
+  .date-filter-toolbar {
+    display: none !important;
+  }
+
+  .report-header-card {
+    box-shadow: none;
+    border: none;
+    padding: 20px 0;
+  }
+
+  .abstract-table-container {
+    box-shadow: none;
+    border: 1px solid #000;
+  }
+
+  .abstract-table {
+    page-break-inside: auto;
+  }
+
+  .abstract-table tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  .abstract-table thead {
+    display: table-header-group;
+  }
+
+  .group-header-row,
+  .group-total-row,
+  .grand-total-row {
+    page-break-inside: avoid;
+  }
+
+  /* Black and white for print */
+  .ledger-name-header,
+  .section-header {
+    background: #333 !important;
+    color: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .sub-header {
+    background: #f0f0f0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .ledger-abstract-container {
+    padding: 10px;
+  }
+
+  .report-header-card {
+    padding: 20px;
+  }
+
+  .report-title {
+    font-size: 18px;
+  }
+
+  .abstract-table-container {
+    overflow-x: auto;
+  }
+
+  .abstract-table {
+    min-width: 900px;
+  }
+
+  .export-section {
+    flex-direction: column;
+  }
+
+  .print-button {
+    width: 100%;
+  }
+}

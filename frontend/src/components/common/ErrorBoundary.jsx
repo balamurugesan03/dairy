@@ -1,5 +1,6 @@
 import React from 'react';
-import './ErrorBoundary.css';
+import { Alert, Stack, Button, Group, Center } from '@mantine/core';
+import { IconAlertCircle } from '@tabler/icons-react';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -23,27 +24,28 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="error-boundary-container">
-          <div className="error-boundary-content">
-            <svg className="error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <circle cx="12" cy="12" r="10" strokeWidth="2"/>
-              <line x1="12" y1="8" x2="12" y2="12" strokeWidth="2"/>
-              <line x1="12" y1="16" x2="12.01" y2="16" strokeWidth="2"/>
-            </svg>
-            <h1 className="error-title">Something went wrong</h1>
-            <p className="error-subtitle">
+        <Center style={{ minHeight: '100vh', padding: '2rem' }}>
+          <Stack align="center" gap="xl" style={{ maxWidth: 500 }}>
+            <IconAlertCircle size={80} color="var(--mantine-color-red-6)" />
+            <Alert
+              color="red"
+              title="Something went wrong"
+              icon={<IconAlertCircle />}
+              variant="light"
+              style={{ width: '100%' }}
+            >
               An unexpected error occurred. Please try refreshing the page.
-            </p>
-            <div className="error-actions">
-              <button className="btn btn-primary" onClick={this.handleReset}>
+            </Alert>
+            <Group gap="md">
+              <Button onClick={this.handleReset}>
                 Go Home
-              </button>
-              <button className="btn btn-secondary" onClick={() => window.location.reload()}>
+              </Button>
+              <Button variant="default" onClick={() => window.location.reload()}>
                 Refresh Page
-              </button>
-            </div>
-          </div>
-        </div>
+              </Button>
+            </Group>
+          </Stack>
+        </Center>
       );
     }
 

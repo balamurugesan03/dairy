@@ -1,0 +1,104 @@
+.date-filter-toolbar {
+  background: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+}
+
+.filter-mode-selector {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+  border-bottom: 2px solid #f0f0f0;
+  padding-bottom: 10px;
+}
+
+.mode-btn {
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #666;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-bottom: -12px;
+}
+
+.mode-btn:hover {
+  color: #1890ff;
+}
+
+.mode-btn.active {
+  color: #1890ff;
+  border-bottom-color: #1890ff;
+}
+
+.filter-inputs {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.filter-select,
+.filter-input {
+  padding: 8px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.3s ease;
+}
+
+.filter-select:focus,
+.filter-input:focus {
+  border-color: #1890ff;
+}
+
+.filter-select {
+  min-width: 150px;
+}
+
+.year-input {
+  width: 100px;
+}
+
+.date-input {
+  width: 150px;
+}
+
+.date-separator {
+  color: #999;
+  font-size: 14px;
+  margin: 0 5px;
+}
+
+.apply-btn {
+  margin-left: auto;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .filter-mode-selector {
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .filter-inputs {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .apply-btn {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .filter-select,
+  .filter-input {
+    width: 100%;
+  }
+}

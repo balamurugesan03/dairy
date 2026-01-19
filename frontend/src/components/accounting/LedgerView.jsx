@@ -6,8 +6,27 @@ import { ledgerAPI } from '../../services/api';
 import PageHeader from '../common/PageHeader';
 import LoadingSpinner from '../common/LoadingSpinner';
 import ExportButton from '../common/ExportButton';
-import './LedgerView.css';
-
+import {
+  Box,
+  Button,
+  Paper,
+  Grid,
+  Table,
+  Text,
+  Badge,
+  Group,
+  Stack,
+  Divider,
+  Container,
+  SimpleGrid,
+  Card,
+  NumberInput,
+  DatePicker,
+  LoadingOverlay,
+  Title,
+  Alert
+} from '@mantine/core';
+import { IconArrowLeft, IconDownload, IconCalendar, IconReceipt, IconCash, IconExchange } from '@tabler/icons-react';
 
 const LedgerView = () => {
   const navigate = useNavigate();
@@ -15,8 +34,8 @@ const LedgerView = () => {
   const [ledger, setLedger] = useState(null);
   const [loading, setLoading] = useState(false);
   const [dateRange, setDateRange] = useState({
-    startDate: '',
-    endDate: ''
+    startDate: null,
+    endDate: null
   });
 
   useEffect(() => {
@@ -36,11 +55,21 @@ const LedgerView = () => {
   };
 
   if (loading) {
-    return <LoadingSpinner />;
+    return (
+      <Container size="xl" py="xl">
+        <LoadingOverlay visible={loading} overlayProps={{ blur: 2 }} />
+      </Container>
+    );
   }
 
   if (!ledger) {
-    return null;
+    return (
+      <Container size="xl" py="xl">
+        <Alert color="red" title="Error">
+          Failed to load ledger details
+        </Alert>
+      </Container>
+    );
   }
 
   const transactions = ledger.transactions || [];
@@ -69,101 +98,221 @@ const LedgerView = () => {
     'Balance': `${Math.abs(txn.balance)} ${txn.balanceType}`
   }));
 
-  const getVoucherTypeClass = (type) => {
-    if (type === 'Receipt') return 'tag-success';
-    if (type === 'Payment') return 'tag-danger';
-    if (type === 'Journal') return 'tag-info';
-    return 'tag-default';
+  const getVoucherTypeIcon = (type) => {
+    if (type === 'Receipt') return <IconCash size={14} />;
+    if (type === 'Payment') return <IconReceipt size={14} />;
+    if (type === 'Journal') return <IconExchange size={14} />;
+    return null;
   };
 
+  const getVoucherTypeColor = (type) => {
+    if (type === 'Receipt') return 'green';
+    if (type === 'Payment') return 'red';
+    if (type === 'Journal') return 'blue';
+    return 'gray';
+  };
+
+  const getLedgerTypeColor = (type) => {
+    const colorMap = {
+      'Sales A/c': 'cyan',
+      'Trade Income': 'teal',
+      'Miscellaneous Income': 'green',
+      'Other Revenue': 'lime',
+      'Grants & Aid': 'teal',
+      'Subsidies': 'green',
+      'Purchases A/c': 'red',
+      'Trade Expenses': 'orange',
+      'Establishment Charges': 'pink',
+      'Miscellaneous Expenses': 'red',
+      'Accounts Due To (Sundry Creditors)': 'blue',
+      'Other Payable': 'violet',
+      'Other Liabilities': 'grape',
+      'Deposit A/c': 'violet',
+      'Contingency Fund': 'grape',
+      'Education Fund': 'violet',
+      'Fixed Assets': 'grape',
+      'Movable Assets': 'violet',
+      'Immovable Assets': 'grape',
+      'Other Assets': 'violet',
+      'Other Receivable': 'grape',
+      'Investment A/c': 'indigo',
+      'Other Investment': 'blue',
+      'Government Securities': 'indigo',
+      'Share Capital': 'blue',
+      'Profit & Loss A/c': 'yellow',
+      'Party': 'blue',
+      'Bank': 'green',
+      'Cash': 'yellow',
+      'Income': 'teal',
+      'Expense': 'red',
+      'Asset': 'grape',
+      'Liability': 'violet',
+      'Capital': 'blue'
+    };
+    return colorMap[type] || 'blue';
+  };
+
+  const rows = filteredTransactions.map((txn, index) => (
+    <tr key={index}>
+      <td>
+        <Text size="sm">
+          {dayjs(txn.date).format('DD-MM-YYYY')}
+        </Text>
+      </td>
+      <td>
+        <Text size="sm" weight={500}>
+          {txn.particulars}
+        </Text>
+      </td>
+      <td>
+        <Badge
+          leftSection={getVoucherTypeIcon(txn.voucherType)}
+          color={getVoucherTypeColor(txn.voucherType)}
+          variant="light"
+          size="sm"
+        >
+          {txn.voucherType}
+        </Badge>
+      </td>
+      <td align="right">
+        <Text size="sm" weight={500}>
+          {txn.debit > 0 ? `₹${txn.debit.toFixed(2)}` : '-'}
+        </Text>
+      </td>
+      <td align="right">
+        <Text size="sm" weight={500}>
+          {txn.credit > 0 ? `₹${txn.credit.toFixed(2)}` : '-'}
+        </Text>
+      </td>
+      <td align="right">
+        <Badge
+          color={txn.balanceType === 'Dr' ? 'red' : 'green'}
+          variant="light"
+          size="sm"
+        >
+          ₹{Math.abs(txn.balance).toFixed(2)} {txn.balanceType}
+        </Badge>
+      </td>
+    </tr>
+  ));
+
   return (
-    <div>
+    <Container size="xl" py="md">
       <PageHeader
         title="Ledger Details"
         subtitle={`View ledger transactions for ${ledger.ledgerName}`}
       />
 
-      <div className="actions-bar">
-        <button
-          className="btn btn-default"
-          onClick={() => navigate('/accounting/ledgers')}
-        >
-          ← Back
-        </button>
-        <ExportButton
-          data={exportData}
-          filename={`ledger_${ledger.ledgerName}`}
-          buttonText="Export"
-        />
-      </div>
+      {/* Actions Bar */}
+      <Paper p="md" mb="md" withBorder>
+        <Group position="apart">
+          <Button
+            leftSection={<IconArrowLeft size={16} />}
+            variant="default"
+            onClick={() => navigate('/accounting/ledgers')}
+          >
+            Back to Ledgers
+          </Button>
+          <ExportButton
+            data={exportData}
+            filename={`ledger_${ledger.ledgerName}`}
+            buttonText="Export"
+          />
+        </Group>
+      </Paper>
 
-      <div className="ledger-info-card">
-        <h3>Ledger Information</h3>
-        <div className="info-grid">
-          <div className="info-item">
-            <span className="info-label">Ledger Name</span>
-            <span className="info-value">{ledger.ledgerName}</span>
+      {/* Ledger Information Card */}
+      <Paper p="md" mb="md" withBorder>
+        <Title order={3} mb="md">Ledger Information</Title>
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="lg">
+          <div>
+            <Text size="sm" color="dimmed">Ledger Name</Text>
+            <Text weight={500} size="lg">{ledger.ledgerName}</Text>
           </div>
-          <div className="info-item">
-            <span className="info-label">Account Group</span>
-            <span className="info-value">
-              <span className="tag tag-info">{ledger.ledgerType}</span>
-            </span>
+          <div>
+            <Text size="sm" color="dimmed">Account Group</Text>
+            <Badge 
+              color={getLedgerTypeColor(ledger.ledgerType)} 
+              variant="light"
+              size="lg"
+            >
+              {ledger.ledgerType}
+            </Badge>
           </div>
-          <div className="info-item">
-            <span className="info-label">Opening Balance</span>
-            <span className="info-value">
+          <div>
+            <Text size="sm" color="dimmed">Opening Balance</Text>
+            <Text weight={500} size="lg">
               ₹{ledger.openingBalance?.toFixed(2) || 0} {ledger.openingBalanceType || ''}
-            </span>
+            </Text>
           </div>
-          <div className="info-item">
-            <span className="info-label">Current Balance</span>
-            <span className="info-value">
-              <span className={`tag ${ledger.balanceType === 'Dr' ? 'tag-danger' : 'tag-success'}`}>
-                ₹{ledger.currentBalance?.toFixed(2) || 0} {ledger.balanceType || ''}
-              </span>
-            </span>
+          <div>
+            <Text size="sm" color="dimmed">Current Balance</Text>
+            <Badge
+              color={ledger.balanceType === 'Dr' ? 'red' : 'green'}
+              variant="light"
+              size="lg"
+            >
+              ₹{ledger.currentBalance?.toFixed(2) || 0} {ledger.balanceType || ''}
+            </Badge>
           </div>
-          <div className="info-item">
-            <span className="info-label">Parent Group</span>
-            <span className="info-value">{ledger.parentGroup || '-'}</span>
+          <div>
+            <Text size="sm" color="dimmed">Parent Group</Text>
+            <Text weight={500} size="lg">{ledger.parentGroup || '-'}</Text>
           </div>
-          <div className="info-item">
-            <span className="info-label">Linked Entity</span>
-            <span className="info-value">{ledger.linkedEntity?.entityType || '-'}</span>
+          <div>
+            <Text size="sm" color="dimmed">Linked Entity</Text>
+            <Text weight={500} size="lg">{ledger.linkedEntity?.entityType || '-'}</Text>
           </div>
-        </div>
-      </div>
+        </SimpleGrid>
+      </Paper>
 
-      <div className="transactions-card">
-        <h3>Transaction History</h3>
+      {/* Transactions Card */}
+      <Paper p="md" withBorder>
+        <Group position="apart" mb="md">
+          <Title order={3}>Transaction History</Title>
+          <Badge color="blue" variant="light">
+            {filteredTransactions.length} Transactions
+          </Badge>
+        </Group>
 
-        <div className="date-filter">
-          <div className="filter-group">
-            <label>Start Date</label>
-            <input
-              type="date"
-              className="form-input"
+        {/* Date Filter */}
+        <Paper p="md" mb="md" withBorder bg="gray.0">
+          <Group spacing="lg">
+            <DatePicker
+              placeholder="Start Date"
               value={dateRange.startDate}
-              onChange={(e) => setDateRange(prev => ({ ...prev, startDate: e.target.value }))}
+              onChange={(date) => setDateRange(prev => ({ ...prev, startDate: date }))}
+              icon={<IconCalendar size={16} />}
+              clearable
             />
-          </div>
-          <div className="filter-group">
-            <label>End Date</label>
-            <input
-              type="date"
-              className="form-input"
+            <DatePicker
+              placeholder="End Date"
               value={dateRange.endDate}
-              onChange={(e) => setDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+              onChange={(date) => setDateRange(prev => ({ ...prev, endDate: date }))}
+              icon={<IconCalendar size={16} />}
+              clearable
             />
-          </div>
-        </div>
+            {(dateRange.startDate || dateRange.endDate) && (
+              <Button
+                variant="subtle"
+                color="gray"
+                size="sm"
+                onClick={() => setDateRange({ startDate: null, endDate: null })}
+              >
+                Clear Filters
+              </Button>
+            )}
+          </Group>
+        </Paper>
 
-        <div className="table-container">
-          {filteredTransactions.length === 0 ? (
-            <div className="no-data">No transactions found</div>
-          ) : (
-            <table className="data-table">
+        {/* Transactions Table */}
+        {filteredTransactions.length === 0 ? (
+          <Paper p="xl" ta="center" withBorder>
+            <Text color="dimmed">No transactions found</Text>
+          </Paper>
+        ) : (
+          <>
+            <Table striped highlightOnHover>
               <thead>
                 <tr>
                   <th>Date</th>
@@ -174,43 +323,54 @@ const LedgerView = () => {
                   <th style={{ textAlign: 'right' }}>Balance</th>
                 </tr>
               </thead>
-              <tbody>
-                {filteredTransactions.map((txn, index) => (
-                  <tr key={index}>
-                    <td>{dayjs(txn.date).format('DD-MM-YYYY')}</td>
-                    <td>{txn.particulars}</td>
-                    <td>
-                      <span className={`tag ${getVoucherTypeClass(txn.voucherType)}`}>
-                        {txn.voucherType}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      {txn.debit > 0 ? `₹${txn.debit.toFixed(2)}` : '-'}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      {txn.credit > 0 ? `₹${txn.credit.toFixed(2)}` : '-'}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <span className={`tag ${txn.balanceType === 'Dr' ? 'tag-danger' : 'tag-success'}`}>
-                        ₹{Math.abs(txn.balance).toFixed(2)} {txn.balanceType}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
+              <tbody>{rows}</tbody>
               <tfoot>
-                <tr style={{ fontWeight: 'bold', backgroundColor: '#fafafa' }}>
-                  <td colSpan="3" style={{ textAlign: 'right' }}>Total:</td>
-                  <td style={{ textAlign: 'right' }}>₹{totalDebit.toFixed(2)}</td>
-                  <td style={{ textAlign: 'right' }}>₹{totalCredit.toFixed(2)}</td>
+                <tr style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}>
+                  <td colSpan="3" align="right">
+                    <Text weight={700}>Total:</Text>
+                  </td>
+                  <td align="right">
+                    <Text weight={700}>₹{totalDebit.toFixed(2)}</Text>
+                  </td>
+                  <td align="right">
+                    <Text weight={700}>₹{totalCredit.toFixed(2)}</Text>
+                  </td>
                   <td></td>
                 </tr>
               </tfoot>
-            </table>
-          )}
-        </div>
-      </div>
-    </div>
+            </Table>
+
+            {/* Summary */}
+            <Paper p="md" mt="md" withBorder bg="gray.0">
+              <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+                <div>
+                  <Text size="sm" color="dimmed">Total Debit</Text>
+                  <Text size="lg" weight={700} color="red">
+                    ₹{totalDebit.toFixed(2)}
+                  </Text>
+                </div>
+                <div>
+                  <Text size="sm" color="dimmed">Total Credit</Text>
+                  <Text size="lg" weight={700} color="green">
+                    ₹{totalCredit.toFixed(2)}
+                  </Text>
+                </div>
+                <div>
+                  <Text size="sm" color="dimmed">Closing Balance</Text>
+                  <Badge
+                    color={ledger.balanceType === 'Dr' ? 'red' : 'green'}
+                    variant="filled"
+                    size="lg"
+                  >
+                    ₹{ledger.currentBalance?.toFixed(2) || 0} {ledger.balanceType || ''}
+                  </Badge>
+                </div>
+              </SimpleGrid>
+            </Paper>
+          </>
+        )}
+      </Paper>
+    </Container>
   );
 };
 

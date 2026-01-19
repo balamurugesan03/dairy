@@ -1,0 +1,379 @@
+/* Balance Sheet - Cooperative Society Format */
+
+/* Main Container */
+.balance-sheet-container {
+  padding: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+  background-color: #fafafa;
+}
+
+/* Report Header */
+.balance-sheet-header {
+  text-align: center;
+  margin-bottom: 30px;
+  padding: 20px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.balance-sheet-header h2 {
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 28px;
+  font-weight: bold;
+  color: #000;
+  margin: 0 0 10px 0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.balance-sheet-header p {
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 16px;
+  color: #333;
+  margin: 5px 0;
+}
+
+/* Summary Cards */
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.summary-card {
+  background: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.summary-card.success {
+  border-left: 4px solid #52c41a;
+}
+
+.summary-card.danger {
+  border-left: 4px solid #f5222d;
+}
+
+.summary-card.info {
+  border-left: 4px solid #1890ff;
+}
+
+.card-label {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.card-value {
+  font-size: 24px;
+  font-weight: bold;
+  color: #333;
+}
+
+.card-subtext {
+  font-size: 12px;
+  color: #999;
+  margin-top: 5px;
+}
+
+/* Two-Sided Layout */
+.balance-sheet-wrapper {
+  display: flex;
+  gap: 20px;
+  margin-top: 20px;
+  background: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.balance-sheet-side {
+  flex: 1;
+  min-width: 0; /* Prevent flex item overflow */
+}
+
+/* Table Styling */
+.balance-sheet-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 14px;
+}
+
+/* Table Header */
+.balance-sheet-table thead .header-row th {
+  padding: 15px;
+  font-size: 18px;
+  font-weight: bold;
+  color: #fff;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border: 1px solid #333;
+}
+
+.balance-sheet-table thead .column-header-row th {
+  padding: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #000;
+  background: #e0e0e0;
+  text-align: center;
+  border: 1px solid #333;
+}
+
+/* Table Body */
+.balance-sheet-table tbody td,
+.balance-sheet-table tfoot td {
+  padding: 10px 12px;
+  border: 1px solid #333;
+  color: #000;
+  vertical-align: middle;
+}
+
+/* Group Header Row */
+.group-header-row {
+  background: #f0f0f0;
+}
+
+.group-header-row td {
+  font-weight: 600;
+  color: #000;
+}
+
+/* Group Item Row */
+.group-item-row td {
+  background: #fff;
+}
+
+/* Group Total Row */
+.group-total-row {
+  background: #fafafa;
+  border-top: 2px solid #666 !important;
+}
+
+.group-total-row td {
+  font-weight: 600;
+  color: #000;
+}
+
+/* Grand Total Row */
+.grand-total-row {
+  background: #d9d9d9;
+  border-top: 3px double #000 !important;
+}
+
+.grand-total-row td {
+  font-weight: bold;
+  font-size: 15px;
+  color: #000;
+  padding: 15px 12px;
+}
+
+/* Text Alignment */
+.text-right {
+  text-align: right;
+}
+
+.text-center {
+  text-align: center;
+}
+
+/* Negative Amount Styling */
+.negative-amount {
+  color: #f5222d;
+}
+
+/* Export Section */
+.export-section {
+  margin-top: 30px;
+  text-align: center;
+  padding: 20px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Loading Message */
+.loading-message {
+  text-align: center;
+  padding: 60px 20px;
+  font-size: 18px;
+  color: #666;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* No Data Message */
+.no-data-message {
+  text-align: center;
+  padding: 60px 20px;
+  font-size: 16px;
+  color: #999;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .balance-sheet-wrapper {
+    flex-direction: column;
+  }
+
+  .balance-sheet-side {
+    width: 100%;
+  }
+
+  .summary-cards {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .balance-sheet-container {
+    padding: 10px;
+  }
+
+  .balance-sheet-header h2 {
+    font-size: 20px;
+  }
+
+  .balance-sheet-header p {
+    font-size: 14px;
+  }
+
+  .balance-sheet-table {
+    font-size: 12px;
+  }
+
+  .balance-sheet-table thead .header-row th {
+    font-size: 14px;
+    padding: 10px;
+  }
+
+  .balance-sheet-table thead .column-header-row th {
+    font-size: 11px;
+    padding: 8px;
+  }
+
+  .balance-sheet-table tbody td,
+  .balance-sheet-table tfoot td {
+    padding: 8px 6px;
+  }
+
+  .summary-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .card-value {
+    font-size: 20px;
+  }
+}
+
+/* Print Styles */
+@media print {
+  /* Hide interactive elements */
+  .date-filter-toolbar,
+  .summary-cards,
+  .export-section {
+    display: none !important;
+  }
+
+  /* Page Setup */
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+
+  /* Container */
+  .balance-sheet-container {
+    padding: 0;
+    max-width: 100%;
+    background: #fff;
+  }
+
+  /* Header */
+  .balance-sheet-header {
+    box-shadow: none;
+    border-radius: 0;
+    padding: 10px 0;
+    margin-bottom: 20px;
+  }
+
+  .balance-sheet-header h2 {
+    font-size: 22px;
+    margin-bottom: 5px;
+  }
+
+  .balance-sheet-header p {
+    font-size: 14px;
+  }
+
+  /* Two-Sided Layout */
+  .balance-sheet-wrapper {
+    display: flex;
+    gap: 15px;
+    box-shadow: none;
+    border-radius: 0;
+    padding: 0;
+    page-break-inside: avoid;
+  }
+
+  .balance-sheet-side {
+    flex: 1;
+  }
+
+  /* Table */
+  .balance-sheet-table {
+    font-size: 11px;
+  }
+
+  .balance-sheet-table thead {
+    display: table-header-group;
+  }
+
+  .balance-sheet-table thead .header-row th {
+    font-size: 14px;
+    padding: 10px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .balance-sheet-table thead .column-header-row th {
+    font-size: 11px;
+    padding: 8px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .balance-sheet-table tbody td,
+  .balance-sheet-table tfoot td {
+    padding: 6px 8px;
+  }
+
+  /* Prevent page breaks inside groups */
+  .group-header-row,
+  .group-item-row,
+  .group-total-row {
+    page-break-inside: avoid;
+  }
+
+  /* Ensure group colors print */
+  .group-header-row,
+  .group-total-row,
+  .grand-total-row {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Remove box shadows and borders */
+  * {
+    box-shadow: none !important;
+  }
+}

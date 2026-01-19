@@ -1,10 +1,39 @@
 import Customer from '../models/Customer.js';
 import Ledger from '../models/Ledger.js';
 
+// Helper function to generate next customer ID
+const generateCustomerId = async () => {
+  try {
+    // Find the last customer by sorting in descending order
+    const lastCustomer = await Customer.findOne()
+      .sort({ createdAt: -1 })
+      .select('customerId');
+
+    if (!lastCustomer || !lastCustomer.customerId) {
+      return 'CUST0001';
+    }
+
+    // Extract the numeric part from the last customer ID (e.g., CUST0001 -> 1)
+    const lastNumber = parseInt(lastCustomer.customerId.replace('CUST', ''));
+    const nextNumber = lastNumber + 1;
+
+    // Generate new customer ID with zero padding (e.g., CUST0002)
+    return `CUST${String(nextNumber).padStart(4, '0')}`;
+  } catch (error) {
+    console.error('Error generating customer ID:', error);
+    return 'CUST0001';
+  }
+};
+
 // Create new customer
 export const createCustomer = async (req, res) => {
   try {
     const customerData = req.body;
+
+    // Auto-generate customer ID if not provided
+    if (!customerData.customerId) {
+      customerData.customerId = await generateCustomerId();
+    }
 
     // Check for duplicate customerId
     const existingCustomer = await Customer.findOne({
@@ -34,10 +63,28 @@ export const createCustomer = async (req, res) => {
     const customer = new Customer(customerData);
     await customer.save();
 
-    // Auto-create ledger for customer with "Advance / Due" as default parent group
-    const ledger = new Ledger({
-      ledgerName: `${customerData.name} (${customerData.customerId})`,
-      ledgerType: 'Party',
+    // Create Ledger 1: "Due to Society" - Credit balance (Liability)
+    const dueToSocietyLedger = new Ledger({
+      ledgerName: `${customerData.name} - Due to Society (${customerData.customerId})`,
+      ledgerType: 'Liability',
+      linkedEntity: {
+        entityType: 'Customer',
+        entityId: customer._id
+      },
+      openingBalance: 0,
+      openingBalanceType: 'Cr',
+      currentBalance: 0,
+      balanceType: 'Cr',
+      parentGroup: 'Current Liabilities',
+      status: 'Active'
+    });
+
+    await dueToSocietyLedger.save();
+
+    // Create Ledger 2: "Due By" - Debit balance (Asset/Receivable)
+    const dueByLedger = new Ledger({
+      ledgerName: `${customerData.name} - Due By (${customerData.customerId})`,
+      ledgerType: 'Asset',
       linkedEntity: {
         entityType: 'Customer',
         entityId: customer._id
@@ -46,19 +93,20 @@ export const createCustomer = async (req, res) => {
       openingBalanceType: 'Dr',
       currentBalance: customerData.openingBalance || 0,
       balanceType: 'Dr',
-      parentGroup: 'Advance / Due',
+      parentGroup: 'Sundry Debtors',
       status: 'Active'
     });
 
-    await ledger.save();
+    await dueByLedger.save();
 
-    // Link ledger to customer
-    customer.ledgerId = ledger._id;
+    // Link both ledgers to customer
+    customer.ledgerId = dueByLedger._id; // Primary ledger for receivables
+    customer.dueToSocietyLedgerId = dueToSocietyLedger._id; // Secondary ledger for dues to society
     await customer.save();
 
     res.status(201).json({
       success: true,
-      message: 'Customer created successfully',
+      message: 'Customer created successfully with ledger accounts',
       data: customer
     });
   } catch (error) {

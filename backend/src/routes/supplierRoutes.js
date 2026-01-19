@@ -6,7 +6,8 @@ import {
   updateSupplier,
   deleteSupplier,
   searchSupplier,
-  getSupplierBySupplierId
+  getSupplierBySupplierId,
+  getNextSupplierId
 } from '../controllers/supplierController.js';
 
 const router = express.Router();
@@ -16,6 +17,9 @@ router.post('/', createSupplier);
 
 // Get all suppliers
 router.get('/', getAllSuppliers);
+
+// Get next supplier ID (auto-generate)
+router.get('/next-id', getNextSupplierId);
 
 // Search supplier by supplierId, name, or phone
 router.get('/search', searchSupplier);

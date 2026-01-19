@@ -1,0 +1,44 @@
+@import './DepartmentList.css';
+
+.leave-list-container {
+  padding: 20px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.leave-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.leave-reason {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #64748b;
+}
+
+.btn-icon.btn-success {
+  background-color: #d1fae5;
+  color: #059669;
+}
+
+.btn-icon.btn-success:hover {
+  background-color: #a7f3d0;
+}
+
+.btn-icon.btn-danger {
+  background-color: #fee2e2;
+  color: #dc2626;
+}
+
+.btn-icon.btn-danger:hover {
+  background-color: #fecaca;
+}
+
+.badge-purple {
+  background-color: #f3e8ff;
+  color: #7e22ce;
+}

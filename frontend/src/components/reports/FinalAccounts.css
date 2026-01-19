@@ -1,0 +1,627 @@
+.final-accounts-container {
+  padding: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.tabs-container {
+  background: #fff;
+  padding: 15px 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+}
+
+.tab-btn {
+  padding: 10px 20px;
+  border: 2px solid #d9d9d9;
+  background: #fff;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.tab-btn:hover {
+  border-color: #1890ff;
+  color: #1890ff;
+}
+
+.tab-btn.active {
+  background: #1890ff;
+  border-color: #1890ff;
+  color: #fff;
+}
+
+.combined-view {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.statement-section {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.statement-title {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  padding: 20px;
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.statement-content {
+  padding: 20px;
+}
+
+.statement-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 30px;
+}
+
+.debit-side h3,
+.credit-side h3 {
+  background: #fafafa;
+  padding: 10px 15px;
+  margin: 0 0 15px 0;
+  border-radius: 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.statement-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.statement-table td {
+  padding: 10px 15px;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 14px;
+  color: #666;
+}
+
+.statement-table .text-right {
+  text-align: right;
+  font-weight: 500;
+}
+
+.statement-table .total-row {
+  background: #e6f7ff;
+  font-weight: 600;
+}
+
+.statement-table .total-row td {
+  color: #1890ff;
+  padding: 12px 15px;
+}
+
+.statement-table .grand-total {
+  background: #f0f0f0;
+  border-top: 2px solid #d9d9d9;
+}
+
+.statement-table .grand-total td {
+  padding: 12px 15px;
+  font-weight: 700;
+  color: #333;
+}
+
+.loading-message,
+.no-data-message {
+  text-align: center;
+  padding: 60px 20px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  color: #999;
+  font-size: 16px;
+}
+
+/* Trading Account Specific Styles */
+.trading-account-section {
+  page-break-after: always;
+}
+
+.trading-account-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  padding: 25px 20px;
+  text-align: center;
+}
+
+.trading-account-header .statement-title {
+  background: none;
+  color: #fff;
+  padding: 0;
+  margin: 0 0 8px 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.trading-account-header .financial-year {
+  margin: 5px 0;
+  font-size: 14px;
+  font-weight: 500;
+  opacity: 0.95;
+}
+
+.trading-account-header .report-subtitle {
+  margin: 5px 0 0 0;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.trading-account-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-top: 0;
+}
+
+.trading-account-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.trading-account-table thead {
+  background: #fafafa;
+  border-bottom: 2px solid #d9d9d9;
+}
+
+.trading-account-table thead th {
+  padding: 10px 12px;
+  font-weight: 600;
+  color: #333;
+  text-align: left;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.trading-account-table .sl-col {
+  width: 60px;
+  text-align: center;
+}
+
+.trading-account-table .particulars-col {
+  min-width: 180px;
+  padding-left: 12px;
+}
+
+.trading-account-table .amount-col {
+  width: 110px;
+  text-align: right;
+  padding-right: 12px;
+}
+
+.trading-account-table .total-col {
+  width: 130px;
+  text-align: right;
+  padding-right: 12px;
+}
+
+.trading-account-table tbody td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  color: #555;
+}
+
+.trading-account-table .sl-no {
+  text-align: center;
+  color: #999;
+  font-size: 12px;
+}
+
+.trading-account-table .group-header-row {
+  background: #f9f9f9;
+  border-top: 1px solid #e0e0e0;
+}
+
+.trading-account-table .group-header-row td {
+  padding: 10px 12px;
+  font-weight: 700;
+  color: #333;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.trading-account-table .ledger-row td {
+  color: #555;
+}
+
+.trading-account-table .ledger-row:hover {
+  background: #f8f8f8;
+}
+
+.trading-account-table .indent {
+  padding-left: 30px;
+}
+
+.trading-account-table .group-total-row {
+  background: #f0f7ff;
+  border-top: 1px solid #d0e6ff;
+  border-bottom: 1px solid #d0e6ff;
+}
+
+.trading-account-table .group-total-row td {
+  padding: 9px 12px;
+  font-weight: 600;
+  color: #1890ff;
+}
+
+.trading-account-table .profit-row,
+.trading-account-table .loss-row {
+  background: #fff8e6;
+  border-top: 1px solid #ffe58f;
+}
+
+.trading-account-table .profit-row td,
+.trading-account-table .loss-row td {
+  padding: 10px 12px;
+  font-weight: 700;
+  color: #d48806;
+}
+
+.trading-account-table .grand-total-row {
+  background: #f0f0f0;
+  border-top: 3px double #333;
+  border-bottom: 3px double #333;
+}
+
+.trading-account-table .grand-total-row td {
+  padding: 12px 12px;
+  font-weight: 800;
+  color: #000;
+  font-size: 14px;
+}
+
+/* Balance Sheet Specific Styles */
+.balance-sheet-section {
+  page-break-after: always;
+}
+
+.balance-sheet-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  padding: 25px 20px;
+  text-align: center;
+}
+
+.balance-sheet-header .statement-title {
+  background: none;
+  color: #fff;
+  padding: 0;
+  margin: 0 0 8px 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.balance-sheet-header .financial-year {
+  margin: 5px 0;
+  font-size: 14px;
+  font-weight: 500;
+  opacity: 0.95;
+}
+
+.balance-sheet-header .report-subtitle {
+  margin: 5px 0 0 0;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.balance-sheet-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-top: 0;
+}
+
+.liabilities-side,
+.assets-side {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.side-header {
+  background: #f5f5f5;
+  color: #333;
+  padding: 12px 15px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+  border-bottom: 2px solid #d9d9d9;
+  letter-spacing: 1px;
+}
+
+.balance-sheet-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.balance-sheet-table thead {
+  background: #fafafa;
+  border-bottom: 2px solid #d9d9d9;
+}
+
+.balance-sheet-table thead th {
+  padding: 10px 12px;
+  font-weight: 600;
+  color: #333;
+  text-align: left;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.balance-sheet-table .sl-col {
+  width: 60px;
+  text-align: center;
+}
+
+.balance-sheet-table .particulars-col {
+  min-width: 200px;
+  padding-left: 12px;
+}
+
+.balance-sheet-table .amount-col {
+  width: 130px;
+  text-align: right;
+  padding-right: 12px;
+}
+
+.balance-sheet-table tbody td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  color: #555;
+}
+
+.balance-sheet-table .sl-no {
+  text-align: center;
+  color: #999;
+  font-size: 12px;
+}
+
+.balance-sheet-table .group-header-row {
+  background: #f9f9f9;
+  border-top: 1px solid #e0e0e0;
+}
+
+.balance-sheet-table .group-header-row td {
+  padding: 10px 12px;
+  font-weight: 700;
+  color: #333;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.balance-sheet-table .ledger-row td {
+  color: #555;
+}
+
+.balance-sheet-table .ledger-row:hover {
+  background: #f8f8f8;
+}
+
+.balance-sheet-table .indent {
+  padding-left: 30px;
+}
+
+.balance-sheet-table .group-total-row {
+  background: #f0f7ff;
+  border-top: 1px solid #d0e6ff;
+  border-bottom: 1px solid #d0e6ff;
+}
+
+.balance-sheet-table .group-total-row td {
+  padding: 9px 12px;
+  font-weight: 600;
+  color: #1890ff;
+}
+
+.balance-sheet-table .profit-row {
+  background: #fff8e6;
+  border-top: 1px solid #ffe58f;
+}
+
+.balance-sheet-table .profit-row td {
+  padding: 10px 12px;
+  font-weight: 700;
+  color: #d48806;
+}
+
+.balance-sheet-table .grand-total-row {
+  background: #f0f0f0;
+  border-top: 3px double #333;
+  border-bottom: 3px double #333;
+}
+
+.balance-sheet-table .grand-total-row td {
+  padding: 12px 12px;
+  font-weight: 800;
+  color: #000;
+  font-size: 14px;
+}
+
+.balance-mismatch-warning {
+  background: #fff2e8;
+  border: 1px solid #ffbb96;
+  border-radius: 4px;
+  padding: 12px 20px;
+  margin-top: 20px;
+  color: #d4380d;
+  font-size: 14px;
+  text-align: center;
+}
+
+.report-footer {
+  margin-top: 30px;
+  padding: 15px 20px;
+  background: #fafafa;
+  border-top: 2px solid #e0e0e0;
+  border-radius: 0 0 8px 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.report-footer .footer-left,
+.report-footer .footer-right {
+  font-size: 11px;
+  color: #666;
+}
+
+.report-footer .footer-center {
+  flex: 1 1 100%;
+  text-align: center;
+  margin: 5px 0 0 0;
+  font-size: 11px;
+  color: #999;
+  font-style: italic;
+}
+
+/* Print Styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .tabs-container,
+  .export-section {
+    display: none;
+  }
+
+  @page {
+    size: A4 landscape;
+    margin: 15mm;
+  }
+
+  .trading-account-section,
+  .balance-sheet-section {
+    box-shadow: none;
+    border: none;
+    page-break-after: always;
+  }
+
+  .trading-account-columns,
+  .balance-sheet-columns {
+    gap: 10mm;
+  }
+
+  .trading-account-table,
+  .balance-sheet-table {
+    font-size: 11px;
+  }
+
+  .trading-account-table thead th,
+  .trading-account-table tbody td,
+  .balance-sheet-table thead th,
+  .balance-sheet-table tbody td {
+    padding: 6px 10px;
+  }
+
+  .trading-account-table thead,
+  .balance-sheet-table thead {
+    display: table-header-group;
+  }
+
+  .trading-account-table tbody tr,
+  .balance-sheet-table tbody tr {
+    page-break-inside: avoid;
+  }
+
+  /* Ensure colors print correctly */
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .statement-columns {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .trading-account-columns,
+  .balance-sheet-columns {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+@media (max-width: 768px) {
+  .final-accounts-container {
+    padding: 10px;
+  }
+
+  .tabs-container {
+    flex-wrap: wrap;
+  }
+
+  .tab-btn {
+    flex: 1 1 calc(50% - 5px);
+    min-width: 150px;
+  }
+
+  .statement-title {
+    font-size: 18px;
+    padding: 15px;
+  }
+
+  .statement-content {
+    padding: 15px;
+  }
+
+  .trading-account-header .statement-title,
+  .balance-sheet-header .statement-title {
+    font-size: 16px;
+  }
+
+  .trading-account-table,
+  .balance-sheet-table {
+    font-size: 11px;
+  }
+
+  .trading-account-table .sl-col,
+  .balance-sheet-table .sl-col {
+    width: 40px;
+  }
+
+  .trading-account-table .amount-col,
+  .trading-account-table .total-col,
+  .balance-sheet-table .amount-col {
+    width: 100px;
+  }
+
+  .trading-account-table thead th,
+  .trading-account-table tbody td,
+  .balance-sheet-table thead th,
+  .balance-sheet-table tbody td {
+    padding: 6px 8px;
+  }
+
+  .report-footer {
+    flex-direction: column;
+    text-align: center;
+  }
+}

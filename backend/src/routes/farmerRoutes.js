@@ -9,10 +9,14 @@ import {
   toggleMembership,
   addShareToFarmer,
   getShareHistory,
-  terminateFarmer
+  terminateFarmer,
+  bulkImportFarmers
 } from '../controllers/farmerController.js';
 
 const router = express.Router();
+
+// Bulk import farmers (must be before other routes)
+router.post('/bulk-import', bulkImportFarmers);
 
 // Create new farmer
 router.post('/', createFarmer);

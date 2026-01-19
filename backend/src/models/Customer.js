@@ -13,7 +13,8 @@ const customerSchema = new mongoose.Schema({
   pincode: { type: String },
   panNumber: { type: String },
   active: { type: Boolean, default: true },
-  ledgerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ledger' },
+  ledgerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ledger' }, // Due By ledger
+  dueToSocietyLedgerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ledger' }, // Due to Society ledger
 
   documents: {
     aadhaar: { type: String },

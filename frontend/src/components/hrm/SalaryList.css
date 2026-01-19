@@ -1,0 +1,45 @@
+@import './DepartmentList.css';
+
+.salary-list-container {
+  padding: 20px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.filter-section .filter-group label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+.salary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.net-salary {
+  font-weight: 700;
+  color: #059669;
+  font-size: 14px;
+}
+
+.btn-icon.btn-primary {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.btn-icon.btn-primary:hover {
+  background-color: #bfdbfe;
+}
+
+.btn-icon.btn-view {
+  background-color: #e0e7ff;
+  color: #4f46e5;
+}
+
+.btn-icon.btn-view:hover {
+  background-color: #c7d2fe;
+}

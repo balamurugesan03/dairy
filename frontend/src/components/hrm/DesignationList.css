@@ -1,0 +1,111 @@
+@import './DepartmentList.css';
+
+/* Additional designation-specific styles */
+.designation-list-container {
+  padding: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.designation-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.designation-code {
+  font-weight: 600;
+  color: #667eea;
+  font-family: 'Courier New', monospace;
+}
+
+.designation-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.designation-name {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.designation-desc {
+  font-size: 12px;
+  color: #64748b;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Badge variations for levels */
+.badge-info {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.badge-primary {
+  background-color: #e0e7ff;
+  color: #4f46e5;
+}
+
+.badge-purple {
+  background-color: #f3e8ff;
+  color: #7e22ce;
+}
+
+/* List input group for responsibilities and qualifications */
+.list-input-group {
+  display: flex;
+  gap: 8px;
+}
+
+.list-input-group input {
+  flex: 1;
+}
+
+.list-input-group .btn {
+  padding: 10px 16px;
+  white-space: nowrap;
+}
+
+.list-items {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f7fafc;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+.list-item span {
+  flex: 1;
+  font-size: 14px;
+  color: #334155;
+}
+
+.list-item button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #64748b;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.list-item button:hover {
+  background: #e2e8f0;
+  color: #dc2626;
+}

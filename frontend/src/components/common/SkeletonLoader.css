@@ -1,0 +1,106 @@
+.skeleton-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    #f0f0f0 0%,
+    #e0e0e0 50%,
+    #f0f0f0 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.skeleton-text {
+  height: 16px;
+  width: 100%;
+  margin: 5px 0;
+}
+
+.skeleton-title {
+  height: 24px;
+  width: 100%;
+  margin: 8px 0;
+}
+
+.skeleton-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+.skeleton-rectangle {
+  height: 100px;
+  width: 100%;
+}
+
+.skeleton-button {
+  height: 36px;
+  width: 120px;
+  border-radius: 4px;
+}
+
+/* Table Skeleton */
+.table-skeleton {
+  width: 100%;
+  padding: 20px;
+  background: white;
+  border-radius: 8px;
+}
+
+.skeleton-table-header,
+.skeleton-table-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 15px;
+  margin-bottom: 15px;
+  padding: 10px 0;
+}
+
+.skeleton-table-header {
+  border-bottom: 2px solid #e0e0e0;
+  padding-bottom: 15px;
+}
+
+/* Card Skeleton */
+.card-skeleton {
+  padding: 20px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      #2a2a2a 0%,
+      #1a1a1a 50%,
+      #2a2a2a 100%
+    );
+  }
+
+  .table-skeleton,
+  .card-skeleton {
+    background: #1e1e1e;
+  }
+
+  .skeleton-table-header {
+    border-bottom-color: #333;
+  }
+}

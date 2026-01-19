@@ -1,0 +1,52 @@
+@import './DepartmentList.css';
+
+.attendance-list-container {
+  padding: 20px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.attendance-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.employee-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.employee-name {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.employee-number {
+  font-size: 11px;
+  color: #64748b;
+}
+
+/* Badge variations */
+.badge-info {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .header-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .header-actions button {
+    width: 100%;
+  }
+}

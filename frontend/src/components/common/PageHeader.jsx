@@ -1,5 +1,5 @@
 import React from 'react';
-import './PageHeader.css';
+import { Group, Title, Text, Stack } from '@mantine/core';
 
 const PageHeader = ({
   title,
@@ -8,15 +8,15 @@ const PageHeader = ({
   style = {}
 }) => {
   return (
-    <div className="page-header" style={style}>
-      <div className="page-header-content">
-        <h2 className="page-header-title">{title}</h2>
+    <Group justify="space-between" align="flex-start" mb="md" style={style}>
+      <Stack gap="xs">
+        <Title order={2}>{title}</Title>
         {subtitle && (
-          <p className="page-header-subtitle">{subtitle}</p>
+          <Text size="sm" c="dimmed">{subtitle}</Text>
         )}
-      </div>
-      {extra && <div className="page-header-extra">{extra}</div>}
-    </div>
+      </Stack>
+      {extra && <div>{extra}</div>}
+    </Group>
   );
 };
 

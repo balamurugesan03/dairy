@@ -1,0 +1,46 @@
+@import './VyaparReports.css';
+
+/* Cashflow Report Specific Styles */
+.vyapar-cashflow-report {
+  padding: 20px;
+}
+
+.particulars-cell {
+  font-weight: 500;
+  color: #333;
+}
+
+.inflow-amount {
+  color: #52c41a;
+  font-weight: 600;
+}
+
+.outflow-amount {
+  color: #ff4d4f;
+  font-weight: 600;
+}
+
+.balance-amount {
+  font-weight: 700;
+  color: #1890ff;
+}
+
+.transaction-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  display: inline-block;
+}
+
+.transaction-badge.inflow {
+  background: #f6ffed;
+  color: #52c41a;
+  border: 1px solid #b7eb8f;
+}
+
+.transaction-badge.outflow {
+  background: #fff1f0;
+  color: #ff4d4f;
+  border: 1px solid #ffccc7;
+}

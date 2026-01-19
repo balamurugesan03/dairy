@@ -1,0 +1,564 @@
+.purchase-register-container {
+  padding: 20px;
+  max-width: 1900px;
+  margin: 0 auto;
+  background: #f5f5f5;
+  min-height: 100vh;
+}
+
+/* Organization Name Section */
+.org-name-section {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 20px;
+  padding: 15px 20px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.org-name-section label {
+  font-weight: 600;
+  color: #333;
+  white-space: nowrap;
+}
+
+.org-name-input {
+  flex: 1;
+  max-width: 400px;
+  padding: 10px 15px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: border-color 0.3s;
+}
+
+.org-name-input:focus {
+  outline: none;
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
+}
+
+/* Report Table Container */
+.report-table-container {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  overflow-x: auto;
+  margin-bottom: 20px;
+  padding: 30px 25px;
+}
+
+/* Print Header - Professional Accounting Style */
+.print-header {
+  text-align: center;
+  margin-bottom: 25px;
+  padding-bottom: 20px;
+  border-bottom: 3px double #000;
+}
+
+.print-header h2 {
+  margin: 0 0 10px 0;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 22px;
+  font-weight: bold;
+  color: #000;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+.print-header .period-line {
+  margin: 8px 0;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 14px;
+  font-weight: bold;
+  color: #000;
+}
+
+.print-header .org-name {
+  margin: 10px 0 5px 0;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 16px;
+  font-weight: bold;
+  color: #000;
+  text-transform: uppercase;
+}
+
+.print-header .financial-year {
+  margin: 5px 0 0 0;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 12px;
+  color: #333;
+}
+
+/* Purchase Register Table */
+.purchase-register-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 12px;
+  color: #000;
+  margin-bottom: 20px;
+}
+
+.purchase-register-table thead {
+  background: #f0f0f0;
+}
+
+.purchase-register-table thead th {
+  padding: 10px 6px;
+  font-weight: bold;
+  text-align: center;
+  border: 1px solid #000;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #000;
+  white-space: nowrap;
+}
+
+/* Column Widths and Alignment */
+.col-date {
+  width: 85px;
+  text-align: center;
+  border: 1px solid #999;
+  padding: 8px 4px;
+  vertical-align: middle;
+}
+
+.col-invoice {
+  width: 140px;
+  text-align: left;
+  border: 1px solid #999;
+  padding: 8px 6px;
+  vertical-align: middle;
+  font-size: 11px;
+}
+
+.col-supplier {
+  min-width: 120px;
+  max-width: 150px;
+  text-align: left;
+  border: 1px solid #999;
+  padding: 8px 6px;
+  vertical-align: middle;
+}
+
+.col-amount {
+  width: 85px;
+  text-align: right;
+  border: 1px solid #999;
+  padding: 8px 6px;
+  vertical-align: middle;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+}
+
+.col-product {
+  min-width: 180px;
+  text-align: left;
+  border: 1px solid #999;
+  padding: 8px 6px;
+  vertical-align: middle;
+}
+
+.col-qty {
+  width: 70px;
+  text-align: right;
+  border: 1px solid #999;
+  padding: 8px 6px;
+  vertical-align: middle;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+}
+
+.col-rate {
+  width: 75px;
+  text-align: right;
+  border: 1px solid #999;
+  padding: 8px 6px;
+  vertical-align: middle;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+}
+
+.col-total-label {
+  text-align: right;
+  padding-right: 15px;
+  border: 1px solid #000;
+  font-size: 13px;
+}
+
+/* Table Body */
+.purchase-register-table tbody tr td {
+  border: 1px solid #ccc;
+}
+
+.purchase-register-table tbody tr:nth-child(even) {
+  background-color: #fafafa;
+}
+
+.purchase-register-table tbody tr:hover {
+  background-color: #f5f5f5;
+}
+
+/* Grand Total Row */
+.purchase-register-table .grand-total-row {
+  background-color: #e8e8e8;
+  border-top: 3px solid #000;
+  border-bottom: 2px solid #000;
+}
+
+.purchase-register-table .grand-total-row td {
+  border: 1px solid #000;
+  padding: 12px 6px;
+  font-size: 12px;
+}
+
+.purchase-register-table .grand-total-row strong {
+  font-weight: bold;
+  color: #000;
+  font-size: 12px;
+}
+
+/* Report Footer */
+.report-footer {
+  margin-top: 25px;
+  padding: 20px;
+  border-top: 1px solid #ccc;
+}
+
+.calculation-notes {
+  margin-bottom: 20px;
+  padding: 15px;
+  background: #f9f9f9;
+  border-left: 4px solid #333;
+}
+
+.calculation-notes p {
+  margin: 4px 0;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 11px;
+  color: #333;
+  line-height: 1.5;
+}
+
+.calculation-notes p:first-child {
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.verification-section {
+  margin-top: 30px;
+}
+
+.signature-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 30px;
+  margin-top: 40px;
+  padding-top: 20px;
+}
+
+.signature-line span {
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 12px;
+  color: #000;
+}
+
+.print-date {
+  margin-top: 20px;
+  text-align: right;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 10px;
+  color: #666;
+}
+
+/* Export Section */
+.export-section {
+  display: flex;
+  justify-content: flex-end;
+  gap: 15px;
+  margin-top: 20px;
+}
+
+.print-btn {
+  padding: 10px 24px;
+  background: #333;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.print-btn:hover {
+  background: #555;
+}
+
+/* Loading and No Data Messages */
+.loading-message,
+.no-data-message {
+  text-align: center;
+  padding: 60px 20px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  color: #999;
+  font-size: 16px;
+}
+
+/* =============================================
+   PRINT STYLES - A4 LANDSCAPE
+   ============================================= */
+@media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    background: #fff;
+  }
+
+  .purchase-register-container {
+    padding: 0;
+    margin: 0;
+    max-width: 100%;
+    background: #fff;
+  }
+
+  /* Hide non-print elements */
+  .no-print,
+  .org-name-section,
+  .export-section,
+  .page-header,
+  .date-filter-toolbar {
+    display: none !important;
+  }
+
+  .report-table-container {
+    box-shadow: none;
+    border-radius: 0;
+    padding: 10mm;
+    margin: 0;
+    page-break-inside: avoid;
+  }
+
+  /* Print Header */
+  .print-header {
+    margin-bottom: 8mm;
+    padding-bottom: 5mm;
+    border-bottom: 1pt double #000;
+  }
+
+  .print-header h2 {
+    font-size: 16pt;
+    margin-bottom: 3mm;
+  }
+
+  .print-header .period-line {
+    font-size: 11pt;
+  }
+
+  .print-header .org-name {
+    font-size: 12pt;
+  }
+
+  .print-header .financial-year {
+    font-size: 9pt;
+  }
+
+  /* Print Table */
+  .purchase-register-table {
+    font-size: 9pt;
+    width: 100%;
+  }
+
+  .purchase-register-table thead th {
+    font-size: 8pt;
+    padding: 4px 3px;
+    background: #f0f0f0 !important;
+    border: 0.5pt solid #000;
+  }
+
+  .purchase-register-table tbody td {
+    font-size: 8pt;
+    padding: 3px 4px;
+    border: 0.5pt solid #666;
+  }
+
+  .col-date {
+    width: 18mm;
+    font-size: 8pt;
+  }
+
+  .col-invoice {
+    width: 32mm;
+    font-size: 7pt;
+  }
+
+  .col-supplier {
+    width: 28mm;
+    font-size: 8pt;
+  }
+
+  .col-amount {
+    width: 18mm;
+    font-size: 8pt;
+  }
+
+  .col-product {
+    width: 40mm;
+    font-size: 8pt;
+  }
+
+  .col-qty {
+    width: 14mm;
+    font-size: 8pt;
+  }
+
+  .col-rate {
+    width: 16mm;
+    font-size: 8pt;
+  }
+
+  /* Grand Total Row - Print */
+  .purchase-register-table .grand-total-row {
+    background-color: #e0e0e0 !important;
+    border-top: 1.5pt solid #000;
+    border-bottom: 1pt solid #000;
+  }
+
+  .purchase-register-table .grand-total-row td {
+    padding: 5px 4px;
+    font-size: 9pt;
+    border: 0.5pt solid #000;
+  }
+
+  .purchase-register-table .grand-total-row strong {
+    font-size: 9pt;
+  }
+
+  /* Footer - Print */
+  .report-footer {
+    margin-top: 8mm;
+    padding: 5mm 0;
+    border-top: 0.5pt solid #000;
+    page-break-inside: avoid;
+  }
+
+  .calculation-notes {
+    padding: 3mm 5mm;
+    background: #fff !important;
+    border-left: 1pt solid #000;
+    margin-bottom: 5mm;
+  }
+
+  .calculation-notes p {
+    font-size: 8pt;
+    margin: 1mm 0;
+  }
+
+  .signature-line {
+    margin-top: 15mm;
+    padding-top: 0;
+  }
+
+  .signature-line span {
+    font-size: 9pt;
+  }
+
+  .print-date {
+    font-size: 8pt;
+    margin-top: 5mm;
+  }
+
+  /* A4 Landscape Page Setup */
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+
+  /* Avoid page breaks inside rows */
+  .purchase-register-table tr {
+    page-break-inside: avoid;
+  }
+
+  /* Keep header visible on new pages */
+  .purchase-register-table thead {
+    display: table-header-group;
+  }
+}
+
+/* =============================================
+   RESPONSIVE STYLES
+   ============================================= */
+@media (max-width: 1200px) {
+  .purchase-register-container {
+    padding: 15px;
+  }
+
+  .report-table-container {
+    padding: 20px 15px;
+  }
+
+  .purchase-register-table {
+    min-width: 1400px;
+  }
+}
+
+@media (max-width: 768px) {
+  .purchase-register-container {
+    padding: 10px;
+  }
+
+  .org-name-section {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .org-name-input {
+    max-width: 100%;
+  }
+
+  .report-table-container {
+    padding: 15px 10px;
+    overflow-x: auto;
+  }
+
+  .purchase-register-table {
+    min-width: 1300px;
+    font-size: 10px;
+  }
+
+  .purchase-register-table thead th {
+    font-size: 9px;
+    padding: 6px 3px;
+  }
+
+  .print-header h2 {
+    font-size: 18px;
+  }
+
+  .print-header .period-line {
+    font-size: 12px;
+  }
+
+  .export-section {
+    flex-direction: column;
+  }
+
+  .export-section button {
+    width: 100%;
+  }
+
+  .signature-line {
+    flex-direction: column;
+    gap: 20px;
+  }
+}

@@ -1,0 +1,195 @@
+.mark-attendance-container {
+  padding: 20px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.attendance-controls {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.date-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.date-control label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.date-control input[type="date"] {
+  padding: 10px 12px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bulk-actions label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.btn-sm {
+  padding: 8px 16px;
+  font-size: 13px;
+}
+
+.btn-success {
+  background-color: #10b981;
+  color: white;
+}
+
+.btn-success:hover {
+  background-color: #059669;
+}
+
+.btn-danger {
+  background-color: #ef4444;
+  color: white;
+}
+
+.btn-danger:hover {
+  background-color: #dc2626;
+}
+
+.mark-attendance-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.mark-attendance-table thead {
+  background: #f7fafc;
+  border-bottom: 2px solid #e2e8f0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.mark-attendance-table th {
+  padding: 12px 8px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mark-attendance-table tbody tr {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.mark-attendance-table td {
+  padding: 12px 8px;
+  font-size: 13px;
+  color: #1e293b;
+}
+
+.mark-attendance-table input[type="time"],
+.mark-attendance-table input[type="number"],
+.mark-attendance-table input[type="text"],
+.mark-attendance-table select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.mark-attendance-table input[type="time"]:focus,
+.mark-attendance-table input[type="number"]:focus,
+.mark-attendance-table input[type="text"]:focus,
+.mark-attendance-table select:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.working-hours {
+  font-weight: 600;
+  color: #667eea;
+}
+
+.status-select {
+  font-weight: 600;
+}
+
+.status-select.status-present {
+  color: #059669;
+}
+
+.status-select.status-absent {
+  color: #dc2626;
+}
+
+.status-select.status-half-day,
+.status-select.status-late {
+  color: #d97706;
+}
+
+.status-select.status-on-leave {
+  color: #2563eb;
+}
+
+.submit-section {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-top: 20px;
+  text-align: center;
+}
+
+.btn-lg {
+  padding: 14px 32px;
+  font-size: 16px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .attendance-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .date-control,
+  .bulk-actions {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .bulk-actions button {
+    width: 100%;
+  }
+
+  .mark-attendance-table {
+    font-size: 11px;
+  }
+
+  .mark-attendance-table th,
+  .mark-attendance-table td {
+    padding: 8px 4px;
+  }
+}

@@ -1,18 +1,167 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef,useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Container,
+  Title,
+  Text,
+  Button,
+  Group,
+  TextInput,
+  Select,
+  Table,
+  Badge,
+  ActionIcon,
+  Menu,
+  Paper,
+  Stack,
+  Grid,
+  Modal,
+  Checkbox,
+  NumberInput,
+  Textarea,
+  Pagination,
+  Loader,
+  Center,
+  SimpleGrid,
+  Card,
+  Divider,
+  ScrollArea,
+  Box,
+  Input,
+  UnstyledButton
+} from '@mantine/core';
+import {
+  IconSearch,
+  IconFilter,
+  IconColumns,
+  IconFileExport,
+  IconPlus,
+  IconEdit,
+  IconTrash,
+  IconCoin,
+  IconBuildingWarehouse,
+  IconWallet,
+  IconPercentage,
+  IconActivity,
+  IconX,
+  IconEye,
+  IconSortAscending,
+  IconSortDescending,
+  IconArrowsSort,
+  IconFileTypeXls,
+  IconFileTypePdf,
+  IconLayoutGrid,
+  IconList,
+  IconChartBar,
+  IconAlertCircle,
+  IconChevronDown,
+  IconSettings,
+  IconRefresh
+} from '@tabler/icons-react';
+import { useForm } from '@mantine/form';
+import { useDisclosure } from '@mantine/hooks';
+import { modals } from '@mantine/modals';
+import { notifications } from '@mantine/notifications';
+import { DataTable } from 'mantine-datatable';
 import { itemAPI, ledgerAPI, supplierAPI } from '../../services/api';
-import PageHeader from '../common/PageHeader';
-import { showConfirmDialog } from '../common/ConfirmDialog';
-import { message } from '../../utils/toast';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 const ItemList = () => {
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [editingItem, setEditingItem] = useState(null);
-  const [formData, setFormData] = useState({});
-  const [errors, setErrors] = useState({});
   const [ledgers, setLedgers] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  
+  // Modal states
+  const [itemModalOpened, { open: openItemModal, close: closeItemModal }] = useDisclosure(false);
+  const [openingBalanceModalOpened, { open: openOpeningBalanceModal, close: closeOpeningBalanceModal }] = useDisclosure(false);
+  const [salesPriceModalOpened, { open: openSalesPriceModal, close: closeSalesPriceModal }] = useDisclosure(false);
+  
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [selectedItemForBalance, setSelectedItemForBalance] = useState(null);
+  const [selectedItemForPrice, setSelectedItemForPrice] = useState(null);
+  
+  // Column visibility
+  const [visibleColumns, setVisibleColumns] = useState({
+    code: true,
+    name: true,
+    category: true,
+    measurement: true,
+    stock: true,
+    price: true,
+    supplier: true,
+    purchaseLedger: true,
+    salesLedger: true,
+    gst: true,
+    status: true
+  });
+
+  // Filter states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+
+  // Sort state
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+
+  // Table column filters
+  const [tableFilters, setTableFilters] = useState({
+    category: '',
+    supplier: '',
+    status: ''
+  });
+
+  // Pagination
+  const [pagination, setPagination] = useState({
+    current: 1,
+    pageSize: 10,
+    total: 0
+  });
+
+  // Forms
+  const itemForm = useForm({
+    initialValues: {
+      itemCode: '',
+      itemName: '',
+      category: '',
+      measurement: '',
+      unit: '',
+      supplier: '',
+      gstPercent: '',
+      hsnCode: '',
+      status: 'Active'
+    },
+    validate: {
+      itemName: (value) => !value ? 'Item name is required' : null,
+      category: (value) => !value ? 'Category is required' : null,
+      measurement: (value) => !value ? 'Measurement is required' : null,
+    }
+  });
+
+  const openingBalanceForm = useForm({
+    initialValues: {
+      openingBalance: '',
+      rate: ''
+    },
+    validate: {
+      openingBalance: (value) => !value ? 'Opening balance is required' : null,
+      rate: (value) => !value ? 'Rate is required' : null,
+    }
+  });
+
+  const salesPriceForm = useForm({
+    initialValues: {
+      salesRate: ''
+    },
+    validate: {
+      salesRate: (value) => !value ? 'Sales price is required' : null,
+    }
+  });
+
+  // Measurement custom input state
   const [showCustomMeasurement, setShowCustomMeasurement] = useState(false);
 
   useEffect(() => {
@@ -30,16 +179,6 @@ const ItemList = () => {
     }
   };
 
-  // Filter ledgers for purchase (expense types)
-  const purchaseLedgers = ledgers.filter(ledger =>
-    ['Purchases A/c', 'Trade Expenses', 'Establishment Charges', 'Miscellaneous Expenses', 'Expense'].includes(ledger.ledgerType)
-  );
-
-  // Filter ledgers for sales (income types)
-  const salesLedgers = ledgers.filter(ledger =>
-    ['Sales A/c', 'Trade Income', 'Miscellaneous Income', 'Other Revenue', 'Grants & Aid', 'Subsidies', 'Income'].includes(ledger.ledgerType)
-  );
-
   const fetchSuppliers = async () => {
     try {
       const response = await supplierAPI.getAll({ active: 'true' });
@@ -53,474 +192,982 @@ const ItemList = () => {
     setLoading(true);
     try {
       const response = await itemAPI.getAll();
-      setItems(response.data);
+      setItems(response.data || []);
+      setPagination(prev => ({ ...prev, total: response.data?.length || 0 }));
     } catch (error) {
-      message.error(error.message || 'Failed to fetch items');
+      notifications.show({
+        title: 'Error',
+        message: error.message || 'Failed to fetch items',
+        color: 'red'
+      });
     } finally {
       setLoading(false);
     }
   };
 
   const handleAdd = () => {
-    setEditingItem(null);
-    setFormData({});
-    setErrors({});
+    setSelectedItem(null);
+    itemForm.reset();
     setShowCustomMeasurement(false);
-    setModalVisible(true);
+    openItemModal();
   };
 
   const handleEdit = (item) => {
-    setEditingItem(item);
-    // Properly set ledger IDs and supplier ID for editing
-    setFormData({
-      ...item,
-      purchaseLedger: item.purchaseLedger?._id || '',
-      salesLedger: item.salesLedger?._id || '',
-      supplier: item.supplier?._id || ''
+    setSelectedItem(item);
+    itemForm.setValues({
+      itemCode: item.itemCode || '',
+      itemName: item.itemName || '',
+      category: item.category || '',
+      measurement: item.measurement || '',
+      unit: item.unit || '',
+      supplier: item.supplier?._id || '',
+      gstPercent: item.gstPercent || '',
+      hsnCode: item.hsnCode || '',
+      status: item.status || 'Active'
     });
-    setErrors({});
-    // Check if measurement is a custom value (not in predefined list)
+
     const predefinedMeasurements = ['Kg', 'Ltr', 'Pcs', 'Box', 'Bag'];
     setShowCustomMeasurement(item.measurement && !predefinedMeasurements.includes(item.measurement));
-    setModalVisible(true);
+    openItemModal();
   };
 
   const handleDelete = async (id) => {
-    showConfirmDialog({
+    modals.openConfirmModal({
       title: 'Delete Item',
-      content: 'Are you sure you want to permanently delete this item? This will also delete all stock transaction history.',
-      type: 'danger',
+      children: (
+        <Text size="sm">
+          Are you sure you want to permanently delete this item? This will also delete all stock transaction history.
+        </Text>
+      ),
+      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
       onConfirm: async () => {
         try {
           await itemAPI.delete(id);
-          message.success('Item deleted successfully');
+          notifications.show({
+            title: 'Success',
+            message: 'Item deleted successfully',
+            color: 'green'
+          });
           fetchItems();
         } catch (error) {
-          message.error(error.message || 'Failed to delete item');
+          notifications.show({
+            title: 'Error',
+            message: error.message || 'Failed to delete item',
+            color: 'red'
+          });
         }
       }
     });
   };
 
-  const handleInputChange = (name, value) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
-    }
-
-    // Handle "Others" option for measurement
-    if (name === 'measurement') {
-      if (value === 'Others') {
-        setShowCustomMeasurement(true);
-        setFormData(prev => ({ ...prev, measurement: '' }));
-      } else {
-        setShowCustomMeasurement(false);
-      }
-    }
-  };
-
-  const validateForm = () => {
-    const newErrors = {};
-    if (!formData.itemCode) newErrors.itemCode = 'Item code is required';
-    if (!formData.itemName) newErrors.itemName = 'Item name is required';
-    if (!formData.category) newErrors.category = 'Category is required';
-    if (!formData.measurement) newErrors.measurement = 'Measurement is required';
-    if (!editingItem && !formData.openingBalance) newErrors.openingBalance = 'Opening balance is required';
-    if (!formData.salesRate) newErrors.salesRate = 'Sale price is required';
-
-    // Validate ledger fields when category is selected
-    if (formData.category) {
-      if (!formData.purchaseLedger) newErrors.purchaseLedger = 'Purchase ledger is required';
-      if (!formData.salesLedger) newErrors.salesLedger = 'Sales ledger is required';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!validateForm()) {
-      message.error('Please fill all required fields');
-      return;
-    }
-
+  const handleItemSubmit = async (values) => {
     try {
-      if (editingItem) {
-        await itemAPI.update(editingItem._id, formData);
-        message.success('Item updated successfully');
+      if (selectedItem) {
+        await itemAPI.update(selectedItem._id, values);
+        notifications.show({
+          title: 'Success',
+          message: 'Item updated successfully',
+          color: 'green'
+        });
       } else {
-        await itemAPI.create(formData);
-        message.success('Item created successfully');
+        await itemAPI.create(values);
+        notifications.show({
+          title: 'Success',
+          message: 'Item created successfully',
+          color: 'green'
+        });
       }
-      setModalVisible(false);
+      closeItemModal();
       fetchItems();
     } catch (error) {
-      message.error(error.message || 'Failed to save item');
+      notifications.show({
+        title: 'Error',
+        message: error.message || 'Failed to save item',
+        color: 'red'
+      });
     }
   };
 
-  const getTagColor = (balance) => {
-    if (balance < 10) return '#ff4d4f';
-    if (balance < 50) return '#faad14';
-    return '#52c41a';
+  const handleOpeningBalanceClick = (item) => {
+    setSelectedItemForBalance(item);
+    openingBalanceForm.setValues({
+      openingBalance: item.openingBalance || 0,
+      rate: item.salesRate || 0
+    });
+    openOpeningBalanceModal();
   };
 
-  const renderTag = (balance, unit) => (
-    <span style={{
-      display: 'inline-block',
-      padding: '2px 8px',
-      borderRadius: '4px',
-      fontSize: '12px',
-      fontWeight: '500',
-      background: `${getTagColor(balance)}20`,
-      color: getTagColor(balance),
-      border: `1px solid ${getTagColor(balance)}`
-    }}>
-      {balance} {unit}
-    </span>
+  const handleOpeningBalanceSubmit = async (values) => {
+    try {
+      await itemAPI.updateOpeningBalance(selectedItemForBalance._id, values);
+      notifications.show({
+        title: 'Success',
+        message: 'Opening balance updated successfully',
+        color: 'green'
+      });
+      closeOpeningBalanceModal();
+      fetchItems();
+    } catch (error) {
+      notifications.show({
+        title: 'Error',
+        message: error.message || 'Failed to update opening balance',
+        color: 'red'
+      });
+    }
+  };
+
+  const handleSalesPriceClick = (item) => {
+    setSelectedItemForPrice(item);
+    salesPriceForm.setValues({ salesRate: item.salesRate || 0 });
+    openSalesPriceModal();
+  };
+
+  const handleSalesPriceSubmit = async (values) => {
+    try {
+      await itemAPI.updateSalesPrice(selectedItemForPrice._id, values);
+      notifications.show({
+        title: 'Success',
+        message: 'Sales price updated successfully',
+        color: 'green'
+      });
+      closeSalesPriceModal();
+      fetchItems();
+    } catch (error) {
+      notifications.show({
+        title: 'Error',
+        message: error.message || 'Failed to update sales price',
+        color: 'red'
+      });
+    }
+  };
+
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const handleTableFilterChange = (column, value) => {
+    setTableFilters(prev => ({ ...prev, [column]: value }));
+    setPagination(prev => ({ ...prev, current: 1 }));
+  };
+
+  const clearAllFilters = () => {
+    setSearchTerm('');
+    setCategoryFilter('');
+    setStatusFilter('');
+    setTableFilters({ category: '', supplier: '', status: '' });
+    setSortConfig({ key: null, direction: 'asc' });
+    setPagination(prev => ({ ...prev, current: 1 }));
+  };
+
+  // Filter and sort items
+  const filteredItems = items.filter(item => {
+    const matchesSearch =
+      item.itemName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.itemCode?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = !categoryFilter || item.category === categoryFilter;
+    const matchesStatus = !statusFilter || item.status === statusFilter;
+    const matchesTableCategory = !tableFilters.category || item.category === tableFilters.category;
+    const matchesTableSupplier = !tableFilters.supplier || item.supplier?._id === tableFilters.supplier;
+    const matchesTableStatus = !tableFilters.status || item.status === tableFilters.status;
+
+    return matchesSearch && matchesCategory && matchesStatus &&
+           matchesTableCategory && matchesTableSupplier && matchesTableStatus;
+  });
+
+  const sortedItems = [...filteredItems].sort((a, b) => {
+    if (!sortConfig.key) return 0;
+
+    let aValue, bValue;
+
+    switch (sortConfig.key) {
+      case 'code': aValue = a.itemCode || ''; bValue = b.itemCode || ''; break;
+      case 'name': aValue = a.itemName || ''; bValue = b.itemName || ''; break;
+      case 'category': aValue = a.category || ''; bValue = b.category || ''; break;
+      case 'measurement': aValue = a.measurement || ''; bValue = b.measurement || ''; break;
+      case 'stock': aValue = a.currentBalance || 0; bValue = b.currentBalance || 0; break;
+      case 'price': aValue = a.salesRate || 0; bValue = b.salesRate || 0; break;
+      case 'gst': aValue = a.gstPercent || 0; bValue = b.gstPercent || 0; break;
+      case 'status': aValue = a.status || ''; bValue = b.status || ''; break;
+      default: return 0;
+    }
+
+    if (typeof aValue === 'string') {
+      aValue = aValue.toLowerCase();
+      bValue = bValue.toLowerCase();
+    }
+
+    if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+    if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  // Paginate items
+  const paginatedItems = useMemo(() => {
+    const startIndex = (pagination.current - 1) * pagination.pageSize;
+    const endIndex = startIndex + pagination.pageSize;
+    return sortedItems.slice(startIndex, endIndex);
+  }, [sortedItems, pagination]);
+
+  // Stats
+  const totalItems = items.length;
+  const activeItems = items.filter(item => item.status === 'Active').length;
+  const lowStock = items.filter(item => item.currentBalance < 10).length;
+
+  const hasActiveFilters = searchTerm || categoryFilter || statusFilter ||
+                           tableFilters.category || tableFilters.supplier || tableFilters.status;
+
+  const toggleColumn = (columnKey) => {
+    setVisibleColumns(prev => ({ ...prev, [columnKey]: !prev[columnKey] }));
+  };
+
+  const handleLedgerClick = (item, ledgerType) => {
+    const ledger = ledgerType === 'purchase' ? item.purchaseLedger : item.salesLedger;
+    if (ledger) {
+      const categoryName = item.category;
+      const ledgerTypeName = ledgerType === 'purchase' ? 'Purchase Ledger' : 'Sales Ledger';
+      const displayName = `${categoryName} ${ledgerTypeName}`;
+      navigate(`/ledgers/${ledger._id}?name=${encodeURIComponent(displayName)}`);
+    }
+  };
+
+  const handleExportExcel = () => {
+    const exportData = sortedItems.map(item => ({
+      'Code': item.itemCode,
+      'Item Name': item.itemName,
+      'Category': item.category,
+      'Measurement': item.measurement,
+      'Stock': `${item.currentBalance} ${item.measurement}`,
+      'Sale Price': `₹${item.salesRate || 0}`,
+      'Supplier': item.supplier?.name || '-',
+      'Purchase Ledger': item.purchaseLedger?.ledgerName || '-',
+      'Sales Ledger': item.salesLedger?.ledgerName || '-',
+      'GST %': `${item.gstPercent || 0}%`,
+      'Status': item.status
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Items');
+
+    ws['!cols'] = [
+      { wch: 10 }, { wch: 25 }, { wch: 15 }, { wch: 12 },
+      { wch: 15 }, { wch: 12 }, { wch: 20 }, { wch: 25 },
+      { wch: 25 }, { wch: 8 }, { wch: 10 }
+    ];
+
+    XLSX.writeFile(wb, `Items_${new Date().toISOString().split('T')[0]}.xlsx`);
+    
+    notifications.show({
+      title: 'Success',
+      message: 'Exported to Excel successfully',
+      color: 'green'
+    });
+  };
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF('l', 'mm', 'a4');
+    doc.setFontSize(16);
+    doc.text('Item Master Report', 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 22);
+
+    const tableData = sortedItems.map(item => [
+      item.itemCode,
+      item.itemName,
+      item.category,
+      item.measurement,
+      `${item.currentBalance} ${item.measurement}`,
+      `₹${item.salesRate || 0}`,
+      item.supplier?.name || '-',
+      item.purchaseLedger?.ledgerName || '-',
+      item.salesLedger?.ledgerName || '-',
+      `${item.gstPercent || 0}%`,
+      item.status
+    ]);
+
+    doc.autoTable({
+      startY: 28,
+      head: [['Code', 'Item Name', 'Category', 'Unit', 'Stock', 'Price', 'Supplier', 'Purchase Ledger', 'Sales Ledger', 'GST%', 'Status']],
+      body: tableData,
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [24, 144, 255], textColor: 255 },
+      columnStyles: {
+        0: { cellWidth: 15 }, 1: { cellWidth: 30 }, 2: { cellWidth: 20 },
+        3: { cellWidth: 12 }, 4: { cellWidth: 20 }, 5: { cellWidth: 15 },
+        6: { cellWidth: 25 }, 7: { cellWidth: 30 }, 8: { cellWidth: 30 },
+        9: { cellWidth: 12 }, 10: { cellWidth: 15 }
+      }
+    });
+
+    doc.save(`Items_${new Date().toISOString().split('T')[0]}.pdf`);
+    
+    notifications.show({
+      title: 'Success',
+      message: 'Exported to PDF successfully',
+      color: 'green'
+    });
+  };
+
+  const SortIcon = ({ columnKey }) => {
+    if (sortConfig.key !== columnKey) {
+      return <IconArrowsSort size={14} />;
+    }
+    return sortConfig.direction === 'asc' ? 
+      <IconSortAscending size={14} /> : 
+      <IconSortDescending size={14} />;
+  };
+
+  const StatCard = ({ icon, label, value, color }) => (
+    <Card shadow="sm" padding="md" radius="md" withBorder>
+      <Group>
+        <Box
+          sx={(theme) => ({
+            padding: theme.spacing.sm,
+            borderRadius: theme.radius.md,
+            backgroundColor: `${color}20`,
+            color: color,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          })}
+        >
+          {icon}
+        </Box>
+        <div>
+          <Text fw={700} size="xl">
+            {value}
+          </Text>
+          <Text size="sm" color="dimmed">
+            {label}
+          </Text>
+        </div>
+      </Group>
+    </Card>
   );
 
-  const getStatusTagColor = (status) => status === 'Active' ? '#52c41a' : '#ff4d4f';
+  const tableColumns = [
+    visibleColumns.code && {
+      accessor: 'itemCode',
+      title: 'Code',
+      render: (item) => (
+        <Badge color="blue" variant="light" radius="sm">
+          {item.itemCode}
+        </Badge>
+      ),
+      width: 100
+    },
+    visibleColumns.name && {
+      accessor: 'itemName',
+      title: 'Item Name',
+      render: (item) => (
+        <Text fw={500} size="sm">
+          {item.itemName}
+        </Text>
+      ),
+      width: 200
+    },
+    visibleColumns.category && {
+      accessor: 'category',
+      title: 'Category',
+      render: (item) => item.category,
+      width: 120
+    },
+    visibleColumns.measurement && {
+      accessor: 'measurement',
+      title: 'Measurement',
+      render: (item) => item.measurement,
+      width: 100
+    },
+    visibleColumns.stock && {
+      accessor: 'stock',
+      title: 'Stock',
+      render: (item) => (
+        <Badge
+          color={
+            item.currentBalance < 10 ? 'red' :
+            item.currentBalance < 50 ? 'yellow' : 'green'
+          }
+          variant="light"
+          size="md"
+        >
+          {item.currentBalance} {item.measurement}
+        </Badge>
+      ),
+      width: 120
+    },
+    visibleColumns.price && {
+      accessor: 'salesRate',
+      title: 'Sale Price',
+      render: (item) => (
+        <Text fw={600} color="blue">
+          ₹{item.salesRate || 0}
+        </Text>
+      ),
+      width: 100
+    },
+    visibleColumns.supplier && {
+      accessor: 'supplier',
+      title: 'Supplier',
+      render: (item) => item.supplier?.name || '-',
+      width: 150
+    },
+    visibleColumns.purchaseLedger && {
+      accessor: 'purchaseLedger',
+      title: 'Purchase Ledger',
+      render: (item) => (
+        item.purchaseLedger ? (
+          <UnstyledButton
+            onClick={(e) => {
+              e.stopPropagation();
+              handleLedgerClick(item, 'purchase');
+            }}
+            style={{ textDecoration: 'underline', color: 'blue' }}
+          >
+            {item.purchaseLedger.ledgerName}
+          </UnstyledButton>
+        ) : '-'
+      ),
+      width: 180
+    },
+    visibleColumns.salesLedger && {
+      accessor: 'salesLedger',
+      title: 'Sales Ledger',
+      render: (item) => (
+        item.salesLedger ? (
+          <UnstyledButton
+            onClick={(e) => {
+              e.stopPropagation();
+              handleLedgerClick(item, 'sales');
+            }}
+            style={{ textDecoration: 'underline', color: 'green' }}
+          >
+            {item.salesLedger.ledgerName}
+          </UnstyledButton>
+        ) : '-'
+      ),
+      width: 180
+    },
+    visibleColumns.gst && {
+      accessor: 'gstPercent',
+      title: 'GST %',
+      render: (item) => `${item.gstPercent || 0}%`,
+      width: 80
+    },
+    visibleColumns.status && {
+      accessor: 'status',
+      title: 'Status',
+      render: (item) => (
+        <Badge
+          color={item.status === 'Active' ? 'green' : 'red'}
+          variant="light"
+          radius="sm"
+        >
+          {item.status}
+        </Badge>
+      ),
+      width: 100
+    },
+    {
+      accessor: 'actions',
+      title: 'Actions',
+      render: (item) => (
+        <Group spacing="xs" wrap="nowrap">
+          <ActionIcon
+            variant="subtle"
+            color="blue"
+            onClick={() => handleEdit(item)}
+            title="Edit"
+          >
+            <IconEdit size={16} />
+          </ActionIcon>
+          <ActionIcon
+            variant="subtle"
+            color="green"
+            onClick={() => handleOpeningBalanceClick(item)}
+            title="Update Balance"
+          >
+            <IconCoin size={16} />
+          </ActionIcon>
+          <ActionIcon
+            variant="subtle"
+            color="orange"
+            onClick={() => handleSalesPriceClick(item)}
+            title="Update Price"
+          >
+            <IconWallet size={16} />
+          </ActionIcon>
+          <ActionIcon
+            variant="subtle"
+            color="red"
+            onClick={() => handleDelete(item._id)}
+            title="Delete"
+          >
+            <IconTrash size={16} />
+          </ActionIcon>
+        </Group>
+      ),
+      width: 180
+    }
+  ].filter(Boolean);
 
   return (
-    <div>
-      <PageHeader
-        title="Item Master"
-        subtitle="Manage inventory items"
-        extra={[
-          <button
-            key="add"
-            className="btn btn-primary"
-            onClick={handleAdd}
-          >
-            <svg className="icon" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
-            </svg>
-            Add Item
-          </button>
-        ]}
-      />
-
-      <div style={{ overflowX: 'auto' }}>
-        <table className="billing-table" style={{ minWidth: '1500px' }}>
-          <thead>
-            <tr>
-              <th>Item Code</th>
-              <th>Item Name</th>
-              <th>Category</th>
-              <th>Measurement</th>
-              <th>Unit</th>
-              <th>Current Balance</th>
-              <th>Sale Price</th>
-              <th>Supplier</th>
-              <th>Purchase Ledger</th>
-              <th>Sales Ledger</th>
-              <th>GST %</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan="13" style={{ textAlign: 'center', padding: '40px' }}>
-                  <div className="spinner"></div>
-                  Loading...
-                </td>
-              </tr>
-            ) : items.length === 0 ? (
-              <tr>
-                <td colSpan="13" className="table-empty">
-                  No items found
-                </td>
-              </tr>
-            ) : (
-              items.map((item) => (
-                <tr key={item._id}>
-                  <td>{item.itemCode}</td>
-                  <td>{item.itemName}</td>
-                  <td>{item.category}</td>
-                  <td>{item.measurement}</td>
-                  <td>{item.unit || '-'}</td>
-                  <td>{renderTag(item.currentBalance, item.measurement)}</td>
-                  <td>₹{item.salesRate || 0}</td>
-                  <td>{item.supplier?.name || '-'}</td>
-                  <td>{item.purchaseLedger?.ledgerName || '-'}</td>
-                  <td>{item.salesLedger?.ledgerName || '-'}</td>
-                  <td>{item.gstPercent || 0}%</td>
-                  <td>
-                    <span style={{
-                      display: 'inline-block',
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      fontSize: '12px',
-                      fontWeight: '500',
-                      background: `${getStatusTagColor(item.status)}20`,
-                      color: getStatusTagColor(item.status),
-                      border: `1px solid ${getStatusTagColor(item.status)}`
-                    }}>
-                      {item.status}
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button
-                        className="btn btn-link"
-                        onClick={() => handleEdit(item)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="btn btn-link"
-                        style={{ color: '#ff4d4f' }}
-                        onClick={() => handleDelete(item._id)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Modal */}
-      {modalVisible && (
-        <div className="modal-overlay" onClick={() => setModalVisible(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px' }}>
-            <div className="modal-header">
-              <h3>{editingItem ? 'Edit Item' : 'Add Item'}</h3>
-              <button className="modal-close" onClick={() => setModalVisible(false)}>&times;</button>
-            </div>
-            <form onSubmit={handleSubmit}>
-              <div className="modal-body">
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label required">Item Code</label>
-                    <input
-                      type="text"
-                      className={`form-input ${errors.itemCode ? 'error' : ''}`}
-                      placeholder="Enter item code"
-                      value={formData.itemCode || ''}
-                      onChange={(e) => handleInputChange('itemCode', e.target.value)}
-                      disabled={editingItem}
-                    />
-                    {errors.itemCode && <div className="form-error">{errors.itemCode}</div>}
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label required">Item Name</label>
-                    <input
-                      type="text"
-                      className={`form-input ${errors.itemName ? 'error' : ''}`}
-                      placeholder="Enter item name"
-                      value={formData.itemName || ''}
-                      onChange={(e) => handleInputChange('itemName', e.target.value)}
-                    />
-                    {errors.itemName && <div className="form-error">{errors.itemName}</div>}
-                  </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label required">Category</label>
-                    <select
-                      className={`form-select ${errors.category ? 'error' : ''}`}
-                      value={formData.category || ''}
-                      onChange={(e) => handleInputChange('category', e.target.value)}
-                    >
-                      <option value="">Select category</option>
-                      <option value="Feed">Feeds</option>
-                      <option value="CattleFeed">CattleFeed</option>
-                      <option value="Medicine">Medicine</option>
-                      <option value="Equipment">Equipment</option>
-                      <option value="Dairy Products">Dairy Products</option>
-                      <option value="Minerals">Minerals</option>
-                      <option value="Other">Other</option>
-                    </select>
-                    {errors.category && <div className="form-error">{errors.category}</div>}
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label required">Measurement</label>
-                    {!showCustomMeasurement ? (
-                      <select
-                        className={`form-select ${errors.measurement ? 'error' : ''}`}
-                        value={formData.measurement || ''}
-                        onChange={(e) => handleInputChange('measurement', e.target.value)}
-                      >
-                        <option value="">Select measurement</option>
-                        <option value="Kg">Kg</option>
-                        <option value="Ltr">Ltr</option>
-                        <option value="Pcs">Pcs</option>
-                        <option value="Box">Box</option>
-                        <option value="Bag">Bag</option>
-                        <option value="Others">Others</option>
-                      </select>
-                    ) : (
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <input
-                          type="text"
-                          className={`form-input ${errors.measurement ? 'error' : ''}`}
-                          placeholder="Enter custom measurement"
-                          value={formData.measurement || ''}
-                          onChange={(e) => handleInputChange('measurement', e.target.value)}
-                        />
-                        <button
-                          type="button"
-                          className="btn btn-default"
-                          onClick={() => {
-                            setShowCustomMeasurement(false);
-                            setFormData(prev => ({ ...prev, measurement: '' }));
-                          }}
-                          style={{ whiteSpace: 'nowrap' }}
-                        >
-                          Back
-                        </button>
-                      </div>
-                    )}
-                    {errors.measurement && <div className="form-error">{errors.measurement}</div>}
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Unit (Count/Number)</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Enter unit count (optional)"
-                    value={formData.unit || ''}
-                    onChange={(e) => handleInputChange('unit', e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Supplier</label>
-                  <select
-                    className="form-select"
-                    value={formData.supplier || ''}
-                    onChange={(e) => handleInputChange('supplier', e.target.value)}
-                  >
-                    <option value="">Select supplier (Optional)</option>
-                    {suppliers.map((supplier) => (
-                      <option key={supplier._id} value={supplier._id}>
-                        {supplier.name} ({supplier.supplierId}) - {supplier.phone}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Show ledger fields when category is selected */}
-                {formData.category && (
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label className="form-label required">Purchase Ledger</label>
-                      <select
-                        className={`form-select ${errors.purchaseLedger ? 'error' : ''}`}
-                        value={formData.purchaseLedger || ''}
-                        onChange={(e) => handleInputChange('purchaseLedger', e.target.value)}
-                      >
-                        <option value="">Select purchase ledger</option>
-                        {purchaseLedgers.map((ledger) => (
-                          <option key={ledger._id} value={ledger._id}>
-                            {ledger.ledgerName} ({ledger.ledgerType})
-                          </option>
-                        ))}
-                      </select>
-                      {errors.purchaseLedger && <div className="form-error">{errors.purchaseLedger}</div>}
-                    </div>
-
-                    <div className="form-group">
-                      <label className="form-label required">Sales Ledger</label>
-                      <select
-                        className={`form-select ${errors.salesLedger ? 'error' : ''}`}
-                        value={formData.salesLedger || ''}
-                        onChange={(e) => handleInputChange('salesLedger', e.target.value)}
-                      >
-                        <option value="">Select sales ledger</option>
-                        {salesLedgers.map((ledger) => (
-                          <option key={ledger._id} value={ledger._id}>
-                            {ledger.ledgerName} ({ledger.ledgerType})
-                          </option>
-                        ))}
-                      </select>
-                      {errors.salesLedger && <div className="form-error">{errors.salesLedger}</div>}
-                    </div>
-                  </div>
-                )}
-
-                <div className="form-row">
-                  {!editingItem && (
-                    <div className="form-group">
-                      <label className="form-label required">Opening Balance</label>
-                      <input
-                        type="number"
-                        className={`form-input ${errors.openingBalance ? 'error' : ''}`}
-                        placeholder="Enter opening balance"
-                        value={formData.openingBalance || ''}
-                        onChange={(e) => handleInputChange('openingBalance', parseFloat(e.target.value))}
-                        min="0"
-                      />
-                      {errors.openingBalance && <div className="form-error">{errors.openingBalance}</div>}
-                    </div>
-                  )}
-
-                  <div className="form-group">
-                    <label className="form-label required">Sale Price</label>
-                    <input
-                      type="number"
-                      className={`form-input ${errors.salesRate ? 'error' : ''}`}
-                      placeholder="Enter sale price"
-                      value={formData.salesRate || ''}
-                      onChange={(e) => handleInputChange('salesRate', parseFloat(e.target.value))}
-                      min="0"
-                    />
-                    {errors.salesRate && <div className="form-error">{errors.salesRate}</div>}
-                  </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">GST Percentage</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      placeholder="Enter GST %"
-                      value={formData.gstPercent || ''}
-                      onChange={(e) => handleInputChange('gstPercent', parseFloat(e.target.value))}
-                      min="0"
-                      max="100"
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">HSN Code</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Enter HSN code"
-                      value={formData.hsnCode || ''}
-                      onChange={(e) => handleInputChange('hsnCode', e.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-default" onClick={() => setModalVisible(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  {editingItem ? 'Update' : 'Create'}
-                </button>
-              </div>
-            </form>
-          </div>
+    <Container size="xl" py="md">
+      {/* Header */}
+      <Group position="apart" mb="xl">
+        <div>
+          <Title order={2}>Item Master</Title>
+          <Text color="dimmed" size="sm">Manage your inventory items</Text>
         </div>
-      )}
-    </div>
+        <Button
+          leftSection={<IconPlus size={16} />}
+          onClick={handleAdd}
+          size="sm"
+        >
+          Add Item
+        </Button>
+      </Group>
+
+      {/* Stats */}
+      <SimpleGrid cols={4} mb="lg">
+        <StatCard
+          icon={<IconBuildingWarehouse size={24} />}
+          label="Total Items"
+          value={totalItems}
+          color="#1890ff"
+        />
+        <StatCard
+          icon={<IconActivity size={24} />}
+          label="Active Items"
+          value={activeItems}
+          color="#52c41a"
+        />
+        <StatCard
+          icon={<IconAlertCircle size={24} />}
+          label="Low Stock"
+          value={lowStock}
+          color="#faad14"
+        />
+        <StatCard
+          icon={<IconList size={24} />}
+          label="Showing"
+          value={sortedItems.length}
+          color="#722ed1"
+        />
+      </SimpleGrid>
+
+      {/* Search & Filters */}
+      <Paper p="md" withBorder mb="md">
+        <Stack>
+          <Group position="apart">
+            <TextInput
+              placeholder="Search by name or code..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              icon={<IconSearch size={16} />}
+              style={{ flex: 1, minWidth: 300 }}
+              size="sm"
+            />
+            
+            <Group spacing="xs">
+              <Select
+                placeholder="Category"
+                value={categoryFilter}
+                onChange={setCategoryFilter}
+                data={[
+                  { value: '', label: 'All Categories' },
+                  { value: 'Feed', label: 'Feeds' },
+                  { value: 'CattleFeed', label: 'CattleFeed' },
+                  { value: 'Medicine', label: 'Medicine' },
+                  { value: 'Equipment', label: 'Equipment' },
+                  { value: 'Dairy Products', label: 'Dairy Products' },
+                  { value: 'Minerals', label: 'Minerals' },
+                  { value: 'Other', label: 'Other' }
+                ]}
+                size="sm"
+                style={{ width: 150 }}
+              />
+              
+              <Select
+                placeholder="Status"
+                value={statusFilter}
+                onChange={setStatusFilter}
+                data={[
+                  { value: '', label: 'All Status' },
+                  { value: 'Active', label: 'Active' },
+                  { value: 'Inactive', label: 'Inactive' }
+                ]}
+                size="sm"
+                style={{ width: 120 }}
+              />
+              
+              <Menu shadow="md" width={200}>
+                <Menu.Target>
+                  <Button
+                    variant="default"
+                    leftSection={<IconColumns size={16} />}
+                    size="sm"
+                  >
+                    Columns
+                  </Button>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Label>Visible Columns</Menu.Label>
+                  {[
+                    { key: 'code', label: 'Code' },
+                    { key: 'name', label: 'Item Name' },
+                    { key: 'category', label: 'Category' },
+                    { key: 'measurement', label: 'Measurement' },
+                    { key: 'stock', label: 'Stock' },
+                    { key: 'price', label: 'Sale Price' },
+                    { key: 'supplier', label: 'Supplier' },
+                    { key: 'purchaseLedger', label: 'Purchase Ledger' },
+                    { key: 'salesLedger', label: 'Sales Ledger' },
+                    { key: 'gst', label: 'GST %' },
+                    { key: 'status', label: 'Status' }
+                  ].map(col => (
+                    <Menu.Item key={col.key}>
+                      <Checkbox
+                        label={col.label}
+                        checked={visibleColumns[col.key]}
+                        onChange={() => toggleColumn(col.key)}
+                      />
+                    </Menu.Item>
+                  ))}
+                </Menu.Dropdown>
+              </Menu>
+              
+              <Button.Group>
+                <Button
+                  variant="default"
+                  leftSection={<IconFileTypeXls size={16} />}
+                  size="sm"
+                  onClick={handleExportExcel}
+                >
+                  Excel
+                </Button>
+                <Button
+                  variant="default"
+                  leftSection={<IconFileTypePdf size={16} />}
+                  size="sm"
+                  onClick={handleExportPDF}
+                >
+                  PDF
+                </Button>
+              </Button.Group>
+              
+              {hasActiveFilters && (
+                <Button
+                  variant="subtle"
+                  leftSection={<IconRefresh size={16} />}
+                  size="sm"
+                  onClick={clearAllFilters}
+                >
+                  Clear Filters
+                </Button>
+              )}
+            </Group>
+          </Group>
+          
+          {/* Table Filters */}
+          <Group spacing="xs">
+            <Select
+              placeholder="Filter Category"
+              value={tableFilters.category}
+              onChange={(value) => handleTableFilterChange('category', value)}
+              data={[
+                { value: '', label: 'All Categories' },
+                ...Array.from(new Set(items.map(item => item.category))).map(cat => ({ value: cat, label: cat }))
+              ]}
+              size="xs"
+              style={{ width: 150 }}
+            />
+            
+            <Select
+              placeholder="Filter Supplier"
+              value={tableFilters.supplier}
+              onChange={(value) => handleTableFilterChange('supplier', value)}
+              data={[
+                { value: '', label: 'All Suppliers' },
+                ...suppliers.map(supplier => ({ value: supplier._id, label: supplier.name }))
+              ]}
+              size="xs"
+              style={{ width: 180 }}
+            />
+            
+            <Select
+              placeholder="Filter Status"
+              value={tableFilters.status}
+              onChange={(value) => handleTableFilterChange('status', value)}
+              data={[
+                { value: '', label: 'All Status' },
+                { value: 'Active', label: 'Active' },
+                { value: 'Inactive', label: 'Inactive' }
+              ]}
+              size="xs"
+              style={{ width: 120 }}
+            />
+          </Group>
+        </Stack>
+      </Paper>
+
+      {/* Table */}
+      <Paper withBorder radius="md">
+        <DataTable
+          columns={tableColumns}
+          records={paginatedItems}
+          fetching={loading}
+          totalRecords={filteredItems.length}
+          recordsPerPage={pagination.pageSize}
+          page={pagination.current}
+          onPageChange={(page) => setPagination(prev => ({ ...prev, current: page }))}
+          recordsPerPageOptions={[10, 25, 50, 100]}
+          onRecordsPerPageChange={(pageSize) => setPagination(prev => ({ ...prev, pageSize, current: 1 }))}
+          highlightOnHover
+          minHeight={300}
+          noRecordsText="No items found"
+          verticalSpacing="sm"
+          fontSize="sm"
+        />
+      </Paper>
+
+      {/* Item Modal */}
+      <Modal
+        opened={itemModalOpened}
+        onClose={closeItemModal}
+        title={selectedItem ? 'Edit Item' : 'Add New Item'}
+        size="lg"
+        centered
+      >
+        <form onSubmit={itemForm.onSubmit(handleItemSubmit)}>
+          <Stack spacing="md">
+            <SimpleGrid cols={2} spacing="md">
+              {selectedItem && (
+                <TextInput
+                  label="Item Code"
+                  value={itemForm.values.itemCode}
+                  disabled
+                />
+              )}
+              
+              <TextInput
+                label="Item Name"
+                placeholder="Enter item name"
+                withAsterisk
+                {...itemForm.getInputProps('itemName')}
+              />
+              
+              <Select
+                label="Category"
+                withAsterisk
+                placeholder="Select category"
+                data={[
+                  { value: 'Feed', label: 'Feeds' },
+                  { value: 'CattleFeed', label: 'CattleFeed' },
+                  { value: 'Medicine', label: 'Medicine' },
+                  { value: 'Equipment', label: 'Equipment' },
+                  { value: 'Dairy Products', label: 'Dairy Products' },
+                  { value: 'Minerals', label: 'Minerals' },
+                  { value: 'Other', label: 'Other' }
+                ]}
+                {...itemForm.getInputProps('category')}
+              />
+              
+              {!showCustomMeasurement ? (
+                <Select
+                  label="Measurement"
+                  withAsterisk
+                  placeholder="Select measurement"
+                  data={[
+                    { value: 'Kg', label: 'Kg' },
+                    { value: 'Ltr', label: 'Ltr' },
+                    { value: 'Pcs', label: 'Pcs' },
+                    { value: 'Box', label: 'Box' },
+                    { value: 'Bag', label: 'Bag' },
+                    { value: 'Others', label: 'Others' }
+                  ]}
+                  {...itemForm.getInputProps('measurement')}
+                  onChange={(value) => {
+                    if (value === 'Others') {
+                      setShowCustomMeasurement(true);
+                      itemForm.setFieldValue('measurement', '');
+                    } else {
+                      itemForm.setFieldValue('measurement', value);
+                    }
+                  }}
+                />
+              ) : (
+                <Group align="flex-end">
+                  <TextInput
+                    label="Custom Measurement"
+                    withAsterisk
+                    placeholder="Enter custom unit"
+                    style={{ flex: 1 }}
+                    {...itemForm.getInputProps('measurement')}
+                  />
+                  <Button
+                    variant="subtle"
+                    size="xs"
+                    onClick={() => {
+                      setShowCustomMeasurement(false);
+                      itemForm.setFieldValue('measurement', '');
+                    }}
+                  >
+                    Back
+                  </Button>
+                </Group>
+              )}
+              
+              <TextInput
+                label="Unit (Optional)"
+                placeholder="Count/Number"
+                {...itemForm.getInputProps('unit')}
+              />
+              
+              <Select
+                label="Supplier (Optional)"
+                placeholder="Select supplier"
+                data={[
+                  { value: '', label: 'No supplier' },
+                  ...suppliers.map(supplier => ({
+                    value: supplier._id,
+                    label: `${supplier.name} (${supplier.supplierId})`
+                  }))
+                ]}
+                {...itemForm.getInputProps('supplier')}
+              />
+              
+              <NumberInput
+                label="GST %"
+                placeholder="0"
+                min={0}
+                max={100}
+                {...itemForm.getInputProps('gstPercent')}
+              />
+              
+              <TextInput
+                label="HSN Code"
+                placeholder="Enter HSN code"
+                {...itemForm.getInputProps('hsnCode')}
+              />
+              
+              <Select
+                label="Status"
+                data={[
+                  { value: 'Active', label: 'Active' },
+                  { value: 'Inactive', label: 'Inactive' }
+                ]}
+                {...itemForm.getInputProps('status')}
+              />
+            </SimpleGrid>
+            
+            <Group position="right" mt="md">
+              <Button variant="default" onClick={closeItemModal}>
+                Cancel
+              </Button>
+              <Button type="submit" color="blue">
+                {selectedItem ? 'Update Item' : 'Create Item'}
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
+
+      {/* Opening Balance Modal */}
+      <Modal
+        opened={openingBalanceModalOpened}
+        onClose={closeOpeningBalanceModal}
+        title="Update Opening Balance"
+        size="sm"
+        centered
+      >
+        <form onSubmit={openingBalanceForm.onSubmit(handleOpeningBalanceSubmit)}>
+          <Stack spacing="md">
+            <TextInput
+              label="Item Name"
+              value={selectedItemForBalance?.itemName || ''}
+              disabled
+            />
+            
+            <TextInput
+              label="Current Opening Balance"
+              value={`${selectedItemForBalance?.openingBalance || 0} ${selectedItemForBalance?.measurement || ''}`}
+              disabled
+            />
+            
+            <NumberInput
+              label="New Opening Balance"
+              placeholder="Enter quantity"
+              withAsterisk
+              {...openingBalanceForm.getInputProps('openingBalance')}
+            />
+            
+            <NumberInput
+              label="Rate"
+              placeholder="Enter rate"
+              withAsterisk
+              precision={2}
+              {...openingBalanceForm.getInputProps('rate')}
+            />
+            
+            <Group position="right" mt="md">
+              <Button variant="default" onClick={closeOpeningBalanceModal}>
+                Cancel
+              </Button>
+              <Button type="submit" color="blue">
+                Update Balance
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
+
+      {/* Sales Price Modal */}
+      <Modal
+        opened={salesPriceModalOpened}
+        onClose={closeSalesPriceModal}
+        title="Update Sales Price"
+        size="sm"
+        centered
+      >
+        <form onSubmit={salesPriceForm.onSubmit(handleSalesPriceSubmit)}>
+          <Stack spacing="md">
+            <TextInput
+              label="Item Name"
+              value={selectedItemForPrice?.itemName || ''}
+              disabled
+            />
+            
+            <TextInput
+              label="Current Sales Price"
+              value={`₹${selectedItemForPrice?.salesRate || 0}`}
+              disabled
+            />
+            
+            <NumberInput
+              label="New Sales Price"
+              placeholder="Enter new sales price"
+              withAsterisk
+              precision={2}
+              {...salesPriceForm.getInputProps('salesRate')}
+            />
+            
+            <Group position="right" mt="md">
+              <Button variant="default" onClick={closeSalesPriceModal}>
+                Cancel
+              </Button>
+              <Button type="submit" color="blue">
+                Update Price
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
+    </Container>
   );
 };
 

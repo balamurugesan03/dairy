@@ -9,41 +9,91 @@ import {
 } from '../utils/stockHelper.js';
 import { createPurchaseVoucher } from '../utils/accountingHelper.js';
 
+// Helper function to generate next item code
+const generateItemCode = async () => {
+  try {
+    // Find the last item by sorting itemCode in descending order
+    const lastItem = await Item.findOne({
+      itemCode: { $regex: /^ITEM-\d+$/ }
+    }).sort({ itemCode: -1 });
+
+    let nextNumber = 1;
+    if (lastItem && lastItem.itemCode) {
+      // Extract the number from the last item code (e.g., "ITEM-0005" -> 5)
+      const match = lastItem.itemCode.match(/^ITEM-(\d+)$/);
+      if (match) {
+        nextNumber = parseInt(match[1]) + 1;
+      }
+    }
+
+    // Format the number with leading zeros (e.g., 1 -> "0001")
+    const formattedNumber = nextNumber.toString().padStart(4, '0');
+    return `ITEM-${formattedNumber}`;
+  } catch (error) {
+    console.error('Error generating item code:', error);
+    throw error;
+  }
+};
+
+// Helper function to find or create category-based ledger
+const findOrCreateCategoryLedger = async (category, ledgerType) => {
+  const isPurchase = ledgerType === 'purchase';
+  const ledgerName = `${category} ${isPurchase ? 'Purchase Ledger' : 'Sales Ledger'}`;
+
+  // Try to find existing ledger
+  let ledger = await Ledger.findOne({ ledgerName, status: 'Active' });
+
+  if (!ledger) {
+    // Create new ledger
+    ledger = new Ledger({
+      ledgerName,
+      ledgerType: isPurchase ? 'Purchases A/c' : 'Sales A/c',
+      linkedEntity: {
+        entityType: 'None'
+      },
+      openingBalance: 0,
+      openingBalanceType: isPurchase ? 'Dr' : 'Cr',
+      currentBalance: 0,
+      balanceType: isPurchase ? 'Dr' : 'Cr',
+      parentGroup: isPurchase ? 'Purchase Accounts' : 'Sales Accounts',
+      status: 'Active'
+    });
+    await ledger.save();
+  }
+
+  return ledger;
+};
+
 // Create new item
 export const createItem = async (req, res) => {
   try {
     const itemData = req.body;
 
-    // Check for duplicate itemCode
-    const existingItem = await Item.findOne({ itemCode: itemData.itemCode });
-    if (existingItem) {
-      return res.status(400).json({
-        success: false,
-        message: 'Item Code already exists'
-      });
+    // Auto-generate item code if not provided
+    if (!itemData.itemCode) {
+      itemData.itemCode = await generateItemCode();
+    } else {
+      // Check for duplicate itemCode if manually provided
+      const existingItem = await Item.findOne({ itemCode: itemData.itemCode });
+      if (existingItem) {
+        return res.status(400).json({
+          success: false,
+          message: 'Item Code already exists'
+        });
+      }
     }
 
     // Set currentBalance same as openingBalance initially
     itemData.currentBalance = itemData.openingBalance || 0;
 
-    // Auto-create purchase ledger for this item
-    const purchaseLedger = new Ledger({
-      ledgerName: `${itemData.itemName} Purchase A/c`,
-      ledgerType: 'Purchases A/c',
-      linkedEntity: {
-        entityType: 'None'
-      },
-      openingBalance: 0,
-      openingBalanceType: 'Dr',
-      currentBalance: 0,
-      balanceType: 'Dr',
-      parentGroup: 'Purchase Accounts',
-      status: 'Active'
-    });
-    await purchaseLedger.save();
+    // Auto-create/find category-based purchase and sales ledgers
+    if (itemData.category) {
+      const purchaseLedger = await findOrCreateCategoryLedger(itemData.category, 'purchase');
+      const salesLedger = await findOrCreateCategoryLedger(itemData.category, 'sales');
 
-    // Link the purchase ledger to the item
-    itemData.purchaseLedger = purchaseLedger._id;
+      itemData.purchaseLedger = purchaseLedger._id;
+      itemData.salesLedger = salesLedger._id;
+    }
 
     const item = new Item(itemData);
     await item.save();
@@ -163,18 +213,30 @@ export const getItemById = async (req, res) => {
 // Update item
 export const updateItem = async (req, res) => {
   try {
-    const item = await Item.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    );
-
-    if (!item) {
+    const existingItem = await Item.findById(req.params.id);
+    if (!existingItem) {
       return res.status(404).json({
         success: false,
         message: 'Item not found'
       });
     }
+
+    const updateData = { ...req.body };
+
+    // If category changed, update ledgers
+    if (updateData.category && updateData.category !== existingItem.category) {
+      const purchaseLedger = await findOrCreateCategoryLedger(updateData.category, 'purchase');
+      const salesLedger = await findOrCreateCategoryLedger(updateData.category, 'sales');
+
+      updateData.purchaseLedger = purchaseLedger._id;
+      updateData.salesLedger = salesLedger._id;
+    }
+
+    const item = await Item.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true, runValidators: true }
+    );
 
     res.status(200).json({
       success: true,
@@ -390,16 +452,49 @@ export const stockOut = async (req, res) => {
 // Get stock transactions
 export const getStockTransactions = async (req, res) => {
   try {
-    const { itemId, startDate, endDate } = req.query;
+    const { itemId, startDate, endDate, transactionType, referenceType } = req.query;
 
-    if (!itemId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Item ID is required'
+    // If itemId is provided, use the specific item history function
+    if (itemId) {
+      const transactions = await getItemStockHistory(itemId, startDate, endDate);
+      return res.status(200).json({
+        success: true,
+        data: transactions
       });
     }
 
-    const transactions = await getItemStockHistory(itemId, startDate, endDate);
+    // Otherwise, get all transactions with filters
+    const query = {};
+
+    if (transactionType) {
+      query.transactionType = transactionType === 'in' ? 'Stock In' : 'Stock Out';
+    }
+
+    if (referenceType) {
+      query.referenceType = referenceType;
+    }
+
+    if (startDate || endDate) {
+      query.date = {};
+      if (startDate) {
+        query.date.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        // Set end date to end of day
+        const endDateTime = new Date(endDate);
+        endDateTime.setHours(23, 59, 59, 999);
+        query.date.$lte = endDateTime;
+      }
+    }
+
+    const transactions = await StockTransaction.find(query)
+      .populate('itemId', 'itemCode itemName measurement')
+      .populate('issueCentre', 'centerName centerType')
+      .populate('subsidyId', 'subsidyName subsidyType')
+      .populate('supplierId', 'supplierId name')
+      .populate('voucherId', 'voucherNumber voucherType')
+      .sort({ date: -1, createdAt: -1 })
+      .limit(1000); // Limit to prevent too many results
 
     res.status(200).json({
       success: true,
@@ -434,6 +529,221 @@ export const getStockBalance = async (req, res) => {
   }
 };
 
+// Update opening balance for an item
+export const updateOpeningBalance = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { openingBalance, rate } = req.body;
+
+    if (openingBalance === undefined || openingBalance < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid opening balance is required'
+      });
+    }
+
+    const item = await Item.findById(id);
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: 'Item not found'
+      });
+    }
+
+    // Calculate the difference to adjust current balance
+    const difference = parseFloat(openingBalance) - item.openingBalance;
+
+    // Update item balances
+    item.openingBalance = parseFloat(openingBalance);
+    item.currentBalance = item.currentBalance + difference;
+    await item.save();
+
+    // Create a stock transaction for the adjustment
+    if (difference !== 0) {
+      await createStockTransaction({
+        itemId: id,
+        transactionType: difference > 0 ? 'Stock In' : 'Stock Out',
+        quantity: Math.abs(difference),
+        rate: parseFloat(rate) || item.salesRate || 0,
+        referenceType: 'Opening Balance Adjustment',
+        notes: 'Opening balance adjusted'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Opening balance updated successfully',
+      data: item
+    });
+  } catch (error) {
+    console.error('Error updating opening balance:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error updating opening balance'
+    });
+  }
+};
+
+// Get stock transaction by ID
+export const getStockTransactionById = async (req, res) => {
+  try {
+    const transaction = await StockTransaction.findById(req.params.id)
+      .populate('itemId', 'itemCode itemName measurement category')
+      .populate('issueCentre', 'centerName centerType')
+      .populate('subsidyId', 'subsidyName subsidyType')
+      .populate('supplierId', 'supplierId name phone')
+      .populate('voucherId', 'voucherNumber voucherType');
+
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        message: 'Stock transaction not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: transaction
+    });
+  } catch (error) {
+    console.error('Error fetching stock transaction:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching stock transaction'
+    });
+  }
+};
+
+// Update stock transaction
+export const updateStockTransaction = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    const transaction = await StockTransaction.findById(id);
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        message: 'Stock transaction not found'
+      });
+    }
+
+    // If quantity changed, update item's current balance
+    if (updateData.quantity !== undefined && updateData.quantity !== transaction.quantity) {
+      const quantityDiff = parseFloat(updateData.quantity) - transaction.quantity;
+      const item = await Item.findById(transaction.itemId);
+
+      if (item) {
+        if (transaction.transactionType === 'Stock In') {
+          item.currentBalance += quantityDiff;
+        } else {
+          item.currentBalance -= quantityDiff;
+        }
+        await item.save();
+      }
+    }
+
+    const updatedTransaction = await StockTransaction.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    )
+      .populate('itemId', 'itemCode itemName measurement')
+      .populate('issueCentre', 'centerName centerType')
+      .populate('subsidyId', 'subsidyName subsidyType')
+      .populate('supplierId', 'supplierId name');
+
+    res.status(200).json({
+      success: true,
+      message: 'Stock transaction updated successfully',
+      data: updatedTransaction
+    });
+  } catch (error) {
+    console.error('Error updating stock transaction:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error updating stock transaction'
+    });
+  }
+};
+
+// Delete stock transaction
+export const deleteStockTransaction = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const transaction = await StockTransaction.findById(id);
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        message: 'Stock transaction not found'
+      });
+    }
+
+    // Update item's current balance
+    const item = await Item.findById(transaction.itemId);
+    if (item) {
+      if (transaction.transactionType === 'Stock In') {
+        item.currentBalance -= transaction.quantity;
+      } else {
+        item.currentBalance += transaction.quantity;
+      }
+      await item.save();
+    }
+
+    await StockTransaction.findByIdAndDelete(id);
+
+    res.status(200).json({
+      success: true,
+      message: 'Stock transaction deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting stock transaction:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error deleting stock transaction'
+    });
+  }
+};
+
+// Update sales price for an item
+export const updateSalesPrice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { salesRate } = req.body;
+
+    if (salesRate === undefined || salesRate < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid sales price is required'
+      });
+    }
+
+    const item = await Item.findById(id);
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: 'Item not found'
+      });
+    }
+
+    item.salesRate = parseFloat(salesRate);
+    await item.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Sales price updated successfully',
+      data: item
+    });
+  } catch (error) {
+    console.error('Error updating sales price:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error updating sales price'
+    });
+  }
+};
+
 export default {
   createItem,
   getAllItems,
@@ -443,5 +753,10 @@ export default {
   stockIn,
   stockOut,
   getStockTransactions,
-  getStockBalance
+  getStockTransactionById,
+  updateStockTransaction,
+  deleteStockTransaction,
+  getStockBalance,
+  updateOpeningBalance,
+  updateSalesPrice
 };

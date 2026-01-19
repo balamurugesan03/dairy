@@ -1,20 +1,72 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import {
+  Paper,
+  Title,
+  Group,
+  Button,
+  Text,
+  Badge,
+  Tabs,
+  Grid,
+  Card,
+  Table,
+  Box,
+  Stack,
+  ActionIcon,
+  Modal,
+  Image,
+  Loader,
+  Center,
+  SimpleGrid
+} from '@mantine/core';
+import {
+  IconArrowLeft,
+  IconEdit,
+  IconBrandWhatsapp,
+  IconFileExport,
+  IconPrinter,
+  IconPlus,
+  IconShoppingCart,
+  IconCreditCard,
+  IconFileText,
+  IconUsers
+} from '@tabler/icons-react';
+import { notifications } from '@mantine/notifications';
 import dayjs from 'dayjs';
-import { supplierAPI } from '../../services/api';
-import PageHeader from '../common/PageHeader';
-import LoadingSpinner from '../common/LoadingSpinner';
-import { message } from '../../utils/toast';
+import { supplierAPI, voucherAPI, stockAPI } from '../../services/api';
 
 const SupplierView = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const [supplier, setSupplier] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [transactions, setTransactions] = useState([]);
+  const [purchases, setPurchases] = useState([]);
+  const [statistics, setStatistics] = useState({
+    totalPurchases: 0,
+    totalPayments: 0,
+    outstandingBalance: 0,
+    transactionCount: 0
+  });
+  const [selectedDocument, setSelectedDocument] = useState(null);
+  const [dateFilter, setDateFilter] = useState({
+    startDate: '',
+    endDate: ''
+  });
 
   useEffect(() => {
     fetchSupplier();
+    fetchTransactions();
+    fetchPurchases();
   }, [id]);
+
+  useEffect(() => {
+    if (transactions.length > 0 || purchases.length > 0) {
+      calculateStatistics();
+    }
+  }, [transactions, purchases]);
 
   const fetchSupplier = async () => {
     setLoading(true);
@@ -22,174 +74,458 @@ const SupplierView = () => {
       const response = await supplierAPI.getById(id);
       setSupplier(response.data);
     } catch (error) {
-      message.error(error.message || 'Failed to fetch supplier details');
+      notifications.show({
+        title: 'Error',
+        message: error.message || 'Failed to fetch supplier details',
+        color: 'red'
+      });
       navigate('/suppliers');
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading) {
-    return <LoadingSpinner />;
-  }
-
-  if (!supplier) {
-    return null;
-  }
-
-  const getStatusColor = (active) => {
-    return active ? '#52c41a' : '#ff4d4f';
+  const fetchTransactions = async () => {
+    try {
+      const response = await voucherAPI.getAll({
+        partyType: 'supplier',
+        partyId: id,
+        ...dateFilter
+      });
+      setTransactions(response.data || []);
+    } catch (error) {
+      console.error('Error fetching transactions:', error);
+    }
   };
 
-  const renderStatusTag = (active) => (
-    <span style={{
-      display: 'inline-block',
-      padding: '2px 8px',
-      borderRadius: '4px',
-      fontSize: '12px',
-      fontWeight: '500',
-      background: `${getStatusColor(active)}20`,
-      color: getStatusColor(active),
-      border: `1px solid ${getStatusColor(active)}`
-    }}>
-      {active ? 'Active' : 'Inactive'}
-    </span>
-  );
+  const fetchPurchases = async () => {
+    try {
+      const response = await stockAPI.getTransactions({
+        supplierId: id,
+        type: 'in',
+        ...dateFilter
+      });
+      setPurchases(response.data || []);
+    } catch (error) {
+      console.error('Error fetching purchases:', error);
+    }
+  };
 
-  const DescriptionRow = ({ label, value, span = 1 }) => (
-    <div style={{
-      gridColumn: span === 2 ? 'span 2' : 'span 1',
-      padding: '12px',
-      borderBottom: '1px solid var(--border-color)',
-      display: 'grid',
-      gridTemplateColumns: '150px 1fr',
-      gap: '12px'
-    }}>
-      <div style={{ fontWeight: '500', color: 'var(--text-secondary)' }}>{label}:</div>
-      <div style={{ color: 'var(--text-primary)' }}>{value}</div>
-    </div>
-  );
+  const calculateStatistics = () => {
+    const totalPurchases = purchases.reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+    const totalPayments = transactions
+      .filter(t => t.voucherType === 'payment')
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+    const outstandingBalance = totalPurchases - totalPayments;
+    const transactionCount = transactions.length + purchases.length;
 
-  const DocumentSection = ({ title, base64Data }) => {
-    if (!base64Data) return null;
+    setStatistics({
+      totalPurchases,
+      totalPayments,
+      outstandingBalance,
+      transactionCount
+    });
+  };
 
-    const isImage = base64Data.startsWith('data:image');
-    const isPdf = base64Data.startsWith('data:application/pdf');
+  const handleExport = () => {
+    try {
+      const exportData = {
+        supplier: {
+          'Supplier ID': supplier.supplierId,
+          'Name': supplier.name,
+          'Phone': supplier.phone,
+          'Email': supplier.email || '-',
+          'Address': supplier.address || '-',
+          'State': supplier.state || '-',
+          'District': supplier.district || '-',
+          'GST Number': supplier.gstNumber || '-',
+          'PAN Number': supplier.panNumber || '-'
+        },
+        statistics: {
+          'Total Purchases': `₹${statistics.totalPurchases.toFixed(2)}`,
+          'Total Payments': `₹${statistics.totalPayments.toFixed(2)}`,
+          'Outstanding Balance': `₹${statistics.outstandingBalance.toFixed(2)}`,
+          'Total Transactions': statistics.transactionCount
+        },
+        transactions: transactions.map(t => ({
+          'Date': dayjs(t.date).format('DD-MM-YYYY'),
+          'Voucher No': t.voucherNumber,
+          'Type': t.voucherType,
+          'Amount': `₹${t.amount?.toFixed(2)}`,
+          'Description': t.description || '-'
+        })),
+        purchases: purchases.map(p => ({
+          'Date': dayjs(p.date).format('DD-MM-YYYY'),
+          'Item': p.itemName,
+          'Quantity': p.quantity,
+          'Rate': `₹${p.rate?.toFixed(2)}`,
+          'Total': `₹${p.totalAmount?.toFixed(2)}`
+        }))
+      };
 
+      const json = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `supplier_${supplier.supplierId}_${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+
+      notifications.show({
+        title: 'Success',
+        message: 'Exported successfully',
+        color: 'green'
+      });
+    } catch (error) {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to export data',
+        color: 'red'
+      });
+    }
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const handleWhatsApp = () => {
+    const phone = supplier.phone.replace(/[^0-9]/g, '');
+    const text = `Hello ${supplier.name}, your current outstanding balance is ₹${statistics.outstandingBalance.toFixed(2)}.`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
+  };
+
+  if (loading || !supplier) {
     return (
-      <div style={{ marginTop: '12px' }}>
-        <div style={{ fontWeight: '500', marginBottom: '8px', color: 'var(--text-secondary)' }}>{title}</div>
-        {isImage && (
-          <img
-            src={base64Data}
-            alt={title}
-            style={{ maxWidth: '300px', maxHeight: '200px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-          />
-        )}
-        {isPdf && (
-          <a
-            href={base64Data}
-            download={`${title}.pdf`}
-            className="btn btn-link"
-          >
-            Download PDF
-          </a>
-        )}
-      </div>
+      <Center h={400}>
+        <Loader size="lg" />
+      </Center>
     );
-  };
+  }
 
   return (
-    <div>
-      <PageHeader
-        title="Supplier Details"
-        subtitle={`View details for ${supplier.name}`}
-        extra={[
-          <button
-            key="back"
-            className="btn btn-default"
-            onClick={() => navigate('/suppliers')}
+    <Box p="md">
+      <Paper p="md" mb="md">
+        <Group justify="space-between" mb="md">
+          <div>
+            <Title order={2}>Supplier Details</Title>
+            <Text c="dimmed" size="sm">View details for {supplier.name}</Text>
+          </div>
+          <Group>
+            <Button
+              variant="default"
+              leftSection={<IconArrowLeft size={16} />}
+              onClick={() => navigate('/suppliers')}
+            >
+              Back
+            </Button>
+            <Button
+              leftSection={<IconEdit size={16} />}
+              onClick={() => navigate(`/suppliers/edit/${id}`)}
+            >
+              Edit
+            </Button>
+          </Group>
+        </Group>
+
+        <Group mb="md">
+          <Button
+            variant="light"
+            color="green"
+            leftSection={<IconBrandWhatsapp size={16} />}
+            onClick={handleWhatsApp}
           >
-            <svg className="icon" viewBox="0 0 16 16" fill="currentColor">
-              <path fillRule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z"/>
-            </svg>
-            Back
-          </button>,
-          <button
-            key="edit"
-            className="btn btn-primary"
-            onClick={() => navigate(`/suppliers/edit/${id}`)}
+            Send WhatsApp
+          </Button>
+          <Button
+            variant="light"
+            leftSection={<IconFileExport size={16} />}
+            onClick={handleExport}
           >
-            <svg className="icon" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/>
-            </svg>
-            Edit
-          </button>
-        ]}
-      />
+            Export Data
+          </Button>
+          <Button
+            variant="light"
+            leftSection={<IconPrinter size={16} />}
+            onClick={handlePrint}
+          >
+            Print
+          </Button>
+          <Button
+            variant="light"
+            leftSection={<IconPlus size={16} />}
+            onClick={() => navigate(`/vouchers/add?supplier=${id}`)}
+          >
+            Add Transaction
+          </Button>
+        </Group>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-        <div style={{ background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-          <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', fontWeight: '600', fontSize: '16px' }}>
-            Basic Information
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)' }}>
-            <DescriptionRow label="Supplier ID" value={supplier.supplierId} />
-            <DescriptionRow label="Name" value={supplier.name} />
-            <DescriptionRow label="Phone" value={supplier.phone} />
-            <DescriptionRow label="Email" value={supplier.email || '-'} />
-            <DescriptionRow label="Opening Balance" value={`₹${supplier.openingBalance?.toFixed(2) || '0.00'}`} />
-            <DescriptionRow label="Status" value={renderStatusTag(supplier.active)} />
-          </div>
-        </div>
+        <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} mb="md">
+          <Card withBorder>
+            <Group>
+              <ActionIcon size="lg" variant="light" color="blue">
+                <IconShoppingCart size={20} />
+              </ActionIcon>
+              <div>
+                <Text size="xs" c="dimmed">Total Purchases</Text>
+                <Text size="xl" fw={700}>₹{statistics.totalPurchases.toFixed(2)}</Text>
+              </div>
+            </Group>
+          </Card>
+          <Card withBorder>
+            <Group>
+              <ActionIcon size="lg" variant="light" color="green">
+                <IconCreditCard size={20} />
+              </ActionIcon>
+              <div>
+                <Text size="xs" c="dimmed">Total Payments</Text>
+                <Text size="xl" fw={700}>₹{statistics.totalPayments.toFixed(2)}</Text>
+              </div>
+            </Group>
+          </Card>
+          <Card withBorder>
+            <Group>
+              <ActionIcon size="lg" variant="light" color="orange">
+                <IconFileText size={20} />
+              </ActionIcon>
+              <div>
+                <Text size="xs" c="dimmed">Outstanding Balance</Text>
+                <Text size="xl" fw={700}>₹{Math.abs(statistics.outstandingBalance).toFixed(2)}</Text>
+              </div>
+            </Group>
+          </Card>
+          <Card withBorder>
+            <Group>
+              <ActionIcon size="lg" variant="light" color="violet">
+                <IconUsers size={20} />
+              </ActionIcon>
+              <div>
+                <Text size="xs" c="dimmed">Total Transactions</Text>
+                <Text size="xl" fw={700}>{statistics.transactionCount}</Text>
+              </div>
+            </Group>
+          </Card>
+        </SimpleGrid>
 
-        <div style={{ background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-          <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', fontWeight: '600', fontSize: '16px' }}>
-            Address Information
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)' }}>
-            <DescriptionRow label="Address" value={supplier.address || '-'} span={2} />
-            <DescriptionRow label="State" value={supplier.state || '-'} />
-            <DescriptionRow label="District" value={supplier.district || '-'} />
-            <DescriptionRow label="PIN Code" value={supplier.pincode || '-'} />
-          </div>
-        </div>
+        <Tabs value={activeTab} onChange={setActiveTab}>
+          <Tabs.List>
+            <Tabs.Tab value="overview">Overview</Tabs.Tab>
+            <Tabs.Tab value="transactions">Transactions</Tabs.Tab>
+            <Tabs.Tab value="purchases">Purchase History</Tabs.Tab>
+          </Tabs.List>
 
-        <div style={{ background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-          <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', fontWeight: '600', fontSize: '16px' }}>
-            Tax Information
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)' }}>
-            <DescriptionRow label="GST Number" value={supplier.gstNumber || '-'} />
-            <DescriptionRow label="PAN Number" value={supplier.panNumber || '-'} />
-          </div>
-        </div>
+          <Tabs.Panel value="overview" pt="md">
+            <Grid>
+              <Grid.Col span={{ base: 12, md: 6 }}>
+                <Card withBorder>
+                  <Title order={5} mb="md">Basic Information</Title>
+                  <Stack gap="xs">
+                    <Group justify="space-between">
+                      <Text fw={500}>Supplier ID:</Text>
+                      <Text>{supplier.supplierId}</Text>
+                    </Group>
+                    <Group justify="space-between">
+                      <Text fw={500}>Name:</Text>
+                      <Text>{supplier.name}</Text>
+                    </Group>
+                    <Group justify="space-between">
+                      <Text fw={500}>Phone:</Text>
+                      <Text>{supplier.phone}</Text>
+                    </Group>
+                    <Group justify="space-between">
+                      <Text fw={500}>Email:</Text>
+                      <Text>{supplier.email || '-'}</Text>
+                    </Group>
+                    <Group justify="space-between">
+                      <Text fw={500}>Opening Balance:</Text>
+                      <Text>₹{supplier.openingBalance?.toFixed(2) || '0.00'}</Text>
+                    </Group>
+                    <Group justify="space-between">
+                      <Text fw={500}>Status:</Text>
+                      <Badge color={supplier.active ? 'green' : 'red'}>
+                        {supplier.active ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </Group>
+                  </Stack>
+                </Card>
+              </Grid.Col>
+              <Grid.Col span={{ base: 12, md: 6 }}>
+                <Card withBorder>
+                  <Title order={5} mb="md">Address Information</Title>
+                  <Stack gap="xs">
+                    <Group justify="space-between">
+                      <Text fw={500}>Address:</Text>
+                      <Text>{supplier.address || '-'}</Text>
+                    </Group>
+                    <Group justify="space-between">
+                      <Text fw={500}>State:</Text>
+                      <Text>{supplier.state || '-'}</Text>
+                    </Group>
+                    <Group justify="space-between">
+                      <Text fw={500}>District:</Text>
+                      <Text>{supplier.district || '-'}</Text>
+                    </Group>
+                    <Group justify="space-between">
+                      <Text fw={500}>PIN Code:</Text>
+                      <Text>{supplier.pincode || '-'}</Text>
+                    </Group>
+                  </Stack>
+                </Card>
+              </Grid.Col>
+              <Grid.Col span={{ base: 12, md: 6 }}>
+                <Card withBorder>
+                  <Title order={5} mb="md">Tax Information</Title>
+                  <Stack gap="xs">
+                    <Group justify="space-between">
+                      <Text fw={500}>GST Number:</Text>
+                      <Text>{supplier.gstNumber || '-'}</Text>
+                    </Group>
+                    <Group justify="space-between">
+                      <Text fw={500}>PAN Number:</Text>
+                      <Text>{supplier.panNumber || '-'}</Text>
+                    </Group>
+                  </Stack>
+                </Card>
+              </Grid.Col>
+              <Grid.Col span={{ base: 12, md: 6 }}>
+                <Card withBorder>
+                  <Title order={5} mb="md">System Information</Title>
+                  <Stack gap="xs">
+                    <Group justify="space-between">
+                      <Text fw={500}>Created At:</Text>
+                      <Text>{supplier.createdAt ? dayjs(supplier.createdAt).format('DD-MM-YYYY HH:mm') : '-'}</Text>
+                    </Group>
+                    <Group justify="space-between">
+                      <Text fw={500}>Last Updated:</Text>
+                      <Text>{supplier.updatedAt ? dayjs(supplier.updatedAt).format('DD-MM-YYYY HH:mm') : '-'}</Text>
+                    </Group>
+                  </Stack>
+                </Card>
+              </Grid.Col>
+            </Grid>
+          </Tabs.Panel>
 
-        {(supplier.documents?.aadhaar || supplier.documents?.passbook || supplier.documents?.rationCard || supplier.documents?.incomeProof) && (
-          <div style={{ background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-            <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', fontWeight: '600', fontSize: '16px' }}>
-              Documents
-            </div>
-            <div style={{ padding: '16px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
-              <DocumentSection title="Aadhaar Card" base64Data={supplier.documents?.aadhaar} />
-              <DocumentSection title="Bank Passbook" base64Data={supplier.documents?.passbook} />
-              <DocumentSection title="Ration Card" base64Data={supplier.documents?.rationCard} />
-              <DocumentSection title="Income Proof" base64Data={supplier.documents?.incomeProof} />
-            </div>
-          </div>
+          <Tabs.Panel value="transactions" pt="md">
+            <Card withBorder>
+              <Table>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Date</Table.Th>
+                    <Table.Th>Voucher No</Table.Th>
+                    <Table.Th>Type</Table.Th>
+                    <Table.Th>Description</Table.Th>
+                    <Table.Th>Debit</Table.Th>
+                    <Table.Th>Credit</Table.Th>
+                    <Table.Th>Balance</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {transactions.length === 0 ? (
+                    <Table.Tr>
+                      <Table.Td colSpan={7}>
+                        <Center>
+                          <Text c="dimmed">No transactions found</Text>
+                        </Center>
+                      </Table.Td>
+                    </Table.Tr>
+                  ) : (
+                    transactions.map((transaction, index) => {
+                      const runningBalance = transactions
+                        .slice(0, index + 1)
+                        .reduce((sum, t) => {
+                          if (t.voucherType === 'receipt') return sum + (t.amount || 0);
+                          if (t.voucherType === 'payment') return sum - (t.amount || 0);
+                          return sum;
+                        }, supplier.openingBalance || 0);
+
+                      return (
+                        <Table.Tr key={transaction._id}>
+                          <Table.Td>{dayjs(transaction.date).format('DD-MM-YYYY')}</Table.Td>
+                          <Table.Td>{transaction.voucherNumber}</Table.Td>
+                          <Table.Td>
+                            <Badge color={transaction.voucherType === 'receipt' ? 'red' : 'green'}>
+                              {transaction.voucherType}
+                            </Badge>
+                          </Table.Td>
+                          <Table.Td>{transaction.description || '-'}</Table.Td>
+                          <Table.Td>{transaction.voucherType === 'receipt' ? `₹${transaction.amount?.toFixed(2)}` : '-'}</Table.Td>
+                          <Table.Td>{transaction.voucherType === 'payment' ? `₹${transaction.amount?.toFixed(2)}` : '-'}</Table.Td>
+                          <Table.Td fw={700}>₹{runningBalance.toFixed(2)}</Table.Td>
+                        </Table.Tr>
+                      );
+                    })
+                  )}
+                </Table.Tbody>
+              </Table>
+            </Card>
+          </Tabs.Panel>
+
+          <Tabs.Panel value="purchases" pt="md">
+            <Card withBorder>
+              <Table>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Date</Table.Th>
+                    <Table.Th>Item</Table.Th>
+                    <Table.Th>Quantity</Table.Th>
+                    <Table.Th>Unit</Table.Th>
+                    <Table.Th>Rate</Table.Th>
+                    <Table.Th>Total Amount</Table.Th>
+                    <Table.Th>Remarks</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {purchases.length === 0 ? (
+                    <Table.Tr>
+                      <Table.Td colSpan={7}>
+                        <Center>
+                          <Text c="dimmed">No purchase history found</Text>
+                        </Center>
+                      </Table.Td>
+                    </Table.Tr>
+                  ) : (
+                    purchases.map((purchase) => (
+                      <Table.Tr key={purchase._id}>
+                        <Table.Td>{dayjs(purchase.date).format('DD-MM-YYYY')}</Table.Td>
+                        <Table.Td>{purchase.itemName || '-'}</Table.Td>
+                        <Table.Td>{purchase.quantity || 0}</Table.Td>
+                        <Table.Td>{purchase.unit || '-'}</Table.Td>
+                        <Table.Td>₹{purchase.rate?.toFixed(2) || '0.00'}</Table.Td>
+                        <Table.Td>₹{purchase.totalAmount?.toFixed(2) || '0.00'}</Table.Td>
+                        <Table.Td>{purchase.remarks || '-'}</Table.Td>
+                      </Table.Tr>
+                    ))
+                  )}
+                </Table.Tbody>
+              </Table>
+            </Card>
+          </Tabs.Panel>
+        </Tabs>
+      </Paper>
+
+      <Modal
+        opened={!!selectedDocument}
+        onClose={() => setSelectedDocument(null)}
+        title={selectedDocument?.title}
+        size="lg"
+      >
+        {selectedDocument && (
+          <Stack>
+            <Image src={selectedDocument.data} alt={selectedDocument.title} />
+            <Group>
+              <Button
+                component="a"
+                href={selectedDocument.data}
+                download={`${selectedDocument.title}.jpg`}
+              >
+                Download
+              </Button>
+            </Group>
+          </Stack>
         )}
-
-        <div style={{ background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-          <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', fontWeight: '600', fontSize: '16px' }}>
-            System Information
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)' }}>
-            <DescriptionRow label="Created At" value={supplier.createdAt ? dayjs(supplier.createdAt).format('DD-MM-YYYY HH:mm') : '-'} />
-            <DescriptionRow label="Last Updated" value={supplier.updatedAt ? dayjs(supplier.updatedAt).format('DD-MM-YYYY HH:mm') : '-'} />
-          </div>
-        </div>
-      </div>
-    </div>
+      </Modal>
+    </Box>
   );
 };
 
