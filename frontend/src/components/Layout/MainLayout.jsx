@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { useNavigate, Outlet, useLocation } from 'react-router-dom';
-import { AppShell, Group, Text, Menu, Button, Drawer } from '@mantine/core';
+import { AppShell, Group, Text, Menu, Button, Drawer, ActionIcon, Tooltip } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconHome, IconUsers, IconBox, IconShoppingCart, IconBook,
   IconCash, IconFileReport, IconShield, IconTool, IconSearch,
-  IconSpeakerphone, IconBriefcase, IconChevronDown, IconMenu2
+  IconSpeakerphone, IconBriefcase, IconChevronDown, IconMenu2, IconLogout, IconUser,
+  IconUserCog
 } from '@tabler/icons-react';
 import { useCompany } from '../../context/CompanyContext';
+import { useAuth } from '../../context/AuthContext';
 import ThemeToggle from '../common/ThemeToggle';
 import CompanySwitcher from '../company/CompanySwitcher';
 
@@ -16,6 +18,13 @@ const MainLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { selectedBusinessType } = useCompany();
+  const { user, logout, isAdmin } = useAuth();
+
+  const handleLogout = () => {
+    if (window.confirm('Are you sure you want to logout?')) {
+      logout();
+    }
+  };
 
   // Function to filter menu items based on business type
   const getFilteredMenuItems = () => {
@@ -171,12 +180,22 @@ const MainLayout = () => {
         { key: '/hrm/leaves', label: 'Leave Management' },
         { key: '/hrm/salary', label: 'Salary Management' }
       ]
-    }
+    },
+    // User Management - Only show for admins
+    ...(isAdmin ? [{
+      key: '/user-management',
+      icon: <IconUserCog size={20} />,
+      label: 'User Management',
+      adminOnly: true
+    }] : [])
     ];
 
     // Filter menu items based on selected business type
     if (selectedBusinessType === 'Dairy Cooperative Society') {
       return allMenuItems.filter(item => {
+        // Always include User Management for admins
+        if (item.adminOnly && isAdmin) return true;
+
         const allowedKeys = [
           '/',
           'party-menu',
@@ -193,6 +212,9 @@ const MainLayout = () => {
       });
     } else if (selectedBusinessType === 'Private Firm') {
       return allMenuItems.filter(item => {
+        // Always include User Management for admins
+        if (item.adminOnly && isAdmin) return true;
+
         const allowedKeys = [
           '/',
           'party-menu',
@@ -300,6 +322,28 @@ const MainLayout = () => {
             <Group gap="md">
               <CompanySwitcher />
               <ThemeToggle />
+              <Menu position="bottom-end" shadow="md">
+                <Menu.Target>
+                  <Button
+                    variant="subtle"
+                    leftSection={<IconUser size={18} />}
+                    rightSection={<IconChevronDown size={14} />}
+                    size="sm"
+                  >
+                    {user?.displayName || user?.username || 'User'}
+                  </Button>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Label>Account</Menu.Label>
+                  <Menu.Item
+                    leftSection={<IconLogout size={16} />}
+                    color="red"
+                    onClick={handleLogout}
+                  >
+                    Logout
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
             </Group>
           </Group>
         </div>

@@ -307,10 +307,12 @@ import { salesAPI } from '../../services/api';
 import PageHeader from '../common/PageHeader';
 import ExportButton from '../common/ExportButton';
 import { showConfirmDialog } from '../common/ConfirmDialog';
+import { useAuth } from '../../context/AuthContext';
 
 const SalesList = () => {
   const theme = useMantineTheme();
   const navigate = useNavigate();
+  const { canWrite, canEdit, canDelete } = useAuth();
   const searchInputRef = useRef(null);
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -587,6 +589,7 @@ const SalesList = () => {
               onClick={() => navigate('/sales/create')}
               color="green"
               size="sm"
+              disabled={!canWrite('sales')}
             >
               New Bill
             </Button>
@@ -986,6 +989,7 @@ const SalesList = () => {
                                   variant="light"
                                   size="sm"
                                   onClick={() => handleDelete(sale._id)}
+                                  disabled={!canDelete('sales')}
                                 >
                                   <IconTrash size={14} />
                                 </ActionIcon>

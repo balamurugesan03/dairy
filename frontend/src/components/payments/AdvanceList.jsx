@@ -5,9 +5,11 @@ import dayjs from 'dayjs';
 import { advanceAPI } from '../../services/api';
 import PageHeader from '../common/PageHeader';
 import ExportButton from '../common/ExportButton';
+import { useAuth } from '../../context/AuthContext';
 
 const AdvanceList = () => {
   const navigate = useNavigate();
+  const { canWrite } = useAuth();
   const [advances, setAdvances] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -53,15 +55,16 @@ const AdvanceList = () => {
             key="add"
             style={{
               padding: '8px 16px',
-              backgroundColor: '#1890ff',
+              backgroundColor: canWrite('payments') ? '#1890ff' : '#d9d9d9',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
-              cursor: 'pointer',
+              cursor: canWrite('payments') ? 'pointer' : 'not-allowed',
               fontSize: '14px',
               fontWeight: '500'
             }}
-            onClick={() => navigate('/payments/advance')}
+            onClick={() => canWrite('payments') && navigate('/payments/advance')}
+            disabled={!canWrite('payments')}
           >
             + New Advance
           </button>,

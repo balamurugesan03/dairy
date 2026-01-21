@@ -41,9 +41,11 @@ import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { customerAPI } from '../../services/api';
 import CustomerModal from './CustomerModal';
+import { useAuth } from '../../context/AuthContext';
 
 const CustomerManagement = () => {
   const navigate = useNavigate();
+  const { canWrite, canEdit, canDelete } = useAuth();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statistics, setStatistics] = useState({
@@ -337,6 +339,7 @@ const CustomerManagement = () => {
             variant="subtle"
             color="green"
             onClick={() => handleOpenEditModal(customer._id)}
+            disabled={!canEdit('customers')}
           >
             <IconEdit size={16} />
           </ActionIcon>
@@ -344,6 +347,7 @@ const CustomerManagement = () => {
             variant="subtle"
             color="red"
             onClick={() => handleDelete(customer._id)}
+            disabled={!canDelete('customers')}
           >
             <IconTrash size={16} />
           </ActionIcon>
@@ -360,7 +364,11 @@ const CustomerManagement = () => {
             <Title order={2}>Customer Management</Title>
             <Text c="dimmed" size="sm">Manage customer information</Text>
           </div>
-          <Button leftSection={<IconPlus size={16} />} onClick={handleOpenAddModal}>
+          <Button
+            leftSection={<IconPlus size={16} />}
+            onClick={handleOpenAddModal}
+            disabled={!canWrite('customers')}
+          >
             Add Customer
           </Button>
         </Group>
@@ -527,7 +535,7 @@ const CustomerManagement = () => {
               <Group justify="space-between">
                 <Text size="sm" fw={500}>{selectedCustomers.length} customer(s) selected</Text>
                 <Group gap="xs">
-                  <Button size="xs" color="red" onClick={handleBulkDelete}>
+                  <Button size="xs" color="red" onClick={handleBulkDelete} disabled={!canDelete('customers')}>
                     Deactivate Selected
                   </Button>
                   <Button size="xs" variant="default" onClick={() => setSelectedCustomers([])}>

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { companyAPI } from '../services/api';
+import { useAuth } from './AuthContext';
 
 const CompanyContext = createContext();
 
@@ -12,15 +13,88 @@ export const useCompany = () => {
 };
 
 export const CompanyProvider = ({ children }) => {
+  const { user, isAuthenticated, isSuperAdmin } = useAuth();
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [selectedBusinessType, setSelectedBusinessType] = useState(null);
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Load company data from localStorage on mount
+  // Load company data when user changes
   useEffect(() => {
-    loadCompanyFromStorage();
-  }, []);
+    if (isAuthenticated && !isSuperAdmin) {
+      loadCompanyForUser();
+    } else {
+      setLoading(false);
+    }
+  }, [isAuthenticated, isSuperAdmin, user]);
+
+  const loadCompanyForUser = async () => {
+    try {
+      // Check if user is a company (logged in via Company model)
+      // Company users have companyName directly on the user object
+      if (user?.companyName) {
+        // User IS the company
+        setSelectedCompany(user);
+        const businessType = user.businessTypes?.[0] || 'Dairy Cooperative Society';
+        const savedType = localStorage.getItem('selectedBusinessType');
+        if (savedType && user.businessTypes?.includes(savedType)) {
+          setSelectedBusinessType(savedType);
+        } else {
+          setSelectedBusinessType(businessType);
+          localStorage.setItem('selectedBusinessType', businessType);
+        }
+        localStorage.setItem('selectedCompanyId', user._id);
+        setLoading(false);
+        return;
+      }
+
+      // If user has a company assigned (old User model with company reference)
+      if (user?.company) {
+        const company = user.company;
+        // If company is already populated as object
+        if (typeof company === 'object' && company.companyName) {
+          setSelectedCompany(company);
+          const businessType = company.businessTypes?.[0] || 'Dairy Cooperative Society';
+          const savedType = localStorage.getItem('selectedBusinessType');
+          if (savedType && company.businessTypes?.includes(savedType)) {
+            setSelectedBusinessType(savedType);
+          } else {
+            setSelectedBusinessType(businessType);
+            localStorage.setItem('selectedBusinessType', businessType);
+          }
+          localStorage.setItem('selectedCompanyId', company._id);
+          setLoading(false);
+          return;
+        }
+
+        // If company is just an ID, fetch it
+        try {
+          const response = await companyAPI.getById(company);
+          if (response.success && response.data) {
+            setSelectedCompany(response.data);
+            const businessType = response.data.businessTypes?.[0] || 'Dairy Cooperative Society';
+            const savedType = localStorage.getItem('selectedBusinessType');
+            if (savedType && response.data.businessTypes?.includes(savedType)) {
+              setSelectedBusinessType(savedType);
+            } else {
+              setSelectedBusinessType(businessType);
+              localStorage.setItem('selectedBusinessType', businessType);
+            }
+            localStorage.setItem('selectedCompanyId', response.data._id);
+          }
+        } catch (err) {
+          console.error('Error fetching user company:', err);
+        }
+      } else {
+        // Try to load from localStorage (fallback)
+        await loadCompanyFromStorage();
+      }
+    } catch (error) {
+      console.error('Error loading company for user:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadCompanyFromStorage = async () => {
     try {
@@ -62,8 +136,6 @@ export const CompanyProvider = ({ children }) => {
     } catch (error) {
       console.error('Error loading company from storage:', error);
       clearCompany();
-    } finally {
-      setLoading(false);
     }
   };
 

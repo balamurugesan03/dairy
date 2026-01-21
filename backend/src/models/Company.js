@@ -1,6 +1,20 @@
 import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
 
 const companySchema = new mongoose.Schema({
+  // Login credentials
+  username: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true,
+    lowercase: true
+  },
+  password: {
+    type: String,
+    select: false
+  },
+
   // Basic company information
   companyName: {
     type: String,
@@ -115,13 +129,25 @@ const companySchema = new mongoose.Schema({
 companySchema.index({ companyName: 1 });
 companySchema.index({ status: 1 });
 companySchema.index({ businessTypes: 1 });
+companySchema.index({ username: 1 });
 
-// Validation to ensure at least one business type is selected
-companySchema.pre('save', function() {
+// Pre-save hook to hash password
+companySchema.pre('save', async function() {
+  // Validate business types
   if (!this.businessTypes || this.businessTypes.length === 0) {
     throw new Error('At least one business type must be selected');
   }
+
+  // Hash password if modified
+  if (this.isModified('password') && this.password) {
+    this.password = await bcrypt.hash(this.password, 12);
+  }
 });
+
+// Instance method to compare password
+companySchema.methods.comparePassword = async function(candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
+};
 
 // Static method to find active companies
 companySchema.statics.findActive = function() {

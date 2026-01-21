@@ -4,10 +4,12 @@ import { employeeAPI, departmentAPI, designationAPI } from '../../services/api';
 import { message } from '../../utils/toast';
 import PageHeader from '../common/PageHeader';
 import { showConfirmDialog } from '../common/ConfirmDialog';
+import { useAuth } from '../../context/AuthContext';
 import './EmployeeList.css';
 
 const EmployeeList = () => {
   const navigate = useNavigate();
+  const { canWrite, canEdit, canDelete } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
   const [departments, setDepartments] = useState([]);
@@ -172,6 +174,7 @@ const EmployeeList = () => {
           <button
             className="btn btn-primary"
             onClick={() => navigate('/hrm/employees/add')}
+            disabled={!canWrite('hrm')}
           >
             <i className="icon-plus"></i> Add Employee
           </button>
@@ -367,6 +370,7 @@ const EmployeeList = () => {
                           className="btn-icon btn-edit"
                           onClick={() => navigate(`/hrm/employees/${emp._id}/edit`)}
                           title="Edit"
+                          disabled={!canEdit('hrm')}
                         >
                           <i className="icon-edit"></i>
                         </button>
@@ -374,6 +378,7 @@ const EmployeeList = () => {
                           className="btn-icon btn-toggle"
                           onClick={() => handleStatusChange(emp._id, emp.employmentDetails?.status)}
                           title={emp.employmentDetails?.status === 'Active' ? 'Deactivate' : 'Activate'}
+                          disabled={!canEdit('hrm')}
                         >
                           <i className={emp.employmentDetails?.status === 'Active' ? 'icon-toggle-right' : 'icon-toggle-left'}></i>
                         </button>
@@ -381,6 +386,7 @@ const EmployeeList = () => {
                           className="btn-icon btn-delete"
                           onClick={() => handleDelete(emp._id, emp.employeeNumber)}
                           title="Delete"
+                          disabled={!canDelete('hrm')}
                         >
                           <i className="icon-trash"></i>
                         </button>

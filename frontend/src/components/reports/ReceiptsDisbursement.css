@@ -886,6 +886,316 @@
   }
 }
 
+/* ============================================
+   Two Column Format Styles (Cooperative Society)
+   ============================================ */
+
+.two-column-report-container {
+  background: #fff;
+  padding: 40px;
+  margin: 20px 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.two-column-report-header {
+  text-align: center;
+  margin-bottom: 30px;
+  border-bottom: 3px double #000;
+  padding-bottom: 20px;
+}
+
+.two-column-report-header .org-name {
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 26px;
+  font-weight: bold;
+  margin: 0 0 15px 0;
+  color: #000;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.two-column-report-header .report-title {
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 20px;
+  font-weight: bold;
+  margin: 0 0 8px 0;
+  color: #000;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.two-column-report-header .report-subtitle {
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 14px;
+  color: #333;
+  margin: 0;
+  font-style: italic;
+}
+
+/* Two Column Table */
+.two-column-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Times New Roman', Times, serif;
+  margin-bottom: 30px;
+  border: 2px solid #000;
+}
+
+.two-column-table thead {
+  background-color: #e8e8e8;
+}
+
+.two-column-table thead th {
+  padding: 12px 10px;
+  text-align: center;
+  font-weight: bold;
+  font-size: 13px;
+  color: #000;
+  border: 1px solid #000;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.two-column-table thead th.section-header {
+  background-color: #d0d0d0;
+  font-size: 14px;
+  letter-spacing: 1px;
+}
+
+.two-column-table thead th.receipt-header {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.two-column-table thead th.payment-header {
+  background-color: #f8d7da;
+  color: #721c24;
+}
+
+.two-column-table .ledger-col {
+  width: 28%;
+  text-align: left;
+  padding-left: 15px;
+  background-color: #f5f5f5;
+}
+
+.two-column-table .amount-col {
+  width: 12%;
+  text-align: right;
+  padding-right: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.two-column-table .total-col {
+  background-color: #fafafa;
+  font-weight: 600;
+}
+
+/* Body Rows */
+.two-column-table tbody tr {
+  border-bottom: 1px solid #ccc;
+}
+
+.two-column-table tbody td {
+  padding: 10px 10px;
+  font-size: 12px;
+  color: #333;
+  border: 1px solid #ccc;
+}
+
+.two-column-table tbody td.ledger-name-col {
+  text-align: left;
+  padding-left: 20px;
+  font-size: 13px;
+}
+
+.two-column-table tbody td.amount-col {
+  text-align: right;
+  padding-right: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Section Header Row */
+.two-column-table .section-header-row {
+  background-color: #4a5568;
+  border-top: 2px solid #000;
+  border-bottom: 1px solid #000;
+}
+
+.two-column-table .section-header-row td {
+  padding: 12px 15px;
+  font-weight: bold;
+  font-size: 14px;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border: 1px solid #000;
+}
+
+/* Ledger Data Rows */
+.two-column-table .ledger-data-row:nth-child(odd) {
+  background-color: #fff;
+}
+
+.two-column-table .ledger-data-row:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+.two-column-table .ledger-data-row:hover {
+  background-color: #e8f4f8;
+}
+
+/* Group Total Row */
+.two-column-table .group-total-row {
+  background-color: #e2e8f0;
+  border-top: 2px solid #666;
+  border-bottom: 2px solid #666;
+}
+
+.two-column-table .group-total-row td {
+  font-weight: bold;
+  font-size: 13px;
+  color: #000;
+  padding: 12px 10px;
+}
+
+.two-column-table .group-total-row td.amount-col {
+  background-color: #d4e5f7;
+}
+
+/* Section Spacer */
+.two-column-table .section-spacer {
+  height: 8px;
+  background: #f0f0f0;
+  border: none;
+}
+
+.two-column-table .section-spacer td {
+  border: none;
+  padding: 0;
+  background: #f0f0f0;
+}
+
+/* Grand Total Row */
+.two-column-table .grand-total-row {
+  background-color: #2d3748;
+  border-top: 3px double #000;
+  border-bottom: 3px double #000;
+}
+
+.two-column-table .grand-total-row td {
+  padding: 14px 10px;
+  font-weight: bold;
+  font-size: 14px;
+  color: #fff;
+  text-transform: uppercase;
+  border: 1px solid #000;
+}
+
+.two-column-table .grand-total-row td.amount-col {
+  color: #fff;
+  background-color: #1a202c;
+}
+
+/* Report Footer for Two Column */
+.two-column-report-container .report-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 20px;
+  border-top: 2px solid #000;
+  margin-top: 30px;
+  font-family: 'Times New Roman', Times, serif;
+  position: relative;
+}
+
+.two-column-report-container .report-footer .footer-left,
+.two-column-report-container .report-footer .footer-right {
+  font-size: 11px;
+  color: #666;
+  font-style: italic;
+}
+
+.two-column-report-container .report-footer .footer-center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: #666;
+  font-style: italic;
+  margin: 0;
+}
+
+/* Print Styles for Two Column */
+@media print {
+  .two-column-report-container {
+    box-shadow: none;
+    border-radius: 0;
+    padding: 10mm;
+    max-width: 100%;
+  }
+
+  .two-column-table {
+    page-break-inside: auto;
+  }
+
+  .two-column-table thead {
+    display: table-header-group;
+  }
+
+  .two-column-table tbody tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  .two-column-table .section-header-row {
+    page-break-after: avoid;
+    background-color: #4a5568 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .two-column-table .group-total-row {
+    page-break-before: avoid;
+    background-color: #e2e8f0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .two-column-table .grand-total-row {
+    background-color: #2d3748 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .two-column-report-header .org-name,
+  .two-column-report-header .report-title {
+    color: #000 !important;
+  }
+
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+}
+
+/* Responsive adjustments for Two Column */
+@media (max-width: 1400px) {
+  .two-column-report-container {
+    max-width: 100%;
+    padding: 20px;
+    overflow-x: auto;
+  }
+
+  .two-column-table {
+    min-width: 900px;
+    font-size: 11px;
+  }
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
   .classified-view {

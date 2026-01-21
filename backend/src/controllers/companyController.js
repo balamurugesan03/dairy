@@ -17,6 +17,20 @@ export const createCompany = async (req, res) => {
       });
     }
 
+    // Check if username already exists
+    if (companyData.username) {
+      const existingUsername = await Company.findOne({
+        username: companyData.username.toLowerCase()
+      });
+
+      if (existingUsername) {
+        return res.status(400).json({
+          success: false,
+          message: 'Username already exists'
+        });
+      }
+    }
+
     // Validate business types
     if (!companyData.businessTypes || companyData.businessTypes.length === 0) {
       return res.status(400).json({
@@ -27,6 +41,9 @@ export const createCompany = async (req, res) => {
 
     const company = new Company(companyData);
     await company.save();
+
+    // Remove password from response
+    company.password = undefined;
 
     res.status(201).json({
       success: true,
@@ -45,15 +62,17 @@ export const createCompany = async (req, res) => {
 // Get all companies (with optional filters)
 export const getAllCompanies = async (req, res) => {
   try {
-    const { status, businessType, limit } = req.query;
+    const { status, businessType, limit, all } = req.query;
 
     let query = {};
 
-    // Filter by status
-    if (status) {
+    // If 'all' parameter is true, don't filter by status
+    if (all === 'true' || all === '1') {
+      // No status filter - get all companies
+    } else if (status) {
       query.status = status;
     } else {
-      // Default to active companies
+      // Default to active companies for non-admin requests
       query.status = 'Active';
     }
 
@@ -133,6 +152,21 @@ export const updateCompany = async (req, res) => {
       }
     }
 
+    // Check if trying to update to a duplicate username
+    if (updateData.username) {
+      const existingUsername = await Company.findOne({
+        username: updateData.username.toLowerCase(),
+        _id: { $ne: id }
+      });
+
+      if (existingUsername) {
+        return res.status(400).json({
+          success: false,
+          message: 'Username already exists'
+        });
+      }
+    }
+
     // Validate business types if provided
     if (updateData.businessTypes && updateData.businessTypes.length === 0) {
       return res.status(400).json({
@@ -141,6 +175,34 @@ export const updateCompany = async (req, res) => {
       });
     }
 
+    // If password is being updated, use save() to trigger pre-save hook for hashing
+    if (updateData.password) {
+      const company = await Company.findById(id);
+      if (!company) {
+        return res.status(404).json({
+          success: false,
+          message: 'Company not found'
+        });
+      }
+
+      // Update all fields
+      Object.keys(updateData).forEach(key => {
+        company[key] = updateData[key];
+      });
+
+      await company.save();
+
+      // Remove password from response
+      company.password = undefined;
+
+      return res.status(200).json({
+        success: true,
+        message: 'Company updated successfully',
+        data: company
+      });
+    }
+
+    // For non-password updates, use findByIdAndUpdate
     const company = await Company.findByIdAndUpdate(
       id,
       updateData,
@@ -168,16 +230,12 @@ export const updateCompany = async (req, res) => {
   }
 };
 
-// Delete company (soft delete - set status to Inactive)
+// Delete company (permanent delete)
 export const deleteCompany = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const company = await Company.findByIdAndUpdate(
-      id,
-      { status: 'Inactive' },
-      { new: true }
-    );
+    const company = await Company.findById(id);
 
     if (!company) {
       return res.status(404).json({
@@ -186,10 +244,12 @@ export const deleteCompany = async (req, res) => {
       });
     }
 
+    // Permanently delete the company
+    await Company.findByIdAndDelete(id);
+
     res.status(200).json({
       success: true,
-      message: 'Company deleted successfully',
-      data: company
+      message: `Company "${company.companyName}" deleted permanently`
     });
   } catch (error) {
     console.error('Error deleting company:', error);

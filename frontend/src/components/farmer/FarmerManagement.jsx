@@ -55,9 +55,11 @@ import AddShareModal from './AddShareModal';
 import TerminateModal from './TerminateModal';
 import ImportModal from '../common/ImportModal';
 import { generateFarmerImportTemplate } from '../../utils/excelTemplate';
+import { useAuth } from '../../context/AuthContext';
 
 const FarmerManagement = () => {
   const theme = useMantineTheme();
+  const { canWrite, canEdit, canDelete } = useAuth();
   const [farmers, setFarmers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({
@@ -547,6 +549,7 @@ const FarmerManagement = () => {
             <Menu.Item
               leftSection={<IconEdit size={16} />}
               onClick={() => handleEdit(farmer._id)}
+              disabled={!canEdit('farmers')}
             >
               Edit Details
             </Menu.Item>
@@ -554,6 +557,7 @@ const FarmerManagement = () => {
               leftSection={farmer.isMembership ? <IconUserMinus size={16} /> : <IconUserPlus size={16} />}
               onClick={() => handleMembershipToggle(farmer._id, farmer.isMembership)}
               color={farmer.isMembership ? 'orange' : 'blue'}
+              disabled={!canEdit('farmers')}
             >
               {farmer.isMembership ? 'Remove Membership' : 'Add Membership'}
             </Menu.Item>
@@ -562,6 +566,7 @@ const FarmerManagement = () => {
                 leftSection={<IconCoin size={16} />}
                 onClick={() => handleAddShare(farmer)}
                 color="green"
+                disabled={!canEdit('farmers')}
               >
                 Add Share
               </Menu.Item>
@@ -572,6 +577,7 @@ const FarmerManagement = () => {
               color="red"
               leftSection={<IconTrash size={16} />}
               onClick={() => handleDelete(farmer._id)}
+              disabled={!canDelete('farmers')}
             >
               Deactivate Farmer
             </Menu.Item>
@@ -620,6 +626,7 @@ const FarmerManagement = () => {
                 color="gray"
                 leftSection={<IconUpload size={18} />}
                 onClick={() => setShowImportModal(true)}
+                disabled={!canWrite('farmers')}
               >
                 Import
               </Button>
@@ -627,6 +634,7 @@ const FarmerManagement = () => {
                 leftSection={<IconPlus size={18} />}
                 onClick={handleAddNew}
                 color="blue"
+                disabled={!canWrite('farmers')}
               >
                 Add Farmer
               </Button>
@@ -1030,6 +1038,7 @@ const FarmerManagement = () => {
                                 setShowMembersModal(false);
                                 handleAddShare(member);
                               }}
+                              disabled={!canEdit('farmers')}
                             >
                               <IconCoin size={14} />
                             </ActionIcon>
@@ -1043,6 +1052,7 @@ const FarmerManagement = () => {
                                 setShowMembersModal(false);
                                 handleEdit(member._id);
                               }}
+                              disabled={!canEdit('farmers')}
                             >
                               <IconEdit size={14} />
                             </ActionIcon>
@@ -1056,6 +1066,7 @@ const FarmerManagement = () => {
                                 setShowMembersModal(false);
                                 handleTerminate(member);
                               }}
+                              disabled={!canDelete('farmers')}
                             >
                               <IconUserMinus size={14} />
                             </ActionIcon>

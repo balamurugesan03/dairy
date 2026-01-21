@@ -648,9 +648,11 @@ import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { supplierAPI } from '../../services/api';
 import SupplierModal from './SupplierModal';
+import { useAuth } from '../../context/AuthContext';
 
 const SupplierList = () => {
   const navigate = useNavigate();
+  const { canWrite, canEdit, canDelete } = useAuth();
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statistics, setStatistics] = useState({
@@ -952,6 +954,7 @@ const SupplierList = () => {
             variant="subtle"
             color="green"
             onClick={() => handleOpenEditModal(supplier._id)}
+            disabled={!canEdit('suppliers')}
           >
             <IconEdit size={16} />
           </ActionIcon>
@@ -959,6 +962,7 @@ const SupplierList = () => {
             variant="subtle"
             color="red"
             onClick={() => handleDelete(supplier._id)}
+            disabled={!canDelete('suppliers')}
           >
             <IconTrash size={16} />
           </ActionIcon>
@@ -975,7 +979,11 @@ const SupplierList = () => {
             <Title order={2}>Supplier Management</Title>
             <Text c="dimmed" size="sm">Manage supplier information</Text>
           </div>
-          <Button leftSection={<IconPlus size={16} />} onClick={handleOpenAddModal}>
+          <Button
+            leftSection={<IconPlus size={16} />}
+            onClick={handleOpenAddModal}
+            disabled={!canWrite('suppliers')}
+          >
             Add Supplier
           </Button>
         </Group>
@@ -1135,7 +1143,7 @@ const SupplierList = () => {
               <Group justify="space-between">
                 <Text size="sm" fw={500}>{selectedSuppliers.length} supplier(s) selected</Text>
                 <Group gap="xs">
-                  <Button size="xs" color="red" onClick={handleBulkDelete}>
+                  <Button size="xs" color="red" onClick={handleBulkDelete} disabled={!canDelete('suppliers')}>
                     Deactivate Selected
                   </Button>
                   <Button size="xs" variant="default" onClick={() => setSelectedSuppliers([])}>

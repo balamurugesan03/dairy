@@ -37,8 +37,10 @@ import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { collectionCenterAPI } from '../../services/api';
 import CollectionCenterModal from './CollectionCenterModal';
+import { useAuth } from '../../context/AuthContext';
 
 const CollectionCenterManagement = () => {
+  const { canWrite, canEdit, canDelete } = useAuth();
   const [centers, setCenters] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statistics, setStatistics] = useState({
@@ -334,6 +336,7 @@ const CollectionCenterManagement = () => {
             variant="subtle"
             color="green"
             onClick={() => handleOpenEditModal(center._id)}
+            disabled={!canEdit('collectionCenters')}
           >
             <IconEdit size={16} />
           </ActionIcon>
@@ -341,6 +344,7 @@ const CollectionCenterManagement = () => {
             variant="subtle"
             color="red"
             onClick={() => handleDelete(center._id)}
+            disabled={!canDelete('collectionCenters')}
           >
             <IconTrash size={16} />
           </ActionIcon>
@@ -357,7 +361,11 @@ const CollectionCenterManagement = () => {
             <Title order={2}>Collection Centre Management</Title>
             <Text c="dimmed" size="sm">Manage collection center information</Text>
           </div>
-          <Button leftSection={<IconPlus size={16} />} onClick={handleOpenAddModal}>
+          <Button
+            leftSection={<IconPlus size={16} />}
+            onClick={handleOpenAddModal}
+            disabled={!canWrite('collectionCenters')}
+          >
             Add Collection Center
           </Button>
         </Group>
@@ -500,7 +508,7 @@ const CollectionCenterManagement = () => {
               <Group justify="space-between">
                 <Text size="sm" fw={500}>{selectedCenters.length} collection center(s) selected</Text>
                 <Group gap="xs">
-                  <Button size="xs" color="red" onClick={handleBulkDelete}>
+                  <Button size="xs" color="red" onClick={handleBulkDelete} disabled={!canDelete('collectionCenters')}>
                     Deactivate Selected
                   </Button>
                   <Button size="xs" variant="default" onClick={() => setSelectedCenters([])}>

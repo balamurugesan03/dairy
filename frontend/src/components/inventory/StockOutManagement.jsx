@@ -38,8 +38,10 @@ import {
 import { notifications } from '@mantine/notifications';
 import { stockAPI } from '../../services/api';
 import StockOutModal from './StockOutModal';
+import { useAuth } from '../../context/AuthContext';
 
 const StockOutManagement = () => {
+  const { canWrite } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -163,6 +165,7 @@ const StockOutManagement = () => {
             leftSection={<IconPlus size={16} />}
             onClick={() => setModalOpen(true)}
             color="red"
+            disabled={!canWrite('inventory')}
           >
             Stock Out
           </Button>

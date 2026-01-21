@@ -1,10 +1,13 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { AppProvider } from './context/AppContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { CompanyProvider, useCompany } from './context/CompanyContext';
 import MainLayout from './components/Layout/MainLayout';
 import CompanySelection from './components/company/CompanySelection';
+import Login from './pages/Login';
+import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import './styles/theme.css';
 
 // Loading fallback component
@@ -143,12 +146,51 @@ const MarkAttendance = lazy(() => import('./components/hrm/MarkAttendance'));
 const LeaveList = lazy(() => import('./components/hrm/LeaveList'));
 const SalaryList = lazy(() => import('./components/hrm/SalaryList'));
 
-// App content component that uses company context
+// User Management
+const UserManagement = lazy(() => import('./pages/UserManagement'));
+
+// App content component that uses auth and company context
 const AppContent = () => {
-  const { selectedCompany, selectedBusinessType, loading } = useCompany();
+  const { isAuthenticated, isSuperAdmin, loading: authLoading } = useAuth();
+  const { selectedCompany, selectedBusinessType, loading: companyLoading } = useCompany();
+
+  // Show loading state while checking auth
+  if (authLoading) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        background: 'var(--bg-base)'
+      }}>
+        <div className="spinner" style={{ width: '40px', height: '40px', border: '3px solid var(--border-color)', borderTopColor: 'var(--primary-color)', borderRadius: '50%' }}></div>
+      </div>
+    );
+  }
+
+  // If not authenticated, show login page
+  if (!isAuthenticated) {
+    // Check if trying to access admin route
+    if (window.location.pathname === '/admin') {
+      return <Login />;
+    }
+    return <Login />;
+  }
+
+  // If superadmin, check if accessing admin route specifically
+  // Only show admin dashboard if accessed via /admin route
+  if (isSuperAdmin) {
+    if (window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin')) {
+      return <SuperAdminDashboard />;
+    }
+    // For regular routes, redirect superadmin to admin dashboard
+    window.location.href = '/admin';
+    return null;
+  }
 
   // Show loading state while checking for saved company
-  if (loading) {
+  if (companyLoading) {
     return (
       <div style={{
         display: 'flex',
@@ -172,6 +214,7 @@ const AppContent = () => {
     <Router>
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
+          <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="/" element={<MainLayout />}>
               {/* Dashboard */}
               <Route index element={<Dashboard />} />
@@ -354,6 +397,9 @@ const AppContent = () => {
                   <Route index element={<SalaryList />} />
                 </Route>
               </Route>
+
+              {/* User Management - Admin Only */}
+              <Route path="user-management" element={<UserManagement />} />
             </Route>
         </Routes>
       </Suspense>
@@ -365,11 +411,13 @@ const AppContent = () => {
 function App() {
   return (
     <ThemeProvider>
-      <CompanyProvider>
-        <AppProvider>
-          <AppContent />
-        </AppProvider>
-      </CompanyProvider>
+      <AuthProvider>
+        <CompanyProvider>
+          <AppProvider>
+            <AppContent />
+          </AppProvider>
+        </CompanyProvider>
+      </AuthProvider>
     </ThemeProvider>
   );
 }

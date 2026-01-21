@@ -10,6 +10,36 @@ const api = axios.create({
   }
 });
 
+// Request interceptor - Add auth token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Response interceptor - Handle 401
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Token expired or invalid
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('selectedCompanyId');
+      localStorage.removeItem('selectedBusinessType');
+      // Redirect to login
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Error handler
 const handleError = (error) => {
   if (error.response) {
@@ -19,6 +49,20 @@ const handleError = (error) => {
   } else {
     throw { message: error.message };
   }
+};
+
+// AUTH APIs
+export const authAPI = {
+  login: (username, password) => api.post('/auth/login', { username, password }).then(res => res.data).catch(handleError),
+  getMe: () => api.get('/auth/me').then(res => res.data).catch(handleError),
+  changePassword: (currentPassword, newPassword) => api.patch('/auth/change-password', { currentPassword, newPassword }).then(res => res.data).catch(handleError),
+  // User Management (superadmin only)
+  getUsers: (params) => api.get('/auth/users', { params }).then(res => res.data).catch(handleError),
+  getUser: (id) => api.get(`/auth/users/${id}`).then(res => res.data).catch(handleError),
+  createUser: (data) => api.post('/auth/users', data).then(res => res.data).catch(handleError),
+  updateUser: (id, data) => api.put(`/auth/users/${id}`, data).then(res => res.data).catch(handleError),
+  resetPassword: (id, newPassword) => api.patch(`/auth/users/${id}/reset-password`, { newPassword }).then(res => res.data).catch(handleError),
+  deleteUser: (id) => api.delete(`/auth/users/${id}`).then(res => res.data).catch(handleError)
 };
 
 // FARMER APIs
@@ -130,16 +174,25 @@ export const ledgerAPI = {
 // FARMER PAYMENT APIs
 export const paymentAPI = {
   getAll: (params) => api.get('/farmer-payments', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/farmer-payments/${id}`).then(res => res.data).catch(handleError),
   create: (data) => api.post('/farmer-payments', data).then(res => res.data).catch(handleError),
-  getFarmerHistory: (farmerId) => api.get(`/farmer-payments/farmer/${farmerId}`).then(res => res.data).catch(handleError)
+  bulkCreate: (payments) => api.post('/farmer-payments/bulk', { payments }).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/farmer-payments/${id}`, data).then(res => res.data).catch(handleError),
+  cancel: (id, cancellationReason) => api.post(`/farmer-payments/${id}/cancel`, { cancellationReason }).then(res => res.data).catch(handleError),
+  getFarmerHistory: (farmerId, params) => api.get(`/farmer-payments/farmer/${farmerId}`, { params }).then(res => res.data).catch(handleError),
+  getStats: (params) => api.get('/farmer-payments/stats', { params }).then(res => res.data).catch(handleError)
 };
 
 // ADVANCE APIs
 export const advanceAPI = {
   getAll: (params) => api.get('/advances', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/advances/${id}`).then(res => res.data).catch(handleError),
   create: (data) => api.post('/advances', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/advances/${id}`, data).then(res => res.data).catch(handleError),
+  cancel: (id, cancellationReason) => api.post(`/advances/${id}/cancel`, { cancellationReason }).then(res => res.data).catch(handleError),
   getFarmerAdvances: (farmerId, params) => api.get(`/advances/farmer/${farmerId}`, { params }).then(res => res.data).catch(handleError),
-  adjust: (id, data) => api.post(`/advances/${id}/adjust`, data).then(res => res.data).catch(handleError)
+  adjust: (id, data) => api.post(`/advances/${id}/adjust`, data).then(res => res.data).catch(handleError),
+  getStats: (params) => api.get('/advances/stats', { params }).then(res => res.data).catch(handleError)
 };
 
 // REPORTS APIs
@@ -357,11 +410,24 @@ export const leaveAPI = {
 // COMPANY APIs
 export const companyAPI = {
   getAll: (params) => api.get('/companies', { params }).then(res => res.data).catch(handleError),
+  getPublic: () => api.get('/companies/public').then(res => res.data).catch(handleError),
   getById: (id) => api.get(`/companies/${id}`).then(res => res.data).catch(handleError),
   create: (data) => api.post('/companies', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/companies/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/companies/${id}`).then(res => res.data).catch(handleError),
   getStats: () => api.get('/companies/stats').then(res => res.data).catch(handleError)
+};
+
+// USER MANAGEMENT APIs (Company level user management)
+export const userManagementAPI = {
+  getAll: (params) => api.get('/user-management', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/user-management/${id}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/user-management', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/user-management/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/user-management/${id}`).then(res => res.data).catch(handleError),
+  resetPassword: (id, newPassword) => api.patch(`/user-management/${id}/reset-password`, { newPassword }).then(res => res.data).catch(handleError),
+  getModules: () => api.get('/user-management/modules').then(res => res.data).catch(handleError),
+  getDesignations: () => api.get('/user-management/designations').then(res => res.data).catch(handleError)
 };
 
 export default api;
