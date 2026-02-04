@@ -1,24 +1,66 @@
+/**
+ * MainLayout - Professional Navigation Design
+ * ============================================
+ *
+ * Attractive gradient header with modern menu styling.
+ * Clean, professional, and responsive design.
+ */
+
 import { useState } from 'react';
 import { useNavigate, Outlet, useLocation } from 'react-router-dom';
-import { AppShell, Group, Text, Menu, Button, Drawer, ActionIcon, Tooltip } from '@mantine/core';
+import {
+  AppShell,
+  Group,
+  Text,
+  Menu,
+  Button,
+  Drawer,
+  ActionIcon,
+  Tooltip,
+  Box,
+  Avatar,
+  Badge,
+  Divider,
+  Stack,
+  Paper,
+  ScrollArea,
+  ThemeIcon,
+} from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconHome, IconUsers, IconBox, IconShoppingCart, IconBook,
   IconCash, IconFileReport, IconShield, IconTool, IconSearch,
   IconSpeakerphone, IconBriefcase, IconChevronDown, IconMenu2, IconLogout, IconUser,
-  IconUserCog
+  IconUserCog, IconBuildingStore, IconSettings
 } from '@tabler/icons-react';
 import { useCompany } from '../../context/CompanyContext';
 import { useAuth } from '../../context/AuthContext';
-import ThemeToggle from '../common/ThemeToggle';
+import { useTheme } from '../../contexts/ThemeContext';
+import { ThemeSwitcherCompact } from '../common/ThemeSwitcher';
 import CompanySwitcher from '../company/CompanySwitcher';
 
 const MainLayout = () => {
   const [mobileOpened, { toggle: toggleMobile }] = useDisclosure();
   const navigate = useNavigate();
   const location = useLocation();
-  const { selectedBusinessType } = useCompany();
+  const { selectedCompany, selectedBusinessType } = useCompany();
   const { user, logout, isAdmin } = useAuth();
+  const { colorScheme, currentThemeConfig } = useTheme();
+
+  const isDark = colorScheme === 'dark';
+
+  // Header gradient based on theme
+  const headerGradient = isDark
+    ? 'linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%)'
+    : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+
+  // Menu bar gradient - attractive light blue/teal gradient
+  const menuBarBg = isDark
+    ? 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)'
+    : 'linear-gradient(135deg, #e0f7fa 0%, #e8eaf6 100%)';
+
+  // Menu text color
+  const menuTextColor = isDark ? '#e0e0e0' : '#4a5568';
 
   const handleLogout = () => {
     if (window.confirm('Are you sure you want to logout?')) {
@@ -31,119 +73,158 @@ const MainLayout = () => {
     const allMenuItems = [
     {
       key: '/',
-      icon: <IconHome size={20} />,
-      label: 'Dashboard'
+      icon: <IconHome size={18} />,
+      label: 'Dashboard',
+      color: 'blue'
     },
     {
       key: 'party-menu',
-      icon: <IconUsers size={20} />,
-      label: 'Party Creation',
+      icon: <IconUsers size={18} />,
+      label: 'Farmers Management',
+      color: 'green',
       children: [
-        { key: '/farmers', label: 'Farmer Management' },
-        { key: '/customers', label: 'Customer Management' },
-        { key: '/suppliers', label: 'Supplier Management' },
-        { key: '/collection-centers', label: 'Collection Centre Management' },
-        { key: '/subsidies', label: 'Subsidy Management' }
+        { key: '/farmers', label: 'Producer Management' },
+         { key: '/collection-centers', label: 'Collection Centre ' },
+        { key: '/customers', label: 'Customer ' },
+       
+      ]
+    },
+      {
+      key: 'sales-menu',
+      icon: <IconShoppingCart size={18} />,
+      label: 'Milk purchase & Sales',
+      color: 'teal',
+      children: [
+       
+       
       ]
     },
     {
       key: 'inventory-menu',
-      icon: <IconBox size={20} />,
+      icon: <IconBox size={18} />,
       label: 'Inventory',
+      color: 'orange',
       children: [
-        { key: '/inventory/items', label: 'Item Master' },
-        { key: '/inventory/stock-in', label: 'Stock In/ Purchase' },
-        { key: '/inventory/stock-out', label: 'Stock Out / Sale' },
-        { key: '/inventory/report', label: 'Stock Report' }
+        { key: '/inventory/items', label: 'Add Items' },
+        { key: '/inventory/stock-in', label: 'Inventory Purchase ' },
+         { key: '/sales/new', label: ' Inventory Sales ' },
+        { key: '/inventory/stock-out', label: 'Stock Returns ' },
+         { key: '/suppliers', label: 'Supplier ' },
+       
+        { key: '/subsidies', label: 'Subsidy ' },
+         { key: '/sales/list', label: 'Sales Report' },
+        { key: '/inventory/report', label: 'Stock Report' },
+         { key: '/reports/purchase-register', label: 'Purchase Register' },
+          { key: '/reports/sales', label: 'Sales Register' },
+            { key: '/reports/stock', label: 'Stock Register' },
+            { key: '/reports/subsidy', label: 'Subsidy Resgister' }
+           
       ]
     },
     {
-      key: 'sales-menu',
-      icon: <IconShoppingCart size={20} />,
-      label: 'Sales & Billing',
+      key: 'payments-menu',
+      icon: <IconCash size={18} />,
+      label: 'Producers dues',
+      color: 'cyan',
       children: [
-        { key: '/sales/new', label: 'Sales Bill' },
-        { key: '/sales/list', label: 'Sales Report' }
+        { key: '/payments/register', label: 'Milk Payment Register' },
+        { key: '/payments/individual', label: 'Individual Payment' },
+        { key: '/payments/producer-register', label: 'Producer Register' },
+        { key: '/payments/producer-register-summary', label: 'Producer Summary' },
+        { key: '/payments/bank-transfer', label: 'Bank Transfer' },
+        { key: '/payments/loans', label: 'Loans' },
+        { key: '/payments/cash-advance', label: 'Cash Advance' },
+        { key: '/payments/receipts', label: 'Receipts' },
+        { key: '/payments/farmer-ledger', label: 'Farmer Ledger' }
       ]
     },
+  
     {
       key: 'accounting-menu',
-      icon: <IconBook size={20} />,
-      label: 'Accounting',
+      icon: <IconBook size={18} />,
+      label: 'Accounts',
+      color: 'violet',
       children: [
-        
         { key: '/accounting/ledgers', label: 'Ledgers' },
         { key: '/accounting/receipt', label: 'Receipt Voucher' },
         { key: '/accounting/payment', label: 'Payment Voucher' },
-        { key: '/accounting/journal', label: 'Journal Voucher' },
+        { key: '/accounting/journal', label: ' Adjustment/Journal Entry' },
         { key: '/accounting/vouchers', label: 'Vouchers Management' },
-        { key: '/accounting/outstanding', label: 'Outstanding Report' }
-      ]
-    },
-   
-    {
-      key: 'payments-menu',
-      icon: <IconCash size={20} />,
-      label: 'Farmer Payments',
-      children: [
-        { key: '/payments/milk', label: 'Milk Payment' },
-        { key: '/payments/advance', label: 'Give Advance' },
-        { key: '/payments/advances', label: 'Advance List' },
-        { key: '/payments/history', label: 'Payment History' }
-      ]
-    },
-    {
-      key: 'reports-menu',
-      icon: <IconFileReport size={20} />,
-      label: 'Reports',
-      children: selectedBusinessType === 'Private Firm'
-        ? [
-            { key: '/reports/vyapar/sale-report', label: 'Sale Report' },
-            { key: '/reports/vyapar/purchase-report', label: 'Purchase Report' },
-            { key: '/reports/vyapar/party-statement', label: 'Party Statement' },
-            { key: '/reports/vyapar/cashflow', label: 'Cashflow' },
-            { key: '/reports/vyapar/all-transactions', label: 'All Transactions' },
-            { key: '/reports/vyapar/profit-loss', label: 'Profit & Loss' },
-            { key: '/reports/vyapar/balance-sheet', label: 'Balance Sheet' },
-            { key: '/reports/vyapar/bill-profit', label: 'Bill Wise Profit' },
-            { key: '/reports/vyapar/party-profit', label: 'Party Wise Profit' },
-            { key: '/reports/vyapar/trial-balance', label: 'Trial Balance' },
-            { key: '/reports/vyapar/stock-summary', label: 'Stock Summary' },
-            { key: '/reports/vyapar/item-by-party', label: 'Item by Party' },
-            { key: '/reports/vyapar/item-profit', label: 'Item Wise Profit' },
-            { key: '/reports/vyapar/low-stock', label: 'Low Stock' },
-            { key: '/reports/vyapar/bank-statement', label: 'Bank Statement' },
-            { key: '/reports/vyapar/all-parties', label: 'All Parties' }
-          ]
-        : [
-            { key: '/reports/cash-book', label: 'Cash Book' },
+        { key: '/accounting/outstanding', label: 'Outstanding Report' },
+        { key: '/reports/cash-book', label: 'Cash Book' },
             { key: '/reports/daybook', label: 'Day Book' },
             { key: '/reports/general-ledger', label: 'General Ledger' },
             { key: '/reports/ledger-abstract', label: 'Ledger Abstract' },
             { key: '/reports/rd-enhanced', label: 'R&D Enhanced' },
             { key: '/reports/final-accounts', label: 'Final Accounts' },
-            // { key: '/reports/trading', label: 'Trading Account' },
-            // { key: '/reports/pl', label: 'Profit & Loss' },
             { key: '/reports/balance-sheet', label: 'Balance Sheet' },
-            { key: '/reports/sales', label: 'Sales Report' },
-            { key: '/reports/stock', label: 'Stock Report' },
-            { key: '/reports/subsidy', label: 'Subsidy Report' },
-            { key: '/reports/purchase-register', label: 'Purchase Register' }
-          ]
+            { key: '/reports/milk-bill-abstract', label: 'Milk Bill Abstract' }
+      ]
     },
+   
+    // DAIRY COOPERATIVE REPORTS - Only show for Dairy Cooperative
+    ...(selectedBusinessType === 'Dairy Cooperative Society' ? [{
+      key: 'dairy-reports-menu',
+      icon: <IconFileReport size={18} />,
+      label: 'Dairy Reports',
+      color: 'pink',
+      children: [
+        { key: '/reports/sales', label: 'Sales Report' },
+        { key: '/reports/stock', label: 'Stock Report' },
+        { key: '/reports/stock-register', label: 'Stock Register' },
+        { key: '/reports/purchase-register', label: 'Purchase Register' },
+        { key: '/reports/subsidy', label: 'Subsidy Report' },
+        { key: '/reports/milk-bill-abstract', label: 'Milk Bill Abstract' },
+        { key: '/reports/rd-enhanced', label: 'R&D Statement' },
+        { key: '/reports/final-accounts', label: 'Final Accounts' },
+        { key: '/reports/balance-sheet', label: 'Balance Sheet' }
+      ]
+    }] : []),
+    // BUSINESS (VYAPAR) REPORTS - Only show for Private Firm
+    ...(selectedBusinessType === 'Private Firm' ? [{
+      key: 'vyapar-reports-menu',
+      icon: <IconFileReport size={18} />,
+      label: 'Business Reports',
+      color: 'pink',
+      children: [
+        { key: '/reports/vyapar/sale-report', label: 'Sale Report' },
+        { key: '/reports/vyapar/purchase-report', label: 'Purchase Report' },
+        { key: '/reports/vyapar/party-statement', label: 'Party Statement' },
+        { key: '/reports/vyapar/all-parties', label: 'All Parties' },
+         { key: '/reports/vyapar/cash-in-hand', label: 'CashFlow' },
+        // { key: '/reports/vyapar/cashflow', label: 'Cashflow' },
+        { key: '/reports/vyapar/all-transactions', label: 'All Transactions' },
+        { key: '/reports/vyapar/profit-loss', label: 'Profit & Loss' },
+        { key: '/reports/vyapar/balance-sheet', label: 'Balance Sheet' },
+        { key: '/reports/vyapar/trial-balance', label: 'Trial Balance' },
+        { key: '/reports/vyapar/bill-profit', label: 'Bill Wise Party Report' },
+        { key: '/reports/vyapar/party-profit', label: 'Party Wise Profit' },
+        { key: '/reports/vyapar/item-profit', label: 'Item Wise Profit' },
+        { key: '/reports/vyapar/stock-summary', label: 'Stock Summary' },
+        { key: '/reports/vyapar/low-stock', label: 'Low Stock Alert' },
+        { key: '/reports/vyapar/item-by-party', label: 'Item by Party' },
+        
+      ]
+    }] : []),
     {
       key: 'warranty-menu',
-      icon: <IconShield size={20} />,
+      icon: <IconShield size={18} />,
       label: 'Warranty',
+      color: 'grape',
       children: [
         { key: '/warranty', label: 'Warranty List' },
-        { key: '/warranty/add', label: 'Add Warranty' }
+        { key: '/warranty/add', label: 'Add Warranty' },
+        { key: '/reports/vyapar/bank-statement', label: 'Bank Statement' },
+        { key: '/reports/vyapar/gstr1', label: 'GSTR-1' },
+        { key: '/reports/vyapar/gstr2', label: 'GSTR-2' }
+        
       ]
     },
     {
       key: 'machines-menu',
-      icon: <IconTool size={20} />,
+      icon: <IconTool size={18} />,
       label: 'Machines',
+      color: 'indigo',
       children: [
         { key: '/machines', label: 'Machine List' },
         { key: '/machines/add', label: 'Add Machine' }
@@ -151,8 +232,9 @@ const MainLayout = () => {
     },
     {
       key: 'quotations-menu',
-      icon: <IconSearch size={20} />,
+      icon: <IconSearch size={18} />,
       label: 'Quotations',
+      color: 'lime',
       children: [
         { key: '/quotations', label: 'Quotation List' },
         { key: '/quotations/add', label: 'Add Quotation' }
@@ -160,18 +242,19 @@ const MainLayout = () => {
     },
     {
       key: 'promotions-menu',
-      icon: <IconSpeakerphone size={20} />,
+      icon: <IconSpeakerphone size={18} />,
       label: 'Promotions',
+      color: 'yellow',
       children: [
         { key: '/promotions', label: 'Promotion List' },
         { key: '/promotions/add', label: 'Add Promotion' }
       ]
     },
-    
     {
       key: 'hrm-menu',
-      icon: <IconBriefcase size={20} />,
+      icon: <IconBriefcase size={18} />,
       label: 'Human Resources',
+      color: 'red',
       children: [
         { key: '/hrm/employees', label: 'Employees' },
         { key: '/hrm/departments', label: 'Departments' },
@@ -184,8 +267,9 @@ const MainLayout = () => {
     // User Management - Only show for admins
     ...(isAdmin ? [{
       key: '/user-management',
-      icon: <IconUserCog size={20} />,
+      icon: <IconUserCog size={18} />,
       label: 'User Management',
+      color: 'gray',
       adminOnly: true
     }] : [])
     ];
@@ -193,9 +277,7 @@ const MainLayout = () => {
     // Filter menu items based on selected business type
     if (selectedBusinessType === 'Dairy Cooperative Society') {
       return allMenuItems.filter(item => {
-        // Always include User Management for admins
         if (item.adminOnly && isAdmin) return true;
-
         const allowedKeys = [
           '/',
           'party-menu',
@@ -204,7 +286,7 @@ const MainLayout = () => {
           'accounting-menu',
           'cashbook-menu',
           'payments-menu',
-          'reports-menu',
+          'dairy-reports-menu',  // Dairy-specific reports
           'subsidies-menu',
           'hrm-menu'
         ];
@@ -212,9 +294,7 @@ const MainLayout = () => {
       });
     } else if (selectedBusinessType === 'Private Firm') {
       return allMenuItems.filter(item => {
-        // Always include User Management for admins
         if (item.adminOnly && isAdmin) return true;
-
         const allowedKeys = [
           '/',
           'party-menu',
@@ -222,7 +302,7 @@ const MainLayout = () => {
           'sales-menu',
           'accounting-menu',
           'cashbook-menu',
-          'reports-menu',
+          'vyapar-reports-menu',  // Business-specific reports
           'warranty-menu',
           'machines-menu',
           'quotations-menu',
@@ -246,20 +326,28 @@ const MainLayout = () => {
   };
 
   const renderHorizontalMenuItem = (item) => {
+    const isActive = location.pathname === item.key ||
+      (item.children && item.children.some(child => location.pathname === child.key));
+
     if (item.children) {
       return (
-        <Menu key={item.key} trigger="click" closeOnItemClick={true}>
+        <Menu key={item.key} trigger="hover" openDelay={100} closeDelay={200} shadow="lg" width={220}>
           <Menu.Target>
             <Button
-              variant="subtle"
+              variant={isActive ? 'filled' : 'subtle'}
               leftSection={item.icon}
-              rightSection={<IconChevronDown size={16} />}
+              rightSection={<IconChevronDown size={14} />}
               size="sm"
+              radius="md"
+              color={isActive ? item.color : undefined}
               styles={{
                 root: {
-                  color: 'inherit',
+                  fontWeight: 600,
+                  transition: 'all 0.2s ease',
+                  color: isActive ? undefined : menuTextColor,
                   '&:hover': {
-                    backgroundColor: 'var(--mantine-color-gray-1)',
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(102, 126, 234, 0.15)',
+                    color: isDark ? '#fff' : '#667eea',
                   },
                 },
               }}
@@ -267,13 +355,27 @@ const MainLayout = () => {
               {item.label}
             </Button>
           </Menu.Target>
-          <Menu.Dropdown>
+          <Menu.Dropdown
+            style={{
+              border: 'none',
+              boxShadow: '0 10px 40px rgba(0,0,0,0.15)',
+              borderRadius: '12px',
+            }}
+          >
             {item.children.map((child) => (
               <Menu.Item
                 key={child.key}
                 onClick={() => handleMenuClick(child.key)}
                 style={{
-                  backgroundColor: location.pathname === child.key ? 'var(--mantine-color-blue-1)' : undefined,
+                  borderRadius: '8px',
+                  margin: '4px',
+                  fontWeight: location.pathname === child.key ? 600 : 400,
+                  backgroundColor: location.pathname === child.key
+                    ? `var(--mantine-color-${item.color}-1)`
+                    : undefined,
+                  color: location.pathname === child.key
+                    ? `var(--mantine-color-${item.color}-7)`
+                    : undefined,
                 }}
               >
                 {child.label}
@@ -287,13 +389,21 @@ const MainLayout = () => {
     return (
       <Button
         key={item.key}
-        variant={location.pathname === item.key ? 'light' : 'subtle'}
+        variant={isActive ? 'filled' : 'subtle'}
         leftSection={item.icon}
         onClick={() => handleMenuClick(item.key)}
         size="sm"
+        radius="md"
+        color={isActive ? item.color : undefined}
         styles={{
           root: {
-            color: 'inherit',
+            fontWeight: 600,
+            transition: 'all 0.2s ease',
+            color: isActive ? undefined : menuTextColor,
+            '&:hover': {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(102, 126, 234, 0.15)',
+              color: isDark ? '#fff' : '#667eea',
+            },
           },
         }}
       >
@@ -303,42 +413,118 @@ const MainLayout = () => {
   };
 
   return (
-    <AppShell header={{ height: 110 }} padding="md">
-      <AppShell.Header>
-        <div style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}>
-          <Group h={60} px="md" justify="space-between">
-            <Group>
+    <AppShell header={{ height: 120 }} padding="md">
+      <AppShell.Header style={{ border: 'none' }}>
+        {/* Top Header - Gradient Background */}
+        <Box
+          style={{
+            background: headerGradient,
+            padding: '12px 20px',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+          }}
+        >
+          <Group justify="space-between" align="center">
+            {/* Logo & Title */}
+            <Group gap="md">
               <Button
-                variant="subtle"
+                variant="white"
                 onClick={toggleMobile}
                 hiddenFrom="md"
                 size="sm"
                 leftSection={<IconMenu2 size={18} />}
+                style={{ color: '#667eea' }}
               >
                 Menu
               </Button>
-              <Text fw={600} size="lg">Dairy Cooperative Management System</Text>
+              <Group gap="sm">
+                <ThemeIcon
+                  size={42}
+                  radius="xl"
+                  style={{
+                    background: 'rgba(255,255,255,0.2)',
+                    backdropFilter: 'blur(4px)',
+                  }}
+                >
+                  <IconBuildingStore size={24} color="white" />
+                </ThemeIcon>
+                <Box>
+                  <Text fw={700} size="lg" c="white" style={{ lineHeight: 1.2 }}>
+                    {selectedCompany?.companyName || 'Dairy Cooperative'}
+                  </Text>
+                  <Text size="xs" c="rgba(255,255,255,0.8)">
+                    Management System
+                  </Text>
+                </Box>
+              </Group>
             </Group>
+
+            {/* Right Section */}
             <Group gap="md">
               <CompanySwitcher />
-              <ThemeToggle />
-              <Menu position="bottom-end" shadow="md">
+
+              <Box
+                style={{
+                  background: 'rgba(255,255,255,0.15)',
+                  borderRadius: '10px',
+                  padding: '6px 10px',
+                  backdropFilter: 'blur(4px)',
+                }}
+              >
+                <ThemeSwitcherCompact />
+              </Box>
+
+              {/* User Menu */}
+              <Menu position="bottom-end" shadow="lg" width={200}>
                 <Menu.Target>
                   <Button
-                    variant="subtle"
-                    leftSection={<IconUser size={18} />}
+                    variant="white"
+                    leftSection={
+                      <Avatar
+                        size={28}
+                        radius="xl"
+                        color="violet"
+                        style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
+                      >
+                        {(user?.displayName || user?.username || 'U')[0].toUpperCase()}
+                      </Avatar>
+                    }
                     rightSection={<IconChevronDown size={14} />}
                     size="sm"
+                    radius="xl"
+                    styles={{
+                      root: {
+                        paddingLeft: 4,
+                        background: 'rgba(255,255,255,0.9)',
+                        color: '#333',
+                        '&:hover': {
+                          background: 'white',
+                        },
+                      },
+                    }}
                   >
                     {user?.displayName || user?.username || 'User'}
                   </Button>
                 </Menu.Target>
-                <Menu.Dropdown>
-                  <Menu.Label>Account</Menu.Label>
+                <Menu.Dropdown style={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 40px rgba(0,0,0,0.15)' }}>
+                  <Box p="sm">
+                    <Text size="sm" fw={600}>{user?.displayName || user?.username}</Text>
+                    <Text size="xs" c="dimmed">{user?.email || 'User'}</Text>
+                    {isAdmin && (
+                      <Badge size="xs" color="violet" mt={4}>Admin</Badge>
+                    )}
+                  </Box>
+                  <Menu.Divider />
+                  <Menu.Item
+                    leftSection={<IconSettings size={16} />}
+                    style={{ borderRadius: '8px', margin: '4px' }}
+                  >
+                    Settings
+                  </Menu.Item>
                   <Menu.Item
                     leftSection={<IconLogout size={16} />}
                     color="red"
                     onClick={handleLogout}
+                    style={{ borderRadius: '8px', margin: '4px' }}
                   >
                     Logout
                   </Menu.Item>
@@ -346,62 +532,115 @@ const MainLayout = () => {
               </Menu>
             </Group>
           </Group>
-        </div>
+        </Box>
 
-        <Group h={50} px="md" gap="xs" visibleFrom="md" style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
-          {menuItems.map(renderHorizontalMenuItem)}
-        </Group>
+        {/* Menu Bar - Colorful Gradient Background */}
+        <Box
+          style={{
+            background: menuBarBg,
+            borderBottom: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(102, 126, 234, 0.15)',
+            boxShadow: isDark ? '0 2px 15px rgba(0,0,0,0.3)' : '0 2px 15px rgba(102, 126, 234, 0.1)',
+          }}
+        >
+          <ScrollArea scrollbarSize={4}>
+            <Group h={52} px="md" gap={6} wrap="nowrap" visibleFrom="md">
+              {menuItems.map(renderHorizontalMenuItem)}
+            </Group>
+          </ScrollArea>
+        </Box>
       </AppShell.Header>
 
+      {/* Mobile Drawer */}
       <Drawer
         opened={mobileOpened}
         onClose={toggleMobile}
-        title="Menu"
+        title={
+          <Group gap="sm">
+            <ThemeIcon size="lg" radius="md" color="violet">
+              <IconBuildingStore size={20} />
+            </ThemeIcon>
+            <Text fw={600}>Menu</Text>
+          </Group>
+        }
         hiddenFrom="md"
-        size="sm"
+        size="xs"
+        styles={{
+          header: {
+            background: isDark ? '#1e1e2e' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            color: 'white',
+          },
+          title: { color: 'white' },
+          close: { color: 'white' },
+        }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {menuItems.map((item) => {
-            if (item.children) {
+        <ScrollArea h="calc(100vh - 80px)" type="auto">
+          <Stack gap="xs" p="xs">
+            {menuItems.map((item) => {
+              if (item.children) {
+                return (
+                  <Box key={item.key}>
+                    <Group gap="xs" mb={8}>
+                      <ThemeIcon size="sm" variant="light" color={item.color} radius="md">
+                        {item.icon}
+                      </ThemeIcon>
+                      <Text size="xs" fw={700} tt="uppercase" c="dimmed">
+                        {item.label}
+                      </Text>
+                    </Group>
+                    <Stack gap={4} pl="md">
+                      {item.children.map((child) => (
+                        <Button
+                          key={child.key}
+                          variant={location.pathname === child.key ? 'light' : 'subtle'}
+                          color={location.pathname === child.key ? item.color : 'gray'}
+                          onClick={() => handleMenuClick(child.key)}
+                          fullWidth
+                          justify="flex-start"
+                          size="sm"
+                          radius="md"
+                          styles={{
+                            root: { fontWeight: location.pathname === child.key ? 600 : 400 },
+                          }}
+                        >
+                          {child.label}
+                        </Button>
+                      ))}
+                    </Stack>
+                    <Divider my="sm" />
+                  </Box>
+                );
+              }
               return (
-                <div key={item.key}>
-                  <Text size="sm" fw={600} mb="xs" c="dimmed">
-                    {item.label}
-                  </Text>
-                  {item.children.map((child) => (
-                    <Button
-                      key={child.key}
-                      variant={location.pathname === child.key ? 'light' : 'subtle'}
-                      onClick={() => handleMenuClick(child.key)}
-                      fullWidth
-                      justify="flex-start"
-                      size="sm"
-                      mb={4}
-                    >
-                      {child.label}
-                    </Button>
-                  ))}
-                </div>
+                <Button
+                  key={item.key}
+                  variant={location.pathname === item.key ? 'light' : 'subtle'}
+                  color={location.pathname === item.key ? item.color : 'gray'}
+                  leftSection={item.icon}
+                  onClick={() => handleMenuClick(item.key)}
+                  fullWidth
+                  justify="flex-start"
+                  size="sm"
+                  radius="md"
+                  styles={{
+                    root: { fontWeight: location.pathname === item.key ? 600 : 400 },
+                  }}
+                >
+                  {item.label}
+                </Button>
               );
-            }
-            return (
-              <Button
-                key={item.key}
-                variant={location.pathname === item.key ? 'light' : 'subtle'}
-                leftSection={item.icon}
-                onClick={() => handleMenuClick(item.key)}
-                fullWidth
-                justify="flex-start"
-                size="sm"
-              >
-                {item.label}
-              </Button>
-            );
-          })}
-        </div>
+            })}
+          </Stack>
+        </ScrollArea>
       </Drawer>
 
-      <AppShell.Main>
+      <AppShell.Main
+        style={{
+          background: isDark
+            ? 'var(--mantine-color-dark-8)'
+            : '#E3F2FD',
+          minHeight: 'calc(100vh - 120px)',
+        }}
+      >
         <Outlet />
       </AppShell.Main>
     </AppShell>

@@ -1,5 +1,3 @@
-
-
 import React, { useState } from 'react';
 import { message } from '../../utils/toast';
 import dayjs from 'dayjs';
@@ -7,7 +5,31 @@ import { reportAPI } from '../../services/api';
 import PageHeader from '../common/PageHeader';
 import DateFilterToolbar from '../common/DateFilterToolbar';
 import ExportButton from '../common/ExportButton';
-import './ReceiptsDisbursement.css';
+import {
+  Container,
+  Paper,
+  Table,
+  ScrollArea,
+  Text,
+  Group,
+  Badge,
+  Card,
+  Stack,
+  LoadingOverlay,
+  Title,
+  Divider,
+  Grid,
+  Button,
+  SegmentedControl
+} from '@mantine/core';
+import {
+  IconReceipt,
+  IconCurrencyRupee,
+  IconArrowUpRight,
+  IconArrowDownRight,
+  IconWallet,
+  IconPrinter
+} from '@tabler/icons-react';
 
 const ReceiptsDisbursement = () => {
   const [loading, setLoading] = useState(false);
@@ -42,81 +64,95 @@ const ReceiptsDisbursement = () => {
     }
   };
 
-  const formatCurrency = (amount) => `₹${parseFloat(amount || 0).toFixed(2)}`;
+  const formatCurrency = (amount) => {
+    const num = parseFloat(amount || 0);
+    return num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
   const formatDate = (date) => dayjs(date).format('DD/MM/YYYY');
 
-  // Remove the render functions for the removed formats
+  // Calculate closing balance: Opening + Receipts - Payments
+  const openingBalance = reportData?.openingBalance || 0;
+  const totalReceipts = reportData?.summary?.totalReceipts || 0;
+  const totalPayments = reportData?.summary?.totalPayments || 0;
+  const closingBalance = openingBalance + totalReceipts - totalPayments;
+
   const renderSingleColumnMonthly = () => {
     if (!reportData.formatted?.sections) return null;
 
     return (
-      <div className="single-column-monthly-container">
-        <div className="monthly-report-header">
-          <h2>RECEIPT AND DISBURSEMENT ACCOUNT FOR THE MONTH OF {dayjs(reportData.startDate).format('MMMM–YYYY')}</h2>
-          <p className="report-subtitle">End of the Month</p>
-        </div>
+      <Paper p="md" withBorder>
+        <Stack gap="xs" align="center" mb="md">
+          <Title order={4}>RECEIPT AND DISBURSEMENT ACCOUNT</Title>
+          <Text size="sm" c="dimmed">
+            For the month of {dayjs(reportData.startDate).format('MMMM YYYY')}
+          </Text>
+        </Stack>
 
-        <table className="monthly-report-table">
-          <thead>
-            <tr>
-              <th className="ledger-col">Ledger / Description</th>
-              <th className="amount-col">Receipt (₹)</th>
-              <th className="amount-col">Payment (₹)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {reportData.formatted.sections.map((section, sectionIdx) => (
-              <React.Fragment key={`section-${sectionIdx}`}>
-                {/* Section Header */}
-                <tr className="section-header-row">
-                  <td colSpan="3"><strong>{section.sectionName}</strong></td>
-                </tr>
+        <ScrollArea>
+          <Table striped highlightOnHover withTableBorder withColumnBorders>
+            <Table.Thead>
+              <Table.Tr style={{ backgroundColor: 'var(--mantine-color-gray-1)' }}>
+                <Table.Th>Ledger / Description</Table.Th>
+                <Table.Th style={{ textAlign: 'right', width: '150px' }}>Receipt (₹)</Table.Th>
+                <Table.Th style={{ textAlign: 'right', width: '150px' }}>Payment (₹)</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {reportData.formatted.sections.map((section, sectionIdx) => (
+                <React.Fragment key={`section-${sectionIdx}`}>
+                  {/* Section Header */}
+                  <Table.Tr style={{ backgroundColor: 'var(--mantine-color-blue-0)' }}>
+                    <Table.Td colSpan={3}>
+                      <Text fw={700}>{section.sectionName}</Text>
+                    </Table.Td>
+                  </Table.Tr>
 
-                {/* Ledger Rows */}
-                {section.ledgers.map((ledger, ledgerIdx) => (
-                  <tr key={`ledger-${sectionIdx}-${ledgerIdx}`} className="ledger-data-row">
-                    <td className="particulars-col indent">{ledger.ledgerName}</td>
-                    <td className="amount-col">
-                      {formatCurrency(ledger.receipt)}
-                    </td>
-                    <td className="amount-col">
-                      {formatCurrency(ledger.payment)}
-                    </td>
-                  </tr>
-                ))}
+                  {/* Ledger Rows */}
+                  {section.ledgers.map((ledger, ledgerIdx) => (
+                    <Table.Tr key={`ledger-${sectionIdx}-${ledgerIdx}`}>
+                      <Table.Td style={{ paddingLeft: '2rem' }}>{ledger.ledgerName}</Table.Td>
+                      <Table.Td style={{ textAlign: 'right', color: 'var(--mantine-color-green-7)' }}>
+                        ₹{formatCurrency(ledger.receipt)}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right', color: 'var(--mantine-color-red-6)' }}>
+                        ₹{formatCurrency(ledger.payment)}
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
 
-                {/* Group Total */}
-                <tr className="group-total-row">
-                  <td className="particulars-col"><strong>Account Group Total</strong></td>
-                  <td className="amount-col">
-                    <strong>{formatCurrency(section.groupTotal.receipt)}</strong>
-                  </td>
-                  <td className="amount-col">
-                    <strong>{formatCurrency(section.groupTotal.payment)}</strong>
-                  </td>
-                </tr>
-              </React.Fragment>
-            ))}
+                  {/* Group Total */}
+                  <Table.Tr style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}>
+                    <Table.Td><Text fw={600}>Account Group Total</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right', color: 'var(--mantine-color-green-7)' }}>
+                      <Text fw={600}>₹{formatCurrency(section.groupTotal.receipt)}</Text>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right', color: 'var(--mantine-color-red-6)' }}>
+                      <Text fw={600}>₹{formatCurrency(section.groupTotal.payment)}</Text>
+                    </Table.Td>
+                  </Table.Tr>
+                </React.Fragment>
+              ))}
 
-            {/* Grand Total */}
-            <tr className="grand-total-row">
-              <td className="particulars-col"><strong>GRAND TOTAL</strong></td>
-              <td className="amount-col">
-                <strong>{formatCurrency(reportData.formatted.grandTotal.receipt)}</strong>
-              </td>
-              <td className="amount-col">
-                <strong>{formatCurrency(reportData.formatted.grandTotal.payment)}</strong>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+              {/* Grand Total */}
+              <Table.Tr style={{ backgroundColor: 'var(--mantine-color-gray-2)' }}>
+                <Table.Td><Text fw={700}>GRAND TOTAL</Text></Table.Td>
+                <Table.Td style={{ textAlign: 'right', color: 'var(--mantine-color-green-7)' }}>
+                  <Text fw={700}>₹{formatCurrency(reportData.formatted.grandTotal.receipt)}</Text>
+                </Table.Td>
+                <Table.Td style={{ textAlign: 'right', color: 'var(--mantine-color-red-6)' }}>
+                  <Text fw={700}>₹{formatCurrency(reportData.formatted.grandTotal.payment)}</Text>
+                </Table.Td>
+              </Table.Tr>
+            </Table.Tbody>
+          </Table>
+        </ScrollArea>
 
-        <div className="report-footer">
-          <div className="footer-left">Created on {dayjs().format('DD/MM/YYYY hh:mm A')} by ERP System</div>
-          <div className="footer-right">Page 1 of 1</div>
-          <p className="footer-center">This is a computer-generated report</p>
-        </div>
-      </div>
+        <Group justify="space-between" mt="md">
+          <Text size="xs" c="dimmed">Created on {dayjs().format('DD/MM/YYYY hh:mm A')} by ERP System</Text>
+          <Text size="xs" c="dimmed">This is a computer-generated report</Text>
+        </Group>
+      </Paper>
     );
   };
 
@@ -124,97 +160,97 @@ const ReceiptsDisbursement = () => {
     if (!reportData.formatted?.sections) return null;
 
     return (
-      <div className="ledgerwise-report-container">
-        <div className="ledgerwise-report-header">
-          <h2>Receipts & Disbursement Account</h2>
-          <h3>Three Column Ledger-wise Format</h3>
-          <p className="report-period">
+      <Paper p="md" withBorder>
+        <Stack gap="xs" align="center" mb="md">
+          <Title order={4}>RECEIPTS & DISBURSEMENT ACCOUNT</Title>
+          <Text size="sm" fw={500}>Three Column Ledger-wise Format</Text>
+          <Text size="sm" c="dimmed">
             For the period: {formatDate(reportData.startDate)} to {formatDate(reportData.endDate)}
-          </p>
-        </div>
+          </Text>
+        </Stack>
 
-        <table className="ledgerwise-table">
-          <thead>
-            <tr>
-              <th rowSpan="2" className="ledger-col">Ledger / Particulars</th>
-              <th colSpan="3" className="section-header">Receipt (₹)</th>
-              <th colSpan="3" className="section-header">Payment (₹)</th>
-            </tr>
-            <tr>
-              <th className="amount-col">Upto Month</th>
-              <th className="amount-col">During Month</th>
-              <th className="amount-col">End of Month</th>
-              <th className="amount-col">Upto Month</th>
-              <th className="amount-col">During Month</th>
-              <th className="amount-col">End of Month</th>
-            </tr>
-          </thead>
-          <tbody>
-            {reportData.formatted.sections.map((section, sectionIdx) => (
-              <React.Fragment key={`section-${sectionIdx}`}>
-                {/* Section Header */}
-                <tr className="section-header-row">
-                  <td colSpan="7"><strong>{section.sectionName}</strong></td>
-                </tr>
+        <ScrollArea>
+          <Table striped highlightOnHover withTableBorder withColumnBorders>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th rowSpan={2}>Ledger / Particulars</Table.Th>
+                <Table.Th colSpan={3} style={{ textAlign: 'center', backgroundColor: 'var(--mantine-color-green-1)' }}>Receipt (₹)</Table.Th>
+                <Table.Th colSpan={3} style={{ textAlign: 'center', backgroundColor: 'var(--mantine-color-red-1)' }}>Payment (₹)</Table.Th>
+              </Table.Tr>
+              <Table.Tr>
+                <Table.Th style={{ textAlign: 'right', width: '110px', backgroundColor: 'var(--mantine-color-green-0)' }}>Upto Month</Table.Th>
+                <Table.Th style={{ textAlign: 'right', width: '110px', backgroundColor: 'var(--mantine-color-green-0)' }}>During Month</Table.Th>
+                <Table.Th style={{ textAlign: 'right', width: '110px', backgroundColor: 'var(--mantine-color-green-0)' }}>End of Month</Table.Th>
+                <Table.Th style={{ textAlign: 'right', width: '110px', backgroundColor: 'var(--mantine-color-red-0)' }}>Upto Month</Table.Th>
+                <Table.Th style={{ textAlign: 'right', width: '110px', backgroundColor: 'var(--mantine-color-red-0)' }}>During Month</Table.Th>
+                <Table.Th style={{ textAlign: 'right', width: '110px', backgroundColor: 'var(--mantine-color-red-0)' }}>End of Month</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {reportData.formatted.sections.map((section, sectionIdx) => (
+                <React.Fragment key={`section-${sectionIdx}`}>
+                  {/* Section Header */}
+                  <Table.Tr style={{ backgroundColor: 'var(--mantine-color-blue-0)' }}>
+                    <Table.Td colSpan={7}><Text fw={700}>{section.sectionName}</Text></Table.Td>
+                  </Table.Tr>
 
-                {/* Ledger Rows */}
-                {section.ledgers.map((ledger, ledgerIdx) => (
-                  <tr key={`ledger-${sectionIdx}-${ledgerIdx}`} className="ledger-data-row">
-                    <td className="ledger-col indent">{ledger.ledgerName}</td>
-                    <td className="amount-col">
-                      {ledger.receipt.uptoMonth > 0 ? formatCurrency(ledger.receipt.uptoMonth) : '-'}
-                    </td>
-                    <td className="amount-col">
-                      {ledger.receipt.duringMonth > 0 ? formatCurrency(ledger.receipt.duringMonth) : '-'}
-                    </td>
-                    <td className="amount-col">
-                      {ledger.receipt.endOfMonth > 0 ? formatCurrency(ledger.receipt.endOfMonth) : '-'}
-                    </td>
-                    <td className="amount-col">
-                      {ledger.payment.uptoMonth > 0 ? formatCurrency(ledger.payment.uptoMonth) : '-'}
-                    </td>
-                    <td className="amount-col">
-                      {ledger.payment.duringMonth > 0 ? formatCurrency(ledger.payment.duringMonth) : '-'}
-                    </td>
-                    <td className="amount-col">
-                      {ledger.payment.endOfMonth > 0 ? formatCurrency(ledger.payment.endOfMonth) : '-'}
-                    </td>
-                  </tr>
-                ))}
+                  {/* Ledger Rows */}
+                  {section.ledgers.map((ledger, ledgerIdx) => (
+                    <Table.Tr key={`ledger-${sectionIdx}-${ledgerIdx}`}>
+                      <Table.Td style={{ paddingLeft: '2rem' }}>{ledger.ledgerName}</Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        {ledger.receipt?.uptoMonth > 0 ? `₹${formatCurrency(ledger.receipt.uptoMonth)}` : '-'}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        {ledger.receipt?.duringMonth > 0 ? `₹${formatCurrency(ledger.receipt.duringMonth)}` : '-'}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right', color: 'var(--mantine-color-green-7)' }}>
+                        {ledger.receipt?.endOfMonth > 0 ? `₹${formatCurrency(ledger.receipt.endOfMonth)}` : '-'}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        {ledger.payment?.uptoMonth > 0 ? `₹${formatCurrency(ledger.payment.uptoMonth)}` : '-'}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        {ledger.payment?.duringMonth > 0 ? `₹${formatCurrency(ledger.payment.duringMonth)}` : '-'}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right', color: 'var(--mantine-color-red-6)' }}>
+                        {ledger.payment?.endOfMonth > 0 ? `₹${formatCurrency(ledger.payment.endOfMonth)}` : '-'}
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
 
-                {/* Group Total */}
-                <tr className="group-total-row">
-                  <td className="ledger-col"><strong>Group Total - {section.sectionName}</strong></td>
-                  <td className="amount-col"><strong>{formatCurrency(section.groupTotal.receipt.uptoMonth)}</strong></td>
-                  <td className="amount-col"><strong>{formatCurrency(section.groupTotal.receipt.duringMonth)}</strong></td>
-                  <td className="amount-col"><strong>{formatCurrency(section.groupTotal.receipt.endOfMonth)}</strong></td>
-                  <td className="amount-col"><strong>{formatCurrency(section.groupTotal.payment.uptoMonth)}</strong></td>
-                  <td className="amount-col"><strong>{formatCurrency(section.groupTotal.payment.duringMonth)}</strong></td>
-                  <td className="amount-col"><strong>{formatCurrency(section.groupTotal.payment.endOfMonth)}</strong></td>
-                </tr>
+                  {/* Group Total */}
+                  <Table.Tr style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}>
+                    <Table.Td><Text fw={600}>Group Total - {section.sectionName}</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}><Text fw={600}>₹{formatCurrency(section.groupTotal.receipt?.uptoMonth || 0)}</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}><Text fw={600}>₹{formatCurrency(section.groupTotal.receipt?.duringMonth || 0)}</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}><Text fw={600}>₹{formatCurrency(section.groupTotal.receipt?.endOfMonth || 0)}</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}><Text fw={600}>₹{formatCurrency(section.groupTotal.payment?.uptoMonth || 0)}</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}><Text fw={600}>₹{formatCurrency(section.groupTotal.payment?.duringMonth || 0)}</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}><Text fw={600}>₹{formatCurrency(section.groupTotal.payment?.endOfMonth || 0)}</Text></Table.Td>
+                  </Table.Tr>
+                </React.Fragment>
+              ))}
 
-                <tr className="section-spacer"><td colSpan="7"></td></tr>
-              </React.Fragment>
-            ))}
+              {/* Grand Total */}
+              <Table.Tr style={{ backgroundColor: 'var(--mantine-color-gray-2)' }}>
+                <Table.Td><Text fw={700}>GRAND TOTAL</Text></Table.Td>
+                <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>₹{formatCurrency(reportData.formatted.grandTotal.receipt?.uptoMonth || 0)}</Text></Table.Td>
+                <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>₹{formatCurrency(reportData.formatted.grandTotal.receipt?.duringMonth || 0)}</Text></Table.Td>
+                <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>₹{formatCurrency(reportData.formatted.grandTotal.receipt?.endOfMonth || 0)}</Text></Table.Td>
+                <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>₹{formatCurrency(reportData.formatted.grandTotal.payment?.uptoMonth || 0)}</Text></Table.Td>
+                <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>₹{formatCurrency(reportData.formatted.grandTotal.payment?.duringMonth || 0)}</Text></Table.Td>
+                <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>₹{formatCurrency(reportData.formatted.grandTotal.payment?.endOfMonth || 0)}</Text></Table.Td>
+              </Table.Tr>
+            </Table.Tbody>
+          </Table>
+        </ScrollArea>
 
-            {/* Grand Total */}
-            <tr className="grand-total-row">
-              <td className="ledger-col"><strong>GRAND TOTAL</strong></td>
-              <td className="amount-col"><strong>{formatCurrency(reportData.formatted.grandTotal.receipt.uptoMonth)}</strong></td>
-              <td className="amount-col"><strong>{formatCurrency(reportData.formatted.grandTotal.receipt.duringMonth)}</strong></td>
-              <td className="amount-col"><strong>{formatCurrency(reportData.formatted.grandTotal.receipt.endOfMonth)}</strong></td>
-              <td className="amount-col"><strong>{formatCurrency(reportData.formatted.grandTotal.payment.uptoMonth)}</strong></td>
-              <td className="amount-col"><strong>{formatCurrency(reportData.formatted.grandTotal.payment.duringMonth)}</strong></td>
-              <td className="amount-col"><strong>{formatCurrency(reportData.formatted.grandTotal.payment.endOfMonth)}</strong></td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div className="report-footer">
-          <div className="footer-left">Created on {dayjs().format('DD/MM/YYYY hh:mm A')} | By ADM</div>
-          <div className="footer-right">Page 1 of 1</div>
-        </div>
-      </div>
+        <Group justify="space-between" mt="md">
+          <Text size="xs" c="dimmed">Created on {dayjs().format('DD/MM/YYYY hh:mm A')} | By ADM</Text>
+          <Text size="xs" c="dimmed">Page 1 of 1</Text>
+        </Group>
+      </Paper>
     );
   };
 
@@ -224,118 +260,115 @@ const ReceiptsDisbursement = () => {
     const monthYear = dayjs(reportData.startDate).format('MMMM-YYYY').toUpperCase();
 
     return (
-      <div className="two-column-report-container">
-        <div className="two-column-report-header">
-          <h2 className="report-title">RECEIPT AND DISBURSEMENT FOR THE MONTH {monthYear}</h2>
-          <p className="report-subtitle">End of the Month</p>
-        </div>
+      <Paper p="md" withBorder>
+        <Stack gap="xs" align="center" mb="md">
+          <Title order={4}>RECEIPT AND DISBURSEMENT FOR THE MONTH {monthYear}</Title>
+          <Text size="sm" c="dimmed">End of the Month</Text>
+        </Stack>
 
-        <table className="two-column-table">
-          <thead>
-            <tr>
-              <th rowSpan="2" className="ledger-col">Ledger</th>
-              <th colSpan="3" className="section-header receipt-header">Receipt (₹)</th>
-              <th colSpan="3" className="section-header payment-header">Payment (₹)</th>
-            </tr>
-            <tr>
-              <th className="amount-col">Adjustment</th>
-              <th className="amount-col">Cash</th>
-              <th className="amount-col total-col">Total</th>
-              <th className="amount-col">Adjustment</th>
-              <th className="amount-col">Cash</th>
-              <th className="amount-col total-col">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {reportData.formatted.sections.map((section, sectionIdx) => (
-              <React.Fragment key={`section-${sectionIdx}`}>
-                {/* Section Header */}
-                <tr className="section-header-row">
-                  <td colSpan="7">
-                    <strong>{section.sectionName}</strong>
-                  </td>
-                </tr>
+        <ScrollArea>
+          <Table striped highlightOnHover withTableBorder withColumnBorders>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th rowSpan={2}>Ledger</Table.Th>
+                <Table.Th colSpan={3} style={{ textAlign: 'center', backgroundColor: 'var(--mantine-color-green-1)' }}>Receipt (₹)</Table.Th>
+                <Table.Th colSpan={3} style={{ textAlign: 'center', backgroundColor: 'var(--mantine-color-red-1)' }}>Payment (₹)</Table.Th>
+              </Table.Tr>
+              <Table.Tr>
+                <Table.Th style={{ textAlign: 'right', width: '100px', backgroundColor: 'var(--mantine-color-green-0)' }}>Adjustment</Table.Th>
+                <Table.Th style={{ textAlign: 'right', width: '100px', backgroundColor: 'var(--mantine-color-green-0)' }}>Cash</Table.Th>
+                <Table.Th style={{ textAlign: 'right', width: '100px', backgroundColor: 'var(--mantine-color-green-2)' }}>Total</Table.Th>
+                <Table.Th style={{ textAlign: 'right', width: '100px', backgroundColor: 'var(--mantine-color-red-0)' }}>Adjustment</Table.Th>
+                <Table.Th style={{ textAlign: 'right', width: '100px', backgroundColor: 'var(--mantine-color-red-0)' }}>Cash</Table.Th>
+                <Table.Th style={{ textAlign: 'right', width: '100px', backgroundColor: 'var(--mantine-color-red-2)' }}>Total</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {reportData.formatted.sections.map((section, sectionIdx) => (
+                <React.Fragment key={`section-${sectionIdx}`}>
+                  {/* Section Header */}
+                  <Table.Tr style={{ backgroundColor: 'var(--mantine-color-blue-0)' }}>
+                    <Table.Td colSpan={7}><Text fw={700}>{section.sectionName}</Text></Table.Td>
+                  </Table.Tr>
 
-                {/* Ledger Rows */}
-                {section.ledgers.map((ledger, ledgerIdx) => {
-                  const receiptAdj = parseFloat(ledger.receipt?.adjustment || 0);
-                  const receiptCash = parseFloat(ledger.receipt?.cash || ledger.receipt || 0);
-                  const receiptTotal = parseFloat(ledger.receipt?.total || ledger.receipt || 0);
-                  const paymentAdj = parseFloat(ledger.payment?.adjustment || 0);
-                  const paymentCash = parseFloat(ledger.payment?.cash || ledger.payment || 0);
-                  const paymentTotal = parseFloat(ledger.payment?.total || ledger.payment || 0);
+                  {/* Ledger Rows */}
+                  {section.ledgers.map((ledger, ledgerIdx) => {
+                    const receiptAdj = parseFloat(ledger.receipt?.adjustment || 0);
+                    const receiptCash = parseFloat(ledger.receipt?.cash || ledger.receipt || 0);
+                    const receiptTotal = parseFloat(ledger.receipt?.total || ledger.receipt || 0);
+                    const paymentAdj = parseFloat(ledger.payment?.adjustment || 0);
+                    const paymentCash = parseFloat(ledger.payment?.cash || ledger.payment || 0);
+                    const paymentTotal = parseFloat(ledger.payment?.total || ledger.payment || 0);
 
-                  return (
-                    <tr key={`ledger-${sectionIdx}-${ledgerIdx}`} className="ledger-data-row">
-                      <td className="ledger-name-col">{ledger.ledgerName}</td>
-                      <td className="amount-col">{receiptAdj.toFixed(2)}</td>
-                      <td className="amount-col">{receiptCash.toFixed(2)}</td>
-                      <td className="amount-col total-col">{receiptTotal.toFixed(2)}</td>
-                      <td className="amount-col">{paymentAdj.toFixed(2)}</td>
-                      <td className="amount-col">{paymentCash.toFixed(2)}</td>
-                      <td className="amount-col total-col">{paymentTotal.toFixed(2)}</td>
-                    </tr>
-                  );
-                })}
+                    return (
+                      <Table.Tr key={`ledger-${sectionIdx}-${ledgerIdx}`}>
+                        <Table.Td>{ledger.ledgerName}</Table.Td>
+                        <Table.Td style={{ textAlign: 'right' }}>{formatCurrency(receiptAdj)}</Table.Td>
+                        <Table.Td style={{ textAlign: 'right' }}>{formatCurrency(receiptCash)}</Table.Td>
+                        <Table.Td style={{ textAlign: 'right', color: 'var(--mantine-color-green-7)', fontWeight: 500 }}>{formatCurrency(receiptTotal)}</Table.Td>
+                        <Table.Td style={{ textAlign: 'right' }}>{formatCurrency(paymentAdj)}</Table.Td>
+                        <Table.Td style={{ textAlign: 'right' }}>{formatCurrency(paymentCash)}</Table.Td>
+                        <Table.Td style={{ textAlign: 'right', color: 'var(--mantine-color-red-6)', fontWeight: 500 }}>{formatCurrency(paymentTotal)}</Table.Td>
+                      </Table.Tr>
+                    );
+                  })}
 
-                {/* Account Group Total */}
-                <tr className="group-total-row">
-                  <td className="ledger-name-col"><strong>Account Group Total</strong></td>
-                  <td className="amount-col">
-                    <strong>{parseFloat(section.groupTotal.receipt?.adjustment || 0).toFixed(2)}</strong>
-                  </td>
-                  <td className="amount-col">
-                    <strong>{parseFloat(section.groupTotal.receipt?.cash || section.groupTotal.receipt || 0).toFixed(2)}</strong>
-                  </td>
-                  <td className="amount-col total-col">
-                    <strong>{parseFloat(section.groupTotal.receipt?.total || section.groupTotal.receipt || 0).toFixed(2)}</strong>
-                  </td>
-                  <td className="amount-col">
-                    <strong>{parseFloat(section.groupTotal.payment?.adjustment || 0).toFixed(2)}</strong>
-                  </td>
-                  <td className="amount-col">
-                    <strong>{parseFloat(section.groupTotal.payment?.cash || section.groupTotal.payment || 0).toFixed(2)}</strong>
-                  </td>
-                  <td className="amount-col total-col">
-                    <strong>{parseFloat(section.groupTotal.payment?.total || section.groupTotal.payment || 0).toFixed(2)}</strong>
-                  </td>
-                </tr>
+                  {/* Account Group Total */}
+                  <Table.Tr style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}>
+                    <Table.Td><Text fw={600}>Account Group Total</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      <Text fw={600}>{formatCurrency(section.groupTotal.receipt?.adjustment || 0)}</Text>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      <Text fw={600}>{formatCurrency(section.groupTotal.receipt?.cash || section.groupTotal.receipt || 0)}</Text>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      <Text fw={600}>{formatCurrency(section.groupTotal.receipt?.total || section.groupTotal.receipt || 0)}</Text>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      <Text fw={600}>{formatCurrency(section.groupTotal.payment?.adjustment || 0)}</Text>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      <Text fw={600}>{formatCurrency(section.groupTotal.payment?.cash || section.groupTotal.payment || 0)}</Text>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      <Text fw={600}>{formatCurrency(section.groupTotal.payment?.total || section.groupTotal.payment || 0)}</Text>
+                    </Table.Td>
+                  </Table.Tr>
+                </React.Fragment>
+              ))}
 
-                <tr className="section-spacer"><td colSpan="7"></td></tr>
-              </React.Fragment>
-            ))}
+              {/* Grand Total */}
+              <Table.Tr style={{ backgroundColor: 'var(--mantine-color-gray-2)' }}>
+                <Table.Td><Text fw={700}>GRAND TOTAL</Text></Table.Td>
+                <Table.Td style={{ textAlign: 'right' }}>
+                  <Text fw={700}>{formatCurrency(reportData.formatted.grandTotal.receipt?.adjustment || 0)}</Text>
+                </Table.Td>
+                <Table.Td style={{ textAlign: 'right' }}>
+                  <Text fw={700}>{formatCurrency(reportData.formatted.grandTotal.receipt?.cash || reportData.formatted.grandTotal.receipt || 0)}</Text>
+                </Table.Td>
+                <Table.Td style={{ textAlign: 'right' }}>
+                  <Text fw={700}>{formatCurrency(reportData.formatted.grandTotal.receipt?.total || reportData.formatted.grandTotal.receipt || 0)}</Text>
+                </Table.Td>
+                <Table.Td style={{ textAlign: 'right' }}>
+                  <Text fw={700}>{formatCurrency(reportData.formatted.grandTotal.payment?.adjustment || 0)}</Text>
+                </Table.Td>
+                <Table.Td style={{ textAlign: 'right' }}>
+                  <Text fw={700}>{formatCurrency(reportData.formatted.grandTotal.payment?.cash || reportData.formatted.grandTotal.payment || 0)}</Text>
+                </Table.Td>
+                <Table.Td style={{ textAlign: 'right' }}>
+                  <Text fw={700}>{formatCurrency(reportData.formatted.grandTotal.payment?.total || reportData.formatted.grandTotal.payment || 0)}</Text>
+                </Table.Td>
+              </Table.Tr>
+            </Table.Tbody>
+          </Table>
+        </ScrollArea>
 
-            {/* Grand Total */}
-            <tr className="grand-total-row">
-              <td className="ledger-name-col"><strong>GRAND TOTAL</strong></td>
-              <td className="amount-col">
-                <strong>{parseFloat(reportData.formatted.grandTotal.receipt?.adjustment || 0).toFixed(2)}</strong>
-              </td>
-              <td className="amount-col">
-                <strong>{parseFloat(reportData.formatted.grandTotal.receipt?.cash || reportData.formatted.grandTotal.receipt || 0).toFixed(2)}</strong>
-              </td>
-              <td className="amount-col total-col">
-                <strong>{parseFloat(reportData.formatted.grandTotal.receipt?.total || reportData.formatted.grandTotal.receipt || 0).toFixed(2)}</strong>
-              </td>
-              <td className="amount-col">
-                <strong>{parseFloat(reportData.formatted.grandTotal.payment?.adjustment || 0).toFixed(2)}</strong>
-              </td>
-              <td className="amount-col">
-                <strong>{parseFloat(reportData.formatted.grandTotal.payment?.cash || reportData.formatted.grandTotal.payment || 0).toFixed(2)}</strong>
-              </td>
-              <td className="amount-col total-col">
-                <strong>{parseFloat(reportData.formatted.grandTotal.payment?.total || reportData.formatted.grandTotal.payment || 0).toFixed(2)}</strong>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div className="report-footer">
-          <div className="footer-left">Created on {dayjs().format('DD/MM/YYYY hh:mm A')} by ERP System</div>
-          <div className="footer-right">Page 1 of 1</div>
-          <p className="footer-center">This is a computer-generated report</p>
-        </div>
-      </div>
+        <Group justify="space-between" mt="md">
+          <Text size="xs" c="dimmed">Created on {dayjs().format('DD/MM/YYYY hh:mm A')} by ERP System</Text>
+          <Text size="xs" c="dimmed">This is a computer-generated report</Text>
+        </Group>
+      </Paper>
     );
   };
 
@@ -348,85 +381,139 @@ const ReceiptsDisbursement = () => {
   })) || [];
 
   return (
-    <div className="rd-report-container">
+    <Container size="xl" py="md">
       <PageHeader
         title="Receipts & Disbursement Report"
         subtitle="Single Column Monthly and Three Column Ledger-wise formats"
+        icon={<IconReceipt size={28} />}
       />
 
-      {/* Format Selector - Only showing remaining formats */}
-      <div className="format-selector">
-        <button
-          className={`format-btn ${format === 'singleColumnMonthly' ? 'active' : ''}`}
-          onClick={() => handleFormatChange('singleColumnMonthly')}
-        >
-          Single Column Monthly
-        </button>
-        <button
-          className={`format-btn ${format === 'threeColumnLedgerwise' ? 'active' : ''}`}
-          onClick={() => handleFormatChange('threeColumnLedgerwise')}
-        >
-          Three Column Ledger-wise
-        </button>
-        <button
-          className={`format-btn ${format === 'twoColumn' ? 'active' : ''}`}
-          onClick={() => handleFormatChange('twoColumn')}
-        >
-          Two Column
-        </button>
-      </div>
+      {/* Format Selector */}
+      <Paper p="md" mb="md" withBorder>
+        <Group justify="center">
+          <SegmentedControl
+            value={format}
+            onChange={handleFormatChange}
+            data={[
+              { label: 'Single Column Monthly', value: 'singleColumnMonthly' },
+              { label: 'Three Column Ledger-wise', value: 'threeColumnLedgerwise' },
+              { label: 'Two Column', value: 'twoColumn' }
+            ]}
+          />
+        </Group>
+      </Paper>
 
       <DateFilterToolbar onFilterChange={handleFilterChange} />
 
-      {loading && (
-        <div className="loading-message">Loading R&D report...</div>
-      )}
+      <Paper p="lg" withBorder shadow="sm" mt="md" pos="relative">
+        <LoadingOverlay visible={loading} overlayProps={{ blur: 2 }} />
 
-      {reportData && !loading && (
-        <>
-          {/* Summary Cards */}
-          <div className="summary-cards">
-            <div className="summary-card">
-              <span className="summary-label">Opening Balance</span>
-              <span className="summary-value">{formatCurrency(reportData.openingBalance)}</span>
-            </div>
-            <div className="summary-card">
-              <span className="summary-label">Total Receipts</span>
-              <span className="summary-value success">{formatCurrency(reportData.summary.totalReceipts)}</span>
-            </div>
-            <div className="summary-card">
-              <span className="summary-label">Total Payments</span>
-              <span className="summary-value danger">{formatCurrency(reportData.summary.totalPayments)}</span>
-            </div>
-            <div className="summary-card">
-              <span className="summary-label">Closing Balance</span>
-              <span className="summary-value">{formatCurrency(reportData.closingBalance)}</span>
-            </div>
-          </div>
+        {reportData && !loading && (
+          <>
+            {/* Summary Cards - Opening Balance + Receipt - Payment = Closing Balance */}
+            <Grid mb="lg">
+              <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+                <Card p="md" withBorder bg="blue.0">
+                  <Group gap="xs">
+                    <IconWallet size={24} color="var(--mantine-color-blue-6)" />
+                    <div>
+                      <Text size="xs" c="dimmed">Opening Balance</Text>
+                      <Text size="xl" fw={700} c="blue">
+                        ₹{formatCurrency(openingBalance)}
+                      </Text>
+                    </div>
+                  </Group>
+                </Card>
+              </Grid.Col>
+              <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+                <Card p="md" withBorder bg="green.0">
+                  <Group gap="xs">
+                    <IconArrowUpRight size={24} color="var(--mantine-color-green-6)" />
+                    <div>
+                      <Text size="xs" c="dimmed">Total Receipts (+)</Text>
+                      <Text size="xl" fw={700} c="green">
+                        ₹{formatCurrency(totalReceipts)}
+                      </Text>
+                    </div>
+                  </Group>
+                </Card>
+              </Grid.Col>
+              <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+                <Card p="md" withBorder bg="red.0">
+                  <Group gap="xs">
+                    <IconArrowDownRight size={24} color="var(--mantine-color-red-6)" />
+                    <div>
+                      <Text size="xs" c="dimmed">Total Payments (-)</Text>
+                      <Text size="xl" fw={700} c="red">
+                        ₹{formatCurrency(totalPayments)}
+                      </Text>
+                    </div>
+                  </Group>
+                </Card>
+              </Grid.Col>
+              <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+                <Card p="md" withBorder bg="teal.0">
+                  <Group gap="xs">
+                    <IconCurrencyRupee size={24} color="var(--mantine-color-teal-6)" />
+                    <div>
+                      <Text size="xs" c="dimmed">Closing Balance</Text>
+                      <Text size="xl" fw={700} c="teal">
+                        ₹{formatCurrency(closingBalance)}
+                      </Text>
+                    </div>
+                  </Group>
+                </Card>
+              </Grid.Col>
+            </Grid>
 
-          {/* Report Content */}
-          <div className="report-content">
+            {/* Formula Display */}
+            <Paper p="sm" mb="lg" withBorder bg="gray.0">
+              <Group justify="center" gap="xs">
+                <Badge size="lg" variant="light" color="blue">Opening: ₹{formatCurrency(openingBalance)}</Badge>
+                <Text fw={700}>+</Text>
+                <Badge size="lg" variant="light" color="green">Receipts: ₹{formatCurrency(totalReceipts)}</Badge>
+                <Text fw={700}>-</Text>
+                <Badge size="lg" variant="light" color="red">Payments: ₹{formatCurrency(totalPayments)}</Badge>
+                <Text fw={700}>=</Text>
+                <Badge size="lg" variant="filled" color="teal">Closing: ₹{formatCurrency(closingBalance)}</Badge>
+              </Group>
+            </Paper>
+
+            {/* Report Content */}
             {format === 'singleColumnMonthly' && renderSingleColumnMonthly()}
             {format === 'threeColumnLedgerwise' && renderThreeColumnLedgerwise()}
             {format === 'twoColumn' && renderTwoColumnFormat()}
-          </div>
 
-          <div className="export-section">
-            <ExportButton
-              data={exportData}
-              filename="receipts_disbursement"
-              buttonText="Export R&D Report"
-            />
-          </div>
-        </>
-      )}
+            {/* Export Section */}
+            <Divider my="lg" />
+            <Group justify="flex-end" gap="md">
+              <ExportButton
+                data={exportData}
+                filename={`receipts_disbursement_${reportData.startDate && formatDate(reportData.startDate)}_to_${reportData.endDate && formatDate(reportData.endDate)}`}
+                buttonText="Export R&D Report"
+              />
+              <Button
+                variant="light"
+                color="gray"
+                leftSection={<IconPrinter size={16} />}
+                onClick={() => window.print()}
+              >
+                Print Report
+              </Button>
+            </Group>
+          </>
+        )}
 
-      {!reportData && !loading && (
-        <div className="no-data-message">
-          Please select a date range to view the receipts & disbursement report
-        </div>
-      )}
-    </div>
+        {!reportData && !loading && (
+          <Stack align="center" py="xl">
+            <IconReceipt size={64} color="gray" opacity={0.5} />
+            <Text c="dimmed" size="lg">
+              Please select a date range to view the receipts & disbursement report
+            </Text>
+          </Stack>
+        )}
+      </Paper>
+    </Container>
   );
 };
 

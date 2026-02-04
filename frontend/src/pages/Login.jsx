@@ -60,7 +60,7 @@ const Login = () => {
               <path d="M2 12l10 5 10-5"/>
             </svg>
           </div>
-          <h1>Dairy Society ERP</h1>
+          <h1>DairySoft ERP</h1>
           <p>Company Login</p>
         </div>
 

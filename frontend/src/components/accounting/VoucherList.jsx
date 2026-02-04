@@ -323,27 +323,27 @@ const VoucherList = () => {
             <Menu.Dropdown>
               <Menu.Label>Create New Voucher</Menu.Label>
               <Menu.Item
-                icon={<IconReceipt2 size={16} color="green" />}
+                leftSection={<IconReceipt2 size={16} color="green" />}
                 onClick={() => navigate('/accounting/vouchers/receipt')}
               >
                 Receipt Voucher
               </Menu.Item>
               <Menu.Item
-                icon={<IconCash size={16} color="red" />}
+                leftSection={<IconCash size={16} color="red" />}
                 onClick={() => navigate('/accounting/vouchers/payment')}
               >
                 Payment Voucher
               </Menu.Item>
               <Menu.Item
-                icon={<IconExchange size={16} color="blue" />}
+                leftSection={<IconExchange size={16} color="blue" />}
                 onClick={() => navigate('/accounting/vouchers/journal')}
               >
                 Journal Voucher
               </Menu.Item>
               <Menu.Divider />
               <Menu.Label>Quick Actions</Menu.Label>
-              <Menu.Item icon={<IconPrinter size={16} />}>Print All</Menu.Item>
-              <Menu.Item icon={<IconDownload size={16} />}>Export All</Menu.Item>
+              <Menu.Item leftSection={<IconPrinter size={16} />}>Print All</Menu.Item>
+              <Menu.Item leftSection={<IconDownload size={16} />}>Export All</Menu.Item>
             </Menu.Dropdown>
           </Menu>
         </Group>
@@ -351,12 +351,12 @@ const VoucherList = () => {
 
       {/* Stats Cards */}
       <Grid gutter="md" mb="md">
-        <Grid.Col xs={12} sm={6} md={3}>
+        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
           <Card withBorder p="lg" radius="md" style={{ borderLeft: '4px solid #4dabf7' }}>
-            <Group position="apart">
+            <Group justify="space-between">
               <Box>
-                <Text size="xs" color="dimmed" transform="uppercase" weight={600}>Total Vouchers</Text>
-                <Text size="xl" weight={700}>{stats.total}</Text>
+                <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Total Vouchers</Text>
+                <Text size="xl" fw={700}>{stats.total}</Text>
               </Box>
               <RingProgress
                 size={60}
@@ -371,13 +371,13 @@ const VoucherList = () => {
             </Group>
           </Card>
         </Grid.Col>
-        
-        <Grid.Col xs={12} sm={6} md={3}>
+
+        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
           <Card withBorder p="lg" radius="md" style={{ borderLeft: '4px solid #40c057' }}>
-            <Group position="apart">
+            <Group justify="space-between">
               <Box>
-                <Text size="xs" color="dimmed" transform="uppercase" weight={600}>Receipts</Text>
-                <Text size="xl" weight={700} color="green">{stats.receipt}</Text>
+                <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Receipts</Text>
+                <Text size="xl" fw={700} c="green">{stats.receipt}</Text>
               </Box>
               <RingProgress
                 size={60}
@@ -392,13 +392,13 @@ const VoucherList = () => {
             </Group>
           </Card>
         </Grid.Col>
-        
-        <Grid.Col xs={12} sm={6} md={3}>
+
+        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
           <Card withBorder p="lg" radius="md" style={{ borderLeft: '4px solid #fa5252' }}>
-            <Group position="apart">
+            <Group justify="space-between">
               <Box>
-                <Text size="xs" color="dimmed" transform="uppercase" weight={600}>Payments</Text>
-                <Text size="xl" weight={700} color="red">{stats.payment}</Text>
+                <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Payments</Text>
+                <Text size="xl" fw={700} c="red">{stats.payment}</Text>
               </Box>
               <RingProgress
                 size={60}
@@ -413,13 +413,13 @@ const VoucherList = () => {
             </Group>
           </Card>
         </Grid.Col>
-        
-        <Grid.Col xs={12} sm={6} md={3}>
+
+        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
           <Card withBorder p="lg" radius="md" style={{ borderLeft: '4px solid #228be6' }}>
-            <Group position="apart">
+            <Group justify="space-between">
               <Box>
-                <Text size="xs" color="dimmed" transform="uppercase" weight={600}>Journals</Text>
-                <Text size="xl" weight={700} color="blue">{stats.journal}</Text>
+                <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Journals</Text>
+                <Text size="xl" fw={700} c="blue">{stats.journal}</Text>
               </Box>
               <RingProgress
                 size={60}
@@ -490,12 +490,12 @@ const VoucherList = () => {
       {/* Search and Filters */}
       <Paper p="lg" mb="md" withBorder shadow="sm" radius="md">
         <Grid gutter="md" align="flex-end">
-          <Grid.Col xs={12} md={4}>
+          <Grid.Col span={{ base: 12, md: 4 }}>
             <TextInput
               placeholder="Search by voucher number, reference, narration..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              icon={<IconSearch size={16} />}
+              leftSection={<IconSearch size={16} />}
               rightSection={
                 searchQuery && (
                   <ActionIcon size="xs" onClick={() => setSearchQuery('')}>
@@ -505,20 +505,20 @@ const VoucherList = () => {
               }
             />
           </Grid.Col>
-          
-          <Grid.Col xs={12} sm={6} md={3}>
+
+          <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
             <DatePickerInput
               type="range"
               label="Date Range"
               placeholder="Pick dates"
               value={dateRange}
               onChange={setDateRange}
-              icon={<IconCalendar size={16} />}
+              leftSection={<IconCalendar size={16} />}
               clearable
             />
           </Grid.Col>
-          
-          <Grid.Col xs={12} sm={6} md={3}>
+
+          <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
             <Select
               label="Voucher Type"
               placeholder="All Types"
@@ -533,8 +533,8 @@ const VoucherList = () => {
               clearable
             />
           </Grid.Col>
-          
-          <Grid.Col xs={12} sm={6} md={2}>
+
+          <Grid.Col span={{ base: 12, sm: 6, md: 2 }}>
             <Button
               variant="light"
               color="gray"

@@ -8,6 +8,7 @@ const supplierSchema = new mongoose.Schema({
   gstNumber: { type: String },
   address: { type: String },
   openingBalance: { type: Number, default: 0 },
+  creditLimit: { type: Number, default: 0 },
   state: { type: String },
   district: { type: String },
   pincode: { type: String },

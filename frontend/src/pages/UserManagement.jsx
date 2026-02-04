@@ -25,6 +25,7 @@ import {
   Tabs,
   ScrollArea
 } from '@mantine/core';
+import { DateInput } from '@mantine/dates';
 import {
   IconUsers,
   IconUserPlus,
@@ -72,6 +73,7 @@ const UserManagement = () => {
   const [users, setUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [designations, setDesignations] = useState([]);
+  const [userTypes, setUserTypes] = useState([]);
 
   // Modal states
   const [modalOpen, setModalOpen] = useState(false);
@@ -84,9 +86,12 @@ const UserManagement = () => {
     displayName: '',
     username: '',
     password: '',
+    userType: 'ordinary',
     designation: 'Other',
     phone: '',
     email: '',
+    joiningDate: null,
+    expireDate: null,
     permissions: []
   });
   const [newPassword, setNewPassword] = useState('');
@@ -99,10 +104,11 @@ const UserManagement = () => {
     }
   }, [isAdmin, navigate]);
 
-  // Fetch users and designations on mount
+  // Fetch users, designations and user types on mount
   useEffect(() => {
     fetchUsers();
     fetchDesignations();
+    fetchUserTypes();
   }, []);
 
   const fetchUsers = async () => {
@@ -126,6 +132,15 @@ const UserManagement = () => {
     }
   };
 
+  const fetchUserTypes = async () => {
+    try {
+      const response = await userManagementAPI.getUserTypes();
+      setUserTypes(response.data || []);
+    } catch (error) {
+      console.error('Failed to fetch user types:', error);
+    }
+  };
+
   // Initialize permissions for new user
   const initializePermissions = () => {
     return MODULES.map(module => ({
@@ -144,9 +159,12 @@ const UserManagement = () => {
       displayName: '',
       username: '',
       password: '',
+      userType: 'ordinary',
       designation: 'Other',
       phone: '',
       email: '',
+      joiningDate: null,
+      expireDate: null,
       permissions: initializePermissions()
     });
     setModalOpen(true);
@@ -173,9 +191,12 @@ const UserManagement = () => {
       displayName: user.displayName || '',
       username: user.username || '',
       password: '',
+      userType: user.userType || 'ordinary',
       designation: user.designation || 'Other',
       phone: user.phone || '',
       email: user.email || '',
+      joiningDate: user.joiningDate ? new Date(user.joiningDate) : null,
+      expireDate: user.expireDate ? new Date(user.expireDate) : null,
       permissions: mergedPermissions
     });
     setModalOpen(true);
@@ -203,9 +224,12 @@ const UserManagement = () => {
       const payload = {
         displayName: formData.displayName,
         username: formData.username,
+        userType: formData.userType,
         designation: formData.designation,
         phone: formData.phone,
         email: formData.email,
+        joiningDate: formData.joiningDate,
+        expireDate: formData.expireDate,
         permissions: formData.permissions
       };
 
@@ -378,18 +402,19 @@ const UserManagement = () => {
                 <Table.Tr>
                   <Table.Th>Name</Table.Th>
                   <Table.Th>Username</Table.Th>
+                  <Table.Th>User Type</Table.Th>
                   <Table.Th>Designation</Table.Th>
                   <Table.Th>Phone</Table.Th>
-                  <Table.Th>Email</Table.Th>
+                  <Table.Th>Joining Date</Table.Th>
+                  <Table.Th>Expire Date</Table.Th>
                   <Table.Th>Status</Table.Th>
-                  <Table.Th>Last Login</Table.Th>
                   <Table.Th style={{ textAlign: 'center' }}>Actions</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
                 {filteredUsers.length === 0 ? (
                   <Table.Tr>
-                    <Table.Td colSpan={8} style={{ textAlign: 'center' }}>
+                    <Table.Td colSpan={9} style={{ textAlign: 'center' }}>
                       <Text c="dimmed" py="xl">No users found</Text>
                     </Table.Td>
                   </Table.Tr>
@@ -399,20 +424,30 @@ const UserManagement = () => {
                       <Table.Td fw={500}>{user.displayName}</Table.Td>
                       <Table.Td>{user.username}</Table.Td>
                       <Table.Td>
+                        <Badge variant="light" color="grape">
+                          {userTypes.find(t => t.value === user.userType)?.label || user.userType || '-'}
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td>
                         <Badge variant="light" color="blue">{user.designation}</Badge>
                       </Table.Td>
                       <Table.Td>{user.phone || '-'}</Table.Td>
-                      <Table.Td>{user.email || '-'}</Table.Td>
+                      <Table.Td>
+                        {user.joiningDate
+                          ? new Date(user.joiningDate).toLocaleDateString()
+                          : '-'
+                        }
+                      </Table.Td>
+                      <Table.Td>
+                        {user.expireDate
+                          ? new Date(user.expireDate).toLocaleDateString()
+                          : '-'
+                        }
+                      </Table.Td>
                       <Table.Td>
                         <Badge color={user.status === 'active' ? 'green' : 'red'} variant="filled">
                           {user.status}
                         </Badge>
-                      </Table.Td>
-                      <Table.Td>
-                        {user.lastLogin
-                          ? new Date(user.lastLogin).toLocaleDateString()
-                          : 'Never'
-                        }
                       </Table.Td>
                       <Table.Td>
                         <Group gap="xs" justify="center">
@@ -499,6 +534,13 @@ const UserManagement = () => {
               />
             )}
             <Select
+              label="User Type"
+              placeholder="Select user type"
+              data={userTypes}
+              value={formData.userType}
+              onChange={(value) => setFormData({ ...formData, userType: value })}
+            />
+            <Select
               label="Designation"
               placeholder="Select designation"
               data={designations}
@@ -516,6 +558,20 @@ const UserManagement = () => {
               placeholder="Enter email"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            />
+            <DateInput
+              label="Joining Date"
+              placeholder="Select joining date"
+              value={formData.joiningDate}
+              onChange={(value) => setFormData({ ...formData, joiningDate: value })}
+              clearable
+            />
+            <DateInput
+              label="Expire Date"
+              placeholder="Select expire date"
+              value={formData.expireDate}
+              onChange={(value) => setFormData({ ...formData, expireDate: value })}
+              clearable
             />
           </SimpleGrid>
 

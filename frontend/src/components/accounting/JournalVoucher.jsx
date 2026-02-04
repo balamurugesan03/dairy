@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { message } from '../../utils/toast';
 import dayjs from 'dayjs';
 import { ledgerAPI, voucherAPI } from '../../services/api';
@@ -27,7 +28,8 @@ import {
   Card,
   Tooltip,
   ScrollArea,
-  SegmentedControl
+  SegmentedControl,
+  Checkbox
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import {
@@ -41,10 +43,12 @@ import {
   IconTrash,
   IconExchange,
   IconArrowRight,
-  IconArrowLeft
+  IconArrowLeft,
+  IconMilk
 } from '@tabler/icons-react';
 
 const JournalVoucher = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [fetchingVouchers, setFetchingVouchers] = useState(false);
   const [ledgers, setLedgers] = useState([]);
@@ -57,6 +61,18 @@ const JournalVoucher = () => {
     { voucherDate: dayjs().format('YYYY-MM-DD'), debitLedgerId: '', debitAmount: '', creditLedgerId: '', creditAmount: '', narration: '' }
   ]);
   const [savingMultiple, setSavingMultiple] = useState(false);
+  const [isMilkBill, setIsMilkBill] = useState(false);
+
+  // Handle Milk Bill checkbox change - navigate to report when checked
+  const handleMilkBillChange = (event) => {
+    const checked = event.currentTarget.checked;
+    setIsMilkBill(checked);
+    if (checked) {
+      // Navigate to Milk Bill Abstract report with current date
+      const currentDate = form.values.voucherDate || dayjs().format('YYYY-MM-DD');
+      navigate(`/reports/milk-bill-abstract?from=journal&date=${currentDate}`);
+    }
+  };
 
   const form = useForm({
     initialValues: {
@@ -331,13 +347,33 @@ const JournalVoucher = () => {
         title="Journal Voucher"
         subtitle="Manage journal vouchers for adjustments and transfers"
         rightSection={
-          <Button
-            leftSection={<IconPlus size={16} />}
-            color="blue"
-            onClick={openAddModal}
-          >
-            Add Journal Voucher
-          </Button>
+          <Group spacing="md">
+            {/* Milk Bill Checkbox */}
+            <Card p="xs" withBorder style={{ cursor: 'pointer' }}>
+              <Checkbox
+                label={
+                  <Group spacing="xs">
+                    <IconMilk size={18} color="var(--mantine-color-cyan-6)" />
+                    <Text size="sm" weight={500}>Milk Bill</Text>
+                  </Group>
+                }
+                checked={isMilkBill}
+                onChange={handleMilkBillChange}
+                color="cyan"
+                styles={{
+                  input: { cursor: 'pointer' },
+                  label: { cursor: 'pointer' }
+                }}
+              />
+            </Card>
+            <Button
+              leftSection={<IconPlus size={16} />}
+              color="blue"
+              onClick={openAddModal}
+            >
+              Add Journal Voucher
+            </Button>
+          </Group>
         }
       />
 
@@ -536,7 +572,7 @@ const JournalVoucher = () => {
                   <Group position="apart" mb="sm">
                     <Group spacing="xs">
                       <IconArrowLeft size={16} color="red" />
-                      <Text weight={600} color="red">DEBIT (Dr)</Text>
+                      <Text weight={600} color="red">Receipt (Dr)</Text>
                     </Group>
                     <Badge color="red" variant="light">To be debited</Badge>
                   </Group>
@@ -580,7 +616,7 @@ const JournalVoucher = () => {
                   <Group position="apart" mb="sm">
                     <Group spacing="xs">
                       <IconArrowRight size={16} color="green" />
-                      <Text weight={600} color="green">CREDIT (Cr)</Text>
+                      <Text weight={600} color="green">Payment (Cr)</Text>
                     </Group>
                     <Badge color="green" variant="light">To be credited</Badge>
                   </Group>

@@ -139,10 +139,12 @@ export const updateLedgerBalances = async (entries, session = null) => {
     const netChange = entry.debitAmount - entry.creditAmount;
 
     // Update current balance based on ledger type
-    if (['Asset', 'Expense'].includes(ledger.ledgerType)) {
+    // Asset-like ledgers (debit increases balance): Asset, Expense, Cash, Bank, Other Receivable
+    if (['Asset', 'Expense', 'Cash', 'Bank', 'Other Receivable'].includes(ledger.ledgerType)) {
       ledger.currentBalance += netChange;
       ledger.balanceType = ledger.currentBalance >= 0 ? 'Dr' : 'Cr';
-    } else if (['Liability', 'Income', 'Capital'].includes(ledger.ledgerType)) {
+    } else if (['Liability', 'Income', 'Capital', 'Other Payable'].includes(ledger.ledgerType)) {
+      // Liability-like ledgers (credit increases balance)
       ledger.currentBalance -= netChange;
       ledger.balanceType = ledger.currentBalance >= 0 ? 'Cr' : 'Dr';
     } else if (ledger.ledgerType === 'Party') {

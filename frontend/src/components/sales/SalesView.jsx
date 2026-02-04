@@ -279,7 +279,7 @@ const SalesView = () => {
   };
 
   const handlePrint = useReactToPrint({
-    content: () => printRef.current,
+    contentRef: printRef,
   });
 
   if (loading) {

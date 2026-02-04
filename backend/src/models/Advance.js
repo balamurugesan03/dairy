@@ -26,6 +26,12 @@ const advanceSchema = new mongoose.Schema({
     enum: ['Regular', 'Emergency', 'Festival', 'Medical', 'Agriculture', 'Cattle Purchase', 'Feed', 'Other'],
     default: 'Regular'
   },
+  // Advance category for deduction priority
+  advanceCategory: {
+    type: String,
+    enum: ['CF Advance', 'Loan Advance', 'Cash Advance'],
+    default: 'Cash Advance'
+  },
   advanceAmount: {
     type: Number,
     required: [true, 'Advance amount is required'],
@@ -190,6 +196,7 @@ advanceSchema.index({ farmerId: 1, advanceDate: -1 });
 advanceSchema.index({ status: 1 });
 advanceSchema.index({ advanceNumber: 1 });
 advanceSchema.index({ advanceType: 1 });
+advanceSchema.index({ advanceCategory: 1 });
 advanceSchema.index({ approvalStatus: 1 });
 
 // Pre-save hook to generate advance number and calculate totals

@@ -1,0 +1,386 @@
+/* =====================================================
+   MILK PAYMENT REGISTER - Modern Dairy SaaS UI
+   Professional, Clean, Vyapar-style Design
+   ===================================================== */
+
+/* Page Container */
+.milk-payment-register {
+  padding: var(--spacing-md);
+  min-height: calc(100vh - 60px);
+  background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+}
+
+/* Page Title */
+.milk-payment-register .page-title {
+  display: flex;
+  align-items: center;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.milk-payment-register .page-title svg {
+  color: var(--primary-color);
+}
+
+/* =====================================================
+   FORM CARDS - Left Section
+   ===================================================== */
+
+.form-card {
+  background: var(--bg-elevated);
+  border-color: var(--border-color);
+  transition: var(--transition-base);
+}
+
+.form-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.form-card .card-header {
+  background: linear-gradient(90deg, var(--bg-secondary) 0%, transparent 100%);
+}
+
+/* Form Inputs */
+.form-input {
+  transition: var(--transition-fast);
+}
+
+.form-input:focus-within {
+  transform: translateY(-1px);
+}
+
+.form-input input:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+/* Readonly Input Styling */
+.readonly-input input {
+  background-color: var(--bg-tertiary) !important;
+  color: var(--text-secondary);
+  cursor: not-allowed;
+}
+
+/* Milk Amount Input - Highlighted */
+.milk-amount-input input {
+  border: 2px solid var(--primary-color);
+  background: linear-gradient(135deg, var(--primary-light) 0%, var(--bg-elevated) 100%);
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.milk-amount-input input:focus {
+  box-shadow: 0 0 0 4px rgba(var(--primary-rgb), 0.2);
+}
+
+/* Optional Fields - Lighter styling */
+.optional-input label {
+  color: var(--text-secondary);
+}
+
+.optional-input input {
+  border-color: var(--border-color);
+  background: var(--bg-elevated);
+}
+
+/* =====================================================
+   DEDUCTIONS CARD
+   ===================================================== */
+
+.deductions-card {
+  border-left: 4px solid var(--error-color);
+}
+
+.deductions-card .card-header {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.08) 0%, transparent 100%);
+}
+
+/* Outstanding Summary Box */
+.outstanding-summary {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.05) 0%, rgba(249, 115, 22, 0.05) 100%);
+  border: 1px dashed var(--border-color);
+}
+
+/* =====================================================
+   PAYMENT MODE SECTION
+   ===================================================== */
+
+.payment-mode-segment {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  padding: 4px;
+}
+
+.payment-mode-segment [data-active="true"] {
+  background: var(--primary-color) !important;
+  color: white !important;
+  box-shadow: var(--shadow-sm);
+}
+
+/* =====================================================
+   SUMMARY CARD - Right Section (Sticky)
+   ===================================================== */
+
+.summary-sticky {
+  position: sticky;
+  top: 80px;
+}
+
+.summary-card {
+  background: var(--bg-elevated);
+  border: 2px solid var(--primary-color);
+  overflow: hidden;
+}
+
+.summary-card .summary-header {
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
+  color: white;
+}
+
+.summary-card .summary-header .mantine-ThemeIcon-root {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: white !important;
+}
+
+.summary-card .summary-header .mantine-Badge-root {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+}
+
+/* Farmer Info Card */
+.farmer-info-card {
+  background: linear-gradient(135deg, var(--primary-light) 0%, var(--bg-secondary) 100%);
+  border: 1px solid var(--border-color);
+}
+
+/* Earnings Box */
+.earnings-box {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(34, 197, 94, 0.05) 100%);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+/* Deductions Box */
+.deductions-box {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* Warning Alert */
+.warning-alert {
+  animation: pulse-warning 2s infinite;
+}
+
+@keyframes pulse-warning {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+}
+
+/* Net Payable Box */
+.net-payable-box {
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
+  border: none;
+  text-align: center;
+}
+
+.net-payable-box .net-payable-amount {
+  font-size: 2rem;
+  color: white !important;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.net-payable-box > div > span:first-child {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.net-payable-box.warning {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+}
+
+/* Closing Balance */
+.closing-balance {
+  padding: var(--spacing-sm);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+}
+
+/* =====================================================
+   ACTION BUTTONS
+   ===================================================== */
+
+.save-button {
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
+  border: none;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: var(--transition-base);
+}
+
+.save-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(var(--primary-rgb), 0.4);
+}
+
+.save-button:disabled {
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+}
+
+.print-button {
+  border: 2px solid var(--primary-color);
+  font-weight: 500;
+}
+
+.print-button:hover:not(:disabled) {
+  background: var(--primary-light);
+}
+
+/* =====================================================
+   PRINT VOUCHER MODAL
+   ===================================================== */
+
+.print-voucher {
+  background: white;
+  color: #000;
+}
+
+.print-voucher .voucher-content {
+  border: 2px solid #333;
+  border-radius: 8px;
+}
+
+.print-voucher .voucher-header {
+  border-bottom: 2px solid #333;
+  padding-bottom: var(--spacing-md);
+}
+
+/* Print-specific styles */
+@media print {
+  .print-voucher {
+    padding: 20mm;
+    background: white !important;
+    color: black !important;
+  }
+
+  .print-voucher .voucher-content {
+    border: 2px solid black;
+    page-break-inside: avoid;
+  }
+
+  .print-voucher * {
+    color: black !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* =====================================================
+   RESPONSIVE ADJUSTMENTS
+   ===================================================== */
+
+@media (max-width: 1200px) {
+  .summary-sticky {
+    position: relative;
+    top: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .milk-payment-register {
+    padding: var(--spacing-sm);
+  }
+
+  .net-payable-box .net-payable-amount {
+    font-size: 1.5rem;
+  }
+
+  .outstanding-summary .mantine-Group-root {
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+}
+
+/* =====================================================
+   DARK MODE OVERRIDES
+   ===================================================== */
+
+[data-mantine-color-scheme="dark"] .form-card,
+[data-mantine-color-scheme="dark"] .summary-card {
+  background: var(--bg-elevated);
+}
+
+[data-mantine-color-scheme="dark"] .milk-amount-input input {
+  background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.15) 0%, var(--bg-elevated) 100%);
+}
+
+[data-mantine-color-scheme="dark"] .readonly-input input {
+  background-color: var(--bg-tertiary) !important;
+}
+
+[data-mantine-color-scheme="dark"] .outstanding-summary {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(249, 115, 22, 0.1) 100%);
+}
+
+[data-mantine-color-scheme="dark"] .farmer-info-card {
+  background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.15) 0%, var(--bg-secondary) 100%);
+}
+
+[data-mantine-color-scheme="dark"] .print-voucher {
+  background: #1a1a1a;
+  color: #fff;
+}
+
+[data-mantine-color-scheme="dark"] .print-voucher .voucher-content {
+  border-color: var(--border-color);
+}
+
+/* =====================================================
+   UTILITY CLASSES
+   ===================================================== */
+
+.text-primary {
+  color: var(--primary-color);
+}
+
+.text-success {
+  color: var(--success-color);
+}
+
+.text-error {
+  color: var(--error-color);
+}
+
+.text-warning {
+  color: var(--warning-color);
+}
+
+/* Smooth transitions for all interactive elements */
+.milk-payment-register button,
+.milk-payment-register input,
+.milk-payment-register select {
+  transition: var(--transition-fast);
+}
+
+/* Focus visible for accessibility */
+.milk-payment-register *:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+/* Custom scrollbar for summary card */
+.summary-card::-webkit-scrollbar {
+  width: 6px;
+}
+
+.summary-card::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+.summary-card::-webkit-scrollbar-thumb {
+  background: var(--primary-color);
+  border-radius: 3px;
+}

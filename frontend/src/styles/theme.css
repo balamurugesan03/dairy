@@ -4,12 +4,13 @@
    ========================================== */
 
 /* CSS Variables - Dark Theme */
+/* Note: Primary colors are dynamically set by ThemeContext based on selected color theme */
 :root {
-  /* Primary Colors */
-  --primary-color: #4a9eff;
-  --primary-hover: #6bb0ff;
-  --primary-active: #2a7fd9;
-  --primary-light: rgba(74, 158, 255, 0.1);
+  /* Primary Colors - Default Blue (will be overridden by ThemeContext) */
+  --primary-color: #228be6;
+  --primary-hover: #1c7ed6;
+  --primary-active: #1971c2;
+  --primary-light: rgba(34, 139, 230, 0.1);
 
   /* Background Colors */
   --bg-primary: #0f1419;
@@ -27,7 +28,7 @@
   /* Border Colors */
   --border-color: #2d3548;
   --border-hover: #3d4558;
-  --border-active: #4a9eff;
+  --border-active: var(--primary-color);
 
   /* Status Colors */
   --success-color: #52c41a;
@@ -995,29 +996,31 @@ a:hover {
    ========================================== */
 
 [data-theme="light"] {
-  /* Background Colors */
-  --bg-primary: #f5f5f5;
+  /* Background Colors - Dairy Farm Sky Blue Theme */
+  --bg-primary: #E3F2FD;
   --bg-secondary: #ffffff;
-  --bg-tertiary: #fafafa;
+  --bg-tertiary: #BBDEFB;
   --bg-elevated: #ffffff;
-  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-hover: rgba(33, 150, 243, 0.08);
+  --bg-gradient: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%);
 
-  /* Text Colors */
-  --text-primary: #1f1f1f;
-  --text-secondary: #666666;
-  --text-tertiary: #999999;
+  /* Text Colors - Softer & Modern */
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --text-tertiary: #94a3b8;
   --text-inverted: #ffffff;
 
-  /* Border Colors */
-  --border-color: #e0e0e0;
-  --border-hover: #bfbfbf;
-  --border-active: #4a9eff;
+  /* Border Colors - Subtle */
+  --border-color: #e2e8f0;
+  --border-hover: #cbd5e1;
+  --border-active: var(--primary-color);
 
-  /* Shadows (Lighter for light theme) */
-  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.15);
-  --shadow-xl: 0 12px 32px rgba(0, 0, 0, 0.18);
+  /* Shadows (Modern soft shadows) */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --shadow-colored: 0 4px 14px 0 rgba(99, 102, 241, 0.39);
 }
 
 /* ==========================================
@@ -1049,8 +1052,20 @@ a:hover {
 
 [data-theme="light"] {
   /* Glass Morphism for Light Theme */
-  --glass-bg: rgba(255, 255, 255, 0.7);
-  --glass-border: rgba(0, 0, 0, 0.1);
+  --glass-bg: rgba(255, 255, 255, 0.8);
+  --glass-border: rgba(99, 102, 241, 0.1);
+
+  /* Modern Gradients for Light Theme */
+  --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --gradient-success: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+  --gradient-warning: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  --gradient-info: linear-gradient(135deg, #00b4db 0%, #0083b0 100%);
+
+  /* Card Backgrounds */
+  --card-bg-1: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --card-bg-2: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+  --card-bg-3: linear-gradient(135deg, #00b4db 0%, #0083b0 100%);
+  --card-bg-4: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
 }
 
 /* Smooth theme transitions */

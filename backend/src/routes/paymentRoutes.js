@@ -20,6 +20,13 @@ import {
   getAdvanceStats
 } from '../controllers/paymentController.js';
 
+import {
+  getFarmerLedger,
+  getLedgerSummary,
+  checkWelfareRecovery,
+  getFarmerOutstandingByType
+} from '../controllers/farmerLedgerController.js';
+
 const router = express.Router();
 
 // ==================== FARMER PAYMENT ROUTES ====================
@@ -36,6 +43,25 @@ router.get('/farmer-payments', getAllPayments);
 // Get payment statistics
 router.get('/farmer-payments/stats', getPaymentStats);
 
+// ==================== FARMER LEDGER ROUTES (must be before :farmerId and :id routes) ====================
+
+// Get farmer ledger with running balance
+router.get('/farmer-payments/farmer/:farmerId/ledger', getFarmerLedger);
+
+// Get farmer ledger summary
+router.get('/farmer-payments/farmer/:farmerId/summary', getLedgerSummary);
+
+// Check welfare recovery eligibility
+router.get('/farmer-payments/farmer/:farmerId/welfare-check', checkWelfareRecovery);
+
+// Get farmer outstanding by type (for priority deduction)
+router.get('/farmer-payments/farmer/:farmerId/outstanding-by-type', getFarmerOutstandingByType);
+
+// ==================== FARMER PAYMENT DETAIL ROUTES ====================
+
+// Get farmer payment history (must be after ledger routes but before :id route)
+router.get('/farmer-payments/farmer/:farmerId', getFarmerPaymentHistory);
+
 // Get single payment by ID
 router.get('/farmer-payments/:id', getPaymentById);
 
@@ -44,9 +70,6 @@ router.put('/farmer-payments/:id', updatePayment);
 
 // Cancel payment
 router.post('/farmer-payments/:id/cancel', cancelPayment);
-
-// Get farmer payment history
-router.get('/farmer-payments/farmer/:farmerId', getFarmerPaymentHistory);
 
 // ==================== ADVANCE ROUTES ====================
 
@@ -59,6 +82,9 @@ router.get('/advances', getAllAdvances);
 // Get advance statistics
 router.get('/advances/stats', getAdvanceStats);
 
+// Get farmer advances (must be before :id route)
+router.get('/advances/farmer/:farmerId', getFarmerAdvances);
+
 // Get single advance by ID
 router.get('/advances/:id', getAdvanceById);
 
@@ -70,8 +96,5 @@ router.post('/advances/:id/adjust', adjustAdvance);
 
 // Cancel advance
 router.post('/advances/:id/cancel', cancelAdvance);
-
-// Get farmer advances
-router.get('/advances/farmer/:farmerId', getFarmerAdvances);
 
 export default router;

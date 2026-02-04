@@ -159,7 +159,7 @@ const CollectionCenterManagement = () => {
         color: 'yellow'
       });
       return;
-    }
+    }z
 
     modals.openConfirmModal({
       title: 'Bulk Delete Collection Centers',

@@ -25,7 +25,7 @@ export const getAllLedgers = async (req, res) => {
 
     const ledgers = await Ledger.find(query)
       .sort({ ledgerName: 1 })
-      .select('ledgerName ledgerType currentBalance balanceType');
+      .select('ledgerName ledgerType currentBalance balanceType linkedEntity parentGroup openingBalance openingBalanceType');
 
     res.status(200).json({
       success: true,

@@ -64,15 +64,49 @@ const userSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  userType: {
+    type: String,
+    enum: ['auditor', 'dairy_department', 'society', 'milma', 'president', 'superuser', 'admin', 'ordinary'],
+    default: 'ordinary'
+  },
   designation: {
     type: String,
-    enum: ['President', 'Secretary', 'Dairy Officer', 'Clerk', 'Salesman', 'Auditor', 'Accountant', 'Manager', 'Other'],
+    enum: [
+      'Secretary',
+      'Assistant Secretary',
+      'Attender',
+      'Auditor',
+      'Branch Supervisor',
+      'Cleaner',
+      'Dairy Department',
+      'Data Entry Operator',
+      'Junior Clerk',
+      'Officer',
+      'Lab Assistant',
+      'Lab Technician',
+      'Milma',
+      'Peon',
+      'Plant Operator',
+      'President',
+      'Procurement Assistant',
+      'Sales Man',
+      'Senior Clerk',
+      'System Administrator',
+      'Technical Supervisor',
+      'Other'
+    ],
     default: 'Other'
   },
   role: {
     type: String,
     enum: ['superadmin', 'admin', 'user'],
     default: 'user'
+  },
+  joiningDate: {
+    type: Date
+  },
+  expireDate: {
+    type: Date
   },
   company: {
     type: mongoose.Schema.Types.ObjectId,

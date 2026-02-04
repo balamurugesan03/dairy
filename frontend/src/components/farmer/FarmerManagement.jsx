@@ -351,11 +351,12 @@ const FarmerManagement = () => {
   };
 
   const getFarmerTypeIcon = (type) => {
+    const iconStyle = { width: 14, height: 14 };
     switch (type) {
-      case 'A': return <IconUser size={14} />;
-      case 'B': return <IconBuilding size={14} />;
-      case 'C': return <IconBuildingCommunity size={14} />;
-      default: return <IconUser size={14} />;
+      case 'A': return <IconUser style={iconStyle} />;
+      case 'B': return <IconBuilding style={iconStyle} />;
+      case 'C': return <IconBuildingCommunity style={iconStyle} />;
+      default: return <IconUser style={iconStyle} />;
     }
   };
 
@@ -591,13 +592,22 @@ const FarmerManagement = () => {
     <Container fluid p="md">
       <Stack gap="lg">
         {/* Header Section */}
-        <Paper p="md" radius="md" withBorder bg={theme.colors.gray[0]}>
+        <Paper
+          p="lg"
+          radius="md"
+          withBorder
+          style={{
+            background: 'linear-gradient(135deg, #e8f4fc 0%, #f0f7ff 100%)',
+            borderColor: '#c5dff0',
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+          }}
+        >
           <Group justify="space-between" align="center">
             <Box>
-              <Title order={2} c={theme.colors.blue[7]}>
+              <Title order={2} style={{ color: '#1a365d', fontWeight: 700 }}>
                 Farmer Management
               </Title>
-              <Text c="dimmed" size="sm" mt={2}>
+              <Text size="sm" mt={4} style={{ color: '#4a5568' }}>
                 Manage dairy cooperative farmers and their details
               </Text>
             </Box>
@@ -823,10 +833,18 @@ const FarmerManagement = () => {
         </Paper>
 
         {/* Data Table Section */}
-        <Paper withBorder radius="md" pos="relative" style={{ overflow: 'hidden' }}>
-          <LoadingOverlay 
-            visible={loading} 
-            zIndex={1000} 
+        <Paper
+          withBorder
+          radius="md"
+          pos="relative"
+          style={{
+            overflow: 'hidden',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.1)'
+          }}
+        >
+          <LoadingOverlay
+            visible={loading}
+            zIndex={1000}
             overlayProps={{ radius: 'md', blur: 2 }}
           />
           <DataTable
@@ -834,16 +852,51 @@ const FarmerManagement = () => {
             records={farmers}
             minHeight={500}
             noRecordsText="No farmers found"
-            striped
             highlightOnHover
             verticalSpacing="sm"
             horizontalSpacing="md"
             fontSize="sm"
-            borderColor={theme.colors.gray[3]}
+            borderColor={theme.colors.gray[2]}
             rowStyle={(record, index) => ({
-              backgroundColor: record.status === 'Inactive' ? theme.colors.red[0] : 'transparent',
+              backgroundColor: record.status === 'Inactive'
+                ? theme.colors.red[0]
+                : '#ffffff',
               opacity: record.status === 'Inactive' ? 0.8 : 1
             })}
+            styles={{
+              root: {
+                borderRadius: '8px',
+                overflow: 'hidden',
+              },
+              header: {
+                backgroundColor: '#e8f4fc',
+                borderBottom: '2px solid #c5dff0',
+              },
+              headerCell: {
+                backgroundColor: '#e8f4fc',
+                color: '#1a365d',
+                fontWeight: 600,
+                fontSize: '13px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                padding: '14px 16px',
+                borderRight: '1px solid #d4e8f5',
+                '&:last-of-type': {
+                  borderRight: 'none',
+                },
+              },
+              cell: {
+                padding: '12px 16px',
+                borderBottom: '1px solid #f0f0f0',
+              },
+              row: {
+                backgroundColor: '#ffffff',
+                transition: 'background-color 0.15s ease',
+                '&:hover': {
+                  backgroundColor: '#f7fafc',
+                },
+              },
+            }}
           />
         </Paper>
 
@@ -984,50 +1037,70 @@ const FarmerManagement = () => {
                 <Text c="dimmed">{memberSearch ? 'No members found matching your search' : 'No members found'}</Text>
               </Center>
             ) : (
-              <Table striped highlightOnHover withTableBorder>
-                <Table.Thead>
+              <>
+              <Table
+                highlightOnHover
+                withTableBorder
+                style={{
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+                }}
+              >
+                <Table.Thead
+                  style={{
+                    backgroundColor: '#e8f4fc',
+                    borderBottom: '2px solid #c5dff0',
+                  }}
+                >
                   <Table.Tr>
-                    <Table.Th>Farmer No.</Table.Th>
-                    <Table.Th>Member ID</Table.Th>
-                    <Table.Th>Name</Table.Th>
-                    <Table.Th>Phone</Table.Th>
-                    <Table.Th>Village</Table.Th>
-                    <Table.Th>Shares</Table.Th>
-                    <Table.Th>Admission Date</Table.Th>
-                    <Table.Th>Actions</Table.Th>
+                    <Table.Th style={{ backgroundColor: '#e8f4fc', color: '#1a365d', fontWeight: 600, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '12px 14px' }}>Farmer No.</Table.Th>
+                    <Table.Th style={{ backgroundColor: '#e8f4fc', color: '#1a365d', fontWeight: 600, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '12px 14px' }}>Member ID</Table.Th>
+                    <Table.Th style={{ backgroundColor: '#e8f4fc', color: '#1a365d', fontWeight: 600, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '12px 14px' }}>Name</Table.Th>
+                    <Table.Th style={{ backgroundColor: '#e8f4fc', color: '#1a365d', fontWeight: 600, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '12px 14px' }}>Phone</Table.Th>
+                    <Table.Th style={{ backgroundColor: '#e8f4fc', color: '#1a365d', fontWeight: 600, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '12px 14px' }}>Village</Table.Th>
+                    <Table.Th style={{ backgroundColor: '#e8f4fc', color: '#1a365d', fontWeight: 600, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '12px 14px' }}>Shares</Table.Th>
+                    <Table.Th style={{ backgroundColor: '#e8f4fc', color: '#1a365d', fontWeight: 600, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '12px 14px' }}>Admission Date</Table.Th>
+                    <Table.Th style={{ backgroundColor: '#e8f4fc', color: '#1a365d', fontWeight: 600, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '12px 14px' }}>Actions</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
-                <Table.Tbody>
+                <Table.Tbody style={{ backgroundColor: '#ffffff' }}>
                   {getPaginatedMembers().map((member) => (
-                    <Table.Tr key={member._id}>
-                      <Table.Td>
+                    <Table.Tr
+                      key={member._id}
+                      style={{
+                        backgroundColor: '#ffffff',
+                        transition: 'background-color 0.15s ease',
+                      }}
+                    >
+                      <Table.Td style={{ padding: '12px 14px', borderBottom: '1px solid #f0f0f0' }}>
                         <Text fw={600} size="sm">{member.farmerNumber || '-'}</Text>
                       </Table.Td>
-                      <Table.Td>
+                      <Table.Td style={{ padding: '12px 14px', borderBottom: '1px solid #f0f0f0' }}>
                         <Badge variant="light" color="grape">{member.memberId || 'N/A'}</Badge>
                       </Table.Td>
-                      <Table.Td>
+                      <Table.Td style={{ padding: '12px 14px', borderBottom: '1px solid #f0f0f0' }}>
                         <Text size="sm">{member.personalDetails?.name || '-'}</Text>
                       </Table.Td>
-                      <Table.Td>
+                      <Table.Td style={{ padding: '12px 14px', borderBottom: '1px solid #f0f0f0' }}>
                         <Text size="sm">{member.personalDetails?.phone || '-'}</Text>
                       </Table.Td>
-                      <Table.Td>
+                      <Table.Td style={{ padding: '12px 14px', borderBottom: '1px solid #f0f0f0' }}>
                         <Text size="sm">{member.address?.village || '-'}</Text>
                       </Table.Td>
-                      <Table.Td>
+                      <Table.Td style={{ padding: '12px 14px', borderBottom: '1px solid #f0f0f0' }}>
                         <Badge color="blue" variant="filled">
                           {member.financialDetails?.totalShares || member.shares || 0}
                         </Badge>
                       </Table.Td>
-                      <Table.Td>
+                      <Table.Td style={{ padding: '12px 14px', borderBottom: '1px solid #f0f0f0' }}>
                         <Text size="sm">
                           {member.admissionDate
                             ? new Date(member.admissionDate).toLocaleDateString('en-IN')
                             : '-'}
                         </Text>
                       </Table.Td>
-                      <Table.Td>
+                      <Table.Td style={{ padding: '12px 14px', borderBottom: '1px solid #f0f0f0' }}>
                         <Group gap="xs">
                           <Tooltip label="Add Share">
                             <ActionIcon
@@ -1077,6 +1150,12 @@ const FarmerManagement = () => {
                   ))}
                 </Table.Tbody>
               </Table>
+              <style>{`
+                .mantine-Table-tr:hover {
+                  background-color: #f7fafc !important;
+                }
+              `}</style>
+              </>
             )}
           </div>
 

@@ -2,6 +2,16 @@ import axios from 'axios';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
+// Public API instance - NO auth token (for login page, etc.)
+const publicApi = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json'
+  }
+});
+
+// Authenticated API instance
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 10000, // 10 second timeout to prevent hanging
@@ -217,6 +227,7 @@ export const reportAPI = {
   vyaparPurchaseReport: (params) => api.get('/reports/vyapar/purchase-report', { params }).then(res => res.data).catch(handleError),
   vyaparPartyStatement: (params) => api.get('/reports/vyapar/party-statement', { params }).then(res => res.data).catch(handleError),
   vyaparCashflow: (params) => api.get('/reports/vyapar/cashflow', { params }).then(res => res.data).catch(handleError),
+  vyaparCashInHand: (params) => api.get('/reports/vyapar/cash-in-hand', { params }).then(res => res.data).catch(handleError),
   vyaparAllTransactions: (params) => api.get('/reports/vyapar/all-transactions', { params }).then(res => res.data).catch(handleError),
   vyaparProfitLoss: (params) => api.get('/reports/vyapar/profit-loss', { params }).then(res => res.data).catch(handleError),
   vyaparBalanceSheet: (params) => api.get('/reports/vyapar/balance-sheet', { params }).then(res => res.data).catch(handleError),
@@ -228,7 +239,9 @@ export const reportAPI = {
   vyaparItemWiseProfit: (params) => api.get('/reports/vyapar/item-profit', { params }).then(res => res.data).catch(handleError),
   vyaparLowStockSummary: (params) => api.get('/reports/vyapar/low-stock', { params }).then(res => res.data).catch(handleError),
   vyaparBankStatement: (params) => api.get('/reports/vyapar/bank-statement', { params }).then(res => res.data).catch(handleError),
-  vyaparAllParties: (params) => api.get('/reports/vyapar/all-parties', { params }).then(res => res.data).catch(handleError)
+  vyaparAllParties: (params) => api.get('/reports/vyapar/all-parties', { params }).then(res => res.data).catch(handleError),
+  vyaparGSTR1: (params) => api.get('/reports/vyapar/gstr1', { params }).then(res => res.data).catch(handleError),
+  vyaparGSTR2: (params) => api.get('/reports/vyapar/gstr2', { params }).then(res => res.data).catch(handleError)
 };
 
 // DAY BOOK API
@@ -410,7 +423,8 @@ export const leaveAPI = {
 // COMPANY APIs
 export const companyAPI = {
   getAll: (params) => api.get('/companies', { params }).then(res => res.data).catch(handleError),
-  getPublic: () => api.get('/companies/public').then(res => res.data).catch(handleError),
+  // Use publicApi for getPublic - no auth token needed (for login page)
+  getPublic: () => publicApi.get('/companies/public').then(res => res.data).catch(handleError),
   getById: (id) => api.get(`/companies/${id}`).then(res => res.data).catch(handleError),
   create: (data) => api.post('/companies', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/companies/${id}`, data).then(res => res.data).catch(handleError),
@@ -427,7 +441,57 @@ export const userManagementAPI = {
   delete: (id) => api.delete(`/user-management/${id}`).then(res => res.data).catch(handleError),
   resetPassword: (id, newPassword) => api.patch(`/user-management/${id}/reset-password`, { newPassword }).then(res => res.data).catch(handleError),
   getModules: () => api.get('/user-management/modules').then(res => res.data).catch(handleError),
-  getDesignations: () => api.get('/user-management/designations').then(res => res.data).catch(handleError)
+  getDesignations: () => api.get('/user-management/designations').then(res => res.data).catch(handleError),
+  getUserTypes: () => api.get('/user-management/user-types').then(res => res.data).catch(handleError)
+};
+
+// PRODUCER LOAN APIs
+export const producerLoanAPI = {
+  getAll: (params) => api.get('/producer-loans', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/producer-loans/${id}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/producer-loans', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/producer-loans/${id}`, data).then(res => res.data).catch(handleError),
+  cancel: (id, reason) => api.post(`/producer-loans/${id}/cancel`, { reason }).then(res => res.data).catch(handleError),
+  getFarmerLoans: (farmerId, params) => api.get(`/producer-loans/farmer/${farmerId}`, { params }).then(res => res.data).catch(handleError),
+  recordEMI: (id, data) => api.post(`/producer-loans/${id}/emi`, data).then(res => res.data).catch(handleError),
+  getStats: (params) => api.get('/producer-loans/stats', { params }).then(res => res.data).catch(handleError)
+};
+
+// PRODUCER RECEIPT APIs
+export const producerReceiptAPI = {
+  getAll: (params) => api.get('/producer-receipts', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/producer-receipts/${id}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/producer-receipts', data).then(res => res.data).catch(handleError),
+  cancel: (id, reason) => api.post(`/producer-receipts/${id}/cancel`, { reason }).then(res => res.data).catch(handleError),
+  getFarmerReceipts: (farmerId, params) => api.get(`/producer-receipts/farmer/${farmerId}`, { params }).then(res => res.data).catch(handleError),
+  getPrintData: (id) => api.get(`/producer-receipts/${id}/print`).then(res => res.data).catch(handleError)
+};
+
+// FARMER LEDGER APIs
+export const farmerLedgerAPI = {
+  getLedger: (farmerId, params) => api.get(`/farmer-payments/farmer/${farmerId}/ledger`, { params }).then(res => res.data).catch(handleError),
+  getSummary: (farmerId) => api.get(`/farmer-payments/farmer/${farmerId}/summary`).then(res => res.data).catch(handleError),
+  checkWelfare: (farmerId, date) => api.get(`/farmer-payments/farmer/${farmerId}/welfare-check`, { params: { date } }).then(res => res.data).catch(handleError),
+  getOutstandingByType: (farmerId) => api.get(`/farmer-payments/farmer/${farmerId}/outstanding-by-type`).then(res => res.data).catch(handleError)
+};
+
+// PRODUCER REGISTER APIs (Detailed Ledger)
+export const producerRegisterAPI = {
+  getRegister: (farmerId, params) => api.get(`/producer-register/${farmerId}`, { params }).then(res => res.data).catch(handleError),
+  saveRegister: (farmerId, data) => api.post(`/producer-register/${farmerId}`, data).then(res => res.data).catch(handleError),
+  getSummary: (params) => api.get('/producer-register/summary', { params }).then(res => res.data).catch(handleError)
+};
+
+// BANK TRANSFER APIs
+export const bankTransferAPI = {
+  retrieve: (data) => api.post('/bank-transfers/retrieve', data).then(res => res.data).catch(handleError),
+  apply: (data) => api.post('/bank-transfers/apply', data).then(res => res.data).catch(handleError),
+  getAll: (params) => api.get('/bank-transfers', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/bank-transfers/${id}`).then(res => res.data).catch(handleError),
+  cancel: (id) => api.post(`/bank-transfers/${id}/cancel`).then(res => res.data).catch(handleError),
+  complete: (id) => api.post(`/bank-transfers/${id}/complete`).then(res => res.data).catch(handleError),
+  getCollectionCenters: () => api.get('/bank-transfers/collection-centers').then(res => res.data).catch(handleError),
+  getBanks: () => api.get('/bank-transfers/banks').then(res => res.data).catch(handleError)
 };
 
 export default api;

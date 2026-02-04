@@ -1,7 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { AppProvider } from './context/AppContext';
-import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CompanyProvider, useCompany } from './context/CompanyContext';
 import MainLayout from './components/Layout/MainLayout';
@@ -73,11 +72,17 @@ const JournalVoucher = lazy(() => import('./components/accounting/JournalVoucher
 const OutstandingReport = lazy(() => import('./components/accounting/OutstandingReport'));
 
 // Payment Components
-const MilkPaymentForm = lazy(() => import('./components/payments/MilkPaymentForm'));
-const AdvanceForm = lazy(() => import('./components/payments/AdvanceForm'));
-const AdvanceView = lazy(() => import('./components/payments/AdvanceView'));
-const PaymentHistory = lazy(() => import('./components/payments/PaymentHistory'));
-const AdvanceList = lazy(() => import('./components/payments/AdvanceList'));
+const IndividualMilkPayment = lazy(() => import('./components/payments/IndividualMilkPayment'));
+const MilkPaymentRegister = lazy(() => import('./components/payments/MilkPaymentRegister'));
+
+const ProducerLoanManagement = lazy(() => import('./components/payments/ProducerLoanManagement'));
+const ProducerLoanView = lazy(() => import('./components/payments/ProducerLoanView'));
+const CashAdvanceVoucher = lazy(() => import('./components/payments/CashAdvanceVoucher'));
+const ProducerReceiptManagement = lazy(() => import('./components/payments/ProducerReceiptManagement'));
+const FarmerLedgerView = lazy(() => import('./components/payments/FarmerLedgerView'));
+const ProducerRegister = lazy(() => import('./components/payments/ProducerRegister'));
+const ProducerRegisterSummary = lazy(() => import('./components/payments/ProducerRegisterSummary'));
+const BankTransferManagement = lazy(() => import('./components/payments/BankTransferManagement'));
 
 // Report Components
 const ReportsDashboard = lazy(() => import('./components/reports/ReportsDashboard'));
@@ -94,6 +99,7 @@ const FinalAccounts = lazy(() => import('./components/reports/FinalAccounts'));
 const BalanceSheet = lazy(() => import('./components/reports/BalanceSheet'));
 const StockRegister = lazy(() => import('./components/reports/StockRegister'));
 const InventoryPurchaseRegister = lazy(() => import('./components/reports/InventoryPurchaseRegister'));
+const MilkBillAbstract = lazy(() => import('./components/reports/MilkBillAbstract'));
 
 // Vyapar Report Components - Private Firm
 const VyaparReportsHub = lazy(() => import('./components/reports/vyapar/VyaparReportsHub'));
@@ -113,6 +119,9 @@ const VyaparStockSummary = lazy(() => import('./components/reports/vyapar/Vyapar
 const VyaparItemReportByParty = lazy(() => import('./components/reports/vyapar/VyaparItemReportByParty'));
 const VyaparItemWiseProfit = lazy(() => import('./components/reports/vyapar/VyaparItemWiseProfit'));
 const VyaparBankStatement = lazy(() => import('./components/reports/vyapar/VyaparBankStatement'));
+const VyaparCashInHand = lazy(() => import('./components/reports/vyapar/VyaparCashInHand'));
+const VyaparGSTR1 = lazy(() => import('./components/reports/vyapar/VyaparGSTR1'));
+const VyaparGSTR2 = lazy(() => import('./components/reports/vyapar/VyaparGSTR2'));
 
 // Additional Module Components
 const WarrantyList = lazy(() => import('./components/additional/WarrantyList'));
@@ -268,11 +277,17 @@ const AppContent = () => {
 
               {/* Farmer Payments Routes */}
               <Route path="payments">
-                <Route path="milk" element={<MilkPaymentForm />} />
-                <Route path="advance" element={<AdvanceForm />} />
-                <Route path="advances" element={<AdvanceList />} />
-                <Route path="advances/view/:id" element={<AdvanceView />} />
-                <Route path="history" element={<PaymentHistory />} />
+                <Route index element={<Navigate to="/payments/register" replace />} />
+                <Route path="register" element={<MilkPaymentRegister />} />
+                <Route path="individual" element={<IndividualMilkPayment />} />
+                <Route path="loans" element={<ProducerLoanManagement />} />
+                <Route path="loans/:id" element={<ProducerLoanView />} />
+                <Route path="cash-advance" element={<CashAdvanceVoucher />} />
+                <Route path="receipts" element={<ProducerReceiptManagement />} />
+                <Route path="farmer-ledger" element={<FarmerLedgerView />} />
+                <Route path="producer-register" element={<ProducerRegister />} />
+                <Route path="producer-register-summary" element={<ProducerRegisterSummary />} />
+                <Route path="bank-transfer" element={<BankTransferManagement />} />
               </Route>
 
               {/* Reports Routes */}
@@ -296,7 +311,9 @@ const AppContent = () => {
                 <Route path="vyapar/item-by-party" element={<VyaparItemReportByParty />} />
                 <Route path="vyapar/item-profit" element={<VyaparItemWiseProfit />} />
                 <Route path="vyapar/bank-statement" element={<VyaparBankStatement />} />
-
+                <Route path="vyapar/cash-in-hand" element={<VyaparCashInHand />} />
+                <Route path="vyapar/gstr1" element={<VyaparGSTR1 />} />
+                <Route path="vyapar/gstr2" element={<VyaparGSTR2 />} />
 
                 {/* Dairy Society Reports */}
                 <Route path="cash-book" element={<CashBook />} />
@@ -314,6 +331,7 @@ const AppContent = () => {
                 <Route path="subsidy" element={<SubsidyReport />} />
                 <Route path="stock-register" element={<StockRegister />} />
                 <Route path="purchase-register" element={<InventoryPurchaseRegister />} />
+                <Route path="milk-bill-abstract" element={<MilkBillAbstract />} />
               </Route>
 
               {/* Warranty Routes */}
@@ -408,17 +426,16 @@ const AppContent = () => {
 };
 
 // Main App component with providers
+// Note: ThemeProvider is now in main.jsx wrapping MantineProvider
 function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <CompanyProvider>
-          <AppProvider>
-            <AppContent />
-          </AppProvider>
-        </CompanyProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <AuthProvider>
+      <CompanyProvider>
+        <AppProvider>
+          <AppContent />
+        </AppProvider>
+      </CompanyProvider>
+    </AuthProvider>
   );
 }
 

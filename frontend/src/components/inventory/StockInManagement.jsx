@@ -311,6 +311,12 @@ const StockInManagement = () => {
           <Title order={2}>Stock In - Purchase Management</Title>
           <Text size="sm" c="dimmed">Manage inventory purchases and stock additions</Text>
         </div>
+        <Button
+            leftSection={<IconPlus size={16} />}
+            onClick={() => setModalOpen(true)}
+          >
+            Add Purchase
+          </Button>
         <Group>
           <Menu shadow="md" width={200}>
             <Menu.Target>
@@ -323,6 +329,7 @@ const StockInManagement = () => {
                 Export
               </Button>
             </Menu.Target>
+            
             <Menu.Dropdown>
               <Menu.Label>Export Options</Menu.Label>
               <Menu.Item
@@ -346,12 +353,7 @@ const StockInManagement = () => {
           >
             Refresh
           </Button>
-          <Button
-            leftSection={<IconPlus size={16} />}
-            onClick={() => setModalOpen(true)}
-          >
-            Add Stock In
-          </Button>
+          
         </Group>
       </Group>
 

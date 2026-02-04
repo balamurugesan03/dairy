@@ -1,0 +1,1007 @@
+/* =====================================================
+   PRODUCER REGISTER - HAND-WRITTEN LEDGER STYLE
+   Mimics a physical accounting register book
+   ===================================================== */
+
+/* Import handwriting-style font */
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Libre+Baskerville:wght@400;700&display=swap');
+
+/* Base Container */
+.ledger-container {
+  width: 100%;
+  min-height: 100vh;
+  background-color: #f5f5f0;
+  padding: 10px;
+  font-family: 'Courier New', Courier, monospace;
+}
+
+/* =====================================================
+   CONTROL PANEL (Not Printed)
+   ===================================================== */
+.ledger-controls {
+  background-color: #fff;
+  border: 2px solid #1a365d;
+  padding: 15px 20px;
+  margin-bottom: 15px;
+}
+
+.control-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 20px;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.control-group label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1a365d;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ledger-select,
+.ledger-input {
+  padding: 8px 12px;
+  border: 1px solid #1a365d;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 14px;
+  background-color: #fff;
+  min-width: 180px;
+}
+
+.ledger-select:focus,
+.ledger-input:focus {
+  outline: 2px solid #2c5282;
+  outline-offset: 1px;
+}
+
+.control-actions {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.ledger-btn {
+  padding: 8px 20px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  border: 2px solid;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ledger-btn-primary {
+  background-color: #1a365d;
+  border-color: #1a365d;
+  color: #fff;
+}
+
+.ledger-btn-primary:hover:not(:disabled) {
+  background-color: #2c5282;
+}
+
+.ledger-btn-success {
+  background-color: #276749;
+  border-color: #276749;
+  color: #fff;
+}
+
+.ledger-btn-success:hover:not(:disabled) {
+  background-color: #38a169;
+}
+
+.ledger-btn-secondary {
+  background-color: #fff;
+  border-color: #1a365d;
+  color: #1a365d;
+}
+
+.ledger-btn-secondary:hover {
+  background-color: #e2e8f0;
+}
+
+.ledger-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* =====================================================
+   LEDGER PAGE - Main Register Area
+   ===================================================== */
+.ledger-page {
+  background-color: #fffef8;
+  border: 3px solid #1a365d;
+  box-shadow:
+    inset 0 0 0 1px #c4a77d,
+    4px 4px 0 rgba(0, 0, 0, 0.1);
+  position: relative;
+  overflow-x: auto;
+}
+
+/* Ruled paper effect - horizontal lines */
+.ledger-page::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent 27px,
+    #cfd8e3 27px,
+    #cfd8e3 28px
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Left margin red line (like ruled notebooks) */
+.ledger-page::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 250px;
+  width: 2px;
+  height: 100%;
+  background-color: #cc4444;
+  opacity: 0.3;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* =====================================================
+   LEDGER HEADER
+   ===================================================== */
+.ledger-header {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  padding: 15px 20px;
+  border-bottom: 3px double #1a365d;
+  background-color: rgba(255, 254, 248, 0.95);
+}
+
+.ledger-title-block {
+  display: inline-block;
+}
+
+.ledger-main-title {
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 24px;
+  font-weight: bold;
+  color: #1a365d;
+  margin: 0 0 8px 0;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.ledger-period {
+  font-size: 13px;
+  color: #4a5568;
+  font-style: italic;
+}
+
+/* =====================================================
+   LEDGER TABLE
+   ===================================================== */
+.ledger-table-wrapper {
+  position: relative;
+  z-index: 2;
+  overflow-x: auto;
+  padding: 0;
+}
+
+.ledger-table {
+  width: 100%;
+  min-width: 1600px;
+  border-collapse: collapse;
+  font-size: 12px;
+  background-color: transparent;
+}
+
+/* Section Headers Row */
+.section-header-row {
+  background-color: #e8edf3;
+}
+
+.section-header {
+  padding: 8px 5px;
+  font-weight: bold;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 1px;
+  border: 2px solid #1a365d;
+  text-align: center;
+  color: #1a365d;
+}
+
+.section-producer {
+  background-color: #dbeafe;
+}
+
+.section-opening {
+  background-color: #fef3c7;
+}
+
+.section-milk {
+  background-color: #d1fae5;
+}
+
+.section-deduction {
+  background-color: #fce7f3;
+}
+
+.section-receipt {
+  background-color: #e0e7ff;
+}
+
+.section-payment {
+  background-color: #cffafe;
+}
+
+/* Column Headers Row */
+.column-header-row {
+  background-color: #f1f5f9;
+}
+
+.col-header {
+  padding: 10px 5px;
+  font-weight: bold;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: 1px solid #1a365d;
+  border-top: none;
+  text-align: center;
+  color: #1e3a5f;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+/* Column Widths */
+.col-narrow { width: 50px; min-width: 50px; }
+.col-name { width: 120px; min-width: 120px; }
+.col-date { width: 75px; min-width: 75px; }
+.col-qty { width: 65px; min-width: 65px; }
+.col-rate { width: 55px; min-width: 55px; }
+.col-amount { width: 80px; min-width: 80px; }
+.col-deduct { width: 70px; min-width: 70px; }
+.col-mode { width: 65px; min-width: 65px; }
+
+/* =====================================================
+   TABLE CELLS - LEDGER STYLE
+   ===================================================== */
+.ledger-row {
+  height: 28px;
+}
+
+.ledger-row:hover {
+  background-color: rgba(219, 234, 254, 0.3);
+}
+
+.cell {
+  border: 1px solid #94a3b8;
+  padding: 2px 4px;
+  vertical-align: middle;
+  background-color: transparent;
+  position: relative;
+}
+
+/* Static cells (non-editable) */
+.cell-static {
+  background-color: rgba(248, 250, 252, 0.8);
+  font-weight: 500;
+  text-align: center;
+}
+
+/* Producer name vertical display */
+.producer-name-cell {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  padding: 10px 5px;
+  font-weight: bold;
+  font-size: 13px;
+  color: #1a365d;
+  letter-spacing: 1px;
+}
+
+.producer-name-vertical {
+  white-space: nowrap;
+}
+
+/* Calculated cells (auto-computed) */
+.cell-calculated {
+  background-color: rgba(254, 243, 199, 0.4);
+  font-weight: 600;
+  text-align: right;
+  padding-right: 8px;
+  font-family: 'Courier New', Courier, monospace;
+}
+
+/* Deduction total highlight */
+.cell-deduct-total {
+  background-color: rgba(252, 231, 243, 0.5);
+  color: #be185d;
+}
+
+/* Closing balance */
+.cell-closing-balance {
+  background-color: rgba(207, 250, 254, 0.5);
+  font-weight: bold;
+}
+
+/* Balance colors */
+.balance-positive {
+  color: #059669;
+}
+
+.balance-negative {
+  color: #dc2626;
+}
+
+/* =====================================================
+   INPUT FIELDS INSIDE CELLS
+   ===================================================== */
+.cell-input,
+.cell-select {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: transparent;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 12px;
+  padding: 2px 4px;
+  box-sizing: border-box;
+}
+
+.cell-input:focus,
+.cell-select:focus {
+  outline: none;
+  background-color: #fffbeb;
+  box-shadow: inset 0 0 0 2px #2563eb;
+}
+
+.cell-input-right {
+  text-align: right;
+}
+
+/* Number input - remove spinners */
+.cell-input[type="number"]::-webkit-outer-spin-button,
+.cell-input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.cell-input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* Select dropdown */
+.cell-select {
+  font-size: 11px;
+  cursor: pointer;
+}
+
+/* =====================================================
+   TOTAL ROW
+   ===================================================== */
+.ledger-total-row {
+  background-color: #f1f5f9;
+  border-top: 3px double #1a365d;
+}
+
+.ledger-total-row .cell {
+  border: 2px solid #1a365d;
+  padding: 8px 5px;
+  font-weight: bold;
+}
+
+.cell-total-label {
+  text-align: center;
+  font-size: 13px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  color: #1a365d;
+  text-transform: uppercase;
+}
+
+.cell-total-value {
+  text-align: right;
+  padding-right: 10px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+}
+
+.cell-total-highlight {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.cell-net-payable {
+  background-color: #d1fae5;
+  color: #065f46;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+/* =====================================================
+   FOOTER
+   ===================================================== */
+.ledger-footer {
+  position: relative;
+  z-index: 2;
+  padding: 20px;
+  border-top: 3px double #1a365d;
+  background-color: rgba(255, 254, 248, 0.95);
+}
+
+.footer-summary {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  padding: 15px 0;
+  margin-bottom: 30px;
+  border: 2px solid #1a365d;
+  background-color: #f8fafc;
+}
+
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.summary-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #64748b;
+}
+
+.summary-value {
+  font-size: 16px;
+  font-weight: bold;
+  font-family: 'Courier New', Courier, monospace;
+  color: #1e293b;
+}
+
+.summary-item-highlight {
+  padding: 10px 25px;
+  background-color: #dbeafe;
+  border: 2px solid #1a365d;
+  margin: -15px 0;
+}
+
+.summary-item-highlight .summary-value {
+  font-size: 20px;
+  color: #1e40af;
+}
+
+/* Signature Blocks */
+.footer-signatures {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 40px;
+  margin-top: 40px;
+}
+
+.signature-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 180px;
+}
+
+.signature-line {
+  width: 100%;
+  height: 1px;
+  background-color: #1a365d;
+  margin-top: 40px;
+}
+
+.signature-block span {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #64748b;
+}
+
+/* =====================================================
+   PRINT STYLES
+   ===================================================== */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .ledger-container {
+    padding: 0;
+    background-color: #fff;
+  }
+
+  .ledger-page {
+    border: 2px solid #000;
+    box-shadow: none;
+    background-color: #fff;
+  }
+
+  .ledger-page::before {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent,
+      transparent 27px,
+      #ddd 27px,
+      #ddd 28px
+    );
+  }
+
+  .ledger-page::after {
+    background-color: #990000;
+    opacity: 0.2;
+  }
+
+  .ledger-table {
+    font-size: 10px;
+  }
+
+  .section-header,
+  .col-header {
+    border-color: #000 !important;
+    color: #000 !important;
+  }
+
+  .cell {
+    border-color: #666 !important;
+  }
+
+  .ledger-total-row .cell {
+    border-color: #000 !important;
+  }
+
+  .cell-input,
+  .cell-select {
+    border: none !important;
+    padding: 0 !important;
+  }
+
+  .cell-input:focus,
+  .cell-select:focus {
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+
+  /* Ensure colored backgrounds print */
+  .section-producer,
+  .section-opening,
+  .section-milk,
+  .section-deduction,
+  .section-receipt,
+  .section-payment,
+  .cell-calculated,
+  .cell-total-highlight,
+  .cell-net-payable,
+  .summary-item-highlight {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .footer-signatures {
+    padding: 0 20px;
+    page-break-inside: avoid;
+  }
+}
+
+/* =====================================================
+   RESPONSIVE ADJUSTMENTS
+   ===================================================== */
+@media screen and (max-width: 1200px) {
+  .ledger-table {
+    font-size: 11px;
+  }
+
+  .col-header {
+    font-size: 9px;
+    padding: 6px 3px;
+  }
+
+  .ledger-row {
+    height: 26px;
+  }
+}
+
+/* =====================================================
+   LOADING STATE
+   ===================================================== */
+.ledger-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a365d;
+}
+
+/* =====================================================
+   ZEBRA STRIPING - SUBTLE
+   ===================================================== */
+.ledger-row:nth-child(even) {
+  background-color: rgba(241, 245, 249, 0.3);
+}
+
+.ledger-row:nth-child(even):hover {
+  background-color: rgba(219, 234, 254, 0.4);
+}
+
+/* =====================================================
+   EMPTY STATE
+   ===================================================== */
+.ledger-empty-row .cell {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* =====================================================
+   SUMMARY PAGE SPECIFIC STYLES
+   ===================================================== */
+.summary-page .ledger-table {
+  min-width: 1000px;
+}
+
+.summary-table .ledger-row {
+  height: 32px;
+}
+
+.summary-table .cell {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.summary-table .cell-calculated {
+  padding-right: 12px;
+}
+
+/* =====================================================
+   PAGE NUMBER FOR PRINT
+   ===================================================== */
+@media print {
+  .ledger-page {
+    counter-increment: page;
+  }
+
+  .ledger-footer::after {
+    content: "Page " counter(page);
+    position: absolute;
+    bottom: 10px;
+    right: 20px;
+    font-size: 10px;
+    color: #666;
+  }
+}
+
+/* =====================================================
+   LEDGER BOOK BINDING EFFECT
+   ===================================================== */
+.ledger-page {
+  position: relative;
+}
+
+.ledger-page::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image:
+    repeating-linear-gradient(
+      to bottom,
+      transparent,
+      transparent 27px,
+      #cfd8e3 27px,
+      #cfd8e3 28px
+    ),
+    linear-gradient(
+      to right,
+      rgba(0,0,0,0.03) 0%,
+      transparent 3%,
+      transparent 97%,
+      rgba(0,0,0,0.03) 100%
+    );
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* =====================================================
+   ENHANCED COLUMN STYLING
+   ===================================================== */
+.col-header {
+  background-color: #f8fafc;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+/* Alternate column backgrounds for readability */
+.ledger-row td:nth-child(4n+1) {
+  background-color: rgba(248, 250, 252, 0.5);
+}
+
+/* =====================================================
+   COMPACT MODE (for smaller screens)
+   ===================================================== */
+@media screen and (max-width: 1400px) {
+  .ledger-table {
+    font-size: 10px;
+  }
+
+  .col-header {
+    font-size: 8px;
+    padding: 4px 2px;
+  }
+
+  .cell {
+    padding: 2px 3px;
+  }
+
+  .cell-input,
+  .cell-select {
+    font-size: 10px;
+    padding: 1px 2px;
+  }
+
+  .ledger-row {
+    height: 24px;
+  }
+}
+
+/* =====================================================
+   HOVER EFFECTS FOR DATA ENTRY
+   ===================================================== */
+.ledger-row:hover .cell-input,
+.ledger-row:hover .cell-select {
+  background-color: rgba(255, 251, 235, 0.5);
+}
+
+.cell-input:hover,
+.cell-select:hover {
+  background-color: #fffbeb;
+}
+
+/* =====================================================
+   REGISTER PAGE NUMBERS
+   ===================================================== */
+.ledger-page-number {
+  position: absolute;
+  top: 10px;
+  right: 20px;
+  font-size: 11px;
+  font-weight: bold;
+  color: #1a365d;
+  padding: 4px 12px;
+  border: 1px solid #1a365d;
+  background-color: #f8fafc;
+}
+
+/* =====================================================
+   RULED MARGIN LINE
+   ===================================================== */
+.ledger-margin-line {
+  position: absolute;
+  left: 40px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: #cc4444;
+  opacity: 0.4;
+}
+
+/* =====================================================
+   HANDWRITING EFFECT FOR VALUES
+   ===================================================== */
+.cell-handwritten {
+  font-family: 'Caveat', cursive;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+/* =====================================================
+   STATUS INDICATORS
+   ===================================================== */
+.status-paid {
+  color: #059669;
+  font-weight: bold;
+}
+
+.status-pending {
+  color: #d97706;
+  font-weight: bold;
+}
+
+.status-overdue {
+  color: #dc2626;
+  font-weight: bold;
+}
+
+/* =====================================================
+   SCROLLBAR STYLING
+   ===================================================== */
+.ledger-table-wrapper::-webkit-scrollbar {
+  height: 8px;
+}
+
+.ledger-table-wrapper::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.ledger-table-wrapper::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 4px;
+}
+
+.ledger-table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* =====================================================
+   ANIMATION FOR NEW ROWS
+   ===================================================== */
+@keyframes newRowHighlight {
+  0% {
+    background-color: #dbeafe;
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.ledger-row-new {
+  animation: newRowHighlight 1s ease-out;
+}
+
+/* =====================================================
+   TOOLTIP STYLES
+   ===================================================== */
+.cell[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  background-color: #1e293b;
+  color: #fff;
+  font-size: 11px;
+  border-radius: 4px;
+  white-space: nowrap;
+  z-index: 100;
+}
+
+/* =====================================================
+   KEYBOARD FOCUS INDICATORS
+   ===================================================== */
+.cell-input:focus,
+.cell-select:focus {
+  outline: none;
+  background-color: #fffbeb;
+  box-shadow: inset 0 0 0 2px #2563eb;
+}
+
+/* Tab navigation indicator */
+.cell:focus-within {
+  outline: 2px solid #3b82f6;
+  outline-offset: -2px;
+}
+
+/* =====================================================
+   DARK MODE SUPPORT
+   ===================================================== */
+@media (prefers-color-scheme: dark) {
+  .ledger-container {
+    background-color: #1a1a2e;
+  }
+
+  .ledger-page {
+    background-color: #16213e;
+    border-color: #4a5568;
+  }
+
+  .ledger-header {
+    background-color: rgba(22, 33, 62, 0.95);
+  }
+
+  .ledger-main-title {
+    color: #e2e8f0;
+  }
+
+  .col-header {
+    background-color: #1e293b;
+    color: #e2e8f0;
+    border-color: #4a5568;
+  }
+
+  .cell {
+    border-color: #4a5568;
+    color: #e2e8f0;
+  }
+
+  .cell-input,
+  .cell-select {
+    color: #e2e8f0;
+  }
+
+  .cell-calculated {
+    background-color: rgba(254, 243, 199, 0.1);
+  }
+
+  .ledger-footer {
+    background-color: rgba(22, 33, 62, 0.95);
+  }
+}
+
+/* =====================================================
+   PRINT ENHANCEMENTS
+   ===================================================== */
+@media print {
+  .ledger-page {
+    page-break-after: always;
+  }
+
+  .ledger-page:last-child {
+    page-break-after: auto;
+  }
+
+  /* Ensure borders print correctly */
+  .ledger-table,
+  .ledger-table th,
+  .ledger-table td {
+    border: 1px solid #333 !important;
+  }
+
+  .ledger-total-row td {
+    border-width: 2px !important;
+  }
+
+  /* Remove input borders for cleaner print */
+  .cell-input,
+  .cell-select {
+    border: none !important;
+    background: transparent !important;
+    font-family: 'Courier New', Courier, monospace !important;
+  }
+
+  /* Ensure text is readable */
+  .cell,
+  .col-header {
+    font-size: 9pt !important;
+  }
+
+  /* Page margins */
+  @page {
+    margin: 0.5in;
+  }
+}

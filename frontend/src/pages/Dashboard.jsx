@@ -395,64 +395,148 @@ const Dashboard = () => {
           />
         </SimpleGrid>
 
-        {/* Secondary Metrics */}
+        {/* Secondary Metrics - Colorful Cards */}
         <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} spacing="md">
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
+          <Card
+            shadow="lg"
+            padding="lg"
+            radius="lg"
+            style={{
+              background: 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)',
+              border: 'none',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <Box
+              style={{
+                position: 'absolute',
+                top: '-15px',
+                right: '-15px',
+                width: '80px',
+                height: '80px',
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.15)',
+              }}
+            />
             <Group justify="space-between" mb="xs">
-              <Text size="sm" fw={500} c="dimmed">Inventory Status</Text>
-              <ThemeIcon size="md" variant="light" color="orange">
-                <IconBuildingWarehouse size={16} />
+              <Text size="sm" fw={600} c="white">Inventory Status</Text>
+              <ThemeIcon size="lg" radius="md" style={{ background: 'rgba(255,255,255,0.2)' }}>
+                <IconBuildingWarehouse size={18} color="white" />
               </ThemeIcon>
             </Group>
-            <Group gap="lg">
+            <Group gap="xl">
               <div>
-                <Text size="xl" fw={700} c="yellow">{metrics.inventory.lowStock}</Text>
-                <Text size="xs" c="dimmed">Low Stock</Text>
+                <Text size="xl" fw={700} c="white">{metrics.inventory.lowStock}</Text>
+                <Text size="xs" c="rgba(255,255,255,0.8)">Low Stock</Text>
               </div>
               <div>
-                <Text size="xl" fw={700} c="red">{metrics.inventory.outOfStock}</Text>
-                <Text size="xs" c="dimmed">Out of Stock</Text>
+                <Text size="xl" fw={700} c="white">{metrics.inventory.outOfStock}</Text>
+                <Text size="xs" c="rgba(255,255,255,0.8)">Out of Stock</Text>
               </div>
             </Group>
           </Card>
 
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
+          <Card
+            shadow="lg"
+            padding="lg"
+            radius="lg"
+            style={{
+              background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)',
+              border: 'none',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <Box
+              style={{
+                position: 'absolute',
+                top: '-15px',
+                right: '-15px',
+                width: '80px',
+                height: '80px',
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.15)',
+              }}
+            />
             <Group justify="space-between" mb="xs">
-              <Text size="sm" fw={500} c="dimmed">Active Advances</Text>
-              <ThemeIcon size="md" variant="light" color="violet">
-                <IconCash size={16} />
+              <Text size="sm" fw={600} c="white">Active Advances</Text>
+              <ThemeIcon size="lg" radius="md" style={{ background: 'rgba(255,255,255,0.2)' }}>
+                <IconCash size={18} color="white" />
               </ThemeIcon>
             </Group>
-            <Text size="xl" fw={700}>{metrics.advances.total}</Text>
-            <Text size="xs" c="dimmed">
+            <Text size="xl" fw={700} c="white">{metrics.advances.total}</Text>
+            <Text size="xs" c="rgba(255,255,255,0.8)">
               Pending: {formatCurrency(metrics.advances.pendingAmount)}
             </Text>
           </Card>
 
           {isDairyCooperative && (
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card
+              shadow="lg"
+              padding="lg"
+              radius="lg"
+              style={{
+                background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)',
+                border: 'none',
+                position: 'relative',
+                overflow: 'hidden',
+              }}
+            >
+              <Box
+                style={{
+                  position: 'absolute',
+                  top: '-15px',
+                  right: '-15px',
+                  width: '80px',
+                  height: '80px',
+                  borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.15)',
+                }}
+              />
               <Group justify="space-between" mb="xs">
-                <Text size="sm" fw={500} c="dimmed">Collection Centers</Text>
-                <ThemeIcon size="md" variant="light" color="cyan">
-                  <IconMilk size={16} />
+                <Text size="sm" fw={600} c="white">Collection Centers</Text>
+                <ThemeIcon size="lg" radius="md" style={{ background: 'rgba(255,255,255,0.2)' }}>
+                  <IconMilk size={18} color="white" />
                 </ThemeIcon>
               </Group>
-              <Text size="xl" fw={700}>{metrics.collectionCenters.total}</Text>
-              <Text size="xs" c="dimmed">
+              <Text size="xl" fw={700} c="white">{metrics.collectionCenters.total}</Text>
+              <Text size="xs" c="rgba(255,255,255,0.8)">
                 {metrics.collectionCenters.active} Active
               </Text>
             </Card>
           )}
 
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
+          <Card
+            shadow="lg"
+            padding="lg"
+            radius="lg"
+            style={{
+              background: 'linear-gradient(135deg, #f472b6 0%, #ec4899 100%)',
+              border: 'none',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <Box
+              style={{
+                position: 'absolute',
+                top: '-15px',
+                right: '-15px',
+                width: '80px',
+                height: '80px',
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.15)',
+              }}
+            />
             <Group justify="space-between" mb="xs">
-              <Text size="sm" fw={500} c="dimmed">Employees</Text>
-              <ThemeIcon size="md" variant="light" color="pink">
-                <IconUserCheck size={16} />
+              <Text size="sm" fw={600} c="white">Employees</Text>
+              <ThemeIcon size="lg" radius="md" style={{ background: 'rgba(255,255,255,0.2)' }}>
+                <IconUserCheck size={18} color="white" />
               </ThemeIcon>
             </Group>
-            <Text size="xl" fw={700}>{metrics.employees.total}</Text>
-            <Text size="xs" c="dimmed">
+            <Text size="xl" fw={700} c="white">{metrics.employees.total}</Text>
+            <Text size="xs" c="rgba(255,255,255,0.8)">
               {metrics.employees.active} Active
             </Text>
           </Card>
@@ -707,84 +791,169 @@ const Dashboard = () => {
           </Grid.Col>
         </Grid>
 
-        {/* Quick Actions */}
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Text fw={600} mb="md">Quick Actions</Text>
+        {/* Quick Actions - Colorful Buttons */}
+        <Card shadow="sm" padding="lg" radius="lg" withBorder>
+          <Text fw={600} mb="md" size="lg">Quick Actions</Text>
           <SimpleGrid cols={{ base: 2, xs: 3, md: 6 }} spacing="md">
             {isDairyCooperative && (
               <Paper
                 p="md"
-                withBorder
-                style={{ cursor: 'pointer', textAlign: 'center' }}
+                radius="lg"
+                style={{
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  background: 'linear-gradient(135deg, rgba(17, 153, 142, 0.1) 0%, rgba(56, 239, 125, 0.1) 100%)',
+                  border: '1px solid rgba(17, 153, 142, 0.2)',
+                  transition: 'all 0.3s ease',
+                }}
                 onClick={() => navigate('/farmers')}
+                className="quick-action-card"
               >
-                <ThemeIcon size="xl" variant="light" color="green" mx="auto" mb="sm">
-                  <IconUserPlus size={24} />
+                <ThemeIcon
+                  size={48}
+                  radius="xl"
+                  style={{ background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)' }}
+                  mx="auto"
+                  mb="sm"
+                >
+                  <IconUserPlus size={24} color="white" />
                 </ThemeIcon>
-                <Text size="sm" fw={500}>Add Farmer</Text>
+                <Text size="sm" fw={600}>Add Farmer</Text>
               </Paper>
             )}
 
             <Paper
               p="md"
-              withBorder
-              style={{ cursor: 'pointer', textAlign: 'center' }}
-              onClick={() => navigate('/sales/billing')}
+              radius="lg"
+              style={{
+                cursor: 'pointer',
+                textAlign: 'center',
+                background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
+                border: '1px solid rgba(102, 126, 234, 0.2)',
+                transition: 'all 0.3s ease',
+              }}
+              onClick={() => navigate('/sales/new')}
+              className="quick-action-card"
             >
-              <ThemeIcon size="xl" variant="light" color="blue" mx="auto" mb="sm">
-                <IconReceipt size={24} />
+              <ThemeIcon
+                size={48}
+                radius="xl"
+                style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
+                mx="auto"
+                mb="sm"
+              >
+                <IconReceipt size={24} color="white" />
               </ThemeIcon>
-              <Text size="sm" fw={500}>New Sale</Text>
+              <Text size="sm" fw={600}>New Sale</Text>
             </Paper>
 
             <Paper
               p="md"
-              withBorder
-              style={{ cursor: 'pointer', textAlign: 'center' }}
+              radius="lg"
+              style={{
+                cursor: 'pointer',
+                textAlign: 'center',
+                background: 'linear-gradient(135deg, rgba(0, 180, 219, 0.1) 0%, rgba(0, 131, 176, 0.1) 100%)',
+                border: '1px solid rgba(0, 180, 219, 0.2)',
+                transition: 'all 0.3s ease',
+              }}
               onClick={() => navigate('/inventory/stock-in')}
+              className="quick-action-card"
             >
-              <ThemeIcon size="xl" variant="light" color="teal" mx="auto" mb="sm">
-                <IconPackage size={24} />
+              <ThemeIcon
+                size={48}
+                radius="xl"
+                style={{ background: 'linear-gradient(135deg, #00b4db 0%, #0083b0 100%)' }}
+                mx="auto"
+                mb="sm"
+              >
+                <IconPackage size={24} color="white" />
               </ThemeIcon>
-              <Text size="sm" fw={500}>Stock In</Text>
+              <Text size="sm" fw={600}>Stock In</Text>
             </Paper>
 
             <Paper
               p="md"
-              withBorder
-              style={{ cursor: 'pointer', textAlign: 'center' }}
+              radius="lg"
+              style={{
+                cursor: 'pointer',
+                textAlign: 'center',
+                background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%)',
+                border: '1px solid rgba(168, 85, 247, 0.2)',
+                transition: 'all 0.3s ease',
+              }}
               onClick={() => navigate('/payments/advance')}
+              className="quick-action-card"
             >
-              <ThemeIcon size="xl" variant="light" color="violet" mx="auto" mb="sm">
-                <IconCash size={24} />
+              <ThemeIcon
+                size={48}
+                radius="xl"
+                style={{ background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)' }}
+                mx="auto"
+                mb="sm"
+              >
+                <IconCash size={24} color="white" />
               </ThemeIcon>
-              <Text size="sm" fw={500}>Give Advance</Text>
+              <Text size="sm" fw={600}>Give Advance</Text>
             </Paper>
 
             <Paper
               p="md"
-              withBorder
-              style={{ cursor: 'pointer', textAlign: 'center' }}
+              radius="lg"
+              style={{
+                cursor: 'pointer',
+                textAlign: 'center',
+                background: 'linear-gradient(135deg, rgba(247, 151, 30, 0.1) 0%, rgba(255, 210, 0, 0.1) 100%)',
+                border: '1px solid rgba(247, 151, 30, 0.2)',
+                transition: 'all 0.3s ease',
+              }}
               onClick={() => navigate('/reports')}
+              className="quick-action-card"
             >
-              <ThemeIcon size="xl" variant="light" color="orange" mx="auto" mb="sm">
-                <IconChartBar size={24} />
+              <ThemeIcon
+                size={48}
+                radius="xl"
+                style={{ background: 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)' }}
+                mx="auto"
+                mb="sm"
+              >
+                <IconChartBar size={24} color="white" />
               </ThemeIcon>
-              <Text size="sm" fw={500}>Reports</Text>
+              <Text size="sm" fw={600}>Reports</Text>
             </Paper>
 
             <Paper
               p="md"
-              withBorder
-              style={{ cursor: 'pointer', textAlign: 'center' }}
+              radius="lg"
+              style={{
+                cursor: 'pointer',
+                textAlign: 'center',
+                background: 'linear-gradient(135deg, rgba(244, 114, 182, 0.1) 0%, rgba(236, 72, 153, 0.1) 100%)',
+                border: '1px solid rgba(244, 114, 182, 0.2)',
+                transition: 'all 0.3s ease',
+              }}
               onClick={() => navigate('/accounting/vouchers')}
+              className="quick-action-card"
             >
-              <ThemeIcon size="xl" variant="light" color="pink" mx="auto" mb="sm">
-                <IconCalendarStats size={24} />
+              <ThemeIcon
+                size={48}
+                radius="xl"
+                style={{ background: 'linear-gradient(135deg, #f472b6 0%, #ec4899 100%)' }}
+                mx="auto"
+                mb="sm"
+              >
+                <IconCalendarStats size={24} color="white" />
               </ThemeIcon>
-              <Text size="sm" fw={500}>Vouchers</Text>
+              <Text size="sm" fw={600}>Vouchers</Text>
             </Paper>
           </SimpleGrid>
+
+          <style>{`
+            .quick-action-card:hover {
+              transform: translateY(-4px);
+              box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+            }
+          `}</style>
         </Card>
       </Stack>
     </Container>

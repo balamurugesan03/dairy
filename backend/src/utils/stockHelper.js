@@ -16,7 +16,17 @@ export const createStockTransaction = async (transactionData, session = null) =>
     invoiceNumber,
     issueCentre,
     subsidyId,
+    // Supplier and payment fields
+    supplierId,
+    supplierName,
+    paymentMode,
+    paidAmount,
+    totalAmount,
+    // Bill summary fields
+    grossTotal,
     subsidyAmount,
+    ledgerDeduction,
+    netTotal,
     notes
   } = transactionData;
 
@@ -56,7 +66,17 @@ export const createStockTransaction = async (transactionData, session = null) =>
     invoiceNumber: invoiceNumber || null,
     issueCentre: issueCentre || null,
     subsidyId: subsidyId || null,
+    // Supplier and payment fields
+    supplierId: supplierId || null,
+    supplierName: supplierName || '',
+    paymentMode: paymentMode || 'Credit',
+    paidAmount: paidAmount || 0,
+    totalAmount: totalAmount || 0,
+    // Bill summary fields
+    grossTotal: grossTotal || 0,
     subsidyAmount: subsidyAmount || 0,
+    ledgerDeduction: ledgerDeduction || 0,
+    netTotal: netTotal || 0,
     notes
   });
 

@@ -63,6 +63,16 @@ import companyRoutes from './routes/companyRoutes.js';
 // User Management routes
 import userManagementRoutes from './routes/userManagementRoutes.js';
 
+// Producer Loan and Receipt routes
+import producerLoanRoutes from './routes/producerLoanRoutes.js';
+import producerReceiptRoutes from './routes/producerReceiptRoutes.js';
+
+// Producer Register routes
+import producerRegisterRoutes from './routes/producerRegisterRoutes.js';
+
+// Bank Transfer routes
+import bankTransferRoutes from './routes/bankTransferRoutes.js';
+
 // Auth routes (public login, protected user management)
 app.use('/api/auth', authRoutes);
 
@@ -91,6 +101,16 @@ app.use('/api/designations', protect, addCompanyFilter, designationRoutes);
 
 // User Management routes (company admins can manage their users)
 app.use('/api/user-management', userManagementRoutes);
+
+// Producer Loan and Receipt routes
+app.use('/api', protect, addCompanyFilter, producerLoanRoutes);
+app.use('/api', protect, addCompanyFilter, producerReceiptRoutes);
+
+// Producer Register routes
+app.use('/api/producer-register', protect, addCompanyFilter, producerRegisterRoutes);
+
+// Bank Transfer routes
+app.use('/api', protect, addCompanyFilter, bankTransferRoutes);
 
 // Company routes - public endpoint for active companies list, protected for other operations
 import { getAllCompanies } from './controllers/companyController.js';

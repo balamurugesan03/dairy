@@ -12,10 +12,10 @@ export const createFarmerPayment = async (req, res) => {
 
   try {
     const paymentData = req.body;
-    paymentData.companyId = req.companyId;
+    paymentData.companyId = req.userCompany;
     paymentData.createdBy = req.user?._id;
 
-    // Calculate total deduction from deductions array
+    // Calculate total deduction from deductions array (includes advance deductions as separate items)
     const deductionTotal = paymentData.deductions?.reduce((sum, d) => sum + (d.amount || 0), 0) || 0;
 
     // Calculate total bonus
@@ -25,11 +25,11 @@ export const createFarmerPayment = async (req, res) => {
     // Calculate gross amount
     paymentData.grossAmount = (paymentData.milkAmount || 0) + bonusTotal;
 
-    // Calculate total deduction including advance
-    paymentData.totalDeduction = (paymentData.advanceAmount || 0) + deductionTotal + (paymentData.tdsAmount || 0);
+    // Calculate total deduction (deductions array already contains advance items, no need to add advanceAmount separately)
+    paymentData.totalDeduction = deductionTotal + (paymentData.tdsAmount || 0);
 
-    // Calculate net payable
-    paymentData.netPayable = paymentData.grossAmount - paymentData.totalDeduction + (paymentData.previousBalance || 0);
+    // Calculate net payable = gross amount - total deductions - previous balance
+    paymentData.netPayable = paymentData.grossAmount - paymentData.totalDeduction - (paymentData.previousBalance || 0);
     paymentData.balanceAmount = paymentData.netPayable - (paymentData.paidAmount || 0);
 
     // Determine status
@@ -132,7 +132,7 @@ export const getAllPayments = async (req, res) => {
     } = req.query;
 
     const query = {};
-    if (req.companyId) query.companyId = req.companyId;
+    if (req.userCompany) query.companyId = req.userCompany;
     if (farmerId) query.farmerId = farmerId;
     if (status) query.status = status;
     if (paymentMode) query.paymentMode = paymentMode;
@@ -381,7 +381,7 @@ export const getPaymentStats = async (req, res) => {
   try {
     const { fromDate, toDate } = req.query;
     const query = {};
-    if (req.companyId) query.companyId = req.companyId;
+    if (req.userCompany) query.companyId = req.userCompany;
 
     if (fromDate || toDate) {
       query.paymentDate = {};
@@ -435,7 +435,7 @@ export const getPaymentStats = async (req, res) => {
 export const createAdvance = async (req, res) => {
   try {
     const advanceData = req.body;
-    advanceData.companyId = req.companyId;
+    advanceData.companyId = req.userCompany;
     advanceData.createdBy = req.user?._id;
     advanceData.balanceAmount = advanceData.advanceAmount;
 
@@ -486,7 +486,7 @@ export const getAllAdvances = async (req, res) => {
     } = req.query;
 
     const query = {};
-    if (req.companyId) query.companyId = req.companyId;
+    if (req.userCompany) query.companyId = req.userCompany;
     if (farmerId) query.farmerId = farmerId;
     if (status) query.status = status;
     if (advanceType) query.advanceType = advanceType;
@@ -773,7 +773,7 @@ export const getAdvanceStats = async (req, res) => {
   try {
     const { fromDate, toDate } = req.query;
     const query = {};
-    if (req.companyId) query.companyId = req.companyId;
+    if (req.userCompany) query.companyId = req.userCompany;
 
     if (fromDate || toDate) {
       query.advanceDate = {};
@@ -834,7 +834,7 @@ export const bulkCreatePayments = async (req, res) => {
 
     for (const paymentData of payments) {
       try {
-        paymentData.companyId = req.companyId;
+        paymentData.companyId = req.userCompany;
         paymentData.createdBy = req.user?._id;
 
         const payment = new FarmerPayment(paymentData);

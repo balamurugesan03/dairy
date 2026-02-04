@@ -1,24 +1,38 @@
-import React from 'react';
-import { ActionIcon, useMantineColorScheme } from '@mantine/core';
-import { IconSun, IconMoon } from '@tabler/icons-react';
+/**
+ * ThemeToggle Component
+ * =====================
+ *
+ * Simple dark/light mode toggle button.
+ * Uses our custom ThemeContext for state management.
+ */
 
-const ThemeToggle = () => {
-  const { colorScheme, toggleColorScheme } = useMantineColorScheme();
+import React from 'react';
+import { ActionIcon, Tooltip } from '@mantine/core';
+import { IconSun, IconMoon } from '@tabler/icons-react';
+import { useTheme } from '../../contexts/ThemeContext';
+
+const ThemeToggle = ({ size = 'lg' }) => {
+  const { colorScheme, toggleColorScheme } = useTheme();
 
   return (
-    <ActionIcon
-      onClick={() => toggleColorScheme()}
-      size="lg"
-      variant="default"
-      aria-label={`Switch to ${colorScheme === 'light' ? 'dark' : 'light'} mode`}
-      title={`Switch to ${colorScheme === 'light' ? 'dark' : 'light'} mode`}
+    <Tooltip
+      label={`Switch to ${colorScheme === 'light' ? 'dark' : 'light'} mode`}
+      position="bottom"
+      withArrow
     >
-      {colorScheme === 'light' ? (
-        <IconSun size={20} stroke={1.5} />
-      ) : (
-        <IconMoon size={20} stroke={1.5} />
-      )}
-    </ActionIcon>
+      <ActionIcon
+        onClick={toggleColorScheme}
+        size={size}
+        variant="default"
+        aria-label={`Switch to ${colorScheme === 'light' ? 'dark' : 'light'} mode`}
+      >
+        {colorScheme === 'light' ? (
+          <IconMoon size={20} stroke={1.5} />
+        ) : (
+          <IconSun size={20} stroke={1.5} />
+        )}
+      </ActionIcon>
+    </Tooltip>
   );
 };
 

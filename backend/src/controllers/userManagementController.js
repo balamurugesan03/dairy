@@ -94,10 +94,13 @@ export const createCompanyUser = async (req, res) => {
       username,
       password,
       displayName,
+      userType,
       designation,
       phone,
       email,
-      permissions
+      permissions,
+      joiningDate,
+      expireDate
     } = req.body;
 
     // Validate required fields
@@ -133,12 +136,15 @@ export const createCompanyUser = async (req, res) => {
       username,
       password,
       displayName,
+      userType: userType || 'ordinary',
       designation: designation || 'Other',
       role: 'user',
       company: companyId,
       phone,
       email,
       permissions: userPermissions,
+      joiningDate: joiningDate || null,
+      expireDate: expireDate || null,
       status: 'active'
     });
 
@@ -181,11 +187,14 @@ export const updateCompanyUser = async (req, res) => {
     const {
       username,
       displayName,
+      userType,
       designation,
       phone,
       email,
       permissions,
-      status
+      status,
+      joiningDate,
+      expireDate
     } = req.body;
 
     // Check if new username already exists
@@ -214,11 +223,14 @@ export const updateCompanyUser = async (req, res) => {
     // Update fields
     if (username) user.username = username;
     if (displayName) user.displayName = displayName;
+    if (userType) user.userType = userType;
     if (designation) user.designation = designation;
     if (phone !== undefined) user.phone = phone;
     if (email !== undefined) user.email = email;
     if (permissions) user.permissions = permissions;
     if (status) user.status = status;
+    if (joiningDate !== undefined) user.joiningDate = joiningDate || null;
+    if (expireDate !== undefined) user.expireDate = expireDate || null;
 
     await user.save({ validateBeforeSave: false });
 
@@ -346,14 +358,27 @@ export const getModulesList = async (req, res) => {
 export const getDesignationsList = async (req, res) => {
   try {
     const designations = [
-      { value: 'President', label: 'President' },
       { value: 'Secretary', label: 'Secretary' },
-      { value: 'Dairy Officer', label: 'Dairy Officer' },
-      { value: 'Clerk', label: 'Clerk' },
-      { value: 'Salesman', label: 'Salesman' },
+      { value: 'Assistant Secretary', label: 'Assistant Secretary' },
+      { value: 'Attender', label: 'Attender' },
       { value: 'Auditor', label: 'Auditor' },
-      { value: 'Accountant', label: 'Accountant' },
-      { value: 'Manager', label: 'Manager' },
+      { value: 'Branch Supervisor', label: 'Branch Supervisor' },
+      { value: 'Cleaner', label: 'Cleaner' },
+      { value: 'Dairy Department', label: 'Dairy Department' },
+      { value: 'Data Entry Operator', label: 'Data Entry Operator' },
+      { value: 'Junior Clerk', label: 'Junior Clerk' },
+      { value: 'Officer', label: 'Officer' },
+      { value: 'Lab Assistant', label: 'Lab Assistant' },
+      { value: 'Lab Technician', label: 'Lab Technician' },
+      { value: 'Milma', label: 'Milma' },
+      { value: 'Peon', label: 'Peon' },
+      { value: 'Plant Operator', label: 'Plant Operator' },
+      { value: 'President', label: 'President' },
+      { value: 'Procurement Assistant', label: 'Procurement Assistant' },
+      { value: 'Sales Man', label: 'Sales Man' },
+      { value: 'Senior Clerk', label: 'Senior Clerk' },
+      { value: 'System Administrator', label: 'System Administrator' },
+      { value: 'Technical Supervisor', label: 'Technical Supervisor' },
       { value: 'Other', label: 'Other' }
     ];
 
@@ -371,6 +396,34 @@ export const getDesignationsList = async (req, res) => {
   }
 };
 
+// Get user types list
+export const getUserTypesList = async (req, res) => {
+  try {
+    const userTypes = [
+      { value: 'auditor', label: 'Auditor' },
+      { value: 'dairy_department', label: 'Dairy Department' },
+      { value: 'society', label: 'Society' },
+      { value: 'milma', label: 'Milma' },
+      { value: 'president', label: 'President' },
+      { value: 'superuser', label: 'Superuser' },
+      { value: 'admin', label: 'Admin' },
+      { value: 'ordinary', label: 'Ordinary' }
+    ];
+
+    res.status(200).json({
+      success: true,
+      data: userTypes
+    });
+  } catch (error) {
+    console.error('Get user types error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching user types',
+      error: error.message
+    });
+  }
+};
+
 export default {
   getCompanyUsers,
   getCompanyUser,
@@ -379,5 +432,6 @@ export default {
   resetCompanyUserPassword,
   deleteCompanyUser,
   getModulesList,
-  getDesignationsList
+  getDesignationsList,
+  getUserTypesList
 };

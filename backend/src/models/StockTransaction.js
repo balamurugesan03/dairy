@@ -77,8 +77,8 @@ const stockTransactionSchema = new mongoose.Schema({
   },
   paymentMode: {
     type: String,
-    enum: ['Cash', 'Adjustment', 'N/A'],
-    default: 'N/A'
+    enum: ['Credit', 'Cash', 'Adjustment', 'N/A'],
+    default: 'Credit'
   },
   paidAmount: {
     type: Number,
@@ -90,11 +90,65 @@ const stockTransactionSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
+  // Bill Summary fields
+  grossTotal: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  subsidyAmount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  ledgerDeduction: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  netTotal: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   // Accounting Integration
   voucherId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Voucher'
   },
+  // Multiple Ledger Entries for payment allocation
+  ledgerEntries: [{
+    ledgerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Ledger',
+      required: true
+    },
+    amount: {
+      type: Number,
+      required: true,
+      min: 0
+    },
+    narration: {
+      type: String,
+      trim: true
+    }
+  }],
+  // Multiple Subsidies support
+  subsidies: [{
+    subsidyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Subsidy'
+    },
+    productId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Item'
+    },
+    amount: {
+      type: Number,
+      default: 0,
+      min: 0
+    }
+  }],
   notes: {
     type: String,
     trim: true

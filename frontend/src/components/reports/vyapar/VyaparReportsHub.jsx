@@ -36,8 +36,15 @@ const VyaparReportsHub = () => {
       category: 'Financial'
     },
     {
-      title: 'Bill Wise Profit',
-      description: 'Profitability analysis for each invoice/bill',
+      title: 'Cash-in-Hand',
+      description: 'Detailed cash book with opening/closing balance like Tally',
+      path: '/reports/vyapar/cash-in-hand',
+      color: '#f6ffed',
+      category: 'Financial'
+    },
+    {
+      title: 'Bill Wise Party Report',
+      description: 'All bills grouped by party with payments, GST, and outstanding balances',
       path: '/reports/vyapar/bill-profit',
       color: '#fffbe6',
       category: 'Profitability'
@@ -118,10 +125,24 @@ const VyaparReportsHub = () => {
       path: '/reports/vyapar/all-transactions',
       color: '#fffbe6',
       category: 'Audit'
+    },
+    {
+      title: 'GSTR-1',
+      description: 'GST Return 1 report for outward supplies filing',
+      path: '/reports/vyapar/gstr1',
+      color: '#fff2e8',
+      category: 'GST'
+    },
+    {
+      title: 'GSTR-2',
+      description: 'GST Return 2 report for inward supplies and ITC',
+      path: '/reports/vyapar/gstr2',
+      color: '#e6fffb',
+      category: 'GST'
     }
   ];
 
-  const categories = ['All', 'Sales', 'Purchase', 'Financial', 'Profitability', 'Accounting', 'Inventory', 'Analysis', 'Banking', 'Ledger', 'Audit'];
+  const categories = ['All', 'Sales', 'Purchase', 'Financial', 'Profitability', 'Accounting', 'Inventory', 'Analysis', 'Banking', 'Ledger', 'Audit', 'GST'];
   const [selectedCategory, setSelectedCategory] = React.useState('All');
 
   const filteredReports = selectedCategory === 'All'

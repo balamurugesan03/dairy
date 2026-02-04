@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { message } from '../../utils/toast';
 import dayjs from 'dayjs';
 import { ledgerAPI, voucherAPI } from '../../services/api';
@@ -15,7 +15,6 @@ import {
   LoadingOverlay,
   Group,
   Stack,
-  Alert,
   Container,
   Title,
   Divider,
@@ -27,13 +26,12 @@ import {
   Card,
   Tooltip,
   ScrollArea,
-  SegmentedControl
+  SegmentedControl,
+  Alert
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import {
   IconCalendar,
-  IconCash,
-  IconUser,
   IconCurrencyRupee,
   IconNotes,
   IconCheck,
@@ -41,7 +39,8 @@ import {
   IconPlus,
   IconEye,
   IconTrash,
-  IconReceipt
+  IconReceipt,
+  IconPrinter
 } from '@tabler/icons-react';
 
 const ReceiptVoucher = () => {
@@ -52,24 +51,23 @@ const ReceiptVoucher = () => {
   const [modalOpened, setModalOpened] = useState(false);
   const [viewModalOpened, setViewModalOpened] = useState(false);
   const [selectedVoucher, setSelectedVoucher] = useState(null);
+  const printRef = useRef(null);
   const [entryMode, setEntryMode] = useState('single');
   const [multipleEntries, setMultipleEntries] = useState([
-    { voucherDate: dayjs().format('YYYY-MM-DD'), debitLedgerId: '', creditLedgerId: '', amount: '', narration: '' }
+    { voucherDate: dayjs().format('YYYY-MM-DD'), ledgerId: '', amount: '', narration: '' }
   ]);
   const [savingMultiple, setSavingMultiple] = useState(false);
 
   const form = useForm({
     initialValues: {
       voucherDate: dayjs().format('YYYY-MM-DD'),
-      debitLedgerId: '',
-      creditLedgerId: '',
+      ledgerId: '',
       amount: '',
       narration: ''
     },
     validate: {
       voucherDate: (value) => !value ? 'Voucher date is required' : null,
-      debitLedgerId: (value) => !value ? 'Please select debit ledger' : null,
-      creditLedgerId: (value) => !value ? 'Please select credit ledger' : null,
+      ledgerId: (value) => !value ? 'Please select head of account' : null,
       amount: (value) => {
         if (!value) return 'Please enter amount';
         const num = parseFloat(value);
@@ -109,24 +107,30 @@ const ReceiptVoucher = () => {
   const handleSubmit = async (values) => {
     setLoading(true);
     try {
-      const debitLedger = ledgers.find(l => l._id === values.debitLedgerId);
-      const creditLedger = ledgers.find(l => l._id === values.creditLedgerId);
+      const selectedLedger = ledgers.find(l => l._id === values.ledgerId);
+      const cashLedger = ledgers.find(l => l.ledgerType === 'Cash');
       const amount = parseFloat(values.amount);
+
+      if (!cashLedger) {
+        message.error('Cash ledger not found. Please create a Cash ledger first.');
+        setLoading(false);
+        return;
+      }
 
       const payload = {
         voucherType: 'Receipt',
         voucherDate: new Date(values.voucherDate).toISOString(),
         entries: [
           {
-            ledgerId: values.debitLedgerId,
-            ledgerName: debitLedger.ledgerName,
+            ledgerId: cashLedger._id,
+            ledgerName: cashLedger.ledgerName,
             debitAmount: amount,
             creditAmount: 0,
             narration: values.narration
           },
           {
-            ledgerId: values.creditLedgerId,
-            ledgerName: creditLedger.ledgerName,
+            ledgerId: values.ledgerId,
+            ledgerName: selectedLedger.ledgerName,
             debitAmount: 0,
             creditAmount: amount,
             narration: values.narration
@@ -166,12 +170,94 @@ const ReceiptVoucher = () => {
     setViewModalOpened(true);
   };
 
+  const handlePrint = (voucher) => {
+    setSelectedVoucher(voucher);
+    setTimeout(() => {
+      const printContent = document.getElementById('print-receipt');
+      if (printContent) {
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Receipt Voucher - ${voucher.voucherNumber || 'N/A'}</title>
+            <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body { font-family: Arial, sans-serif; padding: 20px; }
+              .receipt-container { max-width: 800px; margin: 0 auto; border: 2px solid #333; padding: 20px; }
+              .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 15px; margin-bottom: 20px; }
+              .header h1 { font-size: 24px; margin-bottom: 5px; }
+              .header h2 { font-size: 18px; color: #28a745; }
+              .info-row { display: flex; justify-content: space-between; margin-bottom: 10px; padding: 5px 0; }
+              .info-row.bordered { border-bottom: 1px dashed #ccc; }
+              .label { font-weight: bold; color: #555; }
+              .value { font-weight: 500; }
+              .amount-section { background: #f8f9fa; padding: 15px; margin: 20px 0; border-radius: 5px; text-align: center; }
+              .amount-section .amount { font-size: 28px; font-weight: bold; color: #28a745; }
+              .narration-section { margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 5px; }
+              .narration-section .label { display: block; margin-bottom: 5px; }
+              .footer { margin-top: 40px; display: flex; justify-content: space-between; }
+              .signature { text-align: center; padding-top: 40px; border-top: 1px solid #333; width: 150px; }
+              @media print {
+                body { padding: 0; }
+                .receipt-container { border: 2px solid #000; }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="receipt-container">
+              <div class="header">
+                <h1>RECEIPT VOUCHER</h1>
+                <h2>Money Received</h2>
+              </div>
+
+              <div class="info-row bordered">
+                <span class="label">Bill No:</span>
+                <span class="value">${voucher.voucherNumber || 'Auto-Generated'}</span>
+              </div>
+
+              <div class="info-row bordered">
+                <span class="label">Date:</span>
+                <span class="value">${dayjs(voucher.voucherDate).format('DD-MM-YYYY')}</span>
+              </div>
+
+              <div class="info-row bordered">
+                <span class="label">Received From (Head of Account):</span>
+                <span class="value">${voucher.entries?.find(e => e.creditAmount > 0)?.ledgerName || '-'}</span>
+              </div>
+
+              <div class="amount-section">
+                <div class="label">Amount Received</div>
+                <div class="amount">₹${(voucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+              </div>
+
+              <div class="narration-section">
+                <span class="label">Narration:</span>
+                <span class="value">${voucher.narration || '-'}</span>
+              </div>
+
+              <div class="footer">
+                <div class="signature">Receiver's Signature</div>
+                <div class="signature">Authorized Signature</div>
+              </div>
+            </div>
+          </body>
+          </html>
+        `);
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
+        printWindow.close();
+      }
+    }, 100);
+  };
+
   const openAddModal = () => {
     form.reset();
     form.setFieldValue('voucherDate', dayjs().format('YYYY-MM-DD'));
     setEntryMode('single');
     setMultipleEntries([
-      { voucherDate: dayjs().format('YYYY-MM-DD'), debitLedgerId: '', creditLedgerId: '', amount: '', narration: '' }
+      { voucherDate: dayjs().format('YYYY-MM-DD'), ledgerId: '', amount: '', narration: '' }
     ]);
     setModalOpened(true);
   };
@@ -179,7 +265,7 @@ const ReceiptVoucher = () => {
   const addMultipleRow = () => {
     setMultipleEntries([
       ...multipleEntries,
-      { voucherDate: dayjs().format('YYYY-MM-DD'), debitLedgerId: '', creditLedgerId: '', amount: '', narration: '' }
+      { voucherDate: dayjs().format('YYYY-MM-DD'), ledgerId: '', amount: '', narration: '' }
     ]);
   };
 
@@ -196,13 +282,20 @@ const ReceiptVoucher = () => {
   };
 
   const handleSaveMultiple = async () => {
+    const cashLedger = ledgers.find(l => l.ledgerType === 'Cash');
+    if (!cashLedger) {
+      message.error('Cash ledger not found. Please create a Cash ledger first.');
+      return;
+    }
+
     // Validate all entries
-    const validEntries = multipleEntries.filter(entry =>
-      entry.voucherDate && entry.debitLedgerId && entry.creditLedgerId && entry.amount && parseFloat(entry.amount) > 0
-    );
+    const validEntries = multipleEntries.filter(entry => {
+      const amount = parseFloat(entry.amount) || 0;
+      return entry.voucherDate && entry.ledgerId && amount > 0;
+    });
 
     if (validEntries.length === 0) {
-      message.error('Please fill at least one complete entry');
+      message.error('Please fill at least one complete entry with ledger and amount');
       return;
     }
 
@@ -212,8 +305,7 @@ const ReceiptVoucher = () => {
 
     for (const entry of validEntries) {
       try {
-        const debitLedger = ledgers.find(l => l._id === entry.debitLedgerId);
-        const creditLedger = ledgers.find(l => l._id === entry.creditLedgerId);
+        const selectedLedger = ledgers.find(l => l._id === entry.ledgerId);
         const amount = parseFloat(entry.amount);
 
         const payload = {
@@ -221,15 +313,15 @@ const ReceiptVoucher = () => {
           voucherDate: new Date(entry.voucherDate).toISOString(),
           entries: [
             {
-              ledgerId: entry.debitLedgerId,
-              ledgerName: debitLedger?.ledgerName || '',
+              ledgerId: cashLedger._id,
+              ledgerName: cashLedger.ledgerName,
               debitAmount: amount,
               creditAmount: 0,
               narration: entry.narration || ''
             },
             {
-              ledgerId: entry.creditLedgerId,
-              ledgerName: creditLedger?.ledgerName || '',
+              ledgerId: entry.ledgerId,
+              ledgerName: selectedLedger?.ledgerName || '',
               debitAmount: 0,
               creditAmount: amount,
               narration: entry.narration || ''
@@ -251,7 +343,7 @@ const ReceiptVoucher = () => {
     setSavingMultiple(false);
 
     if (successCount > 0) {
-      message.success(`${successCount} voucher(s) created successfully`);
+      message.success(`${successCount} receipt voucher(s) created successfully`);
       setModalOpened(false);
       fetchVouchers();
     }
@@ -260,7 +352,7 @@ const ReceiptVoucher = () => {
     }
   };
 
-  const getMultipleTotal = () => {
+  const getMultipleTotals = () => {
     return multipleEntries.reduce((sum, entry) => sum + (parseFloat(entry.amount) || 0), 0);
   };
 
@@ -274,8 +366,8 @@ const ReceiptVoucher = () => {
     if (['Cash', 'Bank'].includes(ledgerType)) return 'Cash/Bank Accounts';
     if (ledgerType === 'Party') return 'Parties';
     if (['Sales A/c', 'Trade Income', 'Miscellaneous Income'].includes(ledgerType)) return 'Income Accounts';
-    if (['Accounts Due To (Sundry Creditors)'].includes(ledgerType)) return 'Payable Accounts';
-    if (['Other Payable', 'Other Liabilities'].includes(ledgerType)) return 'Liability Accounts';
+    if (['Accounts Due From (Sundry Debtors)'].includes(ledgerType)) return 'Receivable Accounts';
+    if (['Other Receivable', 'Other Assets'].includes(ledgerType)) return 'Asset Accounts';
     return 'Other Accounts';
   }
 
@@ -286,11 +378,6 @@ const ReceiptVoucher = () => {
     groups[option.group].push(option);
     return groups;
   }, {});
-
-  const getLedgerName = (ledgerId) => {
-    const ledger = ledgers.find(l => l._id === ledgerId);
-    return ledger ? ledger.ledgerName : '-';
-  };
 
   return (
     <Container size="xl" py="md">
@@ -353,10 +440,9 @@ const ReceiptVoucher = () => {
               <thead>
                 <tr>
                   <th>S.No</th>
+                  <th>Bill No</th>
                   <th>Date</th>
-                  <th>Voucher No</th>
-                  <th>Debit (Received In)</th>
-                  <th>Credit (From)</th>
+                  <th>Head of Account</th>
                   <th style={{ textAlign: 'right' }}>Amount</th>
                   <th>Narration</th>
                   <th style={{ textAlign: 'center' }}>Actions</th>
@@ -364,19 +450,17 @@ const ReceiptVoucher = () => {
               </thead>
               <tbody>
                 {vouchers.map((voucher, index) => {
-                  const debitEntry = voucher.entries?.find(e => e.debitAmount > 0);
                   const creditEntry = voucher.entries?.find(e => e.creditAmount > 0);
 
                   return (
                     <tr key={voucher._id}>
                       <td>{index + 1}</td>
-                      <td>{dayjs(voucher.voucherDate).format('DD-MM-YYYY')}</td>
                       <td>
-                        <Badge variant="outline" color="blue">
-                          {voucher.voucherNumber || '-'}
+                        <Badge variant="outline" color="green">
+                          {voucher.voucherNumber || 'Auto'}
                         </Badge>
                       </td>
-                      <td>{debitEntry?.ledgerName || '-'}</td>
+                      <td>{dayjs(voucher.voucherDate).format('DD-MM-YYYY')}</td>
                       <td>{creditEntry?.ledgerName || '-'}</td>
                       <td style={{ textAlign: 'right' }}>
                         <Text weight={600} color="green">
@@ -397,6 +481,15 @@ const ReceiptVoucher = () => {
                               onClick={() => handleView(voucher)}
                             >
                               <IconEye size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+                          <Tooltip label="Print">
+                            <ActionIcon
+                              color="green"
+                              variant="light"
+                              onClick={() => handlePrint(voucher)}
+                            >
+                              <IconPrinter size={16} />
                             </ActionIcon>
                           </Tooltip>
                           <Tooltip label="Delete">
@@ -431,7 +524,7 @@ const ReceiptVoucher = () => {
         )}
       </Paper>
 
-      {/* Add/Edit Modal */}
+      {/* Add Modal */}
       <Modal
         opened={modalOpened}
         onClose={() => setModalOpened(false)}
@@ -441,7 +534,7 @@ const ReceiptVoucher = () => {
             <Text weight={600}>Add Receipt Voucher</Text>
           </Group>
         }
-        size={entryMode === 'multiple' ? 'xl' : 'lg'}
+        size={entryMode === 'multiple' ? 'xl' : 'md'}
         centered
       >
         <LoadingOverlay visible={loading || savingMultiple} overlayProps={{ blur: 2 }} />
@@ -468,56 +561,31 @@ const ReceiptVoucher = () => {
                   placeholder="Select date"
                   required
                   type="date"
-                  icon={<IconCalendar size={16} />}
+                  leftSection={<IconCalendar size={16} />}
                   {...form.getInputProps('voucherDate')}
                 />
 
-                <Alert color="blue" variant="light" py="xs">
-                  <Text size="xs">
-                    Debit: Cash/Bank (where money received) | Credit: Party/Income account
-                  </Text>
-                </Alert>
-
                 <Select
-                  label="Debit (Cash/Bank Received In)"
+                  label="Head of Account (Ledger)"
                   placeholder="Select ledger"
                   required
                   searchable
-                  icon={<IconCash size={16} />}
                   data={Object.entries(groupedOptions).map(([group, items]) => ({
                     group,
                     items: items.map(item => ({ value: item.value, label: item.label }))
                   }))}
-                  {...form.getInputProps('debitLedgerId')}
-                />
-
-                <Select
-                  label="Credit (Party/Income Account)"
-                  placeholder="Select ledger"
-                  required
-                  searchable
-                  icon={<IconUser size={16} />}
-                  data={Object.entries(groupedOptions).map(([group, items]) => ({
-                    group,
-                    items: items.map(item => ({ value: item.value, label: item.label }))
-                  }))}
-                  {...form.getInputProps('creditLedgerId')}
+                  {...form.getInputProps('ledgerId')}
                 />
 
                 <NumberInput
                   label="Amount"
                   placeholder="Enter amount"
                   required
-                  icon={<IconCurrencyRupee size={16} />}
+                  leftSection={<IconCurrencyRupee size={16} />}
                   min={0.01}
                   step={0.01}
-                  precision={2}
-                  parser={(value) => value.replace(/\$\s?|(,*)/g, '')}
-                  formatter={(value) =>
-                    !Number.isNaN(parseFloat(value))
-                      ? `₹ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-                      : '₹ '
-                  }
+                  decimalScale={2}
+                  thousandSeparator=","
                   {...form.getInputProps('amount')}
                 />
 
@@ -525,14 +593,24 @@ const ReceiptVoucher = () => {
                   label="Narration"
                   placeholder="Enter narration/description"
                   required
-                  icon={<IconNotes size={16} />}
+                  leftSection={<IconNotes size={16} />}
                   minRows={2}
                   {...form.getInputProps('narration')}
                 />
 
-                {/* Summary Preview */}
+                {/* Bill No Info */}
+                <Card p="sm" withBorder bg="blue.0">
+                  <Group spacing="xs">
+                    <IconReceipt size={16} />
+                    <Text size="sm" color="dimmed">
+                      Bill No will be auto-generated upon saving
+                    </Text>
+                  </Group>
+                </Card>
+
+                {/* Amount Preview */}
                 {form.values.amount && (
-                  <Card p="sm" withBorder bg="gray.0">
+                  <Card p="sm" withBorder bg="green.0">
                     <Group position="apart">
                       <Text size="sm" color="dimmed">Amount to be recorded:</Text>
                       <Text weight={700} color="green" size="lg">
@@ -567,9 +645,9 @@ const ReceiptVoucher = () => {
           ) : (
             /* Multiple Entries Form */
             <Stack spacing="md">
-              <Alert color="blue" variant="light" py="xs">
+              <Alert color="green" variant="light" py="xs">
                 <Text size="xs">
-                  Add multiple receipt vouchers at once. Fill in the details for each voucher and click Save All.
+                  Add multiple receipt vouchers at once. Cash account will be debited automatically for each entry.
                 </Text>
               </Alert>
 
@@ -589,86 +667,86 @@ const ReceiptVoucher = () => {
                 <Table striped withBorder>
                   <thead style={{ position: 'sticky', top: 0, backgroundColor: 'white', zIndex: 1 }}>
                     <tr>
-                      <th style={{ width: '50px' }}>#</th>
-                      <th style={{ width: '130px' }}>Date</th>
-                      <th>Debit (Cash/Bank)</th>
-                      <th>Credit (Party/Income)</th>
+                      <th style={{ width: '40px' }}>#</th>
+                      <th style={{ width: '120px' }}>Date</th>
+                      <th>Head of Account</th>
                       <th style={{ width: '120px' }}>Amount</th>
-                      <th>Narration</th>
-                      <th style={{ width: '60px', textAlign: 'center' }}>Action</th>
+                      <th style={{ width: '150px' }}>Narration</th>
+                      <th style={{ width: '50px' }}>✓</th>
+                      <th style={{ width: '50px' }}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {multipleEntries.map((entry, index) => (
-                      <tr key={index}>
-                        <td>{index + 1}</td>
-                        <td>
-                          <TextInput
-                            type="date"
-                            size="xs"
-                            value={entry.voucherDate}
-                            onChange={(e) => updateMultipleEntry(index, 'voucherDate', e.target.value)}
-                          />
-                        </td>
-                        <td>
-                          <Select
-                            placeholder="Select ledger"
-                            searchable
-                            size="xs"
-                            data={Object.entries(groupedOptions).map(([group, items]) => ({
-                              group,
-                              items: items.map(item => ({ value: item.value, label: item.label }))
-                            }))}
-                            value={entry.debitLedgerId}
-                            onChange={(value) => updateMultipleEntry(index, 'debitLedgerId', value)}
-                          />
-                        </td>
-                        <td>
-                          <Select
-                            placeholder="Select ledger"
-                            searchable
-                            size="xs"
-                            data={Object.entries(groupedOptions).map(([group, items]) => ({
-                              group,
-                              items: items.map(item => ({ value: item.value, label: item.label }))
-                            }))}
-                            value={entry.creditLedgerId}
-                            onChange={(value) => updateMultipleEntry(index, 'creditLedgerId', value)}
-                          />
-                        </td>
-                        <td>
-                          <NumberInput
-                            size="xs"
-                            placeholder="Amount"
-                            min={0}
-                            precision={2}
-                            value={entry.amount}
-                            onChange={(value) => updateMultipleEntry(index, 'amount', value)}
-                          />
-                        </td>
-                        <td>
-                          <TextInput
-                            size="xs"
-                            placeholder="Narration"
-                            value={entry.narration}
-                            onChange={(e) => updateMultipleEntry(index, 'narration', e.target.value)}
-                          />
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
-                          <Tooltip label="Remove">
-                            <ActionIcon
-                              color="red"
-                              variant="light"
-                              size="sm"
-                              onClick={() => removeMultipleRow(index)}
-                              disabled={multipleEntries.length === 1}
-                            >
-                              <IconTrash size={14} />
-                            </ActionIcon>
-                          </Tooltip>
-                        </td>
-                      </tr>
-                    ))}
+                    {multipleEntries.map((entry, index) => {
+                      const amount = parseFloat(entry.amount) || 0;
+                      const isValid = entry.voucherDate && entry.ledgerId && amount > 0;
+
+                      return (
+                        <tr key={index}>
+                          <td>{index + 1}</td>
+                          <td>
+                            <TextInput
+                              type="date"
+                              size="xs"
+                              value={entry.voucherDate}
+                              onChange={(e) => updateMultipleEntry(index, 'voucherDate', e.target.value)}
+                            />
+                          </td>
+                          <td>
+                            <Select
+                              placeholder="Select ledger"
+                              searchable
+                              size="xs"
+                              data={Object.entries(groupedOptions).map(([group, items]) => ({
+                                group,
+                                items: items.map(item => ({ value: item.value, label: item.label }))
+                              }))}
+                              value={entry.ledgerId}
+                              onChange={(value) => updateMultipleEntry(index, 'ledgerId', value)}
+                            />
+                          </td>
+                          <td>
+                            <NumberInput
+                              size="xs"
+                              placeholder="Amount"
+                              min={0}
+                              decimalScale={2}
+                              value={entry.amount}
+                              onChange={(value) => updateMultipleEntry(index, 'amount', value)}
+                              styles={{ input: { color: 'green', fontWeight: 600 } }}
+                            />
+                          </td>
+                          <td>
+                            <TextInput
+                              size="xs"
+                              placeholder="Narration"
+                              value={entry.narration}
+                              onChange={(e) => updateMultipleEntry(index, 'narration', e.target.value)}
+                            />
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            {isValid ? (
+                              <Badge color="green" size="xs">✓</Badge>
+                            ) : (entry.ledgerId || amount > 0) ? (
+                              <Badge color="red" size="xs">✗</Badge>
+                            ) : null}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <Tooltip label="Remove">
+                              <ActionIcon
+                                color="red"
+                                variant="light"
+                                size="sm"
+                                onClick={() => removeMultipleRow(index)}
+                                disabled={multipleEntries.length === 1}
+                              >
+                                <IconTrash size={14} />
+                              </ActionIcon>
+                            </Tooltip>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </Table>
               </ScrollArea>
@@ -676,12 +754,15 @@ const ReceiptVoucher = () => {
               {/* Total Summary */}
               <Card p="sm" withBorder bg="green.0">
                 <Group position="apart">
-                  <Group spacing="xs">
-                    <Text weight={500}>Total ({multipleEntries.length} entries)</Text>
+                  <Group spacing="lg">
+                    <div>
+                      <Text size="xs" color="dimmed">Total Amount</Text>
+                      <Text weight={700} color="green" size="lg">
+                        ₹{getMultipleTotals().toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </Text>
+                    </div>
                   </Group>
-                  <Text size="lg" weight={700} color="green">
-                    ₹{getMultipleTotal().toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </Text>
+                  <Text weight={500}>({multipleEntries.filter(e => e.ledgerId && parseFloat(e.amount) > 0).length} valid entries)</Text>
                 </Group>
               </Card>
 
@@ -717,7 +798,7 @@ const ReceiptVoucher = () => {
         title={
           <Group spacing="xs">
             <IconEye size={20} />
-            <Text weight={600}>Voucher Details</Text>
+            <Text weight={600}>Receipt Voucher Details</Text>
           </Group>
         }
         size="md"
@@ -727,61 +808,46 @@ const ReceiptVoucher = () => {
           <Stack spacing="md">
             <Grid>
               <Grid.Col span={6}>
-                <Text size="sm" color="dimmed">Voucher Number</Text>
-                <Text weight={500}>{selectedVoucher.voucherNumber || '-'}</Text>
+                <Text size="sm" color="dimmed">Bill No</Text>
+                <Badge size="lg" color="green">{selectedVoucher.voucherNumber || 'Auto'}</Badge>
               </Grid.Col>
               <Grid.Col span={6}>
                 <Text size="sm" color="dimmed">Voucher Date</Text>
                 <Text weight={500}>{dayjs(selectedVoucher.voucherDate).format('DD-MM-YYYY')}</Text>
               </Grid.Col>
-              <Grid.Col span={6}>
-                <Text size="sm" color="dimmed">Voucher Type</Text>
-                <Badge color="green">{selectedVoucher.voucherType}</Badge>
+              <Grid.Col span={12}>
+                <Text size="sm" color="dimmed">Head of Account</Text>
+                <Text weight={500}>{selectedVoucher.entries?.find(e => e.creditAmount > 0)?.ledgerName || '-'}</Text>
               </Grid.Col>
-              <Grid.Col span={6}>
-                <Text size="sm" color="dimmed">Reference Type</Text>
-                <Text weight={500}>{selectedVoucher.referenceType || '-'}</Text>
+              <Grid.Col span={12}>
+                <Card p="md" withBorder bg="green.0">
+                  <Text size="sm" color="dimmed" mb="xs">Amount Received</Text>
+                  <Text size="xl" weight={700} color="green">
+                    ₹{(selectedVoucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </Text>
+                </Card>
               </Grid.Col>
             </Grid>
-
-            <Divider label="Entries" labelPosition="center" />
-
-            <Table withBorder>
-              <thead>
-                <tr>
-                  <th>Ledger</th>
-                  <th style={{ textAlign: 'right' }}>Debit</th>
-                  <th style={{ textAlign: 'right' }}>Credit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selectedVoucher.entries?.map((entry, idx) => (
-                  <tr key={idx}>
-                    <td>{entry.ledgerName}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      {entry.debitAmount > 0 ? `₹${entry.debitAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      {entry.creditAmount > 0 ? `₹${entry.creditAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr style={{ fontWeight: 'bold', backgroundColor: '#f8f9fa' }}>
-                  <td>Total</td>
-                  <td style={{ textAlign: 'right' }}>₹{(selectedVoucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                  <td style={{ textAlign: 'right' }}>₹{(selectedVoucher.totalCredit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                </tr>
-              </tfoot>
-            </Table>
 
             <Card p="sm" withBorder bg="gray.0">
               <Text size="sm" color="dimmed">Narration</Text>
               <Text>{selectedVoucher.narration || '-'}</Text>
             </Card>
 
-            <Group position="right">
+            <Divider />
+
+            <Group position="right" spacing="md">
+              <Button
+                variant="light"
+                color="green"
+                leftSection={<IconPrinter size={16} />}
+                onClick={() => {
+                  setViewModalOpened(false);
+                  handlePrint(selectedVoucher);
+                }}
+              >
+                Print
+              </Button>
               <Button variant="default" onClick={() => setViewModalOpened(false)}>
                 Close
               </Button>
@@ -790,6 +856,8 @@ const ReceiptVoucher = () => {
         )}
       </Modal>
 
+      {/* Hidden print container */}
+      <div id="print-receipt" style={{ display: 'none' }} ref={printRef}></div>
     </Container>
   );
 };

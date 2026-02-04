@@ -298,8 +298,16 @@ export const stockIn = async (req, res) => {
       notes,
       // New fields for accounting
       supplierId,
-      paymentMode, // 'Cash' or 'Adjustment'
-      paidAmount
+      paymentMode, // 'Credit', 'Cash', 'Adjustment' or 'N/A'
+      paidAmount,
+      // Multiple ledger entries for payment allocation
+      ledgerEntries, // Array of { ledgerId, amount, narration }
+      subsidies, // Array of { subsidyId, productId, amount }
+      // Bill summary fields
+      grossTotal,
+      subsidyAmount: totalSubsidyAmount,
+      ledgerDeduction,
+      netTotal
     } = req.body;
 
     // Validate that items array exists and is not empty
@@ -335,6 +343,16 @@ export const stockIn = async (req, res) => {
       totalAmount += parseFloat(item.quantity) * parseFloat(item.rate || 0);
     }
 
+    // Calculate total quantity for ledger deduction calculation
+    const totalQuantity = items.reduce((sum, item) => sum + parseFloat(item.quantity || 0), 0);
+
+    // Calculate bill summary values
+    const calculatedGrossTotal = grossTotal || totalAmount;
+    const calculatedSubsidyAmount = totalSubsidyAmount || (subsidies ? subsidies.reduce((sum, s) => sum + parseFloat(s.amount || 0), 0) : 0);
+    // Ledger deduction = amount * quantity
+    const calculatedLedgerDeduction = ledgerDeduction || (ledgerEntries ? ledgerEntries.reduce((sum, e) => sum + (parseFloat(e.amount || 0) * totalQuantity), 0) : 0);
+    const calculatedNetTotal = netTotal || (calculatedGrossTotal - calculatedLedgerDeduction);
+
     const transactions = [];
     let voucher = null;
 
@@ -352,16 +370,32 @@ export const stockIn = async (req, res) => {
         invoiceNumber: invoiceNumber || null,
         issueCentre: issueCentre || null,
         subsidyId: subsidyId || null,
-        subsidyAmount: parseFloat(subsidyAmount) || 0,
         supplierId: supplierId || null,
         supplierName: supplierName,
-        paymentMode: paymentMode || 'N/A',
+        paymentMode: paymentMode || 'Credit',
         paidAmount: parseFloat(paidAmount) || 0,
         totalAmount: totalAmount,
+        // Bill summary fields
+        grossTotal: calculatedGrossTotal,
+        subsidyAmount: calculatedSubsidyAmount,
+        ledgerDeduction: calculatedLedgerDeduction,
+        netTotal: calculatedNetTotal,
         notes: notes || null
       });
       transactions.push(transaction);
+
+      // Update item's salesRate if provided
+      if (item.salesRate !== undefined && item.salesRate > 0) {
+        await Item.findByIdAndUpdate(item.itemId, {
+          salesRate: parseFloat(item.salesRate)
+        });
+      }
     }
+
+    // Calculate total from ledger entries if provided (amount * quantity)
+    const totalLedgerAmount = ledgerEntries && Array.isArray(ledgerEntries)
+      ? ledgerEntries.reduce((sum, entry) => sum + (parseFloat(entry.amount || 0) * totalQuantity), 0)
+      : 0;
 
     // Create accounting voucher if supplier and payment mode are provided
     if (supplierId && paymentMode && paymentMode !== 'N/A') {
@@ -379,17 +413,37 @@ export const stockIn = async (req, res) => {
           totalAmount,
           purchaseDate: purchaseDate ? new Date(purchaseDate) : new Date(),
           invoiceNumber,
-          referenceId: transactions[0]._id // Link to first transaction
+          referenceId: transactions[0]._id, // Link to first transaction
+          ledgerEntries: ledgerEntries || [] // Pass ledger entries for voucher creation
         });
 
-        // Update transactions with voucher reference
+        // Update transactions with voucher reference and ledger entries
         for (const transaction of transactions) {
           transaction.voucherId = voucher._id;
+          if (ledgerEntries && ledgerEntries.length > 0) {
+            transaction.ledgerEntries = ledgerEntries.map(entry => ({
+              ledgerId: entry.ledgerId,
+              amount: parseFloat(entry.amount || 0),
+              narration: entry.narration || ''
+            }));
+          }
           await transaction.save();
         }
       } catch (voucherError) {
         console.error('Error creating voucher:', voucherError);
         // Continue even if voucher creation fails
+      }
+    }
+
+    // If ledger entries provided but no voucher (N/A payment mode), still store them
+    if ((!voucher) && ledgerEntries && ledgerEntries.length > 0) {
+      for (const transaction of transactions) {
+        transaction.ledgerEntries = ledgerEntries.map(entry => ({
+          ledgerId: entry.ledgerId,
+          amount: parseFloat(entry.amount || 0),
+          narration: entry.narration || ''
+        }));
+        await transaction.save();
       }
     }
 
@@ -402,7 +456,9 @@ export const stockIn = async (req, res) => {
           _id: voucher._id,
           voucherNumber: voucher.voucherNumber,
           voucherType: voucher.voucherType
-        } : null
+        } : null,
+        ledgerEntries: ledgerEntries || [],
+        totalLedgerAmount
       }
     });
   } catch (error) {
@@ -493,6 +549,7 @@ export const getStockTransactions = async (req, res) => {
       .populate('subsidyId', 'subsidyName subsidyType')
       .populate('supplierId', 'supplierId name')
       .populate('voucherId', 'voucherNumber voucherType')
+      .populate('ledgerEntries.ledgerId', 'ledgerName ledgerType')
       .sort({ date: -1, createdAt: -1 })
       .limit(1000); // Limit to prevent too many results
 
@@ -533,14 +590,19 @@ export const getStockBalance = async (req, res) => {
 export const updateOpeningBalance = async (req, res) => {
   try {
     const { id } = req.params;
-    const { openingBalance, rate } = req.body;
+    let { openingBalance, rate } = req.body;
 
-    if (openingBalance === undefined || openingBalance < 0) {
+    // Parse and validate openingBalance
+    openingBalance = parseFloat(openingBalance);
+    if (isNaN(openingBalance) || openingBalance < 0) {
       return res.status(400).json({
         success: false,
-        message: 'Valid opening balance is required'
+        message: 'Valid opening balance is required (must be a non-negative number)'
       });
     }
+
+    // Parse rate with fallback to 0
+    rate = parseFloat(rate) || 0;
 
     const item = await Item.findById(id);
     if (!item) {
@@ -551,11 +613,11 @@ export const updateOpeningBalance = async (req, res) => {
     }
 
     // Calculate the difference to adjust current balance
-    const difference = parseFloat(openingBalance) - item.openingBalance;
+    const difference = openingBalance - (item.openingBalance || 0);
 
     // Update item balances
-    item.openingBalance = parseFloat(openingBalance);
-    item.currentBalance = item.currentBalance + difference;
+    item.openingBalance = openingBalance;
+    item.currentBalance = (item.currentBalance || 0) + difference;
     await item.save();
 
     // Create a stock transaction for the adjustment
@@ -564,7 +626,7 @@ export const updateOpeningBalance = async (req, res) => {
         itemId: id,
         transactionType: difference > 0 ? 'Stock In' : 'Stock Out',
         quantity: Math.abs(difference),
-        rate: parseFloat(rate) || item.salesRate || 0,
+        rate: rate || item.salesRate || 0,
         referenceType: 'Opening Balance Adjustment',
         notes: 'Opening balance adjusted'
       });
@@ -592,7 +654,10 @@ export const getStockTransactionById = async (req, res) => {
       .populate('issueCentre', 'centerName centerType')
       .populate('subsidyId', 'subsidyName subsidyType')
       .populate('supplierId', 'supplierId name phone')
-      .populate('voucherId', 'voucherNumber voucherType');
+      .populate('voucherId', 'voucherNumber voucherType')
+      .populate('ledgerEntries.ledgerId', 'ledgerName ledgerType currentBalance balanceType')
+      .populate('subsidies.subsidyId', 'subsidyName subsidyType')
+      .populate('subsidies.productId', 'itemCode itemName');
 
     if (!transaction) {
       return res.status(404).json({
@@ -643,6 +708,45 @@ export const updateStockTransaction = async (req, res) => {
       }
     }
 
+    // Process ledger entries if provided
+    if (updateData.ledgerEntries && Array.isArray(updateData.ledgerEntries)) {
+      updateData.ledgerEntries = updateData.ledgerEntries.map(entry => ({
+        ledgerId: entry.ledgerId,
+        amount: parseFloat(entry.amount || 0),
+        narration: entry.narration || ''
+      }));
+    }
+
+    // Process subsidies if provided
+    if (updateData.subsidies && Array.isArray(updateData.subsidies)) {
+      updateData.subsidies = updateData.subsidies.map(subsidy => ({
+        subsidyId: subsidy.subsidyId,
+        productId: subsidy.productId,
+        amount: parseFloat(subsidy.amount || 0)
+      }));
+    }
+
+    // Process bill summary fields if provided
+    if (updateData.grossTotal !== undefined) {
+      updateData.grossTotal = parseFloat(updateData.grossTotal || 0);
+    }
+    if (updateData.subsidyAmount !== undefined) {
+      updateData.subsidyAmount = parseFloat(updateData.subsidyAmount || 0);
+    }
+    if (updateData.ledgerDeduction !== undefined) {
+      updateData.ledgerDeduction = parseFloat(updateData.ledgerDeduction || 0);
+    }
+    if (updateData.netTotal !== undefined) {
+      updateData.netTotal = parseFloat(updateData.netTotal || 0);
+    }
+
+    // Update item's salesRate if provided
+    if (updateData.salesRate !== undefined && updateData.salesRate > 0) {
+      await Item.findByIdAndUpdate(transaction.itemId, {
+        salesRate: parseFloat(updateData.salesRate)
+      });
+    }
+
     const updatedTransaction = await StockTransaction.findByIdAndUpdate(
       id,
       updateData,
@@ -651,7 +755,8 @@ export const updateStockTransaction = async (req, res) => {
       .populate('itemId', 'itemCode itemName measurement')
       .populate('issueCentre', 'centerName centerType')
       .populate('subsidyId', 'subsidyName subsidyType')
-      .populate('supplierId', 'supplierId name');
+      .populate('supplierId', 'supplierId name')
+      .populate('ledgerEntries.ledgerId', 'ledgerName ledgerType');
 
     res.status(200).json({
       success: true,

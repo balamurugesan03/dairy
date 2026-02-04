@@ -1,15 +1,35 @@
 import { useState, useEffect, useRef } from 'react';
+import {
+  Container,
+  Card,
+  Group,
+  Stack,
+  Select,
+  TextInput,
+  Button,
+  Loader,
+  Title,
+  Text,
+  Table,
+  Box,
+  Paper,
+  Grid,
+  Divider,
+  Center,
+  ActionIcon
+} from '@mantine/core';
+import { DateInput } from '@mantine/dates';
+import { IconPrinter, IconDownload, IconRefresh, IconCalendar, IconBuilding } from '@tabler/icons-react';
 import { message } from '../../utils/toast';
 import dayjs from 'dayjs';
 import { reportAPI } from '../../services/api';
-import './GeneralLedger.css';
 
 const GeneralLedger = () => {
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState(null);
   const [ledgers, setLedgers] = useState([]);
   const [selectedLedger, setSelectedLedger] = useState('');
-  const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
+  const [dateRange, setDateRange] = useState({ startDate: null, endDate: null });
   const [societyName, setSocietyName] = useState('Dairy Cooperative Society');
   const printRef = useRef(null);
 
@@ -21,8 +41,8 @@ const GeneralLedger = () => {
       ? dayjs().month(3).date(1)
       : dayjs().subtract(1, 'year').month(3).date(1);
     setDateRange({
-      startDate: financialYearStart.format('YYYY-MM-DD'),
-      endDate: today.format('YYYY-MM-DD')
+      startDate: financialYearStart.toDate(),
+      endDate: today.toDate()
     });
   }, []);
 
@@ -48,8 +68,8 @@ const GeneralLedger = () => {
     setLoading(true);
     try {
       const response = await reportAPI.generalLedger({
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate,
+        startDate: dayjs(dateRange.startDate).format('YYYY-MM-DD'),
+        endDate: dayjs(dateRange.endDate).format('YYYY-MM-DD'),
         ledgerId: selectedLedger
       });
       setReportData(response.data);
@@ -98,7 +118,6 @@ const GeneralLedger = () => {
     let runningBalance = reportData?.openingBalance || 0;
 
     return transactions.map(transaction => {
-      // Map debit/credit to receipt/payment (customize based on ledger type)
       const isReceipt = transaction.credit > 0;
       const receipt = isReceipt ? transaction.credit : 0;
       const payment = !isReceipt ? transaction.debit : 0;
@@ -157,214 +176,240 @@ const GeneralLedger = () => {
     const groupedByMonth = groupTransactionsByMonth(processedTransactions);
 
     return (
-      <div className="ledger-print-container" ref={printRef}>
+      <Paper ref={printRef} shadow="md" radius="md" p="xl" mt="xl">
         {/* Report Header */}
-        <div className="report-header">
-          <h1 className="society-name">{societyName}</h1>
-          <h2 className="report-title">GENERAL LEDGER</h2>
-          <div className="report-info">
-            <p><strong>Financial Year:</strong> {getFinancialYear(dateRange.startDate, dateRange.endDate)}</p>
-            <p><strong>Head of Account:</strong> {reportData.ledger.name}</p>
-            <p><strong>Period:</strong> {formatDate(reportData.startDate)} to {formatDate(reportData.endDate)}</p>
-          </div>
-        </div>
+        <Stack align="center" mb="xl">
+          <Title order={1} size="h2" ta="center">{societyName}</Title>
+          <Title order={2} size="h3" ta="center" c="blue">GENERAL LEDGER</Title>
+          <Stack gap="xs" align="center">
+            <Text fw={500}>
+              <Text span fw={600}>Financial Year:</Text> {getFinancialYear(dateRange.startDate, dateRange.endDate)}
+            </Text>
+            <Text fw={500}>
+              <Text span fw={600}>Head of Account:</Text> {reportData.ledger.name}
+            </Text>
+            <Text fw={500}>
+              <Text span fw={600}>Period:</Text> {formatDate(reportData.startDate)} to {formatDate(reportData.endDate)}
+            </Text>
+          </Stack>
+        </Stack>
 
         {/* Ledger Table */}
-        <div className="ledger-table-wrapper">
-          <table className="traditional-ledger-table">
-            <thead>
-              <tr>
-                <th className="col-day">Day</th>
-                <th className="col-amount">Receipt</th>
-                <th className="col-amount">Progressive<br/>Receipt</th>
-                <th className="col-amount">Payment</th>
-                <th className="col-amount">Progressive<br/>Payment</th>
-                <th className="col-amount">Balance</th>
-                <th className="col-description">Description</th>
-              </tr>
-            </thead>
-            <tbody>
+        <Box style={{ overflowX: 'auto' }} mb="xl">
+          <Table striped highlightOnHover withTableBorder withColumnBorders>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th ta="center">Day</Table.Th>
+                <Table.Th ta="right">Receipt</Table.Th>
+                <Table.Th ta="right">Progressive Receipt</Table.Th>
+                <Table.Th ta="right">Payment</Table.Th>
+                <Table.Th ta="right">Progressive Payment</Table.Th>
+                <Table.Th ta="right">Balance</Table.Th>
+                <Table.Th>Description</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
               {/* Opening Balance */}
-              <tr className="opening-balance-row">
-                <td colSpan="5" className="text-left"><strong>Opening Balance</strong></td>
-                <td className="text-right"><strong>{formatNumber(reportData.openingBalance)}</strong></td>
-                <td className="text-left">Brought Forward</td>
-              </tr>
+              <Table.Tr style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}>
+                <Table.Td colSpan={5} fw={600}>Opening Balance</Table.Td>
+                <Table.Td ta="right" fw={600}>{formatNumber(reportData.openingBalance)}</Table.Td>
+                <Table.Td>Brought Forward</Table.Td>
+              </Table.Tr>
 
               {/* Month-wise transactions */}
               {Object.keys(groupedByMonth).map((monthYear, idx) => {
                 const monthTransactions = groupedByMonth[monthYear];
-                const monthTotal = monthTransactions[monthTransactions.length - 1];
 
                 return (
-                  <tbody key={idx}>
+                  <Table.Tbody key={idx}>
                     {/* Month Header */}
-                    <tr className="month-header-row">
-                      <td colSpan="7" className="month-header">{monthYear}</td>
-                    </tr>
+                    <Table.Tr style={{ backgroundColor: 'var(--mantine-color-blue-0)' }}>
+                      <Table.Td colSpan={7} fw={600} ta="center">{monthYear}</Table.Td>
+                    </Table.Tr>
 
                     {/* Transactions for this month */}
                     {monthTransactions.map((transaction, tIdx) => (
-                      <tr key={tIdx} className="transaction-row">
-                        <td className="text-center">{formatDay(transaction.date)}</td>
-                        <td className="text-right">
+                      <Table.Tr key={tIdx}>
+                        <Table.Td ta="center">{formatDay(transaction.date)}</Table.Td>
+                        <Table.Td ta="right">
                           {transaction.receipt > 0 ? formatNumber(transaction.receipt) : ''}
-                        </td>
-                        <td className="text-right">
+                        </Table.Td>
+                        <Table.Td ta="right">
                           {transaction.receipt > 0 ? formatNumber(transaction.progressiveReceipt) : ''}
-                        </td>
-                        <td className="text-right">
+                        </Table.Td>
+                        <Table.Td ta="right">
                           {transaction.payment > 0 ? formatNumber(transaction.payment) : ''}
-                        </td>
-                        <td className="text-right">
+                        </Table.Td>
+                        <Table.Td ta="right">
                           {transaction.payment > 0 ? formatNumber(transaction.progressivePayment) : ''}
-                        </td>
-                        <td className="text-right">{formatNumber(transaction.runningBalance)}</td>
-                        <td className="text-left">
-                          <div className="description-cell">
-                            <span className="particulars">{transaction.particulars}</span>
-                            {transaction.narration && (
-                              <span className="narration"> - {transaction.narration}</span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
+                        </Table.Td>
+                        <Table.Td ta="right" fw={500}>{formatNumber(transaction.runningBalance)}</Table.Td>
+                        <Table.Td>
+                          <Text size="sm">
+                            {transaction.particulars}
+                            {transaction.narration && ` - ${transaction.narration}`}
+                          </Text>
+                        </Table.Td>
+                      </Table.Tr>
                     ))}
-                  </tbody>
+                  </Table.Tbody>
                 );
               })}
 
               {/* Closing Balance */}
-              <tr className="closing-balance-row">
-                <td colSpan="5" className="text-left"><strong>Closing Balance</strong></td>
-                <td className="text-right">
-                  <strong>{formatNumber(processedTransactions[processedTransactions.length - 1]?.runningBalance || reportData.closingBalance)}</strong>
-                </td>
-                <td className="text-left">Carried Forward</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+              <Table.Tr style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}>
+                <Table.Td colSpan={5} fw={600}>Closing Balance</Table.Td>
+                <Table.Td ta="right" fw={600}>
+                  {formatNumber(processedTransactions[processedTransactions.length - 1]?.runningBalance || reportData.closingBalance)}
+                </Table.Td>
+                <Table.Td>Carried Forward</Table.Td>
+              </Table.Tr>
+            </Table.Tbody>
+          </Table>
+        </Box>
 
         {/* Report Footer */}
-        <div className="report-footer">
-          <div className="footer-info">
-            <p>Created on {dayjs().format('DD/MM/YYYY HH:mm:ss')} | By ADM</p>
-          </div>
-          <div className="signature-section">
-            <div className="signature-box">
-              <p className="signature-label">Secretary</p>
-              <div className="signature-line"></div>
-            </div>
-            <div className="signature-box">
-              <p className="signature-label">Cashier</p>
-              <div className="signature-line"></div>
-            </div>
-          </div>
-        </div>
-      </div>
+        <Divider my="md" />
+        <Stack gap="md">
+          <Text size="sm" c="dimmed" ta="center">
+            Created on {dayjs().format('DD/MM/YYYY HH:mm:ss')} | By ADM
+          </Text>
+          <Group justify="space-between" mt="md">
+            <Box style={{ flex: 1 }}>
+              <Text size="sm" fw={500} ta="center">Secretary</Text>
+              <Divider mt="xs" />
+            </Box>
+            <Box style={{ flex: 1 }}>
+              <Text size="sm" fw={500} ta="center">Cashier</Text>
+              <Divider mt="xs" />
+            </Box>
+          </Group>
+        </Stack>
+      </Paper>
     );
   };
 
   return (
-    <div className="general-ledger-modern-container">
-      {/* Control Panel - Hidden in print */}
-      <div className="control-panel no-print">
-        <div className="control-header">
-          <h1>General Ledger Report</h1>
-        </div>
+    <Container size="xl" py="md">
+      {/* Control Panel */}
+      <Card shadow="sm" padding="lg" radius="md" mb="xl">
+        <Stack gap="lg">
+          <Group justify="space-between">
+            <Title order={2}>General Ledger Report</Title>
+            <ActionIcon variant="light" onClick={fetchLedgers} title="Refresh ledgers">
+              <IconRefresh size={18} />
+            </ActionIcon>
+          </Group>
 
-        <div className="control-form">
-          {/* Society Name */}
-          <div className="form-group">
-            <label>Society Name</label>
-            <input
-              type="text"
-              value={societyName}
-              onChange={(e) => setSocietyName(e.target.value)}
-              className="form-input"
-              placeholder="Enter society name"
-            />
-          </div>
+          <Grid gutter="md">
+            {/* Society Name */}
+            <Grid.Col span={{ base: 12, md: 6 }}>
+              <TextInput
+                label="Society Name"
+                value={societyName}
+                onChange={(e) => setSocietyName(e.target.value)}
+                placeholder="Enter society name"
+                leftSection={<IconBuilding size={16} />}
+              />
+            </Grid.Col>
 
-          {/* Ledger Selection */}
-          <div className="form-group">
-            <label>Select Ledger Account</label>
-            <select
-              value={selectedLedger}
-              onChange={(e) => setSelectedLedger(e.target.value)}
-              className="form-select"
-            >
-              <option value="">-- Select Ledger --</option>
-              {ledgers.map(ledger => (
-                <option key={ledger._id} value={ledger._id}>
-                  {ledger.ledgerName} ({ledger.ledgerType})
-                </option>
-              ))}
-            </select>
-          </div>
+            {/* Ledger Selection */}
+            <Grid.Col span={{ base: 12, md: 6 }}>
+              <Select
+                label="Select Ledger Account"
+                value={selectedLedger}
+                onChange={setSelectedLedger}
+                placeholder="-- Select Ledger --"
+                data={ledgers.map(ledger => ({
+                  value: ledger._id,
+                  label: `${ledger.ledgerName} (${ledger.ledgerType})`
+                }))}
+                searchable
+                clearable
+              />
+            </Grid.Col>
 
-          {/* Date Range */}
-          <div className="form-row">
-            <div className="form-group">
-              <label>From Date</label>
-              <input
-                type="date"
+            {/* Date Range */}
+            <Grid.Col span={{ base: 12, md: 6 }}>
+              <DateInput
+                label="From Date"
                 value={dateRange.startDate}
-                onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
-                className="form-input"
+                onChange={(date) => setDateRange({ ...dateRange, startDate: date })}
+                maxDate={dateRange.endDate}
+                leftSection={<IconCalendar size={16} />}
               />
-            </div>
-            <div className="form-group">
-              <label>To Date</label>
-              <input
-                type="date"
+            </Grid.Col>
+            <Grid.Col span={{ base: 12, md: 6 }}>
+              <DateInput
+                label="To Date"
                 value={dateRange.endDate}
-                onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
-                className="form-input"
+                onChange={(date) => setDateRange({ ...dateRange, endDate: date })}
+                minDate={dateRange.startDate}
+                leftSection={<IconCalendar size={16} />}
               />
-            </div>
-          </div>
+            </Grid.Col>
+          </Grid>
 
           {/* Action Buttons */}
-          <div className="action-buttons">
-            <button
+          <Group justify="flex-start" mt="md">
+            <Button
+              leftSection={<IconRefresh size={16} />}
               onClick={fetchReport}
-              className="btn btn-primary"
-              disabled={loading}
+              loading={loading}
+              disabled={!selectedLedger || !dateRange.startDate || !dateRange.endDate}
             >
-              {loading ? 'Loading...' : 'Generate Report'}
-            </button>
+              Generate Report
+            </Button>
+            
             {reportData && (
               <>
-                <button onClick={handlePrint} className="btn btn-secondary">
+                <Button
+                  leftSection={<IconPrinter size={16} />}
+                  onClick={handlePrint}
+                  variant="light"
+                  color="blue"
+                >
                   Print Report
-                </button>
-                <button onClick={handleExport} className="btn btn-secondary">
+                </Button>
+                <Button
+                  leftSection={<IconDownload size={16} />}
+                  onClick={handleExport}
+                  variant="light"
+                  color="green"
+                >
                   Export CSV
-                </button>
+                </Button>
               </>
             )}
-          </div>
-        </div>
-      </div>
+          </Group>
+        </Stack>
+      </Card>
 
       {/* Report Display */}
       {loading && (
-        <div className="loading-state no-print">
-          <div className="spinner"></div>
-          <p>Loading general ledger...</p>
-        </div>
+        <Center py="xl">
+          <Stack align="center" gap="md">
+            <Loader size="lg" />
+            <Text size="lg" fw={500}>Loading general ledger...</Text>
+          </Stack>
+        </Center>
       )}
 
       {!loading && reportData && renderLedgerReport()}
 
       {!loading && !reportData && (
-        <div className="empty-state no-print">
-          <p>Select ledger account and date range to generate report</p>
-        </div>
+        <Card withBorder>
+          <Center py="xl">
+            <Stack align="center" gap="sm">
+              <IconCalendar size={48} color="var(--mantine-color-gray-4)" />
+              <Text size="lg" c="dimmed">
+                Select ledger account and date range to generate report
+              </Text>
+            </Stack>
+          </Center>
+        </Card>
       )}
-    </div>
+    </Container>
   );
 };
 

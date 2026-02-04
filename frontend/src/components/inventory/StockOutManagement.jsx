@@ -150,7 +150,7 @@ const StockOutManagement = () => {
       {/* Header */}
       <Group justify="space-between" mb="xl">
         <div>
-          <Title order={2}>Stock Out Management</Title>
+          <Title order={2}>Stock Return Management</Title>
           <Text size="sm" c="dimmed">Manage stock removals, sales, and adjustments</Text>
         </div>
         <Group>
@@ -167,7 +167,7 @@ const StockOutManagement = () => {
             color="red"
             disabled={!canWrite('inventory')}
           >
-            Stock Out
+            Stock Return
           </Button>
         </Group>
       </Group>

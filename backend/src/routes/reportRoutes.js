@@ -22,6 +22,7 @@ import {
   getPurchaseReport,
   getPartyStatement,
   getCashflowReport,
+  getCashInHandReport,
   getAllTransactions,
   getVyaparProfitLoss,
   getVyaparBalanceSheet,
@@ -33,7 +34,9 @@ import {
   getItemWiseProfit,
   getLowStockSummary,
   getBankStatement,
-  getAllPartiesReport
+  getAllPartiesReport,
+  getGSTR1Report,
+  getGSTR2Report
 } from '../controllers/vyaparReportsController.js';
 
 const router = express.Router();
@@ -61,6 +64,7 @@ router.get('/vyapar/sale-report', getSaleReport);
 router.get('/vyapar/purchase-report', getPurchaseReport);
 router.get('/vyapar/party-statement', getPartyStatement);
 router.get('/vyapar/cashflow', getCashflowReport);
+router.get('/vyapar/cash-in-hand', getCashInHandReport);
 router.get('/vyapar/all-transactions', getAllTransactions);
 router.get('/vyapar/profit-loss', getVyaparProfitLoss);
 router.get('/vyapar/balance-sheet', getVyaparBalanceSheet);
@@ -73,5 +77,7 @@ router.get('/vyapar/item-profit', getItemWiseProfit);
 router.get('/vyapar/low-stock', getLowStockSummary);
 router.get('/vyapar/bank-statement', getBankStatement);
 router.get('/vyapar/all-parties', getAllPartiesReport);
+router.get('/vyapar/gstr1', getGSTR1Report);
+router.get('/vyapar/gstr2', getGSTR2Report);
 
 export default router;

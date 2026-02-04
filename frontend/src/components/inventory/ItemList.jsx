@@ -40,7 +40,6 @@ import {
   IconTrash,
   IconCoin,
   IconBuildingWarehouse,
-  IconWallet,
   IconPercentage,
   IconActivity,
   IconX,
@@ -78,11 +77,9 @@ const ItemList = () => {
   // Modal states
   const [itemModalOpened, { open: openItemModal, close: closeItemModal }] = useDisclosure(false);
   const [openingBalanceModalOpened, { open: openOpeningBalanceModal, close: closeOpeningBalanceModal }] = useDisclosure(false);
-  const [salesPriceModalOpened, { open: openSalesPriceModal, close: closeSalesPriceModal }] = useDisclosure(false);
-  
+
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedItemForBalance, setSelectedItemForBalance] = useState(null);
-  const [selectedItemForPrice, setSelectedItemForPrice] = useState(null);
   
   // Column visibility
   const [visibleColumns, setVisibleColumns] = useState({
@@ -91,7 +88,6 @@ const ItemList = () => {
     category: true,
     measurement: true,
     stock: true,
-    price: true,
     supplier: true,
     purchaseLedger: true,
     salesLedger: true,
@@ -130,7 +126,7 @@ const ItemList = () => {
       measurement: '',
       unit: '',
       supplier: '',
-      gstPercent: '',
+      gstPercent: 0,
       hsnCode: '',
       status: 'Active'
     },
@@ -143,21 +139,12 @@ const ItemList = () => {
 
   const openingBalanceForm = useForm({
     initialValues: {
-      openingBalance: '',
-      rate: ''
+      openingBalance: 0,
+      rate: 0
     },
     validate: {
-      openingBalance: (value) => !value ? 'Opening balance is required' : null,
-      rate: (value) => !value ? 'Rate is required' : null,
-    }
-  });
-
-  const salesPriceForm = useForm({
-    initialValues: {
-      salesRate: ''
-    },
-    validate: {
-      salesRate: (value) => !value ? 'Sales price is required' : null,
+      openingBalance: (value) => (value === undefined || value === null || value === '') ? 'Opening balance is required' : null,
+      rate: (value) => (value === undefined || value === null || value === '') ? 'Rate is required' : null,
     }
   });
 
@@ -221,7 +208,7 @@ const ItemList = () => {
       measurement: item.measurement || '',
       unit: item.unit || '',
       supplier: item.supplier?._id || '',
-      gstPercent: item.gstPercent || '',
+      gstPercent: item.gstPercent || 0,
       hsnCode: item.hsnCode || '',
       status: item.status || 'Active'
     });
@@ -317,31 +304,6 @@ const ItemList = () => {
     }
   };
 
-  const handleSalesPriceClick = (item) => {
-    setSelectedItemForPrice(item);
-    salesPriceForm.setValues({ salesRate: item.salesRate || 0 });
-    openSalesPriceModal();
-  };
-
-  const handleSalesPriceSubmit = async (values) => {
-    try {
-      await itemAPI.updateSalesPrice(selectedItemForPrice._id, values);
-      notifications.show({
-        title: 'Success',
-        message: 'Sales price updated successfully',
-        color: 'green'
-      });
-      closeSalesPriceModal();
-      fetchItems();
-    } catch (error) {
-      notifications.show({
-        title: 'Error',
-        message: error.message || 'Failed to update sales price',
-        color: 'red'
-      });
-    }
-  };
-
   const handleSort = (key) => {
     let direction = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -390,7 +352,6 @@ const ItemList = () => {
       case 'category': aValue = a.category || ''; bValue = b.category || ''; break;
       case 'measurement': aValue = a.measurement || ''; bValue = b.measurement || ''; break;
       case 'stock': aValue = a.currentBalance || 0; bValue = b.currentBalance || 0; break;
-      case 'price': aValue = a.salesRate || 0; bValue = b.salesRate || 0; break;
       case 'gst': aValue = a.gstPercent || 0; bValue = b.gstPercent || 0; break;
       case 'status': aValue = a.status || ''; bValue = b.status || ''; break;
       default: return 0;
@@ -442,7 +403,6 @@ const ItemList = () => {
       'Category': item.category,
       'Measurement': item.measurement,
       'Stock': `${item.currentBalance} ${item.measurement}`,
-      'Sale Price': `₹${item.salesRate || 0}`,
       'Supplier': item.supplier?.name || '-',
       'Purchase Ledger': item.purchaseLedger?.ledgerName || '-',
       'Sales Ledger': item.salesLedger?.ledgerName || '-',
@@ -456,7 +416,7 @@ const ItemList = () => {
 
     ws['!cols'] = [
       { wch: 10 }, { wch: 25 }, { wch: 15 }, { wch: 12 },
-      { wch: 15 }, { wch: 12 }, { wch: 20 }, { wch: 25 },
+      { wch: 15 }, { wch: 20 }, { wch: 25 },
       { wch: 25 }, { wch: 8 }, { wch: 10 }
     ];
 
@@ -482,7 +442,6 @@ const ItemList = () => {
       item.category,
       item.measurement,
       `${item.currentBalance} ${item.measurement}`,
-      `₹${item.salesRate || 0}`,
       item.supplier?.name || '-',
       item.purchaseLedger?.ledgerName || '-',
       item.salesLedger?.ledgerName || '-',
@@ -492,15 +451,15 @@ const ItemList = () => {
 
     doc.autoTable({
       startY: 28,
-      head: [['Code', 'Item Name', 'Category', 'Unit', 'Stock', 'Price', 'Supplier', 'Purchase Ledger', 'Sales Ledger', 'GST%', 'Status']],
+      head: [['Code', 'Item Name', 'Category', 'Unit', 'Stock', 'Supplier', 'Purchase Ledger', 'Sales Ledger', 'GST%', 'Status']],
       body: tableData,
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [24, 144, 255], textColor: 255 },
       columnStyles: {
         0: { cellWidth: 15 }, 1: { cellWidth: 30 }, 2: { cellWidth: 20 },
-        3: { cellWidth: 12 }, 4: { cellWidth: 20 }, 5: { cellWidth: 15 },
-        6: { cellWidth: 25 }, 7: { cellWidth: 30 }, 8: { cellWidth: 30 },
-        9: { cellWidth: 12 }, 10: { cellWidth: 15 }
+        3: { cellWidth: 12 }, 4: { cellWidth: 20 }, 5: { cellWidth: 25 },
+        6: { cellWidth: 30 }, 7: { cellWidth: 30 }, 8: { cellWidth: 12 },
+        9: { cellWidth: 15 }
       }
     });
 
@@ -600,16 +559,6 @@ const ItemList = () => {
       ),
       width: 120
     },
-    visibleColumns.price && {
-      accessor: 'salesRate',
-      title: 'Sale Price',
-      render: (item) => (
-        <Text fw={600} color="blue">
-          ₹{item.salesRate || 0}
-        </Text>
-      ),
-      width: 100
-    },
     visibleColumns.supplier && {
       accessor: 'supplier',
       title: 'Supplier',
@@ -695,14 +644,6 @@ const ItemList = () => {
           </ActionIcon>
           <ActionIcon
             variant="subtle"
-            color="orange"
-            onClick={() => handleSalesPriceClick(item)}
-            title="Update Price"
-          >
-            <IconWallet size={16} />
-          </ActionIcon>
-          <ActionIcon
-            variant="subtle"
             color="red"
             onClick={() => handleDelete(item._id)}
             title="Delete"
@@ -711,7 +652,7 @@ const ItemList = () => {
           </ActionIcon>
         </Group>
       ),
-      width: 180
+      width: 140
     }
   ].filter(Boolean);
 
@@ -823,7 +764,6 @@ const ItemList = () => {
                     { key: 'category', label: 'Category' },
                     { key: 'measurement', label: 'Measurement' },
                     { key: 'stock', label: 'Stock' },
-                    { key: 'price', label: 'Sale Price' },
                     { key: 'supplier', label: 'Supplier' },
                     { key: 'purchaseLedger', label: 'Purchase Ledger' },
                     { key: 'salesLedger', label: 'Sales Ledger' },
@@ -1046,7 +986,10 @@ const ItemList = () => {
                 placeholder="0"
                 min={0}
                 max={100}
-                {...itemForm.getInputProps('gstPercent')}
+                allowDecimal={true}
+                decimalScale={2}
+                value={itemForm.values.gstPercent}
+                onChange={(val) => itemForm.setFieldValue('gstPercent', val || 0)}
               />
               
               <TextInput
@@ -1103,15 +1046,24 @@ const ItemList = () => {
               label="New Opening Balance"
               placeholder="Enter quantity"
               withAsterisk
-              {...openingBalanceForm.getInputProps('openingBalance')}
+              min={0}
+              allowDecimal={true}
+              decimalScale={2}
+              value={openingBalanceForm.values.openingBalance}
+              onChange={(val) => openingBalanceForm.setFieldValue('openingBalance', val || 0)}
+              error={openingBalanceForm.errors.openingBalance}
             />
-            
+
             <NumberInput
               label="Rate"
               placeholder="Enter rate"
               withAsterisk
-              precision={2}
-              {...openingBalanceForm.getInputProps('rate')}
+              min={0}
+              allowDecimal={true}
+              decimalScale={2}
+              value={openingBalanceForm.values.rate}
+              onChange={(val) => openingBalanceForm.setFieldValue('rate', val || 0)}
+              error={openingBalanceForm.errors.rate}
             />
             
             <Group position="right" mt="md">
@@ -1120,48 +1072,6 @@ const ItemList = () => {
               </Button>
               <Button type="submit" color="blue">
                 Update Balance
-              </Button>
-            </Group>
-          </Stack>
-        </form>
-      </Modal>
-
-      {/* Sales Price Modal */}
-      <Modal
-        opened={salesPriceModalOpened}
-        onClose={closeSalesPriceModal}
-        title="Update Sales Price"
-        size="sm"
-        centered
-      >
-        <form onSubmit={salesPriceForm.onSubmit(handleSalesPriceSubmit)}>
-          <Stack spacing="md">
-            <TextInput
-              label="Item Name"
-              value={selectedItemForPrice?.itemName || ''}
-              disabled
-            />
-            
-            <TextInput
-              label="Current Sales Price"
-              value={`₹${selectedItemForPrice?.salesRate || 0}`}
-              disabled
-            />
-            
-            <NumberInput
-              label="New Sales Price"
-              placeholder="Enter new sales price"
-              withAsterisk
-              precision={2}
-              {...salesPriceForm.getInputProps('salesRate')}
-            />
-            
-            <Group position="right" mt="md">
-              <Button variant="default" onClick={closeSalesPriceModal}>
-                Cancel
-              </Button>
-              <Button type="submit" color="blue">
-                Update Price
               </Button>
             </Group>
           </Stack>

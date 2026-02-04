@@ -122,7 +122,7 @@ const farmerPaymentSchema = new mongoose.Schema({
   deductions: [{
     type: {
       type: String,
-      enum: ['Feed', 'Medicine', 'Loan EMI', 'Insurance', 'Society Fee', 'Cattle Feed', 'Mineral Mixture', 'Veterinary', 'Transport', 'Other'],
+      enum: ['Feed', 'Medicine', 'Loan EMI', 'Insurance', 'Society Fee', 'Cattle Feed', 'Mineral Mixture', 'Veterinary', 'Transport', 'Welfare Recovery', 'CF Advance', 'Loan Advance', 'Cash Advance', 'Share', 'Other'],
       required: true
     },
     amount: {
@@ -154,8 +154,7 @@ const farmerPaymentSchema = new mongoose.Schema({
   // Net calculations
   netPayable: {
     type: Number,
-    required: true,
-    min: 0
+    required: true
   },
   // Payment details
   paymentMode: {
@@ -261,10 +260,13 @@ farmerPaymentSchema.pre('save', async function(next) {
   // Calculate totals
   this.totalBonus = this.bonuses?.reduce((sum, b) => sum + (b.amount || 0), 0) || 0;
   this.grossAmount = (this.milkAmount || 0) + this.totalBonus;
-  this.totalDeduction = (this.advanceAmount || 0) +
-                        (this.deductions?.reduce((sum, d) => sum + (d.amount || 0), 0) || 0) +
-                        (this.tdsAmount || 0);
-  this.netPayable = this.grossAmount - this.totalDeduction + (this.previousBalance || 0);
+
+  // Calculate total deduction from deductions array (includes advance deductions as separate items)
+  const deductionsTotal = this.deductions?.reduce((sum, d) => sum + (d.amount || 0), 0) || 0;
+  this.totalDeduction = deductionsTotal + (this.tdsAmount || 0);
+
+  // Net payable = gross amount - total deductions - previous balance (if farmer owes)
+  this.netPayable = this.grossAmount - this.totalDeduction - (this.previousBalance || 0);
   this.balanceAmount = this.netPayable - (this.paidAmount || 0);
 
   // Update status based on payment

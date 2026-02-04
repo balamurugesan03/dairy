@@ -35,7 +35,7 @@ export const calculateOpeningBalance = async (Ledger, Voucher, ledgerId, startDa
     const isDebitNature = [
       'Asset', 'Fixed Assets', 'Movable Assets', 'Immovable Assets', 'Other Assets',
       'Expense', 'Purchases A/c', 'Trade Expenses', 'Establishment Charges', 'Miscellaneous Expenses',
-      'Cash', 'Bank', 'Other Receivable'
+      'Cash', 'Bank', 'Other Receivable', 'Sundry Debtors', 'Customer', 'Party'
     ].includes(ledger.ledgerType);
 
     // Process each voucher entry
@@ -93,7 +93,8 @@ export const isDebitNatureLedger = (ledgerType) => {
   const debitNatureTypes = [
     'Asset', 'Fixed Assets', 'Movable Assets', 'Immovable Assets', 'Other Assets',
     'Expense', 'Purchases A/c', 'Trade Expenses', 'Establishment Charges', 'Miscellaneous Expenses',
-    'Cash', 'Bank', 'Other Receivable', 'Party'
+    'Cash', 'Bank', 'Other Receivable', 'Party',
+    'Sundry Debtors', 'Customer' // Customers owe us money - debit nature
   ];
 
   return debitNatureTypes.includes(ledgerType);
@@ -168,6 +169,10 @@ export const getLedgerCategory = (ledgerType) => {
     'Contingency Fund': 'LIABILITIES',
     'Education Fund': 'LIABILITIES',
     'Accounts Due To (Sundry Creditors)': 'LIABILITIES',
+    'Sundry Creditors': 'LIABILITIES',
+
+    'Sundry Debtors': 'ASSETS',
+    'Customer': 'ASSETS',
 
     'Capital': 'CAPITAL',
     'Share Capital': 'CAPITAL',

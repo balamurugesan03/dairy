@@ -11,12 +11,11 @@ import {
   Stack,
   Grid,
   Text,
-  Box,
-  rem
+  Box
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
-import { IconUpload, IconX, IconTrash } from '@tabler/icons-react';
+import { IconUpload, IconTrash } from '@tabler/icons-react';
 import { farmerAPI, collectionCenterAPI } from '../../services/api';
 import { message } from '../../utils/toast';
 
@@ -213,6 +212,18 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
     });
   };
 
+  // Helper function to safely convert date to ISO string
+  const toISOString = (value) => {
+    if (!value) return null;
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+    if (typeof value === 'string') {
+      return new Date(value).toISOString();
+    }
+    return null;
+  };
+
   const nextStep = () => {
     const validation = form.validate();
     if (!validation.hasErrors) {
@@ -250,7 +261,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
           name: values.personalDetails.name,
           fatherName: values.personalDetails.fatherName,
           age: parseInt(values.personalDetails.age) || null,
-          dob: values.personalDetails.dob ? values.personalDetails.dob.toISOString() : null,
+          dob: toISOString(values.personalDetails.dob),
           gender: values.personalDetails.gender,
           phone: values.personalDetails.phone
         },
@@ -266,12 +277,12 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
           welfareNo: values.identityDetails.welfareNo,
           ksheerasreeId: values.identityDetails.ksheerasreeId,
           idCardNumber: values.identityDetails.idCardNumber,
-          issueDate: values.identityDetails.issueDate ? values.identityDetails.issueDate.toISOString() : null
+          issueDate: toISOString(values.identityDetails.issueDate)
         },
         farmerType: values.farmerType,
         cowType: values.cowType,
         collectionCenter: values.collectionCenter || null,
-        admissionDate: values.admissionDate ? values.admissionDate.toISOString() : null,
+        admissionDate: toISOString(values.admissionDate),
         bankDetails: {
           accountNumber: values.bankDetails.accountNumber,
           bankName: values.bankDetails.bankName,
@@ -282,7 +293,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
           numberOfShares: parseFloat(values.financialDetails.numberOfShares) || 0,
           shareValue: parseFloat(values.financialDetails.shareValue) || 0,
           resolutionNo: values.financialDetails.resolutionNo,
-          resolutionDate: values.financialDetails.resolutionDate ? values.financialDetails.resolutionDate.toISOString() : null,
+          resolutionDate: toISOString(values.financialDetails.resolutionDate),
           admissionFee: parseFloat(values.financialDetails.admissionFee) || 0
         },
         documents: {
@@ -306,6 +317,24 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const calculateAge = (dob) => {
+    if (!dob) return '';
+    const today = new Date();
+    const birthDate = new Date(dob);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age >= 0 ? age : '';
+  };
+
+  const handleDobChange = (date) => {
+    form.setFieldValue('personalDetails.dob', date);
+    const age = calculateAge(date);
+    form.setFieldValue('personalDetails.age', age);
   };
 
   const handleSharesChange = (value) => {
@@ -381,19 +410,23 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
                 />
               </Grid.Col>
               <Grid.Col span={6}>
-                <NumberInput
-                  label="Age"
-                  placeholder="Enter age"
-                  min={0}
-                  max={100}
-                  {...form.getInputProps('personalDetails.age')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
                 <DatePickerInput
                   label="Date of Birth"
                   placeholder="Select date"
-                  {...form.getInputProps('personalDetails.dob')}
+                  value={form.values.personalDetails.dob}
+                  onChange={handleDobChange}
+                  maxDate={new Date()}
+                />
+              </Grid.Col>
+              <Grid.Col span={6}>
+                <NumberInput
+                  label="Age"
+                  placeholder="Auto-calculated"
+                  min={0}
+                  max={150}
+                  value={form.values.personalDetails.age}
+                  disabled
+                  description="Calculated from Date of Birth"
                 />
               </Grid.Col>
               <Grid.Col span={6}>
@@ -651,7 +684,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
                 <FileInput
                   label="Aadhaar Document"
                   placeholder="Upload file"
-                  leftSection={<IconUpload size={rem(14)} />}
+                  leftSection={<IconUpload size={14} />}
                   accept="image/*,.pdf"
                   {...form.getInputProps('documents.aadhaar')}
                 />
@@ -660,7 +693,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
                 <FileInput
                   label="Bank Passbook"
                   placeholder="Upload file"
-                  leftSection={<IconUpload size={rem(14)} />}
+                  leftSection={<IconUpload size={14} />}
                   accept="image/*,.pdf"
                   {...form.getInputProps('documents.bankPassbook')}
                 />
@@ -669,7 +702,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
                 <FileInput
                   label="Ration Card"
                   placeholder="Upload file"
-                  leftSection={<IconUpload size={rem(14)} />}
+                  leftSection={<IconUpload size={14} />}
                   accept="image/*,.pdf"
                   {...form.getInputProps('documents.rationCard')}
                 />
@@ -678,7 +711,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
                 <FileInput
                   label="Income Proof"
                   placeholder="Upload file"
-                  leftSection={<IconUpload size={rem(14)} />}
+                  leftSection={<IconUpload size={14} />}
                   accept="image/*,.pdf"
                   {...form.getInputProps('documents.incomeProof')}
                 />
@@ -700,7 +733,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
                   <Group key={index}>
                     <FileInput
                       placeholder="Upload file"
-                      leftSection={<IconUpload size={rem(14)} />}
+                      leftSection={<IconUpload size={14} />}
                       accept="image/*,.pdf"
                       onChange={(file) => handleAdditionalDocChange(index, file)}
                       style={{ flex: 1 }}
@@ -709,7 +742,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
                       color="red"
                       variant="subtle"
                       onClick={() => removeAdditionalDocument(index)}
-                      leftSection={<IconTrash size={rem(14)} />}
+                      leftSection={<IconTrash size={14} />}
                     >
                       Remove
                     </Button>

@@ -7,7 +7,8 @@ import {
   resetCompanyUserPassword,
   deleteCompanyUser,
   getModulesList,
-  getDesignationsList
+  getDesignationsList,
+  getUserTypesList
 } from '../controllers/userManagementController.js';
 import { protect, addCompanyFilter } from '../middleware/auth.js';
 
@@ -17,9 +18,10 @@ const router = express.Router();
 router.use(protect);
 router.use(addCompanyFilter);
 
-// Get modules and designations lists
+// Get modules, designations, and user types lists
 router.get('/modules', getModulesList);
 router.get('/designations', getDesignationsList);
+router.get('/user-types', getUserTypesList);
 
 // User management routes
 router.route('/')
