@@ -494,4 +494,57 @@ export const bankTransferAPI = {
   getBanks: () => api.get('/bank-transfers/banks').then(res => res.data).catch(handleError)
 };
 
+// BUSINESS ITEM APIs
+export const businessItemAPI = {
+  getAll: (params) => api.get('/business-inventory/items', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/business-inventory/items/${id}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/business-inventory/items', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/business-inventory/items/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/business-inventory/items/${id}`).then(res => res.data).catch(handleError),
+  updateOpeningBalance: (id, data) => api.patch(`/business-inventory/items/${id}/opening-balance`, data).then(res => res.data).catch(handleError),
+  updatePrices: (id, data) => api.patch(`/business-inventory/items/${id}/prices`, data).then(res => res.data).catch(handleError)
+};
+
+// BUSINESS STOCK APIs
+export const businessStockAPI = {
+  stockIn: (data) => api.post('/business-inventory/stock/in', data).then(res => res.data).catch(handleError),
+  stockOut: (data) => api.post('/business-inventory/stock/out', data).then(res => res.data).catch(handleError),
+  getTransactions: (params) => api.get('/business-inventory/stock/transactions', { params }).then(res => res.data).catch(handleError),
+  getBalance: (params) => api.get('/business-inventory/stock/balance', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/business-inventory/stock/transactions/${id}`).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/business-inventory/stock/transactions/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/business-inventory/stock/transactions/${id}`).then(res => res.data).catch(handleError)
+};
+
+// BUSINESS SALES APIs (Vyapar-style billing for Private Firm)
+export const businessSalesAPI = {
+  getAll: (params) => api.get('/business-sales', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/business-sales/${id}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/business-sales', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/business-sales/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/business-sales/${id}`).then(res => res.data).catch(handleError),
+  getPartyHistory: (partyId) => api.get(`/business-sales/party/${partyId}/history`).then(res => res.data).catch(handleError),
+  getSummary: (params) => api.get('/business-sales/summary', { params }).then(res => res.data).catch(handleError)
+};
+
+// BUSINESS LEDGER APIs (Separate ledgers for Private Firm)
+export const businessLedgerAPI = {
+  getAll: (params) => api.get('/business-accounting/ledgers', { params }).then(res => res.data).catch(handleError),
+  getById: (id, params) => api.get(`/business-accounting/ledgers/${id}`, { params }).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/business-accounting/ledgers', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/business-accounting/ledgers/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/business-accounting/ledgers/${id}`).then(res => res.data).catch(handleError)
+};
+
+// BUSINESS VOUCHER APIs (Separate vouchers for Private Firm)
+export const businessVoucherAPI = {
+  getAll: (params) => api.get('/business-accounting/vouchers', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/business-accounting/vouchers/${id}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/business-accounting/vouchers', data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/business-accounting/vouchers/${id}`).then(res => res.data).catch(handleError),
+  createIncome: (data) => api.post('/business-accounting/income-voucher', data).then(res => res.data).catch(handleError),
+  createExpense: (data) => api.post('/business-accounting/expense-voucher', data).then(res => res.data).catch(handleError),
+  createJournal: (data) => api.post('/business-accounting/journal-voucher', data).then(res => res.data).catch(handleError)
+};
+
 export default api;

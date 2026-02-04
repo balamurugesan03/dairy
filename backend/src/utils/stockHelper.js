@@ -5,7 +5,6 @@ import StockTransaction from '../models/StockTransaction.js';
 export const createStockTransaction = async (transactionData, session = null) => {
   const {
     itemId,
-    inventoryType,
     transactionType,
     quantity,
     freeQty,
@@ -54,7 +53,6 @@ export const createStockTransaction = async (transactionData, session = null) =>
   // Create stock transaction record
   const transaction = new StockTransaction({
     itemId,
-    inventoryType: inventoryType || item.inventoryType || 'Dairy',
     transactionType,
     quantity,
     freeQty: freeQty || 0,
@@ -191,18 +189,15 @@ export const getItemStockHistory = async (itemId, startDate = null, endDate = nu
 };
 
 // Get current stock report for all items
-export const getStockReport = async (category = null, status = 'Active', inventoryType = null) => {
+export const getStockReport = async (category = null, status = 'Active') => {
   const query = { status };
   if (category) {
     query.category = category;
   }
-  if (inventoryType) {
-    query.inventoryType = inventoryType;
-  }
 
   const items = await Item.find(query)
     .sort({ itemName: 1 })
-    .select('itemCode itemName category unit currentBalance purchaseRate salesRate inventoryType');
+    .select('itemCode itemName category unit currentBalance purchaseRate salesRate');
 
   return items.map(item => ({
     itemCode: item.itemCode,
@@ -212,7 +207,6 @@ export const getStockReport = async (category = null, status = 'Active', invento
     currentBalance: item.currentBalance,
     purchaseRate: item.purchaseRate,
     salesRate: item.salesRate,
-    inventoryType: item.inventoryType,
     stockValue: item.currentBalance * item.purchaseRate
   }));
 };

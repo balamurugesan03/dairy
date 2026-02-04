@@ -77,51 +77,75 @@ const MainLayout = () => {
       label: 'Dashboard',
       color: 'blue'
     },
-    {
+    // DAIRY COOPERATIVE - Farmers Management (Producer, Collection Centre, Customer)
+    ...(selectedBusinessType === 'Dairy Cooperative Society' ? [{
       key: 'party-menu',
       icon: <IconUsers size={18} />,
       label: 'Farmers Management',
       color: 'green',
       children: [
         { key: '/farmers', label: 'Producer Management' },
-         { key: '/collection-centers', label: 'Collection Centre ' },
-        { key: '/customers', label: 'Customer ' },
-       
+        { key: '/collection-centers', label: 'Collection Centre' },
+        { key: '/customers', label: 'Customer' },
       ]
-    },
-      {
+    }] : []),
+    // PRIVATE FIRM - Customer Module Only
+    ...(selectedBusinessType === 'Private Firm' ? [{
+      key: 'customer-menu',
+      icon: <IconUsers size={18} />,
+      label: 'Customer',
+      color: 'green',
+      children: [
+        { key: '/customers', label: 'Customer Details' },
+      ]
+    }] : []),
+    // DAIRY COOPERATIVE - Milk Purchase & Sales
+    ...(selectedBusinessType === 'Dairy Cooperative Society' ? [{
       key: 'sales-menu',
       icon: <IconShoppingCart size={18} />,
       label: 'Milk purchase & Sales',
       color: 'teal',
-      children: [
-       
-       
-      ]
-    },
-    {
+      children: []
+    }] : []),
+    // DAIRY INVENTORY - Only show for Dairy Cooperative Society
+    ...(selectedBusinessType === 'Dairy Cooperative Society' ? [{
       key: 'inventory-menu',
       icon: <IconBox size={18} />,
-      label: 'Inventory',
+      label: 'Dairy Inventory',
       color: 'orange',
       children: [
         { key: '/inventory/items', label: 'Add Items' },
-        { key: '/inventory/stock-in', label: 'Inventory Purchase ' },
-         { key: '/sales/new', label: ' Inventory Sales ' },
-        { key: '/inventory/stock-out', label: 'Stock Returns ' },
-         { key: '/suppliers', label: 'Supplier ' },
-       
-        { key: '/subsidies', label: 'Subsidy ' },
-         { key: '/sales/list', label: 'Sales Report' },
+        { key: '/inventory/stock-in', label: 'Inventory Purchase' },
+        { key: '/sales/new', label: 'Inventory Sales' },
+        { key: '/inventory/stock-out', label: 'Stock Returns' },
+        { key: '/suppliers', label: 'Supplier' },
+        { key: '/subsidies', label: 'Subsidy' },
+        { key: '/sales/list', label: 'Sales Report' },
         { key: '/inventory/report', label: 'Stock Report' },
-         { key: '/reports/purchase-register', label: 'Purchase Register' },
-          { key: '/reports/sales', label: 'Sales Register' },
-            { key: '/reports/stock', label: 'Stock Register' },
-            { key: '/reports/subsidy', label: 'Subsidy Resgister' }
-           
+        { key: '/reports/purchase-register', label: 'Purchase Register' },
+        { key: '/reports/sales', label: 'Sales Register' },
+        { key: '/reports/stock', label: 'Stock Register' },
+        { key: '/reports/subsidy', label: 'Subsidy Register' }
       ]
-    },
-    {
+    }] : []),
+    // BUSINESS INVENTORY - Only show for Private Firm
+    ...(selectedBusinessType === 'Private Firm' ? [{
+      key: 'business-inventory-menu',
+      icon: <IconBox size={18} />,
+      label: 'Business Inventory',
+      color: 'orange',
+      children: [
+        { key: '/business-inventory/items', label: 'Item Master' },
+        { key: '/business-inventory/stock-in', label: 'Purchase / Stock In' },
+        { key: '/business-inventory/sales/new', label: 'Create Invoice' },
+        { key: '/business-inventory/sales/list', label: 'Sales Invoices' },
+        { key: '/business-inventory/stock-out', label: 'Stock Out / Returns' },
+        { key: '/suppliers', label: 'Supplier' },
+        { key: '/business-inventory/stock-report', label: 'Stock Report' }
+      ]
+    }] : []),
+    // DAIRY COOPERATIVE - Producers dues (Only for Dairy)
+    ...(selectedBusinessType === 'Dairy Cooperative Society' ? [{
       key: 'payments-menu',
       icon: <IconCash size={18} />,
       label: 'Producers dues',
@@ -137,9 +161,10 @@ const MainLayout = () => {
         { key: '/payments/receipts', label: 'Receipts' },
         { key: '/payments/farmer-ledger', label: 'Farmer Ledger' }
       ]
-    },
+    }] : []),
   
-    {
+    // DAIRY COOPERATIVE - Accounts with all reports
+    ...(selectedBusinessType === 'Dairy Cooperative Society' ? [{
       key: 'accounting-menu',
       icon: <IconBook size={18} />,
       label: 'Accounts',
@@ -148,19 +173,33 @@ const MainLayout = () => {
         { key: '/accounting/ledgers', label: 'Ledgers' },
         { key: '/accounting/receipt', label: 'Receipt Voucher' },
         { key: '/accounting/payment', label: 'Payment Voucher' },
-        { key: '/accounting/journal', label: ' Adjustment/Journal Entry' },
+        { key: '/accounting/journal', label: 'Adjustment/Journal Entry' },
         { key: '/accounting/vouchers', label: 'Vouchers Management' },
         { key: '/accounting/outstanding', label: 'Outstanding Report' },
         { key: '/reports/cash-book', label: 'Cash Book' },
-            { key: '/reports/daybook', label: 'Day Book' },
-            { key: '/reports/general-ledger', label: 'General Ledger' },
-            { key: '/reports/ledger-abstract', label: 'Ledger Abstract' },
-            { key: '/reports/rd-enhanced', label: 'R&D Enhanced' },
-            { key: '/reports/final-accounts', label: 'Final Accounts' },
-            { key: '/reports/balance-sheet', label: 'Balance Sheet' },
-            { key: '/reports/milk-bill-abstract', label: 'Milk Bill Abstract' }
+        { key: '/reports/daybook', label: 'Day Book' },
+        { key: '/reports/general-ledger', label: 'General Ledger' },
+        { key: '/reports/ledger-abstract', label: 'Ledger Abstract' },
+        { key: '/reports/rd-enhanced', label: 'R&D Enhanced' },
+        { key: '/reports/final-accounts', label: 'Final Accounts' },
+        { key: '/reports/balance-sheet', label: 'Balance Sheet' },
+        { key: '/reports/milk-bill-abstract', label: 'Milk Bill Abstract' }
       ]
-    },
+    }] : []),
+    // PRIVATE FIRM - Business Accounts (Separate from Dairy)
+    ...(selectedBusinessType === 'Private Firm' ? [{
+      key: 'accounting-menu',
+      icon: <IconBook size={18} />,
+      label: 'Accounts',
+      color: 'violet',
+      children: [
+        { key: '/business-accounting/ledgers', label: 'Ledger' },
+        { key: '/business-accounting/income', label: 'Income Voucher' },
+        { key: '/business-accounting/expense', label: 'Expense Voucher' },
+        { key: '/business-accounting/journal', label: 'Adjustment/Journal Entry' },
+        { key: '/business-accounting/vouchers', label: 'Vouchers Management' }
+      ]
+    }] : []),
    
     // DAIRY COOPERATIVE REPORTS - Only show for Dairy Cooperative
     ...(selectedBusinessType === 'Dairy Cooperative Society' ? [{
@@ -281,12 +320,12 @@ const MainLayout = () => {
         const allowedKeys = [
           '/',
           'party-menu',
-          'inventory-menu',
+          'inventory-menu',  // Dairy inventory
           'sales-menu',
           'accounting-menu',
           'cashbook-menu',
           'payments-menu',
-          'dairy-reports-menu',  // Dairy-specific reports
+          'dairy-reports-menu',
           'subsidies-menu',
           'hrm-menu'
         ];
@@ -297,12 +336,11 @@ const MainLayout = () => {
         if (item.adminOnly && isAdmin) return true;
         const allowedKeys = [
           '/',
-          'party-menu',
-          'inventory-menu',
-          'sales-menu',
+          'customer-menu',  // Only Customer module (NOT Farmers Management)
+          'business-inventory-menu',  // Business inventory (NOT dairy inventory)
           'accounting-menu',
           'cashbook-menu',
-          'vyapar-reports-menu',  // Business-specific reports
+          'vyapar-reports-menu',
           'warranty-menu',
           'machines-menu',
           'quotations-menu',

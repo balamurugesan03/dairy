@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
 
-const stockTransactionSchema = new mongoose.Schema({
+const businessStockTransactionSchema = new mongoose.Schema({
   itemId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Item',
+    ref: 'BusinessItem',
     required: true
   },
   transactionType: {
@@ -28,7 +28,7 @@ const stockTransactionSchema = new mongoose.Schema({
   },
   referenceType: {
     type: String,
-    enum: ['Purchase', 'Sale', 'Opening', 'Adjustment', 'Return'],
+    enum: ['Purchase', 'Sale', 'Opening', 'Adjustment', 'Return', 'Transfer'],
     required: true
   },
   referenceId: {
@@ -53,20 +53,7 @@ const stockTransactionSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
-  issueCentre: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'CollectionCenter'
-  },
-  subsidyId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Subsidy'
-  },
-  subsidyAmount: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-  // Supplier and Payment Info (for Purchase transactions)
+  // Supplier and Payment Info
   supplierId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Supplier'
@@ -77,7 +64,7 @@ const stockTransactionSchema = new mongoose.Schema({
   },
   paymentMode: {
     type: String,
-    enum: ['Credit', 'Cash', 'Adjustment', 'N/A'],
+    enum: ['Credit', 'Cash', 'Bank', 'UPI', 'N/A'],
     default: 'Credit'
   },
   paidAmount: {
@@ -96,12 +83,12 @@ const stockTransactionSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
-  subsidyAmount: {
+  discount: {
     type: Number,
     default: 0,
     min: 0
   },
-  ledgerDeduction: {
+  gstAmount: {
     type: Number,
     default: 0,
     min: 0
@@ -133,22 +120,6 @@ const stockTransactionSchema = new mongoose.Schema({
       trim: true
     }
   }],
-  // Multiple Subsidies support
-  subsidies: [{
-    subsidyId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Subsidy'
-    },
-    productId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Item'
-    },
-    amount: {
-      type: Number,
-      default: 0,
-      min: 0
-    }
-  }],
   notes: {
     type: String,
     trim: true
@@ -158,10 +129,12 @@ const stockTransactionSchema = new mongoose.Schema({
 });
 
 // Indexes for faster queries
-stockTransactionSchema.index({ itemId: 1, date: -1 });
-stockTransactionSchema.index({ referenceType: 1, referenceId: 1 });
-stockTransactionSchema.index({ transactionType: 1, date: -1 });
+businessStockTransactionSchema.index({ itemId: 1, date: -1 });
+businessStockTransactionSchema.index({ referenceType: 1, referenceId: 1 });
+businessStockTransactionSchema.index({ transactionType: 1, date: -1 });
+businessStockTransactionSchema.index({ supplierId: 1 });
+businessStockTransactionSchema.index({ invoiceNumber: 1 });
 
-const StockTransaction = mongoose.model('StockTransaction', stockTransactionSchema);
+const BusinessStockTransaction = mongoose.model('BusinessStockTransaction', businessStockTransactionSchema);
 
-export default StockTransaction;
+export default BusinessStockTransaction;

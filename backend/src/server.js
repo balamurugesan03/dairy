@@ -73,6 +73,15 @@ import producerRegisterRoutes from './routes/producerRegisterRoutes.js';
 // Bank Transfer routes
 import bankTransferRoutes from './routes/bankTransferRoutes.js';
 
+// Business Inventory routes
+import businessInventoryRoutes from './routes/businessInventoryRoutes.js';
+
+// Business Sales routes
+import businessSalesRoutes from './routes/businessSalesRoutes.js';
+
+// Business Accounting routes
+import businessAccountingRoutes from './routes/businessAccountingRoutes.js';
+
 // Auth routes (public login, protected user management)
 app.use('/api/auth', authRoutes);
 
@@ -111,6 +120,15 @@ app.use('/api/producer-register', protect, addCompanyFilter, producerRegisterRou
 
 // Bank Transfer routes
 app.use('/api', protect, addCompanyFilter, bankTransferRoutes);
+
+// Business Inventory routes
+app.use('/api/business-inventory', protect, addCompanyFilter, businessInventoryRoutes);
+
+// Business Sales routes
+app.use('/api/business-sales', protect, addCompanyFilter, businessSalesRoutes);
+
+// Business Accounting routes
+app.use('/api/business-accounting', protect, addCompanyFilter, businessAccountingRoutes);
 
 // Company routes - public endpoint for active companies list, protected for other operations
 import { getAllCompanies } from './controllers/companyController.js';

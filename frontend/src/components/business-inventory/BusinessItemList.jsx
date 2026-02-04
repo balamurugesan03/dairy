@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef,useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Container,
@@ -8,89 +8,74 @@ import {
   Group,
   TextInput,
   Select,
-  Table,
   Badge,
   ActionIcon,
   Menu,
   Paper,
   Stack,
-  Grid,
   Modal,
   Checkbox,
   NumberInput,
-  Textarea,
   Pagination,
-  Loader,
-  Center,
   SimpleGrid,
   Card,
-  Divider,
-  ScrollArea,
   Box,
-  Input,
   UnstyledButton
 } from '@mantine/core';
 import {
   IconSearch,
-  IconFilter,
   IconColumns,
-  IconFileExport,
   IconPlus,
   IconEdit,
   IconTrash,
   IconCoin,
   IconBuildingWarehouse,
-  IconPercentage,
   IconActivity,
-  IconX,
-  IconEye,
-  IconSortAscending,
-  IconSortDescending,
-  IconArrowsSort,
   IconFileTypeXls,
   IconFileTypePdf,
-  IconLayoutGrid,
   IconList,
-  IconChartBar,
   IconAlertCircle,
-  IconChevronDown,
-  IconSettings,
-  IconRefresh
+  IconRefresh,
+  IconBarcode
 } from '@tabler/icons-react';
 import { useForm } from '@mantine/form';
 import { useDisclosure } from '@mantine/hooks';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { DataTable } from 'mantine-datatable';
-import { itemAPI, ledgerAPI, supplierAPI } from '../../services/api';
+import { businessItemAPI, ledgerAPI, supplierAPI } from '../../services/api';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 
-const ItemList = () => {
+const BusinessItemList = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [ledgers, setLedgers] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
-  
+
   // Modal states
   const [itemModalOpened, { open: openItemModal, close: closeItemModal }] = useDisclosure(false);
   const [openingBalanceModalOpened, { open: openOpeningBalanceModal, close: closeOpeningBalanceModal }] = useDisclosure(false);
+  const [pricesModalOpened, { open: openPricesModal, close: closePricesModal }] = useDisclosure(false);
 
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedItemForBalance, setSelectedItemForBalance] = useState(null);
-  
+  const [selectedItemForPrices, setSelectedItemForPrices] = useState(null);
+
   // Column visibility
   const [visibleColumns, setVisibleColumns] = useState({
     code: true,
     name: true,
+    barcode: true,
     category: true,
     measurement: true,
     stock: true,
+    purchasePrice: true,
+    salesRate: true,
+    mrp: true,
     supplier: true,
-    purchaseLedger: true,
-    salesLedger: true,
     gst: true,
     status: true
   });
@@ -99,9 +84,6 @@ const ItemList = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-
-  // Sort state
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
   // Table column filters
   const [tableFilters, setTableFilters] = useState({
@@ -125,9 +107,17 @@ const ItemList = () => {
       category: '',
       measurement: '',
       unit: '',
+      barcode: '',
       supplier: '',
+      purchasePrice: 0,
+      salesRate: 0,
+      wholesalePrice: 0,
+      retailPrice: 0,
+      mrp: 0,
       gstPercent: 0,
       hsnCode: '',
+      lowStockAlert: 0,
+      description: '',
       status: 'Active'
     },
     validate: {
@@ -145,6 +135,15 @@ const ItemList = () => {
     validate: {
       openingBalance: (value) => (value === undefined || value === null || value === '') ? 'Opening balance is required' : null,
       rate: (value) => (value === undefined || value === null || value === '') ? 'Rate is required' : null,
+    }
+  });
+
+  const pricesForm = useForm({
+    initialValues: {
+      salesRate: 0,
+      wholesalePrice: 0,
+      retailPrice: 0,
+      mrp: 0
     }
   });
 
@@ -178,13 +177,13 @@ const ItemList = () => {
   const fetchItems = async () => {
     setLoading(true);
     try {
-      const response = await itemAPI.getAll();
+      const response = await businessItemAPI.getAll();
       setItems(response.data || []);
       setPagination(prev => ({ ...prev, total: response.data?.length || 0 }));
     } catch (error) {
       notifications.show({
         title: 'Error',
-        message: error.message || 'Failed to fetch items',
+        message: error.message || 'Failed to fetch business items',
         color: 'red'
       });
     } finally {
@@ -207,20 +206,28 @@ const ItemList = () => {
       category: item.category || '',
       measurement: item.measurement || '',
       unit: item.unit || '',
+      barcode: item.barcode || '',
       supplier: item.supplier?._id || '',
+      purchasePrice: item.purchasePrice || 0,
+      salesRate: item.salesRate || 0,
+      wholesalePrice: item.wholesalePrice || 0,
+      retailPrice: item.retailPrice || 0,
+      mrp: item.mrp || 0,
       gstPercent: item.gstPercent || 0,
       hsnCode: item.hsnCode || '',
+      lowStockAlert: item.lowStockAlert || 0,
+      description: item.description || '',
       status: item.status || 'Active'
     });
 
-    const predefinedMeasurements = ['Kg', 'Ltr', 'Pcs', 'Box', 'Bag'];
+    const predefinedMeasurements = ['Kg', 'Ltr', 'Pcs', 'Box', 'Bag', 'Packet', 'Bottle'];
     setShowCustomMeasurement(item.measurement && !predefinedMeasurements.includes(item.measurement));
     openItemModal();
   };
 
   const handleDelete = async (id) => {
     modals.openConfirmModal({
-      title: 'Delete Item',
+      title: 'Delete Business Item',
       children: (
         <Text size="sm">
           Are you sure you want to permanently delete this item? This will also delete all stock transaction history.
@@ -230,10 +237,10 @@ const ItemList = () => {
       confirmProps: { color: 'red' },
       onConfirm: async () => {
         try {
-          await itemAPI.delete(id);
+          await businessItemAPI.delete(id);
           notifications.show({
             title: 'Success',
-            message: 'Item deleted successfully',
+            message: 'Business item deleted successfully',
             color: 'green'
           });
           fetchItems();
@@ -251,17 +258,17 @@ const ItemList = () => {
   const handleItemSubmit = async (values) => {
     try {
       if (selectedItem) {
-        await itemAPI.update(selectedItem._id, values);
+        await businessItemAPI.update(selectedItem._id, values);
         notifications.show({
           title: 'Success',
-          message: 'Item updated successfully',
+          message: 'Business item updated successfully',
           color: 'green'
         });
       } else {
-        await itemAPI.create(values);
+        await businessItemAPI.create(values);
         notifications.show({
           title: 'Success',
-          message: 'Item created successfully',
+          message: 'Business item created successfully',
           color: 'green'
         });
       }
@@ -280,14 +287,14 @@ const ItemList = () => {
     setSelectedItemForBalance(item);
     openingBalanceForm.setValues({
       openingBalance: item.openingBalance || 0,
-      rate: item.salesRate || 0
+      rate: item.purchasePrice || 0
     });
     openOpeningBalanceModal();
   };
 
   const handleOpeningBalanceSubmit = async (values) => {
     try {
-      await itemAPI.updateOpeningBalance(selectedItemForBalance._id, values);
+      await businessItemAPI.updateOpeningBalance(selectedItemForBalance._id, values);
       notifications.show({
         title: 'Success',
         message: 'Opening balance updated successfully',
@@ -304,12 +311,34 @@ const ItemList = () => {
     }
   };
 
-  const handleSort = (key) => {
-    let direction = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
+  const handlePricesClick = (item) => {
+    setSelectedItemForPrices(item);
+    pricesForm.setValues({
+      salesRate: item.salesRate || 0,
+      wholesalePrice: item.wholesalePrice || 0,
+      retailPrice: item.retailPrice || 0,
+      mrp: item.mrp || 0
+    });
+    openPricesModal();
+  };
+
+  const handlePricesSubmit = async (values) => {
+    try {
+      await businessItemAPI.updatePrices(selectedItemForPrices._id, values);
+      notifications.show({
+        title: 'Success',
+        message: 'Prices updated successfully',
+        color: 'green'
+      });
+      closePricesModal();
+      fetchItems();
+    } catch (error) {
+      notifications.show({
+        title: 'Error',
+        message: error.message || 'Failed to update prices',
+        color: 'red'
+      });
     }
-    setSortConfig({ key, direction });
   };
 
   const handleTableFilterChange = (column, value) => {
@@ -322,15 +351,15 @@ const ItemList = () => {
     setCategoryFilter('');
     setStatusFilter('');
     setTableFilters({ category: '', supplier: '', status: '' });
-    setSortConfig({ key: null, direction: 'asc' });
     setPagination(prev => ({ ...prev, current: 1 }));
   };
 
-  // Filter and sort items
+  // Filter items
   const filteredItems = items.filter(item => {
     const matchesSearch =
       item.itemName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.itemCode?.toLowerCase().includes(searchTerm.toLowerCase());
+      item.itemCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.barcode?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = !categoryFilter || item.category === categoryFilter;
     const matchesStatus = !statusFilter || item.status === statusFilter;
     const matchesTableCategory = !tableFilters.category || item.category === tableFilters.category;
@@ -341,43 +370,17 @@ const ItemList = () => {
            matchesTableCategory && matchesTableSupplier && matchesTableStatus;
   });
 
-  const sortedItems = [...filteredItems].sort((a, b) => {
-    if (!sortConfig.key) return 0;
-
-    let aValue, bValue;
-
-    switch (sortConfig.key) {
-      case 'code': aValue = a.itemCode || ''; bValue = b.itemCode || ''; break;
-      case 'name': aValue = a.itemName || ''; bValue = b.itemName || ''; break;
-      case 'category': aValue = a.category || ''; bValue = b.category || ''; break;
-      case 'measurement': aValue = a.measurement || ''; bValue = b.measurement || ''; break;
-      case 'stock': aValue = a.currentBalance || 0; bValue = b.currentBalance || 0; break;
-      case 'gst': aValue = a.gstPercent || 0; bValue = b.gstPercent || 0; break;
-      case 'status': aValue = a.status || ''; bValue = b.status || ''; break;
-      default: return 0;
-    }
-
-    if (typeof aValue === 'string') {
-      aValue = aValue.toLowerCase();
-      bValue = bValue.toLowerCase();
-    }
-
-    if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
-    if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
-    return 0;
-  });
-
   // Paginate items
   const paginatedItems = useMemo(() => {
     const startIndex = (pagination.current - 1) * pagination.pageSize;
     const endIndex = startIndex + pagination.pageSize;
-    return sortedItems.slice(startIndex, endIndex);
-  }, [sortedItems, pagination]);
+    return filteredItems.slice(startIndex, endIndex);
+  }, [filteredItems, pagination]);
 
   // Stats
   const totalItems = items.length;
   const activeItems = items.filter(item => item.status === 'Active').length;
-  const lowStock = items.filter(item => item.currentBalance < 10).length;
+  const lowStock = items.filter(item => item.lowStockAlert > 0 && item.currentBalance <= item.lowStockAlert).length;
 
   const hasActiveFilters = searchTerm || categoryFilter || statusFilter ||
                            tableFilters.category || tableFilters.supplier || tableFilters.status;
@@ -390,37 +393,39 @@ const ItemList = () => {
     const ledger = ledgerType === 'purchase' ? item.purchaseLedger : item.salesLedger;
     if (ledger) {
       const categoryName = item.category;
-      const ledgerTypeName = ledgerType === 'purchase' ? 'Purchase Ledger' : 'Sales Ledger';
-      const displayName = `${categoryName} ${ledgerTypeName}`;
+      const ledgerTypeName = ledgerType === 'purchase' ? 'Purchase' : 'Sales';
+      const displayName = `Business ${categoryName} ${ledgerTypeName}`;
       navigate(`/ledgers/${ledger._id}?name=${encodeURIComponent(displayName)}`);
     }
   };
 
   const handleExportExcel = () => {
-    const exportData = sortedItems.map(item => ({
+    const exportData = filteredItems.map(item => ({
       'Code': item.itemCode,
       'Item Name': item.itemName,
+      'Barcode': item.barcode || '-',
       'Category': item.category,
       'Measurement': item.measurement,
       'Stock': `${item.currentBalance} ${item.measurement}`,
+      'Purchase Price': item.purchasePrice || 0,
+      'Sales Rate': item.salesRate || 0,
+      'MRP': item.mrp || 0,
       'Supplier': item.supplier?.name || '-',
-      'Purchase Ledger': item.purchaseLedger?.ledgerName || '-',
-      'Sales Ledger': item.salesLedger?.ledgerName || '-',
       'GST %': `${item.gstPercent || 0}%`,
       'Status': item.status
     }));
 
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Items');
+    XLSX.utils.book_append_sheet(wb, ws, 'Business Items');
 
     ws['!cols'] = [
-      { wch: 10 }, { wch: 25 }, { wch: 15 }, { wch: 12 },
-      { wch: 15 }, { wch: 20 }, { wch: 25 },
-      { wch: 25 }, { wch: 8 }, { wch: 10 }
+      { wch: 12 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 12 },
+      { wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 10 },
+      { wch: 20 }, { wch: 8 }, { wch: 10 }
     ];
 
-    XLSX.writeFile(wb, `Items_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(wb, `Business_Items_${new Date().toISOString().split('T')[0]}.xlsx`);
 
     notifications.show({
       title: 'Success',
@@ -432,50 +437,42 @@ const ItemList = () => {
   const handleExportPDF = () => {
     const doc = new jsPDF('l', 'mm', 'a4');
     doc.setFontSize(16);
-    doc.text('Item Master Report', 14, 15);
+    doc.text('Business Item Master Report', 14, 15);
     doc.setFontSize(10);
     doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 22);
 
-    const tableData = sortedItems.map(item => [
+    const tableData = filteredItems.map(item => [
       item.itemCode,
       item.itemName,
       item.category,
       item.measurement,
       `${item.currentBalance} ${item.measurement}`,
-      item.supplier?.name || '-',
-      `${item.gstPercent || 0}%`,
+      item.purchasePrice || 0,
+      item.salesRate || 0,
+      item.mrp || 0,
       item.status
     ]);
 
     doc.autoTable({
       startY: 28,
-      head: [['Code', 'Item Name', 'Category', 'Unit', 'Stock', 'Supplier', 'GST%', 'Status']],
+      head: [['Code', 'Item Name', 'Category', 'Unit', 'Stock', 'Purchase', 'Sales', 'MRP', 'Status']],
       body: tableData,
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [24, 144, 255], textColor: 255 },
       columnStyles: {
         0: { cellWidth: 18 }, 1: { cellWidth: 40 }, 2: { cellWidth: 25 },
-        3: { cellWidth: 15 }, 4: { cellWidth: 28 }, 5: { cellWidth: 35 },
-        6: { cellWidth: 15 }, 7: { cellWidth: 18 }
+        3: { cellWidth: 15 }, 4: { cellWidth: 25 }, 5: { cellWidth: 20 },
+        6: { cellWidth: 20 }, 7: { cellWidth: 18 }, 8: { cellWidth: 15 }
       }
     });
 
-    doc.save(`Items_${new Date().toISOString().split('T')[0]}.pdf`);
+    doc.save(`Business_Items_${new Date().toISOString().split('T')[0]}.pdf`);
 
     notifications.show({
       title: 'Success',
       message: 'Exported to PDF successfully',
       color: 'green'
     });
-  };
-
-  const SortIcon = ({ columnKey }) => {
-    if (sortConfig.key !== columnKey) {
-      return <IconArrowsSort size={14} />;
-    }
-    return sortConfig.direction === 'asc' ? 
-      <IconSortAscending size={14} /> : 
-      <IconSortDescending size={14} />;
   };
 
   const StatCard = ({ icon, label, value, color }) => (
@@ -515,7 +512,7 @@ const ItemList = () => {
           {item.itemCode}
         </Badge>
       ),
-      width: 100
+      width: 110
     },
     visibleColumns.name && {
       accessor: 'itemName',
@@ -527,6 +524,12 @@ const ItemList = () => {
       ),
       width: 200
     },
+    visibleColumns.barcode && {
+      accessor: 'barcode',
+      title: 'Barcode',
+      render: (item) => item.barcode || '-',
+      width: 120
+    },
     visibleColumns.category && {
       accessor: 'category',
       title: 'Category',
@@ -535,9 +538,9 @@ const ItemList = () => {
     },
     visibleColumns.measurement && {
       accessor: 'measurement',
-      title: 'Measurement',
+      title: 'Unit',
       render: (item) => item.measurement,
-      width: 100
+      width: 80
     },
     visibleColumns.stock && {
       accessor: 'stock',
@@ -545,7 +548,7 @@ const ItemList = () => {
       render: (item) => (
         <Badge
           color={
-            item.currentBalance < 10 ? 'red' :
+            item.lowStockAlert > 0 && item.currentBalance <= item.lowStockAlert ? 'red' :
             item.currentBalance < 50 ? 'yellow' : 'green'
           }
           variant="light"
@@ -556,53 +559,35 @@ const ItemList = () => {
       ),
       width: 120
     },
+    visibleColumns.purchasePrice && {
+      accessor: 'purchasePrice',
+      title: 'Purchase',
+      render: (item) => `Rs. ${item.purchasePrice || 0}`,
+      width: 100
+    },
+    visibleColumns.salesRate && {
+      accessor: 'salesRate',
+      title: 'Sales',
+      render: (item) => `Rs. ${item.salesRate || 0}`,
+      width: 100
+    },
+    visibleColumns.mrp && {
+      accessor: 'mrp',
+      title: 'MRP',
+      render: (item) => `Rs. ${item.mrp || 0}`,
+      width: 90
+    },
     visibleColumns.supplier && {
       accessor: 'supplier',
       title: 'Supplier',
       render: (item) => item.supplier?.name || '-',
       width: 150
     },
-    visibleColumns.purchaseLedger && {
-      accessor: 'purchaseLedger',
-      title: 'Purchase Ledger',
-      render: (item) => (
-        item.purchaseLedger ? (
-          <UnstyledButton
-            onClick={(e) => {
-              e.stopPropagation();
-              handleLedgerClick(item, 'purchase');
-            }}
-            style={{ textDecoration: 'underline', color: 'blue' }}
-          >
-            {item.purchaseLedger.ledgerName}
-          </UnstyledButton>
-        ) : '-'
-      ),
-      width: 180
-    },
-    visibleColumns.salesLedger && {
-      accessor: 'salesLedger',
-      title: 'Sales Ledger',
-      render: (item) => (
-        item.salesLedger ? (
-          <UnstyledButton
-            onClick={(e) => {
-              e.stopPropagation();
-              handleLedgerClick(item, 'sales');
-            }}
-            style={{ textDecoration: 'underline', color: 'green' }}
-          >
-            {item.salesLedger.ledgerName}
-          </UnstyledButton>
-        ) : '-'
-      ),
-      width: 180
-    },
     visibleColumns.gst && {
       accessor: 'gstPercent',
       title: 'GST %',
       render: (item) => `${item.gstPercent || 0}%`,
-      width: 80
+      width: 70
     },
     visibleColumns.status && {
       accessor: 'status',
@@ -616,7 +601,7 @@ const ItemList = () => {
           {item.status}
         </Badge>
       ),
-      width: 100
+      width: 90
     },
     {
       accessor: 'actions',
@@ -641,6 +626,14 @@ const ItemList = () => {
           </ActionIcon>
           <ActionIcon
             variant="subtle"
+            color="orange"
+            onClick={() => handlePricesClick(item)}
+            title="Update Prices"
+          >
+            <IconBarcode size={16} />
+          </ActionIcon>
+          <ActionIcon
+            variant="subtle"
             color="red"
             onClick={() => handleDelete(item._id)}
             title="Delete"
@@ -649,7 +642,7 @@ const ItemList = () => {
           </ActionIcon>
         </Group>
       ),
-      width: 140
+      width: 160
     }
   ].filter(Boolean);
 
@@ -658,15 +651,15 @@ const ItemList = () => {
       {/* Header */}
       <Group position="apart" mb="xl">
         <div>
-          <Title order={2}>Item Master</Title>
-          <Text color="dimmed" size="sm">Manage your inventory items</Text>
+          <Title order={2}>Business Item Master</Title>
+          <Text color="dimmed" size="sm">Manage your business inventory items (Vyapar)</Text>
         </div>
         <Button
           leftSection={<IconPlus size={16} />}
           onClick={handleAdd}
           size="sm"
         >
-          Add Item
+          Add Business Item
         </Button>
       </Group>
 
@@ -693,7 +686,7 @@ const ItemList = () => {
         <StatCard
           icon={<IconList size={24} />}
           label="Showing"
-          value={sortedItems.length}
+          value={filteredItems.length}
           color="#722ed1"
         />
       </SimpleGrid>
@@ -703,14 +696,14 @@ const ItemList = () => {
         <Stack>
           <Group position="apart">
             <TextInput
-              placeholder="Search by name or code..."
+              placeholder="Search by name, code or barcode..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               icon={<IconSearch size={16} />}
               style={{ flex: 1, minWidth: 300 }}
               size="sm"
             />
-            
+
             <Group spacing="xs">
               <Select
                 placeholder="Category"
@@ -718,18 +711,20 @@ const ItemList = () => {
                 onChange={setCategoryFilter}
                 data={[
                   { value: '', label: 'All Categories' },
-                  { value: 'Feed', label: 'Feeds' },
-                  { value: 'CattleFeed', label: 'CattleFeed' },
-                  { value: 'Medicine', label: 'Medicine' },
-                  { value: 'Equipment', label: 'Equipment' },
-                  { value: 'Dairy Products', label: 'Dairy Products' },
-                  { value: 'Minerals', label: 'Minerals' },
+                  { value: 'Electronics', label: 'Electronics' },
+                  { value: 'Groceries', label: 'Groceries' },
+                  { value: 'Clothing', label: 'Clothing' },
+                  { value: 'Hardware', label: 'Hardware' },
+                  { value: 'Stationery', label: 'Stationery' },
+                  { value: 'Medical', label: 'Medical' },
+                  { value: 'Cosmetics', label: 'Cosmetics' },
+                  { value: 'Food', label: 'Food & Beverages' },
                   { value: 'Other', label: 'Other' }
                 ]}
                 size="sm"
                 style={{ width: 150 }}
               />
-              
+
               <Select
                 placeholder="Status"
                 value={statusFilter}
@@ -742,7 +737,7 @@ const ItemList = () => {
                 size="sm"
                 style={{ width: 120 }}
               />
-              
+
               <Menu shadow="md" width={200}>
                 <Menu.Target>
                   <Button
@@ -758,12 +753,14 @@ const ItemList = () => {
                   {[
                     { key: 'code', label: 'Code' },
                     { key: 'name', label: 'Item Name' },
+                    { key: 'barcode', label: 'Barcode' },
                     { key: 'category', label: 'Category' },
-                    { key: 'measurement', label: 'Measurement' },
+                    { key: 'measurement', label: 'Unit' },
                     { key: 'stock', label: 'Stock' },
+                    { key: 'purchasePrice', label: 'Purchase Price' },
+                    { key: 'salesRate', label: 'Sales Rate' },
+                    { key: 'mrp', label: 'MRP' },
                     { key: 'supplier', label: 'Supplier' },
-                    { key: 'purchaseLedger', label: 'Purchase Ledger' },
-                    { key: 'salesLedger', label: 'Sales Ledger' },
                     { key: 'gst', label: 'GST %' },
                     { key: 'status', label: 'Status' }
                   ].map(col => (
@@ -777,7 +774,7 @@ const ItemList = () => {
                   ))}
                 </Menu.Dropdown>
               </Menu>
-              
+
               <Button.Group>
                 <Button
                   variant="default"
@@ -796,7 +793,7 @@ const ItemList = () => {
                   PDF
                 </Button>
               </Button.Group>
-              
+
               {hasActiveFilters && (
                 <Button
                   variant="subtle"
@@ -809,7 +806,7 @@ const ItemList = () => {
               )}
             </Group>
           </Group>
-          
+
           {/* Table Filters */}
           <Group spacing="xs">
             <Select
@@ -818,12 +815,12 @@ const ItemList = () => {
               onChange={(value) => handleTableFilterChange('category', value)}
               data={[
                 { value: '', label: 'All Categories' },
-                ...Array.from(new Set(items.map(item => item.category))).map(cat => ({ value: cat, label: cat }))
+                ...Array.from(new Set(items.map(item => item.category))).filter(Boolean).map(cat => ({ value: cat, label: cat }))
               ]}
               size="xs"
               style={{ width: 150 }}
             />
-            
+
             <Select
               placeholder="Filter Supplier"
               value={tableFilters.supplier}
@@ -835,7 +832,7 @@ const ItemList = () => {
               size="xs"
               style={{ width: 180 }}
             />
-            
+
             <Select
               placeholder="Filter Status"
               value={tableFilters.status}
@@ -866,7 +863,7 @@ const ItemList = () => {
           onRecordsPerPageChange={(pageSize) => setPagination(prev => ({ ...prev, pageSize, current: 1 }))}
           highlightOnHover
           minHeight={300}
-          noRecordsText="No items found"
+          noRecordsText="No business items found"
           verticalSpacing="sm"
           fontSize="sm"
         />
@@ -876,13 +873,13 @@ const ItemList = () => {
       <Modal
         opened={itemModalOpened}
         onClose={closeItemModal}
-        title={selectedItem ? 'Edit Item' : 'Add New Item'}
-        size="lg"
+        title={selectedItem ? 'Edit Business Item' : 'Add New Business Item'}
+        size="xl"
         centered
       >
         <form onSubmit={itemForm.onSubmit(handleItemSubmit)}>
           <Stack spacing="md">
-            <SimpleGrid cols={2} spacing="md">
+            <SimpleGrid cols={3} spacing="md">
               {selectedItem && (
                 <TextInput
                   label="Item Code"
@@ -890,7 +887,7 @@ const ItemList = () => {
                   disabled
                 />
               )}
-              
+
               <TextInput
                 label="Item Name"
                 placeholder="Enter item name"
@@ -898,32 +895,42 @@ const ItemList = () => {
                 {...itemForm.getInputProps('itemName')}
               />
 
+              <TextInput
+                label="Barcode"
+                placeholder="Enter barcode"
+                {...itemForm.getInputProps('barcode')}
+              />
+
               <Select
                 label="Category"
                 withAsterisk
                 placeholder="Select category"
                 data={[
-                  { value: 'Feed', label: 'Feeds' },
-                  { value: 'CattleFeed', label: 'CattleFeed' },
-                  { value: 'Medicine', label: 'Medicine' },
-                  { value: 'Equipment', label: 'Equipment' },
-                  { value: 'Dairy Products', label: 'Dairy Products' },
-                  { value: 'Minerals', label: 'Minerals' },
+                  { value: 'Electronics', label: 'Electronics' },
+                  { value: 'Groceries', label: 'Groceries' },
+                  { value: 'Clothing', label: 'Clothing' },
+                  { value: 'Hardware', label: 'Hardware' },
+                  { value: 'Stationery', label: 'Stationery' },
+                  { value: 'Medical', label: 'Medical' },
+                  { value: 'Cosmetics', label: 'Cosmetics' },
+                  { value: 'Food', label: 'Food & Beverages' },
                   { value: 'Other', label: 'Other' }
                 ]}
                 {...itemForm.getInputProps('category')}
               />
-              
+
               {!showCustomMeasurement ? (
                 <Select
                   label="Measurement"
                   withAsterisk
                   placeholder="Select measurement"
                   data={[
+                    { value: 'Pcs', label: 'Pcs' },
                     { value: 'Kg', label: 'Kg' },
                     { value: 'Ltr', label: 'Ltr' },
-                    { value: 'Pcs', label: 'Pcs' },
                     { value: 'Box', label: 'Box' },
+                    { value: 'Packet', label: 'Packet' },
+                    { value: 'Bottle', label: 'Bottle' },
                     { value: 'Bag', label: 'Bag' },
                     { value: 'Others', label: 'Others' }
                   ]}
@@ -958,15 +965,9 @@ const ItemList = () => {
                   </Button>
                 </Group>
               )}
-              
-              <TextInput
-                label="Unit (Optional)"
-                placeholder="Count/Number"
-                {...itemForm.getInputProps('unit')}
-              />
-              
+
               <Select
-                label="Supplier (Optional)"
+                label="Supplier"
                 placeholder="Select supplier"
                 data={[
                   { value: '', label: 'No supplier' },
@@ -977,7 +978,61 @@ const ItemList = () => {
                 ]}
                 {...itemForm.getInputProps('supplier')}
               />
-              
+            </SimpleGrid>
+
+            <SimpleGrid cols={4} spacing="md">
+              <NumberInput
+                label="Purchase Price"
+                placeholder="0"
+                min={0}
+                allowDecimal={true}
+                decimalScale={2}
+                value={itemForm.values.purchasePrice}
+                onChange={(val) => itemForm.setFieldValue('purchasePrice', val || 0)}
+              />
+
+              <NumberInput
+                label="Sales Rate"
+                placeholder="0"
+                min={0}
+                allowDecimal={true}
+                decimalScale={2}
+                value={itemForm.values.salesRate}
+                onChange={(val) => itemForm.setFieldValue('salesRate', val || 0)}
+              />
+
+              <NumberInput
+                label="Wholesale Price"
+                placeholder="0"
+                min={0}
+                allowDecimal={true}
+                decimalScale={2}
+                value={itemForm.values.wholesalePrice}
+                onChange={(val) => itemForm.setFieldValue('wholesalePrice', val || 0)}
+              />
+
+              <NumberInput
+                label="Retail Price"
+                placeholder="0"
+                min={0}
+                allowDecimal={true}
+                decimalScale={2}
+                value={itemForm.values.retailPrice}
+                onChange={(val) => itemForm.setFieldValue('retailPrice', val || 0)}
+              />
+            </SimpleGrid>
+
+            <SimpleGrid cols={4} spacing="md">
+              <NumberInput
+                label="MRP"
+                placeholder="0"
+                min={0}
+                allowDecimal={true}
+                decimalScale={2}
+                value={itemForm.values.mrp}
+                onChange={(val) => itemForm.setFieldValue('mrp', val || 0)}
+              />
+
               <NumberInput
                 label="GST %"
                 placeholder="0"
@@ -988,13 +1043,29 @@ const ItemList = () => {
                 value={itemForm.values.gstPercent}
                 onChange={(val) => itemForm.setFieldValue('gstPercent', val || 0)}
               />
-              
+
               <TextInput
                 label="HSN Code"
                 placeholder="Enter HSN code"
                 {...itemForm.getInputProps('hsnCode')}
               />
-              
+
+              <NumberInput
+                label="Low Stock Alert"
+                placeholder="0"
+                min={0}
+                value={itemForm.values.lowStockAlert}
+                onChange={(val) => itemForm.setFieldValue('lowStockAlert', val || 0)}
+              />
+            </SimpleGrid>
+
+            <SimpleGrid cols={2} spacing="md">
+              <TextInput
+                label="Description"
+                placeholder="Item description"
+                {...itemForm.getInputProps('description')}
+              />
+
               <Select
                 label="Status"
                 data={[
@@ -1004,7 +1075,7 @@ const ItemList = () => {
                 {...itemForm.getInputProps('status')}
               />
             </SimpleGrid>
-            
+
             <Group position="right" mt="md">
               <Button variant="default" onClick={closeItemModal}>
                 Cancel
@@ -1032,13 +1103,13 @@ const ItemList = () => {
               value={selectedItemForBalance?.itemName || ''}
               disabled
             />
-            
+
             <TextInput
               label="Current Opening Balance"
               value={`${selectedItemForBalance?.openingBalance || 0} ${selectedItemForBalance?.measurement || ''}`}
               disabled
             />
-            
+
             <NumberInput
               label="New Opening Balance"
               placeholder="Enter quantity"
@@ -1062,7 +1133,7 @@ const ItemList = () => {
               onChange={(val) => openingBalanceForm.setFieldValue('rate', val || 0)}
               error={openingBalanceForm.errors.rate}
             />
-            
+
             <Group position="right" mt="md">
               <Button variant="default" onClick={closeOpeningBalanceModal}>
                 Cancel
@@ -1074,8 +1145,78 @@ const ItemList = () => {
           </Stack>
         </form>
       </Modal>
+
+      {/* Prices Modal */}
+      <Modal
+        opened={pricesModalOpened}
+        onClose={closePricesModal}
+        title="Update Prices"
+        size="md"
+        centered
+      >
+        <form onSubmit={pricesForm.onSubmit(handlePricesSubmit)}>
+          <Stack spacing="md">
+            <TextInput
+              label="Item Name"
+              value={selectedItemForPrices?.itemName || ''}
+              disabled
+            />
+
+            <SimpleGrid cols={2} spacing="md">
+              <NumberInput
+                label="Sales Rate"
+                placeholder="0"
+                min={0}
+                allowDecimal={true}
+                decimalScale={2}
+                value={pricesForm.values.salesRate}
+                onChange={(val) => pricesForm.setFieldValue('salesRate', val || 0)}
+              />
+
+              <NumberInput
+                label="Wholesale Price"
+                placeholder="0"
+                min={0}
+                allowDecimal={true}
+                decimalScale={2}
+                value={pricesForm.values.wholesalePrice}
+                onChange={(val) => pricesForm.setFieldValue('wholesalePrice', val || 0)}
+              />
+
+              <NumberInput
+                label="Retail Price"
+                placeholder="0"
+                min={0}
+                allowDecimal={true}
+                decimalScale={2}
+                value={pricesForm.values.retailPrice}
+                onChange={(val) => pricesForm.setFieldValue('retailPrice', val || 0)}
+              />
+
+              <NumberInput
+                label="MRP"
+                placeholder="0"
+                min={0}
+                allowDecimal={true}
+                decimalScale={2}
+                value={pricesForm.values.mrp}
+                onChange={(val) => pricesForm.setFieldValue('mrp', val || 0)}
+              />
+            </SimpleGrid>
+
+            <Group position="right" mt="md">
+              <Button variant="default" onClick={closePricesModal}>
+                Cancel
+              </Button>
+              <Button type="submit" color="blue">
+                Update Prices
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
     </Container>
   );
 };
 
-export default ItemList;
+export default BusinessItemList;

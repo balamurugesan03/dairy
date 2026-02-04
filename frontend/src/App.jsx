@@ -50,12 +50,26 @@ const SupplierList = lazy(() => import('./components/supplier/SupplierList'));
 const SupplierForm = lazy(() => import('./components/supplier/SupplierForm'));
 const SupplierView = lazy(() => import('./components/supplier/SupplierView'));
 
-// Inventory Components
+// Inventory Components (Dairy)
 const ItemList = lazy(() => import('./components/inventory/ItemList'));
 const StockInManagement = lazy(() => import('./components/inventory/StockInManagement'));
 const StockOutManagement = lazy(() => import('./components/inventory/StockOutManagement'));
 const StockReport = lazy(() => import('./components/inventory/StockReport'));
 const StockDashboard = lazy(() => import('./components/inventory/StockDashboard'));
+
+// Business Inventory Components (Private Firm / Vyapar)
+const BusinessItemList = lazy(() => import('./components/business-inventory/BusinessItemList'));
+const BusinessStockInManagement = lazy(() => import('./components/business-inventory/BusinessStockInManagement'));
+const BusinessStockReport = lazy(() => import('./components/business-inventory/BusinessStockReport'));
+const BusinessBillingForm = lazy(() => import('./components/business-inventory/BusinessBillingForm'));
+const BusinessSalesList = lazy(() => import('./components/business-inventory/BusinessSalesList'));
+
+// Business Accounting Components (Private Firm - Separate from Dairy)
+const BusinessLedgerList = lazy(() => import('./components/business-accounting/BusinessLedgerList'));
+const BusinessIncomeVoucher = lazy(() => import('./components/business-accounting/BusinessIncomeVoucher'));
+const BusinessExpenseVoucher = lazy(() => import('./components/business-accounting/BusinessExpenseVoucher'));
+const BusinessJournalVoucher = lazy(() => import('./components/business-accounting/BusinessJournalVoucher'));
+const BusinessVoucherList = lazy(() => import('./components/business-accounting/BusinessVoucherList'));
 
 // Sales Components
 const BillingForm = lazy(() => import('./components/sales/BillingForm'));
@@ -248,13 +262,27 @@ const AppContent = () => {
                 <Route path="view/:id" element={<SupplierView />} />
               </Route>
 
-              {/* Inventory Routes */}
+              {/* Inventory Routes (Dairy) */}
               <Route path="inventory">
                 <Route index element={<StockDashboard />} />
                 <Route path="items" element={<ItemList />} />
                 <Route path="stock-in" element={<StockInManagement />} />
                 <Route path="stock-out" element={<StockOutManagement />} />
                 <Route path="report" element={<StockReport />} />
+              </Route>
+
+              {/* Business Inventory Routes (Private Firm / Vyapar) */}
+              <Route path="business-inventory">
+                <Route index element={<BusinessItemList />} />
+                <Route path="items" element={<BusinessItemList />} />
+                <Route path="stock-in" element={<BusinessStockInManagement />} />
+                <Route path="stock-out" element={<BusinessStockInManagement />} />
+                <Route path="stock-report" element={<BusinessStockReport />} />
+                {/* Business Sales - Vyapar Style Billing */}
+                <Route path="sales/new" element={<BusinessBillingForm />} />
+                <Route path="sales/list" element={<BusinessSalesList />} />
+                <Route path="sales/edit/:id" element={<BusinessBillingForm />} />
+                <Route path="sales/:id" element={<BusinessBillingForm />} />
               </Route>
 
               {/* Sales & Billing Routes */}
@@ -264,7 +292,7 @@ const AppContent = () => {
                 <Route path="view/:id" element={<SalesView />} />
               </Route>
 
-              {/* Accounting Routes */}
+              {/* Accounting Routes (Dairy) */}
               <Route path="accounting">
                 <Route path="vouchers" element={<VoucherList />} />
                 <Route path="ledgers" element={<LedgerList />} />
@@ -273,6 +301,16 @@ const AppContent = () => {
                 <Route path="payment" element={<PaymentVoucher />} />
                 <Route path="journal" element={<JournalVoucher />} />
                 <Route path="outstanding" element={<OutstandingReport />} />
+              </Route>
+
+              {/* Business Accounting Routes (Private Firm - Separate Data) */}
+              <Route path="business-accounting">
+                <Route path="ledgers" element={<BusinessLedgerList />} />
+                <Route path="ledgers/:id" element={<BusinessLedgerList />} />
+                <Route path="income" element={<BusinessIncomeVoucher />} />
+                <Route path="expense" element={<BusinessExpenseVoucher />} />
+                <Route path="journal" element={<BusinessJournalVoucher />} />
+                <Route path="vouchers" element={<BusinessVoucherList />} />
               </Route>
 
               {/* Farmer Payments Routes */}
