@@ -11,6 +11,12 @@ const itemSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  inventoryType: {
+    type: String,
+    enum: ['Dairy', 'Business'],
+    default: 'Dairy',
+    required: true
+  },
   category: {
     type: String,
     trim: true
@@ -82,6 +88,8 @@ const itemSchema = new mongoose.Schema({
 
 // Indexes for faster queries
 itemSchema.index({ status: 1 });
+itemSchema.index({ inventoryType: 1 });
+itemSchema.index({ inventoryType: 1, status: 1 });
 
 const Item = mongoose.model('Item', itemSchema);
 

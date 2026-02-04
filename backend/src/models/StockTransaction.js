@@ -6,6 +6,11 @@ const stockTransactionSchema = new mongoose.Schema({
     ref: 'Item',
     required: true
   },
+  inventoryType: {
+    type: String,
+    enum: ['Dairy', 'Business'],
+    default: 'Dairy'
+  },
   transactionType: {
     type: String,
     enum: ['Stock In', 'Stock Out'],
@@ -160,6 +165,8 @@ const stockTransactionSchema = new mongoose.Schema({
 // Indexes for faster queries
 stockTransactionSchema.index({ itemId: 1, date: -1 });
 stockTransactionSchema.index({ referenceType: 1, referenceId: 1 });
+stockTransactionSchema.index({ inventoryType: 1 });
+stockTransactionSchema.index({ inventoryType: 1, transactionType: 1, date: -1 });
 
 const StockTransaction = mongoose.model('StockTransaction', stockTransactionSchema);
 

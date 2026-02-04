@@ -85,6 +85,7 @@ const ItemList = () => {
   const [visibleColumns, setVisibleColumns] = useState({
     code: true,
     name: true,
+    inventoryType: true,
     category: true,
     measurement: true,
     stock: true,
@@ -97,6 +98,7 @@ const ItemList = () => {
 
   // Filter states
   const [searchTerm, setSearchTerm] = useState('');
+  const [inventoryTypeFilter, setInventoryTypeFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
@@ -122,6 +124,7 @@ const ItemList = () => {
     initialValues: {
       itemCode: '',
       itemName: '',
+      inventoryType: 'Dairy',
       category: '',
       measurement: '',
       unit: '',
@@ -132,6 +135,7 @@ const ItemList = () => {
     },
     validate: {
       itemName: (value) => !value ? 'Item name is required' : null,
+      inventoryType: (value) => !value ? 'Inventory type is required' : null,
       category: (value) => !value ? 'Category is required' : null,
       measurement: (value) => !value ? 'Measurement is required' : null,
     }
@@ -204,6 +208,7 @@ const ItemList = () => {
     itemForm.setValues({
       itemCode: item.itemCode || '',
       itemName: item.itemName || '',
+      inventoryType: item.inventoryType || 'Dairy',
       category: item.category || '',
       measurement: item.measurement || '',
       unit: item.unit || '',
@@ -319,6 +324,7 @@ const ItemList = () => {
 
   const clearAllFilters = () => {
     setSearchTerm('');
+    setInventoryTypeFilter('');
     setCategoryFilter('');
     setStatusFilter('');
     setTableFilters({ category: '', supplier: '', status: '' });
@@ -331,13 +337,14 @@ const ItemList = () => {
     const matchesSearch =
       item.itemName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.itemCode?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesInventoryType = !inventoryTypeFilter || item.inventoryType === inventoryTypeFilter;
     const matchesCategory = !categoryFilter || item.category === categoryFilter;
     const matchesStatus = !statusFilter || item.status === statusFilter;
     const matchesTableCategory = !tableFilters.category || item.category === tableFilters.category;
     const matchesTableSupplier = !tableFilters.supplier || item.supplier?._id === tableFilters.supplier;
     const matchesTableStatus = !tableFilters.status || item.status === tableFilters.status;
 
-    return matchesSearch && matchesCategory && matchesStatus &&
+    return matchesSearch && matchesInventoryType && matchesCategory && matchesStatus &&
            matchesTableCategory && matchesTableSupplier && matchesTableStatus;
   });
 
@@ -379,7 +386,7 @@ const ItemList = () => {
   const activeItems = items.filter(item => item.status === 'Active').length;
   const lowStock = items.filter(item => item.currentBalance < 10).length;
 
-  const hasActiveFilters = searchTerm || categoryFilter || statusFilter ||
+  const hasActiveFilters = searchTerm || inventoryTypeFilter || categoryFilter || statusFilter ||
                            tableFilters.category || tableFilters.supplier || tableFilters.status;
 
   const toggleColumn = (columnKey) => {
@@ -400,6 +407,7 @@ const ItemList = () => {
     const exportData = sortedItems.map(item => ({
       'Code': item.itemCode,
       'Item Name': item.itemName,
+      'Inventory Type': item.inventoryType || 'Dairy',
       'Category': item.category,
       'Measurement': item.measurement,
       'Stock': `${item.currentBalance} ${item.measurement}`,
@@ -415,13 +423,13 @@ const ItemList = () => {
     XLSX.utils.book_append_sheet(wb, ws, 'Items');
 
     ws['!cols'] = [
-      { wch: 10 }, { wch: 25 }, { wch: 15 }, { wch: 12 },
+      { wch: 10 }, { wch: 25 }, { wch: 12 }, { wch: 15 }, { wch: 12 },
       { wch: 15 }, { wch: 20 }, { wch: 25 },
       { wch: 25 }, { wch: 8 }, { wch: 10 }
     ];
 
     XLSX.writeFile(wb, `Items_${new Date().toISOString().split('T')[0]}.xlsx`);
-    
+
     notifications.show({
       title: 'Success',
       message: 'Exported to Excel successfully',
@@ -439,32 +447,30 @@ const ItemList = () => {
     const tableData = sortedItems.map(item => [
       item.itemCode,
       item.itemName,
+      item.inventoryType || 'Dairy',
       item.category,
       item.measurement,
       `${item.currentBalance} ${item.measurement}`,
       item.supplier?.name || '-',
-      item.purchaseLedger?.ledgerName || '-',
-      item.salesLedger?.ledgerName || '-',
       `${item.gstPercent || 0}%`,
       item.status
     ]);
 
     doc.autoTable({
       startY: 28,
-      head: [['Code', 'Item Name', 'Category', 'Unit', 'Stock', 'Supplier', 'Purchase Ledger', 'Sales Ledger', 'GST%', 'Status']],
+      head: [['Code', 'Item Name', 'Inv Type', 'Category', 'Unit', 'Stock', 'Supplier', 'GST%', 'Status']],
       body: tableData,
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [24, 144, 255], textColor: 255 },
       columnStyles: {
-        0: { cellWidth: 15 }, 1: { cellWidth: 30 }, 2: { cellWidth: 20 },
-        3: { cellWidth: 12 }, 4: { cellWidth: 20 }, 5: { cellWidth: 25 },
-        6: { cellWidth: 30 }, 7: { cellWidth: 30 }, 8: { cellWidth: 12 },
-        9: { cellWidth: 15 }
+        0: { cellWidth: 15 }, 1: { cellWidth: 35 }, 2: { cellWidth: 18 },
+        3: { cellWidth: 22 }, 4: { cellWidth: 12 }, 5: { cellWidth: 25 },
+        6: { cellWidth: 30 }, 7: { cellWidth: 12 }, 8: { cellWidth: 15 }
       }
     });
 
     doc.save(`Items_${new Date().toISOString().split('T')[0]}.pdf`);
-    
+
     notifications.show({
       title: 'Success',
       message: 'Exported to PDF successfully',
@@ -529,6 +535,20 @@ const ItemList = () => {
         </Text>
       ),
       width: 200
+    },
+    visibleColumns.inventoryType && {
+      accessor: 'inventoryType',
+      title: 'Inventory Type',
+      render: (item) => (
+        <Badge
+          color={item.inventoryType === 'Dairy' ? 'cyan' : 'grape'}
+          variant="light"
+          radius="sm"
+        >
+          {item.inventoryType || 'Dairy'}
+        </Badge>
+      ),
+      width: 120
     },
     visibleColumns.category && {
       accessor: 'category',
@@ -716,6 +736,19 @@ const ItemList = () => {
             
             <Group spacing="xs">
               <Select
+                placeholder="Inventory Type"
+                value={inventoryTypeFilter}
+                onChange={setInventoryTypeFilter}
+                data={[
+                  { value: '', label: 'All Types' },
+                  { value: 'Dairy', label: 'Dairy' },
+                  { value: 'Business', label: 'Business' }
+                ]}
+                size="sm"
+                style={{ width: 130 }}
+              />
+
+              <Select
                 placeholder="Category"
                 value={categoryFilter}
                 onChange={setCategoryFilter}
@@ -761,6 +794,7 @@ const ItemList = () => {
                   {[
                     { key: 'code', label: 'Code' },
                     { key: 'name', label: 'Item Name' },
+                    { key: 'inventoryType', label: 'Inventory Type' },
                     { key: 'category', label: 'Category' },
                     { key: 'measurement', label: 'Measurement' },
                     { key: 'stock', label: 'Stock' },
@@ -900,7 +934,19 @@ const ItemList = () => {
                 withAsterisk
                 {...itemForm.getInputProps('itemName')}
               />
-              
+
+              <Select
+                label="Inventory Type"
+                withAsterisk
+                placeholder="Select inventory type"
+                description="Dairy: For dairy operations | Business: For Vyapar/business"
+                data={[
+                  { value: 'Dairy', label: 'Dairy (Cooperative)' },
+                  { value: 'Business', label: 'Business (Vyapar)' }
+                ]}
+                {...itemForm.getInputProps('inventoryType')}
+              />
+
               <Select
                 label="Category"
                 withAsterisk

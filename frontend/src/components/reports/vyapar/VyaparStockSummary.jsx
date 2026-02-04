@@ -60,7 +60,8 @@ const VyaparStockSummary = () => {
 
   const fetchCategories = async () => {
     try {
-      const response = await itemAPI.getAll({ limit: 1000 });
+      // Only fetch Business inventory items for Vyapar reports
+      const response = await itemAPI.getAll({ limit: 1000, inventoryType: 'Business' });
       const items = response.data?.items || response.data || [];
       const uniqueCategories = [...new Set(items.map(item => item.category).filter(Boolean))];
       setCategories(uniqueCategories.map(cat => ({ value: cat, label: cat })));
@@ -72,7 +73,9 @@ const VyaparStockSummary = () => {
   const fetchReport = async () => {
     setLoading(true);
     try {
-      const params = {};
+      const params = {
+        inventoryType: 'Business' // Only show Business inventory in Vyapar reports
+      };
 
       if (selectedCategory && selectedCategory !== 'all') {
         params.category = selectedCategory;

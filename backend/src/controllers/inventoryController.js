@@ -132,7 +132,8 @@ export const getAllItems = async (req, res) => {
       limit = 10,
       search = '',
       status = '',
-      category = ''
+      category = '',
+      inventoryType = ''
     } = req.query;
 
     const query = {};
@@ -150,6 +151,10 @@ export const getAllItems = async (req, res) => {
 
     if (category) {
       query.category = category;
+    }
+
+    if (inventoryType) {
+      query.inventoryType = inventoryType;
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -508,7 +513,7 @@ export const stockOut = async (req, res) => {
 // Get stock transactions
 export const getStockTransactions = async (req, res) => {
   try {
-    const { itemId, startDate, endDate, transactionType, referenceType } = req.query;
+    const { itemId, startDate, endDate, transactionType, referenceType, inventoryType } = req.query;
 
     // If itemId is provided, use the specific item history function
     if (itemId) {
@@ -528,6 +533,10 @@ export const getStockTransactions = async (req, res) => {
 
     if (referenceType) {
       query.referenceType = referenceType;
+    }
+
+    if (inventoryType) {
+      query.inventoryType = inventoryType;
     }
 
     if (startDate || endDate) {
@@ -569,9 +578,9 @@ export const getStockTransactions = async (req, res) => {
 // Get stock balance report
 export const getStockBalance = async (req, res) => {
   try {
-    const { category, status } = req.query;
+    const { category, status, inventoryType } = req.query;
 
-    const report = await getStockReport(category, status || 'Active');
+    const report = await getStockReport(category, status || 'Active', inventoryType);
 
     res.status(200).json({
       success: true,

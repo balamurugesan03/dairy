@@ -64,7 +64,11 @@ const VyaparPurchaseReport = () => {
   const fetchReport = async (filterData) => {
     setLoading(true);
     try {
-      const response = await reportAPI.vyaparPurchaseReport(filterData);
+      // Add inventoryType: 'Business' to only show Business inventory in Vyapar reports
+      const response = await reportAPI.vyaparPurchaseReport({
+        ...filterData,
+        inventoryType: 'Business'
+      });
       setReportData(response.data);
       setCurrentPage(1); // Reset to first page when new data loads
     } catch (error) {

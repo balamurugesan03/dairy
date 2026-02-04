@@ -92,19 +92,20 @@ export const getSaleReport = async (req, res) => {
 /**
  * Purchase Report - All purchase transactions with filtering
  * GET /api/reports/vyapar/purchase-report
- * Query params: filterType, customStart, customEnd, partyId, itemId, paymentStatus
+ * Query params: filterType, customStart, customEnd, partyId, itemId, paymentStatus, inventoryType
  */
 export const getPurchaseReport = async (req, res) => {
   try {
-    const { filterType, customStart, customEnd, partyId, itemId, paymentStatus } = req.query;
+    const { filterType, customStart, customEnd, partyId, itemId, paymentStatus, inventoryType } = req.query;
 
     // Get date range
     const { startDate, endDate } = getDateRange(filterType || 'thisMonth', customStart, customEnd);
 
-    // Build query for stock-in transactions (purchases)
+    // Build query for stock-in transactions (purchases) - default to Business inventory for Vyapar
     const query = {
       transactionType: 'Stock In',
       referenceType: 'Purchase',
+      inventoryType: inventoryType || 'Business',
       date: { $gte: startDate, $lte: endDate }
     };
 
@@ -991,10 +992,11 @@ export const getVyaparProfitLoss = async (req, res) => {
     const totalIncome = saleAmount - creditNoteAmount + saleFA;
 
     // ===== PURCHASE & DIRECT COST SECTION =====
-    // Purchase (-)
+    // Purchase (-) - Filter by Business inventory type for Vyapar reports
     const purchaseTransactions = await StockTransaction.find({
-      transactionDate: { $gte: startDate, $lte: endDate },
-      transactionType: 'Stock In'
+      date: { $gte: startDate, $lte: endDate },
+      transactionType: 'Stock In',
+      inventoryType: 'Business'
     });
     const purchaseAmount = purchaseTransactions.reduce((sum, tx) => sum + (tx.totalAmount || 0), 0);
 
@@ -1163,8 +1165,8 @@ export const getVyaparProfitLoss = async (req, res) => {
     const totalTaxReceivable = gstReceivable + tcsReceivable + tdsReceivable;
 
     // ===== STOCK ADJUSTMENTS SECTION =====
-    // Get all items for stock calculation
-    const items = await Item.find({ status: 'Active' });
+    // Get all Business items for stock calculation (Vyapar reports use Business inventory)
+    const items = await Item.find({ status: 'Active', inventoryType: 'Business' });
 
     // Opening Stock - Calculate stock value at start date
     let openingStock = 0;
@@ -1172,12 +1174,14 @@ export const getVyaparProfitLoss = async (req, res) => {
       const stockInBefore = await StockTransaction.find({
         itemId: item._id,
         transactionType: 'Stock In',
-        transactionDate: { $lt: startDate }
+        inventoryType: 'Business',
+        date: { $lt: startDate }
       });
       const stockOutBefore = await StockTransaction.find({
         itemId: item._id,
         transactionType: 'Stock Out',
-        transactionDate: { $lt: startDate }
+        inventoryType: 'Business',
+        date: { $lt: startDate }
       });
 
       const qtyIn = stockInBefore.reduce((sum, tx) => sum + (tx.quantity || 0), 0);
@@ -1192,12 +1196,14 @@ export const getVyaparProfitLoss = async (req, res) => {
       const stockInBefore = await StockTransaction.find({
         itemId: item._id,
         transactionType: 'Stock In',
-        transactionDate: { $lte: endDate }
+        inventoryType: 'Business',
+        date: { $lte: endDate }
       });
       const stockOutBefore = await StockTransaction.find({
         itemId: item._id,
         transactionType: 'Stock Out',
-        transactionDate: { $lte: endDate }
+        inventoryType: 'Business',
+        date: { $lte: endDate }
       });
 
       const qtyIn = stockInBefore.reduce((sum, tx) => sum + (tx.quantity || 0), 0);
@@ -1520,10 +1526,11 @@ export const getBillWiseProfit = async (req, res) => {
       party.totals.totalBalance += balanceAmount;
     }
 
-    // 2. Fetch all purchases (Stock In transactions) within date range
+    // 2. Fetch all purchases (Stock In transactions) within date range - Business inventory only
     const purchases = await StockTransaction.find({
       transactionType: 'Stock In',
       referenceType: 'Purchase',
+      inventoryType: 'Business',
       date: { $gte: startDate, $lte: endDate }
     })
       .populate('supplierId')
@@ -1744,10 +1751,11 @@ export const getPartyWiseProfit = async (req, res) => {
       party.receivable += sale.balanceAmount || 0;
     }
 
-    // 2. Fetch all purchases (Stock In transactions) within date range
+    // 2. Fetch all purchases (Stock In transactions) within date range - Business inventory only
     const purchases = await StockTransaction.find({
       transactionType: 'Stock In',
       referenceType: 'Purchase',
+      inventoryType: 'Business',
       date: { $gte: startDate, $lte: endDate }
     }).populate('itemId').populate('supplierId');
 
@@ -2126,14 +2134,14 @@ export const getTrialBalance = async (req, res) => {
 /**
  * Stock Summary - Current stock levels by item (Tally/Vyapar style)
  * GET /api/reports/vyapar/stock-summary
- * Query params: category, asOfDate, showOnlyInStock
+ * Query params: category, asOfDate, showOnlyInStock, inventoryType
  */
 export const getStockSummary = async (req, res) => {
   try {
-    const { category, asOfDate, showOnlyInStock } = req.query;
+    const { category, asOfDate, showOnlyInStock, inventoryType } = req.query;
 
-    // Build query for active items
-    const query = { status: 'Active' };
+    // Build query for active items - default to Business inventory for Vyapar reports
+    const query = { status: 'Active', inventoryType: inventoryType || 'Business' };
     if (category && category !== 'all') {
       query.category = category;
     }
@@ -2411,8 +2419,8 @@ export const getItemWiseProfit = async (req, res) => {
     const startOfPeriod = new Date(startDate);
     startOfPeriod.setHours(0, 0, 0, 0);
 
-    // Get all items
-    const allItems = await Item.find({ status: 'Active' });
+    // Get all Business items (Vyapar reports use Business inventory)
+    const allItems = await Item.find({ status: 'Active', inventoryType: 'Business' });
 
     // Create item map with all items
     const itemMap = new Map();
@@ -2494,9 +2502,10 @@ export const getItemWiseProfit = async (req, res) => {
       }
     });
 
-    // 3. Fetch Stock In (Purchases)
+    // 3. Fetch Stock In (Purchases) - Business inventory only
     const stockInTransactions = await StockTransaction.find({
       transactionType: 'Stock In',
+      inventoryType: 'Business',
       date: { $gte: startDate, $lte: endDate }
     });
 
@@ -2531,8 +2540,9 @@ export const getItemWiseProfit = async (req, res) => {
       }
     });
 
-    // 5. Calculate Opening Stock (Stock before the period)
+    // 5. Calculate Opening Stock (Stock before the period) - Business inventory only
     const openingStockTransactions = await StockTransaction.find({
+      inventoryType: 'Business',
       date: { $lt: startOfPeriod }
     });
 
@@ -2592,9 +2602,10 @@ export const getItemWiseProfit = async (req, res) => {
       }
     });
 
-    // 7. Fetch Stock Out for Consumption/Manufacturing
+    // 7. Fetch Stock Out for Consumption/Manufacturing - Business inventory only
     const stockOutTransactions = await StockTransaction.find({
       transactionType: 'Stock Out',
+      inventoryType: 'Business',
       date: { $gte: startDate, $lte: endDate }
     });
 
@@ -2686,12 +2697,13 @@ export const getItemWiseProfit = async (req, res) => {
 /**
  * Low Stock Summary - Items below reorder level
  * GET /api/reports/vyapar/low-stock
- * Query params: None
+ * Query params: inventoryType
  */
 export const getLowStockSummary = async (req, res) => {
   try {
-    // Fetch all active items
-    const items = await Item.find({ status: 'Active' });
+    const { inventoryType } = req.query;
+    // Fetch all active items - default to Business inventory for Vyapar reports
+    const items = await Item.find({ status: 'Active', inventoryType: inventoryType || 'Business' });
 
     const records = [];
     let totalStockValue = 0;
