@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { message } from '../../utils/toast';
 import dayjs from 'dayjs';
 import { ledgerAPI, voucherAPI } from '../../services/api';
@@ -356,12 +356,6 @@ const ReceiptVoucher = () => {
     return multipleEntries.reduce((sum, entry) => sum + (parseFloat(entry.amount) || 0), 0);
   };
 
-  const ledgerOptions = ledgers.map(ledger => ({
-    label: `${ledger.ledgerName} (${ledger.ledgerType})`,
-    value: ledger._id,
-    group: getLedgerGroup(ledger.ledgerType)
-  }));
-
   function getLedgerGroup(ledgerType) {
     if (['Cash', 'Bank'].includes(ledgerType)) return 'Cash/Bank Accounts';
     if (ledgerType === 'Party') return 'Parties';
@@ -371,13 +365,15 @@ const ReceiptVoucher = () => {
     return 'Other Accounts';
   }
 
-  const groupedOptions = ledgerOptions.reduce((groups, option) => {
-    if (!groups[option.group]) {
-      groups[option.group] = [];
-    }
-    groups[option.group].push(option);
-    return groups;
-  }, {});
+  const selectData = useMemo(() => {
+    const groups = {};
+    ledgers.forEach(ledger => {
+      const group = getLedgerGroup(ledger.ledgerType);
+      if (!groups[group]) groups[group] = [];
+      groups[group].push({ value: ledger._id, label: `${ledger.ledgerName} (${ledger.ledgerType})` });
+    });
+    return Object.entries(groups).map(([group, items]) => ({ group, items }));
+  }, [ledgers]);
 
   return (
     <Container size="xl" py="md">
@@ -399,14 +395,14 @@ const ReceiptVoucher = () => {
       <Paper p="lg" withBorder shadow="sm">
         <LoadingOverlay visible={fetchingVouchers} overlayProps={{ blur: 2 }} />
 
-        <Group position="apart" mb="md">
+        <Group justify="space-between" mb="md">
           <Title order={4}>
-            <Group spacing="xs">
+            <Group gap="xs">
               <IconReceipt size={20} />
               Receipt Vouchers List
             </Group>
           </Title>
-          <Group spacing="sm">
+          <Group gap="sm">
             <Badge size="lg" variant="filled" color="green">
               {vouchers.length} Vouchers
             </Badge>
@@ -422,9 +418,9 @@ const ReceiptVoucher = () => {
 
         {vouchers.length === 0 ? (
           <Card p="xl" withBorder bg="gray.0">
-            <Stack align="center" spacing="md">
+            <Stack align="center" gap="md">
               <IconReceipt size={48} color="gray" />
-              <Text color="dimmed" size="lg">No receipt vouchers found</Text>
+              <Text c="dimmed" size="lg">No receipt vouchers found</Text>
               <Button
                 variant="light"
                 leftSection={<IconPlus size={16} />}
@@ -463,7 +459,7 @@ const ReceiptVoucher = () => {
                       <td>{dayjs(voucher.voucherDate).format('DD-MM-YYYY')}</td>
                       <td>{creditEntry?.ledgerName || '-'}</td>
                       <td style={{ textAlign: 'right' }}>
-                        <Text weight={600} color="green">
+                        <Text fw={600} c="green">
                           ₹{(voucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </Text>
                       </td>
@@ -473,7 +469,7 @@ const ReceiptVoucher = () => {
                         </Text>
                       </td>
                       <td>
-                        <Group spacing="xs" position="center">
+                        <Group gap="xs" justify="center">
                           <Tooltip label="View Details">
                             <ActionIcon
                               color="blue"
@@ -514,9 +510,9 @@ const ReceiptVoucher = () => {
         {/* Summary Card */}
         {vouchers.length > 0 && (
           <Card mt="md" p="md" withBorder bg="green.0">
-            <Group position="apart">
-              <Text weight={500}>Total Receipts</Text>
-              <Text size="xl" weight={700} color="green">
+            <Group justify="space-between">
+              <Text fw={500}>Total Receipts</Text>
+              <Text size="xl" fw={700} c="green">
                 ₹{vouchers.reduce((sum, v) => sum + (v.totalDebit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </Text>
             </Group>
@@ -529,9 +525,9 @@ const ReceiptVoucher = () => {
         opened={modalOpened}
         onClose={() => setModalOpened(false)}
         title={
-          <Group spacing="xs">
+          <Group gap="xs">
             <IconReceipt size={20} />
-            <Text weight={600}>Add Receipt Voucher</Text>
+            <Text fw={600}>Add Receipt Voucher</Text>
           </Group>
         }
         size={entryMode === 'multiple' ? 'xl' : 'md'}
@@ -539,7 +535,7 @@ const ReceiptVoucher = () => {
       >
         <LoadingOverlay visible={loading || savingMultiple} overlayProps={{ blur: 2 }} />
 
-        <Stack spacing="md">
+        <Stack gap="md">
           {/* Entry Mode Selector */}
           <SegmentedControl
             value={entryMode}
@@ -555,7 +551,7 @@ const ReceiptVoucher = () => {
           {entryMode === 'single' ? (
             /* Single Entry Form */
             <form onSubmit={form.onSubmit(handleSubmit)}>
-              <Stack spacing="md">
+              <Stack gap="md">
                 <TextInput
                   label="Voucher Date"
                   placeholder="Select date"
@@ -570,10 +566,7 @@ const ReceiptVoucher = () => {
                   placeholder="Select ledger"
                   required
                   searchable
-                  data={Object.entries(groupedOptions).map(([group, items]) => ({
-                    group,
-                    items: items.map(item => ({ value: item.value, label: item.label }))
-                  }))}
+                  data={selectData}
                   {...form.getInputProps('ledgerId')}
                 />
 
@@ -583,9 +576,8 @@ const ReceiptVoucher = () => {
                   required
                   leftSection={<IconCurrencyRupee size={16} />}
                   min={0.01}
-                  step={0.01}
                   decimalScale={2}
-                  thousandSeparator=","
+                  hideControls
                   {...form.getInputProps('amount')}
                 />
 
@@ -600,9 +592,9 @@ const ReceiptVoucher = () => {
 
                 {/* Bill No Info */}
                 <Card p="sm" withBorder bg="blue.0">
-                  <Group spacing="xs">
+                  <Group gap="xs">
                     <IconReceipt size={16} />
-                    <Text size="sm" color="dimmed">
+                    <Text size="sm" c="dimmed">
                       Bill No will be auto-generated upon saving
                     </Text>
                   </Group>
@@ -611,9 +603,9 @@ const ReceiptVoucher = () => {
                 {/* Amount Preview */}
                 {form.values.amount && (
                   <Card p="sm" withBorder bg="green.0">
-                    <Group position="apart">
-                      <Text size="sm" color="dimmed">Amount to be recorded:</Text>
-                      <Text weight={700} color="green" size="lg">
+                    <Group justify="space-between">
+                      <Text size="sm" c="dimmed">Amount to be recorded:</Text>
+                      <Text fw={700} c="green" size="lg">
                         ₹{parseFloat(form.values.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </Text>
                     </Group>
@@ -622,7 +614,7 @@ const ReceiptVoucher = () => {
 
                 <Divider />
 
-                <Group position="right" spacing="md">
+                <Group justify="flex-end" gap="md">
                   <Button
                     variant="default"
                     leftSection={<IconX size={16} />}
@@ -644,14 +636,14 @@ const ReceiptVoucher = () => {
             </form>
           ) : (
             /* Multiple Entries Form */
-            <Stack spacing="md">
+            <Stack gap="md">
               <Alert color="green" variant="light" py="xs">
                 <Text size="xs">
                   Add multiple receipt vouchers at once. Cash account will be debited automatically for each entry.
                 </Text>
               </Alert>
 
-              <Group position="right">
+              <Group justify="flex-end">
                 <Button
                   leftSection={<IconPlus size={16} />}
                   variant="light"
@@ -753,22 +745,22 @@ const ReceiptVoucher = () => {
 
               {/* Total Summary */}
               <Card p="sm" withBorder bg="green.0">
-                <Group position="apart">
-                  <Group spacing="lg">
+                <Group justify="space-between">
+                  <Group gap="lg">
                     <div>
-                      <Text size="xs" color="dimmed">Total Amount</Text>
-                      <Text weight={700} color="green" size="lg">
+                      <Text size="xs" c="dimmed">Total Amount</Text>
+                      <Text fw={700} c="green" size="lg">
                         ₹{getMultipleTotals().toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </Text>
                     </div>
                   </Group>
-                  <Text weight={500}>({multipleEntries.filter(e => e.ledgerId && parseFloat(e.amount) > 0).length} valid entries)</Text>
+                  <Text fw={500}>({multipleEntries.filter(e => e.ledgerId && parseFloat(e.amount) > 0).length} valid entries)</Text>
                 </Group>
               </Card>
 
               <Divider />
 
-              <Group position="right" spacing="md">
+              <Group justify="flex-end" gap="md">
                 <Button
                   variant="default"
                   leftSection={<IconX size={16} />}
@@ -796,33 +788,33 @@ const ReceiptVoucher = () => {
         opened={viewModalOpened}
         onClose={() => setViewModalOpened(false)}
         title={
-          <Group spacing="xs">
+          <Group gap="xs">
             <IconEye size={20} />
-            <Text weight={600}>Receipt Voucher Details</Text>
+            <Text fw={600}>Receipt Voucher Details</Text>
           </Group>
         }
         size="md"
         centered
       >
         {selectedVoucher && (
-          <Stack spacing="md">
+          <Stack gap="md">
             <Grid>
               <Grid.Col span={6}>
-                <Text size="sm" color="dimmed">Bill No</Text>
+                <Text size="sm" c="dimmed">Bill No</Text>
                 <Badge size="lg" color="green">{selectedVoucher.voucherNumber || 'Auto'}</Badge>
               </Grid.Col>
               <Grid.Col span={6}>
-                <Text size="sm" color="dimmed">Voucher Date</Text>
-                <Text weight={500}>{dayjs(selectedVoucher.voucherDate).format('DD-MM-YYYY')}</Text>
+                <Text size="sm" c="dimmed">Voucher Date</Text>
+                <Text fw={500}>{dayjs(selectedVoucher.voucherDate).format('DD-MM-YYYY')}</Text>
               </Grid.Col>
               <Grid.Col span={12}>
-                <Text size="sm" color="dimmed">Head of Account</Text>
-                <Text weight={500}>{selectedVoucher.entries?.find(e => e.creditAmount > 0)?.ledgerName || '-'}</Text>
+                <Text size="sm" c="dimmed">Head of Account</Text>
+                <Text fw={500}>{selectedVoucher.entries?.find(e => e.creditAmount > 0)?.ledgerName || '-'}</Text>
               </Grid.Col>
               <Grid.Col span={12}>
                 <Card p="md" withBorder bg="green.0">
-                  <Text size="sm" color="dimmed" mb="xs">Amount Received</Text>
-                  <Text size="xl" weight={700} color="green">
+                  <Text size="sm" c="dimmed" mb="xs">Amount Received</Text>
+                  <Text size="xl" fw={700} c="green">
                     ₹{(selectedVoucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </Text>
                 </Card>
@@ -830,13 +822,13 @@ const ReceiptVoucher = () => {
             </Grid>
 
             <Card p="sm" withBorder bg="gray.0">
-              <Text size="sm" color="dimmed">Narration</Text>
+              <Text size="sm" c="dimmed">Narration</Text>
               <Text>{selectedVoucher.narration || '-'}</Text>
             </Card>
 
             <Divider />
 
-            <Group position="right" spacing="md">
+            <Group justify="flex-end" gap="md">
               <Button
                 variant="light"
                 color="green"

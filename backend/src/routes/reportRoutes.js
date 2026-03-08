@@ -7,7 +7,10 @@ import {
   getSalesReport,
   getStockReport,
   getSubsidyReport,
-  getStockRegister
+  getStockRegister,
+  getInventoryPurchaseRegister,
+  getSalesRegister,
+  getMilkBillAbstractReport
 } from '../controllers/reportController.js';
 import { getDayBook } from '../controllers/dayBookController.js';
 import {
@@ -36,7 +39,11 @@ import {
   getBankStatement,
   getAllPartiesReport,
   getGSTR1Report,
-  getGSTR2Report
+  getGSTR2Report,
+  getStockStatement,
+  getVyaparDayBook,
+  getVyaparCashBook,
+  getVyaparTradingAccount
 } from '../controllers/vyaparReportsController.js';
 
 const router = express.Router();
@@ -51,6 +58,9 @@ router.get('/stock', getStockReport);
 router.get('/subsidy', getSubsidyReport);
 router.get('/day-book', getDayBook);
 router.get('/stock-register', getStockRegister);
+router.get('/inventory-purchase-register', getInventoryPurchaseRegister);
+router.get('/sales-register', getSalesRegister);
+router.get('/milk-bill-abstract', getMilkBillAbstractReport);
 
 // New accounting reports routes
 router.get('/cash-book', getCashBook);
@@ -79,5 +89,9 @@ router.get('/vyapar/bank-statement', getBankStatement);
 router.get('/vyapar/all-parties', getAllPartiesReport);
 router.get('/vyapar/gstr1', getGSTR1Report);
 router.get('/vyapar/gstr2', getGSTR2Report);
+router.get('/vyapar/stock-statement', getStockStatement);
+router.get('/vyapar/day-book', getVyaparDayBook);
+router.get('/vyapar/cash-book', getVyaparCashBook);
+router.get('/vyapar/trading-account', getVyaparTradingAccount);
 
 export default router;

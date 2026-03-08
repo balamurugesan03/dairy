@@ -1,314 +1,240 @@
-import { useState, useEffect } from 'react';
-import { message } from '../../utils/toast';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import dayjs from 'dayjs';
+import {
+  Container, Title, Text, Button, Group, Stack, Paper, TextInput, Select,
+  Badge, ActionIcon, Menu, Loader, Center, Box, Grid, Card, ThemeIcon,
+  Tooltip, Pagination, Progress
+} from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
+import { DataTable } from 'mantine-datatable';
+import { notifications } from '@mantine/notifications';
+import { modals } from '@mantine/modals';
+import {
+  IconPlus, IconSearch, IconShield, IconEye, IconEdit, IconTrash,
+  IconDotsVertical, IconRefresh, IconAlertCircle, IconCheck, IconX,
+  IconCalendar, IconShieldCheck, IconShieldOff
+} from '@tabler/icons-react';
 import { warrantyAPI } from '../../services/api';
-import PageHeader from '../common/PageHeader';
-import ExportButton from '../common/ExportButton';
-import { showConfirmDialog } from '../common/ConfirmDialog';
-import './WarrantyList.css';
+import dayjs from 'dayjs';
+
+const STATUS_CONFIG = {
+  Active:  { color: 'green',  label: 'Active' },
+  Expired: { color: 'red',    label: 'Expired' },
+  Claimed: { color: 'orange', label: 'Claimed' },
+  Void:    { color: 'gray',   label: 'Void' }
+};
 
 const WarrantyList = () => {
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
   const [warranties, setWarranties] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [searchText, setSearchText] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('');
 
-  useEffect(() => {
-    fetchWarranties();
-  }, []);
-
-  const fetchWarranties = async () => {
+  const fetchWarranties = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await warrantyAPI.getAll({ search: searchText });
-      setWarranties(response.data || []);
-    } catch (error) {
-      message.error(error.message || 'Failed to fetch warranties');
+      const params = { page: pagination.page, limit: pagination.limit };
+      if (search) params.search = search;
+      if (status) params.status = status;
+
+      const res = await warrantyAPI.getAll(params);
+      const data = res?.data?.data || res?.data || res || [];
+      const pg = res?.data?.pagination || res?.pagination || {};
+      setWarranties(Array.isArray(data) ? data : []);
+      setPagination(p => ({ ...p, total: pg.total || 0, pages: pg.pages || 0 }));
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message || 'Failed to load warranties', color: 'red' });
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.page, search, status]);
 
-  const handleDelete = async (id) => {
-    showConfirmDialog({
+  useEffect(() => { fetchWarranties(); }, [fetchWarranties]);
+
+  const handleDelete = (row) => {
+    modals.openConfirmModal({
       title: 'Delete Warranty',
-      content: 'Are you sure you want to delete this warranty?',
-      type: 'danger',
+      children: <Text size="sm">Delete warranty for <b>{row.itemName}</b>? This cannot be undone.</Text>,
+      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
       onConfirm: async () => {
         try {
-          await warrantyAPI.delete(id);
-          message.success('Warranty deleted successfully');
+          await warrantyAPI.delete(row._id);
+          notifications.show({ title: 'Deleted', message: 'Warranty deleted', color: 'green' });
           fetchWarranties();
-        } catch (error) {
-          message.error(error.message || 'Failed to delete warranty');
+        } catch (err) {
+          notifications.show({ title: 'Error', message: err.message, color: 'red' });
         }
       }
     });
   };
 
-  const handleSearch = (e) => {
-    e.preventDefault();
-    fetchWarranties();
+  // Days remaining helper
+  const daysRemaining = (endDate) => {
+    const diff = dayjs(endDate).diff(dayjs(), 'day');
+    return diff;
   };
 
-  const handleSearchChange = (e) => {
-    setSearchText(e.target.value);
-  };
-
-  useEffect(() => {
-    if (searchText === '') {
-      fetchWarranties();
-    }
-  }, [searchText]);
-
-  const getWarrantyStatus = (endDate) => {
-    const daysRemaining = dayjs(endDate).diff(dayjs(), 'day');
-    if (daysRemaining < 0) return { text: 'Expired', color: 'red' };
-    if (daysRemaining <= 30) return { text: 'Expiring Soon', color: 'orange' };
-    return { text: 'Active', color: 'green' };
-  };
-
-  const exportData = warranties.map(warranty => ({
-    'Warranty No': warranty.warrantyNumber,
-    'Customer Name': warranty.customerName,
-    'Product': warranty.product,
-    'Serial Number': warranty.serialNumber,
-    'Purchase Date': dayjs(warranty.purchaseDate).format('DD/MM/YYYY'),
-    'Warranty Start': dayjs(warranty.warrantyStartDate).format('DD/MM/YYYY'),
-    'Warranty End': dayjs(warranty.warrantyEndDate).format('DD/MM/YYYY'),
-    'Duration': `${warranty.warrantyPeriod || 0} ${warranty.warrantyPeriodUnit || 'months'}`,
-    'Status': getWarrantyStatus(warranty.warrantyEndDate).text,
-    'Terms': warranty.terms || ''
-  }));
-
-  // Pagination
-  const totalPages = Math.ceil(warranties.length / pageSize);
-  const startIndex = (currentPage - 1) * pageSize;
-  const endIndex = startIndex + pageSize;
-  const currentWarranties = warranties.slice(startIndex, endIndex);
-
-  const handlePageChange = (page) => {
-    setCurrentPage(page);
-  };
-
-  const handlePageSizeChange = (e) => {
-    setPageSize(Number(e.target.value));
-    setCurrentPage(1);
-  };
+  const counts = warranties.reduce((acc, w) => { acc[w.status] = (acc[w.status] || 0) + 1; return acc; }, {});
+  const statCards = [
+    { label: 'Total', value: pagination.total, color: 'blue', icon: <IconShield size={20}/> },
+    { label: 'Active', value: counts.Active || 0, color: 'green', icon: <IconShieldCheck size={20}/> },
+    { label: 'Expired', value: counts.Expired || 0, color: 'red', icon: <IconShieldOff size={20}/> },
+    { label: 'Claimed', value: counts.Claimed || 0, color: 'orange', icon: <IconAlertCircle size={20}/> },
+  ];
 
   return (
-    <div className="warranty-list-container">
-      <PageHeader
-        title="Warranty Management"
-        subtitle="Manage product warranties and service agreements"
-        extra={
-          <button
-            className="btn btn-primary"
-            onClick={() => navigate('/warranty/add')}
-          >
-            <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <line x1="12" y1="5" x2="12" y2="19" strokeWidth="2" strokeLinecap="round"/>
-              <line x1="5" y1="12" x2="19" y2="12" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-            Add Warranty
-          </button>
-        }
-      />
+    <Container size="xl" py="md">
+      <Group justify="space-between" mb="md">
+        <Box>
+          <Title order={2} fw={700}>Warranty Management</Title>
+          <Text c="dimmed" size="sm">Track product warranties and claims</Text>
+        </Box>
+        <Button leftSection={<IconPlus size={16}/>} onClick={() => navigate('/warranty/add')}>
+          Add Warranty
+        </Button>
+      </Group>
 
-      <div className="warranty-list-controls">
-        <form className="search-form" onSubmit={handleSearch}>
-          <input
-            type="text"
-            className="search-input"
-            placeholder="Search by warranty number, customer, or product"
-            value={searchText}
-            onChange={handleSearchChange}
+      {/* Stats */}
+      <Grid mb="md" gutter="sm">
+        {statCards.map(s => (
+          <Grid.Col key={s.label} span={{ base: 6, sm: 3 }}>
+            <Card withBorder radius="md" p="sm">
+              <Group gap="xs">
+                <ThemeIcon size="md" variant="light" color={s.color} radius="md">{s.icon}</ThemeIcon>
+                <Box><Text size="xs" c="dimmed">{s.label}</Text><Text fw={700} size="lg">{s.value}</Text></Box>
+              </Group>
+            </Card>
+          </Grid.Col>
+        ))}
+      </Grid>
+
+      {/* Filters */}
+      <Paper withBorder p="sm" mb="md" radius="md">
+        <Group gap="sm" wrap="wrap">
+          <TextInput
+            placeholder="Search item, customer, serial..."
+            leftSection={<IconSearch size={14}/>}
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPagination(p => ({ ...p, page: 1 })); }}
+            style={{ flex: 1, minWidth: 200 }}
           />
-          <button type="submit" className="btn btn-search">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <circle cx="11" cy="11" r="8" strokeWidth="2"/>
-              <path d="m21 21-4.35-4.35" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-            Search
-          </button>
-        </form>
+          <Select
+            placeholder="All Status"
+            data={['Active', 'Expired', 'Claimed', 'Void']}
+            value={status}
+            onChange={v => { setStatus(v || ''); setPagination(p => ({ ...p, page: 1 })); }}
+            clearable style={{ width: 140 }}
+          />
+          <Tooltip label="Refresh">
+            <ActionIcon variant="light" onClick={fetchWarranties}><IconRefresh size={16}/></ActionIcon>
+          </Tooltip>
+        </Group>
+      </Paper>
 
-        <ExportButton
-          data={exportData}
-          filename="warranties"
-          buttonText="Export to Excel"
+      <Paper withBorder radius="md" style={{ overflow: 'hidden' }}>
+        <DataTable
+          records={warranties}
+          fetching={loading}
+          minHeight={300}
+          noRecordsText="No warranties found"
+          columns={[
+            {
+              accessor: 'warrantyNumber',
+              title: 'Warranty #',
+              render: (row) => (
+                <Text fw={600} size="sm" c="blue" style={{ cursor: 'pointer' }}
+                  onClick={() => navigate(`/warranty/view/${row._id}`)}>
+                  {row.warrantyNumber}
+                </Text>
+              )
+            },
+            {
+              accessor: 'itemName',
+              title: 'Item',
+              render: (row) => (
+                <Box>
+                  <Text size="sm" fw={500}>{row.itemName}</Text>
+                  {row.serialNumber && <Text size="xs" c="dimmed">S/N: {row.serialNumber}</Text>}
+                </Box>
+              )
+            },
+            {
+              accessor: 'customerName',
+              title: 'Customer',
+              render: (row) => (
+                <Box>
+                  <Text size="sm">{row.customerName || '—'}</Text>
+                  {row.customerPhone && <Text size="xs" c="dimmed">{row.customerPhone}</Text>}
+                </Box>
+              )
+            },
+            {
+              accessor: 'warrantyType',
+              title: 'Type',
+              render: (row) => <Badge variant="light" size="sm">{row.warrantyType || '—'}</Badge>
+            },
+            {
+              accessor: 'warrantyStartDate',
+              title: 'Start',
+              render: (row) => <Text size="sm">{row.warrantyStartDate ? dayjs(row.warrantyStartDate).format('DD MMM YY') : '—'}</Text>
+            },
+            {
+              accessor: 'warrantyEndDate',
+              title: 'Expiry',
+              render: (row) => {
+                const days = daysRemaining(row.warrantyEndDate);
+                return (
+                  <Box>
+                    <Text size="sm" c={days < 0 ? 'red' : days < 30 ? 'orange' : undefined}>
+                      {row.warrantyEndDate ? dayjs(row.warrantyEndDate).format('DD MMM YY') : '—'}
+                    </Text>
+                    {days > 0 && <Text size="xs" c="dimmed">{days}d left</Text>}
+                  </Box>
+                );
+              }
+            },
+            {
+              accessor: 'claims',
+              title: 'Claims',
+              render: (row) => <Text size="sm">{row.claims?.length || 0}</Text>
+            },
+            {
+              accessor: 'status',
+              title: 'Status',
+              render: (row) => {
+                const cfg = STATUS_CONFIG[row.status] || { color: 'gray', label: row.status };
+                return <Badge color={cfg.color} variant="light" size="sm">{cfg.label}</Badge>;
+              }
+            },
+            {
+              accessor: 'actions', title: '', width: 60,
+              render: (row) => (
+                <Menu shadow="md" width={180} position="bottom-end">
+                  <Menu.Target>
+                    <ActionIcon variant="subtle"><IconDotsVertical size={16}/></ActionIcon>
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    <Menu.Item leftSection={<IconEye size={14}/>} onClick={() => navigate(`/warranty/view/${row._id}`)}>View / Claims</Menu.Item>
+                    <Menu.Item leftSection={<IconEdit size={14}/>} onClick={() => navigate(`/warranty/edit/${row._id}`)}>Edit</Menu.Item>
+                    <Menu.Divider/>
+                    <Menu.Item leftSection={<IconTrash size={14}/>} color="red" onClick={() => handleDelete(row)}>Delete</Menu.Item>
+                  </Menu.Dropdown>
+                </Menu>
+              )
+            }
+          ]}
         />
-      </div>
+      </Paper>
 
-      {loading ? (
-        <div className="loading-container">
-          <div className="spinner"></div>
-          <p>Loading warranties...</p>
-        </div>
-      ) : (
-        <>
-          <div className="table-container">
-            <table className="warranty-table">
-              <thead>
-                <tr>
-                  <th>Warranty No</th>
-                  <th>Customer Name</th>
-                  <th>Product</th>
-                  <th>Serial Number</th>
-                  <th>Purchase Date</th>
-                  <th>Warranty Start</th>
-                  <th>Warranty End</th>
-                  <th>Duration</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {currentWarranties.length === 0 ? (
-                  <tr>
-                    <td colSpan="10" className="no-data">
-                      No warranties found
-                    </td>
-                  </tr>
-                ) : (
-                  currentWarranties.map((warranty) => {
-                    const status = getWarrantyStatus(warranty.warrantyEndDate);
-                    return (
-                      <tr key={warranty._id}>
-                        <td>{warranty.warrantyNumber}</td>
-                        <td>{warranty.customerName}</td>
-                        <td>{warranty.product}</td>
-                        <td>{warranty.serialNumber}</td>
-                        <td>{dayjs(warranty.purchaseDate).format('DD/MM/YYYY')}</td>
-                        <td>{dayjs(warranty.warrantyStartDate).format('DD/MM/YYYY')}</td>
-                        <td>{dayjs(warranty.warrantyEndDate).format('DD/MM/YYYY')}</td>
-                        <td>{warranty.warrantyPeriod || 0} {warranty.warrantyPeriodUnit || 'months'}</td>
-                        <td>
-                          <span className={`status-badge status-${status.color}`}>
-                            {status.text}
-                          </span>
-                        </td>
-                        <td className="actions-cell">
-                          <button
-                            className="btn btn-link"
-                            onClick={() => navigate(`/warranty/edit/${warranty._id}`)}
-                            title="Edit"
-                          >
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
-                            Edit
-                          </button>
-                          <button
-                            className="btn btn-link btn-danger"
-                            onClick={() => handleDelete(warranty._id)}
-                            title="Delete"
-                          >
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                              <polyline points="3 6 5 6 21 6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {warranties.length > 0 && (
-            <div className="pagination-container">
-              <div className="pagination-info">
-                Showing {startIndex + 1} to {Math.min(endIndex, warranties.length)} of {warranties.length} warranties
-              </div>
-
-              <div className="pagination-controls">
-                <label>
-                  Show
-                  <select value={pageSize} onChange={handlePageSizeChange}>
-                    <option value="10">10</option>
-                    <option value="20">20</option>
-                    <option value="50">50</option>
-                    <option value="100">100</option>
-                  </select>
-                  entries
-                </label>
-              </div>
-
-              <div className="pagination-buttons">
-                <button
-                  className="btn btn-pagination"
-                  onClick={() => handlePageChange(1)}
-                  disabled={currentPage === 1}
-                >
-                  First
-                </button>
-                <button
-                  className="btn btn-pagination"
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage === 1}
-                >
-                  Previous
-                </button>
-
-                {Array.from({ length: totalPages }, (_, i) => i + 1)
-                  .filter(page => {
-                    return page === 1 ||
-                           page === totalPages ||
-                           Math.abs(page - currentPage) <= 2;
-                  })
-                  .map((page, index, array) => {
-                    if (index > 0 && page - array[index - 1] > 1) {
-                      return (
-                        <span key={`ellipsis-${page}`}>
-                          <span className="pagination-ellipsis">...</span>
-                          <button
-                            className={`btn btn-pagination ${currentPage === page ? 'active' : ''}`}
-                            onClick={() => handlePageChange(page)}
-                          >
-                            {page}
-                          </button>
-                        </span>
-                      );
-                    }
-                    return (
-                      <button
-                        key={page}
-                        className={`btn btn-pagination ${currentPage === page ? 'active' : ''}`}
-                        onClick={() => handlePageChange(page)}
-                      >
-                        {page}
-                      </button>
-                    );
-                  })}
-
-                <button
-                  className="btn btn-pagination"
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage === totalPages}
-                >
-                  Next
-                </button>
-                <button
-                  className="btn btn-pagination"
-                  onClick={() => handlePageChange(totalPages)}
-                  disabled={currentPage === totalPages}
-                >
-                  Last
-                </button>
-              </div>
-            </div>
-          )}
-        </>
+      {pagination.pages > 1 && (
+        <Group justify="center" mt="md">
+          <Pagination total={pagination.pages} value={pagination.page} onChange={p => setPagination(prev => ({ ...prev, page: p }))}/>
+        </Group>
       )}
-    </div>
+    </Container>
   );
 };
 

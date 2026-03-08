@@ -93,7 +93,7 @@ export const createCustomer = async (req, res) => {
       openingBalanceType: 'Dr',
       currentBalance: customerData.openingBalance || 0,
       balanceType: 'Dr',
-      parentGroup: 'Sundry Debtors',
+      parentGroup: customerData.category || 'Sundry Debtors',
       status: 'Active'
     });
 
@@ -125,7 +125,12 @@ export const getAllCustomers = async (req, res) => {
       page = 1,
       limit = 10,
       search = '',
-      active = ''
+      active = '',
+      category = '',
+      state = '',
+      district = '',
+      minBalance = '',
+      maxBalance = ''
     } = req.query;
 
     const query = {};
@@ -142,6 +147,15 @@ export const getAllCustomers = async (req, res) => {
 
     if (active !== '') {
       query.active = active === 'true';
+    }
+
+    if (category) query.category = category;
+    if (state) query.state = { $regex: state, $options: 'i' };
+    if (district) query.district = { $regex: district, $options: 'i' };
+    if (minBalance !== '' || maxBalance !== '') {
+      query.openingBalance = {};
+      if (minBalance !== '') query.openingBalance.$gte = parseFloat(minBalance);
+      if (maxBalance !== '') query.openingBalance.$lte = parseFloat(maxBalance);
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);

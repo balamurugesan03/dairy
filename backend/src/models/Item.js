@@ -71,6 +71,15 @@ const itemSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Supplier'
   },
+  subsidyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Subsidy'
+  },
+  subsidyAmount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   status: {
     type: String,
     enum: ['Active', 'Inactive'],

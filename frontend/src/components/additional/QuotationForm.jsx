@@ -1,551 +1,666 @@
 import { useState, useEffect } from 'react';
-import { message } from '../../utils/toast';
 import { useNavigate, useParams } from 'react-router-dom';
-import { quotationAPI, itemAPI } from '../../services/api';
-import PageHeader from '../common/PageHeader';
-import './QuotationForm.css';
+import {
+  Container, Title, Text, Button, Group, Stack, Paper, Grid, TextInput,
+  Select, Textarea, NumberInput, ActionIcon, Table, Badge, Divider, Box,
+  Loader, Center
+} from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
+import { notifications } from '@mantine/notifications';
+import {
+  IconPlus, IconTrash, IconArrowLeft, IconDeviceFloppy, IconRefresh
+} from '@tabler/icons-react';
+import { quotationAPI, customerAPI, businessItemAPI } from '../../services/api';
+import { useCompany } from '../../context/CompanyContext';
+import dayjs from 'dayjs';
 
+// ── Default Terms & Conditions ────────────────────────────────
+const DEFAULT_TERMS = `1. This quotation is valid for 30 days from the date of issue.
+2. Prices are subject to change without prior notice after validity period.
+3. Payment terms: 50% advance, balance before delivery.
+4. Delivery within 7–10 working days after confirmation.
+5. Goods once sold will not be taken back unless defective.
+6. All disputes are subject to local jurisdiction only.`;
+
+// ── Helpers ───────────────────────────────────────────────────
+const emptyItem = () => ({
+  _key: Math.random(),
+  itemId: '', itemCode: '', itemName: '', hsnCode: '',
+  quantity: 1, unit: '', mrp: 0, rate: 0,
+  discountPercent: 0, discountAmount: 0,
+  taxableAmount: 0, gstPercent: 0,
+  cgstPercent: 0, cgstAmount: 0,
+  sgstPercent: 0, sgstAmount: 0,
+  igstPercent: 0, igstAmount: 0,
+  totalAmount: 0
+});
+
+const calcItem = (item) => {
+  const qty = Number(item.quantity) || 0;
+  const rate = Number(item.rate) || 0;
+  const discP = Number(item.discountPercent) || 0;
+  const gstP = Number(item.gstPercent) || 0;
+
+  const gross = qty * rate;
+  const discAmt = +(gross * discP / 100).toFixed(2);
+  const taxable = +(gross - discAmt).toFixed(2);
+  const cgstP = +(gstP / 2).toFixed(2);
+  const sgstP = +(gstP / 2).toFixed(2);
+  const cgstAmt = +(taxable * cgstP / 100).toFixed(2);
+  const sgstAmt = +(taxable * sgstP / 100).toFixed(2);
+  const total = +(taxable + cgstAmt + sgstAmt).toFixed(2);
+
+  return {
+    ...item,
+    discountAmount: discAmt,
+    taxableAmount: taxable,
+    cgstPercent: cgstP, cgstAmount: cgstAmt,
+    sgstPercent: sgstP, sgstAmount: sgstAmt,
+    igstPercent: 0, igstAmount: 0,
+    totalAmount: total
+  };
+};
+
+const calcTotals = (items, billDiscP = 0) => {
+  const totalQty = items.reduce((s, i) => s + (Number(i.quantity) || 0), 0);
+  const grossAmount = items.reduce((s, i) => s + (Number(i.quantity) * Number(i.rate) || 0), 0);
+  const itemDiscount = items.reduce((s, i) => s + (Number(i.discountAmount) || 0), 0);
+  const taxableRaw = items.reduce((s, i) => s + (Number(i.taxableAmount) || 0), 0);
+  const billDiscAmt = +(taxableRaw * Number(billDiscP) / 100).toFixed(2);
+  const afterBillDisc = taxableRaw - billDiscAmt;
+  const totalCgst = items.reduce((s, i) => s + (Number(i.cgstAmount) || 0), 0);
+  const totalSgst = items.reduce((s, i) => s + (Number(i.sgstAmount) || 0), 0);
+  const totalIgst = items.reduce((s, i) => s + (Number(i.igstAmount) || 0), 0);
+  const totalGst = totalCgst + totalSgst + totalIgst;
+  const raw = afterBillDisc + totalGst;
+  const roundOff = +(Math.round(raw) - raw).toFixed(2);
+  const grandTotal = +(raw + roundOff).toFixed(2);
+
+  return {
+    totalQty,
+    grossAmount: +grossAmount.toFixed(2),
+    itemDiscount: +itemDiscount.toFixed(2),
+    billDiscount: billDiscAmt,
+    taxableAmount: +afterBillDisc.toFixed(2),
+    totalCgst: +totalCgst.toFixed(2),
+    totalSgst: +totalSgst.toFixed(2),
+    totalIgst: +totalIgst.toFixed(2),
+    totalGst: +totalGst.toFixed(2),
+    roundOff,
+    grandTotal
+  };
+};
+
+// ── Component ─────────────────────────────────────────────────
 const QuotationForm = () => {
   const navigate = useNavigate();
   const { id } = useParams();
-  const [loading, setLoading] = useState(false);
+  const isEdit = Boolean(id);
+  const { selectedCompany } = useCompany();
+
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(isEdit);
+  const [customers, setCustomers] = useState([]);
   const [items, setItems] = useState([]);
-  const [quotationItems, setQuotationItems] = useState([]);
-  const [formData, setFormData] = useState({
-    quotationNumber: '',
-    quotationDate: new Date().toISOString().split('T')[0],
-    validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    customerName: '',
-    customerPhone: '',
-    customerEmail: '',
-    customerAddress: '',
-    status: 'Draft',
-    discount: 0,
-    notes: '',
-    termsAndConditions: ''
-  });
-  const [totals, setTotals] = useState({
-    subtotal: 0,
-    taxAmount: 0,
-    discount: 0,
-    totalAmount: 0
-  });
-  const [errors, setErrors] = useState({});
 
-  const isEditMode = Boolean(id);
+  // ── Form state ──────────────────────────────────────────────
+  const [quotationDate, setQuotationDate] = useState(new Date());
+  const [validUntil, setValidUntil] = useState(new Date(Date.now() + 30 * 86400000));
+  const [status, setStatus] = useState('Draft');
 
+  // Customer
+  const [partyId, setPartyId] = useState('');
+  const [partyName, setPartyName] = useState('');
+  const [partyOrganization, setPartyOrganization] = useState('');
+  const [partyPhone, setPartyPhone] = useState('');
+  const [partyEmail, setPartyEmail] = useState('');
+  const [partyAddress, setPartyAddress] = useState('');
+  const [partyGstin, setPartyGstin] = useState('');
+  const [partyState, setPartyState] = useState('');
+
+  // Items
+  const [lineItems, setLineItems] = useState([emptyItem()]);
+  const [billDiscP, setBillDiscP] = useState(0);
+
+  // Notes & Terms
+  const [notes, setNotes] = useState('');
+  const [terms, setTerms] = useState(DEFAULT_TERMS);
+
+  const totals = calcTotals(lineItems, billDiscP);
+
+  // ── Load data ───────────────────────────────────────────────
   useEffect(() => {
-    fetchItems();
-    if (isEditMode) {
-      fetchQuotation();
-    }
+    loadMasterData();
+    if (isEdit) loadQuotation();
   }, [id]);
 
-  const fetchItems = async () => {
+  const loadMasterData = async () => {
     try {
-      const response = await itemAPI.getAll();
-      setItems(response.data || []);
-    } catch (error) {
-      message.error('Failed to fetch items');
-    }
+      const [custRes, itemRes] = await Promise.all([
+        customerAPI.getAll({ limit: 500 }),
+        businessItemAPI.getAll({ limit: 500, status: 'Active' })
+      ]);
+      setCustomers(Array.isArray(custRes?.data) ? custRes.data : custRes?.data?.data || []);
+      setItems(Array.isArray(itemRes?.data) ? itemRes.data : itemRes?.data?.data || []);
+    } catch { /* silent */ }
   };
 
-  const fetchQuotation = async () => {
+  const loadQuotation = async () => {
     setLoading(true);
     try {
-      const response = await quotationAPI.getById(id);
-      const quotation = response.data;
-
-      setFormData({
-        quotationNumber: quotation.quotationNumber || '',
-        quotationDate: quotation.quotationDate ? new Date(quotation.quotationDate).toISOString().split('T')[0] : '',
-        validUntil: quotation.validUntil ? new Date(quotation.validUntil).toISOString().split('T')[0] : '',
-        customerName: quotation.customerName || '',
-        customerPhone: quotation.customerPhone || '',
-        customerEmail: quotation.customerEmail || '',
-        customerAddress: quotation.customerAddress || '',
-        status: quotation.status || 'Draft',
-        discount: quotation.discount || 0,
-        notes: quotation.notes || '',
-        termsAndConditions: quotation.termsAndConditions || ''
-      });
-
-      setQuotationItems(quotation.items || []);
-      calculateTotals(quotation.items || [], quotation.discount || 0);
-    } catch (error) {
-      message.error(error.message || 'Failed to fetch quotation details');
+      const res = await quotationAPI.getById(id);
+      const q = res?.data || res;
+      setQuotationDate(q.quotationDate ? new Date(q.quotationDate) : new Date());
+      setValidUntil(q.validUntil ? new Date(q.validUntil) : new Date(Date.now() + 30 * 86400000));
+      setStatus(q.status || 'Draft');
+      setPartyId(q.partyId?._id || q.partyId || '');
+      setPartyName(q.partyName || '');
+      setPartyOrganization(q.partyOrganization || '');
+      setPartyPhone(q.partyPhone || '');
+      setPartyEmail(q.partyEmail || '');
+      setPartyAddress(q.partyAddress || '');
+      setPartyGstin(q.partyGstin || '');
+      setPartyState(q.partyState || '');
+      setLineItems(q.items?.map(i => ({ ...i, _key: Math.random() })) || [emptyItem()]);
+      setBillDiscP(q.billDiscountPercent || 0);
+      setNotes(q.notes || '');
+      setTerms(q.termsAndConditions || DEFAULT_TERMS);
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
     } finally {
       setLoading(false);
     }
   };
 
-  const calculateTotals = (itemsList, discountAmount = 0) => {
-    const subtotal = itemsList.reduce((sum, item) => sum + (item.quantity * item.rate), 0);
-    const taxAmount = itemsList.reduce((sum, item) => {
-      const itemTotal = item.quantity * item.rate;
-      return sum + (itemTotal * (item.taxPercent || 0) / 100);
-    }, 0);
-    const totalAmount = subtotal + taxAmount - discountAmount;
+  // ── Handlers ────────────────────────────────────────────────
+  const handleCustomerSelect = (customerId) => {
+    setPartyId(customerId);
+    const cust = customers.find(c => c._id === customerId);
+    if (cust) {
+      setPartyName(cust.name || cust.customerName || '');
+      setPartyOrganization(cust.organization || cust.companyName || '');
+      setPartyPhone(cust.phone || cust.mobileNumber || '');
+      setPartyEmail(cust.email || '');
+      setPartyAddress(cust.address || '');
+      setPartyGstin(cust.gstin || '');
+      setPartyState(cust.state || '');
+    }
+  };
 
-    setTotals({
-      subtotal,
-      taxAmount,
-      discount: discountAmount,
-      totalAmount
+  const handleItemSelect = (idx, itemId) => {
+    const item = items.find(i => i._id === itemId);
+    if (!item) return;
+    updateLine(idx, {
+      itemId: item._id,
+      itemCode: item.itemCode || '',
+      itemName: item.itemName,
+      hsnCode: item.hsnCode || '',
+      unit: item.measurement || item.unit || '',
+      mrp: item.mrp || 0,
+      rate: item.salesRate || item.mrp || 0,
+      gstPercent: item.gstPercent || 0
     });
   };
 
-  const handleAddItem = () => {
-    const newItem = {
-      key: Date.now(),
-      itemId: '',
-      itemName: '',
-      description: '',
-      quantity: 1,
-      rate: 0,
-      taxPercent: 0,
-      amount: 0
-    };
-    const updatedItems = [...quotationItems, newItem];
-    setQuotationItems(updatedItems);
-  };
-
-  const handleDeleteItem = (key) => {
-    const updatedItems = quotationItems.filter(item => item.key !== key);
-    setQuotationItems(updatedItems);
-    calculateTotals(updatedItems, formData.discount || 0);
-  };
-
-  const handleItemChange = (key, field, value) => {
-    const updatedItems = quotationItems.map(item => {
-      if (item.key === key) {
-        const updatedItem = { ...item, [field]: value };
-
-        if (field === 'itemId') {
-          const selectedItem = items.find(i => i._id === value);
-          if (selectedItem) {
-            updatedItem.itemName = selectedItem.itemName;
-            updatedItem.rate = selectedItem.salesRate || 0;
-            updatedItem.taxPercent = selectedItem.gstPercent || 0;
-          }
-        }
-
-        updatedItem.amount = updatedItem.quantity * updatedItem.rate;
-        return updatedItem;
-      }
-      return item;
+  const updateLine = (idx, patch) => {
+    setLineItems(prev => {
+      const updated = [...prev];
+      const merged = calcItem({ ...updated[idx], ...patch });
+      updated[idx] = merged;
+      return updated;
     });
-
-    setQuotationItems(updatedItems);
-    calculateTotals(updatedItems, formData.discount || 0);
   };
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+  const addLine = () => setLineItems(prev => [...prev, emptyItem()]);
+  const removeLine = (idx) => setLineItems(prev => prev.filter((_, i) => i !== idx));
 
-    if (name === 'discount') {
-      calculateTotals(quotationItems, parseFloat(value) || 0);
-    }
-
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
-    }
+  // Reset entire form
+  const handleReset = () => {
+    setQuotationDate(new Date());
+    setValidUntil(new Date(Date.now() + 30 * 86400000));
+    setStatus('Draft');
+    setPartyId('');
+    setPartyName('');
+    setPartyOrganization('');
+    setPartyPhone('');
+    setPartyEmail('');
+    setPartyAddress('');
+    setPartyGstin('');
+    setPartyState('');
+    setLineItems([emptyItem()]);
+    setBillDiscP(0);
+    setNotes('');
+    setTerms(DEFAULT_TERMS);
   };
 
-  const validateForm = () => {
-    const newErrors = {};
-
-    if (!formData.quotationNumber?.trim()) {
-      newErrors.quotationNumber = 'Please enter quotation number';
+  // Save → then open print template
+  const handleSave = async () => {
+    if (!partyName.trim()) {
+      notifications.show({ title: 'Validation', message: 'Customer name is required', color: 'yellow' });
+      return;
     }
-    if (!formData.quotationDate) {
-      newErrors.quotationDate = 'Please select date';
-    }
-    if (!formData.validUntil) {
-      newErrors.validUntil = 'Please select valid until date';
-    }
-    if (!formData.customerName?.trim()) {
-      newErrors.customerName = 'Please enter customer name';
-    }
-    if (!formData.customerPhone?.trim()) {
-      newErrors.customerPhone = 'Please enter phone number';
-    } else if (!/^[0-9]{10}$/.test(formData.customerPhone)) {
-      newErrors.customerPhone = 'Please enter valid 10-digit phone number';
-    }
-    if (formData.customerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.customerEmail)) {
-      newErrors.customerEmail = 'Please enter valid email';
-    }
-    if (!formData.status) {
-      newErrors.status = 'Please select status';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!validateForm()) {
-      message.error('Please fix the validation errors');
+    if (lineItems.every(i => !i.itemName)) {
+      notifications.show({ title: 'Validation', message: 'Add at least one item', color: 'yellow' });
       return;
     }
 
-    if (quotationItems.length === 0) {
-      message.error('Please add at least one item');
-      return;
-    }
-
-    setLoading(true);
+    setSaving(true);
     try {
       const payload = {
-        ...formData,
-        quotationDate: new Date(formData.quotationDate).toISOString(),
-        validUntil: new Date(formData.validUntil).toISOString(),
-        discount: parseFloat(formData.discount) || 0,
-        items: quotationItems.map(item => ({
-          itemId: item.itemId,
-          itemName: item.itemName,
-          description: item.description,
-          quantity: item.quantity,
-          rate: item.rate,
-          taxPercent: item.taxPercent,
-          amount: item.amount
-        })),
-        subtotal: totals.subtotal,
-        taxAmount: totals.taxAmount,
-        totalAmount: totals.totalAmount
+        quotationDate, validUntil, status,
+        partyId: partyId || undefined,
+        partyName, partyOrganization, partyPhone, partyEmail,
+        partyAddress, partyGstin, partyState,
+        items: lineItems.filter(i => i.itemName),
+        billDiscountPercent: billDiscP,
+        notes,
+        termsAndConditions: terms,
+        ...totals
       };
 
-      if (isEditMode) {
+      let savedId = id;
+      if (isEdit) {
         await quotationAPI.update(id, payload);
-        message.success('Quotation updated successfully');
+        notifications.show({ title: 'Updated', message: 'Quotation updated successfully', color: 'green' });
       } else {
-        await quotationAPI.create(payload);
-        message.success('Quotation created successfully');
+        const res = await quotationAPI.create(payload);
+        savedId = res?.data?._id || res?._id;
+        notifications.show({ title: 'Saved', message: 'Quotation created successfully', color: 'green' });
       }
-      navigate('/additional/quotations');
-    } catch (error) {
-      message.error(error.message || 'Failed to save quotation');
+
+      // Navigate to professional print/preview template
+      navigate(`/quotations/print/${savedId}`);
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
+  if (loading) return <Center h={300}><Loader /></Center>;
+
+  // ── Render ─────────────────────────────────────────────────
   return (
-    <div className="quotation-form-container">
-      <PageHeader
-        title={isEditMode ? 'Edit Quotation' : 'Add Quotation'}
-        subtitle={isEditMode ? 'Update quotation information' : 'Create new quotation'}
-      />
+    <Container size="xl" py="md">
+      {/* ── Header ── */}
+      <Group justify="space-between" mb="md">
+        <Group gap="xs">
+          <ActionIcon variant="subtle" onClick={() => navigate('/quotations')}>
+            <IconArrowLeft size={18} />
+          </ActionIcon>
+          <Box>
+            <Title order={2} fw={700}>{isEdit ? 'Edit Quotation' : 'New Quotation / Estimate'}</Title>
+            <Text size="sm" c="dimmed">Fill the form and click Save to generate the invoice</Text>
+          </Box>
+        </Group>
+        <Group>
+          <Button variant="default" leftSection={<IconRefresh size={15} />} onClick={handleReset}>
+            Reset
+          </Button>
+          <Button variant="default" onClick={() => navigate('/quotations')}>Cancel</Button>
+          <Button
+            leftSection={<IconDeviceFloppy size={16} />}
+            loading={saving}
+            onClick={handleSave}
+          >
+            {isEdit ? 'Update & Preview' : 'Save & Preview'}
+          </Button>
+        </Group>
+      </Group>
 
-      <div className="quotation-form-card">
-        <form onSubmit={handleSubmit}>
-          <div className="form-grid">
-            <div className="form-group">
-              <label htmlFor="quotationNumber">
-                Quotation Number <span className="required">*</span>
-              </label>
-              <input
-                type="text"
-                id="quotationNumber"
-                name="quotationNumber"
-                value={formData.quotationNumber}
-                onChange={handleInputChange}
-                placeholder="Enter quotation number"
-                disabled={isEditMode}
-                className={errors.quotationNumber ? 'error' : ''}
-              />
-              {errors.quotationNumber && <span className="error-message">{errors.quotationNumber}</span>}
-            </div>
+      {/* ── Company Auto-fill Banner ── */}
+      {selectedCompany && (
+        <Paper withBorder radius="md" p="sm" mb="md" bg="blue.0">
+          <Group gap="xs">
+            <Text size="sm" fw={600} c="blue.8">From:</Text>
+            <Text size="sm" fw={700}>{selectedCompany.companyName}</Text>
+            {selectedCompany.address && <Text size="sm" c="dimmed">· {selectedCompany.address}</Text>}
+            {selectedCompany.phone && <Text size="sm" c="dimmed">· {selectedCompany.phone}</Text>}
+          </Group>
+        </Paper>
+      )}
 
-            <div className="form-group">
-              <label htmlFor="quotationDate">
-                Quotation Date <span className="required">*</span>
-              </label>
-              <input
-                type="date"
-                id="quotationDate"
-                name="quotationDate"
-                value={formData.quotationDate}
-                onChange={handleInputChange}
-                className={errors.quotationDate ? 'error' : ''}
-              />
-              {errors.quotationDate && <span className="error-message">{errors.quotationDate}</span>}
-            </div>
+      <Grid gutter="md">
+        {/* ── Left Column ── */}
+        <Grid.Col span={{ base: 12, md: 8 }}>
 
-            <div className="form-group">
-              <label htmlFor="validUntil">
-                Valid Until <span className="required">*</span>
-              </label>
-              <input
-                type="date"
-                id="validUntil"
-                name="validUntil"
-                value={formData.validUntil}
-                onChange={handleInputChange}
-                className={errors.validUntil ? 'error' : ''}
-              />
-              {errors.validUntil && <span className="error-message">{errors.validUntil}</span>}
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="customerName">
-                Customer Name <span className="required">*</span>
-              </label>
-              <input
-                type="text"
-                id="customerName"
-                name="customerName"
-                value={formData.customerName}
-                onChange={handleInputChange}
-                placeholder="Enter customer name"
-                className={errors.customerName ? 'error' : ''}
-              />
-              {errors.customerName && <span className="error-message">{errors.customerName}</span>}
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="customerPhone">
-                Customer Phone <span className="required">*</span>
-              </label>
-              <input
-                type="tel"
-                id="customerPhone"
-                name="customerPhone"
-                value={formData.customerPhone}
-                onChange={handleInputChange}
-                placeholder="Enter phone number"
-                maxLength={10}
-                className={errors.customerPhone ? 'error' : ''}
-              />
-              {errors.customerPhone && <span className="error-message">{errors.customerPhone}</span>}
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="customerEmail">Customer Email</label>
-              <input
-                type="email"
-                id="customerEmail"
-                name="customerEmail"
-                value={formData.customerEmail}
-                onChange={handleInputChange}
-                placeholder="Enter email address"
-                className={errors.customerEmail ? 'error' : ''}
-              />
-              {errors.customerEmail && <span className="error-message">{errors.customerEmail}</span>}
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="status">
-                Status <span className="required">*</span>
-              </label>
-              <select
-                id="status"
-                name="status"
-                value={formData.status}
-                onChange={handleInputChange}
-                className={errors.status ? 'error' : ''}
-              >
-                <option value="Draft">Draft</option>
-                <option value="Sent">Sent</option>
-                <option value="Accepted">Accepted</option>
-                <option value="Rejected">Rejected</option>
-                <option value="Expired">Expired</option>
-              </select>
-              {errors.status && <span className="error-message">{errors.status}</span>}
-            </div>
-
-            <div className="form-group full-width">
-              <label htmlFor="customerAddress">Customer Address</label>
-              <textarea
-                id="customerAddress"
-                name="customerAddress"
-                value={formData.customerAddress}
-                onChange={handleInputChange}
-                placeholder="Enter customer address"
-                rows={2}
-              />
-            </div>
-          </div>
-
-          <div className="items-section">
-            <div className="items-header">
-              <h3>Quotation Items</h3>
-              <button type="button" onClick={handleAddItem} className="btn btn-primary">
-                + Add Item
-              </button>
-            </div>
-
-            <div className="table-wrapper">
-              <table className="items-table">
-                <thead>
-                  <tr>
-                    <th>Item</th>
-                    <th>Description</th>
-                    <th>Quantity</th>
-                    <th>Rate</th>
-                    <th>Tax %</th>
-                    <th>Amount</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {quotationItems.length === 0 ? (
-                    <tr>
-                      <td colSpan="7" className="no-items">No items added</td>
-                    </tr>
-                  ) : (
-                    quotationItems.map(item => (
-                      <tr key={item.key}>
-                        <td>
-                          <select
-                            value={item.itemId}
-                            onChange={(e) => handleItemChange(item.key, 'itemId', e.target.value)}
-                            className="item-select"
-                          >
-                            <option value="">Select item</option>
-                            {items.map(i => (
-                              <option key={i._id} value={i._id}>
-                                {i.itemName}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td>
-                          <input
-                            type="text"
-                            value={item.description}
-                            onChange={(e) => handleItemChange(item.key, 'description', e.target.value)}
-                            placeholder="Description"
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            value={item.quantity}
-                            onChange={(e) => handleItemChange(item.key, 'quantity', parseFloat(e.target.value) || 1)}
-                            min="1"
-                            className="number-input"
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            value={item.rate}
-                            onChange={(e) => handleItemChange(item.key, 'rate', parseFloat(e.target.value) || 0)}
-                            min="0"
-                            step="0.01"
-                            className="number-input"
-                            placeholder="₹"
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            value={item.taxPercent}
-                            onChange={(e) => handleItemChange(item.key, 'taxPercent', parseFloat(e.target.value) || 0)}
-                            min="0"
-                            max="100"
-                            className="number-input"
-                          />
-                        </td>
-                        <td className="amount-cell">₹{(item.amount || 0).toFixed(2)}</td>
-                        <td>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteItem(item.key)}
-                            className="btn btn-danger btn-sm"
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="discount-section">
-              <div className="form-group">
-                <label htmlFor="discount">Discount Amount</label>
-                <input
-                  type="number"
-                  id="discount"
-                  name="discount"
-                  value={formData.discount}
-                  onChange={handleInputChange}
-                  placeholder="Enter discount"
-                  min="0"
-                  step="0.01"
+          {/* Quotation Details */}
+          <Paper withBorder radius="md" p="md" mb="md">
+            <Text fw={600} mb="sm">Quotation Details</Text>
+            <Grid>
+              <Grid.Col span={4}>
+                <DatePickerInput
+                  label="Quotation Date"
+                  value={quotationDate}
+                  onChange={setQuotationDate}
+                  required
                 />
-              </div>
-            </div>
+              </Grid.Col>
+              <Grid.Col span={4}>
+                <DatePickerInput
+                  label="Valid Until"
+                  value={validUntil}
+                  onChange={setValidUntil}
+                  required
+                />
+              </Grid.Col>
+              <Grid.Col span={4}>
+                <Select
+                  label="Status"
+                  value={status}
+                  onChange={setStatus}
+                  data={['Draft', 'Sent', 'Accepted', 'Rejected', 'Expired']}
+                />
+              </Grid.Col>
+            </Grid>
+          </Paper>
 
-            <div className="totals-card">
-              <div className="totals-row">
-                <span>Subtotal:</span>
-                <span>₹{totals.subtotal.toFixed(2)}</span>
-              </div>
-              <div className="totals-row">
-                <span>Tax Amount:</span>
-                <span>₹{totals.taxAmount.toFixed(2)}</span>
-              </div>
-              <div className="totals-row">
-                <span>Discount:</span>
-                <span>₹{totals.discount.toFixed(2)}</span>
-              </div>
-              <hr />
-              <div className="totals-row total">
-                <strong>Total Amount:</strong>
-                <strong>₹{totals.totalAmount.toFixed(2)}</strong>
-              </div>
-            </div>
-          </div>
+          {/* Customer Details */}
+          <Paper withBorder radius="md" p="md" mb="md">
+            <Text fw={600} mb="sm">Customer Details</Text>
+            <Grid>
+              <Grid.Col span={6}>
+                <Select
+                  label="Select Existing Customer"
+                  placeholder="Search customer..."
+                  searchable
+                  clearable
+                  data={customers.map(c => ({ value: c._id, label: c.name || c.customerName || '' }))}
+                  value={partyId}
+                  onChange={handleCustomerSelect}
+                />
+              </Grid.Col>
+              <Grid.Col span={6}>
+                <TextInput
+                  label="Customer Name"
+                  value={partyName}
+                  onChange={e => setPartyName(e.target.value)}
+                  required
+                  placeholder="Enter customer name"
+                />
+              </Grid.Col>
+              <Grid.Col span={6}>
+                <TextInput
+                  label="Organization / Company"
+                  value={partyOrganization}
+                  onChange={e => setPartyOrganization(e.target.value)}
+                  placeholder="Customer's company name"
+                />
+              </Grid.Col>
+              <Grid.Col span={3}>
+                <TextInput
+                  label="Phone"
+                  value={partyPhone}
+                  onChange={e => setPartyPhone(e.target.value)}
+                />
+              </Grid.Col>
+              <Grid.Col span={3}>
+                <TextInput
+                  label="Email"
+                  value={partyEmail}
+                  onChange={e => setPartyEmail(e.target.value)}
+                />
+              </Grid.Col>
+              <Grid.Col span={4}>
+                <TextInput
+                  label="GSTIN"
+                  value={partyGstin}
+                  onChange={e => setPartyGstin(e.target.value.toUpperCase())}
+                />
+              </Grid.Col>
+              <Grid.Col span={5}>
+                <Textarea
+                  label="Address"
+                  value={partyAddress}
+                  onChange={e => setPartyAddress(e.target.value)}
+                  rows={2}
+                />
+              </Grid.Col>
+              <Grid.Col span={3}>
+                <TextInput
+                  label="State"
+                  value={partyState}
+                  onChange={e => setPartyState(e.target.value)}
+                />
+              </Grid.Col>
+            </Grid>
+          </Paper>
 
-          <div className="form-grid">
-            <div className="form-group full-width">
-              <label htmlFor="notes">Notes</label>
-              <textarea
-                id="notes"
-                name="notes"
-                value={formData.notes}
-                onChange={handleInputChange}
-                placeholder="Enter any additional notes"
-                rows={3}
-              />
-            </div>
+          {/* Items */}
+          <Paper withBorder radius="md" p="md" mb="md">
+            <Group justify="space-between" mb="sm">
+              <Text fw={600}>Items</Text>
+              <Button size="xs" leftSection={<IconPlus size={14} />} variant="light" onClick={addLine}>
+                Add Item
+              </Button>
+            </Group>
+            <Box style={{ overflowX: 'auto' }}>
+              <Table striped highlightOnHover style={{ minWidth: 860 }}>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th style={{ minWidth: 180 }}>Item / Description</Table.Th>
+                    <Table.Th style={{ width: 75 }}>HSN</Table.Th>
+                    <Table.Th style={{ width: 75 }}>Qty</Table.Th>
+                    <Table.Th style={{ width: 60 }}>Unit</Table.Th>
+                    <Table.Th style={{ width: 95 }}>Unit Price (₹)</Table.Th>
+                    <Table.Th style={{ width: 65 }}>Disc%</Table.Th>
+                    <Table.Th style={{ width: 65 }}>Tax%</Table.Th>
+                    <Table.Th style={{ width: 100, textAlign: 'right' }}>Total (₹)</Table.Th>
+                    <Table.Th style={{ width: 36 }} />
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {lineItems.map((line, idx) => (
+                    <Table.Tr key={line._key}>
+                      <Table.Td>
+                        <Select
+                          placeholder="Select item"
+                          searchable
+                          clearable
+                          data={items.map(i => ({ value: i._id, label: i.itemName }))}
+                          value={line.itemId || null}
+                          onChange={v => v && handleItemSelect(idx, v)}
+                          size="xs"
+                        />
+                        {!line.itemId && (
+                          <TextInput
+                            size="xs"
+                            mt={3}
+                            placeholder="Or type product name"
+                            value={line.itemName}
+                            onChange={e => updateLine(idx, { itemName: e.target.value })}
+                          />
+                        )}
+                      </Table.Td>
+                      <Table.Td>
+                        <TextInput
+                          size="xs"
+                          value={line.hsnCode}
+                          onChange={e => updateLine(idx, { hsnCode: e.target.value })}
+                        />
+                      </Table.Td>
+                      <Table.Td>
+                        <NumberInput
+                          size="xs"
+                          value={line.quantity}
+                          min={0}
+                          decimalScale={3}
+                          onChange={v => updateLine(idx, { quantity: v || 0 })}
+                        />
+                      </Table.Td>
+                      <Table.Td>
+                        <TextInput
+                          size="xs"
+                          value={line.unit}
+                          onChange={e => updateLine(idx, { unit: e.target.value })}
+                        />
+                      </Table.Td>
+                      <Table.Td>
+                        <NumberInput
+                          size="xs"
+                          value={line.rate}
+                          min={0}
+                          decimalScale={2}
+                          prefix="₹"
+                          onChange={v => updateLine(idx, { rate: v || 0 })}
+                        />
+                      </Table.Td>
+                      <Table.Td>
+                        <NumberInput
+                          size="xs"
+                          value={line.discountPercent}
+                          min={0}
+                          max={100}
+                          decimalScale={2}
+                          suffix="%"
+                          onChange={v => updateLine(idx, { discountPercent: v || 0 })}
+                        />
+                      </Table.Td>
+                      <Table.Td>
+                        <NumberInput
+                          size="xs"
+                          value={line.gstPercent}
+                          min={0}
+                          decimalScale={2}
+                          suffix="%"
+                          onChange={v => updateLine(idx, { gstPercent: v || 0 })}
+                        />
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        <Text size="sm" fw={700}>₹{line.totalAmount.toFixed(2)}</Text>
+                        {line.discountAmount > 0 && (
+                          <Text size="xs" c="dimmed" style={{ textDecoration: 'line-through' }}>
+                            ₹{(line.quantity * line.rate).toFixed(2)}
+                          </Text>
+                        )}
+                      </Table.Td>
+                      <Table.Td>
+                        <ActionIcon
+                          color="red"
+                          variant="subtle"
+                          size="sm"
+                          onClick={() => removeLine(idx)}
+                          disabled={lineItems.length === 1}
+                        >
+                          <IconTrash size={14} />
+                        </ActionIcon>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Box>
+          </Paper>
 
-            <div className="form-group full-width">
-              <label htmlFor="termsAndConditions">Terms and Conditions</label>
-              <textarea
-                id="termsAndConditions"
-                name="termsAndConditions"
-                value={formData.termsAndConditions}
-                onChange={handleInputChange}
-                placeholder="Enter terms and conditions"
-                rows={4}
-              />
-            </div>
-          </div>
+          {/* Notes & Terms */}
+          <Grid>
+            <Grid.Col span={6}>
+              <Paper withBorder radius="md" p="md">
+                <Textarea
+                  label="Notes to Customer"
+                  placeholder="Special instructions, delivery notes..."
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  rows={4}
+                />
+              </Paper>
+            </Grid.Col>
+            <Grid.Col span={6}>
+              <Paper withBorder radius="md" p="md">
+                <Textarea
+                  label="Terms & Conditions"
+                  value={terms}
+                  onChange={e => setTerms(e.target.value)}
+                  rows={4}
+                />
+              </Paper>
+            </Grid.Col>
+          </Grid>
+        </Grid.Col>
 
-          <div className="form-actions">
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? 'Saving...' : isEditMode ? 'Update' : 'Save'}
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/additional/quotations')}
-              className="btn btn-secondary"
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        {/* ── Right Column — Summary ── */}
+        <Grid.Col span={{ base: 12, md: 4 }}>
+          <Paper withBorder radius="md" p="md" style={{ position: 'sticky', top: 20 }}>
+            <Text fw={700} mb="md" size="lg">Summary</Text>
+            <Stack gap={8}>
+              <Group justify="space-between">
+                <Text size="sm" c="dimmed">Gross Amount</Text>
+                <Text size="sm" fw={500}>₹{totals.grossAmount.toFixed(2)}</Text>
+              </Group>
+              <Group justify="space-between">
+                <Text size="sm" c="dimmed">Item Discount</Text>
+                <Text size="sm" c="red">- ₹{totals.itemDiscount.toFixed(2)}</Text>
+              </Group>
+              <Group justify="space-between" align="center">
+                <Text size="sm" c="dimmed">Bill Discount</Text>
+                <Group gap={6}>
+                  <NumberInput
+                    size="xs"
+                    style={{ width: 70 }}
+                    value={billDiscP}
+                    min={0}
+                    max={100}
+                    decimalScale={2}
+                    suffix="%"
+                    onChange={v => setBillDiscP(v || 0)}
+                  />
+                  <Text size="sm" c="red">- ₹{totals.billDiscount.toFixed(2)}</Text>
+                </Group>
+              </Group>
+              <Divider />
+              <Group justify="space-between">
+                <Text size="sm" c="dimmed">Taxable Amount</Text>
+                <Text size="sm">₹{totals.taxableAmount.toFixed(2)}</Text>
+              </Group>
+              <Group justify="space-between">
+                <Text size="sm" c="dimmed">CGST</Text>
+                <Text size="sm">₹{totals.totalCgst.toFixed(2)}</Text>
+              </Group>
+              <Group justify="space-between">
+                <Text size="sm" c="dimmed">SGST</Text>
+                <Text size="sm">₹{totals.totalSgst.toFixed(2)}</Text>
+              </Group>
+              <Group justify="space-between">
+                <Text size="sm" c="dimmed">Round Off</Text>
+                <Text size="sm">₹{totals.roundOff.toFixed(2)}</Text>
+              </Group>
+              <Divider />
+              <Group justify="space-between">
+                <Text fw={700} size="lg">Grand Total</Text>
+                <Text fw={800} size="xl" c="blue">₹{totals.grandTotal.toFixed(2)}</Text>
+              </Group>
+
+              {/* Item count */}
+              <Badge variant="light" color="gray" size="sm">
+                {lineItems.filter(i => i.itemName).length} item(s) · {totals.totalQty} qty
+              </Badge>
+            </Stack>
+
+            <Divider my="md" />
+
+            <Stack gap="xs">
+              <Button
+                fullWidth
+                leftSection={<IconDeviceFloppy size={16} />}
+                loading={saving}
+                onClick={handleSave}
+                size="md"
+              >
+                {isEdit ? 'Update & Preview Invoice' : 'Save & Preview Invoice'}
+              </Button>
+              <Button
+                fullWidth
+                variant="default"
+                leftSection={<IconRefresh size={15} />}
+                onClick={handleReset}
+              >
+                Reset Form
+              </Button>
+            </Stack>
+          </Paper>
+        </Grid.Col>
+      </Grid>
+    </Container>
   );
 };
 

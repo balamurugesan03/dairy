@@ -1,12 +1,5 @@
-/**
- * MainLayout - Professional Navigation Design
- * ============================================
- *
- * Attractive gradient header with modern menu styling.
- * Clean, professional, and responsive design.
- */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Outlet, useLocation } from 'react-router-dom';
 import {
   AppShell,
@@ -31,7 +24,7 @@ import {
   IconHome, IconUsers, IconBox, IconShoppingCart, IconBook,
   IconCash, IconFileReport, IconShield, IconTool, IconSearch,
   IconSpeakerphone, IconBriefcase, IconChevronDown, IconMenu2, IconLogout, IconUser,
-  IconUserCog, IconBuildingStore, IconSettings
+  IconUserCog, IconBuildingStore, IconSettings, IconMilk
 } from '@tabler/icons-react';
 import { useCompany } from '../../context/CompanyContext';
 import { useAuth } from '../../context/AuthContext';
@@ -48,6 +41,21 @@ const MainLayout = () => {
   const { colorScheme, currentThemeConfig } = useTheme();
 
   const isDark = colorScheme === 'dark';
+
+  // ── Global hotkeys ──────────────────────────────────────────────────────
+  useEffect(() => {
+    const handleKey = (e) => {
+      // F2 / F3 work everywhere (even inside inputs)
+      if (e.key === 'F2') { e.preventDefault(); navigate('/daily-collections/milk-purchase'); return; }
+      if (e.key === 'F3') { e.preventDefault(); navigate('/daily-collections/milk-sales'); return; }
+
+      // Other shortcuts: ignore when typing inside an input / textarea / select
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [navigate]);
 
   // Header gradient based on theme
   const headerGradient = isDark
@@ -86,6 +94,7 @@ const MainLayout = () => {
       children: [
         { key: '/farmers', label: 'Producer Management' },
         { key: '/collection-centers', label: 'Collection Centre' },
+        { key: '/agents', label: 'Agent Management' },
         { key: '/customers', label: 'Customer' },
       ]
     }] : []),
@@ -97,15 +106,40 @@ const MainLayout = () => {
       color: 'green',
       children: [
         { key: '/customers', label: 'Customer Details' },
+        { key: '/business-inventory/salesman', label: 'Salesman' },
       ]
     }] : []),
+    // DAIRY COOPERATIVE - Daily Collections
+    // ...(selectedBusinessType === 'Dairy Cooperative Society' ? [{
+    //   key: 'daily-collections-menu',
+    //   icon: <IconMilk size={18} />,
+    //   label: 'Daily Collections',
+    //   color: 'teal',
+    //   children: [
+     
+    //   ]
+    // }] : []),
     // DAIRY COOPERATIVE - Milk Purchase & Sales
     ...(selectedBusinessType === 'Dairy Cooperative Society' ? [{
       key: 'sales-menu',
       icon: <IconShoppingCart size={18} />,
       label: 'Milk purchase & Sales',
       color: 'teal',
-      children: []
+      children: [
+           { key: '/daily-collections/milk-purchase',          label: 'Milk Purchase'          },
+               { key: '/daily-collections/list',                   label: ' Daily Collection List'         },
+        { key: '/daily-collections/milk-sales',             label: 'Milk Sales'             },
+     { key: '/daily-collections/union-sales-slip',       label: 'Union Sales '       },
+        { key: '/daily-collections/farmer-wise-summary',    label: 'Farmer-Wise Summary'    },
+        { key: '/daily-collections/rate-chart-settings',    label: 'Rate Chart Settings'    },
+        { key: '/daily-collections/milk-purchase-settings', label: 'Machine Configuration'  },
+       
+        { key: '/daily-collections/milk-sales-rate',        label: 'Milk Sales Rate'         },
+        { key: '/daily-collections/shift-incentive',         label: 'Shift Incentive'         },
+        { key: '/daily-collections/time-incentive',          label: 'Time Incentive'          },
+        { key: '/daily-collections/producer-openings',       label: 'Producer Openings'       },
+         { key: '/reports/salesman-balance',   label: 'Salesman Balance Report' }
+      ]
     }] : []),
     // DAIRY INVENTORY - Only show for Dairy Cooperative Society
     ...(selectedBusinessType === 'Dairy Cooperative Society' ? [{
@@ -114,17 +148,20 @@ const MainLayout = () => {
       label: 'Dairy Inventory',
       color: 'orange',
       children: [
+        { key: '/suppliers', label: 'Supplier' },
         { key: '/inventory/items', label: 'Add Items' },
         { key: '/inventory/stock-in', label: 'Inventory Purchase' },
         { key: '/sales/new', label: 'Inventory Sales' },
         { key: '/inventory/stock-out', label: 'Stock Returns' },
-        { key: '/suppliers', label: 'Supplier' },
+        { key: '/inventory/purchase-returns/new', label: 'Purchase Return (Debit Note)' },
+        { key: '/inventory/purchase-returns/list', label: 'Purchase Return List' },
+        { key: '/inventory/sales-returns/list', label: 'Sales Return List' },
+        
         { key: '/subsidies', label: 'Subsidy' },
         { key: '/sales/list', label: 'Sales Report' },
         { key: '/inventory/report', label: 'Stock Report' },
         { key: '/reports/purchase-register', label: 'Purchase Register' },
-        { key: '/reports/sales', label: 'Sales Register' },
-        { key: '/reports/stock', label: 'Stock Register' },
+       
         { key: '/reports/subsidy', label: 'Subsidy Register' }
       ]
     }] : []),
@@ -135,13 +172,19 @@ const MainLayout = () => {
       label: 'Business Inventory',
       color: 'orange',
       children: [
+        { key: '/suppliers', label: 'Supplier' },
         { key: '/business-inventory/items', label: 'Item Master' },
         { key: '/business-inventory/stock-in', label: 'Purchase / Stock In' },
         { key: '/business-inventory/sales/new', label: 'Create Invoice' },
         { key: '/business-inventory/sales/list', label: 'Sales Invoices' },
         { key: '/business-inventory/stock-out', label: 'Stock Out / Returns' },
-        { key: '/suppliers', label: 'Supplier' },
-        { key: '/business-inventory/stock-report', label: 'Stock Report' }
+        { key: '/business-inventory/purchase-returns/new', label: 'Purchase Return' },
+        { key: '/business-inventory/purchase-returns/list', label: 'Purchase Return List' },
+        { key: '/business-inventory/sales-returns/list', label: 'Sales Return List' },
+        { key: '/business-inventory/stock-report', label: 'Stock Report' },
+        { key: '/reports/vyapar/stock-summary', label: 'Stock Summary' },
+        { key: '/reports/vyapar/stock-statement', label: 'Stock Statement' },
+        { key: '/reports/vyapar/low-stock', label: 'Low Stock Alert' }
       ]
     }] : []),
     // DAIRY COOPERATIVE - Producers dues (Only for Dairy)
@@ -159,7 +202,11 @@ const MainLayout = () => {
         { key: '/payments/loans', label: 'Loans' },
         { key: '/payments/cash-advance', label: 'Cash Advance' },
         { key: '/payments/receipts', label: 'Receipts' },
-        { key: '/payments/farmer-ledger', label: 'Farmer Ledger' }
+        { key: '/payments/farmer-ledger', label: 'Farmer Ledger' },
+        { key: '/payments/earning-deduction-master',      label: 'Earnings / Deductions Master' },
+        { key: '/payments/individual-deduction-earning',  label: 'Individual Deductions/Earnings' },
+        { key: '/payments/historical-deduction-earning',  label: 'Historical Deductions/Earnings' },
+        { key: '/payments/periodical-deduction-earning', label: 'Periodical Deductions/Earnings' },
       ]
     }] : []),
   
@@ -183,7 +230,8 @@ const MainLayout = () => {
         { key: '/reports/rd-enhanced', label: 'R&D Enhanced' },
         { key: '/reports/final-accounts', label: 'Final Accounts' },
         { key: '/reports/balance-sheet', label: 'Balance Sheet' },
-        { key: '/reports/milk-bill-abstract', label: 'Milk Bill Abstract' }
+        { key: '/reports/milk-bill-abstract', label: 'Milk Bill Abstract' },
+       
       ]
     }] : []),
     // PRIVATE FIRM - Business Accounts (Separate from Dairy)
@@ -197,7 +245,16 @@ const MainLayout = () => {
         { key: '/business-accounting/income', label: 'Income Voucher' },
         { key: '/business-accounting/expense', label: 'Expense Voucher' },
         { key: '/business-accounting/journal', label: 'Adjustment/Journal Entry' },
-        { key: '/business-accounting/vouchers', label: 'Vouchers Management' }
+        { key: '/business-accounting/vouchers', label: 'Vouchers Management' },
+         { key: '/reports/vyapar/day-book', label: 'Day Book' },
+        { key: '/reports/vyapar/cash-book', label: 'Cash Book' },
+        
+        { key: '/reports/vyapar/trading-account', label: 'Trading Account' },
+        
+            { key: '/reports/vyapar/profit-loss', label: 'Profit & Loss' },
+        { key: '/reports/vyapar/balance-sheet', label: 'Balance Sheet' },
+        { key: '/reports/vyapar/trial-balance', label: 'Trial Balance' }
+       
       ]
     }] : []),
    
@@ -208,8 +265,8 @@ const MainLayout = () => {
       label: 'Dairy Reports',
       color: 'pink',
       children: [
-        { key: '/reports/sales', label: 'Sales Report' },
-        { key: '/reports/stock', label: 'Stock Report' },
+        // { key: '/reports/sales', label: 'Sales Report' },
+        // { key: '/reports/stock', label: 'Stock Report' },
         { key: '/reports/stock-register', label: 'Stock Register' },
         { key: '/reports/purchase-register', label: 'Purchase Register' },
         { key: '/reports/subsidy', label: 'Subsidy Report' },
@@ -233,30 +290,26 @@ const MainLayout = () => {
          { key: '/reports/vyapar/cash-in-hand', label: 'CashFlow' },
         // { key: '/reports/vyapar/cashflow', label: 'Cashflow' },
         { key: '/reports/vyapar/all-transactions', label: 'All Transactions' },
-        { key: '/reports/vyapar/profit-loss', label: 'Profit & Loss' },
-        { key: '/reports/vyapar/balance-sheet', label: 'Balance Sheet' },
-        { key: '/reports/vyapar/trial-balance', label: 'Trial Balance' },
+    
         { key: '/reports/vyapar/bill-profit', label: 'Bill Wise Party Report' },
         { key: '/reports/vyapar/party-profit', label: 'Party Wise Profit' },
         { key: '/reports/vyapar/item-profit', label: 'Item Wise Profit' },
-        { key: '/reports/vyapar/stock-summary', label: 'Stock Summary' },
-        { key: '/reports/vyapar/low-stock', label: 'Low Stock Alert' },
         { key: '/reports/vyapar/item-by-party', label: 'Item by Party' },
-        
-      ]
-    }] : []),
-    {
-      key: 'warranty-menu',
-      icon: <IconShield size={18} />,
-      label: 'Warranty',
-      color: 'grape',
-      children: [
-        { key: '/warranty', label: 'Warranty List' },
-        { key: '/warranty/add', label: 'Add Warranty' },
-        { key: '/reports/vyapar/bank-statement', label: 'Bank Statement' },
+              { key: '/reports/vyapar/bank-statement', label: 'Bank Statement' },
         { key: '/reports/vyapar/gstr1', label: 'GSTR-1' },
         { key: '/reports/vyapar/gstr2', label: 'GSTR-2' }
         
+      ]
+    }] : []),
+ 
+     {
+      key: 'quotations-menu',
+      icon: <IconSearch size={18} />,
+      label: 'Quotations',
+      color: 'lime',
+      children: [
+        { key: '/quotations', label: 'Quotation List' },
+        { key: '/quotations/add', label: 'Add Quotation' }
       ]
     },
     {
@@ -269,26 +322,44 @@ const MainLayout = () => {
         { key: '/machines/add', label: 'Add Machine' }
       ]
     },
-    {
-      key: 'quotations-menu',
-      icon: <IconSearch size={18} />,
-      label: 'Quotations',
-      color: 'lime',
+       {
+      key: 'warranty-menu',
+      icon: <IconShield size={18} />,
+      label: 'Warranty',
+      color: 'grape',
       children: [
-        { key: '/quotations', label: 'Quotation List' },
-        { key: '/quotations/add', label: 'Add Quotation' }
+        { key: '/warranty', label: 'Warranty List' },
+        { key: '/warranty/add', label: 'Add Warranty' },
+  
+        
       ]
     },
-    {
-      key: 'promotions-menu',
+   
+    // DAIRY COOPERATIVE - Basic Promotions
+    // ...(selectedBusinessType === 'Dairy Cooperative Society' ? [{
+    //   key: 'promotions-menu',
+    //   icon: <IconSpeakerphone size={18} />,
+    //   label: 'Promotions',
+    //   color: 'yellow',
+    //   children: [
+    //     { key: '/promotions', label: 'Promotion List' },
+    //     { key: '/promotions/add', label: 'Add Promotion' }
+    //   ]
+    // }] : []),
+    // PRIVATE FIRM - Vyapar-style Business Promotions
+    ...(selectedBusinessType === 'Private Firm' ? [{
+      key: 'business-promotions-menu',
       icon: <IconSpeakerphone size={18} />,
       label: 'Promotions',
       color: 'yellow',
       children: [
-        { key: '/promotions', label: 'Promotion List' },
-        { key: '/promotions/add', label: 'Add Promotion' }
+        { key: '/business-promotions', label: 'Dashboard' },
+        { key: '/business-promotions/coupons', label: 'Discount Coupons' },
+        { key: '/business-promotions/offers', label: 'Offers & Schemes' },
+        { key: '/business-promotions/campaigns', label: 'Campaigns' },
+        { key: '/business-promotions/templates', label: 'Message Templates' }
       ]
-    },
+    }] : []),
     {
       key: 'hrm-menu',
       icon: <IconBriefcase size={18} />,
@@ -296,11 +367,10 @@ const MainLayout = () => {
       color: 'red',
       children: [
         { key: '/hrm/employees', label: 'Employees' },
-        { key: '/hrm/departments', label: 'Departments' },
-        { key: '/hrm/designations', label: 'Designations' },
         { key: '/hrm/attendance', label: 'Attendance' },
         { key: '/hrm/leaves', label: 'Leave Management' },
-        { key: '/hrm/salary', label: 'Salary Management' }
+        { key: '/hrm/salary', label: 'Payroll' },
+        { key: '/hrm/loans', label: 'Loans / Advance' }
       ]
     },
     // User Management - Only show for admins
@@ -320,13 +390,15 @@ const MainLayout = () => {
         const allowedKeys = [
           '/',
           'party-menu',
-          'inventory-menu',  // Dairy inventory
+          'daily-collections-menu',  // Daily Collections (Milk Purchase)
+          'inventory-menu',          // Dairy inventory
           'sales-menu',
           'accounting-menu',
           'cashbook-menu',
           'payments-menu',
           'dairy-reports-menu',
           'subsidies-menu',
+          'promotions-menu',
           'hrm-menu'
         ];
         return allowedKeys.includes(item.key);
@@ -344,7 +416,7 @@ const MainLayout = () => {
           'warranty-menu',
           'machines-menu',
           'quotations-menu',
-          'promotions-menu',
+          'business-promotions-menu',
           'hrm-menu'
         ];
         return allowedKeys.includes(item.key);
@@ -354,7 +426,11 @@ const MainLayout = () => {
     return allMenuItems;
   };
 
-  const menuItems = getFilteredMenuItems();
+  const allMenuItems = getFilteredMenuItems();
+  // Separate right-floated items (HRM, User Management)
+  const rightKeys = ['hrm-menu', '/user-management'];
+  const menuItems = allMenuItems.filter(item => !rightKeys.includes(item.key));
+  const rightMenuItems = allMenuItems.filter(item => rightKeys.includes(item.key));
 
   const handleMenuClick = (key) => {
     navigate(key);
@@ -581,8 +657,15 @@ const MainLayout = () => {
           }}
         >
           <ScrollArea scrollbarSize={4}>
-            <Group h={52} px="md" gap={6} wrap="nowrap" visibleFrom="md">
-              {menuItems.map(renderHorizontalMenuItem)}
+            <Group h={52} px="md" gap={6} wrap="nowrap" justify="space-between" visibleFrom="md">
+              <Group gap={6} wrap="nowrap">
+                {menuItems.map(renderHorizontalMenuItem)}
+              </Group>
+              {rightMenuItems.length > 0 && (
+                <Group gap={6} wrap="nowrap">
+                  {rightMenuItems.map(renderHorizontalMenuItem)}
+                </Group>
+              )}
             </Group>
           </ScrollArea>
         </Box>

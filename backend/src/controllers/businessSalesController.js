@@ -54,7 +54,9 @@ export const createBusinessSale = async (req, res) => {
       lrNumber,
       notes,
       termsAndConditions,
-      previousBalance
+      previousBalance,
+      salesmanId,
+      salesmanName
     } = req.body;
 
     // Generate invoice number
@@ -203,6 +205,8 @@ export const createBusinessSale = async (req, res) => {
       lrNumber,
       notes,
       termsAndConditions,
+      salesmanId: salesmanId || null,
+      salesmanName: salesmanName || '',
       businessType: 'Private Firm'
     });
 
@@ -242,19 +246,30 @@ export const createBusinessSale = async (req, res) => {
     // Create accounting voucher (for Sales only)
     if (invoiceType === 'Sale' && grandTotal > 0) {
       try {
-        // Find or create necessary ledgers
-        let salesLedger = await Ledger.findOne({ name: 'Sales Account' });
+        // Find Sales ledger (ledgerName field, not name)
+        let salesLedger = await Ledger.findOne({ ledgerName: 'Business Sales', ledgerType: 'Sales A/c' });
         if (!salesLedger) {
-          salesLedger = await Ledger.create({
-            name: 'Sales Account',
-            code: 'SALES',
-            group: 'Sales Accounts',
-            type: 'Income',
+          salesLedger = await Ledger.findOne({ ledgerType: 'Sales A/c' });
+        }
+        if (!salesLedger) {
+          salesLedger = new Ledger({
+            ledgerName: 'Business Sales',
+            ledgerType: 'Sales A/c',
+            linkedEntity: { entityType: 'None' },
             openingBalance: 0,
-            currentBalance: 0
+            openingBalanceType: 'Cr',
+            currentBalance: 0,
+            balanceType: 'Cr',
+            parentGroup: 'Sales Accounts',
+            status: 'Active'
           });
+          await salesLedger.save();
         }
 
+        // Find Cash ledger (used by Cash in Hand report)
+        const cashLedger = await Ledger.findOne({ ledgerType: 'Cash', status: 'Active' });
+
+        // Find party/customer ledger for credit sales
         let partyLedger = null;
         if (partyId) {
           const customer = await Customer.findById(partyId);
@@ -263,124 +278,172 @@ export const createBusinessSale = async (req, res) => {
           }
         }
 
-        if (!partyLedger) {
-          partyLedger = await Ledger.findOne({ name: 'Cash Account' });
-          if (!partyLedger) {
-            partyLedger = await Ledger.create({
-              name: 'Cash Account',
-              code: 'CASH',
-              group: 'Cash-in-Hand',
-              type: 'Asset',
-              openingBalance: 0,
-              currentBalance: 0
+        // Build voucher entries based on payment mode
+        const voucherEntries = [];
+        const effectivePaymentMode = paymentMode || 'Cash';
+        const paidAmt = paid;
+        const balanceAmt = grandTotal - paidAmt;
+
+        if (effectivePaymentMode === 'Cash' && cashLedger && paidAmt > 0) {
+          // Dr. Cash (amount received)
+          voucherEntries.push({
+            ledgerId: cashLedger._id,
+            ledgerName: cashLedger.ledgerName,
+            debitAmount: paidAmt,
+            creditAmount: 0
+          });
+
+          // Dr. Party ledger for remaining balance (credit portion)
+          if (balanceAmt > 0 && partyLedger) {
+            voucherEntries.push({
+              ledgerId: partyLedger._id,
+              ledgerName: partyLedger.ledgerName,
+              debitAmount: balanceAmt,
+              creditAmount: 0
+            });
+          }
+        } else {
+          // Credit sale or bank payment — debit party ledger for full amount
+          if (partyLedger) {
+            voucherEntries.push({
+              ledgerId: partyLedger._id,
+              ledgerName: partyLedger.ledgerName,
+              debitAmount: grandTotal,
+              creditAmount: 0
+            });
+          } else if (cashLedger) {
+            // No party — walk-in cash sale
+            voucherEntries.push({
+              ledgerId: cashLedger._id,
+              ledgerName: cashLedger.ledgerName,
+              debitAmount: grandTotal,
+              creditAmount: 0
             });
           }
         }
 
-        // Create voucher entries
-        const voucherEntries = [
-          {
-            ledgerId: partyLedger._id,
-            ledgerName: partyLedger.name,
-            type: 'debit',
-            amount: grandTotal
-          },
-          {
-            ledgerId: salesLedger._id,
-            ledgerName: salesLedger.name,
-            type: 'credit',
-            amount: taxableAmount - calculatedBillDiscount
-          }
-        ];
+        // Cr. Sales ledger (taxable amount after bill discount + roundOff to balance)
+        voucherEntries.push({
+          ledgerId: salesLedger._id,
+          ledgerName: salesLedger.ledgerName,
+          debitAmount: 0,
+          creditAmount: taxableAmount - calculatedBillDiscount + finalRoundOff
+        });
 
-        // Add GST entries if applicable
+        // Cr. GST ledgers if applicable
         if (totalCgst > 0) {
-          let cgstLedger = await Ledger.findOne({ name: 'CGST Payable' });
+          let cgstLedger = await Ledger.findOne({ ledgerName: 'CGST Payable' });
           if (!cgstLedger) {
-            cgstLedger = await Ledger.create({
-              name: 'CGST Payable',
-              code: 'CGST-PAY',
-              group: 'Duties & Taxes',
-              type: 'Liability',
+            cgstLedger = new Ledger({
+              ledgerName: 'CGST Payable',
+              ledgerType: 'Other Payable',
+              linkedEntity: { entityType: 'None' },
               openingBalance: 0,
-              currentBalance: 0
+              openingBalanceType: 'Cr',
+              currentBalance: 0,
+              balanceType: 'Cr',
+              parentGroup: 'Duties & Taxes',
+              status: 'Active'
             });
+            await cgstLedger.save();
           }
           voucherEntries.push({
             ledgerId: cgstLedger._id,
-            ledgerName: cgstLedger.name,
-            type: 'credit',
-            amount: totalCgst
+            ledgerName: cgstLedger.ledgerName,
+            debitAmount: 0,
+            creditAmount: totalCgst
           });
         }
 
         if (totalSgst > 0) {
-          let sgstLedger = await Ledger.findOne({ name: 'SGST Payable' });
+          let sgstLedger = await Ledger.findOne({ ledgerName: 'SGST Payable' });
           if (!sgstLedger) {
-            sgstLedger = await Ledger.create({
-              name: 'SGST Payable',
-              code: 'SGST-PAY',
-              group: 'Duties & Taxes',
-              type: 'Liability',
+            sgstLedger = new Ledger({
+              ledgerName: 'SGST Payable',
+              ledgerType: 'Other Payable',
+              linkedEntity: { entityType: 'None' },
               openingBalance: 0,
-              currentBalance: 0
+              openingBalanceType: 'Cr',
+              currentBalance: 0,
+              balanceType: 'Cr',
+              parentGroup: 'Duties & Taxes',
+              status: 'Active'
             });
+            await sgstLedger.save();
           }
           voucherEntries.push({
             ledgerId: sgstLedger._id,
-            ledgerName: sgstLedger.name,
-            type: 'credit',
-            amount: totalSgst
+            ledgerName: sgstLedger.ledgerName,
+            debitAmount: 0,
+            creditAmount: totalSgst
           });
         }
 
         if (totalIgst > 0) {
-          let igstLedger = await Ledger.findOne({ name: 'IGST Payable' });
+          let igstLedger = await Ledger.findOne({ ledgerName: 'IGST Payable' });
           if (!igstLedger) {
-            igstLedger = await Ledger.create({
-              name: 'IGST Payable',
-              code: 'IGST-PAY',
-              group: 'Duties & Taxes',
-              type: 'Liability',
+            igstLedger = new Ledger({
+              ledgerName: 'IGST Payable',
+              ledgerType: 'Other Payable',
+              linkedEntity: { entityType: 'None' },
               openingBalance: 0,
-              currentBalance: 0
+              openingBalanceType: 'Cr',
+              currentBalance: 0,
+              balanceType: 'Cr',
+              parentGroup: 'Duties & Taxes',
+              status: 'Active'
             });
+            await igstLedger.save();
           }
           voucherEntries.push({
             ledgerId: igstLedger._id,
-            ledgerName: igstLedger.name,
-            type: 'credit',
-            amount: totalIgst
+            ledgerName: igstLedger.ledgerName,
+            debitAmount: 0,
+            creditAmount: totalIgst
           });
         }
 
-        const voucher = new Voucher({
-          voucherNumber: `SV-${invoiceNumber}`,
-          voucherType: 'Sales',
-          date: invoiceDate || new Date(),
-          entries: voucherEntries,
-          narration: `Sales Invoice ${invoiceNumber} - ${partyName || 'Walk-in Customer'}`,
-          referenceType: 'BusinessSales',
-          referenceId: sale._id
-        });
-        await voucher.save();
+        if (voucherEntries.length > 0) {
+          const totalDebit = voucherEntries.reduce((s, e) => s + (e.debitAmount || 0), 0);
+          const totalCredit = voucherEntries.reduce((s, e) => s + (e.creditAmount || 0), 0);
 
-        // Update ledger balances
-        for (const entry of voucherEntries) {
-          const ledger = await Ledger.findById(entry.ledgerId);
-          if (ledger) {
-            if (entry.type === 'debit') {
-              ledger.currentBalance += entry.amount;
+          // voucherType: only 'Receipt','Payment','Journal' allowed in schema
+          // Cash sales = Receipt (money received); credit sales = Journal
+          const effectiveVoucherType = (effectivePaymentMode === 'Cash' && paidAmt > 0) ? 'Receipt' : 'Journal';
+
+          const voucher = new Voucher({
+            voucherNumber: `SV-${invoiceNumber}`,
+            voucherType: effectiveVoucherType,
+            voucherDate: invoiceDate ? new Date(invoiceDate) : new Date(),
+            entries: voucherEntries,
+            totalDebit,
+            totalCredit,
+            narration: `Business Sales Invoice ${invoiceNumber} - ${partyName || 'Walk-in Customer'}`,
+            referenceType: 'Sales',
+            referenceId: sale._id
+          });
+          await voucher.save();
+
+          // Update ledger balances (debit increases Asset/Cash, credit increases Income/Liability)
+          for (const entry of voucherEntries) {
+            const ledger = await Ledger.findById(entry.ledgerId);
+            if (!ledger) continue;
+            const netChange = (entry.debitAmount || 0) - (entry.creditAmount || 0);
+            if (['Asset', 'Cash', 'Bank', 'Other Receivable', 'Party'].includes(ledger.ledgerType)) {
+              ledger.currentBalance += netChange;
+              ledger.balanceType = ledger.currentBalance >= 0 ? 'Dr' : 'Cr';
             } else {
-              ledger.currentBalance -= entry.amount;
+              // Income, Liability, Sales A/c, Other Payable
+              ledger.currentBalance -= netChange;
+              ledger.balanceType = ledger.currentBalance >= 0 ? 'Cr' : 'Dr';
             }
             await ledger.save();
           }
-        }
 
-        sale.voucherId = voucher._id;
-        sale.ledgerEntries.push(voucher._id);
-        await sale.save();
+          sale.voucherId = voucher._id;
+          sale.ledgerEntries.push(voucher._id);
+          await sale.save();
+        }
       } catch (voucherError) {
         console.error('Voucher creation error:', voucherError);
       }

@@ -19,10 +19,11 @@ export const getCashBook = async (req, res) => {
     if (filterType) {
       dateFilter = getDateRange(filterType, customStart, customEnd);
     } else if (startDate && endDate) {
-      dateFilter = {
-        startDate: new Date(startDate),
-        endDate: new Date(endDate)
-      };
+      const start = new Date(startDate);
+      start.setUTCHours(0, 0, 0, 0);
+      const end = new Date(endDate);
+      end.setUTCHours(23, 59, 59, 999);
+      dateFilter = { startDate: start, endDate: end };
     } else {
       dateFilter = getDateRange('thisMonth');
     }
@@ -142,10 +143,11 @@ export const getGeneralLedger = async (req, res) => {
     if (filterType) {
       dateFilter = getDateRange(filterType, customStart, customEnd);
     } else if (startDate && endDate) {
-      dateFilter = {
-        startDate: new Date(startDate),
-        endDate: new Date(endDate)
-      };
+      const start = new Date(startDate);
+      start.setUTCHours(0, 0, 0, 0);
+      const end = new Date(endDate);
+      end.setUTCHours(23, 59, 59, 999); // include the full end date
+      dateFilter = { startDate: start, endDate: end };
     } else {
       dateFilter = getDateRange('thisMonth');
     }
@@ -268,10 +270,11 @@ export const getGeneralLedgerAbstract = async (req, res) => {
     if (filterType) {
       dateFilter = getDateRange(filterType, customStart, customEnd);
     } else if (startDate && endDate) {
-      dateFilter = {
-        startDate: new Date(startDate),
-        endDate: new Date(endDate)
-      };
+      const start = new Date(startDate);
+      start.setUTCHours(0, 0, 0, 0);
+      const end = new Date(endDate);
+      end.setUTCHours(23, 59, 59, 999);
+      dateFilter = { startDate: start, endDate: end };
     } else {
       dateFilter = getDateRange('thisMonth');
     }
@@ -387,10 +390,11 @@ export const getReceiptsDisbursementEnhanced = async (req, res) => {
     if (filterType) {
       dateFilter = getDateRange(filterType, customStart, customEnd);
     } else if (startDate && endDate) {
-      dateFilter = {
-        startDate: new Date(startDate),
-        endDate: new Date(endDate)
-      };
+      const start = new Date(startDate);
+      start.setUTCHours(0, 0, 0, 0);
+      const end = new Date(endDate);
+      end.setUTCHours(23, 59, 59, 999);
+      dateFilter = { startDate: start, endDate: end };
     } else {
       // Default to current month if no dates provided
       dateFilter = getDateRange('thisMonth');

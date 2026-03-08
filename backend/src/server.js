@@ -1,7 +1,6 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
-import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -17,8 +16,8 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors());
-app.use(bodyParser.json({ limit: '10mb' }));
-app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI)
@@ -54,6 +53,7 @@ import employeeRoutes from './routes/employeeRoutes.js';
 import attendanceRoutes from './routes/attendanceRoutes.js';
 import salaryRoutes from './routes/salaryRoutes.js';
 import leaveRoutes from './routes/leaveRoutes.js';
+import loanRoutes from './routes/loanRoutes.js';
 import departmentRoutes from './routes/departmentRoutes.js';
 import designationRoutes from './routes/designationRoutes.js';
 
@@ -82,8 +82,85 @@ import businessSalesRoutes from './routes/businessSalesRoutes.js';
 // Business Accounting routes
 import businessAccountingRoutes from './routes/businessAccountingRoutes.js';
 
+// Purchase Return routes
+import purchaseReturnRoutes from './routes/purchaseReturnRoutes.js';
+
+// Sales Return routes
+import salesReturnRoutes from './routes/salesReturnRoutes.js';
+
+// Dairy Return routes
+import dairyPurchaseReturnRoutes from './routes/dairyPurchaseReturnRoutes.js';
+import dairySalesReturnRoutes from './routes/dairySalesReturnRoutes.js';
+
+// Business Promotion routes
+import businessPromotionRoutes from './routes/businessPromotionRoutes.js';
+
+// Rate Chart routes
+import rateChartRoutes from './routes/rateChartRoutes.js';
+
+// Milk Purchase Settings routes
+import milkPurchaseSettingsRoutes from './routes/milkPurchaseSettingsRoutes.js';
+
+// Milk Collection routes
+import milkCollectionRoutes from './routes/milkCollectionRoutes.js';
+
+// Agent routes
+import agentRoutes from './routes/agentRoutes.js';
+
+// Salesman routes
+import salesmanRoutes from './routes/salesmanRoutes.js';
+
+// Union Sales Slip routes
+import unionSalesSlipRoutes from './routes/unionSalesSlipRoutes.js';
+
+// Milk Sales routes (daily collection sales screen)
+import milkSalesRoutes from './routes/milkSalesRoutes.js';
+
+// Milk Sales Rate routes
+import milkSalesRateRoutes from './routes/milkSalesRateRoutes.js';
+
+// Shift Incentive routes
+import shiftIncentiveRoutes from './routes/shiftIncentiveRoutes.js';
+
+// Time Incentive routes
+import timeIncentiveRoutes from './routes/timeIncentiveRoutes.js';
+
+// Earning / Deduction Master routes
+import earningDeductionRoutes from './routes/earningDeductionRoutes.js';
+
+// Individual Deduction / Earning transaction routes
+import individualDeductionEarningRoutes from './routes/individualDeductionEarningRoutes.js';
+
+// Historical Rule routes
+import historicalRuleRoutes from './routes/historicalRuleRoutes.js';
+
+// Periodical Rule routes
+import periodicalRuleRoutes from './routes/periodicalRuleRoutes.js';
+
 // Auth routes (public login, protected user management)
 app.use('/api/auth', authRoutes);
+
+// Public endpoint - get active companies for login page (no auth required)
+// MUST be registered BEFORE any app.use('/api', protect, ...) middleware
+app.get('/api/companies/public', async (req, res) => {
+  try {
+    const Company = (await import('./models/Company.js')).default;
+    const companies = await Company.find({ status: 'Active' })
+      .select('companyName businessTypes _id')
+      .sort({ companyName: 1 });
+    res.status(200).json({
+      success: true,
+      count: companies.length,
+      data: companies
+    });
+  } catch (error) {
+    console.error('Error fetching public companies:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch companies'
+    });
+  }
+});
 
 // Apply authentication and company filter to all protected routes
 app.use('/api/farmers', protect, addCompanyFilter, farmerRoutes);
@@ -105,6 +182,7 @@ app.use('/api/employees', protect, addCompanyFilter, employeeRoutes);
 app.use('/api/attendance', protect, addCompanyFilter, attendanceRoutes);
 app.use('/api/salary', protect, addCompanyFilter, salaryRoutes);
 app.use('/api/leaves', protect, addCompanyFilter, leaveRoutes);
+app.use('/api/loans', protect, addCompanyFilter, loanRoutes);
 app.use('/api/departments', protect, addCompanyFilter, departmentRoutes);
 app.use('/api/designations', protect, addCompanyFilter, designationRoutes);
 
@@ -130,29 +208,60 @@ app.use('/api/business-sales', protect, addCompanyFilter, businessSalesRoutes);
 // Business Accounting routes
 app.use('/api/business-accounting', protect, addCompanyFilter, businessAccountingRoutes);
 
-// Company routes - public endpoint for active companies list, protected for other operations
-import { getAllCompanies } from './controllers/companyController.js';
+// Purchase Return routes
+app.use('/api/purchase-returns', protect, addCompanyFilter, purchaseReturnRoutes);
 
-// Public endpoint - get active companies for login page (no auth required)
-app.get('/api/companies/public', async (req, res) => {
-  try {
-    const Company = (await import('./models/Company.js')).default;
-    const companies = await Company.find({ status: 'Active' })
-      .select('companyName businessTypes _id')
-      .sort({ companyName: 1 });
-    res.status(200).json({
-      success: true,
-      count: companies.length,
-      data: companies
-    });
-  } catch (error) {
-    console.error('Error fetching public companies:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch companies'
-    });
-  }
-});
+// Sales Return routes
+app.use('/api/sales-returns', protect, addCompanyFilter, salesReturnRoutes);
+
+// Dairy Return routes
+app.use('/api/dairy-purchase-returns', protect, addCompanyFilter, dairyPurchaseReturnRoutes);
+app.use('/api/dairy-sales-returns', protect, addCompanyFilter, dairySalesReturnRoutes);
+
+// Business Promotion routes
+app.use('/api/business-promotions', protect, addCompanyFilter, businessPromotionRoutes);
+
+// Rate Chart routes
+app.use('/api/rate-charts', protect, addCompanyFilter, rateChartRoutes);
+
+// Milk Purchase Settings routes
+app.use('/api/milk-purchase-settings', protect, addCompanyFilter, milkPurchaseSettingsRoutes);
+
+// Milk Collection routes
+app.use('/api/milk-collections', protect, addCompanyFilter, milkCollectionRoutes);
+
+// Agent routes
+app.use('/api/agents', protect, addCompanyFilter, agentRoutes);
+
+// Salesman routes
+app.use('/api/salesman', protect, addCompanyFilter, salesmanRoutes);
+
+// Union Sales Slip routes
+app.use('/api/union-sales-slips', protect, addCompanyFilter, unionSalesSlipRoutes);
+
+// Milk Sales routes (daily collection sales screen)
+app.use('/api/milk-sales', protect, addCompanyFilter, milkSalesRoutes);
+
+// Milk Sales Rate routes
+app.use('/api/milk-sales-rates', protect, addCompanyFilter, milkSalesRateRoutes);
+
+// Shift Incentive routes
+app.use('/api/shift-incentives', protect, addCompanyFilter, shiftIncentiveRoutes);
+
+// Time Incentive routes
+app.use('/api/time-incentives', protect, addCompanyFilter, timeIncentiveRoutes);
+
+// Earning / Deduction Master routes
+app.use('/api/earning-deductions', protect, addCompanyFilter, earningDeductionRoutes);
+
+// Individual Deduction / Earning transactions
+app.use('/api/individual-transactions', protect, addCompanyFilter, individualDeductionEarningRoutes);
+
+// Historical Rules
+app.use('/api/historical-rules', protect, addCompanyFilter, historicalRuleRoutes);
+
+// Periodical Rules
+app.use('/api/periodical-rules', protect, addCompanyFilter, periodicalRuleRoutes);
 
 // Protected company routes (for superadmin management)
 app.use('/api/companies', protect, companyRoutes);

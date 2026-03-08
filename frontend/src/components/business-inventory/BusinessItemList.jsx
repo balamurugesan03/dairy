@@ -43,7 +43,7 @@ import { useDisclosure } from '@mantine/hooks';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { DataTable } from 'mantine-datatable';
-import { businessItemAPI, ledgerAPI, supplierAPI } from '../../services/api';
+import { businessItemAPI, businessLedgerAPI, supplierAPI } from '../../services/api';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -158,7 +158,7 @@ const BusinessItemList = () => {
 
   const fetchLedgers = async () => {
     try {
-      const response = await ledgerAPI.getAll({ status: 'Active' });
+      const response = await businessLedgerAPI.getAll({ status: 'Active' });
       setLedgers(response.data || []);
     } catch (error) {
       console.error('Failed to fetch ledgers:', error);

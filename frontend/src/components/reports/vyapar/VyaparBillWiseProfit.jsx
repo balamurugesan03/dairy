@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCompany } from '../../../context/CompanyContext';
 import { reportAPI } from '../../../services/api';
+import { printReport } from '../../../utils/printReport';
 import { message } from '../../../utils/toast';
 import dayjs from 'dayjs';
 import {
@@ -60,6 +61,7 @@ const VyaparBillWiseProfit = () => {
   const [expandedParties, setExpandedParties] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
   const [partyTypeFilter, setPartyTypeFilter] = useState('all');
+  const printRef = useRef(null);
   const [statusFilter, setStatusFilter] = useState('all');
 
   // Redirect if wrong business type
@@ -260,13 +262,13 @@ const VyaparBillWiseProfit = () => {
   };
 
   const handlePrint = () => {
-    window.print();
+    printReport(printRef, { title: 'Bill-wise Party Report', orientation: 'landscape' });
   };
 
   const summary = reportData?.summary || {};
 
   return (
-    <Box pos="relative" style={{ minHeight: '100vh' }}>
+    <Box pos="relative" style={{ minHeight: '100vh' }} ref={printRef}>
       <LoadingOverlay visible={loading} overlayProps={{ blur: 2 }} />
 
       <PageHeader
@@ -279,7 +281,7 @@ const VyaparBillWiseProfit = () => {
       <DateFilterToolbar onFilterChange={handleFilterChange} />
 
       {/* Additional Filters */}
-      <Paper shadow="sm" p="md" mb="md" withBorder>
+      <Paper shadow="sm" p="md" mb="md" withBorder data-no-print>
         <Grid align="end">
           <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
             <TextInput

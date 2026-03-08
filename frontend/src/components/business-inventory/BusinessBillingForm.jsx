@@ -77,7 +77,7 @@ import {
   IconEdit,
   IconEye
 } from '@tabler/icons-react';
-import { businessItemAPI, businessSalesAPI, customerAPI } from '../../services/api';
+import { businessItemAPI, businessSalesAPI, customerAPI, businessPromotionAPI, salesmanAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 
 const BusinessBillingForm = () => {
@@ -96,6 +96,13 @@ const BusinessBillingForm = () => {
   const [savedInvoice, setSavedInvoice] = useState(null);
   const [showMoreOptions, { toggle: toggleMoreOptions }] = useDisclosure(false);
   const [barcodeInput, setBarcodeInput] = useState('');
+  const [dateInvoices, setDateInvoices] = useState([]);
+  const [loadingDateInvoices, setLoadingDateInvoices] = useState(false);
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [salesmen, setSalesmen] = useState([]);
+  const [selectedSalesman, setSelectedSalesman] = useState(null);
 
   const form = useForm({
     initialValues: {
@@ -123,7 +130,9 @@ const BusinessBillingForm = () => {
       transportName: '',
       lrNumber: '',
       notes: '',
-      termsAndConditions: ''
+      termsAndConditions: '',
+      salesmanId: null,
+      salesmanName: ''
     }
   });
 
@@ -146,6 +155,7 @@ const BusinessBillingForm = () => {
   useEffect(() => {
     fetchItems();
     fetchCustomers();
+    fetchSalesmen();
     if (id) {
       fetchInvoice(id);
     }
@@ -154,6 +164,28 @@ const BusinessBillingForm = () => {
   useEffect(() => {
     calculateTotals();
   }, [billItems, form.values.billDiscount, form.values.billDiscountPercent, form.values.partyState]);
+
+  useEffect(() => {
+    if (form.values.invoiceDate) {
+      fetchInvoicesByDate(form.values.invoiceDate);
+    }
+  }, [form.values.invoiceDate]);
+
+  const fetchInvoicesByDate = async (date) => {
+    try {
+      setLoadingDateInvoices(true);
+      const startDate = dayjs(date).startOf('day').toISOString();
+      const endDate = dayjs(date).endOf('day').toISOString();
+      const response = await businessSalesAPI.getAll({ startDate, endDate, limit: 100 });
+      const invoices = response?.data || response || [];
+      setDateInvoices(Array.isArray(invoices) ? invoices : []);
+    } catch (error) {
+      console.error('Error fetching invoices by date:', error);
+      setDateInvoices([]);
+    } finally {
+      setLoadingDateInvoices(false);
+    }
+  };
 
   const fetchItems = async () => {
     try {
@@ -182,6 +214,16 @@ const BusinessBillingForm = () => {
         color: 'red'
       });
       setCustomers([]);
+    }
+  };
+
+  const fetchSalesmen = async () => {
+    try {
+      const response = await salesmanAPI.getAll({ status: 'Active', limit: 100 });
+      setSalesmen(response?.data || []);
+    } catch (error) {
+      console.error('Error fetching salesmen:', error);
+      setSalesmen([]);
     }
   };
 
@@ -220,8 +262,15 @@ const BusinessBillingForm = () => {
         transportName: invoice.transportName || '',
         lrNumber: invoice.lrNumber || '',
         notes: invoice.notes || '',
-        termsAndConditions: invoice.termsAndConditions || ''
+        termsAndConditions: invoice.termsAndConditions || '',
+        salesmanId: invoice.salesmanId?._id || invoice.salesmanId || null,
+        salesmanName: invoice.salesmanName || ''
       });
+
+      if (invoice.salesmanId) {
+        const sm = typeof invoice.salesmanId === 'object' ? invoice.salesmanId : null;
+        setSelectedSalesman(sm);
+      }
 
       const invoiceItems = invoice.items || [];
       setBillItems(invoiceItems.map(item => ({
@@ -302,6 +351,21 @@ const BusinessBillingForm = () => {
           previousBalance: 0
         }));
       }
+    }
+  };
+
+  const handleSalesmanSelect = (id) => {
+    if (!id) {
+      setSelectedSalesman(null);
+      form.setFieldValue('salesmanId', null);
+      form.setFieldValue('salesmanName', '');
+      return;
+    }
+    const salesman = salesmen.find(s => s._id === id);
+    if (salesman) {
+      setSelectedSalesman(salesman);
+      form.setFieldValue('salesmanId', id);
+      form.setFieldValue('salesmanName', salesman.name);
     }
   };
 
@@ -560,6 +624,39 @@ const BusinessBillingForm = () => {
     }));
   };
 
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) return;
+    try {
+      setCouponLoading(true);
+      const response = await businessPromotionAPI.validateCoupon({
+        couponCode: couponCode.trim(),
+        orderAmount: calculations.grandTotal,
+        customerId: form.values.partyId
+      });
+      const couponData = response?.data || response;
+      setAppliedCoupon(couponData);
+      notifications.show({
+        title: 'Coupon Applied',
+        message: `Discount of ${couponData.discountAmount.toFixed(2)} applied!`,
+        color: 'green'
+      });
+    } catch (error) {
+      notifications.show({
+        title: 'Invalid Coupon',
+        message: error?.message || 'Could not apply coupon',
+        color: 'red'
+      });
+      setAppliedCoupon(null);
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponCode('');
+  };
+
   const handlePrint = useReactToPrint({
     contentRef: printRef,
     onAfterPrint: () => {
@@ -602,7 +699,12 @@ const BusinessBillingForm = () => {
         transportName: form.values.transportName,
         lrNumber: form.values.lrNumber,
         notes: form.values.notes,
-        termsAndConditions: form.values.termsAndConditions
+        termsAndConditions: form.values.termsAndConditions,
+        couponCode: appliedCoupon?.couponCode || '',
+        promotionId: appliedCoupon?.promotionId || null,
+        promotionDiscount: appliedCoupon?.discountAmount || 0,
+        salesmanId: form.values.salesmanId || null,
+        salesmanName: form.values.salesmanName || ''
       };
 
       let response;
@@ -622,8 +724,31 @@ const BusinessBillingForm = () => {
         });
       }
 
-      setSavedInvoice(response.data);
+      const savedData = response.data;
+      setSavedInvoice(savedData);
+
+      // Record coupon redemption if coupon was applied
+      if (appliedCoupon && savedData) {
+        try {
+          await businessPromotionAPI.redeem({
+            promotionId: appliedCoupon.promotionId,
+            salesId: savedData._id,
+            invoiceNumber: savedData.invoiceNumber,
+            customerId: form.values.partyId,
+            customerName: form.values.partyName,
+            discountAmount: appliedCoupon.discountAmount,
+            orderAmount: calculations.grandTotal
+          });
+        } catch (err) {
+          console.error('Error recording redemption:', err);
+        }
+      }
+
       setPrintModalOpened(true);
+      // Refresh date invoices after saving
+      if (form.values.invoiceDate) {
+        fetchInvoicesByDate(form.values.invoiceDate);
+      }
     } catch (error) {
       notifications.show({
         title: 'Error',
@@ -655,6 +780,9 @@ const BusinessBillingForm = () => {
       totalDue: 0
     });
     setSavedInvoice(null);
+    setAppliedCoupon(null);
+    setCouponCode('');
+    setSelectedSalesman(null);
   };
 
   const itemOptions = items.map(item => ({
@@ -665,6 +793,11 @@ const BusinessBillingForm = () => {
   const customerOptions = customers.map(customer => ({
     value: customer._id,
     label: `${customer.customerId || ''} - ${customer.name} ${customer.phone ? `| ${customer.phone}` : ''}`
+  }));
+
+  const salesmanOptions = salesmen.map(s => ({
+    value: s._id,
+    label: `${s.salesmanId} - ${s.name}`
   }));
 
   const stateOptions = [
@@ -719,6 +852,87 @@ const BusinessBillingForm = () => {
         </Group>
       </Paper>
 
+      {/* ============ DATE INVOICES HISTORY ============ */}
+      {dateInvoices.length > 0 && (
+        <Paper withBorder p="md" mb="md" radius="md">
+          <Group justify="space-between" mb="sm">
+            <Group gap="xs">
+              <IconReceipt size={18} style={{ opacity: 0.6 }} />
+              <Text fw={600} size="sm">
+                Invoices on {dayjs(form.values.invoiceDate).format('DD-MM-YYYY')}
+              </Text>
+              <Badge size="sm" variant="light" color="violet">{dateInvoices.length}</Badge>
+            </Group>
+          </Group>
+          <ScrollArea h={dateInvoices.length > 5 ? 200 : undefined}>
+            <Table striped highlightOnHover withTableBorder withColumnBorders fontSize="xs">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>#</Table.Th>
+                  <Table.Th>Invoice No</Table.Th>
+                  <Table.Th>Party</Table.Th>
+                  <Table.Th>Type</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Amount</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Paid</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Balance</Table.Th>
+                  <Table.Th>Status</Table.Th>
+                  <Table.Th>Payment</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {dateInvoices.map((inv, idx) => (
+                  <Table.Tr key={inv._id}>
+                    <Table.Td>{idx + 1}</Table.Td>
+                    <Table.Td>
+                      <Text size="xs" fw={500}>{inv.invoiceNumber}</Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="xs">{inv.partyName || 'Walk-in'}</Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Badge size="xs" variant="light" color="violet">{inv.invoiceType || 'Sale'}</Badge>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      <Text size="xs" fw={600}>{(inv.grandTotal || 0).toFixed(2)}</Text>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      <Text size="xs" c="green">{(inv.paidAmount || 0).toFixed(2)}</Text>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      <Text size="xs" c={(inv.balanceAmount || 0) > 0 ? 'red' : 'dimmed'}>
+                        {(inv.balanceAmount || 0).toFixed(2)}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Badge
+                        size="xs"
+                        color={inv.paymentStatus === 'Paid' ? 'green' : inv.paymentStatus === 'Partial' ? 'orange' : 'red'}
+                      >
+                        {inv.paymentStatus || 'Unpaid'}
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="xs" c="dimmed">{inv.paymentMode || '-'}</Text>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </ScrollArea>
+        </Paper>
+      )}
+
+      {loadingDateInvoices && (
+        <Paper withBorder p="sm" mb="md" radius="md">
+          <Center>
+            <Group gap="xs">
+              <Loader size="xs" />
+              <Text size="sm" c="dimmed">Loading invoices...</Text>
+            </Group>
+          </Center>
+        </Paper>
+      )}
+
       <Grid gutter="md">
         {/* Left Panel - Party & Items */}
         <Grid.Col span={8}>
@@ -757,6 +971,18 @@ const BusinessBillingForm = () => {
                     placeholder="Enter party name"
                     value={form.values.partyName}
                     onChange={(e) => form.setFieldValue('partyName', e.target.value)}
+                    leftSection={<IconUser size={16} />}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <Select
+                    label="Salesman"
+                    placeholder="Select salesman..."
+                    value={form.values.salesmanId}
+                    onChange={handleSalesmanSelect}
+                    data={salesmanOptions}
+                    searchable
+                    clearable
                     leftSection={<IconUser size={16} />}
                   />
                 </Grid.Col>
@@ -1150,6 +1376,46 @@ const BusinessBillingForm = () => {
                   </>
                 )}
               </Stack>
+
+              {/* Coupon Section */}
+              <Divider label="Apply Coupon" labelPosition="center" />
+              {!appliedCoupon ? (
+                <Group gap="xs">
+                  <TextInput
+                    placeholder="Enter coupon code"
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => e.key === 'Enter' && handleApplyCoupon()}
+                    size="xs"
+                    style={{ flex: 1 }}
+                    leftSection={<IconTag size={14} />}
+                  />
+                  <Button
+                    size="xs"
+                    onClick={handleApplyCoupon}
+                    loading={couponLoading}
+                    disabled={!couponCode.trim()}
+                    color="violet"
+                  >
+                    Apply
+                  </Button>
+                </Group>
+              ) : (
+                <Card p="xs" bg="green.0" withBorder>
+                  <Group justify="space-between">
+                    <div>
+                      <Text size="xs" fw={600} c="green">{appliedCoupon.couponCode}</Text>
+                      <Text size="xs" c="dimmed">{appliedCoupon.name}</Text>
+                    </div>
+                    <Group gap="xs">
+                      <Badge color="green" size="sm">-{appliedCoupon.discountAmount.toFixed(2)}</Badge>
+                      <ActionIcon size="xs" color="red" variant="light" onClick={handleRemoveCoupon}>
+                        <IconX size={12} />
+                      </ActionIcon>
+                    </Group>
+                  </Group>
+                </Card>
+              )}
 
               <Divider label="Payment" labelPosition="center" />
 

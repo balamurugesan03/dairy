@@ -225,7 +225,7 @@ const VyaparPurchaseReport = () => {
               <th style={{ border: '1px solid #000', padding: '8px', backgroundColor: '#f5f5f5' }}>Date</th>
               <th style={{ border: '1px solid #000', padding: '8px', backgroundColor: '#f5f5f5' }}>Invoice No.</th>
               <th style={{ border: '1px solid #000', padding: '8px', backgroundColor: '#f5f5f5' }}>Supplier Name</th>
-              <th style={{ border: '1px solid #000', padding: '8px', backgroundColor: '#f5f5f5', textAlign: 'center' }}>Items</th>
+              <th style={{ border: '1px solid #000', padding: '8px', backgroundColor: '#f5f5f5' }}>Items (Name × Qty)</th>
               <th style={{ border: '1px solid #000', padding: '8px', backgroundColor: '#f5f5f5', textAlign: 'right' }}>Subtotal</th>
               <th style={{ border: '1px solid #000', padding: '8px', backgroundColor: '#f5f5f5', textAlign: 'right' }}>Tax</th>
               <th style={{ border: '1px solid #000', padding: '8px', backgroundColor: '#f5f5f5', textAlign: 'right' }}>Total</th>
@@ -240,7 +240,13 @@ const VyaparPurchaseReport = () => {
                 <td style={{ border: '1px solid #ddd', padding: '6px' }}>{formatDate(record.date)}</td>
                 <td style={{ border: '1px solid #ddd', padding: '6px', fontWeight: 'bold' }}>{record.invoiceNumber}</td>
                 <td style={{ border: '1px solid #ddd', padding: '6px' }}>{record.supplierName}</td>
-                <td style={{ border: '1px solid #ddd', padding: '6px', textAlign: 'center' }}>{record.itemCount}</td>
+                <td style={{ border: '1px solid #ddd', padding: '6px' }}>
+                  {record.items && record.items.length > 0
+                    ? record.items.map((item, i) => (
+                        <div key={i}>{item.itemName || '—'} ×{item.quantity}</div>
+                      ))
+                    : record.itemCount}
+                </td>
                 <td style={{ border: '1px solid #ddd', padding: '6px', textAlign: 'right' }}>{formatCurrency(record.subtotal)}</td>
                 <td style={{ border: '1px solid #ddd', padding: '6px', textAlign: 'right' }}>{formatCurrency(record.tax)}</td>
                 <td style={{ border: '1px solid #ddd', padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>
@@ -517,15 +523,14 @@ const VyaparPurchaseReport = () => {
                         fontWeight: 600,
                         fontSize: '12px'
                       }}>Supplier Name</th>
-                      <th style={{ 
-                        border: '1px solid #e0e0e0', 
+                      <th style={{
+                        border: '1px solid #e0e0e0',
                         borderRight: 'none',
                         padding: '10px 12px',
                         color: '#455a64',
                         fontWeight: 600,
-                        fontSize: '12px',
-                        textAlign: 'center'
-                      }}>Items</th>
+                        fontSize: '12px'
+                      }}>Items (Name × Qty)</th>
                       <th style={{ 
                         border: '1px solid #e0e0e0', 
                         borderRight: 'none',
@@ -621,14 +626,22 @@ const VyaparPurchaseReport = () => {
                             padding: '10px 12px',
                             fontSize: '12px'
                           }}>{record.supplierName}</td>
-                          <td style={{ 
+                          <td style={{
                             border: '1px solid #e0e0e0',
                             borderTop: 'none',
                             borderRight: 'none',
-                            padding: '10px 12px',
-                            fontSize: '12px',
-                            textAlign: 'center'
-                          }}>{record.itemCount}</td>
+                            padding: '8px 12px',
+                            fontSize: '12px'
+                          }}>
+                            {record.items && record.items.length > 0
+                              ? record.items.map((item, i) => (
+                                  <div key={i} style={{ lineHeight: '1.6' }}>
+                                    <span style={{ fontWeight: 500 }}>{item.itemName || '—'}</span>
+                                    <span style={{ color: '#1976d2', marginLeft: 6 }}>×{item.quantity}</span>
+                                  </div>
+                                ))
+                              : record.itemCount}
+                          </td>
                           <td style={{ 
                             border: '1px solid #e0e0e0',
                             borderTop: 'none',

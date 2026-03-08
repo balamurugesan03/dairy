@@ -654,9 +654,8 @@ const VyaparProfitLoss = () => {
               {['today', 'thisWeek', 'thisMonth', 'thisQuarter', 'thisYear'].map((filter) => (
                 <Button
                   key={filter}
-                  compact
                   variant="subtle"
-                  size="xs"
+                  size="compact-xs"
                   onClick={() => handleQuickFilter(filter)}
                   style={{ border: '1px solid #e0e0e0' }}
                 >
@@ -670,7 +669,7 @@ const VyaparProfitLoss = () => {
           </Stack>
         </Paper>
 
-        <LoadingOverlay visible={loading} overlayBlur={2} />
+        <LoadingOverlay visible={loading} overlayProps={{ blur: 2 }} />
 
         {reportData && !loading && (
           <>

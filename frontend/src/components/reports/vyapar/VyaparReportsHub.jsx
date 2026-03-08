@@ -64,6 +64,27 @@ const VyaparReportsHub = () => {
       category: 'Profitability'
     },
     {
+      title: 'Day Book',
+      description: 'All voucher entries chronologically grouped by date',
+      path: '/reports/vyapar/day-book',
+      color: '#e8eaf6',
+      category: 'Accounting'
+    },
+    {
+      title: 'Cash Book',
+      description: 'Receipt and payment entries with opening/closing balance',
+      path: '/reports/vyapar/cash-book',
+      color: '#e0f2f1',
+      category: 'Financial'
+    },
+    {
+      title: 'Trading Account',
+      description: 'Opening/Closing stock, purchases, sales and gross profit/loss',
+      path: '/reports/vyapar/trading-account',
+      color: '#fce4ec',
+      category: 'Accounting'
+    },
+    {
       title: 'Trial Balance',
       description: 'Ledger-wise debit and credit balance verification',
       path: '/reports/vyapar/trial-balance',
@@ -81,6 +102,13 @@ const VyaparReportsHub = () => {
       title: 'Stock Summary',
       description: 'Current inventory levels and stock valuation',
       path: '/reports/vyapar/stock-summary',
+      color: '#f6ffed',
+      category: 'Inventory'
+    },
+    {
+      title: 'Stock Statement',
+      description: 'Period-wise stock movement with opening/closing stock',
+      path: '/reports/vyapar/stock-statement',
       color: '#f6ffed',
       category: 'Inventory'
     },

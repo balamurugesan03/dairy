@@ -178,9 +178,9 @@ const ItemList = () => {
   const fetchItems = async () => {
     setLoading(true);
     try {
-      const response = await itemAPI.getAll();
+      const response = await itemAPI.getAll({ limit: 10000 });
       setItems(response.data || []);
-      setPagination(prev => ({ ...prev, total: response.data?.length || 0 }));
+      setPagination(prev => ({ ...prev, total: response.pagination?.total || response.data?.length || 0 }));
     } catch (error) {
       notifications.show({
         title: 'Error',
@@ -498,7 +498,7 @@ const ItemList = () => {
           <Text fw={700} size="xl">
             {value}
           </Text>
-          <Text size="sm" color="dimmed">
+          <Text size="sm" c="dimmed">
             {label}
           </Text>
         </div>
@@ -622,7 +622,7 @@ const ItemList = () => {
       accessor: 'actions',
       title: 'Actions',
       render: (item) => (
-        <Group spacing="xs" wrap="nowrap">
+        <Group gap="xs" wrap="nowrap">
           <ActionIcon
             variant="subtle"
             color="blue"
@@ -656,10 +656,10 @@ const ItemList = () => {
   return (
     <Container size="xl" py="md">
       {/* Header */}
-      <Group position="apart" mb="xl">
+      <Group justify="space-between" mb="xl">
         <div>
           <Title order={2}>Item Master</Title>
-          <Text color="dimmed" size="sm">Manage your inventory items</Text>
+          <Text c="dimmed" size="sm">Manage your inventory items</Text>
         </div>
         <Button
           leftSection={<IconPlus size={16} />}
@@ -671,7 +671,7 @@ const ItemList = () => {
       </Group>
 
       {/* Stats */}
-      <SimpleGrid cols={4} mb="lg">
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} mb="lg">
         <StatCard
           icon={<IconBuildingWarehouse size={24} />}
           label="Total Items"
@@ -701,17 +701,17 @@ const ItemList = () => {
       {/* Search & Filters */}
       <Paper p="md" withBorder mb="md">
         <Stack>
-          <Group position="apart">
+          <Group justify="space-between">
             <TextInput
               placeholder="Search by name or code..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              icon={<IconSearch size={16} />}
+              leftSection={<IconSearch size={16} />}
               style={{ flex: 1, minWidth: 300 }}
               size="sm"
             />
-            
-            <Group spacing="xs">
+
+            <Group gap="xs">
               <Select
                 placeholder="Category"
                 value={categoryFilter}
@@ -811,7 +811,7 @@ const ItemList = () => {
           </Group>
           
           {/* Table Filters */}
-          <Group spacing="xs">
+          <Group gap="xs">
             <Select
               placeholder="Filter Category"
               value={tableFilters.category}
@@ -881,8 +881,8 @@ const ItemList = () => {
         centered
       >
         <form onSubmit={itemForm.onSubmit(handleItemSubmit)}>
-          <Stack spacing="md">
-            <SimpleGrid cols={2} spacing="md">
+          <Stack gap="md">
+            <SimpleGrid cols={2} gap="md">
               {selectedItem && (
                 <TextInput
                   label="Item Code"
@@ -1005,7 +1005,7 @@ const ItemList = () => {
               />
             </SimpleGrid>
             
-            <Group position="right" mt="md">
+            <Group justify="flex-end" mt="md">
               <Button variant="default" onClick={closeItemModal}>
                 Cancel
               </Button>
@@ -1026,7 +1026,7 @@ const ItemList = () => {
         centered
       >
         <form onSubmit={openingBalanceForm.onSubmit(handleOpeningBalanceSubmit)}>
-          <Stack spacing="md">
+          <Stack gap="md">
             <TextInput
               label="Item Name"
               value={selectedItemForBalance?.itemName || ''}
@@ -1063,7 +1063,7 @@ const ItemList = () => {
               error={openingBalanceForm.errors.rate}
             />
             
-            <Group position="right" mt="md">
+            <Group justify="flex-end" mt="md">
               <Button variant="default" onClick={closeOpeningBalanceModal}>
                 Cancel
               </Button>

@@ -42,6 +42,7 @@ const CustomerModal = ({ isOpen, onClose, onSuccess, customerId = null }) => {
     district: '',
     pincode: '',
     panNumber: '',
+    category: 'Others',
     active: true,
     documents: {
       aadhaar: '',
@@ -75,6 +76,7 @@ const CustomerModal = ({ isOpen, onClose, onSuccess, customerId = null }) => {
       district: '',
       pincode: '',
       panNumber: '',
+      category: 'School',
       active: true,
       documents: {
         aadhaar: '',
@@ -231,7 +233,7 @@ const CustomerModal = ({ isOpen, onClose, onSuccess, customerId = null }) => {
               />
             </Grid.Col>
           )}
-          <Grid.Col span={{ base: 12, sm: isEditMode ? 6 : 12 }}>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
             <TextInput
               label="Customer Name"
               placeholder="Enter full name"
@@ -240,6 +242,25 @@ const CustomerModal = ({ isOpen, onClose, onSuccess, customerId = null }) => {
               onChange={(e) => handleChange('name', e.target.value)}
               error={errors.name}
               required
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <Select
+              label="Category"
+              placeholder="Select category"
+              value={formData.category}
+              onChange={(value) => handleChange('category', value)}
+              data={[
+                { value: 'School', label: 'School' },
+                { value: 'Anganwadi', label: 'Anganwadi' },
+                { value: 'Hospital', label: 'Hospital' },
+                { value: 'Booth', label: 'Booth' },
+                { value: 'Hotel', label: 'Hotel' },
+                { value: 'Vendor Sales', label: 'Vendor Sales' },
+                  { value: 'SalesMan', label: 'Sales Man' },
+                
+                { value: 'Others', label: 'Others' }
+              ]}
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, sm: 6 }}>

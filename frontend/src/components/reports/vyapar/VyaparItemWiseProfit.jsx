@@ -568,7 +568,7 @@ const VyaparItemWiseProfit = () => {
           </Group>
         </Paper>
 
-        <LoadingOverlay visible={loading} overlayBlur={2} />
+        <LoadingOverlay visible={loading} overlayProps={{ blur: 2 }} />
 
         {/* Main Content */}
         <Paper withBorder style={{ borderColor: '#e0e0e0', overflow: 'hidden', backgroundColor: '#ffffff' }}>

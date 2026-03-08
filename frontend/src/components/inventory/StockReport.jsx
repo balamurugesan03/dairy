@@ -930,7 +930,7 @@ const StockReport = () => {
                 </tr>
               ) : (
                 filteredData.map((item, index) => (
-                  <tr key={item._id || index}>
+                  <tr key={item._id || item.itemCode || index}>
                     <td>
                       <Text size="sm" color="dimmed">{index + 1}</Text>
                     </td>

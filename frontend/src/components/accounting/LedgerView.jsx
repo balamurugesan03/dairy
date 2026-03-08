@@ -21,11 +21,11 @@ import {
   SimpleGrid,
   Card,
   NumberInput,
-  DatePicker,
   LoadingOverlay,
   Title,
   Alert
 } from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
 import { IconArrowLeft, IconDownload, IconCalendar, IconReceipt, IconCash, IconExchange } from '@tabler/icons-react';
 
 const LedgerView = () => {
@@ -160,7 +160,7 @@ const LedgerView = () => {
         </Text>
       </td>
       <td>
-        <Text size="sm" weight={500}>
+        <Text size="sm" fw={500}>
           {txn.particulars}
         </Text>
       </td>
@@ -175,12 +175,12 @@ const LedgerView = () => {
         </Badge>
       </td>
       <td align="right">
-        <Text size="sm" weight={500}>
+        <Text size="sm" fw={500}>
           {txn.debit > 0 ? `₹${txn.debit.toFixed(2)}` : '-'}
         </Text>
       </td>
       <td align="right">
-        <Text size="sm" weight={500}>
+        <Text size="sm" fw={500}>
           {txn.credit > 0 ? `₹${txn.credit.toFixed(2)}` : '-'}
         </Text>
       </td>
@@ -205,7 +205,7 @@ const LedgerView = () => {
 
       {/* Actions Bar */}
       <Paper p="md" mb="md" withBorder>
-        <Group position="apart">
+        <Group justify="space-between">
           <Button
             leftSection={<IconArrowLeft size={16} />}
             variant="default"
@@ -224,13 +224,13 @@ const LedgerView = () => {
       {/* Ledger Information Card */}
       <Paper p="md" mb="md" withBorder>
         <Title order={3} mb="md">Ledger Information</Title>
-        <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="lg">
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} gap="lg">
           <div>
-            <Text size="sm" color="dimmed">Ledger Name</Text>
-            <Text weight={500} size="lg">{ledger.ledgerName}</Text>
+            <Text size="sm" c="dimmed">Ledger Name</Text>
+            <Text fw={500} size="lg">{ledger.ledgerName}</Text>
           </div>
           <div>
-            <Text size="sm" color="dimmed">Account Group</Text>
+            <Text size="sm" c="dimmed">Account Group</Text>
             <Badge 
               color={getLedgerTypeColor(ledger.ledgerType)} 
               variant="light"
@@ -240,13 +240,13 @@ const LedgerView = () => {
             </Badge>
           </div>
           <div>
-            <Text size="sm" color="dimmed">Opening Balance</Text>
-            <Text weight={500} size="lg">
+            <Text size="sm" c="dimmed">Opening Balance</Text>
+            <Text fw={500} size="lg">
               ₹{ledger.openingBalance?.toFixed(2) || 0} {ledger.openingBalanceType || ''}
             </Text>
           </div>
           <div>
-            <Text size="sm" color="dimmed">Current Balance</Text>
+            <Text size="sm" c="dimmed">Current Balance</Text>
             <Badge
               color={ledger.balanceType === 'Dr' ? 'red' : 'green'}
               variant="light"
@@ -256,19 +256,19 @@ const LedgerView = () => {
             </Badge>
           </div>
           <div>
-            <Text size="sm" color="dimmed">Parent Group</Text>
-            <Text weight={500} size="lg">{ledger.parentGroup || '-'}</Text>
+            <Text size="sm" c="dimmed">Parent Group</Text>
+            <Text fw={500} size="lg">{ledger.parentGroup || '-'}</Text>
           </div>
           <div>
-            <Text size="sm" color="dimmed">Linked Entity</Text>
-            <Text weight={500} size="lg">{ledger.linkedEntity?.entityType || '-'}</Text>
+            <Text size="sm" c="dimmed">Linked Entity</Text>
+            <Text fw={500} size="lg">{ledger.linkedEntity?.entityType || '-'}</Text>
           </div>
         </SimpleGrid>
       </Paper>
 
       {/* Transactions Card */}
       <Paper p="md" withBorder>
-        <Group position="apart" mb="md">
+        <Group justify="space-between" mb="md">
           <Title order={3}>Transaction History</Title>
           <Badge color="blue" variant="light">
             {filteredTransactions.length} Transactions
@@ -277,20 +277,22 @@ const LedgerView = () => {
 
         {/* Date Filter */}
         <Paper p="md" mb="md" withBorder bg="gray.0">
-          <Group spacing="lg">
-            <DatePicker
+          <Group gap="lg">
+            <DatePickerInput
               placeholder="Start Date"
               value={dateRange.startDate}
               onChange={(date) => setDateRange(prev => ({ ...prev, startDate: date }))}
-              icon={<IconCalendar size={16} />}
+              leftSection={<IconCalendar size={16} />}
               clearable
+              w={160}
             />
-            <DatePicker
+            <DatePickerInput
               placeholder="End Date"
               value={dateRange.endDate}
               onChange={(date) => setDateRange(prev => ({ ...prev, endDate: date }))}
-              icon={<IconCalendar size={16} />}
+              leftSection={<IconCalendar size={16} />}
               clearable
+              w={160}
             />
             {(dateRange.startDate || dateRange.endDate) && (
               <Button
@@ -308,7 +310,7 @@ const LedgerView = () => {
         {/* Transactions Table */}
         {filteredTransactions.length === 0 ? (
           <Paper p="xl" ta="center" withBorder>
-            <Text color="dimmed">No transactions found</Text>
+            <Text c="dimmed">No transactions found</Text>
           </Paper>
         ) : (
           <>
@@ -327,13 +329,13 @@ const LedgerView = () => {
               <tfoot>
                 <tr style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}>
                   <td colSpan="3" align="right">
-                    <Text weight={700}>Total:</Text>
+                    <Text fw={700}>Total:</Text>
                   </td>
                   <td align="right">
-                    <Text weight={700}>₹{totalDebit.toFixed(2)}</Text>
+                    <Text fw={700}>₹{totalDebit.toFixed(2)}</Text>
                   </td>
                   <td align="right">
-                    <Text weight={700}>₹{totalCredit.toFixed(2)}</Text>
+                    <Text fw={700}>₹{totalCredit.toFixed(2)}</Text>
                   </td>
                   <td></td>
                 </tr>
@@ -342,21 +344,21 @@ const LedgerView = () => {
 
             {/* Summary */}
             <Paper p="md" mt="md" withBorder bg="gray.0">
-              <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+              <SimpleGrid cols={{ base: 1, sm: 3 }} gap="md">
                 <div>
-                  <Text size="sm" color="dimmed">Total Debit</Text>
-                  <Text size="lg" weight={700} color="red">
+                  <Text size="sm" c="dimmed">Total Debit</Text>
+                  <Text size="lg" fw={700} c="red">
                     ₹{totalDebit.toFixed(2)}
                   </Text>
                 </div>
                 <div>
-                  <Text size="sm" color="dimmed">Total Credit</Text>
-                  <Text size="lg" weight={700} color="green">
+                  <Text size="sm" c="dimmed">Total Credit</Text>
+                  <Text size="lg" fw={700} c="green">
                     ₹{totalCredit.toFixed(2)}
                   </Text>
                 </div>
                 <div>
-                  <Text size="sm" color="dimmed">Closing Balance</Text>
+                  <Text size="sm" c="dimmed">Closing Balance</Text>
                   <Badge
                     color={ledger.balanceType === 'Dr' ? 'red' : 'green'}
                     variant="filled"

@@ -88,8 +88,9 @@ const VyaparGSTR2 = () => {
   const fetchReport = async () => {
     setLoading(true);
     try {
-      const month = selectedMonth.getMonth() + 1;
-      const year = selectedMonth.getFullYear();
+      const d = dayjs(selectedMonth || new Date());
+      const month = d.month() + 1;
+      const year = d.year();
       const returnPeriod = `${String(month).padStart(2, '0')}${year}`;
 
       const response = await reportAPI.vyaparGSTR2({ returnPeriod });
@@ -175,8 +176,9 @@ const VyaparGSTR2 = () => {
     XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
 
     // Download
-    const month = String(selectedMonth.getMonth() + 1).padStart(2, '0');
-    const year = selectedMonth.getFullYear();
+    const d = dayjs(selectedMonth || new Date());
+    const month = String(d.month() + 1).padStart(2, '0');
+    const year = d.year();
     XLSX.writeFile(wb, `GSTR2_${month}${year}.xlsx`);
     message.success('GSTR-2 report exported successfully');
   };

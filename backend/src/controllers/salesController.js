@@ -60,22 +60,29 @@ export const createSale = async (req, res) => {
     // Calculate totals
     let subtotal = 0;
     let totalGst = 0;
+    let totalSubsidy = 0;
 
     saleData.items.forEach(item => {
       item.amount = item.quantity * item.rate;
       item.gstAmount = item.gstAmount || 0;
+      item.subsidyAmount = item.subsidyAmount || 0;
       subtotal += item.amount;
       totalGst += item.gstAmount;
+      totalSubsidy += item.subsidyAmount;
     });
+
+    const discount = parseFloat(saleData.discount) || 0;
 
     saleData.subtotal = subtotal;
     saleData.totalGst = totalGst;
-    saleData.grandTotal = subtotal + totalGst;
+    saleData.totalSubsidy = totalSubsidy;
+    saleData.grandTotal = subtotal - discount + totalGst - totalSubsidy + (parseFloat(saleData.roundOff) || 0);
     saleData.totalDue = (saleData.oldBalance || 0) + saleData.grandTotal;
-    saleData.balanceAmount = saleData.totalDue - (saleData.paidAmount || 0);
+    const rawBalance = saleData.totalDue - (saleData.paidAmount || 0);
+    saleData.balanceAmount = Math.max(0, rawBalance);
 
     // Determine payment status
-    if (saleData.balanceAmount === 0) {
+    if (rawBalance <= 0) {
       saleData.status = 'Paid';
     } else if (saleData.paidAmount > 0) {
       saleData.status = 'Partial';
@@ -88,16 +95,26 @@ export const createSale = async (req, res) => {
     await sale.save();
 
     // Create stock transactions (deduct stock)
-    await createBulkStockTransactions(
-      saleData.items,
-      'Sale',
-      sale._id
-    );
+    try {
+      await createBulkStockTransactions(
+        saleData.items,
+        'Sale',
+        sale._id
+      );
+    } catch (stockError) {
+      console.error('Error creating stock transactions:', stockError);
+    }
 
-    // Create accounting voucher
-    const voucher = await createSalesVoucher(sale);
-    sale.ledgerEntries = [voucher._id];
-    await sale.save();
+    // Create accounting voucher (non-blocking)
+    try {
+      const voucher = await createSalesVoucher(sale);
+      if (voucher) {
+        sale.ledgerEntries = [voucher._id];
+        await sale.save();
+      }
+    } catch (voucherError) {
+      console.error('Error creating sales voucher:', voucherError);
+    }
 
     res.status(201).json({
       success: true,
@@ -226,16 +243,23 @@ export const updateSale = async (req, res) => {
     // Recalculate totals
     let subtotal = 0;
     let totalGst = 0;
+    let totalSubsidy = 0;
 
     updatedSaleData.items.forEach(item => {
       item.amount = item.quantity * item.rate;
+      item.gstAmount = item.gstAmount || 0;
+      item.subsidyAmount = item.subsidyAmount || 0;
       subtotal += item.amount;
-      totalGst += item.gstAmount || 0;
+      totalGst += item.gstAmount;
+      totalSubsidy += item.subsidyAmount;
     });
+
+    const discount = parseFloat(updatedSaleData.discount) || 0;
 
     updatedSaleData.subtotal = subtotal;
     updatedSaleData.totalGst = totalGst;
-    updatedSaleData.grandTotal = subtotal + totalGst;
+    updatedSaleData.totalSubsidy = totalSubsidy;
+    updatedSaleData.grandTotal = subtotal - discount + totalGst - totalSubsidy + (parseFloat(updatedSaleData.roundOff) || 0);
 
     Object.assign(existingSale, updatedSaleData);
     await existingSale.save();

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Paper,
@@ -35,10 +35,12 @@ import {
 import { notifications } from '@mantine/notifications';
 import dayjs from 'dayjs';
 import { supplierAPI, voucherAPI, stockAPI } from '../../services/api';
+import { printReport } from '../../utils/printReport';
 
 const SupplierView = () => {
   const navigate = useNavigate();
   const { id } = useParams();
+  const printRef = useRef(null);
   const [supplier, setSupplier] = useState(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
@@ -187,7 +189,7 @@ const SupplierView = () => {
   };
 
   const handlePrint = () => {
-    window.print();
+    printReport(printRef, { title: 'Supplier Profile', orientation: 'landscape' });
   };
 
   const handleWhatsApp = () => {
@@ -205,7 +207,7 @@ const SupplierView = () => {
   }
 
   return (
-    <Box p="md">
+    <Box p="md" ref={printRef}>
       <Paper p="md" mb="md">
         <Group justify="space-between" mb="md">
           <div>

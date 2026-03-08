@@ -13,6 +13,11 @@ const customerSchema = new mongoose.Schema({
   district: { type: String },
   pincode: { type: String },
   panNumber: { type: String },
+  category: {
+    type: String,
+    enum: ['School', 'Anganwadi', 'Hospital', 'Booth', 'Hotel', 'Vendor Sales', 'Others'],
+    default: 'Others'
+  },
   active: { type: Boolean, default: true },
   ledgerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ledger' }, // Due By ledger
   dueToSocietyLedgerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ledger' }, // Due to Society ledger

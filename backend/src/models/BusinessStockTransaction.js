@@ -28,7 +28,7 @@ const businessStockTransactionSchema = new mongoose.Schema({
   },
   referenceType: {
     type: String,
-    enum: ['Purchase', 'Sale', 'Opening', 'Adjustment', 'Return', 'Transfer'],
+    enum: ['Purchase', 'Sale', 'Opening', 'Adjustment', 'Return', 'Sales Return', 'Transfer'],
     required: true
   },
   referenceId: {

@@ -5,7 +5,7 @@ import { reportAPI } from '../../../services/api';
 import { message } from '../../../utils/toast';
 import PageHeader from '../../common/PageHeader';
 import ExportButton from '../../common/ExportButton';
-import './VyaparSaleReport.css';
+import './VyaparReports.css';
 
 const VyaparLowStockSummary = () => {
   const { selectedBusinessType } = useCompany();

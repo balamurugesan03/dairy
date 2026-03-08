@@ -364,27 +364,24 @@ const VyaparSaleReport = () => {
               <Text weight={600} size="sm" style={{ color: '#455a64' }}>Filter by Date Range</Text>
               <Group spacing="xs">
                 <Button
-                  compact
                   variant="subtle"
-                  size="xs"
+                  size="compact-xs"
                   onClick={() => handleQuickFilter('today')}
                   style={{ border: '1px solid #e0e0e0' }}
                 >
                   Today
                 </Button>
                 <Button
-                  compact
                   variant="subtle"
-                  size="xs"
+                  size="compact-xs"
                   onClick={() => handleQuickFilter('thisWeek')}
                   style={{ border: '1px solid #e0e0e0' }}
                 >
                   This Week
                 </Button>
                 <Button
-                  compact
                   variant="subtle"
-                  size="xs"
+                  size="compact-xs"
                   onClick={() => handleQuickFilter('thisMonth')}
                   style={{ border: '1px solid #e0e0e0' }}
                 >
@@ -425,7 +422,7 @@ const VyaparSaleReport = () => {
           </Stack>
         </Paper>
 
-        <LoadingOverlay visible={loading} overlayBlur={2} />
+        <LoadingOverlay visible={loading} overlayProps={{ blur: 2 }} />
 
         {reportData && !loading && (
           <>

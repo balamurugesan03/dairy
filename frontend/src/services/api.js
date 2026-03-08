@@ -216,6 +216,7 @@ export const reportAPI = {
   subsidy: (params) => api.get('/reports/subsidy', { params }).then(res => res.data).catch(handleError),
   stockRegister: (params) => api.get('/reports/stock-register', { params }).then(res => res.data).catch(handleError),
   inventoryPurchaseRegister: (params) => api.get('/reports/inventory-purchase-register', { params }).then(res => res.data).catch(handleError),
+  milkBillAbstract: (params) => api.get('/reports/milk-bill-abstract', { params }).then(res => res.data).catch(handleError),
   // New accounting reports
   cashBook: (params) => api.get('/reports/cash-book', { params }).then(res => res.data).catch(handleError),
   generalLedger: (params) => api.get('/reports/general-ledger', { params }).then(res => res.data).catch(handleError),
@@ -241,7 +242,12 @@ export const reportAPI = {
   vyaparBankStatement: (params) => api.get('/reports/vyapar/bank-statement', { params }).then(res => res.data).catch(handleError),
   vyaparAllParties: (params) => api.get('/reports/vyapar/all-parties', { params }).then(res => res.data).catch(handleError),
   vyaparGSTR1: (params) => api.get('/reports/vyapar/gstr1', { params }).then(res => res.data).catch(handleError),
-  vyaparGSTR2: (params) => api.get('/reports/vyapar/gstr2', { params }).then(res => res.data).catch(handleError)
+  vyaparGSTR2: (params) => api.get('/reports/vyapar/gstr2', { params }).then(res => res.data).catch(handleError),
+  vyaparStockStatement: (params) => api.get('/reports/vyapar/stock-statement', { params }).then(res => res.data).catch(handleError),
+  vyaparDayBook: (params) => api.get('/reports/vyapar/day-book', { params }).then(res => res.data).catch(handleError),
+  vyaparCashBook: (params) => api.get('/reports/vyapar/cash-book', { params }).then(res => res.data).catch(handleError),
+  vyaparTradingAccount: (params) => api.get('/reports/vyapar/trading-account', { params }).then(res => res.data).catch(handleError),
+  salesRegister: (params) => api.get('/reports/sales-register', { params }).then(res => res.data).catch(handleError)
 };
 
 // DAY BOOK API
@@ -255,7 +261,9 @@ export const warrantyAPI = {
   getById: (id) => api.get(`/warranty/${id}`).then(res => res.data).catch(handleError),
   create: (data) => api.post('/warranty', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/warranty/${id}`, data).then(res => res.data).catch(handleError),
-  delete: (id) => api.delete(`/warranty/${id}`).then(res => res.data).catch(handleError)
+  delete: (id) => api.delete(`/warranty/${id}`).then(res => res.data).catch(handleError),
+  addClaim: (id, data) => api.post(`/warranty/${id}/claims`, data).then(res => res.data).catch(handleError),
+  updateClaim: (id, claimId, data) => api.put(`/warranty/${id}/claims/${claimId}`, data).then(res => res.data).catch(handleError)
 };
 
 // MACHINE APIs
@@ -264,7 +272,9 @@ export const machineAPI = {
   getById: (id) => api.get(`/machines/${id}`).then(res => res.data).catch(handleError),
   create: (data) => api.post('/machines', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/machines/${id}`, data).then(res => res.data).catch(handleError),
-  delete: (id) => api.delete(`/machines/${id}`).then(res => res.data).catch(handleError)
+  delete: (id) => api.delete(`/machines/${id}`).then(res => res.data).catch(handleError),
+  addMaintenance: (id, data) => api.post(`/machines/${id}/maintenance`, data).then(res => res.data).catch(handleError),
+  updateMaintenance: (id, logId, data) => api.put(`/machines/${id}/maintenance/${logId}`, data).then(res => res.data).catch(handleError)
 };
 
 // QUOTATION APIs
@@ -273,7 +283,9 @@ export const quotationAPI = {
   getById: (id) => api.get(`/quotations/${id}`).then(res => res.data).catch(handleError),
   create: (data) => api.post('/quotations', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/quotations/${id}`, data).then(res => res.data).catch(handleError),
-  delete: (id) => api.delete(`/quotations/${id}`).then(res => res.data).catch(handleError)
+  delete: (id) => api.delete(`/quotations/${id}`).then(res => res.data).catch(handleError),
+  convertToInvoice: (id, data) => api.post(`/quotations/${id}/convert`, data).then(res => res.data).catch(handleError),
+  send: (id, data) => api.post(`/quotations/${id}/send`, data).then(res => res.data).catch(handleError)
 };
 
 // PROMOTION APIs
@@ -336,7 +348,28 @@ export const milkCollectionAPI = {
   update: (id, data) => api.put(`/milk-collections/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/milk-collections/${id}`).then(res => res.data).catch(handleError),
   getFarmerHistory: (farmerNumber, params) => api.get(`/milk-collections/farmer/${farmerNumber}`, { params }).then(res => res.data).catch(handleError),
-  getFarmerStats: (farmerNumber, params) => api.get(`/milk-collections/farmer/${farmerNumber}/stats`, { params }).then(res => res.data).catch(handleError)
+  getFarmerStats: (farmerNumber, params) => api.get(`/milk-collections/farmer/${farmerNumber}/stats`, { params }).then(res => res.data).catch(handleError),
+  getFarmerWiseSummary: (params) => api.get('/milk-collections/summary/farmer-wise', { params }).then(res => res.data).catch(handleError),
+};
+
+// MILK SALES APIs
+export const milkSalesAPI = {
+  getAll:  (params) => api.get('/milk-sales', { params }).then(res => res.data).catch(handleError),
+  getById: (id)     => api.get(`/milk-sales/${id}`).then(res => res.data).catch(handleError),
+  create:  (data)   => api.post('/milk-sales', data).then(res => res.data).catch(handleError),
+  update:  (id, data) => api.put(`/milk-sales/${id}`, data).then(res => res.data).catch(handleError),
+  delete:  (id)     => api.delete(`/milk-sales/${id}`).then(res => res.data).catch(handleError),
+  getDailySummary:  (params) => api.get('/milk-sales/summary/daily',  { params }).then(res => res.data).catch(handleError),
+  getBalanceReport: (params) => api.get('/milk-sales/balance-report', { params }).then(res => res.data).catch(handleError),
+};
+
+// UNION SALES SLIP APIs
+export const unionSalesSlipAPI = {
+  getAll:  (params) => api.get('/union-sales-slips', { params }).then(res => res.data).catch(handleError),
+  getById: (id)     => api.get(`/union-sales-slips/${id}`).then(res => res.data).catch(handleError),
+  create:  (data)   => api.post('/union-sales-slips', data).then(res => res.data).catch(handleError),
+  update:  (id, data) => api.put(`/union-sales-slips/${id}`, data).then(res => res.data).catch(handleError),
+  delete:  (id)     => api.delete(`/union-sales-slips/${id}`).then(res => res.data).catch(handleError),
 };
 
 // EMPLOYEE APIs
@@ -409,15 +442,23 @@ export const salaryAPI = {
 export const leaveAPI = {
   getAll: (params) => api.get('/leaves', { params }).then(res => res.data).catch(handleError),
   getById: (id) => api.get(`/leaves/${id}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/leaves', data).then(res => res.data).catch(handleError),
   apply: (data) => api.post('/leaves', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/leaves/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/leaves/${id}`).then(res => res.data).catch(handleError),
   approve: (id, data) => api.patch(`/leaves/${id}/approve`, data).then(res => res.data).catch(handleError),
   reject: (id, data) => api.patch(`/leaves/${id}/reject`, data).then(res => res.data).catch(handleError),
-  cancel: (id) => api.patch(`/leaves/${id}/cancel`).then(res => res.data).catch(handleError),
-  getPending: () => api.get('/leaves/pending').then(res => res.data).catch(handleError),
-  getUpcoming: () => api.get('/leaves/upcoming').then(res => res.data).catch(handleError),
   getSummary: (employeeId, params) => api.get(`/leaves/${employeeId}/summary`, { params }).then(res => res.data).catch(handleError)
+};
+
+// LOAN APIs (Employee Loans / Advances)
+export const loanAPI = {
+  getAll: (params) => api.get('/loans', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/loans/${id}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/loans', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/loans/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/loans/${id}`).then(res => res.data).catch(handleError),
+  makePayment: (id, amount) => api.post(`/loans/${id}/payment`, { amount }).then(res => res.data).catch(handleError)
 };
 
 // COMPANY APIs
@@ -527,6 +568,46 @@ export const businessSalesAPI = {
   getSummary: (params) => api.get('/business-sales/summary', { params }).then(res => res.data).catch(handleError)
 };
 
+// PURCHASE RETURN APIs (Debit Note - for Private Firm)
+export const purchaseReturnAPI = {
+  getAll: (params) => api.get('/purchase-returns', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/purchase-returns/${id}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/purchase-returns', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/purchase-returns/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/purchase-returns/${id}`).then(res => res.data).catch(handleError),
+  getSummary: (params) => api.get('/purchase-returns/summary', { params }).then(res => res.data).catch(handleError)
+};
+
+// SALES RETURN APIs (Credit Note - for Private Firm)
+export const salesReturnAPI = {
+  getAll: (params) => api.get('/sales-returns', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/sales-returns/${id}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/sales-returns', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/sales-returns/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/sales-returns/${id}`).then(res => res.data).catch(handleError),
+  getSummary: (params) => api.get('/sales-returns/summary', { params }).then(res => res.data).catch(handleError)
+};
+
+// DAIRY PURCHASE RETURN APIs (Debit Note - for Dairy Cooperative)
+export const dairyPurchaseReturnAPI = {
+  getAll: (params) => api.get('/dairy-purchase-returns', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/dairy-purchase-returns/${id}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/dairy-purchase-returns', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/dairy-purchase-returns/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/dairy-purchase-returns/${id}`).then(res => res.data).catch(handleError),
+  getSummary: (params) => api.get('/dairy-purchase-returns/summary', { params }).then(res => res.data).catch(handleError)
+};
+
+// DAIRY SALES RETURN APIs (Credit Note - for Dairy Cooperative)
+export const dairySalesReturnAPI = {
+  getAll: (params) => api.get('/dairy-sales-returns', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/dairy-sales-returns/${id}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/dairy-sales-returns', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/dairy-sales-returns/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/dairy-sales-returns/${id}`).then(res => res.data).catch(handleError),
+  getSummary: (params) => api.get('/dairy-sales-returns/summary', { params }).then(res => res.data).catch(handleError)
+};
+
 // BUSINESS LEDGER APIs (Separate ledgers for Private Firm)
 export const businessLedgerAPI = {
   getAll: (params) => api.get('/business-accounting/ledgers', { params }).then(res => res.data).catch(handleError),
@@ -545,6 +626,191 @@ export const businessVoucherAPI = {
   createIncome: (data) => api.post('/business-accounting/income-voucher', data).then(res => res.data).catch(handleError),
   createExpense: (data) => api.post('/business-accounting/expense-voucher', data).then(res => res.data).catch(handleError),
   createJournal: (data) => api.post('/business-accounting/journal-voucher', data).then(res => res.data).catch(handleError)
+};
+
+// BUSINESS PROMOTION APIs (Vyapar-style for Private Firm)
+export const businessPromotionAPI = {
+  getAll: (params) => api.get('/business-promotions', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/business-promotions/${id}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/business-promotions', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/business-promotions/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/business-promotions/${id}`).then(res => res.data).catch(handleError),
+  validateCoupon: (data) => api.post('/business-promotions/validate-coupon', data).then(res => res.data).catch(handleError),
+  redeem: (data) => api.post('/business-promotions/redeem', data).then(res => res.data).catch(handleError),
+  getAnalytics: () => api.get('/business-promotions/analytics').then(res => res.data).catch(handleError),
+  getRedemptions: (id) => api.get(`/business-promotions/${id}/redemptions`).then(res => res.data).catch(handleError),
+  // Template APIs
+  createTemplate: (data) => api.post('/business-promotions/templates', data).then(res => res.data).catch(handleError),
+  getAllTemplates: (params) => api.get('/business-promotions/templates', { params }).then(res => res.data).catch(handleError),
+  getTemplateById: (id) => api.get(`/business-promotions/templates/${id}`).then(res => res.data).catch(handleError),
+  updateTemplate: (id, data) => api.put(`/business-promotions/templates/${id}`, data).then(res => res.data).catch(handleError),
+  deleteTemplate: (id) => api.delete(`/business-promotions/templates/${id}`).then(res => res.data).catch(handleError),
+  previewTemplate: (id, data) => api.post(`/business-promotions/templates/${id}/preview`, data).then(res => res.data).catch(handleError)
+};
+
+// RATE CHART APIs (Daily Collections - Dairy Cooperative)
+export const rateChartAPI = {
+  // Manual Entry
+  getManualEntries: ()        => api.get('/rate-charts/manual-entries').then(r => r.data).catch(handleError),
+  createManualEntry: (data)   => api.post('/rate-charts/manual-entries', data).then(r => r.data).catch(handleError),
+  updateManualEntry: (id, d)  => api.put(`/rate-charts/manual-entries/${id}`, d).then(r => r.data).catch(handleError),
+  deleteManualEntry: (id)     => api.delete(`/rate-charts/manual-entries/${id}`).then(r => r.data).catch(handleError),
+  // Apply Formula
+  getFormulas: ()             => api.get('/rate-charts/formulas').then(r => r.data).catch(handleError),
+  createFormula: (data)       => api.post('/rate-charts/formulas', data).then(r => r.data).catch(handleError),
+  updateFormula: (id, d)      => api.put(`/rate-charts/formulas/${id}`, d).then(r => r.data).catch(handleError),
+  deleteFormula: (id)         => api.delete(`/rate-charts/formulas/${id}`).then(r => r.data).catch(handleError),
+  // Low Chart
+  getLowCharts: ()            => api.get('/rate-charts/low-charts').then(r => r.data).catch(handleError),
+  createLowChart: (data)      => api.post('/rate-charts/low-charts', data).then(r => r.data).catch(handleError),
+  updateLowChart: (id, d)     => api.put(`/rate-charts/low-charts/${id}`, d).then(r => r.data).catch(handleError),
+  deleteLowChart: (id)        => api.delete(`/rate-charts/low-charts/${id}`).then(r => r.data).catch(handleError),
+  // Gold / Less / Existing Chart
+  getGoldLessCharts: ()       => api.get('/rate-charts/gold-less-charts').then(r => r.data).catch(handleError),
+  createGoldLessChart: (data) => api.post('/rate-charts/gold-less-charts', data).then(r => r.data).catch(handleError),
+  updateGoldLessChart: (id,d) => api.put(`/rate-charts/gold-less-charts/${id}`, d).then(r => r.data).catch(handleError),
+  deleteGoldLessChart: (id)   => api.delete(`/rate-charts/gold-less-charts/${id}`).then(r => r.data).catch(handleError),
+  // Slab Rate
+  getSlabRates: ()            => api.get('/rate-charts/slab-rates').then(r => r.data).catch(handleError),
+  createSlabRate: (data)      => api.post('/rate-charts/slab-rates', data).then(r => r.data).catch(handleError),
+  updateSlabRate: (id, d)     => api.put(`/rate-charts/slab-rates/${id}`, d).then(r => r.data).catch(handleError),
+  deleteSlabRate: (id)        => api.delete(`/rate-charts/slab-rates/${id}`).then(r => r.data).catch(handleError)
+};
+
+// AGENT APIs (Dairy Cooperative - Collection Agents)
+export const agentAPI = {
+  getAll: (params) => api.get('/agents', { params }).then(res => res.data).catch(handleError),
+  getAllActive: () => api.get('/agents', { params: { all: 'true' } }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/agents/${id}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/agents', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/agents/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/agents/${id}`).then(res => res.data).catch(handleError),
+  toggleStatus: (id) => api.patch(`/agents/${id}/status`).then(res => res.data).catch(handleError)
+};
+
+// ─── MILK PURCHASE SETTINGS APIs (Daily Collections - Dairy Cooperative) ─────
+export const salesmanAPI = {
+  getAll: (params) => api.get('/salesman', { params }).then(res => res.data).catch(handleError),
+  search: (query) => api.get('/salesman/search', { params: { query } }).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/salesman', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/salesman/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/salesman/${id}`).then(res => res.data).catch(handleError)
+};
+
+export const milkPurchaseSettingsAPI = {
+  // GET full settings (auto-creates with defaults if first time)
+  getSettings    : ()      => api.get('/milk-purchase-settings').then(r => r.data).catch(handleError),
+
+  // GET lightweight summary (quantityUnit, combo, printSize, machines) – used in MilkPurchase screen
+  getSummary     : ()      => api.get('/milk-purchase-settings/summary').then(r => r.data).catch(handleError),
+
+  // PUT upsert – send full or partial settings object
+  saveSettings   : (data)  => api.put('/milk-purchase-settings', data).then(r => r.data).catch(handleError),
+
+  // DELETE /reset – restore all settings to factory defaults
+  resetSettings  : ()      => api.delete('/milk-purchase-settings/reset').then(r => r.data).catch(handleError),
+
+  // PATCH /machines/:key – toggle a single device  { enabled: true|false }
+  toggleMachine  : (key, enabled) =>
+    api.patch(`/milk-purchase-settings/machines/${key}`, { enabled }).then(r => r.data).catch(handleError),
+};
+
+// MILK SALES RATE APIs
+export const milkSalesRateAPI = {
+  // Get all rates with optional pagination/search/filter
+  getAll: (params = {}) =>
+    api.get('/milk-sales-rates', { params }).then(res => res.data).catch(handleError),
+
+  // Get latest active rate for a party + salesItem (used during billing)
+  getLatest: (partyId, salesItem, date) =>
+    api.get('/milk-sales-rates/latest', { params: { partyId, salesItem, date } })
+      .then(res => res.data).catch(handleError),
+
+  // Get full rate history for a specific party
+  getHistory: (partyId) =>
+    api.get(`/milk-sales-rates/history/${partyId}`).then(res => res.data).catch(handleError),
+
+  // Create new rate entry
+  create: (data) =>
+    api.post('/milk-sales-rates', data).then(res => res.data).catch(handleError),
+
+  // Update existing rate entry
+  update: (id, data) =>
+    api.put(`/milk-sales-rates/${id}`, data).then(res => res.data).catch(handleError),
+};
+
+// ─── SHIFT INCENTIVE APIs ─────────────────────────────────────────────────────
+export const shiftIncentiveAPI = {
+  // GET all (paginated + filters)
+  getAll: (params = {}) =>
+    api.get('/shift-incentives', { params }).then(r => r.data).catch(handleError),
+
+  // GET single record by ID
+  getById: (id) =>
+    api.get(`/shift-incentives/${id}`).then(r => r.data).catch(handleError),
+
+  // GET active incentives for billing integration with milk purchase
+  getActive: (params = {}) =>
+    api.get('/shift-incentives/active', { params }).then(r => r.data).catch(handleError),
+
+  // POST create new
+  create: (data) =>
+    api.post('/shift-incentives', data).then(r => r.data).catch(handleError),
+
+  // PUT update
+  update: (id, data) =>
+    api.put(`/shift-incentives/${id}`, data).then(r => r.data).catch(handleError),
+
+  // PATCH toggle active / inactive
+  toggleStatus: (id) =>
+    api.patch(`/shift-incentives/${id}/status`).then(r => r.data).catch(handleError),
+
+  // DELETE soft-delete (sets inactive)
+  delete: (id) =>
+    api.delete(`/shift-incentives/${id}`).then(r => r.data).catch(handleError),
+};
+
+export const timeIncentiveAPI = {
+  getAll:       (params = {}) => api.get('/time-incentives', { params }).then(r => r.data).catch(handleError),
+  getById:      (id)          => api.get(`/time-incentives/${id}`).then(r => r.data).catch(handleError),
+  create:       (data)        => api.post('/time-incentives', data).then(r => r.data).catch(handleError),
+  update:       (id, data)    => api.put(`/time-incentives/${id}`, data).then(r => r.data).catch(handleError),
+  toggleStatus: (id)          => api.patch(`/time-incentives/${id}/status`).then(r => r.data).catch(handleError),
+  delete:       (id)          => api.delete(`/time-incentives/${id}`).then(r => r.data).catch(handleError),
+};
+
+// ─── EARNING / DEDUCTION MASTER APIs ─────────────────────────────────────────
+export const earningDeductionAPI = {
+  getAll:       (params = {}) => api.get('/earning-deductions', { params }).then(r => r.data).catch(handleError),
+  getActive:    ()            => api.get('/earning-deductions/active').then(r => r.data).catch(handleError),
+  getById:      (id)          => api.get(`/earning-deductions/${id}`).then(r => r.data).catch(handleError),
+  create:       (data)        => api.post('/earning-deductions', data).then(r => r.data).catch(handleError),
+  update:       (id, data)    => api.put(`/earning-deductions/${id}`, data).then(r => r.data).catch(handleError),
+  toggleStatus: (id)          => api.patch(`/earning-deductions/${id}/status`).then(r => r.data).catch(handleError),
+  delete:             (id)     => api.delete(`/earning-deductions/${id}`).then(r => r.data).catch(handleError),
+  bulkUpdateSettings: (items)  => api.put('/earning-deductions/settings/bulk', { items }).then(r => r.data).catch(handleError),
+};
+
+export const periodicalRuleAPI = {
+  getAll:       (params = {}) => api.get('/periodical-rules', { params }).then(r => r.data).catch(handleError),
+  create:       (data)        => api.post('/periodical-rules', data).then(r => r.data).catch(handleError),
+  toggleStatus: (id)          => api.patch(`/periodical-rules/${id}/status`).then(r => r.data).catch(handleError),
+  delete:       (id)          => api.delete(`/periodical-rules/${id}`).then(r => r.data).catch(handleError),
+};
+
+export const historicalRuleAPI = {
+  getAll: (params = {}) => api.get('/historical-rules', { params }).then(r => r.data).catch(handleError),
+  create: (data)        => api.post('/historical-rules', data).then(r => r.data).catch(handleError),
+  delete: (id)          => api.delete(`/historical-rules/${id}`).then(r => r.data).catch(handleError),
+};
+
+export const individualTransactionAPI = {
+  getAll:          (params = {}) => api.get('/individual-transactions', { params }).then(r => r.data).catch(handleError),
+  getById:         (id)          => api.get(`/individual-transactions/${id}`).then(r => r.data).catch(handleError),
+  create:          (data)        => api.post('/individual-transactions', data).then(r => r.data).catch(handleError),
+  update:          (id, data)    => api.put(`/individual-transactions/${id}`, data).then(r => r.data).catch(handleError),
+  delete:          (id)          => api.delete(`/individual-transactions/${id}`).then(r => r.data).catch(handleError),
+  lookupProducer:  (code)        => api.get(`/individual-transactions/lookup/${code}`).then(r => r.data).catch(handleError),
 };
 
 export default api;

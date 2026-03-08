@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Paper,
@@ -10,14 +10,11 @@ import {
   Select,
   Table,
   Badge,
-  Button,
   ActionIcon,
   Tooltip,
   Collapse,
   Divider,
   Flex,
-  TextInput,
-  Radio,
   LoadingOverlay,
   Card,
   SimpleGrid,
@@ -35,12 +32,10 @@ import {
   IconChevronUp,
   IconFilter,
   IconRefresh,
-  IconSearch,
   IconCash,
   IconReceipt,
   IconArrowUpRight,
   IconArrowDownRight,
-  IconScale,
   IconShoppingCart,
   IconPackage,
   IconReportMoney
@@ -49,17 +44,15 @@ import dayjs from 'dayjs';
 import quarterOfYear from 'dayjs/plugin/quarterOfYear';
 dayjs.extend(quarterOfYear);
 import { useCompany } from '../../../context/CompanyContext';
-import { reportAPI, customerAPI, supplierAPI, ledgerAPI } from '../../../services/api';
+import { reportAPI, customerAPI, supplierAPI } from '../../../services/api';
 import { message } from '../../../utils/toast';
 import * as XLSX from 'xlsx';
 
 const VyaparPartyStatement = () => {
   const { selectedBusinessType } = useCompany();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const printRef = useRef();
 
-  // State
   const [loading, setLoading] = useState(false);
   const [partiesLoading, setPartiesLoading] = useState(false);
   const [reportData, setReportData] = useState(null);
@@ -67,7 +60,6 @@ const VyaparPartyStatement = () => {
   const [parties, setParties] = useState([]);
   const [searchValue, setSearchValue] = useState('');
   const [summaryExpanded, setSummaryExpanded] = useState(true);
-  const [viewMode, setViewMode] = useState('vyapar'); // vyapar or accounting
 
   // Date filter state
   const [dateFilterType, setDateFilterType] = useState('thisMonth');
@@ -76,11 +68,8 @@ const VyaparPartyStatement = () => {
     dayjs().endOf('month').toDate()
   ]);
 
-  // Column filters
-  const [columnFilters, setColumnFilters] = useState({
-    transactionType: '',
-    paymentType: ''
-  });
+  // Column filter
+  const [txnTypeFilter, setTxnTypeFilter] = useState('');
 
   const dateFilterOptions = [
     { value: 'today', label: 'Today' },
@@ -94,7 +83,7 @@ const VyaparPartyStatement = () => {
     { value: 'custom', label: 'Custom Range' }
   ];
 
-  // Redirect if wrong business type
+  // Redirect if not Private Firm
   useEffect(() => {
     if (selectedBusinessType !== 'Private Firm') {
       message.warning('This report is only available for Private Firm');
@@ -102,144 +91,64 @@ const VyaparPartyStatement = () => {
     }
   }, [selectedBusinessType, navigate]);
 
-  // Fetch parties on mount
+  // Load parties on mount
   useEffect(() => {
     fetchParties();
   }, []);
 
-  // Check for party param from URL
+  // Update dateRange when period dropdown changes
   useEffect(() => {
-    const partyFromUrl = searchParams.get('party');
-    if (partyFromUrl && parties.length > 0) {
-      setSelectedParty(partyFromUrl);
+    if (dateFilterType === 'custom') return;
+    const now = dayjs();
+    let start, end;
+    switch (dateFilterType) {
+      case 'today':      start = now.startOf('day');    end = now.endOf('day');    break;
+      case 'yesterday':  start = now.subtract(1,'day').startOf('day'); end = now.subtract(1,'day').endOf('day'); break;
+      case 'thisWeek':   start = now.startOf('week');   end = now.endOf('week');   break;
+      case 'lastWeek':   start = now.subtract(1,'week').startOf('week'); end = now.subtract(1,'week').endOf('week'); break;
+      case 'thisMonth':  start = now.startOf('month');  end = now.endOf('month');  break;
+      case 'lastMonth':  start = now.subtract(1,'month').startOf('month'); end = now.subtract(1,'month').endOf('month'); break;
+      case 'thisQuarter':start = now.startOf('quarter'); end = now.endOf('quarter'); break;
+      case 'thisYear':   start = now.startOf('year');   end = now.endOf('year');   break;
+      default:           start = now.startOf('month');  end = now.endOf('month');
     }
-  }, [searchParams, parties]);
+    setDateRange([start.toDate(), end.toDate()]);
+  }, [dateFilterType]);
 
   // Fetch report when party or date changes
   useEffect(() => {
-    if (selectedParty && parties.length > 0) {
+    if (selectedParty) {
       fetchReport();
     }
-  }, [selectedParty, dateRange, parties]);
-
-  // Update date range when filter type changes
-  useEffect(() => {
-    const now = dayjs();
-    let start, end;
-
-    switch (dateFilterType) {
-      case 'today':
-        start = now.startOf('day');
-        end = now.endOf('day');
-        break;
-      case 'yesterday':
-        start = now.subtract(1, 'day').startOf('day');
-        end = now.subtract(1, 'day').endOf('day');
-        break;
-      case 'thisWeek':
-        start = now.startOf('week');
-        end = now.endOf('week');
-        break;
-      case 'lastWeek':
-        start = now.subtract(1, 'week').startOf('week');
-        end = now.subtract(1, 'week').endOf('week');
-        break;
-      case 'thisMonth':
-        start = now.startOf('month');
-        end = now.endOf('month');
-        break;
-      case 'lastMonth':
-        start = now.subtract(1, 'month').startOf('month');
-        end = now.subtract(1, 'month').endOf('month');
-        break;
-      case 'thisQuarter':
-        start = now.startOf('quarter');
-        end = now.endOf('quarter');
-        break;
-      case 'thisYear':
-        start = now.startOf('year');
-        end = now.endOf('year');
-        break;
-      case 'custom':
-        return; // Don't update for custom
-      default:
-        start = now.startOf('month');
-        end = now.endOf('month');
-    }
-
-    setDateRange([start.toDate(), end.toDate()]);
-  }, [dateFilterType]);
+  }, [selectedParty, dateRange]);
 
   const fetchParties = async () => {
     setPartiesLoading(true);
     try {
-      const [customersRes, suppliersRes, ledgersRes] = await Promise.all([
+      const [custRes, suppRes] = await Promise.all([
         customerAPI.getAll({ limit: 1000 }),
-        supplierAPI.getAll({ limit: 1000 }),
-        ledgerAPI.getAll({ limit: 1000 })
+        supplierAPI.getAll({ limit: 1000 })
       ]);
 
-      const customers = customersRes.data || customersRes.customers || [];
-      const suppliers = suppliersRes.data || suppliersRes.suppliers || [];
-      const ledgers = ledgersRes.data?.ledgers || ledgersRes.ledgers || ledgersRes.data || [];
+      const customers = custRes.data || custRes.customers || [];
+      const suppliers = suppRes.data || suppRes.suppliers || [];
 
-      // Create entity to ledger map
-      const entityToLedger = new Map();
-      ledgers.forEach(ledger => {
-        if (ledger.linkedEntity?.entityId) {
-          entityToLedger.set(ledger.linkedEntity.entityId.toString(), ledger._id);
-        }
-      });
-
-      const partyList = [];
-
-      // Add customers
-      customers.forEach(customer => {
-        const ledgerId = customer.ledgerId || entityToLedger.get(customer._id.toString());
-        const ledgerIdStr = ledgerId ? (typeof ledgerId === 'object' ? ledgerId._id?.toString() || ledgerId.toString() : ledgerId.toString()) : null;
-
-        partyList.push({
-          value: ledgerIdStr || `customer_${customer._id}`,
-          label: `${customer.name || customer.customerName} (Customer)`,
-          type: 'Customer',
-          phone: customer.phone || customer.mobileNumber,
-          email: customer.email,
-          hasLedger: !!ledgerIdStr
-        });
-      });
-
-      // Add suppliers
-      suppliers.forEach(supplier => {
-        const ledgerId = supplier.dueToLedgerId || entityToLedger.get(supplier._id.toString());
-        const ledgerIdStr = ledgerId ? (typeof ledgerId === 'object' ? ledgerId._id?.toString() || ledgerId.toString() : ledgerId.toString()) : null;
-
-        partyList.push({
-          value: ledgerIdStr || `supplier_${supplier._id}`,
-          label: `${supplier.name || supplier.supplierName} (Supplier)`,
-          type: 'Supplier',
-          phone: supplier.phone || supplier.mobileNumber,
-          email: supplier.email,
-          hasLedger: !!ledgerIdStr
-        });
-      });
-
-      // Add unlinked party ledgers
-      ledgers.forEach(ledger => {
-        if (['Sundry Debtors', 'Sundry Creditors'].includes(ledger.ledgerType)) {
-          const ledgerIdStr = ledger._id?.toString() || ledger._id;
-          const existing = partyList.find(p => p.value === ledgerIdStr);
-          if (!existing) {
-            partyList.push({
-              value: ledgerIdStr,
-              label: `${ledger.ledgerName} (${ledger.ledgerType === 'Sundry Debtors' ? 'Customer' : 'Supplier'})`,
-              type: ledger.ledgerType === 'Sundry Debtors' ? 'Customer' : 'Supplier',
-              phone: '',
-              email: '',
-              hasLedger: true
-            });
-          }
-        }
-      });
+      const partyList = [
+        ...customers.map(c => ({
+          value: c._id?.toString(),
+          label: `${c.name || c.customerName} (Customer)`,
+          partyName: c.name || c.customerName,
+          partyType: 'customer',
+          phone: c.phone || c.mobileNumber || ''
+        })),
+        ...suppliers.map(s => ({
+          value: s._id?.toString(),
+          label: `${s.name || s.supplierName} (Supplier)`,
+          partyName: s.name || s.supplierName,
+          partyType: 'supplier',
+          phone: s.phone || s.mobileNumber || ''
+        }))
+      ];
 
       setParties(partyList);
     } catch (error) {
@@ -251,22 +160,15 @@ const VyaparPartyStatement = () => {
   };
 
   const fetchReport = async () => {
-    if (!selectedParty) {
-      message.warning('Please select a party');
-      return;
-    }
-
-    const selectedPartyData = parties.find(p => p.value === selectedParty);
-    if (selectedPartyData && !selectedPartyData.hasLedger) {
-      message.warning('No ledger found for this party. Create a ledger first to view statement.');
-      setReportData(null);
-      return;
-    }
+    if (!selectedParty) return;
+    const partyData = parties.find(p => p.value === selectedParty);
+    if (!partyData) return;
 
     setLoading(true);
     try {
       const response = await reportAPI.vyaparPartyStatement({
-        ledgerId: selectedParty,
+        partyId: selectedParty,
+        partyType: partyData.partyType,
         filterType: 'custom',
         customStart: dayjs(dateRange[0]).format('YYYY-MM-DD'),
         customEnd: dayjs(dateRange[1]).format('YYYY-MM-DD')
@@ -280,13 +182,6 @@ const VyaparPartyStatement = () => {
     }
   };
 
-  const handleRefresh = () => {
-    fetchParties();
-    if (selectedParty) {
-      fetchReport();
-    }
-  };
-
   const formatCurrency = (amount) => {
     const num = parseFloat(amount || 0);
     return `₹${num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -295,88 +190,80 @@ const VyaparPartyStatement = () => {
   const formatDate = (date) => dayjs(date).format('DD/MM/YYYY');
 
   const handleExportExcel = () => {
-    if (!reportData?.transactions?.length) {
-      message.warning('No data to export');
-      return;
-    }
-
-    const exportData = reportData.transactions.map(txn => ({
+    if (!filteredTransactions.length) { message.warning('No data to export'); return; }
+    const exportData = filteredTransactions.map(txn => ({
       'Date': formatDate(txn.date),
-      'Transaction Type': txn.transactionType || txn.voucherType,
-      'Reference No': txn.referenceNo || txn.voucherNumber,
-      'Payment Type': txn.paymentType || '-',
-      'Total Amount': txn.totalAmount || txn.debitAmount || txn.creditAmount || 0,
-      'Received Amount': txn.receivedAmount || 0,
-      'Transaction Balance': txn.transactionBalance || 0,
-      'Receivable Balance': txn.receivableBalance || 0,
-      'Payable Balance': txn.payableBalance || 0
+      'Type': txn.transactionType,
+      'Reference No': txn.referenceNo || '-',
+      'Payment Mode': txn.paymentType || '-',
+      'Total Amount': txn.totalAmount || 0,
+      'Received/Paid': txn.receivedAmount || 0,
+      'Due Amount': txn.transactionBalance || 0,
+      'Running Balance': txn.receivableBalance || txn.payableBalance || 0,
+      'Status': txn.paymentStatus || '-'
     }));
-
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Party Statement');
-    XLSX.writeFile(wb, `Party_Statement_${reportData.ledger?.ledgerName || 'Report'}_${dayjs().format('YYYY-MM-DD')}.xlsx`);
+    XLSX.writeFile(wb, `Party_Statement_${reportData?.party?.name || 'Report'}_${dayjs().format('YYYY-MM-DD')}.xlsx`);
     message.success('Exported to Excel successfully');
   };
 
   const handlePrint = () => {
     const printContent = printRef.current;
     if (!printContent) return;
-
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
       <html>
         <head>
-          <title>Party Statement - ${reportData?.ledger?.ledgerName || 'Report'}</title>
+          <title>Party Statement - ${reportData?.party?.name || 'Report'}</title>
           <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
+            body { font-family: Arial, sans-serif; padding: 20px; font-size: 12px; }
             table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
+            th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
             th { background-color: #f5f5f5; font-weight: 600; }
             .text-right { text-align: right; }
-            .header { margin-bottom: 20px; }
-            .summary { margin-top: 20px; padding: 15px; background: #f9f9f9; }
             @media print { body { -webkit-print-color-adjust: exact; } }
           </style>
         </head>
-        <body>
-          ${printContent.innerHTML}
-        </body>
+        <body>${printContent.innerHTML}</body>
       </html>
     `);
     printWindow.document.close();
     printWindow.print();
   };
 
-  const getTransactionTypeBadge = (type) => {
-    const typeConfig = {
-      'Sale': { color: 'green', label: 'Sale' },
-      'Purchase': { color: 'red', label: 'Purchase' },
-      'Receipt': { color: 'teal', label: 'Receipt' },
-      'Payment': { color: 'orange', label: 'Payment' },
-      'Journal': { color: 'blue', label: 'Journal' },
-      'Credit Note': { color: 'pink', label: 'Credit Note' },
-      'Debit Note': { color: 'grape', label: 'Debit Note' }
+  const getStatusBadge = (status) => {
+    const cfg = {
+      'Paid':    { color: 'green' },
+      'Partial': { color: 'orange' },
+      'Unpaid':  { color: 'red' }
     };
-    const config = typeConfig[type] || { color: 'gray', label: type || 'Other' };
-    return <Badge variant="light" color={config.color} size="sm">{config.label}</Badge>;
+    const c = cfg[status] || { color: 'gray' };
+    return <Badge variant="light" color={c.color} size="xs">{status || '-'}</Badge>;
   };
 
-  const selectedPartyDetails = parties.find(p => p.value === selectedParty);
+  const getTxnBadge = (type) => {
+    const cfg = {
+      'Sale':     { color: 'green' },
+      'Purchase': { color: 'red' },
+      'Receipt':  { color: 'teal' },
+      'Payment':  { color: 'orange' }
+    };
+    const c = cfg[type] || { color: 'gray' };
+    return <Badge variant="light" color={c.color} size="sm">{type || '-'}</Badge>;
+  };
 
-  // Filter transactions based on column filters
-  const filteredTransactions = reportData?.transactions?.filter(txn => {
-    if (columnFilters.transactionType && txn.transactionType !== columnFilters.transactionType) {
-      return false;
-    }
-    if (columnFilters.paymentType && txn.paymentType !== columnFilters.paymentType) {
-      return false;
-    }
-    return true;
-  }) || [];
+  const selectedPartyData = parties.find(p => p.value === selectedParty);
+  const isCustomer = selectedPartyData?.partyType === 'customer';
 
-  const transactionTypes = [...new Set(reportData?.transactions?.map(t => t.transactionType || t.voucherType).filter(Boolean))];
-  const paymentTypes = [...new Set(reportData?.transactions?.map(t => t.paymentType).filter(Boolean))];
+  const allTransactions = reportData?.transactions || [];
+  const filteredTransactions = txnTypeFilter
+    ? allTransactions.filter(t => t.transactionType === txnTypeFilter)
+    : allTransactions;
+
+  const txnTypes = [...new Set(allTransactions.map(t => t.transactionType).filter(Boolean))];
+  const summary = reportData?.summary || {};
 
   return (
     <Box pos="relative" p="md">
@@ -388,7 +275,7 @@ const VyaparPartyStatement = () => {
           <Title order={3} fw={600} c="dark">Party Statement</Title>
           <Group gap="xs">
             <Tooltip label="Refresh">
-              <ActionIcon variant="light" size="lg" onClick={handleRefresh}>
+              <ActionIcon variant="light" size="lg" onClick={() => { fetchParties(); if (selectedParty) fetchReport(); }}>
                 <IconRefresh size={18} />
               </ActionIcon>
             </Tooltip>
@@ -405,100 +292,85 @@ const VyaparPartyStatement = () => {
           </Group>
         </Group>
 
-        {/* Filters Row */}
+        {/* Filters */}
         <Flex gap="md" wrap="wrap" align="flex-end">
-          {/* Date Filter Dropdown */}
+          {/* Party Select */}
           <Select
-            label="Period"
-            placeholder="Select period"
-            data={dateFilterOptions}
-            value={dateFilterType}
-            onChange={setDateFilterType}
-            leftSection={<IconCalendar size={16} />}
-            style={{ minWidth: 150 }}
-            styles={{
-              input: { backgroundColor: '#fff', border: '1px solid #e0e0e0' }
-            }}
-          />
-
-          {/* Date Range */}
-          <DatePickerInput
-            type="range"
-            label="Date Range"
-            placeholder="Select date range"
-            value={dateRange}
-            onChange={setDateRange}
-            leftSection={<IconCalendar size={16} />}
-            style={{ minWidth: 280 }}
-            disabled={dateFilterType !== 'custom'}
-            styles={{
-              input: { backgroundColor: '#fff', border: '1px solid #e0e0e0' }
-            }}
-          />
-
-          {/* Party Selection */}
-          <Select
-            label="Party"
-            placeholder="Search and select party..."
+            label="Select Party"
+            placeholder="Search customer / supplier..."
             data={parties}
             value={selectedParty}
-            onChange={setSelectedParty}
+            onChange={(val) => { setSelectedParty(val); setReportData(null); setTxnTypeFilter(''); }}
             searchable
             clearable
             nothingFoundMessage="No parties found"
             leftSection={<IconUser size={16} />}
             searchValue={searchValue}
             onSearchChange={setSearchValue}
-            style={{ flex: 1, minWidth: 250 }}
-            styles={{
-              input: { backgroundColor: '#fff', border: '1px solid #e0e0e0' }
-            }}
+            style={{ flex: 1, minWidth: 260 }}
+            styles={{ input: { backgroundColor: '#fff', border: '1px solid #e0e0e0' } }}
           />
 
-          {/* View Toggle */}
-          <Box>
-            <Text size="sm" fw={500} mb={4}>View</Text>
-            <Radio.Group value={viewMode} onChange={setViewMode}>
-              <Group gap="md">
-                <Radio value="vyapar" label="Vyapar" size="sm" />
-                <Radio value="accounting" label="Accounting" size="sm" />
-              </Group>
-            </Radio.Group>
-          </Box>
+          {/* Period */}
+          <Select
+            label="Period"
+            data={dateFilterOptions}
+            value={dateFilterType}
+            onChange={setDateFilterType}
+            leftSection={<IconCalendar size={16} />}
+            style={{ minWidth: 155 }}
+            styles={{ input: { backgroundColor: '#fff', border: '1px solid #e0e0e0' } }}
+          />
+
+          {/* Date range — always enabled; switching dates auto-sets period to custom */}
+          <DatePickerInput
+            type="range"
+            label="Date Range"
+            placeholder="From → To"
+            value={dateRange}
+            onChange={(val) => { setDateRange(val); setDateFilterType('custom'); }}
+            leftSection={<IconCalendar size={16} />}
+            style={{ minWidth: 280 }}
+            styles={{ input: { backgroundColor: '#fff', border: '1px solid #e0e0e0' } }}
+          />
         </Flex>
       </Paper>
 
       {/* Party Info Bar */}
-      {selectedPartyDetails && reportData?.ledger && (
+      {selectedPartyData && reportData && (
         <Paper shadow="xs" p="sm" mb="md" withBorder style={{ backgroundColor: '#f8f9fa' }}>
           <Group justify="space-between">
             <Group gap="md">
-              <ThemeIcon size="lg" variant="light" color="blue" radius="xl">
+              <ThemeIcon size="lg" variant="light" color={isCustomer ? 'blue' : 'orange'} radius="xl">
                 <IconUser size={20} />
               </ThemeIcon>
               <Box>
-                <Text fw={600} size="sm">{reportData.ledger.ledgerName}</Text>
+                <Text fw={600} size="sm">{reportData.party?.name || selectedPartyData.partyName}</Text>
                 <Group gap="xs">
-                  <Badge size="xs" variant="outline" color={selectedPartyDetails.type === 'Customer' ? 'blue' : 'orange'}>
-                    {selectedPartyDetails.type}
+                  <Badge size="xs" variant="outline" color={isCustomer ? 'blue' : 'orange'}>
+                    {isCustomer ? 'Customer' : 'Supplier'}
                   </Badge>
-                  {selectedPartyDetails.phone && (
-                    <Text size="xs" c="dimmed">{selectedPartyDetails.phone}</Text>
+                  {selectedPartyData.phone && (
+                    <Text size="xs" c="dimmed">{selectedPartyData.phone}</Text>
                   )}
                 </Group>
               </Box>
             </Group>
             <Group gap="xl">
               <Box ta="right">
-                <Text size="xs" c="dimmed">Opening Balance</Text>
-                <Text fw={600} size="sm">
-                  {formatCurrency(reportData.summary?.openingBalance)} {reportData.summary?.openingBalanceType}
+                <Text size="xs" c="dimmed">{isCustomer ? 'Total Sale' : 'Total Purchase'}</Text>
+                <Text fw={600} size="sm" c={isCustomer ? 'green' : 'red'}>
+                  {formatCurrency(isCustomer ? summary.totalSale : summary.totalPurchase)}
                 </Text>
               </Box>
               <Box ta="right">
-                <Text size="xs" c="dimmed">Closing Balance</Text>
-                <Text fw={700} size="md" c={reportData.summary?.closingBalanceType === 'Dr' ? 'green' : 'red'}>
-                  {formatCurrency(reportData.summary?.closingBalance)} {reportData.summary?.closingBalanceType}
+                <Text size="xs" c="dimmed">{isCustomer ? 'Received' : 'Paid'}</Text>
+                <Text fw={600} size="sm">{formatCurrency(isCustomer ? summary.totalReceived : summary.totalPaid)}</Text>
+              </Box>
+              <Box ta="right" style={{ padding: '6px 14px', backgroundColor: isCustomer ? '#e8f5e9' : '#fff3e0', borderRadius: 8 }}>
+                <Text size="xs" c="dimmed">{isCustomer ? 'Receivable' : 'Payable'}</Text>
+                <Text fw={700} size="md" c={isCustomer ? 'green' : 'orange'}>
+                  {formatCurrency(isCustomer ? summary.totalReceivable : summary.totalPayable)}
                 </Text>
               </Box>
             </Group>
@@ -506,82 +378,49 @@ const VyaparPartyStatement = () => {
         </Paper>
       )}
 
-      {/* Main Table */}
+      {/* Table */}
       <Paper shadow="xs" withBorder style={{ backgroundColor: '#fff' }} ref={printRef}>
         <Box style={{ overflowX: 'auto' }}>
-          <Table striped highlightOnHover withTableBorder withColumnBorders style={{ minWidth: 1200 }}>
+          <Table striped highlightOnHover withTableBorder withColumnBorders style={{ minWidth: 1000 }}>
             <Table.Thead style={{ backgroundColor: '#f5f5f5' }}>
               <Table.Tr>
-                <Table.Th style={{ width: 100 }}>
-                  <Group gap={4}>
-                    Date
-                  </Group>
-                </Table.Th>
-                <Table.Th style={{ width: 140 }}>
-                  <Group gap={4}>
-                    Transaction Type
-                    <Menu shadow="md" width={150}>
-                      <Menu.Target>
-                        <ActionIcon variant="subtle" size="xs" color={columnFilters.transactionType ? 'blue' : 'gray'}>
-                          <IconFilter size={14} />
-                        </ActionIcon>
-                      </Menu.Target>
-                      <Menu.Dropdown>
-                        <Menu.Item onClick={() => setColumnFilters(f => ({ ...f, transactionType: '' }))}>
-                          All Types
-                        </Menu.Item>
-                        <Menu.Divider />
-                        {transactionTypes.map(type => (
-                          <Menu.Item
-                            key={type}
-                            onClick={() => setColumnFilters(f => ({ ...f, transactionType: type }))}
-                          >
-                            {type}
-                          </Menu.Item>
-                        ))}
-                      </Menu.Dropdown>
-                    </Menu>
-                  </Group>
-                </Table.Th>
-                <Table.Th style={{ width: 130 }}>Reference No</Table.Th>
+                <Table.Th style={{ width: 100 }}>Date</Table.Th>
                 <Table.Th style={{ width: 120 }}>
                   <Group gap={4}>
-                    Payment Type
-                    <Menu shadow="md" width={150}>
+                    Type
+                    <Menu shadow="md" width={140}>
                       <Menu.Target>
-                        <ActionIcon variant="subtle" size="xs" color={columnFilters.paymentType ? 'blue' : 'gray'}>
+                        <ActionIcon variant="subtle" size="xs" color={txnTypeFilter ? 'blue' : 'gray'}>
                           <IconFilter size={14} />
                         </ActionIcon>
                       </Menu.Target>
                       <Menu.Dropdown>
-                        <Menu.Item onClick={() => setColumnFilters(f => ({ ...f, paymentType: '' }))}>
-                          All
-                        </Menu.Item>
+                        <Menu.Item onClick={() => setTxnTypeFilter('')}>All</Menu.Item>
                         <Menu.Divider />
-                        {paymentTypes.map(type => (
-                          <Menu.Item
-                            key={type}
-                            onClick={() => setColumnFilters(f => ({ ...f, paymentType: type }))}
-                          >
-                            {type}
-                          </Menu.Item>
+                        {txnTypes.map(t => (
+                          <Menu.Item key={t} onClick={() => setTxnTypeFilter(t)}>{t}</Menu.Item>
                         ))}
                       </Menu.Dropdown>
                     </Menu>
                   </Group>
                 </Table.Th>
-                <Table.Th style={{ width: 120, textAlign: 'right' }}>Total Amount</Table.Th>
-                <Table.Th style={{ width: 120, textAlign: 'right' }}>Received Amt</Table.Th>
-                <Table.Th style={{ width: 120, textAlign: 'right' }}>Txn Balance</Table.Th>
-                <Table.Th style={{ width: 120, textAlign: 'right' }}>Receivable Bal</Table.Th>
-                <Table.Th style={{ width: 120, textAlign: 'right' }}>Payable Bal</Table.Th>
-                <Table.Th style={{ width: 60, textAlign: 'center' }}>Print</Table.Th>
+                <Table.Th style={{ width: 140 }}>Reference No</Table.Th>
+                <Table.Th style={{ width: 110 }}>Payment Mode</Table.Th>
+                <Table.Th style={{ width: 130, textAlign: 'right' }}>Total Amount</Table.Th>
+                <Table.Th style={{ width: 130, textAlign: 'right' }}>
+                  {isCustomer ? 'Received Amt' : 'Paid Amt'}
+                </Table.Th>
+                <Table.Th style={{ width: 120, textAlign: 'right' }}>Due Amount</Table.Th>
+                <Table.Th style={{ width: 140, textAlign: 'right' }}>
+                  {isCustomer ? 'Receivable Bal' : 'Payable Bal'}
+                </Table.Th>
+                <Table.Th style={{ width: 90, textAlign: 'center' }}>Status</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {!selectedParty ? (
                 <Table.Tr>
-                  <Table.Td colSpan={10}>
+                  <Table.Td colSpan={9}>
                     <Flex direction="column" align="center" justify="center" py={60}>
                       <IconUser size={48} color="#ccc" />
                       <Text c="dimmed" size="lg" mt="md">Select a party to view statement</Text>
@@ -591,58 +430,39 @@ const VyaparPartyStatement = () => {
                 </Table.Tr>
               ) : filteredTransactions.length === 0 ? (
                 <Table.Tr>
-                  <Table.Td colSpan={10}>
+                  <Table.Td colSpan={9}>
                     <Flex direction="column" align="center" justify="center" py={60}>
                       <IconReceipt size={48} color="#ccc" />
-                      <Text c="dimmed" size="lg" mt="md">No transactions to show</Text>
-                      <Text c="dimmed" size="sm">No transactions found for the selected period</Text>
+                      <Text c="dimmed" size="lg" mt="md">No transactions found</Text>
+                      <Text c="dimmed" size="sm">No records for the selected period</Text>
                     </Flex>
                   </Table.Td>
                 </Table.Tr>
               ) : (
                 filteredTransactions.map((txn, idx) => (
                   <Table.Tr key={idx}>
-                    <Table.Td>
-                      <Text size="sm">{formatDate(txn.date)}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      {getTransactionTypeBadge(txn.transactionType || txn.voucherType)}
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm" fw={500}>{txn.referenceNo || txn.voucherNumber}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm">{txn.paymentType || '-'}</Text>
+                    <Table.Td><Text size="sm">{formatDate(txn.date)}</Text></Table.Td>
+                    <Table.Td>{getTxnBadge(txn.transactionType)}</Table.Td>
+                    <Table.Td><Text size="sm" fw={500}>{txn.referenceNo || '-'}</Text></Table.Td>
+                    <Table.Td><Text size="sm">{txn.paymentType || '-'}</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      <Text size="sm" fw={500}>{formatCurrency(txn.totalAmount)}</Text>
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
-                      <Text size="sm" fw={500}>
-                        {formatCurrency(txn.totalAmount || txn.debitAmount || txn.creditAmount)}
+                      <Text size="sm" c="green" fw={500}>{formatCurrency(txn.receivedAmount)}</Text>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      <Text size="sm" c={txn.transactionBalance > 0 ? 'red' : 'dimmed'} fw={500}>
+                        {txn.transactionBalance > 0 ? formatCurrency(txn.transactionBalance) : '-'}
                       </Text>
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
-                      <Text size="sm" c="green">
-                        {formatCurrency(txn.receivedAmount || txn.creditAmount || 0)}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right' }}>
-                      <Text size="sm">{formatCurrency(txn.transactionBalance || 0)}</Text>
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right' }}>
-                      <Text size="sm" c="green" fw={500}>
-                        {txn.receivableBalance > 0 ? formatCurrency(txn.receivableBalance) : '-'}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right' }}>
-                      <Text size="sm" c="red" fw={500}>
-                        {txn.payableBalance > 0 ? formatCurrency(txn.payableBalance) : '-'}
+                      <Text size="sm" fw={600} c={isCustomer ? 'green.7' : 'orange.7'}>
+                        {formatCurrency(isCustomer ? txn.receivableBalance : txn.payableBalance)}
                       </Text>
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'center' }}>
-                      <Tooltip label="Print transaction">
-                        <ActionIcon variant="subtle" size="sm" color="gray">
-                          <IconPrinter size={14} />
-                        </ActionIcon>
-                      </Tooltip>
+                      {getStatusBadge(txn.paymentStatus)}
                     </Table.Td>
                   </Table.Tr>
                 ))
@@ -655,12 +475,17 @@ const VyaparPartyStatement = () => {
                     <Text fw={700}>Totals:</Text>
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'right' }}>
-                    <Text fw={700}>{formatCurrency(reportData?.summary?.totalAmount || reportData?.summary?.totalDebits)}</Text>
+                    <Text fw={700}>{formatCurrency(summary.totalDebits)}</Text>
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'right' }}>
-                    <Text fw={700} c="green">{formatCurrency(reportData?.summary?.totalReceived || reportData?.summary?.totalCredits)}</Text>
+                    <Text fw={700} c="green">{formatCurrency(summary.totalCredits)}</Text>
                   </Table.Td>
-                  <Table.Td colSpan={4}></Table.Td>
+                  <Table.Td style={{ textAlign: 'right' }}>
+                    <Text fw={700} c="red">
+                      {formatCurrency(isCustomer ? summary.totalReceivable : summary.totalPayable)}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td colSpan={2}></Table.Td>
                 </Table.Tr>
               </Table.Tfoot>
             )}
@@ -668,17 +493,14 @@ const VyaparPartyStatement = () => {
         </Box>
       </Paper>
 
-      {/* Collapsible Summary Panel */}
+      {/* Summary Panel */}
       {reportData && (
         <Paper shadow="xs" mt="md" withBorder style={{ backgroundColor: '#fff' }}>
-          <UnstyledButton
-            onClick={() => setSummaryExpanded(!summaryExpanded)}
-            style={{ width: '100%' }}
-          >
+          <UnstyledButton onClick={() => setSummaryExpanded(v => !v)} style={{ width: '100%' }}>
             <Group justify="space-between" p="md" style={{ backgroundColor: '#f5f5f5', borderBottom: summaryExpanded ? '1px solid #e0e0e0' : 'none' }}>
               <Group gap="sm">
                 <IconReportMoney size={20} />
-                <Text fw={600}>Party Statement Summary</Text>
+                <Text fw={600}>Party Summary</Text>
               </Group>
               {summaryExpanded ? <IconChevronUp size={20} /> : <IconChevronDown size={20} />}
             </Group>
@@ -686,108 +508,77 @@ const VyaparPartyStatement = () => {
 
           <Collapse in={summaryExpanded}>
             <Box p="md">
-              <SimpleGrid cols={{ base: 2, sm: 3, md: 6 }} spacing="md">
-                {/* Total Sale */}
-                <Card shadow="none" padding="md" radius="md" withBorder style={{ borderColor: '#e8f5e9' }}>
-                  <Group gap="sm" mb="xs">
-                    <ThemeIcon size="md" variant="light" color="green" radius="xl">
-                      <IconShoppingCart size={16} />
-                    </ThemeIcon>
-                    <Text size="xs" c="dimmed" fw={500}>Total Sale</Text>
-                  </Group>
-                  <Text fw={700} size="lg" c="green.7">
-                    {formatCurrency(reportData.summary?.totalSale || 0)}
-                  </Text>
-                </Card>
-
-                {/* Total Purchase */}
-                <Card shadow="none" padding="md" radius="md" withBorder style={{ borderColor: '#ffebee' }}>
-                  <Group gap="sm" mb="xs">
-                    <ThemeIcon size="md" variant="light" color="red" radius="xl">
-                      <IconPackage size={16} />
-                    </ThemeIcon>
-                    <Text size="xs" c="dimmed" fw={500}>Total Purchase</Text>
-                  </Group>
-                  <Text fw={700} size="lg" c="red.7">
-                    {formatCurrency(reportData.summary?.totalPurchase || 0)}
-                  </Text>
-                </Card>
-
-                {/* Total Expense */}
-                <Card shadow="none" padding="md" radius="md" withBorder style={{ borderColor: '#fff3e0' }}>
-                  <Group gap="sm" mb="xs">
-                    <ThemeIcon size="md" variant="light" color="orange" radius="xl">
-                      <IconReceipt size={16} />
-                    </ThemeIcon>
-                    <Text size="xs" c="dimmed" fw={500}>Total Expense</Text>
-                  </Group>
-                  <Text fw={700} size="lg" c="orange.7">
-                    {formatCurrency(reportData.summary?.totalExpense || 0)}
-                  </Text>
-                </Card>
-
-                {/* Total Money-In */}
-                <Card shadow="none" padding="md" radius="md" withBorder style={{ borderColor: '#e3f2fd' }}>
-                  <Group gap="sm" mb="xs">
-                    <ThemeIcon size="md" variant="light" color="blue" radius="xl">
-                      <IconArrowDownRight size={16} />
-                    </ThemeIcon>
-                    <Text size="xs" c="dimmed" fw={500}>Total Money-In</Text>
-                  </Group>
-                  <Text fw={700} size="lg" c="blue.7">
-                    {formatCurrency(reportData.summary?.totalMoneyIn || reportData.summary?.totalCredits || 0)}
-                  </Text>
-                </Card>
-
-                {/* Total Money-Out */}
-                <Card shadow="none" padding="md" radius="md" withBorder style={{ borderColor: '#fce4ec' }}>
-                  <Group gap="sm" mb="xs">
-                    <ThemeIcon size="md" variant="light" color="pink" radius="xl">
-                      <IconArrowUpRight size={16} />
-                    </ThemeIcon>
-                    <Text size="xs" c="dimmed" fw={500}>Total Money-Out</Text>
-                  </Group>
-                  <Text fw={700} size="lg" c="pink.7">
-                    {formatCurrency(reportData.summary?.totalMoneyOut || reportData.summary?.totalDebits || 0)}
-                  </Text>
-                </Card>
-
-                {/* Total Receivable - Highlighted */}
-                <Card shadow="sm" padding="md" radius="md" style={{ backgroundColor: '#e8f5e9', border: '2px solid #4caf50' }}>
-                  <Group gap="sm" mb="xs">
-                    <ThemeIcon size="md" variant="filled" color="green" radius="xl">
-                      <IconCash size={16} />
-                    </ThemeIcon>
-                    <Text size="xs" c="green.8" fw={600}>Total Receivable</Text>
-                  </Group>
-                  <Text fw={700} size="xl" c="green.8">
-                    {formatCurrency(reportData.summary?.totalReceivable || reportData.summary?.closingBalance || 0)}
-                  </Text>
-                </Card>
+              <SimpleGrid cols={{ base: 2, sm: isCustomer ? 3 : 3 }} spacing="md">
+                {isCustomer ? (
+                  <>
+                    <Card shadow="none" padding="md" radius="md" withBorder style={{ borderColor: '#e8f5e9' }}>
+                      <Group gap="sm" mb="xs">
+                        <ThemeIcon size="md" variant="light" color="green" radius="xl"><IconShoppingCart size={16} /></ThemeIcon>
+                        <Text size="xs" c="dimmed" fw={500}>Total Sale</Text>
+                      </Group>
+                      <Text fw={700} size="lg" c="green.7">{formatCurrency(summary.totalSale || 0)}</Text>
+                    </Card>
+                    <Card shadow="none" padding="md" radius="md" withBorder style={{ borderColor: '#e3f2fd' }}>
+                      <Group gap="sm" mb="xs">
+                        <ThemeIcon size="md" variant="light" color="blue" radius="xl"><IconArrowDownRight size={16} /></ThemeIcon>
+                        <Text size="xs" c="dimmed" fw={500}>Received</Text>
+                      </Group>
+                      <Text fw={700} size="lg" c="blue.7">{formatCurrency(summary.totalReceived || 0)}</Text>
+                    </Card>
+                    <Card shadow="sm" padding="md" radius="md" style={{ backgroundColor: '#e8f5e9', border: '2px solid #4caf50' }}>
+                      <Group gap="sm" mb="xs">
+                        <ThemeIcon size="md" variant="filled" color="green" radius="xl"><IconCash size={16} /></ThemeIcon>
+                        <Text size="xs" c="green.8" fw={600}>Receivable</Text>
+                      </Group>
+                      <Text fw={700} size="xl" c="green.8">{formatCurrency(summary.totalReceivable || 0)}</Text>
+                    </Card>
+                  </>
+                ) : (
+                  <>
+                    <Card shadow="none" padding="md" radius="md" withBorder style={{ borderColor: '#ffebee' }}>
+                      <Group gap="sm" mb="xs">
+                        <ThemeIcon size="md" variant="light" color="red" radius="xl"><IconPackage size={16} /></ThemeIcon>
+                        <Text size="xs" c="dimmed" fw={500}>Total Purchase</Text>
+                      </Group>
+                      <Text fw={700} size="lg" c="red.7">{formatCurrency(summary.totalPurchase || 0)}</Text>
+                    </Card>
+                    <Card shadow="none" padding="md" radius="md" withBorder style={{ borderColor: '#e3f2fd' }}>
+                      <Group gap="sm" mb="xs">
+                        <ThemeIcon size="md" variant="light" color="blue" radius="xl"><IconArrowUpRight size={16} /></ThemeIcon>
+                        <Text size="xs" c="dimmed" fw={500}>Paid</Text>
+                      </Group>
+                      <Text fw={700} size="lg" c="blue.7">{formatCurrency(summary.totalPaid || 0)}</Text>
+                    </Card>
+                    <Card shadow="sm" padding="md" radius="md" style={{ backgroundColor: '#fff3e0', border: '2px solid #ff9800' }}>
+                      <Group gap="sm" mb="xs">
+                        <ThemeIcon size="md" variant="filled" color="orange" radius="xl"><IconCash size={16} /></ThemeIcon>
+                        <Text size="xs" c="orange.9" fw={600}>Payable</Text>
+                      </Group>
+                      <Text fw={700} size="xl" c="orange.9">{formatCurrency(summary.totalPayable || 0)}</Text>
+                    </Card>
+                  </>
+                )}
               </SimpleGrid>
 
-              {/* Balance Summary */}
               <Divider my="md" />
               <Flex justify="flex-end" gap="xl">
                 <Box ta="right">
-                  <Text size="sm" c="dimmed">Opening Balance</Text>
-                  <Text fw={600}>
-                    {formatCurrency(reportData.summary?.openingBalance)} {reportData.summary?.openingBalanceType}
-                  </Text>
+                  <Text size="sm" c="dimmed">Total Transactions</Text>
+                  <Text fw={600}>{allTransactions.length}</Text>
                 </Box>
                 <Box ta="right">
-                  <Text size="sm" c="dimmed">Net Movement</Text>
-                  <Text fw={600}>
-                    {formatCurrency((reportData.summary?.totalDebits || 0) - (reportData.summary?.totalCredits || 0))}
+                  <Text size="sm" c="dimmed">Period</Text>
+                  <Text fw={600} size="sm">
+                    {dayjs(dateRange[0]).format('DD MMM YYYY')} – {dayjs(dateRange[1]).format('DD MMM YYYY')}
                   </Text>
                 </Box>
-                <Box ta="right" style={{ padding: '8px 16px', backgroundColor: reportData.summary?.closingBalanceType === 'Dr' ? '#e8f5e9' : '#ffebee', borderRadius: 8 }}>
-                  <Text size="sm" c="dimmed">Closing Balance</Text>
-                  <Text fw={700} size="lg" c={reportData.summary?.closingBalanceType === 'Dr' ? 'green' : 'red'}>
-                    {formatCurrency(reportData.summary?.closingBalance)} {reportData.summary?.closingBalanceType}
+                <Box ta="right" style={{ padding: '8px 16px', backgroundColor: isCustomer ? '#e8f5e9' : '#fff3e0', borderRadius: 8 }}>
+                  <Text size="sm" c="dimmed">{isCustomer ? 'Net Receivable' : 'Net Payable'}</Text>
+                  <Text fw={700} size="lg" c={isCustomer ? 'green' : 'orange'}>
+                    {formatCurrency(isCustomer ? summary.totalReceivable : summary.totalPayable)}
                   </Text>
-                  <Badge size="sm" color={reportData.summary?.closingBalanceType === 'Dr' ? 'green' : 'red'} variant="filled">
-                    {reportData.summary?.closingBalanceType === 'Dr' ? 'To Receive' : 'To Pay'}
+                  <Badge size="sm" color={isCustomer ? 'green' : 'orange'} variant="filled">
+                    {isCustomer ? 'To Receive' : 'To Pay'}
                   </Badge>
                 </Box>
               </Flex>

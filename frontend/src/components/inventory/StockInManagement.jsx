@@ -19,7 +19,8 @@ import {
   Paper,
   ThemeIcon,
   SimpleGrid,
-  Modal
+  Modal,
+  Pagination
 } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import {
@@ -68,6 +69,10 @@ const StockInManagement = () => {
     totalAmount: 0,
     totalPaid: 0
   });
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
 
   useEffect(() => {
     fetchTransactions();
@@ -119,6 +124,7 @@ const StockInManagement = () => {
 
   const handleFilterChange = (field, value) => {
     setFilters(prev => ({ ...prev, [field]: value }));
+    setCurrentPage(1);
   };
 
   const clearFilters = () => {
@@ -128,6 +134,7 @@ const StockInManagement = () => {
       referenceType: '',
       search: ''
     });
+    setCurrentPage(1);
   };
 
   const formatDate = (dateString) => {
@@ -311,13 +318,7 @@ const StockInManagement = () => {
           <Title order={2}>Stock In - Purchase Management</Title>
           <Text size="sm" c="dimmed">Manage inventory purchases and stock additions</Text>
         </div>
-        <Button
-            leftSection={<IconPlus size={16} />}
-            onClick={() => setModalOpen(true)}
-          >
-            Add Purchase
-          </Button>
-        <Group>
+          <Group>
           <Menu shadow="md" width={200}>
             <Menu.Target>
               <Button
@@ -353,7 +354,12 @@ const StockInManagement = () => {
           >
             Refresh
           </Button>
-          
+          <Button
+            leftSection={<IconPlus size={16} />}
+            onClick={() => setModalOpen(true)}
+          >
+            Add Purchase
+          </Button>
         </Group>
       </Group>
 
@@ -495,10 +501,16 @@ const StockInManagement = () => {
           </Badge>
         </Group>
 
-        {transactions.length > 0 ? (
+        {transactions.length > 0 ? (() => {
+          const totalPages = Math.ceil(transactions.length / perPage);
+          const start = (currentPage - 1) * perPage;
+          const paginatedTransactions = transactions.slice(start, start + perPage);
+          return (
+          <>
           <Table striped highlightOnHover withTableBorder>
             <Table.Thead>
               <Table.Tr>
+                <Table.Th>S.No</Table.Th>
                 <Table.Th>Date</Table.Th>
                 <Table.Th>Item</Table.Th>
                 <Table.Th>Quantity</Table.Th>
@@ -513,8 +525,11 @@ const StockInManagement = () => {
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {transactions.map((txn) => (
+              {paginatedTransactions.map((txn, idx) => (
                 <Table.Tr key={txn._id}>
+                  <Table.Td>
+                    <Text size="sm" c="dimmed">{start + idx + 1}</Text>
+                  </Table.Td>
                   <Table.Td>
                     <Text size="sm">{formatDate(txn.purchaseDate || txn.date)}</Text>
                   </Table.Td>
@@ -608,7 +623,35 @@ const StockInManagement = () => {
               ))}
             </Table.Tbody>
           </Table>
-        ) : (
+
+          {/* Pagination Footer */}
+          <Group justify="space-between" align="center" mt="md" pt="md" style={{ borderTop: '1px solid var(--mantine-color-gray-2)' }}>
+            <Group gap="xs" align="center">
+              <Text size="sm" c="dimmed">Rows per page:</Text>
+              <Select
+                size="xs"
+                value={String(perPage)}
+                onChange={v => { setPerPage(Number(v)); setCurrentPage(1); }}
+                data={['10', '20', '30', '50', '100']}
+                w={70}
+                styles={{ input: { textAlign: 'center' } }}
+              />
+              <Text size="sm" c="dimmed">
+                Showing {transactions.length === 0 ? 0 : start + 1}–{Math.min(start + perPage, transactions.length)} of {transactions.length}
+              </Text>
+            </Group>
+            {totalPages > 1 && (
+              <Pagination
+                value={currentPage}
+                onChange={setCurrentPage}
+                total={totalPages}
+                size="sm"
+              />
+            )}
+          </Group>
+          </>
+          );
+        })() : (
           <Paper p="xl" ta="center">
             <IconPackageImport size={48} style={{ opacity: 0.3 }} />
             <Text c="dimmed" mt="md">

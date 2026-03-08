@@ -1,428 +1,292 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { employeeAPI, departmentAPI, designationAPI } from '../../services/api';
-import { message } from '../../utils/toast';
-import PageHeader from '../common/PageHeader';
-import { showConfirmDialog } from '../common/ConfirmDialog';
-import { useAuth } from '../../context/AuthContext';
-import './EmployeeList.css';
+import {
+  Container, Title, Text, Paper, Group, Stack, Button, Select, Badge,
+  Table, ActionIcon, SimpleGrid, Card, LoadingOverlay, Tooltip, ThemeIcon,
+  TextInput, Modal, NumberInput, Textarea
+} from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
+import { useDisclosure } from '@mantine/hooks';
+import { modals } from '@mantine/modals';
+import { notifications } from '@mantine/notifications';
+import {
+  IconPlus, IconEdit, IconTrash, IconUsers, IconUserCheck,
+  IconUserOff, IconSearch, IconBriefcase, IconPhone, IconUser
+} from '@tabler/icons-react';
+import { employeeAPI } from '../../services/api';
+
+const DEPARTMENTS = ['Administration', 'Dairy', 'Finance', 'HR', 'IT', 'Operations', 'Production', 'Sales'];
+const ROLES = ['Manager', 'Supervisor', 'Operator', 'Accountant', 'Driver', 'Helper', 'Clerk', 'Other'];
+
+const defaultForm = {
+  name: '', mobile: '', address: '', department: '', role: '',
+  salary: '', joiningDate: new Date(), status: 'Active'
+};
 
 const EmployeeList = () => {
-  const navigate = useNavigate();
-  const { canWrite, canEdit, canDelete } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [departments, setDepartments] = useState([]);
-  const [designations, setDesignations] = useState([]);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState(null);
+  const [form, setForm] = useState(defaultForm);
+  const [editId, setEditId] = useState(null);
+  const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false);
+  const [stats, setStats] = useState({ total: 0, active: 0, inactive: 0 });
 
-  const [pagination, setPagination] = useState({
-    current: 1,
-    pageSize: 10,
-    total: 0
-  });
-
-  const [filters, setFilters] = useState({
-    search: '',
-    status: 'Active',
-    department: '',
-    designation: '',
-    employmentType: ''
-  });
-
-  const [statistics, setStatistics] = useState({
-    total: 0,
-    active: 0,
-    inactive: 0,
-    onLeave: 0
-  });
-
-  const [showFilters, setShowFilters] = useState(false);
-
-  useEffect(() => {
-    fetchDepartments();
-    fetchDesignations();
-  }, []);
-
-  useEffect(() => {
-    fetchEmployees();
-  }, [pagination.current, pagination.pageSize, filters]);
-
-  const fetchDepartments = async () => {
-    try {
-      const response = await departmentAPI.getActive();
-      setDepartments(response.data || []);
-    } catch (error) {
-      console.error('Failed to fetch departments:', error);
-    }
-  };
-
-  const fetchDesignations = async () => {
-    try {
-      const response = await designationAPI.getActive();
-      setDesignations(response.data || []);
-    } catch (error) {
-      console.error('Failed to fetch designations:', error);
-    }
-  };
+  useEffect(() => { fetchEmployees(); }, [search, statusFilter]);
 
   const fetchEmployees = async () => {
     setLoading(true);
     try {
-      const response = await employeeAPI.getAll({
-        page: pagination.current,
-        limit: pagination.pageSize,
-        ...filters
-      });
-
-      setEmployees(response.data || []);
-      setPagination(prev => ({
-        ...prev,
-        total: response.pagination?.total || 0
-      }));
-
-      if (response.statistics) {
-        setStatistics(response.statistics);
-      }
-    } catch (error) {
-      message.error(error.message || 'Failed to fetch employees');
+      const params = { limit: 200 };
+      if (search) params.search = search;
+      if (statusFilter) params.status = statusFilter;
+      const res = await employeeAPI.getAll(params);
+      setEmployees(res.data || []);
+      if (res.statistics) setStats(res.statistics);
+    } catch (err) {
+      notifications.show({ title: 'Error', message: 'Failed to load employees', color: 'red' });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSearch = (value) => {
-    setFilters({ ...filters, search: value });
-    setPagination({ ...pagination, current: 1 });
+  const handleSave = async () => {
+    if (!form.name || !form.mobile || !form.salary) {
+      return notifications.show({ title: 'Validation', message: 'Name, mobile and salary are required', color: 'orange' });
+    }
+    try {
+      const payload = { ...form, joiningDate: form.joiningDate };
+      if (editId) {
+        await employeeAPI.update(editId, payload);
+        notifications.show({ title: 'Success', message: 'Employee updated', color: 'green' });
+      } else {
+        await employeeAPI.create(payload);
+        notifications.show({ title: 'Success', message: 'Employee added', color: 'green' });
+      }
+      closeModal();
+      setForm(defaultForm);
+      setEditId(null);
+      fetchEmployees();
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message || 'Failed to save', color: 'red' });
+    }
   };
 
-  const handleFilterChange = (key, value) => {
-    setFilters({ ...filters, [key]: value });
-    setPagination({ ...pagination, current: 1 });
+  const handleEdit = (emp) => {
+    setForm({
+      name: emp.name, mobile: emp.mobile, address: emp.address || '',
+      department: emp.department || '', role: emp.role || '',
+      salary: emp.salary, joiningDate: emp.joiningDate ? new Date(emp.joiningDate) : new Date(),
+      status: emp.status
+    });
+    setEditId(emp._id);
+    openModal();
   };
 
-  const handlePageChange = (newPage) => {
-    setPagination({ ...pagination, current: newPage });
-  };
-
-  const handleDelete = async (id, employeeNumber) => {
-    const confirmed = await showConfirmDialog({
+  const handleDelete = (emp) => {
+    modals.openConfirmModal({
       title: 'Delete Employee',
-      content: `Are you sure you want to delete employee ${employeeNumber}? This will change their status to Inactive.`,
-      type: 'danger'
-    });
-
-    if (confirmed) {
-      try {
-        await employeeAPI.delete(id);
-        message.success('Employee deleted successfully');
-        fetchEmployees();
-      } catch (error) {
-        message.error(error.message || 'Failed to delete employee');
+      children: <Text size="sm">Delete <b>{emp.name}</b>? This cannot be undone.</Text>,
+      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          await employeeAPI.delete(emp._id);
+          notifications.show({ title: 'Deleted', message: 'Employee removed', color: 'green' });
+          fetchEmployees();
+        } catch (err) {
+          notifications.show({ title: 'Error', message: err.message, color: 'red' });
+        }
       }
-    }
-  };
-
-  const handleStatusChange = async (id, currentStatus) => {
-    const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
-    const confirmed = await showConfirmDialog({
-      title: 'Change Status',
-      content: `Change employee status to ${newStatus}?`,
-      type: 'warning'
     });
-
-    if (confirmed) {
-      try {
-        await employeeAPI.updateStatus(id, newStatus);
-        message.success('Status updated successfully');
-        fetchEmployees();
-      } catch (error) {
-        message.error(error.message || 'Failed to update status');
-      }
-    }
   };
 
-  const clearFilters = () => {
-    setFilters({
-      search: '',
-      status: 'Active',
-      department: '',
-      designation: '',
-      employmentType: ''
-    });
-    setPagination({ ...pagination, current: 1 });
+  const openAdd = () => {
+    setForm(defaultForm);
+    setEditId(null);
+    openModal();
   };
 
-  const getStatusBadgeClass = (status) => {
-    switch (status) {
-      case 'Active': return 'badge-success';
-      case 'Inactive': return 'badge-danger';
-      case 'On Leave': return 'badge-warning';
-      case 'Terminated': return 'badge-danger';
-      case 'Resigned': return 'badge-secondary';
-      default: return 'badge-secondary';
-    }
-  };
-
-  const totalPages = Math.ceil(pagination.total / pagination.pageSize);
+  const StatCard = ({ icon, label, value, color }) => (
+    <Card shadow="sm" padding="md" radius="md" withBorder>
+      <Group>
+        <ThemeIcon size={44} radius="md" variant="light" color={color}>{icon}</ThemeIcon>
+        <div>
+          <Text fw={700} size="xl">{value}</Text>
+          <Text size="sm" c="dimmed">{label}</Text>
+        </div>
+      </Group>
+    </Card>
+  );
 
   return (
-    <div className="employee-list-container">
-      <PageHeader
-        title="Employee Management"
-        subtitle="Manage your organization's employees"
-        extra={
-          <button
-            className="btn btn-primary"
-            onClick={() => navigate('/hrm/employees/add')}
-            disabled={!canWrite('hrm')}
-          >
-            <i className="icon-plus"></i> Add Employee
-          </button>
-        }
-      />
-
-      {/* Statistics Cards */}
-      <div className="statistics-grid">
-        <div className="stat-card stat-card-primary">
-          <div className="stat-icon">
-            <i className="icon-users"></i>
-          </div>
-          <div className="stat-content">
-            <div className="stat-value">{statistics.total}</div>
-            <div className="stat-label">Total Employees</div>
-          </div>
+    <Container size="xl" py="md">
+      <Group justify="space-between" mb="lg">
+        <div>
+          <Title order={2}>Employee Management</Title>
+          <Text c="dimmed" size="sm">Manage dairy society employees</Text>
         </div>
-        <div className="stat-card stat-card-success">
-          <div className="stat-icon">
-            <i className="icon-check-circle"></i>
-          </div>
-          <div className="stat-content">
-            <div className="stat-value">{statistics.active}</div>
-            <div className="stat-label">Active</div>
-          </div>
-        </div>
-        <div className="stat-card stat-card-warning">
-          <div className="stat-icon">
-            <i className="icon-calendar"></i>
-          </div>
-          <div className="stat-content">
-            <div className="stat-value">{statistics.onLeave}</div>
-            <div className="stat-label">On Leave</div>
-          </div>
-        </div>
-        <div className="stat-card stat-card-danger">
-          <div className="stat-icon">
-            <i className="icon-user-x"></i>
-          </div>
-          <div className="stat-content">
-            <div className="stat-value">{statistics.inactive}</div>
-            <div className="stat-label">Inactive</div>
-          </div>
-        </div>
-      </div>
+        <Button leftSection={<IconPlus size={18} />} onClick={openAdd}>Add Employee</Button>
+      </Group>
 
-      {/* Filter Section */}
-      <div className="filter-section">
-        <div className="filter-row">
-          <div className="search-box">
-            <i className="icon-search"></i>
-            <input
-              type="text"
-              placeholder="Search by name, number, phone, or email..."
-              value={filters.search}
-              onChange={(e) => handleSearch(e.target.value)}
-            />
-          </div>
-          <button
-            className="btn btn-outline"
-            onClick={() => setShowFilters(!showFilters)}
-          >
-            <i className="icon-filter"></i> {showFilters ? 'Hide' : 'Show'} Filters
-          </button>
-        </div>
+      <SimpleGrid cols={{ base: 1, sm: 3 }} mb="lg">
+        <StatCard icon={<IconUsers size={22} />} label="Total Employees" value={stats.total} color="blue" />
+        <StatCard icon={<IconUserCheck size={22} />} label="Active" value={stats.active} color="green" />
+        <StatCard icon={<IconUserOff size={22} />} label="Inactive" value={stats.inactive} color="gray" />
+      </SimpleGrid>
 
-        {showFilters && (
-          <div className="advanced-filters">
-            <div className="filter-group">
-              <label>Status</label>
-              <select
-                value={filters.status}
-                onChange={(e) => handleFilterChange('status', e.target.value)}
-              >
-                <option value="">All Status</option>
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-                <option value="On Leave">On Leave</option>
-                <option value="Terminated">Terminated</option>
-                <option value="Resigned">Resigned</option>
-              </select>
-            </div>
+      <Paper shadow="xs" p="md" radius="md" withBorder mb="lg">
+        <Group>
+          <TextInput
+            placeholder="Search by name..."
+            leftSection={<IconSearch size={16} />}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ flex: 1 }}
+          />
+          <Select
+            placeholder="All Status"
+            data={['Active', 'Inactive']}
+            value={statusFilter}
+            onChange={setStatusFilter}
+            clearable
+            w={160}
+          />
+        </Group>
+      </Paper>
 
-            <div className="filter-group">
-              <label>Department</label>
-              <select
-                value={filters.department}
-                onChange={(e) => handleFilterChange('department', e.target.value)}
-              >
-                <option value="">All Departments</option>
-                {departments.map(dept => (
-                  <option key={dept._id} value={dept._id}>{dept.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="filter-group">
-              <label>Designation</label>
-              <select
-                value={filters.designation}
-                onChange={(e) => handleFilterChange('designation', e.target.value)}
-              >
-                <option value="">All Designations</option>
-                {designations.map(desig => (
-                  <option key={desig._id} value={desig._id}>{desig.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="filter-group">
-              <label>Employment Type</label>
-              <select
-                value={filters.employmentType}
-                onChange={(e) => handleFilterChange('employmentType', e.target.value)}
-              >
-                <option value="">All Types</option>
-                <option value="Full-time">Full-time</option>
-                <option value="Part-time">Part-time</option>
-                <option value="Contract">Contract</option>
-                <option value="Temporary">Temporary</option>
-              </select>
-            </div>
-
-            <div className="filter-actions">
-              <button className="btn btn-secondary" onClick={clearFilters}>
-                Clear Filters
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Employee Table */}
-      <div className="table-container">
-        {loading ? (
-          <div className="loading-spinner">
-            <div className="spinner"></div>
-            <p>Loading employees...</p>
-          </div>
-        ) : employees.length === 0 ? (
-          <div className="empty-state">
-            <i className="icon-users"></i>
-            <h3>No employees found</h3>
-            <p>Try adjusting your filters or add a new employee</p>
-            <button className="btn btn-primary" onClick={() => navigate('/hrm/employees/add')}>
-              Add Employee
-            </button>
-          </div>
+      <Paper shadow="xs" radius="md" withBorder pos="relative">
+        <LoadingOverlay visible={loading} zIndex={10} overlayProps={{ blur: 2 }} />
+        {employees.length === 0 && !loading ? (
+          <Stack align="center" py={60} gap="md">
+            <ThemeIcon size={64} radius="xl" variant="light" color="gray"><IconUsers size={32} /></ThemeIcon>
+            <Title order={4} c="dimmed">No employees found</Title>
+            <Button variant="light" leftSection={<IconPlus size={16} />} onClick={openAdd}>Add Employee</Button>
+          </Stack>
         ) : (
-          <>
-            <table className="employee-table">
-              <thead>
-                <tr>
-                  <th>Employee No.</th>
-                  <th>Name</th>
-                  <th>Phone</th>
-                  <th>Department</th>
-                  <th>Designation</th>
-                  <th>Employment Type</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {employees.map((emp) => (
-                  <tr key={emp._id}>
-                    <td className="employee-number">{emp.employeeNumber}</td>
-                    <td>
-                      <div className="employee-info">
-                        <div className="employee-name">{emp.personalDetails?.name}</div>
-                        <div className="employee-email">{emp.personalDetails?.email}</div>
-                      </div>
-                    </td>
-                    <td>{emp.personalDetails?.phone}</td>
-                    <td>{emp.employmentDetails?.department?.name || '-'}</td>
-                    <td>{emp.employmentDetails?.designation?.name || '-'}</td>
-                    <td>{emp.employmentDetails?.employmentType}</td>
-                    <td>
-                      <span className={`badge ${getStatusBadgeClass(emp.employmentDetails?.status)}`}>
-                        {emp.employmentDetails?.status}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="action-buttons">
-                        <button
-                          className="btn-icon btn-view"
-                          onClick={() => navigate(`/hrm/employees/${emp._id}`)}
-                          title="View Details"
-                        >
-                          <i className="icon-eye"></i>
-                        </button>
-                        <button
-                          className="btn-icon btn-edit"
-                          onClick={() => navigate(`/hrm/employees/${emp._id}/edit`)}
-                          title="Edit"
-                          disabled={!canEdit('hrm')}
-                        >
-                          <i className="icon-edit"></i>
-                        </button>
-                        <button
-                          className="btn-icon btn-toggle"
-                          onClick={() => handleStatusChange(emp._id, emp.employmentDetails?.status)}
-                          title={emp.employmentDetails?.status === 'Active' ? 'Deactivate' : 'Activate'}
-                          disabled={!canEdit('hrm')}
-                        >
-                          <i className={emp.employmentDetails?.status === 'Active' ? 'icon-toggle-right' : 'icon-toggle-left'}></i>
-                        </button>
-                        <button
-                          className="btn-icon btn-delete"
-                          onClick={() => handleDelete(emp._id, emp.employeeNumber)}
-                          title="Delete"
-                          disabled={!canDelete('hrm')}
-                        >
-                          <i className="icon-trash"></i>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+          <Table.ScrollContainer minWidth={800}>
+            <Table striped highlightOnHover verticalSpacing="sm">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>#</Table.Th>
+                  <Table.Th>Name</Table.Th>
+                  <Table.Th>Mobile</Table.Th>
+                  <Table.Th>Department</Table.Th>
+                  <Table.Th>Role</Table.Th>
+                  <Table.Th ta="right">Salary</Table.Th>
+                  <Table.Th>Joining Date</Table.Th>
+                  <Table.Th>Status</Table.Th>
+                  <Table.Th ta="center">Actions</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {employees.map((emp, i) => (
+                  <Table.Tr key={emp._id}>
+                    <Table.Td><Text size="sm" c="dimmed">{i + 1}</Text></Table.Td>
+                    <Table.Td>
+                      <Group gap={6}>
+                        <ThemeIcon size={28} radius="xl" variant="light" color="blue"><IconUser size={14} /></ThemeIcon>
+                        <Text size="sm" fw={600}>{emp.name}</Text>
+                      </Group>
+                    </Table.Td>
+                    <Table.Td><Text size="sm">{emp.mobile}</Text></Table.Td>
+                    <Table.Td>
+                      {emp.department && <Badge variant="light" color="indigo" size="sm">{emp.department}</Badge>}
+                    </Table.Td>
+                    <Table.Td><Text size="sm">{emp.role || '-'}</Text></Table.Td>
+                    <Table.Td ta="right">
+                      <Text size="sm" fw={600} c="teal">₹{(emp.salary || 0).toLocaleString('en-IN')}</Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm">
+                        {emp.joiningDate ? new Date(emp.joiningDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Badge variant="light" color={emp.status === 'Active' ? 'green' : 'gray'} size="sm">
+                        {emp.status}
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <Group gap={4} justify="center">
+                        <Tooltip label="Edit">
+                          <ActionIcon variant="light" color="blue" size="sm" onClick={() => handleEdit(emp)}>
+                            <IconEdit size={16} />
+                          </ActionIcon>
+                        </Tooltip>
+                        <Tooltip label="Delete">
+                          <ActionIcon variant="light" color="red" size="sm" onClick={() => handleDelete(emp)}>
+                            <IconTrash size={16} />
+                          </ActionIcon>
+                        </Tooltip>
+                      </Group>
+                    </Table.Td>
+                  </Table.Tr>
                 ))}
-              </tbody>
-            </table>
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="pagination">
-                <button
-                  className="pagination-btn"
-                  onClick={() => handlePageChange(pagination.current - 1)}
-                  disabled={pagination.current === 1}
-                >
-                  Previous
-                </button>
-                <div className="pagination-info">
-                  Page {pagination.current} of {totalPages} ({pagination.total} total)
-                </div>
-                <button
-                  className="pagination-btn"
-                  onClick={() => handlePageChange(pagination.current + 1)}
-                  disabled={pagination.current === totalPages}
-                >
-                  Next
-                </button>
-              </div>
-            )}
-          </>
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
         )}
-      </div>
-    </div>
+      </Paper>
+
+      {/* Add / Edit Modal */}
+      <Modal
+        opened={modalOpened}
+        onClose={closeModal}
+        title={<Text fw={600}>{editId ? 'Edit Employee' : 'Add Employee'}</Text>}
+        size="md"
+      >
+        <Stack gap="sm">
+          <TextInput
+            label="Full Name" placeholder="Employee name" required
+            value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+          />
+          <TextInput
+            label="Mobile" placeholder="10-digit mobile" required
+            value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })}
+          />
+          <Textarea
+            label="Address" placeholder="Full address" rows={2}
+            value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })}
+          />
+          <SimpleGrid cols={2}>
+            <Select
+              label="Department" placeholder="Select department"
+              data={DEPARTMENTS} value={form.department}
+              onChange={(val) => setForm({ ...form, department: val })}
+              clearable
+            />
+            <Select
+              label="Role" placeholder="Select role"
+              data={ROLES} value={form.role}
+              onChange={(val) => setForm({ ...form, role: val })}
+              clearable
+            />
+          </SimpleGrid>
+          <SimpleGrid cols={2}>
+            <NumberInput
+              label="Salary (₹)" placeholder="Monthly salary" required min={0}
+              value={form.salary} onChange={(val) => setForm({ ...form, salary: val })}
+            />
+            <DatePickerInput
+              label="Joining Date"
+              value={form.joiningDate}
+              onChange={(val) => setForm({ ...form, joiningDate: val })}
+            />
+          </SimpleGrid>
+          <Select
+            label="Status"
+            data={['Active', 'Inactive']}
+            value={form.status}
+            onChange={(val) => setForm({ ...form, status: val })}
+          />
+          <Group justify="flex-end" mt="sm">
+            <Button variant="default" onClick={closeModal}>Cancel</Button>
+            <Button onClick={handleSave}>{editId ? 'Update' : 'Add Employee'}</Button>
+          </Group>
+        </Stack>
+      </Modal>
+    </Container>
   );
 };
 

@@ -22,15 +22,6 @@ export const calculateOpeningBalance = async (Ledger, Voucher, ledgerId, startDa
     const ledger = await Ledger.findById(ledgerId);
     if (!ledger) return 0;
 
-    // Start with the ledger's opening balance
-    let balance = ledger.openingBalance || 0;
-
-    // Get all voucher entries before startDate for this ledger
-    const vouchers = await Voucher.find({
-      voucherDate: { $lt: new Date(startDate) },
-      'entries.ledgerId': ledgerId
-    }).sort({ voucherDate: 1 });
-
     // Determine if this is a debit nature account
     const isDebitNature = [
       'Asset', 'Fixed Assets', 'Movable Assets', 'Immovable Assets', 'Other Assets',
@@ -38,17 +29,36 @@ export const calculateOpeningBalance = async (Ledger, Voucher, ledgerId, startDa
       'Cash', 'Bank', 'Other Receivable', 'Sundry Debtors', 'Customer', 'Party'
     ].includes(ledger.ledgerType);
 
+    // openingBalance is stored as an absolute (positive) number.
+    // openingBalanceType ('Dr'/'Cr') tells the direction.
+    // Internal signed convention:
+    //   debit-nature  : positive = Dr (normal), negative = Cr (unusual)
+    //   credit-nature : positive = Cr (normal), negative = Dr (unusual)
+    let balance = ledger.openingBalance || 0;
+    const obType = ledger.openingBalanceType || 'Dr';
+    const isNormalDirection =
+      (isDebitNature && obType === 'Dr') || (!isDebitNature && obType === 'Cr');
+    if (!isNormalDirection && balance > 0) {
+      balance = -balance; // unusual direction → negate to fit signed convention
+    }
+
+    // Get all voucher entries strictly before startDate for this ledger
+    const startDateObj = new Date(startDate);
+    startDateObj.setUTCHours(0, 0, 0, 0); // normalise to midnight UTC
+
+    const vouchers = await Voucher.find({
+      voucherDate: { $lt: startDateObj },
+      'entries.ledgerId': ledgerId
+    }).sort({ voucherDate: 1 });
+
     // Process each voucher entry
     vouchers.forEach(voucher => {
       voucher.entries.forEach(entry => {
         if (entry.ledgerId.toString() === ledgerId.toString()) {
           const netChange = entry.debitAmount - entry.creditAmount;
-
           if (isDebitNature) {
-            // For debit nature accounts: debit increases balance, credit decreases
             balance += netChange;
           } else {
-            // For credit nature accounts: credit increases balance, debit decreases
             balance -= netChange;
           }
         }

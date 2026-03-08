@@ -70,7 +70,12 @@ const StockOutModal = ({ isOpen, onClose, onSuccess }) => {
       setItems(itemsData.map(item => ({
         value: item._id,
         label: `${item.itemCode} - ${item.itemName} (Stock: ${item.currentBalance} ${item.unit})`,
-        ...item
+        itemCode: item.itemCode,
+        itemName: item.itemName,
+        category: item.category,
+        currentBalance: item.currentBalance,
+        unit: item.unit,
+        salesRate: item.salesRate
       })));
     } catch (error) {
       notifications.show({
@@ -139,6 +144,8 @@ const StockOutModal = ({ isOpen, onClose, onSuccess }) => {
         itemId: formData.itemId,
         quantity: parseFloat(formData.quantity),
         rate: parseFloat(formData.rate),
+        date: formData.date,
+        referenceType: formData.referenceType,
         notes: formData.notes
       };
 

@@ -67,6 +67,29 @@ const StockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
 
   const isEditMode = !!editData;
 
+  // Populate selectedItemInfo when items are loaded in edit mode
+  useEffect(() => {
+    if (isEditMode && items.length > 0 && formData.items[0]?.itemId) {
+      const selectedItem = items.find(item => item.value === formData.items[0].itemId);
+      if (selectedItem && !selectedItemInfo[0]) {
+        setSelectedItemInfo({
+          0: {
+            itemName: selectedItem.itemName,
+            salesRate: selectedItem.salesRate || 0,
+            currentBalance: selectedItem.currentBalance || 0,
+            unit: selectedItem.measurement || selectedItem.unit || ''
+          }
+        });
+        // If salesRate is 0 in form but available from item master, update it
+        if (!formData.items[0].salesRate && selectedItem.salesRate) {
+          const newItems = [...formData.items];
+          newItems[0].salesRate = selectedItem.salesRate;
+          setFormData(prev => ({ ...prev, items: newItems }));
+        }
+      }
+    }
+  }, [items, isEditMode, formData.items[0]?.itemId]);
+
   useEffect(() => {
     if (isOpen) {
       fetchItems();
@@ -75,6 +98,7 @@ const StockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
       fetchLedgers();
 
       if (editData) {
+        setSelectedItemInfo({});
         const existingSubsidies = editData.subsidies || [];
         if (!existingSubsidies.length && editData.subsidy?.subsidyId) {
           existingSubsidies.push({
@@ -114,6 +138,8 @@ const StockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
   }, [isOpen, editData]);
 
   const resetForm = () => {
+    setSelectedItemInfo({});
+    setPricePopoverOpened({});
     setFormData({
       items: [{ itemId: '', quantity: 0, rate: 0, salesRate: 0, freeQty: 0 }],
       purchaseDate: new Date(),
@@ -137,7 +163,12 @@ const StockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
       setItems(itemsData.map(item => ({
         value: item._id,
         label: `${item.itemCode} - ${item.itemName}`,
-        ...item
+        itemName: item.itemName,
+        salesRate: item.salesRate,
+        currentBalance: item.currentBalance,
+        measurement: item.measurement,
+        unit: item.unit,
+        purchasePrice: item.purchasePrice
       })));
     } catch (error) {
       notifications.show({
@@ -154,8 +185,7 @@ const StockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
       const suppliersData = response.data || [];
       setSuppliers(suppliersData.map(supplier => ({
         value: supplier._id,
-        label: `${supplier.supplierId} - ${supplier.name}`,
-        ...supplier
+        label: `${supplier.supplierId} - ${supplier.name}`
       })));
     } catch (error) {
       notifications.show({
@@ -172,8 +202,7 @@ const StockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
       const subsidiesData = response.data || [];
       setSubsidies(subsidiesData.map(subsidy => ({
         value: subsidy._id,
-        label: `${subsidy.subsidyName} (${subsidy.subsidyType})`,
-        ...subsidy
+        label: `${subsidy.subsidyName} (${subsidy.subsidyType})`
       })));
     } catch (error) {
       notifications.show({
@@ -193,8 +222,7 @@ const StockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
         label: `${ledger.ledgerName} (${ledger.ledgerType})`,
         ledgerType: ledger.ledgerType,
         currentBalance: ledger.currentBalance,
-        balanceType: ledger.balanceType,
-        ...ledger
+        balanceType: ledger.balanceType
       })));
     } catch (error) {
       notifications.show({

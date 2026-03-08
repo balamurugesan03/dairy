@@ -60,6 +60,19 @@ const ReportsDashboard = () => {
       color: '#f6ffed'
     },
     {
+      title: 'Sales Register',
+      description: 'Dairy cooperative sales transactions with item-wise breakdown',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="#c2185b">
+          <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <line x1="3" y1="6" x2="21" y2="6" strokeWidth="2" strokeLinecap="round"/>
+          <path d="M16 10a4 4 0 0 1-8 0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      ),
+      path: '/reports/sales-register',
+      color: '#fce4ec'
+    },
+    {
       title: 'Financial Reports',
       description: 'Profit & Loss, Balance Sheet, and Trading Account',
       icon: (
@@ -68,7 +81,7 @@ const ReportsDashboard = () => {
           <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       ),
-      path: '/reports/financial',
+      path: '/reports/final-accounts',
       color: '#fffbe6'
     },
     {
@@ -97,7 +110,7 @@ const ReportsDashboard = () => {
           <line x1="16" y1="17" x2="8" y2="17" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       ),
-      path: '/reports/receipts-disbursement',
+      path: '/reports/rd-enhanced',
       color: '#fff0f6'
     },
     {

@@ -1,51 +1,52 @@
 import mongoose from 'mongoose';
 
+const maintenanceLogSchema = new mongoose.Schema({
+  date: { type: Date, default: Date.now },
+  maintenanceType: {
+    type: String,
+    enum: ['Preventive', 'Corrective', 'Emergency', 'Annual Service'],
+    default: 'Preventive'
+  },
+  description: { type: String, required: true },
+  cost: { type: Number, default: 0 },
+  nextMaintenanceDate: Date,
+  technicianName: String,
+  partsReplaced: String,
+  status: { type: String, enum: ['Completed', 'Pending', 'In Progress'], default: 'Completed' }
+}, { timestamps: true });
+
 const machineSchema = new mongoose.Schema({
-  machineId: {
-    type: String,
-    required: true,
-    unique: true,
-    trim: true
-  },
-  machineName: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  allocatedTo: {
-    type: String,
-    trim: true
-  },
-  allocationDate: {
-    type: Date
-  },
-  replacementHistory: [{
-    date: {
-      type: Date,
-      required: true
-    },
-    reason: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    replacedWith: {
-      type: String,
-      trim: true
-    }
-  }],
+  machineCode: { type: String, unique: true },
+  machineName: { type: String, required: true },
+  category: String,
+  make: String,
+  model: String,
+  manufacturer: String,
+  serialNumber: String,
+  modelNumber: String,
+  purchaseDate: Date,
+  purchasePrice: { type: Number, default: 0 },
+  supplierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Supplier' },
+  supplierName: String,
+  warrantyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Warranty' },
+  warrantyExpiry: Date,
+  location: String,
+  department: String,
+  assignedTo: String,
   status: {
     type: String,
-    enum: ['Active', 'Standby', 'Maintenance'],
+    enum: ['Active', 'Under Maintenance', 'Disposed', 'Sold', 'Inactive'],
     default: 'Active'
-  }
-}, {
-  timestamps: true
-});
+  },
+  description: String,
+  maintenanceLogs: [maintenanceLogSchema],
+  disposalDate: Date,
+  disposalPrice: { type: Number, default: 0 },
+  disposalReason: String,
+  companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true }
+}, { timestamps: true });
 
-// Indexes for faster queries
 machineSchema.index({ status: 1 });
+machineSchema.index({ companyId: 1 });
 
-const Machine = mongoose.model('Machine', machineSchema);
-
-export default Machine;
+export default mongoose.model('Machine', machineSchema);

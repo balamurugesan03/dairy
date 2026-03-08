@@ -9,6 +9,13 @@ import './SalesReportView.css';
 const SalesReportView = () => {
   const [loading, setLoading] = useState(false);
   const [salesData, setSalesData] = useState([]);
+  const [expandedRows, setExpandedRows] = useState(new Set());
+
+  const toggleRow = (id) => setExpandedRows(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
   const [summary, setSummary] = useState({
     totalSales: 0,
     totalAmount: 0,
@@ -142,16 +149,54 @@ const SalesReportView = () => {
               </thead>
               <tbody>
                 {salesData.map((sale) => (
-                  <tr key={sale._id}>
-                    <td>{sale.billNumber}</td>
-                    <td>{dayjs(sale.date).format('DD/MM/YYYY')}</td>
-                    <td>{sale.customer?.name || sale.customerName || '-'}</td>
-                    <td>{sale.items?.length || 0}</td>
-                    <td style={{ textAlign: 'right' }}>₹{(sale.subtotal || 0).toFixed(2)}</td>
-                    <td style={{ textAlign: 'right' }}>₹{(sale.taxAmount || 0).toFixed(2)}</td>
-                    <td style={{ textAlign: 'right' }}>₹{(sale.discount || 0).toFixed(2)}</td>
-                    <td style={{ textAlign: 'right' }}>₹{(sale.totalAmount || 0).toFixed(2)}</td>
-                  </tr>
+                  <>
+                    <tr
+                      key={sale._id}
+                      onClick={() => toggleRow(sale._id)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <td>{sale.billNumber}</td>
+                      <td>{dayjs(sale.date).format('DD/MM/YYYY')}</td>
+                      <td>{sale.customer?.name || sale.customerName || '-'}</td>
+                      <td style={{ userSelect: 'none' }}>
+                        {expandedRows.has(sale._id) ? '▼' : '▶'} {sale.items?.length || 0}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>₹{(sale.subtotal || 0).toFixed(2)}</td>
+                      <td style={{ textAlign: 'right' }}>₹{(sale.taxAmount || 0).toFixed(2)}</td>
+                      <td style={{ textAlign: 'right' }}>₹{(sale.discount || 0).toFixed(2)}</td>
+                      <td style={{ textAlign: 'right' }}>₹{(sale.totalAmount || 0).toFixed(2)}</td>
+                    </tr>
+                    {expandedRows.has(sale._id) && (
+                      <tr key={`${sale._id}-items`} style={{ background: '#f8f9fa' }}>
+                        <td colSpan={8} style={{ padding: '0 16px 12px 32px' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                            <thead>
+                              <tr style={{ background: '#e9ecef' }}>
+                                <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600 }}>#</th>
+                                <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600 }}>Item Name</th>
+                                <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600 }}>Qty</th>
+                                <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600 }}>Unit</th>
+                                <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600 }}>Rate</th>
+                                <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600 }}>Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(sale.items || []).map((item, idx) => (
+                                <tr key={idx} style={{ borderBottom: '1px solid #dee2e6' }}>
+                                  <td style={{ padding: '5px 10px' }}>{idx + 1}</td>
+                                  <td style={{ padding: '5px 10px' }}>{item.itemName || item.item?.name || '-'}</td>
+                                  <td style={{ padding: '5px 10px', textAlign: 'right' }}>{item.quantity ?? item.qty ?? 0}</td>
+                                  <td style={{ padding: '5px 10px' }}>{item.unit || '-'}</td>
+                                  <td style={{ padding: '5px 10px', textAlign: 'right' }}>₹{(item.rate || 0).toFixed(2)}</td>
+                                  <td style={{ padding: '5px 10px', textAlign: 'right' }}>₹{(item.amount || 0).toFixed(2)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 ))}
               </tbody>
               <tfoot>

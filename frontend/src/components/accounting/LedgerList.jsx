@@ -252,7 +252,7 @@ const LedgerList = () => {
       </td>
       <td>{ledger.linkedEntity?.entityType || '-'}</td>
       <td>
-        <Group spacing="xs">
+        <Group gap="xs">
           <Button
             size="xs"
             variant="subtle"
@@ -293,7 +293,7 @@ const LedgerList = () => {
       />
 
       <Paper p="md" mb="md" withBorder>
-        <Group position="apart" mb="md">
+        <Group justify="space-between" mb="md">
           <Button
             leftSection={<IconPlus size={16} />}
             onClick={handleAdd}
@@ -304,25 +304,25 @@ const LedgerList = () => {
         </Group>
 
         <Grid gutter="md" mb="md">
-          <Grid.Col xs={12} md={6}>
+          <Grid.Col span={{ base: 12, md: 6 }}>
             <TextInput
               placeholder="Search by ledger name"
               value={filters.search}
               onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-              icon={<IconSearch size={16} />}
+              leftSection={<IconSearch size={16} />}
             />
           </Grid.Col>
-          <Grid.Col xs={12} md={6}>
+          <Grid.Col span={{ base: 12, md: 6 }}>
             <Select
               placeholder="Filter by account group"
-              data={ledgerTypeOptions.flatMap(opt => 
-                opt.group 
+              data={ledgerTypeOptions.flatMap(opt =>
+                opt.group
                   ? [{ group: opt.group, items: opt.items }]
                   : [{ value: opt.value, label: opt.label }]
               )}
               value={filters.ledgerType}
               onChange={(value) => setFilters(prev => ({ ...prev, ledgerType: value }))}
-              icon={<IconFilter size={16} />}
+              leftSection={<IconFilter size={16} />}
               clearable
             />
           </Grid.Col>
@@ -333,7 +333,7 @@ const LedgerList = () => {
           
           {!loading && filteredLedgers.length === 0 ? (
             <Box p="xl" ta="center">
-              <Text color="dimmed">No ledgers found</Text>
+              <Text c="dimmed">No ledgers found</Text>
             </Box>
           ) : (
             <>
@@ -353,8 +353,8 @@ const LedgerList = () => {
 
               {totalPages > 1 && (
                 <Box p="md">
-                  <Group position="apart">
-                    <Text size="sm" color="dimmed">
+                  <Group justify="space-between">
+                    <Text size="sm" c="dimmed">
                       Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, filteredLedgers.length)} of {filteredLedgers.length} ledgers
                     </Text>
                     <Pagination
@@ -378,7 +378,7 @@ const LedgerList = () => {
         size="lg"
       >
         <form onSubmit={form.onSubmit(handleSubmit)}>
-          <Stack spacing="md">
+          <Stack gap="md">
             <TextInput
               label="Ledger Name"
               placeholder="Enter ledger name"
@@ -468,7 +468,7 @@ const LedgerList = () => {
 
             <Divider />
 
-            <Group position="right">
+            <Group justify="flex-end">
               <Button variant="default" onClick={() => setModalVisible(false)}>
                 Cancel
               </Button>

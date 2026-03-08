@@ -45,6 +45,17 @@ const businessSalesSchema = new mongoose.Schema({
     trim: true
   },
 
+  // Salesman
+  salesmanId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Salesman',
+    default: null
+  },
+  salesmanName: {
+    type: String,
+    trim: true
+  },
+
   // Items
   items: [{
     itemId: {

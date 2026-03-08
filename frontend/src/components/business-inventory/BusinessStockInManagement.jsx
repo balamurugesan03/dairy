@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Container,
   Card,
@@ -39,22 +39,31 @@ import {
   IconTrash,
   IconFileSpreadsheet,
   IconFileTypePdf,
-  IconDownload
+  IconDownload,
+  IconPrinter,
+  IconBuilding,
+  IconUser,
+  IconHash
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { businessStockAPI } from '../../services/api';
+import { printReport } from '../../utils/printReport';
 import BusinessStockInModal from './BusinessStockInModal';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 
 const BusinessStockInManagement = () => {
+  const printRef = useRef(null);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editTransaction, setEditTransaction] = useState(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [transactionToDelete, setTransactionToDelete] = useState(null);
+  const [viewDetailsOpen, setViewDetailsOpen] = useState(false);
+  const [viewInvoiceOpen, setViewInvoiceOpen] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [filters, setFilters] = useState({
     startDate: null,
     endDate: null,
@@ -209,6 +218,20 @@ const BusinessStockInManagement = () => {
     setEditTransaction(null);
   };
 
+  const handleViewDetails = (txn) => {
+    setSelectedTransaction(txn);
+    setViewDetailsOpen(true);
+  };
+
+  const handleViewInvoice = (txn) => {
+    setSelectedTransaction(txn);
+    setViewInvoiceOpen(true);
+  };
+
+  const handlePrintInvoice = () => {
+    printReport(printRef, { title: 'Purchase Invoice', orientation: 'landscape' });
+  };
+
   const exportToExcel = () => {
     const exportData = transactions.map((txn, index) => ({
       'S.No': index + 1,
@@ -299,7 +322,7 @@ const BusinessStockInManagement = () => {
   };
 
   return (
-    <Container fluid p="md">
+    <Container fluid p="md" ref={printRef}>
       <LoadingOverlay visible={loading} />
 
       {/* Header */}
@@ -578,10 +601,10 @@ const BusinessStockInManagement = () => {
                         </ActionIcon>
                       </Menu.Target>
                       <Menu.Dropdown>
-                        <Menu.Item leftSection={<IconEye size={14} />}>
+                        <Menu.Item leftSection={<IconEye size={14} />} onClick={() => handleViewDetails(txn)}>
                           View Details
                         </Menu.Item>
-                        <Menu.Item leftSection={<IconFileInvoice size={14} />}>
+                        <Menu.Item leftSection={<IconFileInvoice size={14} />} onClick={() => handleViewInvoice(txn)}>
                           View Invoice
                         </Menu.Item>
                         <Menu.Divider />
@@ -621,6 +644,250 @@ const BusinessStockInManagement = () => {
           </Paper>
         )}
       </Card>
+
+      {/* View Details Modal */}
+      <Modal
+        opened={viewDetailsOpen}
+        onClose={() => { setViewDetailsOpen(false); setSelectedTransaction(null); }}
+        title={
+          <Group>
+            <IconEye size={20} />
+            <Text fw={600}>Purchase Transaction Details</Text>
+          </Group>
+        }
+        size="lg"
+        centered
+      >
+        {selectedTransaction && (
+          <Stack gap="md">
+            <SimpleGrid cols={2}>
+              <Paper p="sm" withBorder>
+                <Text size="xs" c="dimmed">Item Name</Text>
+                <Text fw={600}>{selectedTransaction.itemId?.itemName || 'N/A'}</Text>
+                <Text size="xs" c="dimmed">{selectedTransaction.itemId?.itemCode}</Text>
+              </Paper>
+              <Paper p="sm" withBorder>
+                <Text size="xs" c="dimmed">Category / Unit</Text>
+                <Text fw={600}>{selectedTransaction.itemId?.category || 'N/A'}</Text>
+                <Text size="xs" c="dimmed">{selectedTransaction.itemId?.measurement}</Text>
+              </Paper>
+              <Paper p="sm" withBorder>
+                <Text size="xs" c="dimmed">Purchase Date</Text>
+                <Text fw={600}>{formatDate(selectedTransaction.purchaseDate || selectedTransaction.date)}</Text>
+              </Paper>
+              <Paper p="sm" withBorder>
+                <Text size="xs" c="dimmed">Invoice Date</Text>
+                <Text fw={600}>{selectedTransaction.invoiceDate ? formatDate(selectedTransaction.invoiceDate) : '—'}</Text>
+              </Paper>
+              <Paper p="sm" withBorder>
+                <Text size="xs" c="dimmed">Invoice Number</Text>
+                <Text fw={600}>{selectedTransaction.invoiceNumber || '—'}</Text>
+              </Paper>
+              <Paper p="sm" withBorder>
+                <Text size="xs" c="dimmed">Reference Type</Text>
+                {getReferenceTypeBadge(selectedTransaction.referenceType)}
+              </Paper>
+              <Paper p="sm" withBorder>
+                <Text size="xs" c="dimmed">Supplier</Text>
+                <Text fw={600}>{selectedTransaction.supplierName || selectedTransaction.supplierId?.name || '—'}</Text>
+              </Paper>
+              <Paper p="sm" withBorder>
+                <Text size="xs" c="dimmed">Payment Mode</Text>
+                {getPaymentModeBadge(selectedTransaction.paymentMode)}
+              </Paper>
+              <Paper p="sm" withBorder>
+                <Text size="xs" c="dimmed">Quantity</Text>
+                <Text fw={600} c="blue">{selectedTransaction.quantity} {selectedTransaction.itemId?.measurement}</Text>
+                {selectedTransaction.freeQty > 0 && (
+                  <Text size="xs" c="green">+ {selectedTransaction.freeQty} Free</Text>
+                )}
+              </Paper>
+              <Paper p="sm" withBorder>
+                <Text size="xs" c="dimmed">Rate</Text>
+                <Text fw={600}>{formatCurrency(selectedTransaction.rate)}</Text>
+              </Paper>
+              <Paper p="sm" withBorder>
+                <Text size="xs" c="dimmed">Total Amount</Text>
+                <Text fw={700} c="blue" size="lg">{formatCurrency((selectedTransaction.quantity || 0) * (selectedTransaction.rate || 0))}</Text>
+              </Paper>
+              <Paper p="sm" withBorder>
+                <Text size="xs" c="dimmed">Paid Amount</Text>
+                <Text fw={600} c="green">{formatCurrency(selectedTransaction.paidAmount)}</Text>
+                <Text size="xs" c="red">
+                  Balance: {formatCurrency(((selectedTransaction.quantity || 0) * (selectedTransaction.rate || 0)) - (selectedTransaction.paidAmount || 0))}
+                </Text>
+              </Paper>
+              <Paper p="sm" withBorder>
+                <Text size="xs" c="dimmed">Stock After Transaction</Text>
+                <Text fw={600} c="teal">{selectedTransaction.balanceAfter} {selectedTransaction.itemId?.measurement}</Text>
+              </Paper>
+              {selectedTransaction.voucherId && (
+                <Paper p="sm" withBorder>
+                  <Text size="xs" c="dimmed">Voucher</Text>
+                  <Text fw={600}>{selectedTransaction.voucherId?.voucherNumber}</Text>
+                  <Text size="xs" c="dimmed">{selectedTransaction.voucherId?.voucherType}</Text>
+                </Paper>
+              )}
+            </SimpleGrid>
+            {selectedTransaction.notes && (
+              <Paper p="sm" withBorder>
+                <Text size="xs" c="dimmed">Notes</Text>
+                <Text size="sm">{selectedTransaction.notes}</Text>
+              </Paper>
+            )}
+            <Group justify="flex-end">
+              <Button variant="default" onClick={() => { setViewDetailsOpen(false); setSelectedTransaction(null); }}>
+                Close
+              </Button>
+              <Button leftSection={<IconFileInvoice size={16} />} onClick={() => { setViewDetailsOpen(false); handleViewInvoice(selectedTransaction); }}>
+                View Invoice
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
+
+      {/* View Invoice Modal */}
+      <Modal
+        opened={viewInvoiceOpen}
+        onClose={() => { setViewInvoiceOpen(false); setSelectedTransaction(null); }}
+        title={
+          <Group>
+            <IconFileInvoice size={20} />
+            <Text fw={600}>Purchase Invoice</Text>
+          </Group>
+        }
+        size="xl"
+        centered
+      >
+        {selectedTransaction && (
+          <Stack gap="md">
+            <Paper p="lg" withBorder style={{ fontFamily: 'monospace' }}>
+              {/* Invoice Header */}
+              <Group justify="space-between" mb="md">
+                <div>
+                  <Text fw={700} size="xl">PURCHASE INVOICE</Text>
+                  <Badge color="blue" variant="light" size="lg">
+                    {selectedTransaction.invoiceNumber || `TXN-${selectedTransaction._id?.slice(-8).toUpperCase()}`}
+                  </Badge>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <Text size="sm" c="dimmed">Purchase Date</Text>
+                  <Text fw={600}>{formatDate(selectedTransaction.purchaseDate || selectedTransaction.date)}</Text>
+                  {selectedTransaction.invoiceDate && (
+                    <>
+                      <Text size="sm" c="dimmed" mt={4}>Invoice Date</Text>
+                      <Text fw={600}>{formatDate(selectedTransaction.invoiceDate)}</Text>
+                    </>
+                  )}
+                </div>
+              </Group>
+
+              <hr style={{ margin: '12px 0', borderColor: '#dee2e6' }} />
+
+              {/* Supplier Info */}
+              <Group align="flex-start" justify="space-between" mb="md">
+                <div>
+                  <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Supplier</Text>
+                  <Text fw={600} size="md">{selectedTransaction.supplierName || selectedTransaction.supplierId?.name || '—'}</Text>
+                  {selectedTransaction.supplierId?.phone && (
+                    <Text size="sm" c="dimmed">{selectedTransaction.supplierId.phone}</Text>
+                  )}
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Payment</Text>
+                  {getPaymentModeBadge(selectedTransaction.paymentMode)}
+                </div>
+              </Group>
+
+              <hr style={{ margin: '12px 0', borderColor: '#dee2e6' }} />
+
+              {/* Items Table */}
+              <Table withTableBorder withColumnBorders mb="md">
+                <Table.Thead bg="blue.0">
+                  <Table.Tr>
+                    <Table.Th>#</Table.Th>
+                    <Table.Th>Item</Table.Th>
+                    <Table.Th>Code</Table.Th>
+                    <Table.Th style={{ textAlign: 'right' }}>Qty</Table.Th>
+                    <Table.Th style={{ textAlign: 'right' }}>Free</Table.Th>
+                    <Table.Th style={{ textAlign: 'right' }}>Rate</Table.Th>
+                    <Table.Th style={{ textAlign: 'right' }}>Amount</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  <Table.Tr>
+                    <Table.Td>1</Table.Td>
+                    <Table.Td>
+                      <Text fw={500}>{selectedTransaction.itemId?.itemName || 'N/A'}</Text>
+                      <Text size="xs" c="dimmed">{selectedTransaction.itemId?.category}</Text>
+                    </Table.Td>
+                    <Table.Td>{selectedTransaction.itemId?.itemCode || '—'}</Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      {selectedTransaction.quantity} {selectedTransaction.itemId?.measurement}
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      {selectedTransaction.freeQty > 0 ? `${selectedTransaction.freeQty} ${selectedTransaction.itemId?.measurement}` : '—'}
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      Rs.{(selectedTransaction.rate || 0).toFixed(2)}
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      <Text fw={600}>Rs.{((selectedTransaction.quantity || 0) * (selectedTransaction.rate || 0)).toFixed(2)}</Text>
+                    </Table.Td>
+                  </Table.Tr>
+                </Table.Tbody>
+              </Table>
+
+              {/* Totals */}
+              <Group justify="flex-end">
+                <Stack gap={4} style={{ minWidth: 220 }}>
+                  <Group justify="space-between">
+                    <Text size="sm" c="dimmed">Gross Total:</Text>
+                    <Text size="sm" fw={500}>Rs.{((selectedTransaction.quantity || 0) * (selectedTransaction.rate || 0)).toFixed(2)}</Text>
+                  </Group>
+                  <Group justify="space-between">
+                    <Text size="sm" c="dimmed">Paid Amount:</Text>
+                    <Text size="sm" fw={500} c="green">Rs.{(selectedTransaction.paidAmount || 0).toFixed(2)}</Text>
+                  </Group>
+                  <hr style={{ margin: '4px 0', borderColor: '#dee2e6' }} />
+                  <Group justify="space-between">
+                    <Text fw={700}>Balance Due:</Text>
+                    <Text fw={700} c="red" size="lg">
+                      Rs.{(((selectedTransaction.quantity || 0) * (selectedTransaction.rate || 0)) - (selectedTransaction.paidAmount || 0)).toFixed(2)}
+                    </Text>
+                  </Group>
+                </Stack>
+              </Group>
+
+              {selectedTransaction.notes && (
+                <>
+                  <hr style={{ margin: '12px 0', borderColor: '#dee2e6' }} />
+                  <Text size="xs" c="dimmed">Notes: {selectedTransaction.notes}</Text>
+                </>
+              )}
+
+              {/* Stock Info */}
+              <hr style={{ margin: '12px 0', borderColor: '#dee2e6' }} />
+              <Group justify="space-between">
+                <Text size="xs" c="dimmed">Stock Balance After: <strong>{selectedTransaction.balanceAfter} {selectedTransaction.itemId?.measurement}</strong></Text>
+                {selectedTransaction.referenceType && (
+                  <Text size="xs" c="dimmed">Type: {selectedTransaction.referenceType}</Text>
+                )}
+              </Group>
+            </Paper>
+
+            <Group justify="flex-end">
+              <Button variant="default" onClick={() => { setViewInvoiceOpen(false); setSelectedTransaction(null); }}>
+                Close
+              </Button>
+              <Button leftSection={<IconPrinter size={16} />} onClick={handlePrintInvoice} color="blue">
+                Print Invoice
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
 
       {/* Stock In Modal */}
       <BusinessStockInModal

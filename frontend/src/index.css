@@ -1,0 +1,74 @@
+/* ============================================================
+   GLOBAL STYLES
+   ============================================================ */
+:root {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+/* ============================================================
+   PRINT STYLES — hides all app chrome, prints only content
+   ============================================================ */
+@media print {
+  /* Force colour rendering */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  /* ── Hide the entire AppShell chrome (header contains nav + sidebar) ── */
+  .mantine-AppShell-header,
+  .mantine-AppShell-navbar,
+  .mantine-AppShell-aside,
+  .mantine-AppShell-footer {
+    display: none !important;
+  }
+
+  /* ── Collapse main padding so content fills the page ── */
+  .mantine-AppShell-main {
+    padding: 0 !important;
+    margin-left: 0 !important;
+    margin-top: 0 !important;
+  }
+
+  /* ── Hide toolbars, filter bars, action buttons ── */
+  .no-print,
+  [data-no-print] {
+    display: none !important;
+  }
+
+  /* ── Drawer / Modal overlays ── */
+  .mantine-Drawer-overlay,
+  .mantine-Modal-overlay,
+  .mantine-Notification-root {
+    display: none !important;
+  }
+
+  /* ── Tables ── */
+  table { page-break-inside: auto; }
+  thead { display: table-header-group; }
+  tr    { page-break-inside: avoid; }
+
+  /* ── Page size ── */
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+}

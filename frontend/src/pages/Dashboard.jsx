@@ -55,7 +55,11 @@ import {
   stockAPI,
   advanceAPI,
   employeeAPI,
-  collectionCenterAPI
+  collectionCenterAPI,
+  businessItemAPI,
+  businessStockAPI,
+  businessSalesAPI,
+  businessVoucherAPI
 } from '../services/api';
 
 const Dashboard = () => {
@@ -106,108 +110,125 @@ const Dashboard = () => {
 
   const loadMetrics = async () => {
     try {
-      const [
-        farmersRes,
-        customersRes,
-        salesRes,
-        itemsRes,
-        stockRes,
-        advancesRes,
-        employeesRes,
-        centersRes
-      ] = await Promise.allSettled([
-        farmerAPI.getAll({ limit: 1 }),
-        customerAPI.getAll({ limit: 1 }),
-        salesAPI.getAll({ limit: 10 }),
-        itemAPI.getAll(),
-        stockAPI.getBalance(),
-        advanceAPI.getAll({ status: 'Active' }),
-        employeeAPI.getAll({ limit: 1 }),
-        collectionCenterAPI.getAll()
-      ]);
+      if (isDairyCooperative) {
+        // Dairy Cooperative - use dairy APIs
+        const [
+          farmersRes,
+          customersRes,
+          salesRes,
+          itemsRes,
+          stockRes,
+          advancesRes,
+          employeesRes,
+          centersRes
+        ] = await Promise.allSettled([
+          farmerAPI.getAll({ limit: 1 }),
+          customerAPI.getAll({ limit: 1 }),
+          salesAPI.getAll({ limit: 10 }),
+          itemAPI.getAll(),
+          stockAPI.getBalance(),
+          advanceAPI.getAll({ status: 'Active' }),
+          employeeAPI.getAll({ limit: 1 }),
+          collectionCenterAPI.getAll()
+        ]);
 
-      // Process farmers
-      const farmersData = farmersRes.status === 'fulfilled' ? farmersRes.value : {};
-      const activeFarmers = farmersData.data?.filter(f => f.isMembership === 'Active').length || 0;
+        const farmersData = farmersRes.status === 'fulfilled' ? farmersRes.value : {};
+        const activeFarmers = farmersData.data?.filter(f => f.isMembership === 'Active').length || 0;
+        const customersData = customersRes.status === 'fulfilled' ? customersRes.value : {};
+        const salesData = salesRes.status === 'fulfilled' ? salesRes.value : {};
+        const sales = salesData.data || [];
+        const today = new Date().toISOString().split('T')[0];
+        const todaySales = sales.filter(s => s.billDate?.split('T')[0] === today);
+        const todayAmount = todaySales.reduce((sum, s) => sum + (s.grandTotal || 0), 0);
+        const itemsData = itemsRes.status === 'fulfilled' ? itemsRes.value : {};
+        const items = itemsData.data || [];
+        const stockData = stockRes.status === 'fulfilled' ? stockRes.value : {};
+        const stockItems = stockData.data || [];
 
-      // Process customers
-      const customersData = customersRes.status === 'fulfilled' ? customersRes.value : {};
+        let lowStockCount = 0;
+        let outOfStockCount = 0;
+        let totalStockValue = 0;
+        stockItems.forEach(item => {
+          const balance = item.currentBalance || 0;
+          const rate = item.sellingPrice || item.costPrice || 0;
+          totalStockValue += balance * rate;
+          if (balance === 0) outOfStockCount++;
+          else if (balance <= (item.reorderLevel || 10)) lowStockCount++;
+        });
 
-      // Process sales
-      const salesData = salesRes.status === 'fulfilled' ? salesRes.value : {};
-      const sales = salesData.data || [];
-      const today = new Date().toISOString().split('T')[0];
-      const todaySales = sales.filter(s => s.billDate?.split('T')[0] === today);
-      const todayAmount = todaySales.reduce((sum, s) => sum + (s.grandTotal || 0), 0);
+        const advancesData = advancesRes.status === 'fulfilled' ? advancesRes.value : {};
+        const advances = advancesData.data || [];
+        const pendingAdvanceAmount = advances.reduce((sum, a) => sum + (a.balanceAmount || 0), 0);
+        const employeesData = employeesRes.status === 'fulfilled' ? employeesRes.value : {};
+        const activeEmployees = employeesData.data?.filter(e => e.status === 'Active').length || 0;
+        const centersData = centersRes.status === 'fulfilled' ? centersRes.value : {};
+        const centers = centersData.data || [];
+        const activeCenters = centers.filter(c => c.status === 'Active').length;
 
-      // Process items and stock
-      const itemsData = itemsRes.status === 'fulfilled' ? itemsRes.value : {};
-      const items = itemsData.data || [];
-      const stockData = stockRes.status === 'fulfilled' ? stockRes.value : {};
-      const stockItems = stockData.data || [];
+        setMetrics({
+          farmers: { total: farmersData.pagination?.total || farmersData.data?.length || 0, active: activeFarmers, trend: 5 },
+          customers: { total: customersData.pagination?.total || customersData.data?.length || 0, trend: 3 },
+          sales: { total: salesData.pagination?.total || sales.length, todayCount: todaySales.length, todayAmount, trend: 8 },
+          inventory: { totalItems: items.length, lowStock: lowStockCount, outOfStock: outOfStockCount, totalValue: totalStockValue },
+          advances: { total: advances.length, pendingAmount: pendingAdvanceAmount },
+          employees: { total: employeesData.pagination?.total || employeesData.data?.length || 0, active: activeEmployees },
+          collectionCenters: { total: centers.length, active: activeCenters }
+        });
+      } else {
+        // Private Firm - use business APIs
+        const [
+          customersRes,
+          salesRes,
+          itemsRes,
+          stockRes,
+          employeesRes,
+          vouchersRes
+        ] = await Promise.allSettled([
+          customerAPI.getAll({ limit: 1 }),
+          businessSalesAPI.getAll({ limit: 10 }),
+          businessItemAPI.getAll(),
+          businessStockAPI.getBalance(),
+          employeeAPI.getAll({ limit: 1 }),
+          businessVoucherAPI.getAll({ limit: 1 })
+        ]);
 
-      let lowStockCount = 0;
-      let outOfStockCount = 0;
-      let totalStockValue = 0;
+        const customersData = customersRes.status === 'fulfilled' ? customersRes.value : {};
+        const salesData = salesRes.status === 'fulfilled' ? salesRes.value : {};
+        const sales = salesData.data || [];
+        const today = new Date().toISOString().split('T')[0];
+        const todaySales = sales.filter(s => (s.billDate || s.date)?.split('T')[0] === today);
+        const todayAmount = todaySales.reduce((sum, s) => sum + (s.grandTotal || s.totalAmount || 0), 0);
+        const itemsData = itemsRes.status === 'fulfilled' ? itemsRes.value : {};
+        const items = itemsData.data || [];
+        const stockData = stockRes.status === 'fulfilled' ? stockRes.value : {};
+        const stockItems = stockData.data || [];
 
-      stockItems.forEach(item => {
-        const balance = item.currentBalance || 0;
-        const rate = item.salesRate || item.purchaseRate || 0;
-        totalStockValue += balance * rate;
+        let lowStockCount = 0;
+        let outOfStockCount = 0;
+        let totalStockValue = 0;
+        stockItems.forEach(item => {
+          const balance = item.currentBalance || item.closingStock || 0;
+          const rate = item.salesRate || item.purchasePrice || 0;
+          totalStockValue += balance * rate;
+          if (balance === 0) outOfStockCount++;
+          else if (balance <= (item.lowStockAlert || 10)) lowStockCount++;
+        });
 
-        if (balance === 0) outOfStockCount++;
-        else if (balance <= (item.reorderLevel || 10)) lowStockCount++;
-      });
+        const employeesData = employeesRes.status === 'fulfilled' ? employeesRes.value : {};
+        const activeEmployees = employeesData.data?.filter(e => e.status === 'Active').length || 0;
+        const vouchersData = vouchersRes.status === 'fulfilled' ? vouchersRes.value : {};
 
-      // Process advances
-      const advancesData = advancesRes.status === 'fulfilled' ? advancesRes.value : {};
-      const advances = advancesData.data || [];
-      const pendingAdvanceAmount = advances.reduce((sum, a) => sum + (a.balanceAmount || 0), 0);
-
-      // Process employees
-      const employeesData = employeesRes.status === 'fulfilled' ? employeesRes.value : {};
-      const activeEmployees = employeesData.data?.filter(e => e.status === 'Active').length || 0;
-
-      // Process collection centers
-      const centersData = centersRes.status === 'fulfilled' ? centersRes.value : {};
-      const centers = centersData.data || [];
-      const activeCenters = centers.filter(c => c.status === 'Active').length;
-
-      setMetrics({
-        farmers: {
-          total: farmersData.pagination?.total || farmersData.data?.length || 0,
-          active: activeFarmers,
-          trend: 5
-        },
-        customers: {
-          total: customersData.pagination?.total || customersData.data?.length || 0,
-          trend: 3
-        },
-        sales: {
-          total: salesData.pagination?.total || sales.length,
-          todayCount: todaySales.length,
-          todayAmount: todayAmount,
-          trend: 8
-        },
-        inventory: {
-          totalItems: items.length,
-          lowStock: lowStockCount,
-          outOfStock: outOfStockCount,
-          totalValue: totalStockValue
-        },
-        advances: {
-          total: advances.length,
-          pendingAmount: pendingAdvanceAmount
-        },
-        employees: {
-          total: employeesData.pagination?.total || employeesData.data?.length || 0,
-          active: activeEmployees
-        },
-        collectionCenters: {
-          total: centers.length,
-          active: activeCenters
-        }
-      });
+        setMetrics({
+          farmers: { total: 0, active: 0, trend: 0 },
+          customers: { total: customersData.pagination?.total || customersData.data?.length || 0, trend: 3 },
+          sales: { total: salesData.pagination?.total || sales.length, todayCount: todaySales.length, todayAmount, trend: 8 },
+          inventory: { totalItems: items.length, lowStock: lowStockCount, outOfStock: outOfStockCount, totalValue: totalStockValue },
+          advances: { total: 0, pendingAmount: 0 },
+          employees: { total: employeesData.pagination?.total || employeesData.data?.length || 0, active: activeEmployees },
+          collectionCenters: { total: 0, active: 0 },
+          vouchers: { total: vouchersData.pagination?.total || vouchersData.data?.length || 0 }
+        });
+      }
     } catch (error) {
       console.error('Error loading metrics:', error);
     }
@@ -215,7 +236,8 @@ const Dashboard = () => {
 
   const loadRecentSales = async () => {
     try {
-      const response = await salesAPI.getAll({ limit: 5, sort: '-createdAt' });
+      const api = isDairyCooperative ? salesAPI : businessSalesAPI;
+      const response = await api.getAll({ limit: 5, sort: '-createdAt' });
       if (response.success) {
         setRecentSales(response.data || []);
       }
@@ -226,13 +248,15 @@ const Dashboard = () => {
 
   const loadLowStockItems = async () => {
     try {
-      const response = await stockAPI.getBalance();
+      const api = isDairyCooperative ? stockAPI : businessStockAPI;
+      const reorderField = isDairyCooperative ? 'reorderLevel' : 'lowStockAlert';
+      const response = await api.getBalance();
       if (response.success) {
         const items = response.data || [];
         const lowStock = items
           .filter(item => {
-            const balance = item.currentBalance || 0;
-            return balance > 0 && balance <= (item.reorderLevel || 10);
+            const balance = item.currentBalance || item.closingStock || 0;
+            return balance > 0 && balance <= (item[reorderField] || 10);
           })
           .slice(0, 5);
         setLowStockItems(lowStock);
@@ -244,7 +268,8 @@ const Dashboard = () => {
 
   const loadSalesChart = async () => {
     try {
-      const response = await salesAPI.getAll({ limit: 100 });
+      const api = isDairyCooperative ? salesAPI : businessSalesAPI;
+      const response = await api.getAll({ limit: 100 });
       if (response.success) {
         const sales = response.data || [];
 
@@ -257,8 +282,8 @@ const Dashboard = () => {
         }
 
         const salesByDate = last7Days.map(date => {
-          const daySales = sales.filter(s => s.billDate?.split('T')[0] === date);
-          return daySales.reduce((sum, s) => sum + (s.grandTotal || 0), 0);
+          const daySales = sales.filter(s => (s.billDate || s.date)?.split('T')[0] === date);
+          return daySales.reduce((sum, s) => sum + (s.grandTotal || s.totalAmount || 0), 0);
         });
 
         const labels = last7Days.map(date => {
@@ -353,6 +378,325 @@ const Dashboard = () => {
           </Group>
         </Group>
 
+        {/* Quick Actions - Colorful Buttons */}
+        <Card shadow="sm" padding="lg" radius="lg" withBorder>
+          <Text fw={600} mb="md" size="lg">Quick Actions</Text>
+          <SimpleGrid cols={{ base: 2, xs: 3, md: 6 }} spacing="md">
+            {isDairyCooperative ? (
+              <>
+                <Paper
+                  p="md"
+                  radius="lg"
+                  style={{
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    background: 'linear-gradient(135deg, rgba(17, 153, 142, 0.1) 0%, rgba(56, 239, 125, 0.1) 100%)',
+                    border: '1px solid rgba(17, 153, 142, 0.2)',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onClick={() => navigate('/farmers')}
+                  className="quick-action-card"
+                >
+                  <ThemeIcon
+                    size={48}
+                    radius="xl"
+                    style={{ background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)' }}
+                    mx="auto"
+                    mb="sm"
+                  >
+                    <IconUserPlus size={24} color="white" />
+                  </ThemeIcon>
+                  <Text size="sm" fw={600}>Add Farmer</Text>
+                </Paper>
+
+                <Paper
+                  p="md"
+                  radius="lg"
+                  style={{
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
+                    border: '1px solid rgba(102, 126, 234, 0.2)',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onClick={() => navigate('/sales/new')}
+                  className="quick-action-card"
+                >
+                  <ThemeIcon
+                    size={48}
+                    radius="xl"
+                    style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
+                    mx="auto"
+                    mb="sm"
+                  >
+                    <IconReceipt size={24} color="white" />
+                  </ThemeIcon>
+                  <Text size="sm" fw={600}>New Sale</Text>
+                </Paper>
+
+                <Paper
+                  p="md"
+                  radius="lg"
+                  style={{
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    background: 'linear-gradient(135deg, rgba(0, 180, 219, 0.1) 0%, rgba(0, 131, 176, 0.1) 100%)',
+                    border: '1px solid rgba(0, 180, 219, 0.2)',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onClick={() => navigate('/inventory/stock-in')}
+                  className="quick-action-card"
+                >
+                  <ThemeIcon
+                    size={48}
+                    radius="xl"
+                    style={{ background: 'linear-gradient(135deg, #00b4db 0%, #0083b0 100%)' }}
+                    mx="auto"
+                    mb="sm"
+                  >
+                    <IconPackage size={24} color="white" />
+                  </ThemeIcon>
+                  <Text size="sm" fw={600}>Stock In</Text>
+                </Paper>
+
+                <Paper
+                  p="md"
+                  radius="lg"
+                  style={{
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%)',
+                    border: '1px solid rgba(168, 85, 247, 0.2)',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onClick={() => navigate('/payments/advance')}
+                  className="quick-action-card"
+                >
+                  <ThemeIcon
+                    size={48}
+                    radius="xl"
+                    style={{ background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)' }}
+                    mx="auto"
+                    mb="sm"
+                  >
+                    <IconCash size={24} color="white" />
+                  </ThemeIcon>
+                  <Text size="sm" fw={600}>Give Advance</Text>
+                </Paper>
+
+                <Paper
+                  p="md"
+                  radius="lg"
+                  style={{
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    background: 'linear-gradient(135deg, rgba(247, 151, 30, 0.1) 0%, rgba(255, 210, 0, 0.1) 100%)',
+                    border: '1px solid rgba(247, 151, 30, 0.2)',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onClick={() => navigate('/reports')}
+                  className="quick-action-card"
+                >
+                  <ThemeIcon
+                    size={48}
+                    radius="xl"
+                    style={{ background: 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)' }}
+                    mx="auto"
+                    mb="sm"
+                  >
+                    <IconChartBar size={24} color="white" />
+                  </ThemeIcon>
+                  <Text size="sm" fw={600}>Reports</Text>
+                </Paper>
+
+                <Paper
+                  p="md"
+                  radius="lg"
+                  style={{
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    background: 'linear-gradient(135deg, rgba(244, 114, 182, 0.1) 0%, rgba(236, 72, 153, 0.1) 100%)',
+                    border: '1px solid rgba(244, 114, 182, 0.2)',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onClick={() => navigate('/accounting/vouchers')}
+                  className="quick-action-card"
+                >
+                  <ThemeIcon
+                    size={48}
+                    radius="xl"
+                    style={{ background: 'linear-gradient(135deg, #f472b6 0%, #ec4899 100%)' }}
+                    mx="auto"
+                    mb="sm"
+                  >
+                    <IconCalendarStats size={24} color="white" />
+                  </ThemeIcon>
+                  <Text size="sm" fw={600}>Vouchers</Text>
+                </Paper>
+              </>
+            ) : (
+              <>
+                <Paper
+                  p="md"
+                  radius="lg"
+                  style={{
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
+                    border: '1px solid rgba(102, 126, 234, 0.2)',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onClick={() => navigate('/business-inventory/sales/new')}
+                  className="quick-action-card"
+                >
+                  <ThemeIcon
+                    size={48}
+                    radius="xl"
+                    style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
+                    mx="auto"
+                    mb="sm"
+                  >
+                    <IconReceipt size={24} color="white" />
+                  </ThemeIcon>
+                  <Text size="sm" fw={600}>New Sale</Text>
+                </Paper>
+
+                <Paper
+                  p="md"
+                  radius="lg"
+                  style={{
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    background: 'linear-gradient(135deg, rgba(0, 180, 219, 0.1) 0%, rgba(0, 131, 176, 0.1) 100%)',
+                    border: '1px solid rgba(0, 180, 219, 0.2)',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onClick={() => navigate('/business-inventory/stock-in')}
+                  className="quick-action-card"
+                >
+                  <ThemeIcon
+                    size={48}
+                    radius="xl"
+                    style={{ background: 'linear-gradient(135deg, #00b4db 0%, #0083b0 100%)' }}
+                    mx="auto"
+                    mb="sm"
+                  >
+                    <IconPackage size={24} color="white" />
+                  </ThemeIcon>
+                  <Text size="sm" fw={600}>Stock In</Text>
+                </Paper>
+
+                <Paper
+                  p="md"
+                  radius="lg"
+                  style={{
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    background: 'linear-gradient(135deg, rgba(17, 153, 142, 0.1) 0%, rgba(56, 239, 125, 0.1) 100%)',
+                    border: '1px solid rgba(17, 153, 142, 0.2)',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onClick={() => navigate('/customers')}
+                  className="quick-action-card"
+                >
+                  <ThemeIcon
+                    size={48}
+                    radius="xl"
+                    style={{ background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)' }}
+                    mx="auto"
+                    mb="sm"
+                  >
+                    <IconUserPlus size={24} color="white" />
+                  </ThemeIcon>
+                  <Text size="sm" fw={600}>Customers</Text>
+                </Paper>
+
+                <Paper
+                  p="md"
+                  radius="lg"
+                  style={{
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    background: 'linear-gradient(135deg, rgba(247, 151, 30, 0.1) 0%, rgba(255, 210, 0, 0.1) 100%)',
+                    border: '1px solid rgba(247, 151, 30, 0.2)',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onClick={() => navigate('/reports/vyapar')}
+                  className="quick-action-card"
+                >
+                  <ThemeIcon
+                    size={48}
+                    radius="xl"
+                    style={{ background: 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)' }}
+                    mx="auto"
+                    mb="sm"
+                  >
+                    <IconChartBar size={24} color="white" />
+                  </ThemeIcon>
+                  <Text size="sm" fw={600}>Reports</Text>
+                </Paper>
+
+                <Paper
+                  p="md"
+                  radius="lg"
+                  style={{
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    background: 'linear-gradient(135deg, rgba(244, 114, 182, 0.1) 0%, rgba(236, 72, 153, 0.1) 100%)',
+                    border: '1px solid rgba(244, 114, 182, 0.2)',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onClick={() => navigate('/business-accounting/vouchers')}
+                  className="quick-action-card"
+                >
+                  <ThemeIcon
+                    size={48}
+                    radius="xl"
+                    style={{ background: 'linear-gradient(135deg, #f472b6 0%, #ec4899 100%)' }}
+                    mx="auto"
+                    mb="sm"
+                  >
+                    <IconCalendarStats size={24} color="white" />
+                  </ThemeIcon>
+                  <Text size="sm" fw={600}>Vouchers</Text>
+                </Paper>
+
+                <Paper
+                  p="md"
+                  radius="lg"
+                  style={{
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%)',
+                    border: '1px solid rgba(168, 85, 247, 0.2)',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onClick={() => navigate('/business-inventory/items')}
+                  className="quick-action-card"
+                >
+                  <ThemeIcon
+                    size={48}
+                    radius="xl"
+                    style={{ background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)' }}
+                    mx="auto"
+                    mb="sm"
+                  >
+                    <IconBuildingStore size={24} color="white" />
+                  </ThemeIcon>
+                  <Text size="sm" fw={600}>Items</Text>
+                </Paper>
+              </>
+            )}
+          </SimpleGrid>
+
+          <style>{`
+            .quick-action-card:hover {
+              transform: translateY(-4px);
+              box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+            }
+          `}</style>
+        </Card>
+
         {/* Key Metrics */}
         <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} spacing="md">
           {isDairyCooperative && (
@@ -382,7 +726,7 @@ const Dashboard = () => {
             icon={<IconReceipt size={20} />}
             color="teal"
             subtitle={`${metrics.sales.todayCount} Bills Today`}
-            onClick={() => navigate('/sales')}
+            onClick={() => navigate(isDairyCooperative ? '/sales/list' : '/business-inventory/sales/list')}
           />
 
           <AnalyticCard
@@ -391,7 +735,7 @@ const Dashboard = () => {
             icon={<IconPackage size={20} />}
             color="orange"
             subtitle={`${metrics.inventory.totalItems} Items`}
-            onClick={() => navigate('/inventory/stock')}
+            onClick={() => navigate(isDairyCooperative ? '/inventory' : '/business-inventory')}
           />
         </SimpleGrid>
 
@@ -437,39 +781,75 @@ const Dashboard = () => {
             </Group>
           </Card>
 
-          <Card
-            shadow="lg"
-            padding="lg"
-            radius="lg"
-            style={{
-              background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)',
-              border: 'none',
-              position: 'relative',
-              overflow: 'hidden',
-            }}
-          >
-            <Box
+          {isDairyCooperative ? (
+            <Card
+              shadow="lg"
+              padding="lg"
+              radius="lg"
               style={{
-                position: 'absolute',
-                top: '-15px',
-                right: '-15px',
-                width: '80px',
-                height: '80px',
-                borderRadius: '50%',
-                background: 'rgba(255,255,255,0.15)',
+                background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)',
+                border: 'none',
+                position: 'relative',
+                overflow: 'hidden',
               }}
-            />
-            <Group justify="space-between" mb="xs">
-              <Text size="sm" fw={600} c="white">Active Advances</Text>
-              <ThemeIcon size="lg" radius="md" style={{ background: 'rgba(255,255,255,0.2)' }}>
-                <IconCash size={18} color="white" />
-              </ThemeIcon>
-            </Group>
-            <Text size="xl" fw={700} c="white">{metrics.advances.total}</Text>
-            <Text size="xs" c="rgba(255,255,255,0.8)">
-              Pending: {formatCurrency(metrics.advances.pendingAmount)}
-            </Text>
-          </Card>
+            >
+              <Box
+                style={{
+                  position: 'absolute',
+                  top: '-15px',
+                  right: '-15px',
+                  width: '80px',
+                  height: '80px',
+                  borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.15)',
+                }}
+              />
+              <Group justify="space-between" mb="xs">
+                <Text size="sm" fw={600} c="white">Active Advances</Text>
+                <ThemeIcon size="lg" radius="md" style={{ background: 'rgba(255,255,255,0.2)' }}>
+                  <IconCash size={18} color="white" />
+                </ThemeIcon>
+              </Group>
+              <Text size="xl" fw={700} c="white">{metrics.advances.total}</Text>
+              <Text size="xs" c="rgba(255,255,255,0.8)">
+                Pending: {formatCurrency(metrics.advances.pendingAmount)}
+              </Text>
+            </Card>
+          ) : (
+            <Card
+              shadow="lg"
+              padding="lg"
+              radius="lg"
+              style={{
+                background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)',
+                border: 'none',
+                position: 'relative',
+                overflow: 'hidden',
+              }}
+            >
+              <Box
+                style={{
+                  position: 'absolute',
+                  top: '-15px',
+                  right: '-15px',
+                  width: '80px',
+                  height: '80px',
+                  borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.15)',
+                }}
+              />
+              <Group justify="space-between" mb="xs">
+                <Text size="sm" fw={600} c="white">Total Sales</Text>
+                <ThemeIcon size="lg" radius="md" style={{ background: 'rgba(255,255,255,0.2)' }}>
+                  <IconReceipt size={18} color="white" />
+                </ThemeIcon>
+              </Group>
+              <Text size="xl" fw={700} c="white">{metrics.sales.total}</Text>
+              <Text size="xs" c="rgba(255,255,255,0.8)">
+                Today: {metrics.sales.todayCount} Bills
+              </Text>
+            </Card>
+          )}
 
           {isDairyCooperative && (
             <Card
@@ -698,7 +1078,7 @@ const Dashboard = () => {
                   </ThemeIcon>
                   <Text fw={600}>Recent Sales</Text>
                 </Group>
-                <ActionIcon variant="subtle" onClick={() => navigate('/sales')}>
+                <ActionIcon variant="subtle" onClick={() => navigate(isDairyCooperative ? '/sales/list' : '/business-inventory/sales/list')}>
                   <IconArrowRight size={18} />
                 </ActionIcon>
               </Group>
@@ -752,7 +1132,7 @@ const Dashboard = () => {
                   </ThemeIcon>
                   <Text fw={600}>Low Stock Alert</Text>
                 </Group>
-                <ActionIcon variant="subtle" onClick={() => navigate('/inventory/stock')}>
+                <ActionIcon variant="subtle" onClick={() => navigate(isDairyCooperative ? '/inventory' : '/business-inventory')}>
                   <IconArrowRight size={18} />
                 </ActionIcon>
               </Group>
@@ -791,170 +1171,6 @@ const Dashboard = () => {
           </Grid.Col>
         </Grid>
 
-        {/* Quick Actions - Colorful Buttons */}
-        <Card shadow="sm" padding="lg" radius="lg" withBorder>
-          <Text fw={600} mb="md" size="lg">Quick Actions</Text>
-          <SimpleGrid cols={{ base: 2, xs: 3, md: 6 }} spacing="md">
-            {isDairyCooperative && (
-              <Paper
-                p="md"
-                radius="lg"
-                style={{
-                  cursor: 'pointer',
-                  textAlign: 'center',
-                  background: 'linear-gradient(135deg, rgba(17, 153, 142, 0.1) 0%, rgba(56, 239, 125, 0.1) 100%)',
-                  border: '1px solid rgba(17, 153, 142, 0.2)',
-                  transition: 'all 0.3s ease',
-                }}
-                onClick={() => navigate('/farmers')}
-                className="quick-action-card"
-              >
-                <ThemeIcon
-                  size={48}
-                  radius="xl"
-                  style={{ background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)' }}
-                  mx="auto"
-                  mb="sm"
-                >
-                  <IconUserPlus size={24} color="white" />
-                </ThemeIcon>
-                <Text size="sm" fw={600}>Add Farmer</Text>
-              </Paper>
-            )}
-
-            <Paper
-              p="md"
-              radius="lg"
-              style={{
-                cursor: 'pointer',
-                textAlign: 'center',
-                background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
-                border: '1px solid rgba(102, 126, 234, 0.2)',
-                transition: 'all 0.3s ease',
-              }}
-              onClick={() => navigate('/sales/new')}
-              className="quick-action-card"
-            >
-              <ThemeIcon
-                size={48}
-                radius="xl"
-                style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
-                mx="auto"
-                mb="sm"
-              >
-                <IconReceipt size={24} color="white" />
-              </ThemeIcon>
-              <Text size="sm" fw={600}>New Sale</Text>
-            </Paper>
-
-            <Paper
-              p="md"
-              radius="lg"
-              style={{
-                cursor: 'pointer',
-                textAlign: 'center',
-                background: 'linear-gradient(135deg, rgba(0, 180, 219, 0.1) 0%, rgba(0, 131, 176, 0.1) 100%)',
-                border: '1px solid rgba(0, 180, 219, 0.2)',
-                transition: 'all 0.3s ease',
-              }}
-              onClick={() => navigate('/inventory/stock-in')}
-              className="quick-action-card"
-            >
-              <ThemeIcon
-                size={48}
-                radius="xl"
-                style={{ background: 'linear-gradient(135deg, #00b4db 0%, #0083b0 100%)' }}
-                mx="auto"
-                mb="sm"
-              >
-                <IconPackage size={24} color="white" />
-              </ThemeIcon>
-              <Text size="sm" fw={600}>Stock In</Text>
-            </Paper>
-
-            <Paper
-              p="md"
-              radius="lg"
-              style={{
-                cursor: 'pointer',
-                textAlign: 'center',
-                background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%)',
-                border: '1px solid rgba(168, 85, 247, 0.2)',
-                transition: 'all 0.3s ease',
-              }}
-              onClick={() => navigate('/payments/advance')}
-              className="quick-action-card"
-            >
-              <ThemeIcon
-                size={48}
-                radius="xl"
-                style={{ background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)' }}
-                mx="auto"
-                mb="sm"
-              >
-                <IconCash size={24} color="white" />
-              </ThemeIcon>
-              <Text size="sm" fw={600}>Give Advance</Text>
-            </Paper>
-
-            <Paper
-              p="md"
-              radius="lg"
-              style={{
-                cursor: 'pointer',
-                textAlign: 'center',
-                background: 'linear-gradient(135deg, rgba(247, 151, 30, 0.1) 0%, rgba(255, 210, 0, 0.1) 100%)',
-                border: '1px solid rgba(247, 151, 30, 0.2)',
-                transition: 'all 0.3s ease',
-              }}
-              onClick={() => navigate('/reports')}
-              className="quick-action-card"
-            >
-              <ThemeIcon
-                size={48}
-                radius="xl"
-                style={{ background: 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)' }}
-                mx="auto"
-                mb="sm"
-              >
-                <IconChartBar size={24} color="white" />
-              </ThemeIcon>
-              <Text size="sm" fw={600}>Reports</Text>
-            </Paper>
-
-            <Paper
-              p="md"
-              radius="lg"
-              style={{
-                cursor: 'pointer',
-                textAlign: 'center',
-                background: 'linear-gradient(135deg, rgba(244, 114, 182, 0.1) 0%, rgba(236, 72, 153, 0.1) 100%)',
-                border: '1px solid rgba(244, 114, 182, 0.2)',
-                transition: 'all 0.3s ease',
-              }}
-              onClick={() => navigate('/accounting/vouchers')}
-              className="quick-action-card"
-            >
-              <ThemeIcon
-                size={48}
-                radius="xl"
-                style={{ background: 'linear-gradient(135deg, #f472b6 0%, #ec4899 100%)' }}
-                mx="auto"
-                mb="sm"
-              >
-                <IconCalendarStats size={24} color="white" />
-              </ThemeIcon>
-              <Text size="sm" fw={600}>Vouchers</Text>
-            </Paper>
-          </SimpleGrid>
-
-          <style>{`
-            .quick-action-card:hover {
-              transform: translateY(-4px);
-              box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-            }
-          `}</style>
-        </Card>
       </Stack>
     </Container>
   );

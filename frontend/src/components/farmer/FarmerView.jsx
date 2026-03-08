@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Container,
@@ -26,12 +26,14 @@ import {
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { farmerAPI } from '../../services/api';
+import { printReport } from '../../utils/printReport';
 import { message } from '../../utils/toast';
 import AnalyticCard from '../common/AnalyticCard';
 
 const FarmerView = () => {
   const navigate = useNavigate();
   const { id } = useParams();
+  const printRef = useRef(null);
   const [farmer, setFarmer] = useState(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('details');
@@ -55,7 +57,7 @@ const FarmerView = () => {
   };
 
   const handlePrint = () => {
-    window.print();
+    printReport(printRef, { title: 'Farmer Profile', orientation: 'landscape' });
   };
 
   const handleExportPDF = () => {
@@ -101,7 +103,7 @@ const FarmerView = () => {
   );
 
   return (
-    <Container fluid>
+    <Container fluid ref={printRef}>
       <Stack gap="lg">
         <Group justify="space-between" align="flex-start">
           <Box>

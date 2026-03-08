@@ -1,578 +1,597 @@
-import { useState, useEffect } from 'react';
-import { message } from '../../utils/toast';
+import { useState, useRef } from 'react';
+import {
+  Alert, Badge, Box, Button, Card, Divider, Grid, Group,
+  Loader, Paper, Stack, Table, Tabs, Text, Title, ActionIcon, Tooltip
+} from '@mantine/core';
+import { DateInput } from '@mantine/dates';
+import { notifications } from '@mantine/notifications';
+import {
+  IconRefresh, IconPrinter, IconAlertCircle, IconScale,
+  IconChartBar, IconTrendingUp, IconFileText, IconLayoutColumns
+} from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { reportAPI } from '../../services/api';
-import PageHeader from '../common/PageHeader';
-import DateFilterToolbar from '../common/DateFilterToolbar';
-import ExportButton from '../common/ExportButton';
-import './FinalAccounts.css';
+import { printReport } from '../../utils/printReport';
 
+/* ── helpers ────────────────────────────────────────────────── */
+const fmt = (v) =>
+  new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
+    Math.abs(parseFloat(v || 0))
+  );
+const neg = (v) => parseFloat(v || 0) < 0;
+
+const getFinancialYear = (date) => {
+  const d = dayjs(date);
+  const m = d.month();
+  const y = d.year();
+  return m >= 3 ? `${y}-${(y + 1).toString().slice(2)}` : `${y - 1}-${y.toString().slice(2)}`;
+};
+
+/* ── reusable two-column wrapper ────────────────────────────── */
+const TwoCol = ({ left, right }) => (
+  <Group align="flex-start" grow gap="md" style={{ alignItems: 'stretch' }}>
+    {left}
+    {right}
+  </Group>
+);
+
+/* ── side panel card ────────────────────────────────────────── */
+const SideCard = ({ title, color, children, footer }) => (
+  <Card withBorder shadow="sm" radius="md" p={0} style={{ flex: 1 }}>
+    <Box bg={color} px="md" py="xs">
+      <Text fw={700} size="sm" c="white" tt="uppercase" style={{ letterSpacing: 1 }}>
+        {title}
+      </Text>
+    </Box>
+    <Box>{children}</Box>
+    {footer && (
+      <Box bg="gray.1" px="md" py="xs" style={{ borderTop: '1px solid #dee2e6' }}>
+        {footer}
+      </Box>
+    )}
+  </Card>
+);
+
+/* ── simple table row types ─────────────────────────────────── */
+const GroupHeader = ({ label, no }) => (
+  <Table.Tr bg="gray.0">
+    <Table.Td w={32} ta="center" c="dimmed" style={{ fontSize: 11 }}>{no}</Table.Td>
+    <Table.Td colSpan={2}><Text fw={700} size="sm">{label}</Text></Table.Td>
+  </Table.Tr>
+);
+
+const ItemRow = ({ label, amount, indent }) => (
+  <Table.Tr>
+    <Table.Td />
+    <Table.Td pl={indent ? 28 : 12}>{label}</Table.Td>
+    <Table.Td ta="right" w={130} c={neg(amount) ? 'red' : 'dark'} fw={500}>
+      {neg(amount) ? `(${fmt(amount)})` : fmt(amount)}
+    </Table.Td>
+  </Table.Tr>
+);
+
+const SubtotalRow = ({ label, amount }) => (
+  <Table.Tr bg="blue.0">
+    <Table.Td />
+    <Table.Td pl={28}><Text fw={600} size="sm">{label}</Text></Table.Td>
+    <Table.Td ta="right" w={130}>
+      <Text fw={700} size="sm" c="blue">{neg(amount) ? `(${fmt(amount)})` : fmt(amount)}</Text>
+    </Table.Td>
+  </Table.Tr>
+);
+
+const GrandTotalRow = ({ label, amount, color = 'dark' }) => (
+  <Table.Tr bg="dark" style={{ borderTop: '2px solid #343a40' }}>
+    <Table.Td colSpan={2} pl={12}><Text fw={800} size="sm" c="white">{label}</Text></Table.Td>
+    <Table.Td ta="right" w={130}>
+      <Text fw={800} size="sm" c="yellow">{neg(amount) ? `(${fmt(amount)})` : fmt(amount)}</Text>
+    </Table.Td>
+  </Table.Tr>
+);
+
+const SpecialRow = ({ label, amount, color = 'green' }) => (
+  <Table.Tr bg={`${color}.0`}>
+    <Table.Td colSpan={2} pl={12}><Text fw={700} size="sm" c={color}>{label}</Text></Table.Td>
+    <Table.Td ta="right" w={130}>
+      <Text fw={700} size="sm" c={color}>{neg(amount) ? `(${fmt(amount)})` : fmt(amount)}</Text>
+    </Table.Td>
+  </Table.Tr>
+);
+
+/* ══════════════════════════════════════════════════════════════
+   TRADING ACCOUNT
+══════════════════════════════════════════════════════════════ */
+const TradingAccount = ({ data, period }) => {
+  if (!data) return null;
+  const { debitSide, creditSide, totals } = data;
+  const periodLabel = period
+    ? `${dayjs(period.startDate).format('DD-MMM-YYYY')} to ${dayjs(period.endDate).format('DD-MMM-YYYY')}`
+    : '';
+
+  const BaseTable = ({ children }) => (
+    <Table withColumnBorders style={{ fontSize: 13 }}>
+      <Table.Thead bg="gray.0">
+        <Table.Tr>
+          <Table.Th w={32} ta="center" style={{ fontSize: 11 }}>#</Table.Th>
+          <Table.Th>Particulars</Table.Th>
+          <Table.Th w={130} ta="right">Amount (₹)</Table.Th>
+        </Table.Tr>
+      </Table.Thead>
+      <Table.Tbody>{children}</Table.Tbody>
+    </Table>
+  );
+
+  return (
+    <Stack gap="sm">
+      <Box ta="center">
+        <Text fw={700} size="md">TRADING ACCOUNT</Text>
+        {periodLabel && <Text size="sm" c="dimmed">Period: {periodLabel}</Text>}
+      </Box>
+
+      <TwoCol
+        left={
+          <SideCard title="Dr. — Expenditure / Purchases" color="blue">
+            <BaseTable>
+              {/* Opening Stock */}
+              <GroupHeader no={1} label="Opening Stock" />
+              <ItemRow
+                label={`Total Opening Stock`}
+                amount={debitSide?.openingStock?.total || 0}
+              />
+              <SubtotalRow label="Total Opening Stock" amount={debitSide?.openingStock?.total || 0} />
+
+              {/* Purchases */}
+              <GroupHeader no={2} label="Purchases" />
+              {(debitSide?.purchases?.items || []).map((it, i) => (
+                <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />
+              ))}
+              <SubtotalRow label="Total Purchases" amount={debitSide?.purchases?.total || 0} />
+
+              {/* Trade Expenses */}
+              <GroupHeader no={3} label="Trade Expenses" />
+              {(debitSide?.tradeExpenses?.items || []).map((it, i) => (
+                <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />
+              ))}
+              <SubtotalRow label="Total Trade Expenses" amount={debitSide?.tradeExpenses?.total || 0} />
+
+              {/* Gross Profit (balancing) */}
+              {parseFloat(debitSide?.grossProfit || 0) > 0 && (
+                <SpecialRow
+                  label="Gross Profit c/o to P&L A/c"
+                  amount={debitSide.grossProfit}
+                  color="green"
+                />
+              )}
+
+              <GrandTotalRow label="GRAND TOTAL" amount={totals?.debitTotal || 0} />
+            </BaseTable>
+          </SideCard>
+        }
+        right={
+          <SideCard title="Cr. — Sales / Income" color="teal">
+            <BaseTable>
+              {/* Sales */}
+              <GroupHeader no={1} label="Sales" />
+              {(creditSide?.sales?.items || []).map((it, i) => (
+                <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />
+              ))}
+              <SubtotalRow label="Total Sales" amount={creditSide?.sales?.total || 0} />
+
+              {/* Trade Income */}
+              <GroupHeader no={2} label="Trade Income" />
+              {(creditSide?.tradeIncome?.items || []).map((it, i) => (
+                <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />
+              ))}
+              <SubtotalRow label="Total Trade Income" amount={creditSide?.tradeIncome?.total || 0} />
+
+              {/* Closing Stock */}
+              <GroupHeader no={3} label="Closing Stock" />
+              {(creditSide?.closingStock?.items || []).map((it, i) => (
+                <ItemRow key={i} label={it.category} amount={it.amount} indent />
+              ))}
+              <SubtotalRow label="Total Closing Stock" amount={creditSide?.closingStock?.total || 0} />
+
+              {/* Gross Loss (balancing) */}
+              {parseFloat(creditSide?.grossLoss || 0) > 0 && (
+                <SpecialRow
+                  label="Gross Loss c/o to P&L A/c"
+                  amount={creditSide.grossLoss}
+                  color="red"
+                />
+              )}
+
+              <GrandTotalRow label="GRAND TOTAL" amount={totals?.creditTotal || 0} />
+            </BaseTable>
+          </SideCard>
+        }
+      />
+    </Stack>
+  );
+};
+
+/* ══════════════════════════════════════════════════════════════
+   PROFIT & LOSS
+══════════════════════════════════════════════════════════════ */
+const ProfitLoss = ({ data }) => {
+  if (!data) return null;
+  const { income, totalIncome, expenses, totalExpense, netProfit } = data;
+  const isProfit = netProfit >= 0;
+
+  const BaseTable = ({ children }) => (
+    <Table withColumnBorders style={{ fontSize: 13 }}>
+      <Table.Thead bg="gray.0">
+        <Table.Tr>
+          <Table.Th w={32} ta="center" style={{ fontSize: 11 }}>#</Table.Th>
+          <Table.Th>Particulars</Table.Th>
+          <Table.Th w={130} ta="right">Amount (₹)</Table.Th>
+        </Table.Tr>
+      </Table.Thead>
+      <Table.Tbody>{children}</Table.Tbody>
+    </Table>
+  );
+
+  return (
+    <Stack gap="sm">
+      <Box ta="center">
+        <Text fw={700} size="md">PROFIT & LOSS ACCOUNT</Text>
+        <Text size="sm" c="dimmed">Based on current ledger balances</Text>
+      </Box>
+
+      <TwoCol
+        left={
+          <SideCard title="Dr. — Expenses" color="red.7">
+            <BaseTable>
+              <GroupHeader no={1} label="Expenses" />
+              {(expenses || []).map((it, i) => (
+                <ItemRow key={i} label={it.name} amount={it.amount} indent />
+              ))}
+              <SubtotalRow label="Total Expenses" amount={totalExpense} />
+
+              {/* Net Profit carried to Balance Sheet */}
+              {isProfit && (
+                <SpecialRow label="Net Profit (c/o to Balance Sheet)" amount={netProfit} color="green" />
+              )}
+
+              <GrandTotalRow
+                label="GRAND TOTAL"
+                amount={isProfit ? (totalExpense + netProfit) : totalExpense}
+              />
+            </BaseTable>
+          </SideCard>
+        }
+        right={
+          <SideCard title="Cr. — Income" color="green.7">
+            <BaseTable>
+              <GroupHeader no={1} label="Income" />
+              {(income || []).map((it, i) => (
+                <ItemRow key={i} label={it.name} amount={it.amount} indent />
+              ))}
+              <SubtotalRow label="Total Income" amount={totalIncome} />
+
+              {/* Net Loss carried to Balance Sheet */}
+              {!isProfit && (
+                <SpecialRow label="Net Loss (c/o to Balance Sheet)" amount={Math.abs(netProfit)} color="red" />
+              )}
+
+              <GrandTotalRow
+                label="GRAND TOTAL"
+                amount={!isProfit ? (totalIncome + Math.abs(netProfit)) : totalIncome}
+              />
+            </BaseTable>
+          </SideCard>
+        }
+      />
+
+      {/* Net Profit / Loss summary */}
+      <Card withBorder radius="md" p="sm" bg={isProfit ? 'green.0' : 'red.0'}>
+        <Group justify="center" gap="xl">
+          <Text fw={700} c={isProfit ? 'green' : 'red'} size="lg">
+            {isProfit ? 'NET PROFIT' : 'NET LOSS'}: ₹ {fmt(netProfit)}
+          </Text>
+          <Badge color={isProfit ? 'green' : 'red'} size="lg">
+            {isProfit ? 'Profitable' : 'Loss-Making'}
+          </Badge>
+        </Group>
+      </Card>
+    </Stack>
+  );
+};
+
+/* ══════════════════════════════════════════════════════════════
+   BALANCE SHEET
+══════════════════════════════════════════════════════════════ */
+const BalanceSheetSection = ({ data }) => {
+  if (!data) return null;
+  const { assets, totalAssets, liabilities, totalLiabilities, capital, totalCapital, netProfit, totalLiabilitiesAndCapital, isTallied } = data;
+
+  const BaseTable = ({ children }) => (
+    <Table withColumnBorders style={{ fontSize: 13 }}>
+      <Table.Thead bg="gray.0">
+        <Table.Tr>
+          <Table.Th w={32} ta="center" style={{ fontSize: 11 }}>#</Table.Th>
+          <Table.Th>Particulars</Table.Th>
+          <Table.Th w={130} ta="right">Amount (₹)</Table.Th>
+        </Table.Tr>
+      </Table.Thead>
+      <Table.Tbody>{children}</Table.Tbody>
+    </Table>
+  );
+
+  // Build liability+capital items
+  const liabRow = (it, i) => <ItemRow key={i} label={it.name} amount={it.amount} indent />;
+  const capRow = (it, i) => <ItemRow key={`cap-${i}`} label={it.name} amount={it.amount} indent />;
+
+  return (
+    <Stack gap="sm">
+      <Box ta="center">
+        <Text fw={700} size="md">BALANCE SHEET</Text>
+        <Text size="sm" c="dimmed">As on {dayjs().format('DD MMMM YYYY')}</Text>
+      </Box>
+
+      {!isTallied && (
+        <Alert icon={<IconAlertCircle size={16} />} color="orange" title="Not Balanced">
+          Liabilities + Capital (₹ {fmt(totalLiabilitiesAndCapital)}) ≠ Assets (₹ {fmt(totalAssets)}) |
+          Difference: ₹ {fmt(Math.abs((totalLiabilitiesAndCapital || 0) - (totalAssets || 0)))}
+        </Alert>
+      )}
+
+      <TwoCol
+        left={
+          <SideCard title="Liabilities & Capital" color="blue">
+            <BaseTable>
+              {/* Liabilities */}
+              {(liabilities || []).length > 0 && (
+                <>
+                  <GroupHeader no={1} label="Liabilities" />
+                  {(liabilities || []).map(liabRow)}
+                  <SubtotalRow label="Total Liabilities" amount={totalLiabilities} />
+                </>
+              )}
+
+              {/* Capital */}
+              {(capital || []).length > 0 && (
+                <>
+                  <GroupHeader no={2} label="Capital" />
+                  {(capital || []).map(capRow)}
+                  <SubtotalRow label="Total Capital" amount={totalCapital} />
+                </>
+              )}
+
+              {/* Net Profit from P&L */}
+              <Table.Tr bg="green.0">
+                <Table.Td />
+                <Table.Td pl={12}>
+                  <Text fw={600} size="sm" c="green">Net Profit from P&L A/c</Text>
+                </Table.Td>
+                <Table.Td ta="right" w={130}>
+                  <Text fw={700} size="sm" c={netProfit >= 0 ? 'green' : 'red'}>
+                    {netProfit < 0 ? `(${fmt(netProfit)})` : fmt(netProfit)}
+                  </Text>
+                </Table.Td>
+              </Table.Tr>
+
+              <GrandTotalRow label="GRAND TOTAL" amount={totalLiabilitiesAndCapital} />
+            </BaseTable>
+          </SideCard>
+        }
+        right={
+          <SideCard title="Assets" color="teal">
+            <BaseTable>
+              <GroupHeader no={1} label="Assets" />
+              {(assets || []).map((it, i) => (
+                <ItemRow key={i} label={it.name} amount={it.amount} indent />
+              ))}
+              <SubtotalRow label="Total Assets" amount={totalAssets} />
+              <GrandTotalRow label="GRAND TOTAL" amount={totalAssets} />
+            </BaseTable>
+          </SideCard>
+        }
+      />
+
+      {isTallied && (
+        <Alert icon={<IconScale size={16} />} color="green" title="Balance Sheet Tallied">
+          Total Liabilities & Capital = Total Assets = ₹ {fmt(totalAssets)}
+        </Alert>
+      )}
+    </Stack>
+  );
+};
+
+/* ══════════════════════════════════════════════════════════════
+   MAIN COMPONENT
+══════════════════════════════════════════════════════════════ */
 const FinalAccounts = () => {
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('all');
-  const [tradingData, setTradingData] = useState(null);
-  const [profitLossData, setProfitLossData] = useState(null);
-  const [balanceSheetData, setBalanceSheetData] = useState(null);
-  const [filterParams, setFilterParams] = useState(null);
+  const [activeTab, setActiveTab] = useState('trading');
+  const printRef = useRef(null);
+  const [startDate, setStartDate] = useState(() => {
+    const now = new Date();
+    const fy = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+    return new Date(fy, 3, 1); // 1 April
+  });
+  const [endDate, setEndDate] = useState(new Date());
 
-  const fetchAllReports = async (params) => {
+  const [tradingData, setTradingData] = useState(null);
+  const [plData, setPlData] = useState(null);
+  const [bsData, setBsData] = useState(null);
+
+  const fy = getFinancialYear(startDate);
+
+  const fetchAll = async () => {
     setLoading(true);
     try {
+      const params = {
+        startDate: dayjs(startDate).format('YYYY-MM-DD'),
+        endDate: dayjs(endDate).format('YYYY-MM-DD')
+      };
+
       const [trading, pl, bs] = await Promise.all([
         reportAPI.tradingAccount(params),
         reportAPI.profitLoss(params),
         reportAPI.balanceSheet()
       ]);
 
-      setTradingData(trading.data);
-      setProfitLossData(pl.data);
-      setBalanceSheetData(bs.data);
-      setFilterParams(params);
-    } catch (error) {
-      message.error(error.message || 'Failed to fetch final accounts');
+      setTradingData(trading?.data || null);
+      setPlData(pl?.data || null);
+      setBsData(bs?.data || null);
+
+      notifications.show({ title: 'Done', message: 'Final accounts loaded', color: 'green' });
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message || 'Failed to load', color: 'red' });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleFilterChange = (filterData) => {
-    fetchAllReports(filterData);
-  };
-
-  const formatCurrency = (amount) => {
-    return `₹${parseFloat(amount || 0).toFixed(2)}`;
-  };
-
-  const renderTradingAccount = () => {
-    if (!tradingData) return null;
-
-    const { period, debitSide, creditSide, totals } = tradingData;
-    let debitSlNo = 1;
-    let creditSlNo = 1;
-
-    return (
-      <div className="statement-section trading-account-section">
-        <div className="trading-account-header">
-          <h2 className="statement-title">
-            TRADING ACCOUNT FOR THE PERIOD: {dayjs(period?.startDate).format('DD-MMM-YYYY')} to {dayjs(period?.endDate).format('DD-MMM-YYYY')}
-          </h2>
-          <p className="financial-year">Financial Year: {period?.financialYear || '2024-25'}</p>
-          <p className="report-subtitle">Standard Trading Account | Single Column Accounting Format</p>
-          <p className="report-subtitle">Cooperative Society / ERP / Audit-Ready Layout</p>
-        </div>
-
-        <div className="statement-content">
-          <div className="trading-account-columns">
-            {/* DEBIT SIDE */}
-            <div className="debit-side">
-              <h3 className="side-header">DEBIT (EXPENDITURE / PURCHASES)</h3>
-              <table className="trading-account-table">
-                <thead>
-                  <tr>
-                    <th className="sl-col">Sl. No</th>
-                    <th className="particulars-col">Particulars</th>
-                    <th className="amount-col">Amount (₹)</th>
-                    <th className="total-col">Total (₹)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Opening Stock */}
-                  <tr>
-                    <td className="sl-no">{debitSlNo++}</td>
-                    <td className="particulars-col"><strong>Opening Stock</strong></td>
-                    <td className="amount-col"></td>
-                    <td className="total-col text-right">{formatCurrency(debitSide?.openingStock?.total || 0)}</td>
-                  </tr>
-
-                  {/* Purchases Group */}
-                  <tr className="group-header-row">
-                    <td className="sl-no">{debitSlNo++}</td>
-                    <td className="particulars-col"><strong>Purchases</strong></td>
-                    <td className="amount-col"></td>
-                    <td className="total-col"></td>
-                  </tr>
-                  {debitSide?.purchases?.items?.map((item, idx) => (
-                    <tr key={`purchase-${idx}`} className="ledger-row">
-                      <td className="sl-no"></td>
-                      <td className="particulars-col indent">{item.ledgerName}</td>
-                      <td className="amount-col text-right">{formatCurrency(item.amount)}</td>
-                      <td className="total-col"></td>
-                    </tr>
-                  ))}
-                  <tr className="group-total-row">
-                    <td className="sl-no"></td>
-                    <td className="particulars-col indent"><strong>Total Purchases</strong></td>
-                    <td className="amount-col"></td>
-                    <td className="total-col text-right"><strong>{formatCurrency(debitSide?.purchases?.total || 0)}</strong></td>
-                  </tr>
-
-                  {/* Trade Expenses Group */}
-                  <tr className="group-header-row">
-                    <td className="sl-no">{debitSlNo++}</td>
-                    <td className="particulars-col"><strong>Trade Expenses</strong></td>
-                    <td className="amount-col"></td>
-                    <td className="total-col"></td>
-                  </tr>
-                  {debitSide?.tradeExpenses?.items?.map((item, idx) => (
-                    <tr key={`expense-${idx}`} className="ledger-row">
-                      <td className="sl-no"></td>
-                      <td className="particulars-col indent">{item.ledgerName}</td>
-                      <td className="amount-col text-right">{formatCurrency(item.amount)}</td>
-                      <td className="total-col"></td>
-                    </tr>
-                  ))}
-                  <tr className="group-total-row">
-                    <td className="sl-no"></td>
-                    <td className="particulars-col indent"><strong>Total Trade Expenses</strong></td>
-                    <td className="amount-col"></td>
-                    <td className="total-col text-right"><strong>{formatCurrency(debitSide?.tradeExpenses?.total || 0)}</strong></td>
-                  </tr>
-
-                  {/* Gross Profit */}
-                  {debitSide?.grossProfit > 0 && (
-                    <tr className="profit-row">
-                      <td className="sl-no"></td>
-                      <td className="particulars-col"><strong>Gross Profit Carried to P&amp;L A/c</strong></td>
-                      <td className="amount-col"></td>
-                      <td className="total-col text-right"><strong>{formatCurrency(debitSide.grossProfit)}</strong></td>
-                    </tr>
-                  )}
-
-                  {/* Grand Total */}
-                  <tr className="grand-total-row">
-                    <td className="sl-no"></td>
-                    <td className="particulars-col"><strong>GRAND TOTAL</strong></td>
-                    <td className="amount-col"></td>
-                    <td className="total-col text-right"><strong>{formatCurrency(totals?.debitTotal || 0)}</strong></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* CREDIT SIDE */}
-            <div className="credit-side">
-              <h3 className="side-header">CREDIT (SALES / INCOME)</h3>
-              <table className="trading-account-table">
-                <thead>
-                  <tr>
-                    <th className="sl-col">Sl. No</th>
-                    <th className="particulars-col">Particulars</th>
-                    <th className="amount-col">Amount (₹)</th>
-                    <th className="total-col">Total (₹)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Sales Group */}
-                  <tr className="group-header-row">
-                    <td className="sl-no">{creditSlNo++}</td>
-                    <td className="particulars-col"><strong>Sales</strong></td>
-                    <td className="amount-col"></td>
-                    <td className="total-col"></td>
-                  </tr>
-                  {creditSide?.sales?.items?.map((item, idx) => (
-                    <tr key={`sales-${idx}`} className="ledger-row">
-                      <td className="sl-no"></td>
-                      <td className="particulars-col indent">{item.ledgerName}</td>
-                      <td className="amount-col text-right">{formatCurrency(item.amount)}</td>
-                      <td className="total-col"></td>
-                    </tr>
-                  ))}
-                  <tr className="group-total-row">
-                    <td className="sl-no"></td>
-                    <td className="particulars-col indent"><strong>Total Sales</strong></td>
-                    <td className="amount-col"></td>
-                    <td className="total-col text-right"><strong>{formatCurrency(creditSide?.sales?.total || 0)}</strong></td>
-                  </tr>
-
-                  {/* Trade Income Group */}
-                  <tr className="group-header-row">
-                    <td className="sl-no">{creditSlNo++}</td>
-                    <td className="particulars-col"><strong>Trade Income</strong></td>
-                    <td className="amount-col"></td>
-                    <td className="total-col"></td>
-                  </tr>
-                  {creditSide?.tradeIncome?.items?.map((item, idx) => (
-                    <tr key={`income-${idx}`} className="ledger-row">
-                      <td className="sl-no"></td>
-                      <td className="particulars-col indent">{item.ledgerName}</td>
-                      <td className="amount-col text-right">{formatCurrency(item.amount)}</td>
-                      <td className="total-col"></td>
-                    </tr>
-                  ))}
-                  <tr className="group-total-row">
-                    <td className="sl-no"></td>
-                    <td className="particulars-col indent"><strong>Total Trade Income</strong></td>
-                    <td className="amount-col"></td>
-                    <td className="total-col text-right"><strong>{formatCurrency(creditSide?.tradeIncome?.total || 0)}</strong></td>
-                  </tr>
-
-                  {/* Closing Stock Group */}
-                  <tr className="group-header-row">
-                    <td className="sl-no">{creditSlNo++}</td>
-                    <td className="particulars-col"><strong>Closing Stock</strong></td>
-                    <td className="amount-col"></td>
-                    <td className="total-col"></td>
-                  </tr>
-                  {creditSide?.closingStock?.items?.map((item, idx) => (
-                    <tr key={`stock-${idx}`} className="ledger-row">
-                      <td className="sl-no"></td>
-                      <td className="particulars-col indent">{item.category}</td>
-                      <td className="amount-col text-right">{formatCurrency(item.amount)}</td>
-                      <td className="total-col"></td>
-                    </tr>
-                  ))}
-                  <tr className="group-total-row">
-                    <td className="sl-no"></td>
-                    <td className="particulars-col indent"><strong>Total Closing Stock</strong></td>
-                    <td className="amount-col"></td>
-                    <td className="total-col text-right"><strong>{formatCurrency(creditSide?.closingStock?.total || 0)}</strong></td>
-                  </tr>
-
-                  {/* Gross Loss */}
-                  {creditSide?.grossLoss > 0 && (
-                    <tr className="loss-row">
-                      <td className="sl-no"></td>
-                      <td className="particulars-col"><strong>Gross Loss Carried to P&amp;L A/c</strong></td>
-                      <td className="amount-col"></td>
-                      <td className="total-col text-right"><strong>{formatCurrency(creditSide.grossLoss)}</strong></td>
-                    </tr>
-                  )}
-
-                  {/* Grand Total */}
-                  <tr className="grand-total-row">
-                    <td className="sl-no"></td>
-                    <td className="particulars-col"><strong>GRAND TOTAL</strong></td>
-                    <td className="amount-col"></td>
-                    <td className="total-col text-right"><strong>{formatCurrency(totals?.creditTotal || 0)}</strong></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <div className="report-footer">
-          <div className="footer-left">Created on {dayjs().format('DD/MM/YYYY hh:mm A')}</div>
-          <div className="footer-right">Page 1 of 1</div>
-          <p className="footer-center">This is a computer-generated report</p>
-        </div>
-      </div>
-    );
-  };
-
-  const renderProfitLoss = () => (
-    <div className="statement-section">
-      <h2 className="statement-title">Profit & Loss Account</h2>
-      <div className="statement-content">
-        <div className="statement-columns">
-          <div className="debit-side">
-            <h3>Expenses</h3>
-            <table className="statement-table">
-              <tbody>
-                {profitLossData?.expenses.map((expense, idx) => (
-                  <tr key={idx}>
-                    <td>{expense.ledgerName}</td>
-                    <td className="text-right">{formatCurrency(expense.amount)}</td>
-                  </tr>
-                ))}
-                <tr className="total-row">
-                  <td><strong>Net Profit</strong></td>
-                  <td className="text-right"><strong>{formatCurrency(profitLossData?.netProfit || 0)}</strong></td>
-                </tr>
-                <tr className="grand-total">
-                  <td><strong>Total</strong></td>
-                  <td className="text-right"><strong>{formatCurrency(profitLossData?.totalExpense || 0)}</strong></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div className="credit-side">
-            <h3>Income</h3>
-            <table className="statement-table">
-              <tbody>
-                {profitLossData?.income.map((inc, idx) => (
-                  <tr key={idx}>
-                    <td>{inc.ledgerName}</td>
-                    <td className="text-right">{formatCurrency(inc.amount)}</td>
-                  </tr>
-                ))}
-                <tr className="grand-total">
-                  <td><strong>Total</strong></td>
-                  <td className="text-right"><strong>{formatCurrency(profitLossData?.totalIncome || 0)}</strong></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderBalanceSheet = () => {
-    if (!balanceSheetData) return null;
-
-    // Group liabilities by category
-    const liabilityGroups = {
-      'Grants and Subsidies': [],
-      'Advance due by Society': [],
-      'Profit': [],
-      'Other Liabilities': []
-    };
-
-    // Group assets by category
-    const assetGroups = {
-      'Cash': [],
-      'Bank Accounts': [],
-      'Share in Other Institutions': [],
-      'Interest Receivable': [],
-      'Fixed Assets - Movables': [],
-      'Advance due to Society': [],
-      'Closing Stock': [],
-      'Other Assets': []
-    };
-
-    // Categorize liabilities
-    balanceSheetData?.liabilities?.forEach(item => {
-      const name = (item.ledgerName || '').toLowerCase();
-      if (name.includes('grant') || name.includes('subsidy')) {
-        liabilityGroups['Grants and Subsidies'].push(item);
-      } else if (name.includes('milk value') || name.includes('producers') ||
-                 name.includes('kdf') || name.includes('welfare') ||
-                 name.includes('minerals factory') || name.includes('silage factory')) {
-        liabilityGroups['Advance due by Society'].push(item);
-      } else {
-        liabilityGroups['Other Liabilities'].push(item);
-      }
-    });
-
-    // Categorize assets
-    balanceSheetData?.assets?.forEach(item => {
-      const name = (item.ledgerName || '').toLowerCase();
-      if (name.includes('cash in hand')) {
-        assetGroups['Cash'].push(item);
-      } else if (name.includes('bank') || name.includes('a/c')) {
-        assetGroups['Bank Accounts'].push(item);
-      } else if (name.includes('share in')) {
-        assetGroups['Share in Other Institutions'].push(item);
-      } else if (name.includes('interest')) {
-        assetGroups['Interest Receivable'].push(item);
-      } else if (name.includes('furniture') || name.includes('equipment')) {
-        assetGroups['Fixed Assets - Movables'].push(item);
-      } else if (name.includes('am lps') || name.includes('amlp') ||
-                 name.includes('minerals subsidy') || name.includes('silage subsidy')) {
-        assetGroups['Advance due to Society'].push(item);
-      } else if (name.includes('stock') || name.includes('cattle feed') ||
-                 name.includes('minerals') || name.includes('others')) {
-        assetGroups['Closing Stock'].push(item);
-      } else {
-        assetGroups['Other Assets'].push(item);
-      }
-    });
-
-    const renderGroupedItems = (groups, showTotal = true) => {
-      let slNo = 1;
-      const items = [];
-
-      Object.entries(groups).forEach(([groupName, groupItems]) => {
-        if (groupItems.length === 0) return;
-
-        // Group header
-        items.push(
-          <tr key={`header-${groupName}`} className="group-header-row">
-            <td className="sl-no"></td>
-            <td colSpan="2"><strong>{groupName}</strong></td>
-          </tr>
-        );
-
-        // Group items
-        let groupTotal = 0;
-        groupItems.forEach((item, idx) => {
-          groupTotal += parseFloat(item.amount || 0);
-          items.push(
-            <tr key={`${groupName}-${idx}`} className="ledger-row">
-              <td className="sl-no">{slNo++}</td>
-              <td className="particulars-col indent">{item.ledgerName}</td>
-              <td className="amount-col text-right">{formatCurrency(item.amount)}</td>
-            </tr>
-          );
-        });
-
-        // Group total (if more than one item)
-        if (groupItems.length > 1) {
-          items.push(
-            <tr key={`total-${groupName}`} className="group-total-row">
-              <td className="sl-no"></td>
-              <td className="particulars-col indent"><strong>Total {groupName}</strong></td>
-              <td className="amount-col text-right"><strong>{formatCurrency(groupTotal)}</strong></td>
-            </tr>
-          );
-        }
-      });
-
-      return items;
-    };
-
-    const totalLiabilities = (balanceSheetData?.liabilities || []).reduce(
-      (sum, item) => sum + parseFloat(item.amount || 0), 0
-    );
-    const totalAssets = (balanceSheetData?.assets || []).reduce(
-      (sum, item) => sum + parseFloat(item.amount || 0), 0
-    );
-    const netProfit = balanceSheetData?.netProfit || 0;
-    const grandTotal = totalLiabilities + netProfit;
-
-    return (
-      <div className="statement-section balance-sheet-section">
-        <div className="balance-sheet-header">
-          <h2 className="statement-title">BALANCE SHEET AS ON {filterParams?.date ? dayjs(filterParams.date).format('DD-MMM-YYYY') : '31-Mar-2025'}</h2>
-          <p className="financial-year">Financial Year: {filterParams?.financialYear || '2024-25'}</p>
-          <p className="report-subtitle">Standard Balance Sheet | Single Column Accounting Format</p>
-        </div>
-        <div className="statement-content">
-          <div className="statement-columns balance-sheet-columns">
-            {/* LIABILITIES SIDE */}
-            <div className="liabilities-side">
-              <h3 className="side-header">LIABILITIES</h3>
-              <table className="balance-sheet-table">
-                <thead>
-                  <tr>
-                    <th className="sl-col">Sl. No</th>
-                    <th className="particulars-col">Particulars</th>
-                    <th className="amount-col">Amount (₹)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {renderGroupedItems(liabilityGroups)}
-
-                  {/* Net Profit from P&L */}
-                  <tr className="profit-row">
-                    <td className="sl-no"></td>
-                    <td className="particulars-col"><strong>Profit</strong></td>
-                    <td className="amount-col"></td>
-                  </tr>
-                  <tr className="ledger-row">
-                    <td className="sl-no"></td>
-                    <td className="particulars-col indent">Net Profit Brought from P&L A/c</td>
-                    <td className="amount-col text-right">{formatCurrency(netProfit)}</td>
-                  </tr>
-
-                  {/* Grand Total */}
-                  <tr className="grand-total-row">
-                    <td className="sl-no"></td>
-                    <td className="particulars-col"><strong>GRAND TOTAL</strong></td>
-                    <td className="amount-col text-right"><strong>{formatCurrency(grandTotal)}</strong></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* ASSETS SIDE */}
-            <div className="assets-side">
-              <h3 className="side-header">ASSETS</h3>
-              <table className="balance-sheet-table">
-                <thead>
-                  <tr>
-                    <th className="sl-col">Sl. No</th>
-                    <th className="particulars-col">Particulars</th>
-                    <th className="amount-col">Amount (₹)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {renderGroupedItems(assetGroups)}
-
-                  {/* Grand Total */}
-                  <tr className="grand-total-row">
-                    <td className="sl-no"></td>
-                    <td className="particulars-col"><strong>GRAND TOTAL</strong></td>
-                    <td className="amount-col text-right"><strong>{formatCurrency(totalAssets)}</strong></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Balance Check */}
-          {Math.abs(grandTotal - totalAssets) > 0.01 && (
-            <div className="balance-mismatch-warning">
-              <strong>⚠ Warning:</strong> Balance Sheet is not balanced.
-              Liabilities: {formatCurrency(grandTotal)} | Assets: {formatCurrency(totalAssets)}
-            </div>
-          )}
-        </div>
-
-        <div className="report-footer">
-          <div className="footer-left">Created on {dayjs().format('DD/MM/YYYY hh:mm A')}</div>
-          <div className="footer-right">Page 1 of 1</div>
-          <p className="footer-center">This is a computer-generated report</p>
-        </div>
-      </div>
-    );
-  };
-
-  const renderCombinedView = () => (
-    <div className="combined-view">
-      {tradingData && renderTradingAccount()}
-      {profitLossData && renderProfitLoss()}
-      {balanceSheetData && renderBalanceSheet()}
-    </div>
-  );
+  const hasData = tradingData || plData || bsData;
 
   return (
-    <div className="final-accounts-container">
-      <PageHeader
-        title="Final Accounts"
-        subtitle="Trading Account, Profit & Loss, and Balance Sheet"
-      />
+    <Stack gap="md" p="md">
+      {/* Header */}
+      <Group justify="space-between">
+        <Stack gap={2}>
+          <Title order={3}>Final Accounts</Title>
+          <Text size="sm" c="dimmed">Trading Account · Profit & Loss · Balance Sheet</Text>
+        </Stack>
+        {hasData && (
+          <Tooltip label="Print">
+            <ActionIcon variant="light" color="gray" size="lg" onClick={() => printReport(printRef, { title: 'Final Accounts', orientation: 'landscape' })}>
+              <IconPrinter size={18} />
+            </ActionIcon>
+          </Tooltip>
+        )}
+      </Group>
+
+      {/* Filters */}
+      <Paper withBorder p="sm" radius="md">
+        <Group align="flex-end" gap="md" wrap="wrap">
+          <DateInput
+            label="From Date"
+            value={startDate}
+            onChange={setStartDate}
+            valueFormat="DD-MM-YYYY"
+            clearable={false}
+            w={160}
+          />
+          <DateInput
+            label="To Date"
+            value={endDate}
+            onChange={setEndDate}
+            valueFormat="DD-MM-YYYY"
+            clearable={false}
+            w={160}
+          />
+          <Box>
+            <Text size="xs" c="dimmed" mb={4}>Financial Year</Text>
+            <Badge size="lg" variant="outline" color="blue" radius="sm">{fy}</Badge>
+          </Box>
+          <Button
+            leftSection={loading ? <Loader size={14} color="white" /> : <IconRefresh size={16} />}
+            onClick={fetchAll}
+            loading={loading}
+            color="blue"
+          >
+            Generate All
+          </Button>
+        </Group>
+      </Paper>
+
+      {/* Loading / No Data */}
+      {loading && !hasData && (
+        <Box ta="center" py="xl">
+          <Loader size="md" />
+          <Text mt="sm" c="dimmed">Loading final accounts...</Text>
+        </Box>
+      )}
+      {!loading && !hasData && (
+        <Paper withBorder p="xl" ta="center" radius="md">
+          <Text c="dimmed" size="sm">
+            Select a date range and click "Generate All" to view the Final Accounts
+          </Text>
+        </Paper>
+      )}
 
       {/* Tabs */}
-      <div className="tabs-container">
-        <button
-          className={`tab-btn ${activeTab === 'all' ? 'active' : ''}`}
-          onClick={() => setActiveTab('all')}
-        >
-          Combined View
-        </button>
-        <button
-          className={`tab-btn ${activeTab === 'trading' ? 'active' : ''}`}
-          onClick={() => setActiveTab('trading')}
-        >
-          Trading Account
-        </button>
-        <button
-          className={`tab-btn ${activeTab === 'profitLoss' ? 'active' : ''}`}
-          onClick={() => setActiveTab('profitLoss')}
-        >
-          Profit & Loss
-        </button>
-        <button
-          className={`tab-btn ${activeTab === 'balanceSheet' ? 'active' : ''}`}
-          onClick={() => setActiveTab('balanceSheet')}
-        >
-          Balance Sheet
-        </button>
-      </div>
+      {hasData && (
+        <Box ref={printRef}>
+        <Tabs value={activeTab} onChange={setActiveTab} keepMounted={false}>
+          <Tabs.List>
+            <Tabs.Tab value="trading" leftSection={<IconChartBar size={16} />}>
+              Trading Account
+            </Tabs.Tab>
+            <Tabs.Tab value="pl" leftSection={<IconTrendingUp size={16} />}>
+              Profit & Loss
+            </Tabs.Tab>
+            <Tabs.Tab value="bs" leftSection={<IconFileText size={16} />}>
+              Balance Sheet
+            </Tabs.Tab>
+            <Tabs.Tab value="combined" leftSection={<IconLayoutColumns size={16} />}>
+              Combined View
+            </Tabs.Tab>
+          </Tabs.List>
 
-      <DateFilterToolbar onFilterChange={handleFilterChange} />
+          <Tabs.Panel value="trading" pt="md">
+            {tradingData
+              ? <TradingAccount data={tradingData} period={tradingData.period} />
+              : <Text c="dimmed" ta="center" py="xl">No trading data available</Text>
+            }
+          </Tabs.Panel>
 
-      {loading && (
-        <div className="loading-message">Loading final accounts...</div>
+          <Tabs.Panel value="pl" pt="md">
+            {plData
+              ? <ProfitLoss data={plData} />
+              : <Text c="dimmed" ta="center" py="xl">No profit & loss data available</Text>
+            }
+          </Tabs.Panel>
+
+          <Tabs.Panel value="bs" pt="md">
+            {bsData
+              ? <BalanceSheetSection data={bsData} />
+              : <Text c="dimmed" ta="center" py="xl">No balance sheet data available</Text>
+            }
+          </Tabs.Panel>
+
+          <Tabs.Panel value="combined" pt="md">
+            <Stack gap="xl">
+              <Box>
+                <Divider label={<Text fw={700} size="sm">TRADING ACCOUNT</Text>} labelPosition="center" mb="md" />
+                {tradingData
+                  ? <TradingAccount data={tradingData} period={tradingData.period} />
+                  : <Text c="dimmed" ta="center">No data</Text>
+                }
+              </Box>
+              <Box>
+                <Divider label={<Text fw={700} size="sm">PROFIT & LOSS ACCOUNT</Text>} labelPosition="center" mb="md" />
+                {plData
+                  ? <ProfitLoss data={plData} />
+                  : <Text c="dimmed" ta="center">No data</Text>
+                }
+              </Box>
+              <Box>
+                <Divider label={<Text fw={700} size="sm">BALANCE SHEET</Text>} labelPosition="center" mb="md" />
+                {bsData
+                  ? <BalanceSheetSection data={bsData} />
+                  : <Text c="dimmed" ta="center">No data</Text>
+                }
+              </Box>
+            </Stack>
+          </Tabs.Panel>
+        </Tabs>
       )}
 
-      {!loading && (tradingData || profitLossData || balanceSheetData) && (
-        <>
-          {activeTab === 'all' && renderCombinedView()}
-          {activeTab === 'trading' && tradingData && renderTradingAccount()}
-          {activeTab === 'profitLoss' && profitLossData && renderProfitLoss()}
-          {activeTab === 'balanceSheet' && balanceSheetData && renderBalanceSheet()}
-        </>
+      {/* Footer */}
+      {hasData && (
+        <Paper withBorder p="sm" radius="md">
+          <Group justify="space-between">
+            <Text size="xs" c="dimmed">Financial Year: {fy}</Text>
+            <Text size="xs" c="dimmed">This is a computer-generated report</Text>
+            <Text size="xs" c="dimmed">Generated: {dayjs().format('DD/MM/YYYY hh:mm A')}</Text>
+          </Group>
+        </Paper>
       )}
-
-      {!loading && !tradingData && !profitLossData && !balanceSheetData && (
-        <div className="no-data-message">
-          Please select a date range to view the final accounts
-        </div>
+        </Box>
       )}
-    </div>
+    </Stack>
   );
 };
 

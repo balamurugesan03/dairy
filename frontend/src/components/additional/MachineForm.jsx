@@ -1,402 +1,225 @@
 import { useState, useEffect } from 'react';
-import { message } from '../../utils/toast';
 import { useNavigate, useParams } from 'react-router-dom';
+import {
+  Container, Title, Text, Button, Group, Stack, Paper, Grid, TextInput,
+  Select, Textarea, NumberInput, ActionIcon, Loader, Center, Box
+} from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
+import { notifications } from '@mantine/notifications';
+import { IconArrowLeft, IconDeviceFloppy } from '@tabler/icons-react';
+import { machineAPI, supplierAPI, warrantyAPI } from '../../services/api';
 import dayjs from 'dayjs';
-import { machineAPI } from '../../services/api';
-import PageHeader from '../common/PageHeader';
-import './MachineForm.css';
-
 
 const MachineForm = () => {
   const navigate = useNavigate();
   const { id } = useParams();
-  const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    machineCode: '',
-    machineName: '',
-    category: 'Processing',
-    manufacturer: '',
-    model: '',
-    serialNumber: '',
-    purchaseDate: '',
-    purchaseCost: '',
-    installationDate: '',
-    location: '',
-    capacity: '',
-    powerRating: '',
-    lastMaintenanceDate: '',
-    nextMaintenanceDate: '',
-    maintenanceInterval: '',
-    status: 'Active',
-    description: '',
-    specifications: '',
-    maintenanceNotes: ''
-  });
-  const [errors, setErrors] = useState({});
+  const isEdit = Boolean(id);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(isEdit);
+  const [suppliers, setSuppliers] = useState([]);
+  const [warranties, setWarranties] = useState([]);
 
-  const isEditMode = Boolean(id);
+  const [machineName, setMachineName] = useState('');
+  const [category, setCategory] = useState('');
+  const [make, setMake] = useState('');
+  const [model, setModel] = useState('');
+  const [manufacturer, setManufacturer] = useState('');
+  const [serialNumber, setSerialNumber] = useState('');
+  const [modelNumber, setModelNumber] = useState('');
+  const [purchaseDate, setPurchaseDate] = useState(null);
+  const [purchasePrice, setPurchasePrice] = useState(0);
+  const [supplierId, setSupplierId] = useState('');
+  const [supplierName, setSupplierName] = useState('');
+  const [warrantyId, setWarrantyId] = useState('');
+  const [warrantyExpiry, setWarrantyExpiry] = useState(null);
+  const [location, setLocation] = useState('');
+  const [department, setDepartment] = useState('');
+  const [assignedTo, setAssignedTo] = useState('');
+  const [status, setStatus] = useState('Active');
+  const [description, setDescription] = useState('');
 
   useEffect(() => {
-    if (isEditMode) {
-      fetchMachine();
-    }
+    loadMasterData();
+    if (isEdit) loadMachine();
   }, [id]);
 
-  const fetchMachine = async () => {
+  const loadMasterData = async () => {
+    try {
+      const [supRes, warRes] = await Promise.all([
+        supplierAPI.getAll({ limit: 300 }),
+        warrantyAPI.getAll({ limit: 300, status: 'Active' })
+      ]);
+      setSuppliers(Array.isArray(supRes?.data) ? supRes.data : supRes?.data?.data || []);
+      const warData = Array.isArray(warRes?.data) ? warRes.data : warRes?.data?.data || [];
+      setWarranties(warData);
+    } catch { /* silent */ }
+  };
+
+  const loadMachine = async () => {
     setLoading(true);
     try {
-      const response = await machineAPI.getById(id);
-      const machine = response.data;
-
-      setFormData({
-        ...machine,
-        purchaseDate: machine.purchaseDate ? dayjs(machine.purchaseDate).format('YYYY-MM-DD') : '',
-        installationDate: machine.installationDate ? dayjs(machine.installationDate).format('YYYY-MM-DD') : '',
-        lastMaintenanceDate: machine.lastMaintenanceDate ? dayjs(machine.lastMaintenanceDate).format('YYYY-MM-DD') : '',
-        nextMaintenanceDate: machine.nextMaintenanceDate ? dayjs(machine.nextMaintenanceDate).format('YYYY-MM-DD') : ''
-      });
-    } catch (error) {
-      message.error(error.message || 'Failed to fetch machine details');
+      const res = await machineAPI.getById(id);
+      const m = res?.data || res;
+      setMachineName(m.machineName || '');
+      setCategory(m.category || '');
+      setMake(m.make || '');
+      setModel(m.model || '');
+      setManufacturer(m.manufacturer || '');
+      setSerialNumber(m.serialNumber || '');
+      setModelNumber(m.modelNumber || '');
+      setPurchaseDate(m.purchaseDate ? new Date(m.purchaseDate) : null);
+      setPurchasePrice(m.purchasePrice || 0);
+      setSupplierId(m.supplierId?._id || m.supplierId || '');
+      setSupplierName(m.supplierName || '');
+      setWarrantyId(m.warrantyId?._id || m.warrantyId || '');
+      setWarrantyExpiry(m.warrantyExpiry ? new Date(m.warrantyExpiry) : null);
+      setLocation(m.location || '');
+      setDepartment(m.department || '');
+      setAssignedTo(m.assignedTo || '');
+      setStatus(m.status || 'Active');
+      setDescription(m.description || '');
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
-    }
+  const handleSupplierSelect = (val) => {
+    setSupplierId(val || '');
+    const sup = suppliers.find(s => s._id === val);
+    if (sup) setSupplierName(sup.name || sup.supplierName || '');
   };
 
-  const validateForm = () => {
-    const newErrors = {};
-    if (!formData.machineCode) newErrors.machineCode = 'Machine code is required';
-    if (!formData.machineName) newErrors.machineName = 'Machine name is required';
-    if (!formData.category) newErrors.category = 'Category is required';
-    if (!formData.manufacturer) newErrors.manufacturer = 'Manufacturer is required';
-    if (!formData.model) newErrors.model = 'Model is required';
-    if (!formData.serialNumber) newErrors.serialNumber = 'Serial number is required';
-    if (!formData.status) newErrors.status = 'Status is required';
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  const handleWarrantySelect = (val) => {
+    setWarrantyId(val || '');
+    const war = warranties.find(w => w._id === val);
+    if (war) setWarrantyExpiry(war.warrantyEndDate ? new Date(war.warrantyEndDate) : null);
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!validateForm()) {
-      message.error('Please fill all required fields');
-      return;
-    }
-
-    setLoading(true);
+  const handleSave = async () => {
+    if (!machineName) { notifications.show({ title: 'Validation', message: 'Machine name required', color: 'yellow' }); return; }
+    setSaving(true);
     try {
       const payload = {
-        ...formData,
-        purchaseDate: formData.purchaseDate ? new Date(formData.purchaseDate).toISOString() : null,
-        installationDate: formData.installationDate ? new Date(formData.installationDate).toISOString() : null,
-        lastMaintenanceDate: formData.lastMaintenanceDate ? new Date(formData.lastMaintenanceDate).toISOString() : null,
-        nextMaintenanceDate: formData.nextMaintenanceDate ? new Date(formData.nextMaintenanceDate).toISOString() : null,
-        purchaseCost: formData.purchaseCost ? parseFloat(formData.purchaseCost) : null,
-        maintenanceInterval: formData.maintenanceInterval ? parseInt(formData.maintenanceInterval) : null
+        machineName, category, make, model, manufacturer,
+        serialNumber, modelNumber, purchaseDate, purchasePrice,
+        supplierId: supplierId || undefined, supplierName,
+        warrantyId: warrantyId || undefined, warrantyExpiry,
+        location, department, assignedTo, status, description
       };
-
-      if (isEditMode) {
+      if (isEdit) {
         await machineAPI.update(id, payload);
-        message.success('Machine updated successfully');
+        notifications.show({ title: 'Updated', message: 'Machine updated', color: 'green' });
       } else {
         await machineAPI.create(payload);
-        message.success('Machine created successfully');
+        notifications.show({ title: 'Created', message: 'Machine added', color: 'green' });
       }
-      navigate('/additional/machines');
-    } catch (error) {
-      message.error(error.message || 'Failed to save machine');
+      navigate('/machines');
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
+  if (loading) return <Center h={300}><Loader/></Center>;
+
   return (
-    <div>
-      <PageHeader
-        title={isEditMode ? 'Edit Machine' : 'Add Machine'}
-        subtitle={isEditMode ? 'Update machine information' : 'Register new machine'}
-      />
+    <Container size="xl" py="md">
+      <Group justify="space-between" mb="md">
+        <Group gap="xs">
+          <ActionIcon variant="subtle" onClick={() => navigate('/machines')}><IconArrowLeft size={18}/></ActionIcon>
+          <Box>
+            <Title order={2} fw={700}>{isEdit ? 'Edit Machine' : 'Add Machine / Asset'}</Title>
+            <Text size="sm" c="dimmed">Register a machine or asset with full details</Text>
+          </Box>
+        </Group>
+        <Group>
+          <Button variant="default" onClick={() => navigate('/machines')}>Cancel</Button>
+          <Button leftSection={<IconDeviceFloppy size={16}/>} loading={saving} onClick={handleSave}>
+            {isEdit ? 'Update' : 'Save Machine'}
+          </Button>
+        </Group>
+      </Group>
 
-      <div className="machine-form-card">
-        <form onSubmit={handleSubmit}>
-          <div className="form-grid">
-            <div className="form-group">
-              <label className="form-label required">Machine Code</label>
-              <input
-                type="text"
-                name="machineCode"
-                className={`form-input ${errors.machineCode ? 'error' : ''}`}
-                placeholder="Enter machine code"
-                value={formData.machineCode}
-                onChange={handleChange}
-                disabled={isEditMode}
+      <Grid gutter="md">
+        <Grid.Col span={{ base: 12, md: 6 }}>
+          {/* Machine Specs */}
+          <Paper withBorder radius="md" p="md" mb="md">
+            <Text fw={600} mb="sm">Machine Specifications</Text>
+            <Stack gap="sm">
+              <TextInput label="Machine Name" value={machineName} onChange={e => setMachineName(e.target.value)} required/>
+              <Grid>
+                <Grid.Col span={6}><TextInput label="Category" value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Processing, Packaging"/></Grid.Col>
+                <Grid.Col span={6}><Select label="Status" value={status} onChange={setStatus} data={['Active', 'Under Maintenance', 'Disposed', 'Sold', 'Inactive']}/></Grid.Col>
+                <Grid.Col span={6}><TextInput label="Make / Brand" value={make} onChange={e => setMake(e.target.value)}/></Grid.Col>
+                <Grid.Col span={6}><TextInput label="Model" value={model} onChange={e => setModel(e.target.value)}/></Grid.Col>
+                <Grid.Col span={6}><TextInput label="Manufacturer" value={manufacturer} onChange={e => setManufacturer(e.target.value)}/></Grid.Col>
+                <Grid.Col span={6}><TextInput label="Model Number" value={modelNumber} onChange={e => setModelNumber(e.target.value)}/></Grid.Col>
+                <Grid.Col span={6}><TextInput label="Serial Number" value={serialNumber} onChange={e => setSerialNumber(e.target.value)}/></Grid.Col>
+              </Grid>
+              <Textarea label="Description" value={description} onChange={e => setDescription(e.target.value)} rows={3}/>
+            </Stack>
+          </Paper>
+
+          {/* Location */}
+          <Paper withBorder radius="md" p="md">
+            <Text fw={600} mb="sm">Location & Assignment</Text>
+            <Grid>
+              <Grid.Col span={6}><TextInput label="Location" value={location} onChange={e => setLocation(e.target.value)} placeholder="Building / Section"/></Grid.Col>
+              <Grid.Col span={6}><TextInput label="Department" value={department} onChange={e => setDepartment(e.target.value)}/></Grid.Col>
+              <Grid.Col span={12}><TextInput label="Assigned To" value={assignedTo} onChange={e => setAssignedTo(e.target.value)} placeholder="Person responsible"/></Grid.Col>
+            </Grid>
+          </Paper>
+        </Grid.Col>
+
+        <Grid.Col span={{ base: 12, md: 6 }}>
+          {/* Purchase Details */}
+          <Paper withBorder radius="md" p="md" mb="md">
+            <Text fw={600} mb="sm">Purchase Details</Text>
+            <Stack gap="sm">
+              <Grid>
+                <Grid.Col span={6}><DatePickerInput label="Purchase Date" value={purchaseDate} onChange={setPurchaseDate}/></Grid.Col>
+                <Grid.Col span={6}><NumberInput label="Purchase Price (₹)" value={purchasePrice} onChange={setPurchasePrice} min={0} decimalScale={2} prefix="₹"/></Grid.Col>
+              </Grid>
+              <Select
+                label="Supplier"
+                placeholder="Select supplier..."
+                searchable clearable
+                data={suppliers.map(s => ({ value: s._id, label: s.name || s.supplierName || '' }))}
+                value={supplierId}
+                onChange={handleSupplierSelect}
               />
-              {errors.machineCode && <div className="form-error">{errors.machineCode}</div>}
-            </div>
-
-            <div className="form-group">
-              <label className="form-label required">Machine Name</label>
-              <input
-                type="text"
-                name="machineName"
-                className={`form-input ${errors.machineName ? 'error' : ''}`}
-                placeholder="Enter machine name"
-                value={formData.machineName}
-                onChange={handleChange}
-              />
-              {errors.machineName && <div className="form-error">{errors.machineName}</div>}
-            </div>
-
-            <div className="form-group">
-              <label className="form-label required">Category</label>
-              <select
-                name="category"
-                className={`form-select ${errors.category ? 'error' : ''}`}
-                value={formData.category}
-                onChange={handleChange}
-              >
-                <option value="Processing">Processing</option>
-                <option value="Packaging">Packaging</option>
-                <option value="Testing">Testing</option>
-                <option value="Storage">Storage</option>
-                <option value="Other">Other</option>
-              </select>
-              {errors.category && <div className="form-error">{errors.category}</div>}
-            </div>
-
-            <div className="form-group">
-              <label className="form-label required">Manufacturer</label>
-              <input
-                type="text"
-                name="manufacturer"
-                className={`form-input ${errors.manufacturer ? 'error' : ''}`}
-                placeholder="Enter manufacturer name"
-                value={formData.manufacturer}
-                onChange={handleChange}
-              />
-              {errors.manufacturer && <div className="form-error">{errors.manufacturer}</div>}
-            </div>
-
-            <div className="form-group">
-              <label className="form-label required">Model</label>
-              <input
-                type="text"
-                name="model"
-                className={`form-input ${errors.model ? 'error' : ''}`}
-                placeholder="Enter model number"
-                value={formData.model}
-                onChange={handleChange}
-              />
-              {errors.model && <div className="form-error">{errors.model}</div>}
-            </div>
-
-            <div className="form-group">
-              <label className="form-label required">Serial Number</label>
-              <input
-                type="text"
-                name="serialNumber"
-                className={`form-input ${errors.serialNumber ? 'error' : ''}`}
-                placeholder="Enter serial number"
-                value={formData.serialNumber}
-                onChange={handleChange}
-              />
-              {errors.serialNumber && <div className="form-error">{errors.serialNumber}</div>}
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Purchase Date</label>
-              <input
-                type="date"
-                name="purchaseDate"
-                className="form-input"
-                value={formData.purchaseDate}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Purchase Cost</label>
-              <input
-                type="number"
-                name="purchaseCost"
-                className="form-input"
-                placeholder="Enter purchase cost"
-                value={formData.purchaseCost}
-                onChange={handleChange}
-                min="0"
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Installation Date</label>
-              <input
-                type="date"
-                name="installationDate"
-                className="form-input"
-                value={formData.installationDate}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Location</label>
-              <input
-                type="text"
-                name="location"
-                className="form-input"
-                placeholder="Enter machine location"
-                value={formData.location}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Capacity</label>
-              <input
-                type="text"
-                name="capacity"
-                className="form-input"
-                placeholder="Enter capacity (e.g., 1000 liters/hour)"
-                value={formData.capacity}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Power Rating</label>
-              <input
-                type="text"
-                name="powerRating"
-                className="form-input"
-                placeholder="Enter power rating (e.g., 5 kW)"
-                value={formData.powerRating}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Last Maintenance Date</label>
-              <input
-                type="date"
-                name="lastMaintenanceDate"
-                className="form-input"
-                value={formData.lastMaintenanceDate}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Next Maintenance Date</label>
-              <input
-                type="date"
-                name="nextMaintenanceDate"
-                className="form-input"
-                value={formData.nextMaintenanceDate}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Maintenance Interval (Days)</label>
-              <input
-                type="number"
-                name="maintenanceInterval"
-                className="form-input"
-                placeholder="Enter maintenance interval"
-                value={formData.maintenanceInterval}
-                onChange={handleChange}
-                min="1"
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label required">Status</label>
-              <select
-                name="status"
-                className={`form-select ${errors.status ? 'error' : ''}`}
-                value={formData.status}
-                onChange={handleChange}
-              >
-                <option value="Active">Active</option>
-                <option value="Under Maintenance">Under Maintenance</option>
-                <option value="Out of Service">Out of Service</option>
-                <option value="Inactive">Inactive</option>
-              </select>
-              {errors.status && <div className="form-error">{errors.status}</div>}
-            </div>
-
-            <div className="form-group full-width">
-              <label className="form-label">Description</label>
-              <textarea
-                name="description"
-                className="form-textarea"
-                rows="3"
-                placeholder="Enter machine description"
-                value={formData.description}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div className="form-group full-width">
-              <label className="form-label">Technical Specifications</label>
-              <textarea
-                name="specifications"
-                className="form-textarea"
-                rows="4"
-                placeholder="Enter technical specifications"
-                value={formData.specifications}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div className="form-group full-width">
-              <label className="form-label">Maintenance Notes</label>
-              <textarea
-                name="maintenanceNotes"
-                className="form-textarea"
-                rows="3"
-                placeholder="Enter maintenance notes and instructions"
-                value={formData.maintenanceNotes}
-                onChange={handleChange}
-              />
-            </div>
-          </div>
-
-          <div className="form-actions">
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <div className="spinner"></div>
-                  {isEditMode ? 'Updating...' : 'Saving...'}
-                </>
-              ) : (
-                isEditMode ? 'Update' : 'Save'
+              {!supplierId && (
+                <TextInput label="Supplier Name (manual)" value={supplierName} onChange={e => setSupplierName(e.target.value)}/>
               )}
-            </button>
-            <button
-              type="button"
-              className="btn btn-default"
-              onClick={() => navigate('/additional/machines')}
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+            </Stack>
+          </Paper>
+
+          {/* Warranty Link */}
+          <Paper withBorder radius="md" p="md">
+            <Text fw={600} mb="sm">Warranty (Optional)</Text>
+            <Stack gap="sm">
+              <Select
+                label="Link Warranty"
+                placeholder="Search warranty..."
+                searchable clearable
+                data={warranties.map(w => ({ value: w._id, label: `${w.warrantyNumber} - ${w.itemName}` }))}
+                value={warrantyId}
+                onChange={handleWarrantySelect}
+              />
+              <DatePickerInput
+                label="Warranty Expiry"
+                value={warrantyExpiry}
+                onChange={setWarrantyExpiry}
+                description="Auto-filled from warranty, or set manually"
+              />
+            </Stack>
+          </Paper>
+        </Grid.Col>
+      </Grid>
+    </Container>
   );
 };
 

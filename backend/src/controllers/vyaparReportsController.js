@@ -1,8 +1,12 @@
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
-import Sales from '../models/Sales.js';
-import Item from '../models/Item.js';
-import StockTransaction from '../models/StockTransaction.js';
+import BusinessLedger from '../models/BusinessLedger.js';
+import BusinessVoucher from '../models/BusinessVoucher.js';
+import BusinessSales from '../models/BusinessSales.js';
+import BusinessStockTransaction from '../models/BusinessStockTransaction.js';
+import BusinessItem from '../models/BusinessItem.js';
+import SalesReturn from '../models/SalesReturn.js';
+import PurchaseReturn from '../models/PurchaseReturn.js';
 import {
   calculateOpeningBalance,
   calculateClosingBalance,
@@ -25,19 +29,20 @@ export const getSaleReport = async (req, res) => {
     // Get date range
     const { startDate, endDate } = getDateRange(filterType || 'thisMonth', customStart, customEnd);
 
-    // Build query
+    // Build query - use BusinessSales model with invoiceDate field
     const query = {
-      billDate: { $gte: startDate, $lte: endDate }
+      invoiceDate: { $gte: startDate, $lte: endDate },
+      invoiceType: 'Sale'
     };
 
-    if (partyId) query.customerId = partyId;
-    if (paymentStatus) query.status = paymentStatus;
+    if (partyId) query.partyId = partyId;
+    if (paymentStatus) query.paymentStatus = paymentStatus;
     if (itemId) query['items.itemId'] = itemId;
 
-    // Fetch sales
-    const sales = await Sales.find(query)
-      .populate('customerId')
-      .sort({ billDate: -1 });
+    // Fetch sales from BusinessSales (Private Firm)
+    const sales = await BusinessSales.find(query)
+      .populate('partyId', 'name phone customerId')
+      .sort({ invoiceDate: -1 });
 
     // Calculate summary
     const summary = {
@@ -58,16 +63,16 @@ export const getSaleReport = async (req, res) => {
     // Format records
     const records = sales.map(sale => ({
       _id: sale._id,
-      date: sale.billDate,
-      invoiceNumber: sale.billNumber,
-      partyName: sale.customerName || 'Cash Sale',
-      itemCount: sale.items.length,
-      subtotal: sale.subtotal,
-      tax: sale.totalGst,
-      total: sale.grandTotal,
-      paid: sale.paidAmount,
-      balance: sale.balanceAmount,
-      paymentStatus: sale.status,
+      date: sale.invoiceDate,
+      invoiceNumber: sale.invoiceNumber,
+      partyName: sale.partyName || 'Cash Sale',
+      itemCount: sale.items?.length || 0,
+      subtotal: sale.taxableAmount || 0,
+      tax: sale.totalGst || 0,
+      total: sale.grandTotal || 0,
+      paid: sale.paidAmount || 0,
+      balance: sale.balanceAmount || 0,
+      paymentStatus: sale.paymentStatus,
       paymentMode: sale.paymentMode
     }));
 
@@ -101,19 +106,28 @@ export const getPurchaseReport = async (req, res) => {
     // Get date range
     const { startDate, endDate } = getDateRange(filterType || 'thisMonth', customStart, customEnd);
 
-    // Build query for stock-in transactions (purchases) - default to Business inventory for Vyapar
+    // Build query for stock-in transactions (purchases)
     const query = {
       transactionType: 'Stock In',
       referenceType: 'Purchase',
-      inventoryType: inventoryType || 'Business',
       date: { $gte: startDate, $lte: endDate }
     };
 
     if (partyId) query.supplierId = partyId;
     if (itemId) query.itemId = itemId;
 
-    // Fetch purchase transactions
-    const transactions = await StockTransaction.find(query)
+    // Use BusinessStockTransaction for Business inventory (Vyapar/Private Firm),
+    // StockTransaction for Dairy inventory
+    const useBusinessModel = !inventoryType || inventoryType === 'Business';
+    const Model = useBusinessModel ? BusinessStockTransaction : StockTransaction;
+
+    // Only add inventoryType filter for Dairy model (StockTransaction) which has that field
+    if (!useBusinessModel) {
+      query.inventoryType = inventoryType;
+    }
+
+    // Fetch purchase transactions - populate with correct item model ref
+    const transactions = await Model.find(query)
       .populate('itemId')
       .populate('supplierId')
       .sort({ date: -1 });
@@ -144,7 +158,7 @@ export const getPurchaseReport = async (req, res) => {
       }
 
       const invoice = invoiceMap.get(invoiceKey);
-      const itemAmount = (txn.quantity + (txn.freeQty || 0)) * txn.rate;
+      const itemAmount = txn.quantity * txn.rate;
 
       invoice.items.push({
         itemId: txn.itemId?._id,
@@ -218,170 +232,141 @@ export const getPurchaseReport = async (req, res) => {
  */
 export const getPartyStatement = async (req, res) => {
   try {
-    const { ledgerId, filterType, customStart, customEnd } = req.query;
+    const { partyId, partyType, filterType, customStart, customEnd } = req.query;
 
-    if (!ledgerId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Ledger ID is required'
-      });
+    if (!partyId) {
+      return res.status(400).json({ success: false, message: 'Party ID is required' });
     }
 
-    // Get date range
     const { startDate, endDate } = getDateRange(filterType || 'thisMonth', customStart, customEnd);
 
-    // Get ledger details
-    const ledger = await Ledger.findById(ledgerId);
-    if (!ledger) {
-      return res.status(404).json({
-        success: false,
-        message: 'Ledger not found'
+    const transactions = [];
+    let partyName = '';
+    let totalSale = 0;
+    let totalPurchase = 0;
+    let totalReceived = 0;
+    let totalPaid = 0;
+    let runningBalance = 0;
+
+    if (partyType === 'supplier') {
+      // ── Supplier: fetch BusinessStockTransaction purchases ──
+      const purchases = await BusinessStockTransaction.find({
+        supplierId: partyId,
+        referenceType: 'Purchase',
+        date: { $gte: startDate, $lte: endDate }
+      }).sort({ date: 1 });
+
+      if (purchases.length > 0) {
+        partyName = purchases[0].supplierName || 'Supplier';
+      } else {
+        // Try to get supplier name even if no transactions in range
+        const anyPurchase = await BusinessStockTransaction.findOne({ supplierId: partyId });
+        partyName = anyPurchase?.supplierName || 'Supplier';
+      }
+
+      purchases.forEach(p => {
+        const invoiceTotal = p.totalAmount || p.netTotal || 0;
+        const paid = p.paidAmount || 0;
+        const due = invoiceTotal - paid;
+        totalPurchase += invoiceTotal;
+        totalPaid += paid;
+        runningBalance += due;
+
+        transactions.push({
+          date: p.date,
+          transactionType: 'Purchase',
+          referenceNo: p.invoiceNumber || `PUR-${p._id.toString().slice(-6)}`,
+          paymentType: p.paymentMode || 'Credit',
+          totalAmount: invoiceTotal,
+          receivedAmount: paid,
+          transactionBalance: due,
+          receivableBalance: 0,
+          payableBalance: runningBalance > 0 ? runningBalance : 0,
+          paymentStatus: p.paidAmount >= invoiceTotal ? 'Paid' : p.paidAmount > 0 ? 'Partial' : 'Unpaid'
+        });
+      });
+
+      const totalReceivable = 0;
+      const totalPayable = totalPurchase - totalPaid;
+
+      res.json({
+        success: true,
+        data: {
+          party: { _id: partyId, name: partyName, type: 'Supplier' },
+          summary: {
+            totalPurchase,
+            totalPaid,
+            totalPayable,
+            totalReceivable,
+            closingBalance: totalPayable,
+            closingBalanceType: 'Cr',
+            totalDebits: totalPurchase,
+            totalCredits: totalPaid
+          },
+          transactions,
+          filters: { filterType, startDate, endDate }
+        }
+      });
+
+    } else {
+      // ── Customer: fetch BusinessSales ──
+      const sales = await BusinessSales.find({
+        partyId: partyId,
+        invoiceType: 'Sale',
+        invoiceDate: { $gte: startDate, $lte: endDate }
+      }).sort({ invoiceDate: 1 });
+
+      if (sales.length > 0) {
+        partyName = sales[0].partyName || 'Customer';
+      } else {
+        const anySale = await BusinessSales.findOne({ partyId: partyId, invoiceType: 'Sale' });
+        partyName = anySale?.partyName || 'Customer';
+      }
+
+      sales.forEach(sale => {
+        const invoiceTotal = sale.grandTotal || 0;
+        const paid = sale.paidAmount || 0;
+        const due = sale.balanceAmount ?? (invoiceTotal - paid);
+        totalSale += invoiceTotal;
+        totalReceived += paid;
+        runningBalance += due;
+
+        transactions.push({
+          date: sale.invoiceDate,
+          transactionType: 'Sale',
+          referenceNo: sale.invoiceNumber,
+          paymentType: sale.paymentMode || 'Credit',
+          totalAmount: invoiceTotal,
+          receivedAmount: paid,
+          transactionBalance: due,
+          receivableBalance: runningBalance > 0 ? runningBalance : 0,
+          payableBalance: 0,
+          paymentStatus: sale.paymentStatus || (paid >= invoiceTotal ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid')
+        });
+      });
+
+      const totalReceivable = totalSale - totalReceived;
+
+      res.json({
+        success: true,
+        data: {
+          party: { _id: partyId, name: partyName, type: 'Customer' },
+          summary: {
+            totalSale,
+            totalReceived,
+            totalReceivable,
+            totalPayable: 0,
+            closingBalance: totalReceivable,
+            closingBalanceType: 'Dr',
+            totalDebits: totalSale,
+            totalCredits: totalReceived
+          },
+          transactions,
+          filters: { filterType, startDate, endDate }
+        }
       });
     }
 
-    // Calculate opening balance
-    const openingBalance = await calculateOpeningBalance(Ledger, Voucher, ledgerId, startDate);
-    const isDebitNature = isDebitNatureLedger(ledger.ledgerType);
-
-    // Fetch voucher entries for the period
-    const vouchers = await Voucher.find({
-      voucherDate: { $gte: startDate, $lte: endDate },
-      'entries.ledgerId': ledgerId
-    })
-      .populate('entries.ledgerId')
-      .sort({ voucherDate: 1, createdAt: 1 });
-
-    // Process transactions with enhanced data
-    const transactions = [];
-    let totalDebits = 0;
-    let totalCredits = 0;
-    let totalSale = 0;
-    let totalPurchase = 0;
-    let totalExpense = 0;
-    let totalMoneyIn = 0;
-    let totalMoneyOut = 0;
-    let runningBalance = openingBalance;
-
-    vouchers.forEach(voucher => {
-      voucher.entries.forEach(entry => {
-        if (entry.ledgerId._id.toString() === ledgerId) {
-          const debitAmount = entry.debitAmount || 0;
-          const creditAmount = entry.creditAmount || 0;
-          const totalAmount = debitAmount || creditAmount;
-
-          // Update running balance
-          if (isDebitNature) {
-            runningBalance = runningBalance + debitAmount - creditAmount;
-          } else {
-            runningBalance = runningBalance - debitAmount + creditAmount;
-          }
-
-          // Determine transaction type based on voucher type and reference
-          let transactionType = voucher.voucherType;
-          if (voucher.referenceType === 'Sales') {
-            transactionType = 'Sale';
-            totalSale += debitAmount;
-          } else if (voucher.referenceType === 'Purchase') {
-            transactionType = 'Purchase';
-            totalPurchase += creditAmount;
-          } else if (voucher.voucherType === 'Receipt') {
-            totalMoneyIn += creditAmount;
-          } else if (voucher.voucherType === 'Payment') {
-            totalMoneyOut += debitAmount;
-          }
-
-          // Check for expense
-          const contraEntry = voucher.entries.find(e =>
-            e.ledgerId._id.toString() !== ledgerId &&
-            e.ledgerId.ledgerType &&
-            e.ledgerId.ledgerType.includes('Expense')
-          );
-          if (contraEntry) {
-            totalExpense += debitAmount;
-          }
-
-          // Determine payment type from voucher or contra ledger
-          let paymentType = '-';
-          const cashEntry = voucher.entries.find(e =>
-            e.ledgerId.ledgerType === 'Cash'
-          );
-          const bankEntry = voucher.entries.find(e =>
-            e.ledgerId.ledgerType === 'Bank'
-          );
-          if (cashEntry) paymentType = 'Cash';
-          else if (bankEntry) paymentType = 'Bank';
-          else if (voucher.voucherType === 'Journal') paymentType = 'Journal';
-
-          // Calculate receivable and payable balance
-          const receivableBalance = runningBalance > 0 ? runningBalance : 0;
-          const payableBalance = runningBalance < 0 ? Math.abs(runningBalance) : 0;
-
-          transactions.push({
-            date: voucher.voucherDate,
-            voucherNumber: voucher.voucherNumber,
-            referenceNo: voucher.voucherNumber,
-            voucherType: voucher.voucherType,
-            transactionType: transactionType,
-            paymentType: paymentType,
-            particulars: entry.narration || voucher.narration,
-            debitAmount: debitAmount,
-            creditAmount: creditAmount,
-            totalAmount: totalAmount,
-            receivedAmount: creditAmount,
-            transactionBalance: debitAmount - creditAmount,
-            balance: Math.abs(runningBalance),
-            balanceType: getBalanceType(runningBalance, isDebitNature),
-            receivableBalance: isDebitNature ? receivableBalance : payableBalance,
-            payableBalance: isDebitNature ? payableBalance : receivableBalance,
-            referenceType: voucher.referenceType,
-            referenceId: voucher.referenceId
-          });
-
-          totalDebits += debitAmount;
-          totalCredits += creditAmount;
-        }
-      });
-    });
-
-    // Calculate closing balance
-    const closingBalance = calculateClosingBalance(openingBalance, totalDebits, totalCredits, isDebitNature);
-    const closingBalanceType = getBalanceType(closingBalance, isDebitNature);
-
-    // Calculate total receivable based on closing balance
-    const totalReceivable = closingBalanceType === 'Dr' ? Math.abs(closingBalance) : 0;
-    const totalPayable = closingBalanceType === 'Cr' ? Math.abs(closingBalance) : 0;
-
-    res.json({
-      success: true,
-      data: {
-        ledger: {
-          _id: ledger._id,
-          ledgerName: ledger.ledgerName,
-          ledgerType: ledger.ledgerType
-        },
-        summary: {
-          openingBalance: Math.abs(openingBalance),
-          openingBalanceType: getBalanceType(openingBalance, isDebitNature),
-          totalDebits,
-          totalCredits,
-          totalAmount: totalDebits,
-          totalReceived: totalCredits,
-          closingBalance: Math.abs(closingBalance),
-          closingBalanceType: closingBalanceType,
-          // Enhanced summary for Vyapar-style UI
-          totalSale,
-          totalPurchase,
-          totalExpense,
-          totalMoneyIn,
-          totalMoneyOut,
-          totalReceivable,
-          totalPayable,
-          netBalance: totalReceivable - totalPayable
-        },
-        transactions,
-        filters: { filterType, startDate, endDate }
-      }
-    });
   } catch (error) {
     console.error('Error in getPartyStatement:', error);
     res.status(500).json({
@@ -393,140 +378,117 @@ export const getPartyStatement = async (req, res) => {
 };
 
 /**
- * Cashflow Report - Categorized receipts and payments
+ * Cashflow Report - Private Firm cash inflows/outflows
+ * Uses BusinessSales (inflows) + BusinessStockTransaction (outflows) — no dairy data
  * GET /api/reports/vyapar/cashflow
- * Query params: filterType, customStart, customEnd, groupBy, includeZero
+ * Query params: filterType, customStart, customEnd
  */
 export const getCashflowReport = async (req, res) => {
   try {
-    const { filterType, customStart, customEnd, groupBy, includeZero } = req.query;
+    const { filterType, customStart, customEnd, paymentMode } = req.query;
 
     // Get date range
     const { startDate, endDate } = getDateRange(filterType || 'thisMonth', customStart, customEnd);
 
-    // Get Cash ledger
-    const cashLedger = await Ledger.findOne({ ledgerType: 'Cash', status: 'Active' });
-    if (!cashLedger) {
-      return res.status(404).json({
-        success: false,
-        message: 'Cash ledger not found'
-      });
-    }
+    // Build payment mode filter ('Cash', 'Bank Transfer', or 'All' / undefined = All)
+    const modeFilter = paymentMode && paymentMode !== 'All' ? { paymentMode } : {};
 
-    // Calculate opening balance
-    const openingCash = await calculateOpeningBalance(Ledger, Voucher, cashLedger._id, startDate);
+    // Fetch Business Sales in period (Inflows)
+    const sales = await BusinessSales.find({
+      invoiceDate: { $gte: startDate, $lte: endDate },
+      invoiceType: 'Sale',
+      ...modeFilter,
+      paidAmount: { $gt: 0 }
+    }).sort({ invoiceDate: 1 });
 
-    // Fetch all vouchers in period
-    const vouchers = await Voucher.find({
-      voucherDate: { $gte: startDate, $lte: endDate }
-    })
-      .populate('entries.ledgerId')
-      .sort({ voucherDate: 1, createdAt: 1 });
+    // Fetch Business Purchases in period (Outflows)
+    const rawPurchases = await BusinessStockTransaction.find({
+      date: { $gte: startDate, $lte: endDate },
+      referenceType: 'Purchase',
+      ...modeFilter,
+      $or: [{ paidAmount: { $gt: 0 } }, { netTotal: { $gt: 0 } }]
+    }).sort({ date: 1 });
 
-    // Categorize transactions
-    const categories = {
-      receipts: {
-        sales: 0,
-        payments: 0,
-        others: 0
-      },
-      payments: {
-        purchases: 0,
-        expenses: 0,
-        others: 0
-      }
-    };
-
-    let totalReceipts = 0;
-    let totalPayments = 0;
-    let runningBalance = openingCash;
-    const records = [];
-
-    vouchers.forEach(voucher => {
-      const cashEntry = voucher.entries.find(e =>
-        e.ledgerId._id.toString() === cashLedger._id.toString()
-      );
-
-      if (cashEntry) {
-        const amount = cashEntry.debitAmount || cashEntry.creditAmount || 0;
-        const isReceipt = cashEntry.debitAmount > 0;
-
-        // Skip zero amount transactions if not requested
-        if (!includeZero && amount === 0) {
-          return;
-        }
-
-        // Find the contra entry (the other party in the transaction)
-        const contraEntry = voucher.entries.find(e =>
-          e.ledgerId._id.toString() !== cashLedger._id.toString()
-        );
-        const partyName = contraEntry?.ledgerId?.ledgerName || contraEntry?.ledgerName || 'Unknown';
-
-        // Determine category
-        let category = 'Others';
-        if (voucher.referenceType === 'Sales') {
-          category = 'Sales';
-          categories.receipts.sales += amount;
-        } else if (voucher.referenceType === 'Purchase') {
-          category = 'Purchases';
-          categories.payments.purchases += amount;
-        } else if (isReceipt) {
-          category = 'Other Receipts';
-          categories.receipts.others += amount;
-        } else {
-          const isExpense = voucher.entries.some(e =>
-            e.ledgerId.ledgerType && e.ledgerId.ledgerType.includes('Expense')
-          );
-          if (isExpense) {
-            category = 'Expenses';
-            categories.payments.expenses += amount;
-          } else {
-            category = 'Other Payments';
-            categories.payments.others += amount;
-          }
-        }
-
-        // Update running balance
-        if (isReceipt) {
-          totalReceipts += amount;
-          runningBalance += amount;
-        } else {
-          totalPayments += amount;
-          runningBalance -= amount;
-        }
-
-        records.push({
-          date: voucher.voucherDate,
-          voucherNumber: voucher.voucherNumber,
-          voucherType: voucher.voucherType,
-          type: isReceipt ? 'Receipt' : 'Payment',
-          category: category,
-          particulars: partyName,
-          amount: amount,
-          narration: voucher.narration || cashEntry.narration,
-          referenceType: voucher.referenceType,
-          referenceId: voucher.referenceId,
-          runningBalance: runningBalance
-        });
-      }
+    // Deduplicate: each purchase creates one transaction per item — group into one per invoice
+    const seenPurchaseKeys = new Set();
+    const purchases = rawPurchases.filter(p => {
+      const key = (p.invoiceNumber && p.invoiceNumber.trim())
+        ? p.invoiceNumber.trim()
+        : `${p.date?.toISOString().substring(0, 10)}_${p.supplierName || ''}_${p.paidAmount || p.netTotal || 0}`;
+      if (seenPurchaseKeys.has(key)) return false;
+      seenPurchaseKeys.add(key);
+      return true;
     });
 
-    const closingCash = openingCash + totalReceipts - totalPayments;
+    const records = [];
+
+    // Build inflow records from sales
+    sales.forEach(sale => {
+      records.push({
+        date: sale.invoiceDate,
+        voucherNumber: sale.invoiceNumber,
+        type: 'Inflow',
+        mode: sale.paymentMode || 'Cash',
+        category: 'Sales',
+        particulars: sale.partyName || 'Walk-in Customer',
+        amount: sale.paidAmount,
+        narration: `Sale Invoice: ${sale.invoiceNumber}`,
+        referenceType: 'Sale',
+        referenceId: sale._id
+      });
+    });
+
+    // Build outflow records from purchases (use paidAmount if set, else netTotal for old records)
+    purchases.forEach(purchase => {
+      const amount = purchase.paidAmount > 0 ? purchase.paidAmount : (purchase.netTotal || 0);
+      if (amount <= 0) return;
+      records.push({
+        date: purchase.date,
+        voucherNumber: purchase.invoiceNumber || `PUR-${purchase._id.toString().slice(-6)}`,
+        type: 'Outflow',
+        mode: purchase.paymentMode || 'Cash',
+        category: 'Purchases',
+        particulars: purchase.supplierName || 'Supplier',
+        amount,
+        narration: `Purchase: ${purchase.invoiceNumber || ''}`,
+        referenceType: 'Purchase',
+        referenceId: purchase._id
+      });
+    });
+
+    // Sort all records by date
+    records.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Calculate running balance and totals
+    let totalInflow = 0;
+    let totalOutflow = 0;
+    let runningBalance = 0;
+    records.forEach(record => {
+      if (record.type === 'Inflow') {
+        totalInflow += record.amount;
+        runningBalance += record.amount;
+      } else {
+        totalOutflow += record.amount;
+        runningBalance -= record.amount;
+      }
+      record.balance = runningBalance;
+    });
 
     res.json({
       success: true,
       data: {
         summary: {
-          openingCash: openingCash,
-          totalReceipts,
-          totalPayments,
-          closingCash: closingCash,
-          netCashflow: totalReceipts - totalPayments,
+          openingBalance: 0,
+          totalInflow,
+          inflowCount: records.filter(r => r.type === 'Inflow').length,
+          totalOutflow,
+          outflowCount: records.filter(r => r.type === 'Outflow').length,
+          closingBalance: totalInflow - totalOutflow,
+          netCashflow: totalInflow - totalOutflow,
           totalTransactions: records.length
         },
-        categories,
-        records,
-        filters: { filterType, startDate, endDate, groupBy }
+        transactions: records,
+        filters: { filterType, startDate, endDate }
       }
     });
   } catch (error) {
@@ -540,127 +502,210 @@ export const getCashflowReport = async (req, res) => {
 };
 
 /**
- * Cash-in-Hand Report - Enhanced cash book with detailed transaction view
+ * Cash-in-Hand Report - Business cash book tracking all cash transactions
+ * Sources: BusinessSales (cash receipts), BusinessStockTransaction (cash payments), BusinessVoucher (manual entries)
  * GET /api/reports/vyapar/cash-in-hand
- * Query params: filterType, customStart, customEnd, includeZero, search
+ * Query params: filterType, customStart, customEnd, search
  */
 export const getCashInHandReport = async (req, res) => {
   try {
-    const { filterType, customStart, customEnd, includeZero, search } = req.query;
+    const { filterType, customStart, customEnd, search } = req.query;
 
-    // Get date range
     const { startDate, endDate } = getDateRange(filterType || 'thisMonth', customStart, customEnd);
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
 
-    // Get Cash ledger
-    const cashLedger = await Ledger.findOne({ ledgerType: 'Cash', status: 'Active' });
-    if (!cashLedger) {
-      return res.status(404).json({
-        success: false,
-        message: 'Cash ledger not found'
+    // ─── 1. Cash Sales (Cash In) ──────────────────────────────────────
+    const [salesInPeriod, salesBefore] = await Promise.all([
+      BusinessSales.find({
+        invoiceDate: { $gte: start, $lte: end },
+        paymentMode: 'Cash',
+        paidAmount: { $gt: 0 },
+        invoiceType: 'Sale'
+      }).sort({ invoiceDate: 1 }),
+      BusinessSales.find({
+        invoiceDate: { $lt: start },
+        paymentMode: 'Cash',
+        paidAmount: { $gt: 0 },
+        invoiceType: 'Sale'
+      })
+    ]);
+
+    // ─── 2. Cash Purchases (Cash Out) ─────────────────────────────────
+    // Group by invoiceNumber to avoid per-item duplication
+    const [purchaseTxnInPeriod, purchaseTxnBefore] = await Promise.all([
+      BusinessStockTransaction.find({
+        date: { $gte: start, $lte: end },
+        transactionType: 'Stock In',
+        paymentMode: 'Cash',
+        paidAmount: { $gt: 0 }
+      }).sort({ date: 1, invoiceNumber: 1 }),
+      BusinessStockTransaction.find({
+        date: { $lt: start },
+        transactionType: 'Stock In',
+        paymentMode: 'Cash',
+        paidAmount: { $gt: 0 }
+      })
+    ]);
+
+    // Deduplicate purchases by invoiceNumber (one cash-out per invoice, not per item)
+    const deduplicatePurchases = (txns) => {
+      const seen = new Set();
+      return txns.filter(txn => {
+        const key = txn.invoiceNumber || txn._id.toString();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    };
+
+    const purchasesInPeriod = deduplicatePurchases(purchaseTxnInPeriod);
+    const purchasesBefore = deduplicatePurchases(purchaseTxnBefore);
+
+    // ─── 3. Manual Business Vouchers ─────────────────────────────────
+    const cashBizLedger = await BusinessLedger.findOne({ group: 'Cash-in-Hand', status: 'Active' });
+    let vouchersInPeriod = [];
+    let vouchersBefore = [];
+
+    if (cashBizLedger) {
+      [vouchersInPeriod, vouchersBefore] = await Promise.all([
+        BusinessVoucher.find({
+          date: { $gte: start, $lte: end },
+          'entries.ledgerId': cashBizLedger._id,
+          status: 'Posted'
+        }).populate('entries.ledgerId').sort({ date: 1 }),
+        BusinessVoucher.find({
+          date: { $lt: start },
+          'entries.ledgerId': cashBizLedger._id,
+          status: 'Posted'
+        }).populate('entries.ledgerId')
+      ]);
+    }
+
+    // ─── 4. Opening Balance ───────────────────────────────────────────
+    let openingCash = 0;
+
+    // Cash in from sales before period
+    for (const s of salesBefore) {
+      openingCash += (s.paidAmount || 0);
+    }
+    // Cash out from purchases before period
+    for (const p of purchasesBefore) {
+      openingCash -= (p.paidAmount || 0);
+    }
+    // Manual voucher entries before period
+    if (cashBizLedger) {
+      for (const v of vouchersBefore) {
+        for (const e of v.entries) {
+          if (e.ledgerId && e.ledgerId._id.toString() === cashBizLedger._id.toString()) {
+            if (e.type === 'debit') openingCash += (e.amount || 0);
+            else openingCash -= (e.amount || 0);
+          }
+        }
+      }
+    }
+
+    // ─── 5. Build Transaction List ────────────────────────────────────
+    const transactions = [];
+
+    // Cash Sales → Cash In
+    for (const sale of salesInPeriod) {
+      transactions.push({
+        _id: sale._id,
+        date: sale.invoiceDate,
+        refNo: sale.invoiceNumber,
+        partyName: sale.partyName || 'Walk-in Customer',
+        category: 'Sales',
+        type: 'Receipt',
+        cashIn: sale.paidAmount || 0,
+        cashOut: 0,
+        narration: `Cash sale - ${sale.invoiceNumber}`,
+        source: 'sale'
       });
     }
 
-    // Calculate opening balance
-    const openingCash = await calculateOpeningBalance(Ledger, Voucher, cashLedger._id, startDate);
+    // Cash Purchases → Cash Out
+    for (const purchase of purchasesInPeriod) {
+      transactions.push({
+        _id: purchase._id,
+        date: purchase.date || purchase.purchaseDate,
+        refNo: purchase.invoiceNumber || '-',
+        partyName: purchase.supplierName || 'Supplier',
+        category: 'Purchase',
+        type: 'Payment',
+        cashIn: 0,
+        cashOut: purchase.paidAmount || 0,
+        narration: `Cash purchase - ${purchase.invoiceNumber || ''}`.trim().replace(/- $/, ''),
+        source: 'purchase'
+      });
+    }
 
-    // Fetch all vouchers in period with cash entries
-    const vouchers = await Voucher.find({
-      voucherDate: { $gte: startDate, $lte: endDate },
-      'entries.ledgerId': cashLedger._id
-    })
-      .populate('entries.ledgerId')
-      .sort({ voucherDate: 1, createdAt: 1 });
-
-    let totalCashIn = 0;
-    let totalCashOut = 0;
-    let runningBalance = openingCash;
-    const transactions = [];
-
-    for (const voucher of vouchers) {
+    // Manual Vouchers (Receipt/Payment)
+    for (const voucher of vouchersInPeriod) {
+      if (!cashBizLedger) continue;
       const cashEntry = voucher.entries.find(e =>
-        e.ledgerId._id.toString() === cashLedger._id.toString()
+        e.ledgerId && e.ledgerId._id.toString() === cashBizLedger._id.toString()
       );
+      if (!cashEntry || !cashEntry.amount) continue;
 
-      if (!cashEntry) continue;
-
-      const isCashIn = cashEntry.debitAmount > 0;
-      const cashIn = cashEntry.debitAmount || 0;
-      const cashOut = cashEntry.creditAmount || 0;
-      const amount = cashIn || cashOut;
-
-      // Skip zero amount if not requested
-      if (!includeZero && amount === 0) continue;
-
-      // Find contra entry
+      const isCashIn = cashEntry.type === 'debit';
       const contraEntry = voucher.entries.find(e =>
-        e.ledgerId._id.toString() !== cashLedger._id.toString()
+        e.ledgerId && e.ledgerId._id.toString() !== cashBizLedger._id.toString()
       );
-      const partyName = contraEntry?.ledgerId?.ledgerName || contraEntry?.ledgerName || 'Cash Transaction';
-      const partyType = contraEntry?.ledgerId?.ledgerType || '';
+      const partyName = contraEntry?.ledgerId?.name || 'Voucher Entry';
+      const partyGroup = contraEntry?.ledgerId?.group || '';
 
-      // Determine category based on ledger type or reference
       let category = 'General';
-      if (voucher.referenceType === 'Sales') {
-        category = 'Sales';
-      } else if (voucher.referenceType === 'Purchase') {
-        category = 'Purchase';
-      } else if (partyType.includes('Expense')) {
-        category = 'Expense';
-      } else if (partyType === 'Sundry Debtors' || partyType === 'Customer') {
-        category = 'Customer Payment';
-      } else if (partyType === 'Sundry Creditors' || partyType === 'Supplier') {
-        category = 'Supplier Payment';
-      } else if (partyType === 'Bank') {
-        category = 'Bank Transfer';
-      } else if (partyType.includes('Income')) {
-        category = 'Income';
-      } else if (partyType === 'Capital' || partyType === 'Share Capital') {
-        category = 'Capital';
-      }
-
-      // Update totals and running balance
-      totalCashIn += cashIn;
-      totalCashOut += cashOut;
-      runningBalance = runningBalance + cashIn - cashOut;
-
-      // Determine type
-      const type = isCashIn ? 'Receipt' : 'Payment';
+      if (partyGroup === 'Sundry Debtors') category = 'Customer Receipt';
+      else if (partyGroup === 'Sundry Creditors') category = 'Supplier Payment';
+      else if (partyGroup === 'Bank Accounts') category = 'Bank Transfer';
+      else if (partyGroup.includes('Expenses')) category = 'Expense';
+      else if (partyGroup.includes('Incomes')) category = 'Income';
+      else if (partyGroup === 'Capital Account') category = 'Capital';
 
       transactions.push({
         _id: voucher._id,
-        date: voucher.voucherDate,
-        voucherNumber: voucher.voucherNumber,
-        voucherType: voucher.voucherType,
+        date: voucher.date,
         refNo: voucher.voucherNumber,
-        name: partyName,
-        particulars: partyName,
-        category: category,
-        type: type,
-        cashIn: cashIn,
-        cashOut: cashOut,
-        amount: amount,
-        runningBalance: runningBalance,
-        narration: voucher.narration || cashEntry.narration || '',
-        referenceType: voucher.referenceType,
-        referenceId: voucher.referenceId
+        partyName,
+        category,
+        type: isCashIn ? 'Receipt' : 'Payment',
+        cashIn: isCashIn ? (cashEntry.amount || 0) : 0,
+        cashOut: !isCashIn ? (cashEntry.amount || 0) : 0,
+        narration: voucher.narration || '',
+        source: 'voucher'
       });
     }
 
-    // Apply search filter if provided
-    let filteredTransactions = transactions;
+    // ─── 6. Sort by date then refNo ───────────────────────────────────
+    transactions.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // ─── 7. Running Balance ───────────────────────────────────────────
+    let runningBalance = openingCash;
+    let totalCashIn = 0;
+    let totalCashOut = 0;
+
+    const txnsWithBalance = transactions.map(t => {
+      totalCashIn += t.cashIn;
+      totalCashOut += t.cashOut;
+      runningBalance += t.cashIn - t.cashOut;
+      return { ...t, runningBalance };
+    });
+
+    // ─── 8. Apply Search Filter ───────────────────────────────────────
+    let filteredTransactions = txnsWithBalance;
     if (search && search.trim()) {
-      const searchLower = search.toLowerCase().trim();
-      filteredTransactions = transactions.filter(t =>
-        t.name?.toLowerCase().includes(searchLower) ||
-        t.voucherNumber?.toLowerCase().includes(searchLower) ||
-        t.category?.toLowerCase().includes(searchLower) ||
-        t.narration?.toLowerCase().includes(searchLower)
+      const q = search.toLowerCase().trim();
+      filteredTransactions = txnsWithBalance.filter(t =>
+        t.partyName?.toLowerCase().includes(q) ||
+        t.refNo?.toLowerCase().includes(q) ||
+        t.category?.toLowerCase().includes(q) ||
+        t.narration?.toLowerCase().includes(q)
       );
     }
 
-    const closingBalance = openingCash + totalCashIn - totalCashOut;
-
-    // Category summary
+    // ─── 9. Category Summary ──────────────────────────────────────────
     const categorySummary = {};
     transactions.forEach(t => {
       if (!categorySummary[t.category]) {
@@ -674,28 +719,19 @@ export const getCashInHandReport = async (req, res) => {
     res.json({
       success: true,
       data: {
-        ledger: {
-          _id: cashLedger._id,
-          name: cashLedger.ledgerName,
-          type: cashLedger.ledgerType
-        },
         summary: {
-          openingCash: openingCash,
-          totalCashIn: totalCashIn,
-          totalCashOut: totalCashOut,
-          closingBalance: closingBalance,
-          netChange: totalCashIn - totalCashOut,
+          openingCash,
+          totalCashIn,
+          totalCashOut,
+          closingBalance: openingCash + totalCashIn - totalCashOut,
           totalTransactions: transactions.length,
-          receiptCount: transactions.filter(t => t.type === 'Receipt').length,
-          paymentCount: transactions.filter(t => t.type === 'Payment').length
+          salesCount: transactions.filter(t => t.source === 'sale').length,
+          purchaseCount: transactions.filter(t => t.source === 'purchase').length,
+          voucherCount: transactions.filter(t => t.source === 'voucher').length
         },
         categorySummary,
         transactions: filteredTransactions,
-        period: {
-          startDate,
-          endDate,
-          filterType
-        }
+        period: { startDate, endDate, filterType }
       }
     });
   } catch (error) {
@@ -742,11 +778,12 @@ export const getAllTransactions = async (req, res) => {
 
     // Also fetch sales data for comprehensive view
     const salesQuery = {
-      billDate: { $gte: startDate, $lte: endDate }
+      invoiceDate: { $gte: startDate, $lte: endDate },
+      invoiceType: 'Sale'
     };
-    const salesData = await Sales.find(salesQuery)
-      .populate('customerId')
-      .sort({ billDate: -1 });
+    const salesData = await BusinessSales.find(salesQuery)
+      .populate('partyId')
+      .sort({ invoiceDate: -1 });
 
     // Create a map of sales for quick lookup
     const salesMap = new Map();
@@ -974,8 +1011,9 @@ export const getVyaparProfitLoss = async (req, res) => {
 
     // ===== INCOME SECTION =====
     // Sale (+)
-    const salesData = await Sales.find({
-      billDate: { $gte: startDate, $lte: endDate }
+    const salesData = await BusinessSales.find({
+      invoiceDate: { $gte: startDate, $lte: endDate },
+      invoiceType: 'Sale'
     });
     const saleAmount = salesData.reduce((sum, sale) => sum + (sale.grandTotal || 0), 0);
 
@@ -992,13 +1030,16 @@ export const getVyaparProfitLoss = async (req, res) => {
     const totalIncome = saleAmount - creditNoteAmount + saleFA;
 
     // ===== PURCHASE & DIRECT COST SECTION =====
-    // Purchase (-) - Filter by Business inventory type for Vyapar reports
-    const purchaseTransactions = await StockTransaction.find({
+    // Purchase (-) - Use BusinessStockTransaction for Business inventory
+    // Only include referenceType='Purchase' to exclude Opening Stock / Adjustments
+    // Use item-level (quantity * rate) to avoid multi-item invoice triple-counting from totalAmount field
+    const purchaseTransactions = await BusinessStockTransaction.find({
       date: { $gte: startDate, $lte: endDate },
       transactionType: 'Stock In',
-      inventoryType: 'Business'
+      referenceType: 'Purchase'
     });
-    const purchaseAmount = purchaseTransactions.reduce((sum, tx) => sum + (tx.totalAmount || 0), 0);
+    const purchaseAmount = purchaseTransactions.reduce((sum, tx) =>
+      sum + ((tx.quantity || 0) * (tx.rate || 0)), 0);
 
     // Debit Note (+) - Returns to supplier
     const debitNoteVouchers = await Voucher.find({
@@ -1166,50 +1207,46 @@ export const getVyaparProfitLoss = async (req, res) => {
 
     // ===== STOCK ADJUSTMENTS SECTION =====
     // Get all Business items for stock calculation (Vyapar reports use Business inventory)
-    const items = await Item.find({ status: 'Active', inventoryType: 'Business' });
+    const items = await BusinessItem.find({ status: 'Active' });
 
     // Opening Stock - Calculate stock value at start date
     let openingStock = 0;
     for (const item of items) {
-      const stockInBefore = await StockTransaction.find({
+      const stockInBefore = await BusinessStockTransaction.find({
         itemId: item._id,
         transactionType: 'Stock In',
-        inventoryType: 'Business',
         date: { $lt: startDate }
       });
-      const stockOutBefore = await StockTransaction.find({
+      const stockOutBefore = await BusinessStockTransaction.find({
         itemId: item._id,
         transactionType: 'Stock Out',
-        inventoryType: 'Business',
         date: { $lt: startDate }
       });
 
       const qtyIn = stockInBefore.reduce((sum, tx) => sum + (tx.quantity || 0), 0);
       const qtyOut = stockOutBefore.reduce((sum, tx) => sum + (tx.quantity || 0), 0);
       const openingQty = qtyIn - qtyOut;
-      openingStock += openingQty * (item.costPrice || item.purchasePrice || 0);
+      openingStock += openingQty * (item.purchasePrice || item.costPrice || 0);
     }
 
     // Closing Stock - Calculate stock value at end date
     let closingStock = 0;
     for (const item of items) {
-      const stockInBefore = await StockTransaction.find({
+      const stockInBefore = await BusinessStockTransaction.find({
         itemId: item._id,
         transactionType: 'Stock In',
-        inventoryType: 'Business',
         date: { $lte: endDate }
       });
-      const stockOutBefore = await StockTransaction.find({
+      const stockOutBefore = await BusinessStockTransaction.find({
         itemId: item._id,
         transactionType: 'Stock Out',
-        inventoryType: 'Business',
         date: { $lte: endDate }
       });
 
       const qtyIn = stockInBefore.reduce((sum, tx) => sum + (tx.quantity || 0), 0);
       const qtyOut = stockOutBefore.reduce((sum, tx) => sum + (tx.quantity || 0), 0);
       const closingQty = qtyIn - qtyOut;
-      closingStock += closingQty * (item.costPrice || item.purchasePrice || 0);
+      closingStock += closingQty * (item.purchasePrice || item.costPrice || 0);
     }
 
     // Fixed Assets Stock - placeholder for now
@@ -1480,32 +1517,33 @@ export const getBillWiseProfit = async (req, res) => {
       return partyMap.get(key);
     };
 
-    // 1. Fetch all sales within date range
-    const sales = await Sales.find({
-      billDate: { $gte: startDate, $lte: endDate }
+    // 1. Fetch all sales within date range - Business Sales
+    const sales = await BusinessSales.find({
+      invoiceDate: { $gte: startDate, $lte: endDate },
+      invoiceType: 'Sale'
     })
-      .populate('customerId')
-      .sort({ billDate: 1 });
+      .populate('partyId')
+      .sort({ invoiceDate: 1 });
 
     for (const sale of sales) {
-      const partyId = sale.customerId?._id?.toString() || sale.customerName || 'cash';
-      const partyName = sale.customerName || 'Cash Sales';
+      const partyId = sale.partyId?._id?.toString() || sale.partyName || 'cash';
+      const partyName = sale.partyName || 'Cash Sales';
 
       // Apply party type filter
       if (partyType === 'Supplier') continue;
 
       const party = getOrCreateParty(partyId, partyName, 'Customer');
 
-      const billAmount = sale.grandTotal || sale.subtotal || 0;
-      const discount = sale.discount || 0;
+      const billAmount = sale.grandTotal || sale.taxableAmount || 0;
+      const discount = sale.billDiscount || sale.itemDiscount || 0;
       const gstAmount = sale.totalGst || 0;
       const paidAmount = sale.paidAmount || 0;
       const balanceAmount = sale.balanceAmount || (billAmount - paidAmount);
 
       party.bills.push({
         _id: sale._id,
-        billNumber: sale.billNumber,
-        billDate: sale.billDate,
+        billNumber: sale.invoiceNumber,
+        billDate: sale.invoiceDate,
         billType: 'Sales',
         totalAmount: billAmount,
         discount: discount,
@@ -1514,7 +1552,7 @@ export const getBillWiseProfit = async (req, res) => {
         balanceAmount: balanceAmount,
         itemCount: sale.items?.length || 0,
         paymentMode: sale.paymentMode || 'Credit',
-        status: balanceAmount <= 0 ? 'Paid' : paidAmount > 0 ? 'Partial' : 'Pending'
+        status: balanceAmount <= 0 ? 'Paid' : paidAmount > 0 ? 'Partial' : 'Unpaid'
       });
 
       // Update party totals
@@ -1526,11 +1564,10 @@ export const getBillWiseProfit = async (req, res) => {
       party.totals.totalBalance += balanceAmount;
     }
 
-    // 2. Fetch all purchases (Stock In transactions) within date range - Business inventory only
-    const purchases = await StockTransaction.find({
+    // 2. Fetch all purchases (Stock In transactions) within date range - Business inventory
+    const purchases = await BusinessStockTransaction.find({
       transactionType: 'Stock In',
       referenceType: 'Purchase',
-      inventoryType: 'Business',
       date: { $gte: startDate, $lte: endDate }
     })
       .populate('supplierId')
@@ -1722,24 +1759,25 @@ export const getPartyWiseProfit = async (req, res) => {
       return partyMap.get(partyId);
     };
 
-    // 1. Fetch all sales within date range
-    const sales = await Sales.find({
-      billDate: { $gte: startDate, $lte: endDate }
-    }).populate('items.itemId').populate('customerId');
+    // 1. Fetch all sales within date range - Business Sales
+    const sales = await BusinessSales.find({
+      invoiceDate: { $gte: startDate, $lte: endDate },
+      invoiceType: 'Sale'
+    }).populate('items.itemId').populate('partyId');
 
     for (const sale of sales) {
-      const partyId = sale.customerId ? sale.customerId.toString() : 'cash';
-      const partyName = sale.customerName || 'Cash Sales';
+      const partyId = sale.partyId ? sale.partyId._id?.toString() || sale.partyId.toString() : 'cash';
+      const partyName = sale.partyName || 'Cash Sales';
       const party = initParty(partyId, partyName, 'Customer');
 
       // Calculate sale revenue and cost
-      const saleRevenue = sale.subtotal || 0;
+      const saleRevenue = sale.taxableAmount || 0;
       const saleGst = sale.totalGst || 0;
       let saleCost = 0;
 
       for (const item of sale.items) {
-        if (item.itemId && item.itemId.costPrice) {
-          saleCost += item.itemId.costPrice * item.quantity;
+        if (item.itemId && (item.itemId.purchasePrice || item.itemId.costPrice)) {
+          saleCost += (item.itemId.purchasePrice || item.itemId.costPrice) * item.quantity;
         }
       }
 
@@ -1751,11 +1789,10 @@ export const getPartyWiseProfit = async (req, res) => {
       party.receivable += sale.balanceAmount || 0;
     }
 
-    // 2. Fetch all purchases (Stock In transactions) within date range - Business inventory only
-    const purchases = await StockTransaction.find({
+    // 2. Fetch all purchases (Stock In transactions) within date range - Business inventory
+    const purchases = await BusinessStockTransaction.find({
       transactionType: 'Stock In',
       referenceType: 'Purchase',
-      inventoryType: 'Business',
       date: { $gte: startDate, $lte: endDate }
     }).populate('itemId').populate('supplierId');
 
@@ -1773,7 +1810,8 @@ export const getPartyWiseProfit = async (req, res) => {
         });
       }
       const invoice = purchaseInvoiceMap.get(invoiceKey);
-      invoice.totalAmount += purchase.totalAmount || (purchase.rate * purchase.quantity) || 0;
+      // Use item-level (quantity * rate) to avoid multi-item invoice over-counting from totalAmount
+      invoice.totalAmount += (purchase.quantity || 0) * (purchase.rate || 0);
       invoice.paidAmount += purchase.paidAmount || 0;
       invoice.items.push(purchase);
     }
@@ -2140,14 +2178,14 @@ export const getStockSummary = async (req, res) => {
   try {
     const { category, asOfDate, showOnlyInStock, inventoryType } = req.query;
 
-    // Build query for active items - default to Business inventory for Vyapar reports
-    const query = { status: 'Active', inventoryType: inventoryType || 'Business' };
+    // Build query for active Business items for Vyapar reports
+    const itemQuery = { status: 'Active' };
     if (category && category !== 'all') {
-      query.category = category;
+      itemQuery.category = category;
     }
 
-    // Fetch all items
-    const items = await Item.find(query).sort({ itemName: 1 });
+    // Fetch all Business items
+    const items = await BusinessItem.find(itemQuery).sort({ itemName: 1 });
 
     // If asOfDate is provided, we need to calculate stock as of that date
     // by considering stock transactions up to that date
@@ -2157,15 +2195,16 @@ export const getStockSummary = async (req, res) => {
       const endDate = new Date(asOfDate);
       endDate.setHours(23, 59, 59, 999);
 
-      // Get all stock transactions up to the date
-      const StockTransaction = (await import('../models/StockTransaction.js')).default;
-      const transactions = await StockTransaction.find({
+      // Get all business stock transactions up to the date
+      const transactions = await BusinessStockTransaction.find({
         date: { $lte: endDate }
       });
 
-      // Calculate stock for each item based on transactions
+      // Calculate stock for each item from transactions only
+      // Do NOT start with item.openingBalance because the opening balance already
+      // creates a Stock In transaction (referenceType='Opening'), which would double-count
       items.forEach(item => {
-        let stockQty = item.openingBalance || 0;
+        let stockQty = 0;
 
         transactions.forEach(txn => {
           if (txn.itemId && txn.itemId.toString() === item._id.toString()) {
@@ -2201,9 +2240,9 @@ export const getStockSummary = async (req, res) => {
         return;
       }
 
-      // Get prices - use salesRate/retailPrice for sale price, wholesalePrice for purchase
+      // Get prices - use salesRate for sale price, purchasePrice for cost
       const salePrice = item.salesRate || item.retailPrice || 0;
-      const purchasePrice = item.wholesalePrice || 0;
+      const purchasePrice = item.purchasePrice || item.wholesalePrice || 0;
 
       // Calculate stock value based on purchase price (cost-based valuation)
       const stockValue = stockQty * purchasePrice;
@@ -2270,24 +2309,26 @@ export const getItemByParty = async (req, res) => {
     // Get date range
     const { startDate, endDate } = getDateRange(filterType || 'thisMonth', customStart, customEnd);
 
-    // Build sales query
+    // Build sales query - Business Sales
     const salesQuery = {
-      billDate: { $gte: startDate, $lte: endDate }
+      invoiceDate: { $gte: startDate, $lte: endDate },
+      invoiceType: 'Sale'
     };
     if (itemId) salesQuery['items.itemId'] = itemId;
 
-    // Build purchase query (stock transactions with type 'in')
+    // Build purchase query (Business stock transactions)
     const purchaseQuery = {
-      transactionDate: { $gte: startDate, $lte: endDate },
-      type: 'in'
+      date: { $gte: startDate, $lte: endDate },
+      transactionType: 'Stock In',
+      referenceType: 'Purchase'
     };
     if (itemId) purchaseQuery.itemId = itemId;
 
     // Fetch sales and purchases in parallel
     const [sales, purchases, allItems] = await Promise.all([
-      Sales.find(salesQuery).populate('items.itemId'),
-      StockTransaction.find(purchaseQuery).populate('itemId').populate('supplierId'),
-      Item.find({ status: 'Active' }).select('itemName category')
+      BusinessSales.find(salesQuery).populate('items.itemId'),
+      BusinessStockTransaction.find(purchaseQuery).populate('itemId').populate('supplierId'),
+      BusinessItem.find({ status: 'Active' }).select('itemName category')
     ]);
 
     // Get unique categories from items
@@ -2296,10 +2337,10 @@ export const getItemByParty = async (req, res) => {
     // Group by party (combining both customers and suppliers)
     const partyMap = new Map();
 
-    // Process sales - grouped by customer
+    // Process sales - grouped by customer/party
     sales.forEach(sale => {
-      const partyKey = sale.customerId ? sale.customerId.toString() : 'cash-customer';
-      const partyName = sale.customerName || 'Cash Sales';
+      const partyKey = sale.partyId ? sale.partyId.toString() : 'cash-customer';
+      const partyName = sale.partyName || 'Cash Sales';
 
       // Filter by category if provided
       let filteredItems = sale.items;
@@ -2314,7 +2355,7 @@ export const getItemByParty = async (req, res) => {
           partyMap.set(partyKey, {
             partyId: partyKey,
             partyName,
-            partyType: sale.customerId ? 'Customer' : 'Cash',
+            partyType: sale.partyId ? 'Customer' : 'Cash',
             saleQty: 0,
             saleAmount: 0,
             purchaseQty: 0,
@@ -2326,7 +2367,7 @@ export const getItemByParty = async (req, res) => {
 
         const record = partyMap.get(partyKey);
         record.saleQty += item.quantity || 0;
-        record.saleAmount += item.amount || 0;
+        record.saleAmount += item.totalAmount || 0;
         record.saleBillCount++;
       });
     });
@@ -2339,7 +2380,7 @@ export const getItemByParty = async (req, res) => {
       }
 
       const partyKey = purchase.supplierId ? purchase.supplierId._id.toString() : 'cash-supplier';
-      const partyName = purchase.supplierId ? purchase.supplierId.supplierName : (purchase.supplierName || 'Direct Purchase');
+      const partyName = purchase.supplierId ? (purchase.supplierId.name || purchase.supplierName || 'Direct Purchase') : (purchase.supplierName || 'Direct Purchase');
 
       if (!partyMap.has(partyKey)) {
         partyMap.set(partyKey, {
@@ -2420,7 +2461,7 @@ export const getItemWiseProfit = async (req, res) => {
     startOfPeriod.setHours(0, 0, 0, 0);
 
     // Get all Business items (Vyapar reports use Business inventory)
-    const allItems = await Item.find({ status: 'Active', inventoryType: 'Business' });
+    const allItems = await BusinessItem.find({ status: 'Active' });
 
     // Create item map with all items
     const itemMap = new Map();
@@ -2429,10 +2470,10 @@ export const getItemWiseProfit = async (req, res) => {
         itemId: item._id.toString(),
         itemName: item.itemName,
         category: item.category || 'General',
-        unit: item.unit || 'Pcs',
-        costPrice: item.costPrice || 0,
-        sellingPrice: item.sellingPrice || 0,
-        gstRate: item.gstRate || 0,
+        unit: item.unit || item.measurement || 'Pcs',
+        costPrice: item.purchasePrice || item.costPrice || 0,
+        sellingPrice: item.salesRate || item.sellingPrice || 0,
+        gstRate: item.gstPercent || item.gstRate || 0,
         // Initialize all values
         sale: 0,
         saleQty: 0,
@@ -2454,9 +2495,10 @@ export const getItemWiseProfit = async (req, res) => {
       });
     });
 
-    // 1. Fetch Sales (Sale amount)
-    const sales = await Sales.find({
-      billDate: { $gte: startDate, $lte: endDate }
+    // 1. Fetch Sales (Sale amount) - Business Sales
+    const sales = await BusinessSales.find({
+      invoiceDate: { $gte: startDate, $lte: endDate },
+      invoiceType: 'Sale'
     }).populate('items.itemId');
 
     sales.forEach(sale => {
@@ -2466,8 +2508,8 @@ export const getItemWiseProfit = async (req, res) => {
         if (!itemId || !itemMap.has(itemId)) return;
 
         const record = itemMap.get(itemId);
-        const saleAmount = saleItem.amount || (saleItem.quantity * saleItem.rate) || 0;
-        const gstAmount = saleItem.gstAmount || 0;
+        const saleAmount = saleItem.totalAmount || saleItem.taxableAmount || (saleItem.quantity * saleItem.rate) || 0;
+        const gstAmount = (saleItem.cgstAmount || 0) + (saleItem.sgstAmount || 0) + (saleItem.igstAmount || 0);
 
         record.sale += saleAmount;
         record.saleQty += saleItem.quantity || 0;
@@ -2502,10 +2544,11 @@ export const getItemWiseProfit = async (req, res) => {
       }
     });
 
-    // 3. Fetch Stock In (Purchases) - Business inventory only
-    const stockInTransactions = await StockTransaction.find({
+    // 3. Fetch Stock In (Purchases) - Business inventory
+    // Only referenceType='Purchase' to exclude Opening Stock and Adjustments
+    const stockInTransactions = await BusinessStockTransaction.find({
       transactionType: 'Stock In',
-      inventoryType: 'Business',
+      referenceType: 'Purchase',
       date: { $gte: startDate, $lte: endDate }
     });
 
@@ -2514,7 +2557,8 @@ export const getItemWiseProfit = async (req, res) => {
       if (!itemId || !itemMap.has(itemId)) return;
 
       const record = itemMap.get(itemId);
-      const purchaseAmount = txn.totalAmount || (txn.quantity * (txn.rate || txn.costPrice || 0));
+      // Use item-level (quantity * rate) instead of totalAmount to avoid multi-item invoice over-counting
+      const purchaseAmount = (txn.quantity || 0) * (txn.rate || txn.costPrice || 0);
 
       record.purchase += purchaseAmount;
       record.purchaseQty += txn.quantity || 0;
@@ -2540,9 +2584,8 @@ export const getItemWiseProfit = async (req, res) => {
       }
     });
 
-    // 5. Calculate Opening Stock (Stock before the period) - Business inventory only
-    const openingStockTransactions = await StockTransaction.find({
-      inventoryType: 'Business',
+    // 5. Calculate Opening Stock (Stock before the period) - Business inventory
+    const openingStockTransactions = await BusinessStockTransaction.find({
       date: { $lt: startOfPeriod }
     });
 
@@ -2586,7 +2629,7 @@ export const getItemWiseProfit = async (req, res) => {
         // If item has opening balance and no calculated opening stock
         if (item.openingBalance && record.openingStock === 0) {
           record.openingStock = item.openingBalance || 0;
-          record.openingStockValue = (item.openingBalance || 0) * (item.costPrice || 0);
+          record.openingStockValue = (item.openingBalance || 0) * (item.purchasePrice || item.costPrice || 0);
         }
       }
     });
@@ -2598,14 +2641,13 @@ export const getItemWiseProfit = async (req, res) => {
         const record = itemMap.get(itemId);
         // Use current balance from item model
         record.closingStock = item.currentBalance || 0;
-        record.closingStockValue = (item.currentBalance || 0) * (item.costPrice || 0);
+        record.closingStockValue = (item.currentBalance || 0) * (item.purchasePrice || item.costPrice || 0);
       }
     });
 
-    // 7. Fetch Stock Out for Consumption/Manufacturing - Business inventory only
-    const stockOutTransactions = await StockTransaction.find({
+    // 7. Fetch Stock Out for Consumption/Manufacturing - Business inventory
+    const stockOutTransactions = await BusinessStockTransaction.find({
       transactionType: 'Stock Out',
-      inventoryType: 'Business',
       date: { $gte: startDate, $lte: endDate }
     });
 
@@ -2702,18 +2744,19 @@ export const getItemWiseProfit = async (req, res) => {
 export const getLowStockSummary = async (req, res) => {
   try {
     const { inventoryType } = req.query;
-    // Fetch all active items - default to Business inventory for Vyapar reports
-    const items = await Item.find({ status: 'Active', inventoryType: inventoryType || 'Business' });
+    // Fetch all active Business items for Vyapar reports
+    const items = await BusinessItem.find({ status: 'Active' });
 
     const records = [];
     let totalStockValue = 0;
 
     items.forEach(item => {
       const currentBalance = item.currentBalance || 0;
-      const reorderLevel = item.reorderLevel || 0;
+      const reorderLevel = item.lowStockAlert || item.reorderLevel || 0;
 
       if (currentBalance <= reorderLevel) {
-        const stockValue = currentBalance * (item.sellingPrice || 0);
+        const sellingPrice = item.salesRate || item.sellingPrice || 0;
+        const stockValue = currentBalance * sellingPrice;
         const shortage = reorderLevel - currentBalance;
 
         records.push({
@@ -2721,27 +2764,35 @@ export const getLowStockSummary = async (req, res) => {
           itemName: item.itemName,
           category: item.category,
           currentBalance,
+          currentStock: currentBalance,
           reorderLevel,
+          minStock: reorderLevel,
           shortage,
-          unit: item.unit,
-          sellingPrice: item.sellingPrice,
+          unit: item.unit || item.measurement,
+          sellingPrice,
           stockValue,
-          status: currentBalance === 0 ? 'Out of Stock' : 'Low Stock'
+          status: currentBalance === 0 ? 'Out of Stock' : (currentBalance <= reorderLevel * 0.25 ? 'Critical' : 'Low Stock')
         });
 
         totalStockValue += stockValue;
       }
     });
 
+    const sortedRecords = records.sort((a, b) => a.shortage - b.shortage);
     res.json({
       success: true,
       data: {
         summary: {
+          criticalItems: records.filter(r => r.status === 'Critical').length,
+          lowStockItems: records.length,
           totalLowStockItems: records.length,
+          outOfStock: records.filter(r => r.status === 'Out of Stock').length,
           outOfStockItems: records.filter(r => r.status === 'Out of Stock').length,
+          totalValue: totalStockValue,
           totalStockValue
         },
-        records: records.sort((a, b) => a.shortage - b.shortage),
+        items: sortedRecords,
+        records: sortedRecords,
         filters: {}
       }
     });
@@ -2767,93 +2818,90 @@ export const getBankStatement = async (req, res) => {
     // Get date range
     const { startDate, endDate } = getDateRange(filterType || 'thisMonth', customStart, customEnd);
 
-    // If no ledgerId provided, find the first bank ledger
-    let bankLedgerId = ledgerId;
-    if (!bankLedgerId) {
-      const bankLedger = await Ledger.findOne({ ledgerType: 'Bank', status: 'Active' });
-      if (!bankLedger) {
-        return res.status(404).json({
-          success: false,
-          message: 'No bank ledger found'
-        });
-      }
-      bankLedgerId = bankLedger._id;
+    // Get ledger details if provided (for display name only)
+    let ledger = null;
+    if (ledgerId) {
+      ledger = await Ledger.findById(ledgerId);
     }
-
-    // Get ledger details
-    const ledger = await Ledger.findById(bankLedgerId);
     if (!ledger) {
-      return res.status(404).json({
-        success: false,
-        message: 'Ledger not found'
-      });
+      ledger = await Ledger.findOne({ ledgerType: 'Bank', status: 'Active' });
     }
 
-    // Calculate opening balance
-    const openingBalance = await calculateOpeningBalance(Ledger, Voucher, bankLedgerId, startDate);
-    const isDebitNature = true; // Bank is always debit nature
+    // Bank payment modes — non-cash transactions
+    const bankModes = ['Bank', 'UPI', 'Card', 'Cheque'];
 
-    // Fetch transactions
-    const vouchers = await Voucher.find({
-      voucherDate: { $gte: startDate, $lte: endDate },
-      'entries.ledgerId': bankLedgerId
-    })
-      .populate('entries.ledgerId')
-      .sort({ voucherDate: 1 });
+    // Deposits: Business Sales paid via bank
+    const sales = await BusinessSales.find({
+      invoiceDate: { $gte: startDate, $lte: endDate },
+      invoiceType: 'Sale',
+      paymentMode: { $in: bankModes },
+      paidAmount: { $gt: 0 }
+    }).sort({ invoiceDate: 1 });
+
+    // Withdrawals: Business Purchases paid via bank
+    const purchases = await BusinessStockTransaction.find({
+      date: { $gte: startDate, $lte: endDate },
+      referenceType: 'Purchase',
+      paymentMode: { $in: bankModes },
+      paidAmount: { $gt: 0 }
+    }).sort({ date: 1 });
 
     const transactions = [];
-    let totalDeposits = 0;
-    let totalWithdrawals = 0;
 
-    vouchers.forEach(voucher => {
-      voucher.entries.forEach(entry => {
-        if (entry.ledgerId._id.toString() === bankLedgerId.toString()) {
-          const isDeposit = entry.debitAmount > 0;
-          const amount = isDeposit ? entry.debitAmount : entry.creditAmount;
-
-          transactions.push({
-            date: voucher.voucherDate,
-            voucherNumber: voucher.voucherNumber,
-            voucherType: voucher.voucherType,
-            particulars: entry.narration || voucher.narration,
-            deposit: isDeposit ? amount : 0,
-            withdrawal: !isDeposit ? amount : 0,
-            referenceType: voucher.referenceType
-          });
-
-          if (isDeposit) {
-            totalDeposits += amount;
-          } else {
-            totalWithdrawals += amount;
-          }
-        }
+    sales.forEach(sale => {
+      transactions.push({
+        date: sale.invoiceDate,
+        voucherNumber: sale.invoiceNumber,
+        voucherType: 'Sale',
+        particulars: sale.partyName || 'Walk-in Customer',
+        mode: sale.paymentMode,
+        deposit: sale.paidAmount,
+        withdrawal: 0,
+        referenceType: 'Sale',
+        referenceId: sale._id
       });
     });
 
-    // Calculate running balance
-    const transactionsWithBalance = transactions.map(txn => {
-      const balance = openingBalance + totalDeposits - totalWithdrawals;
-      return {
-        ...txn,
-        balance: Math.abs(balance)
-      };
+    purchases.forEach(purchase => {
+      transactions.push({
+        date: purchase.date,
+        voucherNumber: purchase.invoiceNumber || `PUR-${purchase._id.toString().slice(-6)}`,
+        voucherType: 'Purchase',
+        particulars: purchase.supplierName || 'Supplier',
+        mode: purchase.paymentMode,
+        deposit: 0,
+        withdrawal: purchase.paidAmount,
+        referenceType: 'Purchase',
+        referenceId: purchase._id
+      });
     });
 
-    const closingBalance = openingBalance + totalDeposits - totalWithdrawals;
+    // Sort by date
+    transactions.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Calculate running balance and totals
+    let totalDeposits = 0;
+    let totalWithdrawals = 0;
+    let runningBalance = 0;
+
+    const transactionsWithBalance = transactions.map(txn => {
+      totalDeposits += txn.deposit;
+      totalWithdrawals += txn.withdrawal;
+      runningBalance = runningBalance + txn.deposit - txn.withdrawal;
+      return { ...txn, balance: runningBalance };
+    });
 
     res.json({
       success: true,
       data: {
-        ledger: {
-          _id: ledger._id,
-          ledgerName: ledger.ledgerName,
-          ledgerType: ledger.ledgerType
-        },
+        ledger: ledger
+          ? { _id: ledger._id, ledgerName: ledger.ledgerName, ledgerType: ledger.ledgerType }
+          : { ledgerName: 'Bank Account' },
         summary: {
-          openingBalance: Math.abs(openingBalance),
+          openingBalance: 0,
           totalDeposits,
           totalWithdrawals,
-          closingBalance: Math.abs(closingBalance),
+          closingBalance: totalDeposits - totalWithdrawals,
           netChange: totalDeposits - totalWithdrawals
         },
         transactions: transactionsWithBalance,
@@ -3066,10 +3114,11 @@ export const getGSTR1Report = async (req, res) => {
       endDate = dateRange.endDate;
     }
 
-    // Fetch all sales within the period
-    const sales = await Sales.find({
-      billDate: { $gte: startDate, $lte: endDate }
-    }).populate('customerId').sort({ billDate: 1 });
+    // Fetch all sales within the period - Business Sales
+    const sales = await BusinessSales.find({
+      invoiceDate: { $gte: startDate, $lte: endDate },
+      invoiceType: 'Sale'
+    }).populate('partyId').sort({ invoiceDate: 1 });
 
     // GSTR-1 Sections
     const b2bInvoices = [];      // B2B - Business to Business (with GSTIN)
@@ -3096,26 +3145,26 @@ export const getGSTR1Report = async (req, res) => {
     const COMPANY_STATE_CODE = '33'; // Tamil Nadu - can be configured
 
     for (const sale of sales) {
-      const customer = sale.customerId;
-      const gstin = customer?.gstNumber || '';
-      const customerState = customer?.state || '';
+      const customer = sale.partyId;
+      const gstin = sale.partyGstin || customer?.gstNumber || '';
+      const customerState = sale.partyState || customer?.state || '';
       const stateCode = customerState ? customerState.substring(0, 2) : '';
 
-      // Calculate GST breakdown (assuming equal split for CGST/SGST)
-      const taxableValue = sale.subtotal || 0;
+      // Calculate GST breakdown - use actual values from BusinessSales
+      const taxableValue = sale.taxableAmount || 0;
       const totalGst = sale.totalGst || 0;
       const isInterState = stateCode && stateCode !== COMPANY_STATE_CODE;
 
-      const cgst = isInterState ? 0 : totalGst / 2;
-      const sgst = isInterState ? 0 : totalGst / 2;
-      const igst = isInterState ? totalGst : 0;
+      const cgst = sale.totalCgst || (isInterState ? 0 : totalGst / 2);
+      const sgst = sale.totalSgst || (isInterState ? 0 : totalGst / 2);
+      const igst = sale.totalIgst || (isInterState ? totalGst : 0);
       const invoiceValue = sale.grandTotal || 0;
 
       const invoiceData = {
         _id: sale._id,
-        invoiceNumber: sale.billNumber,
-        invoiceDate: sale.billDate,
-        partyName: sale.customerName || customer?.name || 'Cash Sale',
+        invoiceNumber: sale.invoiceNumber,
+        invoiceDate: sale.invoiceDate,
+        partyName: sale.partyName || customer?.name || 'Cash Sale',
         gstin: gstin,
         placeOfSupply: customerState || 'Tamil Nadu',
         stateCode: stateCode || COMPANY_STATE_CODE,
@@ -3130,8 +3179,8 @@ export const getGSTR1Report = async (req, res) => {
           itemName: item.itemName,
           quantity: item.quantity,
           rate: item.rate,
-          amount: item.amount,
-          gstAmount: item.gstAmount || 0
+          amount: item.totalAmount || item.taxableAmount || 0,
+          gstAmount: (item.cgstAmount || 0) + (item.sgstAmount || 0) + (item.igstAmount || 0)
         })) || []
       };
 
@@ -3305,8 +3354,8 @@ export const getGSTR2Report = async (req, res) => {
       endDate = dateRange.endDate;
     }
 
-    // Fetch all purchase transactions within the period
-    const purchases = await StockTransaction.find({
+    // Fetch all purchase transactions within the period (Business inventory)
+    const purchases = await BusinessStockTransaction.find({
       transactionType: 'Stock In',
       referenceType: 'Purchase',
       date: { $gte: startDate, $lte: endDate }
@@ -3390,7 +3439,7 @@ export const getGSTR2Report = async (req, res) => {
       const netAmount = itemAmount - subsidyAmount;
 
       // Assume 18% GST as default (can be item-specific)
-      const gstRate = item?.gstRate || 18;
+      const gstRate = item?.gstPercent || item?.gstRate || 18;
       const gstAmount = (netAmount * gstRate) / 100;
       const isInterState = stateCode && stateCode !== COMPANY_STATE_CODE;
 
@@ -3399,11 +3448,11 @@ export const getGSTR2Report = async (req, res) => {
       const igst = isInterState ? gstAmount : 0;
 
       invoice.items.push({
-        itemName: item?.name || 'Unknown Item',
+        itemName: item?.itemName || 'Unknown Item',
         itemCode: item?.itemCode || '',
         hsnCode: item?.hsnCode || '',
         quantity: quantity,
-        unit: item?.unit || 'Pcs',
+        unit: item?.unit || item?.measurement || 'Pcs',
         rate: rate,
         amount: itemAmount,
         gstRate: gstRate,
@@ -3579,6 +3628,578 @@ export const getGSTR2Report = async (req, res) => {
   }
 };
 
+/**
+ * Stock Statement - Period-wise stock movement report
+ * GET /api/reports/vyapar/stock-statement
+ * Query params: filterType, customStart, customEnd, category
+ */
+export const getStockStatement = async (req, res) => {
+  try {
+    const { filterType, customStart, customEnd, category } = req.query;
+
+    // Get date range
+    const { startDate, endDate } = getDateRange(filterType || 'thisMonth', customStart, customEnd);
+
+    // Build query for active Business items
+    const itemQuery = { status: 'Active' };
+    if (category && category !== 'all') {
+      itemQuery.category = category;
+    }
+
+    // Fetch all Business items
+    const items = await BusinessItem.find(itemQuery).sort({ itemName: 1 });
+
+    // Fetch transactions BEFORE the date range (for opening stock)
+    const priorTransactions = await BusinessStockTransaction.find({
+      date: { $lt: startDate }
+    });
+
+    // Fetch transactions WITHIN the date range
+    const periodTransactions = await BusinessStockTransaction.find({
+      date: { $gte: startDate, $lte: endDate }
+    });
+
+    // Build maps for quick lookup
+    const priorByItem = new Map();
+    priorTransactions.forEach(txn => {
+      const key = txn.itemId?.toString();
+      if (!key) return;
+      if (!priorByItem.has(key)) priorByItem.set(key, []);
+      priorByItem.get(key).push(txn);
+    });
+
+    const periodByItem = new Map();
+    periodTransactions.forEach(txn => {
+      const key = txn.itemId?.toString();
+      if (!key) return;
+      if (!periodByItem.has(key)) periodByItem.set(key, []);
+      periodByItem.get(key).push(txn);
+    });
+
+    const records = [];
+    let totalOpening = 0, totalPurchase = 0, totalPurchaseReturn = 0;
+    let totalSales = 0, totalSalesReturn = 0, totalClosing = 0, totalStockValue = 0;
+
+    items.forEach(item => {
+      const itemId = item._id.toString();
+
+      // Calculate opening stock from transactions only (do NOT add item.openingBalance separately
+      // because the opening balance already creates a Stock In transaction with referenceType='Opening')
+      let openingStock = 0;
+      const priorTxns = priorByItem.get(itemId) || [];
+      priorTxns.forEach(txn => {
+        if (txn.transactionType === 'Stock In') {
+          openingStock += txn.quantity || 0;
+        } else if (txn.transactionType === 'Stock Out') {
+          openingStock -= txn.quantity || 0;
+        }
+      });
+
+      // Calculate period movements
+      let purchaseQty = 0, purchaseReturn = 0, salesQty = 0, salesReturn = 0;
+      const periodTxns = periodByItem.get(itemId) || [];
+      periodTxns.forEach(txn => {
+        const qty = txn.quantity || 0;
+        if (txn.transactionType === 'Stock In' && txn.referenceType === 'Purchase') {
+          purchaseQty += qty;
+        } else if (txn.transactionType === 'Stock Out' && txn.referenceType === 'Return') {
+          purchaseReturn += qty;
+        } else if (txn.transactionType === 'Stock Out' && txn.referenceType === 'Sale') {
+          salesQty += qty;
+        } else if (txn.transactionType === 'Stock In' && (txn.referenceType === 'Return' || txn.referenceType === 'Sales Return')) {
+          salesReturn += qty;
+        }
+      });
+
+      // Closing stock = Opening + Purchase + Sales Return - Sales - Purchase Return
+      const closingStock = openingStock + purchaseQty + salesReturn - salesQty - purchaseReturn;
+
+      // Stock value = closing stock × purchase price
+      const purchasePrice = item.purchasePrice || item.wholesalePrice || 0;
+      const stockValue = closingStock * purchasePrice;
+
+      records.push({
+        itemId: item._id,
+        itemCode: item.itemCode,
+        itemName: item.itemName,
+        category: item.category || 'Uncategorized',
+        unit: item.unit || item.measurement,
+        purchasePrice,
+        openingStock,
+        purchaseQty,
+        purchaseReturn,
+        salesQty,
+        salesReturn,
+        closingStock,
+        stockValue
+      });
+
+      totalOpening += openingStock;
+      totalPurchase += purchaseQty;
+      totalPurchaseReturn += purchaseReturn;
+      totalSales += salesQty;
+      totalSalesReturn += salesReturn;
+      totalClosing += closingStock;
+      totalStockValue += stockValue;
+    });
+
+    res.json({
+      success: true,
+      data: {
+        summary: {
+          totalItems: records.length,
+          totalOpening,
+          totalPurchase,
+          totalPurchaseReturn,
+          totalSales,
+          totalSalesReturn,
+          totalClosing,
+          totalStockValue
+        },
+        items: records,
+        filters: {
+          filterType: filterType || 'thisMonth',
+          startDate,
+          endDate,
+          category: category || 'all'
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error in getStockStatement:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate stock statement',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Vyapar Day Book - All voucher entries chronologically grouped by date
+ * GET /api/reports/vyapar/day-book
+ * Query params: filterType, customStart, customEnd, voucherType, search
+ */
+export const getVyaparDayBook = async (req, res) => {
+  try {
+    const { filterType, customStart, customEnd, voucherType, search } = req.query;
+
+    const { startDate, endDate } = getDateRange(filterType || 'thisMonth', customStart, customEnd);
+
+    // Opening balance: net (Dr - Cr) from all vouchers before startDate
+    const openingVouchers = await Voucher.find({ voucherDate: { $lt: startDate } }).select('entries');
+    let openingBalance = 0;
+    for (const v of openingVouchers) {
+      for (const e of v.entries) {
+        openingBalance += (e.debitAmount || 0) - (e.creditAmount || 0);
+      }
+    }
+
+    // Build query
+    const query = {
+      voucherDate: { $gte: startDate, $lte: endDate }
+    };
+    if (voucherType && voucherType !== 'All') {
+      query.voucherType = voucherType;
+    }
+
+    // Fetch vouchers
+    const vouchers = await Voucher.find(query)
+      .populate('entries.ledgerId')
+      .sort({ voucherDate: 1, voucherNumber: 1 });
+
+    // Also fetch sales not linked to vouchers
+    const salesQuery = {
+      invoiceDate: { $gte: startDate, $lte: endDate }
+    };
+    const salesData = await BusinessSales.find(salesQuery)
+      .populate('partyId')
+      .sort({ invoiceDate: 1 });
+
+    // Track voucher-linked sales
+    const linkedSaleIds = new Set();
+    vouchers.forEach(v => {
+      if (v.referenceType === 'Sales' && v.referenceId) {
+        linkedSaleIds.add(v.referenceId.toString());
+      }
+    });
+
+    const transactions = [];
+    let totalDebit = 0;
+    let totalCredit = 0;
+
+    // Process vouchers
+    for (const voucher of vouchers) {
+      for (const entry of voucher.entries) {
+        const ledgerName = entry.ledgerId?.ledgerName || 'Unknown';
+        const debit = entry.debitAmount || 0;
+        const credit = entry.creditAmount || 0;
+
+        // Find contra entry for particulars
+        const contraEntry = voucher.entries.find(e =>
+          e.ledgerId && e.ledgerId._id.toString() !== (entry.ledgerId?._id?.toString() || '')
+        );
+        const contraName = contraEntry?.ledgerId?.ledgerName || '';
+
+        transactions.push({
+          _id: voucher._id,
+          date: voucher.voucherDate,
+          voucherNumber: voucher.voucherNumber,
+          voucherType: voucher.voucherType,
+          ledgerName,
+          contraName,
+          particulars: entry.narration || voucher.narration || ledgerName,
+          debitAmount: debit,
+          creditAmount: credit,
+          referenceType: voucher.referenceType,
+          referenceId: voucher.referenceId
+        });
+
+        totalDebit += debit;
+        totalCredit += credit;
+      }
+    }
+
+    // Add unlinked sales as Sale entries
+    for (const sale of salesData) {
+      if (!linkedSaleIds.has(sale._id.toString())) {
+        const amount = sale.grandTotal || 0;
+        transactions.push({
+          _id: sale._id,
+          date: sale.invoiceDate,
+          voucherNumber: sale.invoiceNumber || '',
+          voucherType: 'Sale',
+          ledgerName: sale.partyName || sale.partyId?.name || 'Cash Sale',
+          contraName: 'Sales',
+          particulars: `Sale Invoice ${sale.invoiceNumber || ''}`,
+          debitAmount: amount,
+          creditAmount: 0,
+          referenceType: 'Sales',
+          referenceId: sale._id
+        });
+        totalDebit += amount;
+
+        transactions.push({
+          _id: sale._id + '_cr',
+          date: sale.invoiceDate,
+          voucherNumber: sale.invoiceNumber || '',
+          voucherType: 'Sale',
+          ledgerName: 'Sales',
+          contraName: sale.partyName || sale.partyId?.name || 'Cash Sale',
+          particulars: `Sale Invoice ${sale.invoiceNumber || ''}`,
+          debitAmount: 0,
+          creditAmount: amount,
+          referenceType: 'Sales',
+          referenceId: sale._id
+        });
+        totalCredit += amount;
+      }
+    }
+
+    // Sort by date
+    transactions.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Apply search filter
+    let filteredTransactions = transactions;
+    if (search && search.trim()) {
+      const searchLower = search.toLowerCase().trim();
+      filteredTransactions = transactions.filter(t =>
+        t.ledgerName?.toLowerCase().includes(searchLower) ||
+        t.voucherNumber?.toLowerCase().includes(searchLower) ||
+        t.particulars?.toLowerCase().includes(searchLower) ||
+        t.voucherType?.toLowerCase().includes(searchLower) ||
+        t.contraName?.toLowerCase().includes(searchLower)
+      );
+    }
+
+    // Group by date for day-wise summary
+    const dayWiseSummary = {};
+    filteredTransactions.forEach(t => {
+      const dateKey = new Date(t.date).toISOString().split('T')[0];
+      if (!dayWiseSummary[dateKey]) {
+        dayWiseSummary[dateKey] = { date: dateKey, totalDebit: 0, totalCredit: 0, count: 0 };
+      }
+      dayWiseSummary[dateKey].totalDebit += t.debitAmount;
+      dayWiseSummary[dateKey].totalCredit += t.creditAmount;
+      dayWiseSummary[dateKey].count++;
+    });
+
+    res.json({
+      success: true,
+      data: {
+        openingBalance,
+        closingBalance: openingBalance + totalDebit - totalCredit,
+        transactions: filteredTransactions,
+        dayWiseSummary: Object.values(dayWiseSummary),
+        summary: {
+          totalDebit,
+          totalCredit,
+          transactionCount: filteredTransactions.length,
+          voucherCount: vouchers.length
+        },
+        filters: { filterType, startDate, endDate, voucherType }
+      }
+    });
+  } catch (error) {
+    console.error('Error in getVyaparDayBook:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate day book',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Vyapar Cash Book - Traditional double-column cash book with receipts and payments
+ * GET /api/reports/vyapar/cash-book
+ * Query params: filterType, customStart, customEnd, includeBank
+ */
+export const getVyaparCashBook = async (req, res) => {
+  try {
+    const { filterType, customStart, customEnd } = req.query;
+
+    const { startDate, endDate } = getDateRange(filterType || 'thisMonth', customStart, customEnd);
+
+    // Receipt side: BusinessSales paid by Cash
+    const cashSales = await BusinessSales.find({
+      invoiceDate: { $gte: startDate, $lte: endDate },
+      invoiceType: 'Sale',
+      paymentMode: 'Cash',
+      paidAmount: { $gt: 0 }
+    }).sort({ invoiceDate: 1 });
+
+    // Payment side: BusinessStockTransaction purchases paid by Cash
+    const cashPurchases = await BusinessStockTransaction.find({
+      date: { $gte: startDate, $lte: endDate },
+      referenceType: 'Purchase',
+      paymentMode: 'Cash',
+      paidAmount: { $gt: 0 }
+    }).sort({ date: 1 });
+
+    const receiptSide = cashSales.map(sale => ({
+      date: sale.invoiceDate,
+      voucherNumber: sale.invoiceNumber,
+      voucherType: 'Sale',
+      particulars: sale.partyName || 'Walk-in Customer',
+      amount: sale.paidAmount,
+      account: 'Cash',
+      referenceType: 'Sale',
+      referenceId: sale._id
+    }));
+
+    const paymentSide = cashPurchases.map(p => ({
+      date: p.date,
+      voucherNumber: p.invoiceNumber || `PUR-${p._id.toString().slice(-6)}`,
+      voucherType: 'Purchase',
+      particulars: p.supplierName || 'Supplier',
+      amount: p.paidAmount,
+      account: 'Cash',
+      referenceType: 'Purchase',
+      referenceId: p._id
+    }));
+
+    const totalReceipts = receiptSide.reduce((s, r) => s + r.amount, 0);
+    const totalPayments = paymentSide.reduce((s, p) => s + p.amount, 0);
+    const closingBalance = totalReceipts - totalPayments;
+
+    // Build combined entries with running balance
+    const allEntries = [
+      ...receiptSide.map(r => ({ ...r, debitAmount: r.amount, creditAmount: 0 })),
+      ...paymentSide.map(p => ({ ...p, debitAmount: 0, creditAmount: p.amount }))
+    ].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    let running = 0;
+    allEntries.forEach(e => {
+      running += (e.debitAmount || 0) - (e.creditAmount || 0);
+      e.runningBalance = running;
+    });
+
+    res.json({
+      success: true,
+      data: {
+        receiptSide,
+        paymentSide,
+        entries: allEntries,
+        summary: {
+          openingBalance: 0,
+          closingBalance,
+          totalReceipts,
+          totalPayments,
+          netChange: closingBalance,
+          receiptCount: receiptSide.length,
+          paymentCount: paymentSide.length
+        },
+        filters: { filterType, startDate, endDate }
+      }
+    });
+  } catch (error) {
+    console.error('Error in getVyaparCashBook:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate cash book',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Vyapar Trading Account - Standard Trading Account (Dr/Cr format)
+ * GET /api/reports/vyapar/trading-account
+ * Query params: filterType, customStart, customEnd
+ */
+export const getVyaparTradingAccount = async (req, res) => {
+  try {
+    const { filterType, customStart, customEnd } = req.query;
+
+    const { startDate, endDate } = getDateRange(filterType || 'thisMonth', customStart, customEnd);
+
+    // ===== OPENING STOCK =====
+    const items = await BusinessItem.find({ status: 'Active' });
+    let openingStock = 0;
+    for (const item of items) {
+      const stockInBefore = await BusinessStockTransaction.find({
+        itemId: item._id,
+        transactionType: 'Stock In',
+        date: { $lt: startDate }
+      });
+      const stockOutBefore = await BusinessStockTransaction.find({
+        itemId: item._id,
+        transactionType: 'Stock Out',
+        date: { $lt: startDate }
+      });
+      const qtyIn = stockInBefore.reduce((sum, tx) => sum + (tx.quantity || 0), 0);
+      const qtyOut = stockOutBefore.reduce((sum, tx) => sum + (tx.quantity || 0), 0);
+      const openingQty = qtyIn - qtyOut;
+      openingStock += openingQty * (item.purchasePrice || item.costPrice || 0);
+    }
+
+    // ===== CLOSING STOCK =====
+    let closingStock = 0;
+    for (const item of items) {
+      const stockInBefore = await BusinessStockTransaction.find({
+        itemId: item._id,
+        transactionType: 'Stock In',
+        date: { $lte: endDate }
+      });
+      const stockOutBefore = await BusinessStockTransaction.find({
+        itemId: item._id,
+        transactionType: 'Stock Out',
+        date: { $lte: endDate }
+      });
+      const qtyIn = stockInBefore.reduce((sum, tx) => sum + (tx.quantity || 0), 0);
+      const qtyOut = stockOutBefore.reduce((sum, tx) => sum + (tx.quantity || 0), 0);
+      const closingQty = qtyIn - qtyOut;
+      closingStock += closingQty * (item.purchasePrice || item.costPrice || 0);
+    }
+
+    // ===== PURCHASES =====
+    const purchaseTransactions = await BusinessStockTransaction.find({
+      transactionType: 'Stock In',
+      referenceType: 'Purchase',
+      date: { $gte: startDate, $lte: endDate }
+    });
+    let totalPurchases = 0;
+    purchaseTransactions.forEach(tx => {
+      totalPurchases += tx.totalAmount || ((tx.quantity || 0) * (tx.rate || 0));
+    });
+
+    // Purchase Returns - from PurchaseReturn model
+    const purchaseReturnDocs = await PurchaseReturn.find({
+      returnDate: { $gte: startDate, $lte: endDate },
+      status: 'Active'
+    });
+    const purchaseReturnAmount = purchaseReturnDocs.reduce((sum, r) => sum + (r.grandTotal || 0), 0);
+
+    // ===== SALES =====
+    const sales = await BusinessSales.find({
+      invoiceDate: { $gte: startDate, $lte: endDate },
+      invoiceType: 'Sale'
+    });
+    const totalSales = sales.reduce((sum, s) => sum + (s.grandTotal || 0), 0);
+
+    // Sales Returns - from SalesReturn model
+    const salesReturnDocs = await SalesReturn.find({
+      returnDate: { $gte: startDate, $lte: endDate },
+      status: 'Active'
+    });
+    const totalSalesReturn = salesReturnDocs.reduce((sum, r) => sum + (r.grandTotal || 0), 0);
+
+    // ===== DIRECT EXPENSES =====
+    const directExpenseLedgers = await Ledger.find({
+      status: 'Active',
+      $or: [
+        { ledgerType: { $regex: /Direct.*Expense|Trade.*Expense|Manufacturing.*Expense/i } },
+        { ledgerName: { $regex: /freight|carriage|wages|power|fuel|factory/i } }
+      ]
+    });
+    let totalDirectExpenses = 0;
+    const directExpenseItems = [];
+    for (const ledger of directExpenseLedgers) {
+      const vouchers = await Voucher.find({
+        voucherDate: { $gte: startDate, $lte: endDate },
+        'entries.ledgerId': ledger._id
+      });
+      let amount = 0;
+      vouchers.forEach(v => {
+        v.entries.forEach(entry => {
+          if (entry.ledgerId.toString() === ledger._id.toString()) {
+            amount += (entry.debitAmount || 0) - (entry.creditAmount || 0);
+          }
+        });
+      });
+      if (amount !== 0) {
+        directExpenseItems.push({ name: ledger.ledgerName, amount: Math.abs(amount) });
+        totalDirectExpenses += Math.max(0, amount);
+      }
+    }
+
+    // ===== GROSS PROFIT / LOSS =====
+    const debitSideTotal = openingStock + totalPurchases - purchaseReturnAmount + totalDirectExpenses;
+    const creditSideTotal = totalSales - totalSalesReturn + closingStock;
+    const grossProfit = creditSideTotal - debitSideTotal;
+
+    res.json({
+      success: true,
+      data: {
+        debitSide: {
+          openingStock,
+          purchases: totalPurchases,
+          purchaseReturns: purchaseReturnAmount,
+          netPurchases: totalPurchases - purchaseReturnAmount,
+          directExpenses: totalDirectExpenses,
+          directExpenseItems,
+          grossProfit: grossProfit > 0 ? grossProfit : 0, // Gross Profit shown on debit side when profit
+          total: debitSideTotal + (grossProfit > 0 ? grossProfit : 0) // Balance with credit side
+        },
+        creditSide: {
+          sales: totalSales,
+          salesReturns: totalSalesReturn,
+          netSales: totalSales - totalSalesReturn,
+          closingStock,
+          grossLoss: grossProfit < 0 ? Math.abs(grossProfit) : 0, // Gross Loss shown on credit side when loss
+          total: creditSideTotal + (grossProfit < 0 ? Math.abs(grossProfit) : 0)
+        },
+        summary: {
+          grossProfit: grossProfit > 0 ? grossProfit : 0,
+          grossLoss: grossProfit < 0 ? Math.abs(grossProfit) : 0,
+          grossAmount: grossProfit,
+          grossMarginPercent: totalSales > 0 ? ((grossProfit / totalSales) * 100) : 0,
+          isProfit: grossProfit >= 0
+        },
+        filters: { filterType, startDate, endDate }
+      }
+    });
+  } catch (error) {
+    console.error('Error in getVyaparTradingAccount:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate trading account',
+      error: error.message
+    });
+  }
+};
+
 export default {
   getSaleReport,
   getPurchaseReport,
@@ -3598,5 +4219,9 @@ export default {
   getBankStatement,
   getAllPartiesReport,
   getGSTR1Report,
-  getGSTR2Report
+  getGSTR2Report,
+  getStockStatement,
+  getVyaparDayBook,
+  getVyaparCashBook,
+  getVyaparTradingAccount
 };

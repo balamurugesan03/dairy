@@ -26,6 +26,11 @@ const stockTransactionSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
+  salesRate: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   referenceType: {
     type: String,
     enum: ['Purchase', 'Sale', 'Opening', 'Adjustment', 'Return'],

@@ -83,8 +83,9 @@ const VyaparGSTR1 = () => {
   const fetchReport = async () => {
     setLoading(true);
     try {
-      const month = selectedMonth.getMonth() + 1;
-      const year = selectedMonth.getFullYear();
+      const d = dayjs(selectedMonth || new Date());
+      const month = d.month() + 1;
+      const year = d.year();
       const returnPeriod = `${String(month).padStart(2, '0')}${year}`;
 
       const response = await reportAPI.vyaparGSTR1({ returnPeriod });

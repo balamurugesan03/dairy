@@ -29,7 +29,7 @@ import {
   IconUser
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
-import { businessStockAPI, businessItemAPI, supplierAPI, ledgerAPI } from '../../services/api';
+import { businessStockAPI, businessItemAPI, supplierAPI, businessLedgerAPI } from '../../services/api';
 
 const BusinessStockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
   const [formData, setFormData] = useState({
@@ -111,7 +111,8 @@ const BusinessStockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
       setItems(itemsData.map(item => ({
         value: item._id,
         label: `${item.itemCode} - ${item.itemName}`,
-        ...item
+        salesRate: item.salesRate,
+        purchasePrice: item.purchasePrice
       })));
     } catch (error) {
       notifications.show({
@@ -128,8 +129,7 @@ const BusinessStockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
       const suppliersData = response.data || [];
       setSuppliers(suppliersData.map(supplier => ({
         value: supplier._id,
-        label: `${supplier.supplierId} - ${supplier.name}`,
-        ...supplier
+        label: `${supplier.supplierId} - ${supplier.name}`
       })));
     } catch (error) {
       notifications.show({
@@ -142,12 +142,11 @@ const BusinessStockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
 
   const fetchLedgers = async () => {
     try {
-      const response = await ledgerAPI.getAll({ status: 'Active' });
+      const response = await businessLedgerAPI.getAll({ status: 'Active' });
       const ledgersData = response.data || [];
       setLedgers(ledgersData.map(ledger => ({
         value: ledger._id,
-        label: `${ledger.ledgerName} (${ledger.ledgerType})`,
-        ...ledger
+        label: `${ledger.ledgerName} (${ledger.ledgerType})`
       })));
     } catch (error) {
       notifications.show({
@@ -537,7 +536,15 @@ const BusinessStockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
                 { value: 'N/A', label: 'N/A' }
               ]}
               value={formData.paymentMode}
-              onChange={(value) => setFormData(prev => ({ ...prev, paymentMode: value }))}
+              onChange={(value) => {
+                const immediate = ['Cash', 'Bank', 'UPI'];
+                const currentNet = calculateTotal().netTotal;
+                setFormData(prev => ({
+                  ...prev,
+                  paymentMode: value,
+                  paidAmount: immediate.includes(value) ? currentNet : 0
+                }));
+              }}
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, sm: 4 }}>

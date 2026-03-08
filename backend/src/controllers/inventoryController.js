@@ -158,6 +158,7 @@ export const getAllItems = async (req, res) => {
       .populate('purchaseLedger', 'ledgerName ledgerType')
       .populate('salesLedger', 'ledgerName ledgerType')
       .populate('supplier', 'supplierId name phone')
+      .populate('subsidyId', 'subsidyName subsidyType')
       .sort({ itemName: 1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -364,6 +365,7 @@ export const stockIn = async (req, res) => {
         quantity: parseFloat(item.quantity),
         freeQty: parseFloat(item.freeQty) || 0,
         rate: parseFloat(item.rate) || 0,
+        salesRate: parseFloat(item.salesRate) || 0,
         referenceType: referenceType || 'Purchase',
         purchaseDate: purchaseDate ? new Date(purchaseDate) : null,
         invoiceDate: invoiceDate ? new Date(invoiceDate) : null,
@@ -389,6 +391,17 @@ export const stockIn = async (req, res) => {
         await Item.findByIdAndUpdate(item.itemId, {
           salesRate: parseFloat(item.salesRate)
         });
+      }
+
+      // Update item's subsidy from subsidies array
+      if (subsidies && Array.isArray(subsidies)) {
+        const itemSubsidy = subsidies.find(s => s.productId === item.itemId);
+        if (itemSubsidy) {
+          await Item.findByIdAndUpdate(item.itemId, {
+            subsidyId: itemSubsidy.subsidyId || null,
+            subsidyAmount: parseFloat(itemSubsidy.amount) || 0
+          });
+        }
       }
     }
 
@@ -473,7 +486,7 @@ export const stockIn = async (req, res) => {
 // Stock Out
 export const stockOut = async (req, res) => {
   try {
-    const { itemId, quantity, rate, notes } = req.body;
+    const { itemId, quantity, rate, date, referenceType, notes } = req.body;
 
     if (!itemId || !quantity || quantity <= 0) {
       return res.status(400).json({
@@ -487,7 +500,8 @@ export const stockOut = async (req, res) => {
       transactionType: 'Stock Out',
       quantity,
       rate: rate || 0,
-      referenceType: 'Adjustment',
+      date: date ? new Date(date) : new Date(),
+      referenceType: referenceType || 'Adjustment',
       notes
     });
 
@@ -544,7 +558,7 @@ export const getStockTransactions = async (req, res) => {
     }
 
     const transactions = await StockTransaction.find(query)
-      .populate('itemId', 'itemCode itemName measurement')
+      .populate('itemId', 'itemCode itemName measurement salesRate unit')
       .populate('issueCentre', 'centerName centerType')
       .populate('subsidyId', 'subsidyName subsidyType')
       .populate('supplierId', 'supplierId name')
@@ -724,6 +738,16 @@ export const updateStockTransaction = async (req, res) => {
         productId: subsidy.productId,
         amount: parseFloat(subsidy.amount || 0)
       }));
+
+      // Update item's subsidy fields
+      for (const subsidy of updateData.subsidies) {
+        if (subsidy.productId) {
+          await Item.findByIdAndUpdate(subsidy.productId, {
+            subsidyId: subsidy.subsidyId || null,
+            subsidyAmount: parseFloat(subsidy.amount) || 0
+          });
+        }
+      }
     }
 
     // Process bill summary fields if provided

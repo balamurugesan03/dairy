@@ -173,6 +173,9 @@ export const addCompanyFilter = (req, res, next) => {
     req.userCompany = companyId;
   }
 
+  // Alias for controllers that use req.companyId
+  req.companyId = req.userCompany;
+
   next();
 };
 

@@ -1,267 +1,210 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  Container, Title, Text, Paper, Group, Stack, Button, Select, Badge,
+  Table, LoadingOverlay, ThemeIcon, SimpleGrid, Card
+} from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
+import { notifications } from '@mantine/notifications';
+import {
+  IconCalendarCheck, IconArrowLeft, IconUsers, IconUserCheck, IconUserOff, IconClock
+} from '@tabler/icons-react';
 import { attendanceAPI, employeeAPI } from '../../services/api';
-import { message } from '../../utils/toast';
-import PageHeader from '../common/PageHeader';
-import './MarkAttendance.css';
+
+const STATUS_OPTIONS = ['Present', 'Absent', 'Half Day'];
+
+const getStatusColor = (s) => ({ Present: 'green', Absent: 'red', 'Half Day': 'yellow' }[s] || 'gray');
 
 const MarkAttendance = () => {
   const navigate = useNavigate();
-  const [employees, setEmployees] = useState([]);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [attendanceData, setAttendanceData] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    fetchEmployees();
-  }, []);
+  useEffect(() => { fetchAndInit(); }, [selectedDate]);
 
-  useEffect(() => {
-    if (employees.length > 0) {
-      initializeAttendanceData();
-    }
-  }, [employees, selectedDate]);
-
-  const fetchEmployees = async () => {
-    try {
-      const response = await employeeAPI.getAll({ status: 'Active', limit: 1000 });
-      setEmployees(response.data || []);
-    } catch (error) {
-      message.error('Failed to fetch employees');
-    }
-  };
-
-  const initializeAttendanceData = () => {
-    const data = employees.map(emp => ({
-      employee: emp._id,
-      employeeNumber: emp.employeeNumber,
-      name: emp.personalDetails?.name,
-      date: selectedDate,
-      checkIn: '',
-      checkOut: '',
-      status: 'Present',
-      shift: 'General',
-      workingHours: 0,
-      overtimeHours: 0,
-      breakTime: 0,
-      remarks: ''
-    }));
-    setAttendanceData(data);
-  };
-
-  const handleAttendanceChange = (index, field, value) => {
-    const newData = [...attendanceData];
-    newData[index][field] = value;
-
-    // Calculate working hours if both check-in and check-out are provided
-    if (field === 'checkIn' || field === 'checkOut' || field === 'breakTime') {
-      const record = newData[index];
-      if (record.checkIn && record.checkOut) {
-        const checkInTime = new Date(`${record.date}T${record.checkIn}`);
-        const checkOutTime = new Date(`${record.date}T${record.checkOut}`);
-        const diffMs = checkOutTime - checkInTime;
-        const diffHours = diffMs / (1000 * 60 * 60);
-        const breakHours = (record.breakTime || 0) / 60;
-        record.workingHours = Math.max(0, diffHours - breakHours);
-        record.overtimeHours = Math.max(0, record.workingHours - 8);
-
-        // Auto-set status
-        if (record.workingHours >= 8) {
-          record.status = 'Present';
-        } else if (record.workingHours >= 4) {
-          record.status = 'Half Day';
-        }
-      }
-    }
-
-    setAttendanceData(newData);
-  };
-
-  const handleBulkAction = (action) => {
-    const newData = attendanceData.map(record => ({
-      ...record,
-      status: action
-    }));
-    setAttendanceData(newData);
-  };
-
-  const handleSubmit = async () => {
+  const fetchAndInit = async () => {
     setLoading(true);
     try {
-      const payload = attendanceData.map(record => ({
-        employee: record.employee,
-        date: record.date,
-        checkIn: record.checkIn ? new Date(`${record.date}T${record.checkIn}`) : null,
-        checkOut: record.checkOut ? new Date(`${record.date}T${record.checkOut}`) : null,
-        status: record.status,
-        shift: record.shift,
-        workingHours: record.workingHours,
-        overtimeHours: record.overtimeHours,
-        breakTime: record.breakTime,
-        remarks: record.remarks
-      }));
+      const res = await employeeAPI.getAll({ status: 'Active', limit: 500 });
+      const employees = res.data || [];
 
-      await attendanceAPI.bulkMark(payload);
-      message.success('Attendance marked successfully');
-      navigate('/hrm/attendance');
-    } catch (error) {
-      message.error(error.message || 'Failed to mark attendance');
+      // Fetch existing attendance for this date
+      const dateStr = selectedDate.toISOString().split('T')[0];
+      const existing = await attendanceAPI.getByDate(dateStr);
+      const existingMap = {};
+      (existing.data || []).forEach(r => { existingMap[r.employeeId?._id || r.employeeId] = r.status; });
+
+      setAttendanceData(employees.map(emp => ({
+        employeeId: emp._id,
+        name: emp.name,
+        department: emp.department || '',
+        role: emp.role || '',
+        status: existingMap[emp._id] || 'Present'
+      })));
+    } catch (err) {
+      notifications.show({ title: 'Error', message: 'Failed to load employees', color: 'red' });
     } finally {
       setLoading(false);
     }
   };
 
+  const handleStatusChange = (index, status) => {
+    setAttendanceData(prev => {
+      const d = [...prev];
+      d[index] = { ...d[index], status };
+      return d;
+    });
+  };
+
+  const handleBulkAction = (status) => {
+    setAttendanceData(prev => prev.map(r => ({ ...r, status })));
+  };
+
+  const handleSubmit = async () => {
+    setSaving(true);
+    try {
+      const dateStr = selectedDate.toISOString().split('T')[0];
+      const records = attendanceData.map(r => ({
+        employeeId: r.employeeId,
+        date: dateStr,
+        status: r.status
+      }));
+      await attendanceAPI.bulkMark({ attendanceRecords: records });
+      notifications.show({ title: 'Success', message: 'Attendance saved successfully', color: 'green' });
+      navigate('/hrm/attendance');
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message || 'Failed to save attendance', color: 'red' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const present = attendanceData.filter(r => r.status === 'Present').length;
+  const absent = attendanceData.filter(r => r.status === 'Absent').length;
+  const halfDay = attendanceData.filter(r => r.status === 'Half Day').length;
+
+  const StatCard = ({ icon, label, value, color }) => (
+    <Card shadow="sm" padding="md" radius="md" withBorder>
+      <Group>
+        <ThemeIcon size={40} radius="md" variant="light" color={color}>{icon}</ThemeIcon>
+        <div>
+          <Text fw={700} size="lg">{value}</Text>
+          <Text size="xs" c="dimmed">{label}</Text>
+        </div>
+      </Group>
+    </Card>
+  );
+
   return (
-    <div className="mark-attendance-container">
-      <PageHeader
-        title="Mark Attendance"
-        subtitle="Record employee attendance"
-        extra={
-          <button
-            className="btn btn-outline"
-            onClick={() => navigate('/hrm/attendance')}
-          >
-            <i className="icon-arrow-left"></i> Back
-          </button>
-        }
-      />
+    <Container size="xl" py="md">
+      <Group justify="space-between" mb="lg">
+        <div>
+          <Title order={2}>Mark Attendance</Title>
+          <Text c="dimmed" size="sm">Record daily attendance for all employees</Text>
+        </div>
+        <Button variant="default" leftSection={<IconArrowLeft size={16} />} onClick={() => navigate('/hrm/attendance')}>
+          Back
+        </Button>
+      </Group>
 
-      {/* Date and Actions */}
-      <div className="attendance-controls">
-        <div className="date-control">
-          <label>Attendance Date:</label>
-          <input
-            type="date"
+      {/* Date & Bulk Actions */}
+      <Paper shadow="xs" p="md" radius="md" withBorder mb="lg">
+        <Group justify="space-between" wrap="wrap" gap="sm">
+          <DatePickerInput
+            label="Attendance Date"
             value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            max={new Date().toISOString().split('T')[0]}
+            onChange={(val) => val && setSelectedDate(val)}
+            maxDate={new Date()}
+            w={200}
           />
-        </div>
+          <Group gap="xs">
+            <Text size="sm" fw={500}>Bulk:</Text>
+            <Button size="xs" color="green" variant="light" onClick={() => handleBulkAction('Present')}>
+              All Present
+            </Button>
+            <Button size="xs" color="red" variant="light" onClick={() => handleBulkAction('Absent')}>
+              All Absent
+            </Button>
+            <Button size="xs" color="yellow" variant="light" onClick={() => handleBulkAction('Half Day')}>
+              All Half Day
+            </Button>
+          </Group>
+        </Group>
+      </Paper>
 
-        <div className="bulk-actions">
-          <label>Bulk Actions:</label>
-          <button
-            className="btn btn-success btn-sm"
-            onClick={() => handleBulkAction('Present')}
-          >
-            Mark All Present
-          </button>
-          <button
-            className="btn btn-danger btn-sm"
-            onClick={() => handleBulkAction('Absent')}
-          >
-            Mark All Absent
-          </button>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => handleBulkAction('Week Off')}
-          >
-            Mark Week Off
-          </button>
-        </div>
-      </div>
+      {/* Summary Cards */}
+      <SimpleGrid cols={{ base: 3 }} mb="lg">
+        <StatCard icon={<IconUserCheck size={20} />} label="Present" value={present} color="green" />
+        <StatCard icon={<IconUserOff size={20} />} label="Absent" value={absent} color="red" />
+        <StatCard icon={<IconClock size={20} />} label="Half Day" value={halfDay} color="yellow" />
+      </SimpleGrid>
 
       {/* Attendance Table */}
-      <div className="table-container">
-        <table className="mark-attendance-table">
-          <thead>
-            <tr>
-              <th>Employee</th>
-              <th>Shift</th>
-              <th>Check In</th>
-              <th>Check Out</th>
-              <th>Break (min)</th>
-              <th>Working Hours</th>
-              <th>Status</th>
-              <th>Remarks</th>
-            </tr>
-          </thead>
-          <tbody>
-            {attendanceData.map((record, index) => (
-              <tr key={record.employee}>
-                <td>
-                  <div className="employee-info">
-                    <div className="employee-name">{record.name}</div>
-                    <div className="employee-number">{record.employeeNumber}</div>
-                  </div>
-                </td>
-                <td>
-                  <select
-                    value={record.shift}
-                    onChange={(e) => handleAttendanceChange(index, 'shift', e.target.value)}
-                  >
-                    <option value="General">General</option>
-                    <option value="Morning">Morning</option>
-                    <option value="Evening">Evening</option>
-                    <option value="Night">Night</option>
-                  </select>
-                </td>
-                <td>
-                  <input
-                    type="time"
-                    value={record.checkIn}
-                    onChange={(e) => handleAttendanceChange(index, 'checkIn', e.target.value)}
-                  />
-                </td>
-                <td>
-                  <input
-                    type="time"
-                    value={record.checkOut}
-                    onChange={(e) => handleAttendanceChange(index, 'checkOut', e.target.value)}
-                  />
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    value={record.breakTime}
-                    onChange={(e) => handleAttendanceChange(index, 'breakTime', parseInt(e.target.value) || 0)}
-                    min="0"
-                    max="480"
-                  />
-                </td>
-                <td className="working-hours">
-                  {record.workingHours.toFixed(2)} hrs
-                </td>
-                <td>
-                  <select
-                    value={record.status}
-                    onChange={(e) => handleAttendanceChange(index, 'status', e.target.value)}
-                    className={`status-select status-${record.status.toLowerCase().replace(' ', '-')}`}
-                  >
-                    <option value="Present">Present</option>
-                    <option value="Absent">Absent</option>
-                    <option value="Half Day">Half Day</option>
-                    <option value="Late">Late</option>
-                    <option value="On Leave">On Leave</option>
-                    <option value="Holiday">Holiday</option>
-                    <option value="Week Off">Week Off</option>
-                  </select>
-                </td>
-                <td>
-                  <input
-                    type="text"
-                    value={record.remarks}
-                    onChange={(e) => handleAttendanceChange(index, 'remarks', e.target.value)}
-                    placeholder="Add notes..."
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Paper shadow="xs" radius="md" withBorder pos="relative" mb="lg">
+        <LoadingOverlay visible={loading} zIndex={10} overlayProps={{ blur: 2 }} />
+        {attendanceData.length === 0 && !loading ? (
+          <Stack align="center" py={60}>
+            <ThemeIcon size={64} radius="xl" variant="light" color="gray"><IconUsers size={32} /></ThemeIcon>
+            <Text c="dimmed">No active employees found</Text>
+          </Stack>
+        ) : (
+          <Table.ScrollContainer minWidth={600}>
+            <Table striped highlightOnHover verticalSpacing="sm">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>#</Table.Th>
+                  <Table.Th>Employee</Table.Th>
+                  <Table.Th>Department</Table.Th>
+                  <Table.Th>Role</Table.Th>
+                  <Table.Th>Status</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {attendanceData.map((rec, i) => (
+                  <Table.Tr key={rec.employeeId}>
+                    <Table.Td><Text size="sm" c="dimmed">{i + 1}</Text></Table.Td>
+                    <Table.Td><Text size="sm" fw={600}>{rec.name}</Text></Table.Td>
+                    <Table.Td>
+                      {rec.department && <Badge variant="light" color="indigo" size="sm">{rec.department}</Badge>}
+                    </Table.Td>
+                    <Table.Td><Text size="sm">{rec.role || '-'}</Text></Table.Td>
+                    <Table.Td>
+                      <Select
+                        data={STATUS_OPTIONS}
+                        value={rec.status}
+                        onChange={(val) => handleStatusChange(i, val)}
+                        size="xs"
+                        w={130}
+                        styles={{
+                          input: {
+                            color: rec.status === 'Present' ? 'green' : rec.status === 'Absent' ? 'red' : 'orange',
+                            fontWeight: 600
+                          }
+                        }}
+                      />
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        )}
+      </Paper>
 
-      {/* Submit Button */}
-      <div className="submit-section">
-        <button
-          className="btn btn-primary btn-lg"
+      <Group justify="flex-end">
+        <Button
+          size="md"
+          leftSection={<IconCalendarCheck size={18} />}
           onClick={handleSubmit}
-          disabled={loading}
+          loading={saving}
+          disabled={attendanceData.length === 0}
         >
-          {loading ? 'Saving...' : 'Save Attendance'}
-        </button>
-      </div>
-    </div>
+          Save Attendance
+        </Button>
+      </Group>
+    </Container>
   );
 };
 

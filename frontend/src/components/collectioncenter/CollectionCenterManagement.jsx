@@ -82,7 +82,6 @@ const CollectionCenterManagement = () => {
 
   useEffect(() => {
     setPagination(prev => ({ ...prev, current: 1 }));
-    fetchCenters();
   }, [filters]);
 
   const fetchCenters = async () => {
@@ -95,14 +94,16 @@ const CollectionCenterManagement = () => {
         search: filters.search,
         centerType: filters.centerType
       };
-      const response = await collectionCenterAPI.getAll(params);
-      setCenters(response.data);
+      const [pageRes, allRes] = await Promise.all([
+        collectionCenterAPI.getAll(params),
+        collectionCenterAPI.getAll({ limit: 1000 })
+      ]);
+      setCenters(pageRes.data);
       setPagination(prev => ({
         ...prev,
-        total: response.pagination?.totalItems || response.data.length
+        total: pageRes.pagination?.totalItems || pageRes.data.length
       }));
-
-      calculateStatistics(response.data);
+      calculateStatistics(allRes.data);
     } catch (error) {
       notifications.show({
         title: 'Error',
@@ -159,7 +160,7 @@ const CollectionCenterManagement = () => {
         color: 'yellow'
       });
       return;
-    }z
+    }
 
     modals.openConfirmModal({
       title: 'Bulk Delete Collection Centers',
@@ -188,6 +189,10 @@ const CollectionCenterManagement = () => {
   };
 
   const handleExport = (format) => {
+    if (centers.length === 0) {
+      notifications.show({ title: 'Warning', message: 'No data to export', color: 'yellow' });
+      return;
+    }
     try {
       const exportData = centers.map(c => ({
         'Center Name': c.centerName,

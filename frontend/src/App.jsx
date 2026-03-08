@@ -56,6 +56,9 @@ const StockInManagement = lazy(() => import('./components/inventory/StockInManag
 const StockOutManagement = lazy(() => import('./components/inventory/StockOutManagement'));
 const StockReport = lazy(() => import('./components/inventory/StockReport'));
 const StockDashboard = lazy(() => import('./components/inventory/StockDashboard'));
+const DairyReturnForm = lazy(() => import('./components/inventory/DairyReturnForm'));
+const DairyPurchaseReturnList = lazy(() => import('./components/inventory/DairyPurchaseReturnList'));
+const DairySalesReturnList = lazy(() => import('./components/inventory/DairySalesReturnList'));
 
 // Business Inventory Components (Private Firm / Vyapar)
 const BusinessItemList = lazy(() => import('./components/business-inventory/BusinessItemList'));
@@ -63,6 +66,10 @@ const BusinessStockInManagement = lazy(() => import('./components/business-inven
 const BusinessStockReport = lazy(() => import('./components/business-inventory/BusinessStockReport'));
 const BusinessBillingForm = lazy(() => import('./components/business-inventory/BusinessBillingForm'));
 const BusinessSalesList = lazy(() => import('./components/business-inventory/BusinessSalesList'));
+const PurchaseReturnForm = lazy(() => import('./components/business-inventory/PurchaseReturnForm'));
+const PurchaseReturnList = lazy(() => import('./components/business-inventory/PurchaseReturnList'));
+const SalesReturnList = lazy(() => import('./components/business-inventory/SalesReturnList'));
+const SalesmanList = lazy(() => import('./components/business-inventory/SalesmanList'));
 
 // Business Accounting Components (Private Firm - Separate from Dairy)
 const BusinessLedgerList = lazy(() => import('./components/business-accounting/BusinessLedgerList'));
@@ -85,6 +92,19 @@ const PaymentVoucher = lazy(() => import('./components/accounting/PaymentVoucher
 const JournalVoucher = lazy(() => import('./components/accounting/JournalVoucher'));
 const OutstandingReport = lazy(() => import('./components/accounting/OutstandingReport'));
 
+// Daily Collections Components
+const MilkPurchase           = lazy(() => import('./components/daily-collections/MilkPurchase'));
+const MilkSales              = lazy(() => import('./components/daily-collections/MilkSales'));
+const DailyCollectionList    = lazy(() => import('./components/daily-collections/DailyCollectionList'));
+const FarmerWiseSummary      = lazy(() => import('./components/daily-collections/FarmerWiseSummary'));
+const RateChartSettings      = lazy(() => import('./components/daily-collections/RateChartSettings'));
+const MilkPurchaseSettings   = lazy(() => import('./components/daily-collections/MilkPurchaseSettings'));
+const UnionSalesSlip         = lazy(() => import('./components/daily-collections/UnionSalesSlip'));
+const MilkSalesRateList      = lazy(() => import('./components/daily-collections/MilkSalesRateList'));
+const ShiftIncentiveList     = lazy(() => import('./components/daily-collections/ShiftIncentiveList'));
+const TimeIncentiveList      = lazy(() => import('./components/daily-collections/TimeIncentiveList'));
+const ProducerOpenings       = lazy(() => import('./components/daily-collections/ProducerOpenings'));
+
 // Payment Components
 const IndividualMilkPayment = lazy(() => import('./components/payments/IndividualMilkPayment'));
 const MilkPaymentRegister = lazy(() => import('./components/payments/MilkPaymentRegister'));
@@ -92,6 +112,10 @@ const MilkPaymentRegister = lazy(() => import('./components/payments/MilkPayment
 const ProducerLoanManagement = lazy(() => import('./components/payments/ProducerLoanManagement'));
 const ProducerLoanView = lazy(() => import('./components/payments/ProducerLoanView'));
 const CashAdvanceVoucher = lazy(() => import('./components/payments/CashAdvanceVoucher'));
+const EarningDeductionMaster = lazy(() => import('./components/payments/EarningDeductionMaster'));
+const IndividualDeductionEarning = lazy(() => import('./components/payments/IndividualDeductionEarning'));
+const HistoricalDeductionEarning  = lazy(() => import('./components/payments/HistoricalDeductionEarning'));
+const PeriodicalDeductionEarning  = lazy(() => import('./components/payments/PeriodicalDeductionEarning'));
 const ProducerReceiptManagement = lazy(() => import('./components/payments/ProducerReceiptManagement'));
 const FarmerLedgerView = lazy(() => import('./components/payments/FarmerLedgerView'));
 const ProducerRegister = lazy(() => import('./components/payments/ProducerRegister'));
@@ -111,9 +135,10 @@ const LedgerAbstract = lazy(() => import('./components/reports/LedgerAbstract'))
 const ReceiptsDisbursement = lazy(() => import('./components/reports/ReceiptsDisbursement'));
 const FinalAccounts = lazy(() => import('./components/reports/FinalAccounts'));
 const BalanceSheet = lazy(() => import('./components/reports/BalanceSheet'));
-const StockRegister = lazy(() => import('./components/reports/StockRegister'));
 const InventoryPurchaseRegister = lazy(() => import('./components/reports/InventoryPurchaseRegister'));
+const StockRegister = lazy(() => import('./components/reports/StockRegister'));
 const MilkBillAbstract = lazy(() => import('./components/reports/MilkBillAbstract'));
+const SalesmanBalanceReport = lazy(() => import('./components/reports/SalesmanBalanceReport'));
 
 // Vyapar Report Components - Private Firm
 const VyaparReportsHub = lazy(() => import('./components/reports/vyapar/VyaparReportsHub'));
@@ -130,12 +155,16 @@ const VyaparBillWiseProfit = lazy(() => import('./components/reports/vyapar/Vyap
 const VyaparPartyWiseProfit = lazy(() => import('./components/reports/vyapar/VyaparPartyWiseProfit'));
 const VyaparTrialBalance = lazy(() => import('./components/reports/vyapar/VyaparTrialBalance'));
 const VyaparStockSummary = lazy(() => import('./components/reports/vyapar/VyaparStockSummary'));
+const VyaparStockStatement = lazy(() => import('./components/reports/vyapar/VyaparStockStatement'));
 const VyaparItemReportByParty = lazy(() => import('./components/reports/vyapar/VyaparItemReportByParty'));
 const VyaparItemWiseProfit = lazy(() => import('./components/reports/vyapar/VyaparItemWiseProfit'));
 const VyaparBankStatement = lazy(() => import('./components/reports/vyapar/VyaparBankStatement'));
 const VyaparCashInHand = lazy(() => import('./components/reports/vyapar/VyaparCashInHand'));
 const VyaparGSTR1 = lazy(() => import('./components/reports/vyapar/VyaparGSTR1'));
 const VyaparGSTR2 = lazy(() => import('./components/reports/vyapar/VyaparGSTR2'));
+const VyaparDayBook = lazy(() => import('./components/reports/vyapar/VyaparDayBook'));
+const VyaparCashBook = lazy(() => import('./components/reports/vyapar/VyaparCashBook'));
+const VyaparTradingAccount = lazy(() => import('./components/reports/vyapar/VyaparTradingAccount'));
 
 // Additional Module Components
 const WarrantyList = lazy(() => import('./components/additional/WarrantyList'));
@@ -147,6 +176,8 @@ const MachineView = lazy(() => import('./components/additional/MachineView'));
 const QuotationList = lazy(() => import('./components/additional/QuotationList'));
 const QuotationForm = lazy(() => import('./components/additional/QuotationForm'));
 const QuotationView = lazy(() => import('./components/additional/QuotationView'));
+const QuotationPrint = lazy(() => import('./components/additional/QuotationPrint'));
+const BusinessProposal = lazy(() => import('./components/additional/BusinessProposal'));
 const PromotionList = lazy(() => import('./components/additional/PromotionList'));
 const PromotionForm = lazy(() => import('./components/additional/PromotionForm'));
 const PromotionView = lazy(() => import('./components/additional/PromotionView'));
@@ -158,16 +189,25 @@ const SubsidyView = lazy(() => import('./components/subsidy/SubsidyView'));
 // Collection Center Components
 const CollectionCenterManagement = lazy(() => import('./components/collectioncenter/CollectionCenterManagement'));
 
+// Agent Components
+const AgentManagement = lazy(() => import('./components/agents/AgentManagement'));
+
 // HRM Components
 const EmployeeList = lazy(() => import('./components/hrm/EmployeeList'));
-const EmployeeForm = lazy(() => import('./components/hrm/EmployeeForm'));
-const EmployeeView = lazy(() => import('./components/hrm/EmployeeView'));
-const DepartmentList = lazy(() => import('./components/hrm/DepartmentList'));
-const DesignationList = lazy(() => import('./components/hrm/DesignationList'));
 const AttendanceList = lazy(() => import('./components/hrm/AttendanceList'));
 const MarkAttendance = lazy(() => import('./components/hrm/MarkAttendance'));
 const LeaveList = lazy(() => import('./components/hrm/LeaveList'));
+const LeaveApply = lazy(() => import('./components/hrm/LeaveApply'));
 const SalaryList = lazy(() => import('./components/hrm/SalaryList'));
+const ProcessSalary = lazy(() => import('./components/hrm/ProcessSalary'));
+const LoanList = lazy(() => import('./components/hrm/LoanList'));
+
+// Business Promotions Components (Private Firm)
+const PromotionDashboard = lazy(() => import('./components/business-promotions/PromotionDashboard'));
+const CouponManager = lazy(() => import('./components/business-promotions/CouponManager'));
+const OfferManager = lazy(() => import('./components/business-promotions/OfferManager'));
+const CampaignManager = lazy(() => import('./components/business-promotions/CampaignManager'));
+const MessageTemplates = lazy(() => import('./components/business-promotions/MessageTemplates'));
 
 // User Management
 const UserManagement = lazy(() => import('./pages/UserManagement'));
@@ -269,6 +309,16 @@ const AppContent = () => {
                 <Route path="stock-in" element={<StockInManagement />} />
                 <Route path="stock-out" element={<StockOutManagement />} />
                 <Route path="report" element={<StockReport />} />
+                {/* Dairy Purchase Returns - Debit Notes */}
+                <Route path="purchase-returns/new" element={<DairyReturnForm />} />
+                <Route path="purchase-returns/list" element={<DairyPurchaseReturnList />} />
+                <Route path="purchase-returns/edit/:id" element={<DairyReturnForm />} />
+                <Route path="purchase-returns/:id" element={<DairyReturnForm />} />
+                {/* Dairy Sales Returns - Credit Notes */}
+                <Route path="sales-returns/new" element={<DairyReturnForm />} />
+                <Route path="sales-returns/list" element={<DairySalesReturnList />} />
+                <Route path="sales-returns/edit/:id" element={<DairyReturnForm />} />
+                <Route path="sales-returns/:id" element={<DairyReturnForm />} />
               </Route>
 
               {/* Business Inventory Routes (Private Firm / Vyapar) */}
@@ -283,6 +333,18 @@ const AppContent = () => {
                 <Route path="sales/list" element={<BusinessSalesList />} />
                 <Route path="sales/edit/:id" element={<BusinessBillingForm />} />
                 <Route path="sales/:id" element={<BusinessBillingForm />} />
+                {/* Purchase Returns - Debit Notes */}
+                <Route path="purchase-returns/new" element={<PurchaseReturnForm />} />
+                <Route path="purchase-returns/list" element={<PurchaseReturnList />} />
+                <Route path="purchase-returns/edit/:id" element={<PurchaseReturnForm />} />
+                <Route path="purchase-returns/:id" element={<PurchaseReturnForm />} />
+                {/* Sales Returns - Credit Notes */}
+                <Route path="sales-returns/new" element={<PurchaseReturnForm />} />
+                <Route path="sales-returns/list" element={<SalesReturnList />} />
+                <Route path="sales-returns/edit/:id" element={<PurchaseReturnForm />} />
+                <Route path="sales-returns/:id" element={<PurchaseReturnForm />} />
+                {/* Salesman Management */}
+                <Route path="salesman" element={<SalesmanList />} />
               </Route>
 
               {/* Sales & Billing Routes */}
@@ -313,6 +375,21 @@ const AppContent = () => {
                 <Route path="vouchers" element={<BusinessVoucherList />} />
               </Route>
 
+              {/* Daily Collections Routes */}
+              <Route path="daily-collections">
+                <Route path="milk-purchase"          element={<MilkPurchase />} />
+                <Route path="milk-sales"             element={<MilkSales />} />
+                <Route path="list"                   element={<DailyCollectionList />} />
+                <Route path="farmer-wise-summary"    element={<FarmerWiseSummary />} />
+                <Route path="rate-chart-settings"    element={<RateChartSettings />} />
+                <Route path="milk-purchase-settings" element={<MilkPurchaseSettings />} />
+                <Route path="union-sales-slip"       element={<UnionSalesSlip />} />
+                <Route path="milk-sales-rate"        element={<MilkSalesRateList />} />
+                <Route path="shift-incentive"        element={<ShiftIncentiveList />} />
+                <Route path="time-incentive"         element={<TimeIncentiveList />} />
+                <Route path="producer-openings"      element={<ProducerOpenings />} />
+              </Route>
+
               {/* Farmer Payments Routes */}
               <Route path="payments">
                 <Route index element={<Navigate to="/payments/register" replace />} />
@@ -326,6 +403,10 @@ const AppContent = () => {
                 <Route path="producer-register" element={<ProducerRegister />} />
                 <Route path="producer-register-summary" element={<ProducerRegisterSummary />} />
                 <Route path="bank-transfer" element={<BankTransferManagement />} />
+                <Route path="earning-deduction-master" element={<EarningDeductionMaster />} />
+                <Route path="individual-deduction-earning"  element={<IndividualDeductionEarning />} />
+                <Route path="historical-deduction-earning"  element={<HistoricalDeductionEarning />} />
+                <Route path="periodical-deduction-earning" element={<PeriodicalDeductionEarning />} />
               </Route>
 
               {/* Reports Routes */}
@@ -346,12 +427,16 @@ const AppContent = () => {
                 <Route path="vyapar/party-profit" element={<VyaparPartyWiseProfit />} />
                 <Route path="vyapar/trial-balance" element={<VyaparTrialBalance />} />
                 <Route path="vyapar/stock-summary" element={<VyaparStockSummary />} />
+                <Route path="vyapar/stock-statement" element={<VyaparStockStatement />} />
                 <Route path="vyapar/item-by-party" element={<VyaparItemReportByParty />} />
                 <Route path="vyapar/item-profit" element={<VyaparItemWiseProfit />} />
                 <Route path="vyapar/bank-statement" element={<VyaparBankStatement />} />
                 <Route path="vyapar/cash-in-hand" element={<VyaparCashInHand />} />
                 <Route path="vyapar/gstr1" element={<VyaparGSTR1 />} />
                 <Route path="vyapar/gstr2" element={<VyaparGSTR2 />} />
+                <Route path="vyapar/day-book" element={<VyaparDayBook />} />
+                <Route path="vyapar/cash-book" element={<VyaparCashBook />} />
+                <Route path="vyapar/trading-account" element={<VyaparTradingAccount />} />
 
                 {/* Dairy Society Reports */}
                 <Route path="cash-book" element={<CashBook />} />
@@ -369,7 +454,8 @@ const AppContent = () => {
                 <Route path="subsidy" element={<SubsidyReport />} />
                 <Route path="stock-register" element={<StockRegister />} />
                 <Route path="purchase-register" element={<InventoryPurchaseRegister />} />
-                <Route path="milk-bill-abstract" element={<MilkBillAbstract />} />
+                <Route path="milk-bill-abstract"    element={<MilkBillAbstract />} />
+                <Route path="salesman-balance"      element={<SalesmanBalanceReport />} />
               </Route>
 
               {/* Warranty Routes */}
@@ -394,14 +480,25 @@ const AppContent = () => {
                 <Route path="add" element={<QuotationForm />} />
                 <Route path="edit/:id" element={<QuotationForm />} />
                 <Route path="view/:id" element={<QuotationView />} />
+                <Route path="print/:id" element={<QuotationPrint />} />
+                <Route path="proposal" element={<BusinessProposal />} />
               </Route>
 
-              {/* Promotion Routes */}
+              {/* Promotion Routes (Basic - Dairy) */}
               <Route path="promotions">
                 <Route index element={<PromotionList />} />
                 <Route path="add" element={<PromotionForm />} />
                 <Route path="edit/:id" element={<PromotionForm />} />
                 <Route path="view/:id" element={<PromotionView />} />
+              </Route>
+
+              {/* Business Promotions Routes (Vyapar - Private Firm) */}
+              <Route path="business-promotions">
+                <Route index element={<PromotionDashboard />} />
+                <Route path="coupons" element={<CouponManager />} />
+                <Route path="offers" element={<OfferManager />} />
+                <Route path="campaigns" element={<CampaignManager />} />
+                <Route path="templates" element={<MessageTemplates />} />
               </Route>
 
        
@@ -417,24 +514,16 @@ const AppContent = () => {
                 <Route index element={<CollectionCenterManagement />} />
               </Route>
 
+              {/* Agent Routes */}
+              <Route path="agents">
+                <Route index element={<AgentManagement />} />
+              </Route>
+
               {/* HRM Routes */}
               <Route path="hrm">
                 {/* Employee Routes */}
                 <Route path="employees">
                   <Route index element={<EmployeeList />} />
-                  <Route path="add" element={<EmployeeForm />} />
-                  <Route path=":id" element={<EmployeeView />} />
-                  <Route path=":id/edit" element={<EmployeeForm />} />
-                </Route>
-
-                {/* Department Routes */}
-                <Route path="departments">
-                  <Route index element={<DepartmentList />} />
-                </Route>
-
-                {/* Designation Routes */}
-                <Route path="designations">
-                  <Route index element={<DesignationList />} />
                 </Route>
 
                 {/* Attendance Routes */}
@@ -446,11 +535,18 @@ const AppContent = () => {
                 {/* Leave Routes */}
                 <Route path="leaves">
                   <Route index element={<LeaveList />} />
+                  <Route path="apply" element={<LeaveApply />} />
                 </Route>
 
-                {/* Salary Routes */}
+                {/* Salary / Payroll Routes */}
                 <Route path="salary">
                   <Route index element={<SalaryList />} />
+                  <Route path="process" element={<ProcessSalary />} />
+                </Route>
+
+                {/* Loan Routes */}
+                <Route path="loans">
+                  <Route index element={<LoanList />} />
                 </Route>
               </Route>
 

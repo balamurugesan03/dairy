@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Paper,
@@ -19,7 +19,11 @@ import {
   Text,
   Box,
   Card,
-  SimpleGrid
+  SimpleGrid,
+  ScrollArea,
+  Table,
+  Progress,
+  Alert
 } from '@mantine/core';
 import { DataTable } from 'mantine-datatable';
 import {
@@ -27,6 +31,7 @@ import {
   IconSearch,
   IconFilter,
   IconFileExport,
+  IconFileImport,
   IconEdit,
   IconEye,
   IconTrash,
@@ -35,13 +40,32 @@ import {
   IconCircle,
   IconCurrencyRupee,
   IconColumns,
-  IconClearAll
+  IconClearAll,
+  IconUpload,
+  IconAlertCircle
 } from '@tabler/icons-react';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
+import * as XLSX from 'xlsx';
 import { customerAPI } from '../../services/api';
 import CustomerModal from './CustomerModal';
 import { useAuth } from '../../context/AuthContext';
+
+// Flexible column name → customer field mapping
+const COLUMN_MAP = {
+  'name': 'name', 'customer name': 'name', 'customername': 'name',
+  'party name': 'name', 'partyname': 'name', 'customer': 'name',
+  'phone': 'phone', 'mobile': 'phone', 'mobile no': 'phone',
+  'phone no': 'phone', 'contact': 'phone', 'contact no': 'phone',
+  'mobile number': 'phone', 'phone number': 'phone',
+  'email': 'email', 'email address': 'email', 'emailid': 'email',
+  'state': 'state',
+  'district': 'district', 'city': 'district',
+  'opening balance': 'openingBalance', 'balance': 'openingBalance',
+  'ob': 'openingBalance', 'opening bal': 'openingBalance',
+  'gstin': 'gstin', 'gst': 'gstin', 'gstin/uin': 'gstin', 'gst no': 'gstin',
+  'address': 'address', 'full address': 'address'
+};
 
 const CustomerManagement = () => {
   const navigate = useNavigate();
@@ -62,6 +86,7 @@ const CustomerManagement = () => {
   const [filters, setFilters] = useState({
     search: '',
     active: 'true',
+    category: '',
     state: '',
     district: '',
     minBalance: '',
@@ -74,12 +99,20 @@ const CustomerManagement = () => {
     name: true,
     phone: true,
     email: true,
+    category: true,
     state: true,
     district: true,
     openingBalance: true,
     status: true
   });
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importRows, setImportRows] = useState([]);
+  const [importHeaders, setImportHeaders] = useState([]);
+  const [importMapping, setImportMapping] = useState({});
+  const [importLoading, setImportLoading] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+  const fileInputRef = useRef(null);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
 
@@ -89,7 +122,6 @@ const CustomerManagement = () => {
 
   useEffect(() => {
     setPagination(prev => ({ ...prev, current: 1 }));
-    fetchCustomers();
   }, [filters]);
 
   const fetchCustomers = async () => {
@@ -100,19 +132,22 @@ const CustomerManagement = () => {
         limit: pagination.pageSize,
         active: filters.active,
         search: filters.search,
+        category: filters.category,
         state: filters.state,
         district: filters.district,
         minBalance: filters.minBalance,
         maxBalance: filters.maxBalance
       };
-      const response = await customerAPI.getAll(params);
-      setCustomers(response.data);
+      const [pageRes, allRes] = await Promise.all([
+        customerAPI.getAll(params),
+        customerAPI.getAll({ limit: 1000 })
+      ]);
+      setCustomers(pageRes.data);
       setPagination(prev => ({
         ...prev,
-        total: response.pagination?.total || response.data.length
+        total: pageRes.pagination?.total || pageRes.data.length
       }));
-
-      calculateStatistics(response.data);
+      calculateStatistics(allRes.data);
     } catch (error) {
       notifications.show({
         title: 'Error',
@@ -197,6 +232,10 @@ const CustomerManagement = () => {
   };
 
   const handleExport = (format) => {
+    if (customers.length === 0) {
+      notifications.show({ title: 'Warning', message: 'No data to export', color: 'yellow' });
+      return;
+    }
     try {
       const exportData = customers.map(c => ({
         'Customer ID': c.customerId,
@@ -254,10 +293,99 @@ const CustomerManagement = () => {
     }
   };
 
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        if (rawRows.length < 2) {
+          notifications.show({ title: 'Error', message: 'Excel file has no data rows', color: 'red' });
+          return;
+        }
+        const headers = rawRows[0].map(h => String(h).trim());
+        // Build mapping: excel header index → customer field
+        const mapping = {};
+        headers.forEach((h, i) => {
+          const key = h.toLowerCase().replace(/\s+/g, ' ').trim();
+          if (COLUMN_MAP[key]) mapping[i] = COLUMN_MAP[key];
+        });
+        const matchedCount = Object.keys(mapping).length;
+        if (matchedCount === 0) {
+          notifications.show({
+            title: 'No matching columns',
+            message: `None of the Excel headers matched known fields. Headers found: ${headers.join(', ')}`,
+            color: 'orange'
+          });
+          return;
+        }
+        // Parse data rows
+        const dataRows = rawRows.slice(1).filter(row => row.some(cell => cell !== ''));
+        const parsed = dataRows.map(row => {
+          const obj = {};
+          Object.entries(mapping).forEach(([colIdx, field]) => {
+            obj[field] = row[colIdx] !== undefined && row[colIdx] !== '' ? String(row[colIdx]).trim() : '';
+          });
+          return obj;
+        }).filter(obj => obj.name); // name is required
+        setImportHeaders(Object.values(mapping).filter((v, i, arr) => arr.indexOf(v) === i));
+        setImportMapping(mapping);
+        setImportRows(parsed);
+        if (parsed.length === 0) {
+          notifications.show({ title: 'Warning', message: 'No valid rows found (name column required)', color: 'yellow' });
+        }
+      } catch (err) {
+        notifications.show({ title: 'Parse Error', message: 'Could not read Excel file', color: 'red' });
+      }
+    };
+    reader.readAsBinaryString(file);
+    // Reset input so same file can be re-selected
+    e.target.value = '';
+  };
+
+  const handleImportSubmit = async () => {
+    if (importRows.length === 0) return;
+    setImportLoading(true);
+    setImportProgress(0);
+    let success = 0, failed = 0;
+    for (let i = 0; i < importRows.length; i++) {
+      const row = importRows[i];
+      try {
+        const payload = {
+          name: row.name,
+          phone: row.phone || '',
+          email: row.email || '',
+          state: row.state || '',
+          district: row.district || '',
+          address: row.address || '',
+          gstin: row.gstin || '',
+          openingBalance: row.openingBalance ? parseFloat(row.openingBalance) || 0 : 0
+        };
+        await customerAPI.create(payload);
+        success++;
+      } catch { failed++; }
+      setImportProgress(Math.round(((i + 1) / importRows.length) * 100));
+    }
+    setImportLoading(false);
+    notifications.show({
+      title: 'Import Complete',
+      message: `${success} imported, ${failed} failed`,
+      color: failed === 0 ? 'green' : 'orange'
+    });
+    setShowImportModal(false);
+    setImportRows([]);
+    setImportHeaders([]);
+    fetchCustomers();
+  };
+
   const clearFilters = () => {
     setFilters({
       search: '',
       active: 'true',
+      category: '',
       state: '',
       district: '',
       minBalance: '',
@@ -303,6 +431,13 @@ const CustomerManagement = () => {
       accessor: 'email',
       title: 'Email',
       render: (customer) => customer.email || '-'
+    },
+    visibleColumns.category && {
+      accessor: 'category',
+      title: 'Category',
+      render: (customer) => customer.category ? (
+        <Badge color="grape" variant="light">{customer.category}</Badge>
+      ) : '-'
     },
     visibleColumns.state && {
       accessor: 'state',
@@ -440,6 +575,23 @@ const CustomerManagement = () => {
               ]}
               style={{ width: 150 }}
             />
+            <Select
+              placeholder="All Categories"
+              value={filters.category}
+              onChange={(value) => setFilters(prev => ({ ...prev, category: value || '' }))}
+              data={[
+                { value: '', label: 'All Categories' },
+                { value: 'School', label: 'School' },
+                { value: 'Anganwadi', label: 'Anganwadi' },
+                { value: 'Hospital', label: 'Hospital' },
+                { value: 'Booth', label: 'Booth' },
+                { value: 'Hotel', label: 'Hotel' },
+                { value: 'Vendor Sales', label: 'Vendor Sales' },
+                { value: 'Others', label: 'Others' }
+              ]}
+              style={{ width: 160 }}
+              clearable
+            />
             <Menu shadow="md" width={200}>
               <Menu.Target>
                 <Button variant="default" leftSection={<IconColumns size={16} />}>
@@ -471,6 +623,14 @@ const CustomerManagement = () => {
               onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
             >
               Advanced Filters
+            </Button>
+            <Button
+              variant="default"
+              leftSection={<IconFileImport size={16} />}
+              color="violet"
+              onClick={() => { setImportRows([]); setImportHeaders([]); setShowImportModal(true); }}
+            >
+              Import
             </Button>
             <Button
               variant="default"
@@ -586,6 +746,97 @@ const CustomerManagement = () => {
           >
             Export as JSON
           </Button>
+        </Stack>
+      </Modal>
+
+      {/* Import Modal */}
+      <Modal
+        opened={showImportModal}
+        onClose={() => { if (!importLoading) { setShowImportModal(false); setImportRows([]); setImportHeaders([]); } }}
+        title="Import Customers from Excel"
+        size="xl"
+      >
+        <Stack gap="md">
+          <Alert icon={<IconAlertCircle size={16} />} color="blue" variant="light">
+            Upload an Excel (.xlsx / .xls) file. Even if only one column header matches a known field, the import will proceed.
+            The <strong>Name</strong> column is required. Known fields: Name, Phone, Email, State, District, Opening Balance, GSTIN, Address.
+          </Alert>
+
+          <Group>
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              ref={fileInputRef}
+              style={{ display: 'none' }}
+              onChange={handleFileSelect}
+            />
+            <Button
+              leftSection={<IconUpload size={16} />}
+              variant="default"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importLoading}
+            >
+              Choose Excel File
+            </Button>
+            {importRows.length > 0 && (
+              <Text size="sm" c="green" fw={600}>
+                {importRows.length} valid rows parsed ({importHeaders.length} matched columns)
+              </Text>
+            )}
+          </Group>
+
+          {importRows.length > 0 && (
+            <>
+              <Text size="sm" fw={600} c="dimmed">Preview (first 5 rows):</Text>
+              <ScrollArea>
+                <Table striped withColumnBorders style={{ fontSize: 12 }}>
+                  <Table.Thead>
+                    <Table.Tr>
+                      {importHeaders.map(h => (
+                        <Table.Th key={h} style={{ textTransform: 'capitalize', fontSize: 11 }}>
+                          {h.replace(/([A-Z])/g, ' $1')}
+                        </Table.Th>
+                      ))}
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {importRows.slice(0, 5).map((row, i) => (
+                      <Table.Tr key={i}>
+                        {importHeaders.map(h => (
+                          <Table.Td key={h}>{row[h] || '—'}</Table.Td>
+                        ))}
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </ScrollArea>
+              {importRows.length > 5 && (
+                <Text size="xs" c="dimmed">...and {importRows.length - 5} more rows</Text>
+              )}
+            </>
+          )}
+
+          {importLoading && (
+            <Stack gap="xs">
+              <Text size="sm">Importing... {importProgress}%</Text>
+              <Progress value={importProgress} animated />
+            </Stack>
+          )}
+
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => { setShowImportModal(false); setImportRows([]); setImportHeaders([]); }} disabled={importLoading}>
+              Cancel
+            </Button>
+            <Button
+              leftSection={<IconFileImport size={16} />}
+              color="violet"
+              onClick={handleImportSubmit}
+              disabled={importRows.length === 0 || importLoading}
+              loading={importLoading}
+            >
+              Import {importRows.length > 0 ? `${importRows.length} Customers` : ''}
+            </Button>
+          </Group>
         </Stack>
       </Modal>
 

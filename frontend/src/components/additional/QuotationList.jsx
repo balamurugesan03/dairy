@@ -1,358 +1,295 @@
-import { useState, useEffect } from 'react';
-import { message } from '../../utils/toast';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import dayjs from 'dayjs';
+import {
+  Container, Title, Text, Button, Group, Paper, TextInput, Select,
+  Badge, ActionIcon, Menu, Box, Grid, Card,
+  ThemeIcon, Tooltip, Pagination
+} from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
+import { DataTable } from 'mantine-datatable';
+import { notifications } from '@mantine/notifications';
+import { modals } from '@mantine/modals';
+import {
+  IconPlus, IconSearch, IconFileText, IconEye, IconEdit, IconTrash,
+  IconDotsVertical, IconRefresh, IconCalendar, IconCheck, IconSend,
+  IconX, IconClock, IconArrowRight, IconPrinter, IconCurrencyRupee,
+  IconBrandWhatsapp, IconMail
+} from '@tabler/icons-react';
 import { quotationAPI } from '../../services/api';
-import PageHeader from '../common/PageHeader';
-import ExportButton from '../common/ExportButton';
-import { showConfirmDialog } from '../common/ConfirmDialog';
-import './QuotationList.css';
+import QuotationSendModal from './QuotationSendModal';
+import dayjs from 'dayjs';
+
+const STATUS_CONFIG = {
+  Draft:     { color: 'gray',   label: 'Draft' },
+  Sent:      { color: 'blue',   label: 'Sent' },
+  Accepted:  { color: 'green',  label: 'Accepted' },
+  Rejected:  { color: 'red',    label: 'Rejected' },
+  Expired:   { color: 'orange', label: 'Expired' },
+  Converted: { color: 'teal',   label: 'Converted' }
+};
 
 const QuotationList = () => {
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
   const [quotations, setQuotations] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [searchText, setSearchText] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('');
+  const [dateRange, setDateRange] = useState([null, null]);
+  const [sendTarget, setSendTarget] = useState(null); // quotation to send
 
-  useEffect(() => {
-    fetchQuotations();
-  }, []);
-
-  const fetchQuotations = async () => {
+  const fetchQuotations = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await quotationAPI.getAll({ search: searchText });
-      setQuotations(response.data || []);
-    } catch (error) {
-      message.error(error.message || 'Failed to fetch quotations');
+      const params = { page: pagination.page, limit: pagination.limit };
+      if (search) params.search = search;
+      if (status) params.status = status;
+      if (dateRange[0]) params.startDate = dayjs(dateRange[0]).format('YYYY-MM-DD');
+      if (dateRange[1]) params.endDate = dayjs(dateRange[1]).format('YYYY-MM-DD');
+
+      const res = await quotationAPI.getAll(params);
+      const data = res?.data?.data || res?.data || res || [];
+      const pg = res?.data?.pagination || res?.pagination || {};
+      setQuotations(Array.isArray(data) ? data : []);
+      setPagination(p => ({ ...p, total: pg.total || 0, pages: pg.pages || 0 }));
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message || 'Failed to load quotations', color: 'red' });
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.page, search, status, dateRange]);
 
-  const handleDelete = async (id) => {
-    showConfirmDialog({
+  useEffect(() => { fetchQuotations(); }, [fetchQuotations]);
+
+  const handleDelete = (row) => {
+    modals.openConfirmModal({
       title: 'Delete Quotation',
-      content: 'Are you sure you want to delete this quotation?',
-      type: 'danger',
+      children: <Text size="sm">Delete <b>{row.quotationNumber}</b>? This cannot be undone.</Text>,
+      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
       onConfirm: async () => {
         try {
-          await quotationAPI.delete(id);
-          message.success('Quotation deleted successfully');
+          await quotationAPI.delete(row._id);
+          notifications.show({ title: 'Deleted', message: 'Quotation deleted', color: 'green' });
           fetchQuotations();
-        } catch (error) {
-          message.error(error.message || 'Failed to delete quotation');
+        } catch (err) {
+          notifications.show({ title: 'Error', message: err.message, color: 'red' });
         }
       }
     });
   };
 
-  const handleSearch = (e) => {
-    e.preventDefault();
-    fetchQuotations();
-  };
-
-  const handleSearchChange = (e) => {
-    setSearchText(e.target.value);
-  };
-
-  useEffect(() => {
-    if (searchText === '') {
+  const handleStatusChange = async (id, newStatus) => {
+    try {
+      await quotationAPI.update(id, { status: newStatus });
+      notifications.show({ title: 'Updated', message: `Status changed to ${newStatus}`, color: 'green' });
       fetchQuotations();
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
     }
-  }, [searchText]);
-
-  const getStatusColor = (status) => {
-    const statusColors = {
-      'Draft': 'default',
-      'Sent': 'blue',
-      'Accepted': 'green',
-      'Rejected': 'red',
-      'Expired': 'orange'
-    };
-    return statusColors[status] || 'default';
   };
 
-  const exportData = quotations.map(quotation => ({
-    'Quotation No': quotation.quotationNumber,
-    'Date': dayjs(quotation.quotationDate).format('DD/MM/YYYY'),
-    'Customer Name': quotation.customerName,
-    'Customer Phone': quotation.customerPhone,
-    'Valid Until': dayjs(quotation.validUntil).format('DD/MM/YYYY'),
-    'Items': quotation.items?.length || 0,
-    'Subtotal': (quotation.subtotal || 0).toFixed(2),
-    'Tax Amount': (quotation.taxAmount || 0).toFixed(2),
-    'Discount': (quotation.discount || 0).toFixed(2),
-    'Total Amount': (quotation.totalAmount || 0).toFixed(2),
-    'Status': quotation.status,
-    'Notes': quotation.notes || ''
-  }));
+  // Summary counts
+  const counts = quotations.reduce((acc, q) => {
+    acc[q.status] = (acc[q.status] || 0) + 1;
+    return acc;
+  }, {});
 
-  // Filter quotations by status
-  const filteredQuotations = statusFilter === 'all'
-    ? quotations
-    : quotations.filter(q => q.status === statusFilter);
-
-  // Pagination
-  const totalPages = Math.ceil(filteredQuotations.length / pageSize);
-  const startIndex = (currentPage - 1) * pageSize;
-  const endIndex = startIndex + pageSize;
-  const currentQuotations = filteredQuotations.slice(startIndex, endIndex);
-
-  const handlePageChange = (page) => {
-    setCurrentPage(page);
-  };
-
-  const handlePageSizeChange = (e) => {
-    setPageSize(Number(e.target.value));
-    setCurrentPage(1);
-  };
-
-  const handleStatusFilterChange = (e) => {
-    setStatusFilter(e.target.value);
-    setCurrentPage(1);
-  };
+  const statCards = [
+    { label: 'Total', value: pagination.total, color: 'blue', icon: <IconFileText size={20}/> },
+    { label: 'Draft', value: counts.Draft || 0, color: 'gray', icon: <IconClock size={20}/> },
+    { label: 'Sent', value: counts.Sent || 0, color: 'blue', icon: <IconSend size={20}/> },
+    { label: 'Accepted', value: counts.Accepted || 0, color: 'green', icon: <IconCheck size={20}/> },
+    { label: 'Converted', value: counts.Converted || 0, color: 'teal', icon: <IconArrowRight size={20}/> },
+  ];
 
   return (
-    <div className="quotation-list-container">
-      <PageHeader
-        title="Quotation Management"
-        subtitle="Manage customer quotations and estimates"
-        extra={
-          <button
-            className="btn btn-primary"
-            onClick={() => navigate('/quotations/add')}
-          >
-            <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <line x1="12" y1="5" x2="12" y2="19" strokeWidth="2" strokeLinecap="round"/>
-              <line x1="5" y1="12" x2="19" y2="12" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-            Add Quotation
-          </button>
-        }
-      />
+    <Container size="xl" py="md">
+      {/* Header */}
+      <Group justify="space-between" mb="md">
+        <Box>
+          <Title order={2} fw={700}>Quotations / Estimates</Title>
+          <Text c="dimmed" size="sm">Create and manage customer quotations</Text>
+        </Box>
+        <Group gap="xs">
+          <Button variant="light" color="teal" leftSection={<IconFileText size={16}/>} onClick={() => navigate('/quotations/proposal')}>
+            Business Proposal
+          </Button>
+          <Button leftSection={<IconPlus size={16}/>} onClick={() => navigate('/quotations/add')}>
+            New Quotation
+          </Button>
+        </Group>
+      </Group>
 
-      <div className="quotation-list-controls">
-        <form className="search-form" onSubmit={handleSearch}>
-          <input
-            type="text"
-            className="search-input"
-            placeholder="Search by quotation number or customer name"
-            value={searchText}
-            onChange={handleSearchChange}
+      {/* Stats */}
+      <Grid mb="md" gutter="sm">
+        {statCards.map(s => (
+          <Grid.Col key={s.label} span={{ base: 6, sm: 4, md: 2.4 }}>
+            <Card withBorder radius="md" p="sm">
+              <Group gap="xs">
+                <ThemeIcon size="md" variant="light" color={s.color} radius="md">
+                  {s.icon}
+                </ThemeIcon>
+                <Box>
+                  <Text size="xs" c="dimmed">{s.label}</Text>
+                  <Text fw={700} size="lg">{s.value}</Text>
+                </Box>
+              </Group>
+            </Card>
+          </Grid.Col>
+        ))}
+      </Grid>
+
+      {/* Filters */}
+      <Paper withBorder p="sm" mb="md" radius="md">
+        <Group gap="sm" wrap="wrap">
+          <TextInput
+            placeholder="Search by number or customer..."
+            leftSection={<IconSearch size={14}/>}
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPagination(p => ({ ...p, page: 1 })); }}
+            style={{ flex: 1, minWidth: 200 }}
           />
-          <button type="submit" className="btn btn-search">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <circle cx="11" cy="11" r="8" strokeWidth="2"/>
-              <path d="m21 21-4.35-4.35" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-            Search
-          </button>
-        </form>
+          <Select
+            placeholder="All Status"
+            data={['Draft', 'Sent', 'Accepted', 'Rejected', 'Expired', 'Converted']}
+            value={status}
+            onChange={v => { setStatus(v || ''); setPagination(p => ({ ...p, page: 1 })); }}
+            clearable
+            style={{ width: 150 }}
+          />
+          <DatePickerInput
+            type="range"
+            placeholder="Date range"
+            value={dateRange}
+            onChange={setDateRange}
+            leftSection={<IconCalendar size={14}/>}
+            clearable
+            style={{ minWidth: 220 }}
+          />
+          <Tooltip label="Refresh">
+            <ActionIcon variant="light" onClick={fetchQuotations}><IconRefresh size={16}/></ActionIcon>
+          </Tooltip>
+        </Group>
+      </Paper>
 
-        <div className="filter-group">
-          <label htmlFor="status-filter">Status:</label>
-          <select
-            id="status-filter"
-            value={statusFilter}
-            onChange={handleStatusFilterChange}
-            className="filter-select"
-          >
-            <option value="all">All Status</option>
-            <option value="Draft">Draft</option>
-            <option value="Sent">Sent</option>
-            <option value="Accepted">Accepted</option>
-            <option value="Rejected">Rejected</option>
-            <option value="Expired">Expired</option>
-          </select>
-        </div>
-
-        <ExportButton
-          data={exportData}
-          filename="quotations"
-          buttonText="Export to Excel"
+      {/* Table */}
+      <Paper withBorder radius="md" style={{ overflow: 'hidden' }}>
+        <DataTable
+          records={quotations}
+          fetching={loading}
+          minHeight={300}
+          noRecordsText="No quotations found"
+          columns={[
+            {
+              accessor: 'quotationNumber',
+              title: 'Quotation #',
+              render: (row) => (
+                <Text fw={600} size="sm" c="blue" style={{ cursor: 'pointer' }}
+                  onClick={() => navigate(`/quotations/view/${row._id}`)}>
+                  {row.quotationNumber}
+                </Text>
+              )
+            },
+            {
+              accessor: 'quotationDate',
+              title: 'Date',
+              render: (row) => <Text size="sm">{dayjs(row.quotationDate).format('DD MMM YYYY')}</Text>
+            },
+            {
+              accessor: 'validUntil',
+              title: 'Valid Until',
+              render: (row) => {
+                const expired = new Date(row.validUntil) < new Date();
+                return <Text size="sm" c={expired ? 'red' : undefined}>{dayjs(row.validUntil).format('DD MMM YYYY')}</Text>;
+              }
+            },
+            {
+              accessor: 'partyName',
+              title: 'Customer',
+              render: (row) => (
+                <Box>
+                  <Text size="sm" fw={500}>{row.partyName || '—'}</Text>
+                  {row.partyPhone && <Text size="xs" c="dimmed">{row.partyPhone}</Text>}
+                </Box>
+              )
+            },
+            {
+              accessor: 'items',
+              title: 'Items',
+              render: (row) => <Text size="sm">{row.items?.length || 0}</Text>
+            },
+            {
+              accessor: 'grandTotal',
+              title: 'Amount',
+              textAlign: 'right',
+              render: (row) => (
+                <Text size="sm" fw={600}>
+                  ₹{(row.grandTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </Text>
+              )
+            },
+            {
+              accessor: 'status',
+              title: 'Status',
+              render: (row) => {
+                const cfg = STATUS_CONFIG[row.status] || { color: 'gray', label: row.status };
+                return <Badge color={cfg.color} variant="light" size="sm">{cfg.label}</Badge>;
+              }
+            },
+            {
+              accessor: 'actions',
+              title: '',
+              width: 60,
+              render: (row) => (
+                <Menu shadow="md" width={200} position="bottom-end">
+                  <Menu.Target>
+                    <ActionIcon variant="subtle"><IconDotsVertical size={16}/></ActionIcon>
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    <Menu.Item leftSection={<IconEye size={14}/>} onClick={() => navigate(`/quotations/view/${row._id}`)}>View</Menu.Item>
+                    <Menu.Item leftSection={<IconEdit size={14}/>} onClick={() => navigate(`/quotations/edit/${row._id}`)} disabled={row.status === 'Converted'}>Edit</Menu.Item>
+                    <Menu.Divider/>
+                    <Menu.Item leftSection={<IconBrandWhatsapp size={14}/>} color="green" onClick={() => setSendTarget(row)}>Send via WhatsApp</Menu.Item>
+                    <Menu.Item leftSection={<IconMail size={14}/>} color="blue" onClick={() => setSendTarget(row)}>Send via Email</Menu.Item>
+                    <Menu.Divider/>
+                    {row.status === 'Draft' && <Menu.Item leftSection={<IconSend size={14}/>} onClick={() => handleStatusChange(row._id, 'Sent')}>Mark as Sent</Menu.Item>}
+                    {row.status === 'Sent' && <Menu.Item leftSection={<IconCheck size={14}/>} color="green" onClick={() => handleStatusChange(row._id, 'Accepted')}>Mark Accepted</Menu.Item>}
+                    {row.status === 'Sent' && <Menu.Item leftSection={<IconX size={14}/>} color="red" onClick={() => handleStatusChange(row._id, 'Rejected')}>Mark Rejected</Menu.Item>}
+                    {(row.status === 'Accepted' || row.status === 'Sent') && (
+                      <Menu.Item leftSection={<IconArrowRight size={14}/>} color="teal" onClick={() => navigate(`/quotations/view/${row._id}`)}>Convert to Invoice</Menu.Item>
+                    )}
+                    <Menu.Divider/>
+                    <Menu.Item leftSection={<IconTrash size={14}/>} color="red" onClick={() => handleDelete(row)} disabled={row.status === 'Converted'}>Delete</Menu.Item>
+                  </Menu.Dropdown>
+                </Menu>
+              )
+            }
+          ]}
         />
-      </div>
+      </Paper>
 
-      {loading ? (
-        <div className="loading-container">
-          <div className="spinner"></div>
-          <p>Loading quotations...</p>
-        </div>
-      ) : (
-        <>
-          <div className="table-container">
-            <table className="quotation-table">
-              <thead>
-                <tr>
-                  <th>Quotation No</th>
-                  <th>Date</th>
-                  <th>Customer Name</th>
-                  <th>Customer Phone</th>
-                  <th>Valid Until</th>
-                  <th>Items</th>
-                  <th className="text-right">Subtotal</th>
-                  <th className="text-right">Tax</th>
-                  <th className="text-right">Total Amount</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {currentQuotations.length === 0 ? (
-                  <tr>
-                    <td colSpan="11" className="no-data">
-                      No quotations found
-                    </td>
-                  </tr>
-                ) : (
-                  currentQuotations.map((quotation) => (
-                    <tr key={quotation._id}>
-                      <td>{quotation.quotationNumber}</td>
-                      <td>{dayjs(quotation.quotationDate).format('DD/MM/YYYY')}</td>
-                      <td>{quotation.customerName}</td>
-                      <td>{quotation.customerPhone}</td>
-                      <td>{dayjs(quotation.validUntil).format('DD/MM/YYYY')}</td>
-                      <td>{quotation.items?.length || 0}</td>
-                      <td className="text-right">₹{(quotation.subtotal || 0).toFixed(2)}</td>
-                      <td className="text-right">₹{(quotation.taxAmount || 0).toFixed(2)}</td>
-                      <td className="text-right">₹{(quotation.totalAmount || 0).toFixed(2)}</td>
-                      <td>
-                        <span className={`status-badge status-${getStatusColor(quotation.status)}`}>
-                          {quotation.status}
-                        </span>
-                      </td>
-                      <td className="actions-cell">
-                        <button
-                          className="btn btn-link"
-                          onClick={() => navigate(`/quotations/view/${quotation._id}`)}
-                          title="View"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                            <circle cx="12" cy="12" r="3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                          View
-                        </button>
-                        <button
-                          className="btn btn-link"
-                          onClick={() => navigate(`/quotations/edit/${quotation._id}`)}
-                          title="Edit"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                          Edit
-                        </button>
-                        <button
-                          className="btn btn-link btn-danger"
-                          onClick={() => handleDelete(quotation._id)}
-                          title="Delete"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <polyline points="3 6 5 6 21 6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {filteredQuotations.length > 0 && (
-            <div className="pagination-container">
-              <div className="pagination-info">
-                Showing {startIndex + 1} to {Math.min(endIndex, filteredQuotations.length)} of {filteredQuotations.length} quotations
-              </div>
-
-              <div className="pagination-controls">
-                <label>
-                  Show
-                  <select value={pageSize} onChange={handlePageSizeChange}>
-                    <option value="10">10</option>
-                    <option value="20">20</option>
-                    <option value="50">50</option>
-                    <option value="100">100</option>
-                  </select>
-                  entries
-                </label>
-              </div>
-
-              <div className="pagination-buttons">
-                <button
-                  className="btn btn-pagination"
-                  onClick={() => handlePageChange(1)}
-                  disabled={currentPage === 1}
-                >
-                  First
-                </button>
-                <button
-                  className="btn btn-pagination"
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage === 1}
-                >
-                  Previous
-                </button>
-
-                {Array.from({ length: totalPages }, (_, i) => i + 1)
-                  .filter(page => {
-                    return page === 1 ||
-                           page === totalPages ||
-                           Math.abs(page - currentPage) <= 2;
-                  })
-                  .map((page, index, array) => {
-                    if (index > 0 && page - array[index - 1] > 1) {
-                      return (
-                        <span key={`ellipsis-${page}`}>
-                          <span className="pagination-ellipsis">...</span>
-                          <button
-                            className={`btn btn-pagination ${currentPage === page ? 'active' : ''}`}
-                            onClick={() => handlePageChange(page)}
-                          >
-                            {page}
-                          </button>
-                        </span>
-                      );
-                    }
-                    return (
-                      <button
-                        key={page}
-                        className={`btn btn-pagination ${currentPage === page ? 'active' : ''}`}
-                        onClick={() => handlePageChange(page)}
-                      >
-                        {page}
-                      </button>
-                    );
-                  })}
-
-                <button
-                  className="btn btn-pagination"
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage === totalPages}
-                >
-                  Next
-                </button>
-                <button
-                  className="btn btn-pagination"
-                  onClick={() => handlePageChange(totalPages)}
-                  disabled={currentPage === totalPages}
-                >
-                  Last
-                </button>
-              </div>
-            </div>
-          )}
-        </>
+      {/* Pagination */}
+      {pagination.pages > 1 && (
+        <Group justify="center" mt="md">
+          <Pagination
+            total={pagination.pages}
+            value={pagination.page}
+            onChange={p => setPagination(prev => ({ ...prev, page: p }))}
+          />
+        </Group>
       )}
-    </div>
+
+      {/* Send Modal */}
+      {sendTarget && (
+        <QuotationSendModal
+          opened={!!sendTarget}
+          onClose={() => setSendTarget(null)}
+          quotation={sendTarget}
+          onSent={fetchQuotations}
+        />
+      )}
+    </Container>
   );
 };
 

@@ -179,7 +179,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
           ifsc: farmer.bankDetails?.ifsc || ''
         },
         financialDetails: {
-          numberOfShares: farmer.financialDetails?.numberOfShares || 0,
+          numberOfShares: farmer.financialDetails?.totalShares || farmer.financialDetails?.oldShares || 0,
           shareValue: farmer.financialDetails?.shareValue || 0,
           resolutionNo: farmer.financialDetails?.resolutionNo || '',
           resolutionDate: farmer.financialDetails?.resolutionDate ? new Date(farmer.financialDetails.resolutionDate) : null,
@@ -290,7 +290,8 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
           ifsc: values.bankDetails.ifsc
         },
         financialDetails: {
-          numberOfShares: parseFloat(values.financialDetails.numberOfShares) || 0,
+          oldShares: parseFloat(values.financialDetails.numberOfShares) || 0,
+          totalShares: parseFloat(values.financialDetails.numberOfShares) || 0,
           shareValue: parseFloat(values.financialDetails.shareValue) || 0,
           resolutionNo: values.financialDetails.resolutionNo,
           resolutionDate: toISOString(values.financialDetails.resolutionDate),

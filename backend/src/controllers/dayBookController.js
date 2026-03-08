@@ -1,7 +1,7 @@
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
 
-// Get Day Book report
+// Get Day Book report with date-wise grouping
 export const getDayBook = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
@@ -13,24 +13,64 @@ export const getDayBook = async (req, res) => {
       });
     }
 
-    // Build query
-    const query = {
-      voucherDate: {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      }
-    };
+    const start = new Date(startDate);
+    const end = new Date(endDate);
 
     // Fetch all vouchers in date range
-    const vouchers = await Voucher.find(query)
+    const vouchers = await Voucher.find({
+      voucherDate: { $gte: start, $lte: end }
+    })
       .sort({ voucherDate: 1, voucherNumber: 1 })
       .populate('entries.ledgerId', 'ledgerName ledgerType');
 
-    // Categorize entries into Receipt (Credits) and Payment (Debits)
-    const receiptSide = []; // Credit entries
-    const paymentSide = []; // Debit entries
+    // --- Calculate opening balance from Cash/Bank ledgers before startDate ---
+    const cashBankLedgers = await Ledger.find({
+      ledgerType: { $in: ['Cash', 'Bank'] },
+      status: 'Active'
+    });
+
+    // Start with ledger opening balances (Dr = positive, Cr = negative for asset accounts)
+    let openingBalance = 0;
+    for (const ledger of cashBankLedgers) {
+      const bal = ledger.openingBalance || 0;
+      openingBalance += ledger.openingBalanceType === 'Dr' ? bal : -bal;
+    }
+
+    // Add net effect of all vouchers before startDate on Cash/Bank accounts
+    const cashBankLedgerIds = cashBankLedgers.map(l => l._id.toString());
+
+    const preVouchers = await Voucher.find({
+      voucherDate: { $lt: start }
+    }).populate('entries.ledgerId', 'ledgerName ledgerType');
+
+    for (const voucher of preVouchers) {
+      for (const entry of voucher.entries) {
+        const ledgerId = entry.ledgerId?._id?.toString();
+        if (ledgerId && cashBankLedgerIds.includes(ledgerId)) {
+          // For asset accounts: debit increases, credit decreases
+          openingBalance += (entry.debitAmount || 0) - (entry.creditAmount || 0);
+        }
+      }
+    }
+
+    // --- Categorize entries into Receipt and Payment, grouped by date ---
+    const dateMap = {};
+    const receiptSide = []; // All credit entries (flat list for backward compat)
+    const paymentSide = []; // All debit entries (flat list for backward compat)
 
     for (const voucher of vouchers) {
+      const dateKey = voucher.voucherDate.toISOString().split('T')[0];
+
+      if (!dateMap[dateKey]) {
+        dateMap[dateKey] = {
+          date: dateKey,
+          receiptSide: [],
+          paymentSide: [],
+          totalReceipts: 0,
+          totalPayments: 0
+        };
+      }
+
       for (const entry of voucher.entries) {
         const entryData = {
           date: voucher.voucherDate,
@@ -42,43 +82,38 @@ export const getDayBook = async (req, res) => {
           voucherId: voucher._id
         };
 
-        // Add to payment side if debit
+        // Debit entries → payment side
         if (entry.debitAmount > 0) {
-          paymentSide.push({
-            ...entryData,
-            amount: entry.debitAmount
-          });
+          const paymentEntry = { ...entryData, amount: entry.debitAmount };
+          dateMap[dateKey].paymentSide.push(paymentEntry);
+          dateMap[dateKey].totalPayments += entry.debitAmount;
+          paymentSide.push(paymentEntry);
         }
 
-        // Add to receipt side if credit
+        // Credit entries → receipt side
         if (entry.creditAmount > 0) {
-          receiptSide.push({
-            ...entryData,
-            amount: entry.creditAmount
-          });
+          const receiptEntry = { ...entryData, amount: entry.creditAmount };
+          dateMap[dateKey].receiptSide.push(receiptEntry);
+          dateMap[dateKey].totalReceipts += entry.creditAmount;
+          receiptSide.push(receiptEntry);
         }
       }
     }
 
-    // Calculate opening and closing balances (Cash + Bank)
-    const cashLedger = await Ledger.findOne({ ledgerName: 'Cash', ledgerType: 'Cash' });
-    const bankLedger = await Ledger.findOne({ ledgerName: 'Bank', ledgerType: 'Bank' });
+    // --- Build dayWiseData with chained opening/closing balances ---
+    const sortedDates = Object.keys(dateMap).sort();
+    const dayWiseData = [];
+    let runningBalance = openingBalance;
 
-    // Get balances at start date
-    const openingBalance = (cashLedger?.currentBalance || 0) + (bankLedger?.currentBalance || 0);
+    for (const dateKey of sortedDates) {
+      const day = dateMap[dateKey];
+      day.openingBalance = runningBalance;
+      day.closingBalance = runningBalance + day.totalReceipts - day.totalPayments;
+      runningBalance = day.closingBalance;
+      dayWiseData.push(day);
+    }
 
-    // Calculate closing balance from opening + receipts - payments (cash/bank only)
-    const cashReceipts = receiptSide
-      .filter(e => e.ledgerType === 'Cash' || e.ledgerType === 'Bank')
-      .reduce((sum, e) => sum + e.amount, 0);
-
-    const cashPayments = paymentSide
-      .filter(e => e.ledgerType === 'Cash' || e.ledgerType === 'Bank')
-      .reduce((sum, e) => sum + e.amount, 0);
-
-    const closingBalance = openingBalance + cashReceipts - cashPayments;
-
-    // Calculate totals
+    // --- Summary ---
     const totalReceipts = receiptSide.reduce((sum, e) => sum + e.amount, 0);
     const totalPayments = paymentSide.reduce((sum, e) => sum + e.amount, 0);
 
@@ -87,15 +122,14 @@ export const getDayBook = async (req, res) => {
       data: {
         startDate,
         endDate,
-        receiptSide, // All credit entries
-        paymentSide, // All debit entries
+        dayWiseData,
+        receiptSide,
+        paymentSide,
         summary: {
           openingBalance,
-          closingBalance,
+          closingBalance: openingBalance + totalReceipts - totalPayments,
           totalReceipts,
-          totalPayments,
-          cashReceipts,
-          cashPayments
+          totalPayments
         }
       }
     });

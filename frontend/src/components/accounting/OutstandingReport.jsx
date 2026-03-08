@@ -130,7 +130,7 @@ const OutstandingReport = () => {
           ) : (
             <IconUserX size={16} color="red" />
           )}
-          <Text size="sm" weight={500}>
+          <Text size="sm" fw={500}>
             {ledger.ledgerName}
           </Text>
         </Group>
@@ -154,7 +154,7 @@ const OutstandingReport = () => {
       </td>
       <td style={{ textAlign: 'right' }}>
         <Text 
-          weight={700} 
+          fw={700} 
           color={ledger.balanceType === 'Dr' ? 'green' : 'red'}
           size="sm"
         >
@@ -167,7 +167,7 @@ const OutstandingReport = () => {
             Farmer Account
           </Badge>
         ) : (
-          <Text size="sm" color="dimmed">-</Text>
+          <Text size="sm" c="dimmed">-</Text>
         )}
       </td>
     </tr>
@@ -178,14 +178,14 @@ const OutstandingReport = () => {
       {/* Header */}
       <Paper p="lg" mb="md" withBorder shadow="sm" radius="md" 
         style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}>
-        <Group position="apart">
+        <Group justify="space-between">
           <Box>
-            <Title order={2} color="white">Outstanding Report</Title>
-            <Text color="white" size="sm" opacity={0.9}>
+            <Title order={2} c="white">Outstanding Report</Title>
+            <Text c="white" size="sm" opacity={0.9}>
               Track receivables and payables for all parties
             </Text>
           </Box>
-          <Group spacing="xs">
+          <Group gap="xs">
             <Button
               variant="light"
               color="white"
@@ -208,12 +208,12 @@ const OutstandingReport = () => {
 
       {/* Stats Overview */}
       <Grid gutter="md" mb="md">
-        <Grid.Col xs={12} sm={6} md={3}>
+        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
           <Card withBorder p="lg" radius="md" style={{ borderLeft: '4px solid #40c057' }}>
-            <Group position="apart">
+            <Group justify="space-between">
               <Box>
-                <Text size="xs" color="dimmed" transform="uppercase" weight={600}>To Receive</Text>
-                <Text size="xl" weight={700} color="green">
+                <Text size="xs" c="dimmed" transform="uppercase" fw={600}>To Receive</Text>
+                <Text size="xl" fw={700} c="green">
                   ₹{stats.totalReceivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </Text>
               </Box>
@@ -231,18 +231,18 @@ const OutstandingReport = () => {
                 }
               />
             </Group>
-            <Text size="sm" color="dimmed" mt="xs">
+            <Text size="sm" c="dimmed" mt="xs">
               {stats.receivableParties} party(s) to receive from
             </Text>
           </Card>
         </Grid.Col>
 
-        <Grid.Col xs={12} sm={6} md={3}>
+        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
           <Card withBorder p="lg" radius="md" style={{ borderLeft: '4px solid #fa5252' }}>
-            <Group position="apart">
+            <Group justify="space-between">
               <Box>
-                <Text size="xs" color="dimmed" transform="uppercase" weight={600}>To Pay</Text>
-                <Text size="xl" weight={700} color="red">
+                <Text size="xs" c="dimmed" transform="uppercase" fw={600}>To Pay</Text>
+                <Text size="xl" fw={700} c="red">
                   ₹{stats.totalPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </Text>
               </Box>
@@ -260,19 +260,19 @@ const OutstandingReport = () => {
                 }
               />
             </Group>
-            <Text size="sm" color="dimmed" mt="xs">
+            <Text size="sm" c="dimmed" mt="xs">
               {stats.payableParties} party(s) to pay to
             </Text>
           </Card>
         </Grid.Col>
 
-        <Grid.Col xs={12} sm={6} md={3}>
+        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
           <Card withBorder p="lg" radius="md" 
             style={{ borderLeft: '4px solid', borderLeftColor: stats.netPosition >= 0 ? '#228be6' : '#fd7e14' }}>
-            <Group position="apart">
+            <Group justify="space-between">
               <Box>
-                <Text size="xs" color="dimmed" transform="uppercase" weight={600}>Net Position</Text>
-                <Group spacing="xs" align="center">
+                <Text size="xs" c="dimmed" transform="uppercase" fw={600}>Net Position</Text>
+                <Group gap="xs" align="center">
                   {stats.netPosition >= 0 ? (
                     <IconArrowUpRight size={18} color="#228be6" />
                   ) : (
@@ -280,7 +280,7 @@ const OutstandingReport = () => {
                   )}
                   <Text 
                     size="xl" 
-                    weight={700} 
+                    fw={700} 
                     color={stats.netPosition >= 0 ? 'blue' : 'orange'}
                   >
                     ₹{Math.abs(stats.netPosition).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -295,18 +295,18 @@ const OutstandingReport = () => {
                 {stats.netPosition >= 0 ? 'Favorable' : 'Unfavorable'}
               </Badge>
             </Group>
-            <Text size="sm" color="dimmed" mt="xs">
+            <Text size="sm" c="dimmed" mt="xs">
               {stats.netPosition >= 0 ? 'Net receivable' : 'Net payable'}
             </Text>
           </Card>
         </Grid.Col>
 
-        <Grid.Col xs={12} sm={6} md={3}>
+        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
           <Card withBorder p="lg" radius="md" style={{ borderLeft: '4px solid #7950f2' }}>
-            <Group position="apart">
+            <Group justify="space-between">
               <Box>
-                <Text size="xs" color="dimmed" transform="uppercase" weight={600}>Total Parties</Text>
-                <Text size="xl" weight={700}>{stats.totalParties}</Text>
+                <Text size="xs" c="dimmed" transform="uppercase" fw={600}>Total Parties</Text>
+                <Text size="xl" fw={700}>{stats.totalParties}</Text>
               </Box>
               <RingProgress
                 size={60}
@@ -322,7 +322,7 @@ const OutstandingReport = () => {
                 }
               />
             </Group>
-            <Group spacing="xs" mt="xs">
+            <Group gap="xs" mt="xs">
               <Badge color="green" variant="light" size="xs">
                 {stats.receivableParties} Receivable
               </Badge>
@@ -336,25 +336,25 @@ const OutstandingReport = () => {
 
       {/* Distribution Bar */}
       <Card withBorder p="lg" mb="md" radius="md">
-        <Group position="apart" mb="md">
+        <Group justify="space-between" mb="md">
           <Title order={4}>
-            <Group spacing="xs">
+            <Group gap="xs">
               <IconChartBar size={20} />
               Outstanding Distribution
             </Group>
           </Title>
-          <Text size="sm" color="dimmed">
+          <Text size="sm" c="dimmed">
             ₹{(stats.totalReceivable + stats.totalPayable).toLocaleString('en-IN', { minimumFractionDigits: 2 })} Total Outstanding
           </Text>
         </Group>
 
-        <Stack spacing="xs">
-          <Group position="apart">
-            <Group spacing="xs">
+        <Stack gap="xs">
+          <Group justify="space-between">
+            <Group gap="xs">
               <IconTrendingUp size={14} color="green" />
               <Text size="sm">To Receive</Text>
             </Group>
-            <Text size="sm" weight={500}>
+            <Text size="sm" fw={500}>
               ₹{stats.totalReceivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
           </Group>
@@ -365,12 +365,12 @@ const OutstandingReport = () => {
             radius="xl"
           />
 
-          <Group position="apart" mt="md">
-            <Group spacing="xs">
+          <Group justify="space-between" mt="md">
+            <Group gap="xs">
               <IconTrendingDown size={14} color="red" />
               <Text size="sm">To Pay</Text>
             </Group>
-            <Text size="sm" weight={500}>
+            <Text size="sm" fw={500}>
               ₹{stats.totalPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
           </Group>
@@ -385,9 +385,9 @@ const OutstandingReport = () => {
 
       {/* Outstanding Details */}
       <Paper p="lg" withBorder shadow="sm" radius="md">
-        <Group position="apart" mb="md">
+        <Group justify="space-between" mb="md">
           <Title order={4}>
-            <Group spacing="xs">
+            <Group gap="xs">
               <IconUsers size={20} />
               Party Outstanding Details
             </Group>
@@ -405,10 +405,10 @@ const OutstandingReport = () => {
 
         {ledgers.length === 0 ? (
           <Card p="xl" withBorder>
-            <Stack align="center" spacing="md">
+            <Stack align="center" gap="md">
               <IconCashBanknote size={48} color="gray" />
-              <Text color="dimmed" size="lg">No outstanding balances found</Text>
-              <Text color="dimmed" size="sm" ta="center">
+              <Text c="dimmed" size="lg">No outstanding balances found</Text>
+              <Text c="dimmed" size="sm" ta="center">
                 All party accounts are settled with zero balance
               </Text>
             </Stack>
@@ -432,30 +432,30 @@ const OutstandingReport = () => {
 
             {/* Summary */}
             <Card mt="md" p="md" withBorder bg="gray.0">
-              <Group position="apart">
-                <Text weight={500}>Summary</Text>
-                <Group spacing="lg">
+              <Group justify="space-between">
+                <Text fw={500}>Summary</Text>
+                <Group gap="lg">
                   <div>
-                    <Text size="sm" color="dimmed">Total Parties</Text>
-                    <Text weight={700}>{stats.totalParties}</Text>
+                    <Text size="sm" c="dimmed">Total Parties</Text>
+                    <Text fw={700}>{stats.totalParties}</Text>
                   </div>
                   <Divider orientation="vertical" />
                   <div>
-                    <Text size="sm" color="dimmed">Total Receivable</Text>
-                    <Text weight={700} color="green">
+                    <Text size="sm" c="dimmed">Total Receivable</Text>
+                    <Text fw={700} c="green">
                       ₹{stats.totalReceivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Text>
                   </div>
                   <Divider orientation="vertical" />
                   <div>
-                    <Text size="sm" color="dimmed">Total Payable</Text>
-                    <Text weight={700} color="red">
+                    <Text size="sm" c="dimmed">Total Payable</Text>
+                    <Text fw={700} c="red">
                       ₹{stats.totalPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Text>
                   </div>
                   <Divider orientation="vertical" />
                   <div>
-                    <Text size="sm" color="dimmed">Net Position</Text>
+                    <Text size="sm" c="dimmed">Net Position</Text>
                     <Badge 
                       color={stats.netPosition >= 0 ? 'blue' : 'orange'} 
                       variant="light"
@@ -480,7 +480,7 @@ const OutstandingReport = () => {
         mt="md"
         radius="md"
       >
-        <Group spacing="xs">
+        <Group gap="xs">
           <Text size="sm">
             Outstanding report shows party balances only. 
             Receivable amounts (Dr) are money to be received, 

@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { message } from '../../utils/toast';
+import { printReport } from '../../utils/printReport';
 import { producerLoanAPI } from '../../services/api';
 import {
   Container,
@@ -35,6 +36,7 @@ import {
 const ProducerLoanView = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const printRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [loan, setLoan] = useState(null);
 
@@ -105,7 +107,7 @@ const ProducerLoanView = () => {
   };
 
   const handlePrint = () => {
-    window.print();
+    printReport(printRef, { title: 'Producer Loan Statement', orientation: 'landscape' });
   };
 
   if (loading) {
@@ -133,7 +135,7 @@ const ProducerLoanView = () => {
   const paidEMIs = loan.emiSchedule?.filter(e => e.status === 'Paid').length || 0;
 
   return (
-    <Container size="xl" py="xl">
+    <Container size="xl" py="xl" ref={printRef}>
       <Stack gap="lg">
         {/* Header */}
         <Group justify="space-between">

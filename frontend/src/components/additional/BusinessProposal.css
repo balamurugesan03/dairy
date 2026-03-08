@@ -1,0 +1,521 @@
+/* ============================================================
+   BusinessProposal.css — Dairy Tech Solutions Proposal Document
+   ============================================================ */
+
+/* ── Outer wrapper & toolbar ─────────────────────────────── */
+.bp-wrapper {
+  background: #eef2f7;
+  min-height: 100vh;
+  padding: 24px 16px 60px;
+  font-family: 'Segoe UI', Arial, sans-serif;
+}
+
+.bp-toolbar {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 860px;
+  margin: 0 auto 18px;
+}
+
+.bp-toolbar-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.bp-btn {
+  padding: 8px 20px;
+  border-radius: 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.18s;
+}
+
+.bp-btn-primary  { background: #1565c0; color: #fff; }
+.bp-btn-primary:hover  { background: #0d47a1; }
+.bp-btn-success  { background: #2e7d32; color: #fff; }
+.bp-btn-success:hover  { background: #1b5e20; }
+.bp-btn-outline  { background: #fff; color: #333; border: 1.5px solid #b0bec5; }
+.bp-btn-outline:hover  { border-color: #1565c0; color: #1565c0; }
+.bp-btn-warning  { background: #e65100; color: #fff; }
+.bp-btn-warning:hover  { background: #bf360c; }
+
+/* ── A4-like Page ─────────────────────────────────────────── */
+.bp-page {
+  max-width: 860px;
+  margin: 0 auto;
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 4px 28px rgba(0,0,0,0.14);
+}
+
+/* ── Top Stripe (company brand bar) ─────────────────────── */
+.bp-brand-bar {
+  background: linear-gradient(135deg, #0d47a1 0%, #1976d2 60%, #42a5f5 100%);
+  border-radius: 6px 6px 0 0;
+  padding: 22px 36px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 20px;
+}
+
+.bp-brand-left { display: flex; flex-direction: column; gap: 2px; }
+
+.bp-brand-name {
+  font-size: 22px;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: 0.5px;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.bp-brand-tagline {
+  font-size: 11px;
+  color: rgba(255,255,255,0.75);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+.bp-brand-right { text-align: right; flex-shrink: 0; }
+
+.bp-doc-title {
+  font-size: 26px;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: 4px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.bp-doc-subtitle {
+  font-size: 10px;
+  color: rgba(255,255,255,0.7);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-top: 3px;
+}
+
+/* ── Ref + Date bar ──────────────────────────────────────── */
+.bp-ref-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #e3f2fd;
+  border-bottom: 2px solid #90caf9;
+  padding: 8px 36px;
+  font-size: 12.5px;
+}
+
+.bp-ref-item { display: flex; align-items: center; gap: 8px; }
+.bp-ref-label { color: #555; font-weight: 600; }
+.bp-ref-value { color: #0d47a1; font-weight: 800; letter-spacing: 0.5px; }
+
+/* ── Main body ────────────────────────────────────────────── */
+.bp-body {
+  padding: 32px 36px 28px;
+}
+
+/* ── To address block ────────────────────────────────────── */
+.bp-to-block {
+  margin-bottom: 20px;
+}
+
+.bp-to-label {
+  font-size: 11px;
+  font-weight: 800;
+  color: #1565c0;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.bp-to-address {
+  font-size: 13px;
+  line-height: 1.9;
+  color: #1a1a2e;
+  border-left: 3px solid #1976d2;
+  padding-left: 14px;
+  background: #f5f9ff;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-right: 12px;
+  border-radius: 0 4px 4px 0;
+}
+
+.bp-to-address strong {
+  font-weight: 800;
+  font-size: 13.5px;
+  display: block;
+  color: #0d47a1;
+}
+
+/* ── Salutation & body text ──────────────────────────────── */
+.bp-salutation {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #222;
+  margin: 16px 0 10px;
+}
+
+.bp-subject-line {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin-bottom: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.bp-para {
+  font-size: 13px;
+  line-height: 1.85;
+  color: #333;
+  text-align: justify;
+  margin-bottom: 14px;
+}
+
+/* ── Divider ─────────────────────────────────────────────── */
+.bp-divider {
+  border: none;
+  border-top: 1.5px dashed #90caf9;
+  margin: 22px 0;
+}
+
+.bp-divider-solid {
+  border: none;
+  border-top: 2px solid #1976d2;
+  margin: 20px 0 16px;
+}
+
+/* ── Signature block ─────────────────────────────────────── */
+.bp-sig-block {
+  margin-top: 18px;
+}
+
+.bp-sig-thanks {
+  font-size: 13px;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.bp-sig-for {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0d47a1;
+  margin-bottom: 32px;
+}
+
+.bp-sig-line-draw {
+  width: 180px;
+  border-top: 1.5px solid #333;
+  margin-bottom: 4px;
+}
+
+.bp-sig-name {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #1a1a2e;
+}
+
+.bp-sig-desig {
+  font-size: 12px;
+  color: #666;
+  margin-top: 2px;
+}
+
+/* ── Product Section ─────────────────────────────────────── */
+.bp-section-header {
+  background: linear-gradient(90deg, #0d47a1, #1976d2);
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 5px;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  margin-bottom: 16px;
+  margin-top: 10px;
+}
+
+.bp-section-sub {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0d47a1;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  border-bottom: 2px solid #1976d2;
+  padding-bottom: 5px;
+  margin-bottom: 12px;
+  margin-top: 20px;
+}
+
+/* Salient features list */
+.bp-features-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 20px;
+}
+
+.bp-features-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  color: #333;
+  line-height: 1.5;
+}
+
+.bp-features-list li::before {
+  content: '✦';
+  color: #1976d2;
+  font-size: 10px;
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+/* ── Spec / Solution Tables ──────────────────────────────── */
+.bp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  margin-bottom: 18px;
+}
+
+.bp-table thead tr {
+  background: #1565c0;
+  color: #fff;
+}
+
+.bp-table th {
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 700;
+  font-size: 11.5px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.bp-table th.center, .bp-table td.center { text-align: center; }
+.bp-table th.right,  .bp-table td.right  { text-align: right; }
+
+.bp-table tbody tr:nth-child(odd)  { background: #f5f9ff; }
+.bp-table tbody tr:nth-child(even) { background: #fff; }
+
+.bp-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #e0e8f4;
+  color: #222;
+  vertical-align: top;
+}
+
+.bp-table tbody tr:last-child td { border-bottom: 2px solid #1565c0; }
+
+.bp-table .bp-td-label {
+  font-weight: 700;
+  color: #1a3a6b;
+  width: 40%;
+}
+
+.bp-table .bp-td-colon {
+  width: 5%;
+  color: #666;
+  text-align: center;
+}
+
+/* Total solution table — center-heavy */
+.bp-table.solution thead tr { background: #2e7d32; }
+.bp-table.solution tbody tr:last-child td { border-bottom: 2px solid #2e7d32; }
+.bp-table.solution td { text-align: center; }
+.bp-table.solution th { text-align: center; }
+
+/* ── Contact Section ─────────────────────────────────────── */
+.bp-contact-section {
+  background: linear-gradient(135deg, #e3f2fd, #f0f7ff);
+  border: 1.5px solid #90caf9;
+  border-radius: 8px;
+  padding: 18px 22px;
+  margin-top: 8px;
+}
+
+.bp-contact-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #0d47a1;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #bbdefb;
+  padding-bottom: 6px;
+}
+
+.bp-contact-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 28px;
+}
+
+.bp-contact-row { display: flex; flex-direction: column; gap: 2px; }
+.bp-contact-label { font-size: 10.5px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.8px; }
+.bp-contact-value { font-size: 13px; color: #1a1a2e; font-weight: 600; }
+.bp-contact-value a { color: #1565c0; text-decoration: none; }
+
+.bp-office-address {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed #90caf9;
+}
+
+.bp-office-lines {
+  font-size: 12.5px;
+  color: #333;
+  line-height: 1.8;
+}
+
+.bp-office-lines strong {
+  display: block;
+  color: #0d47a1;
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: 2px;
+}
+
+/* ── Page break for print ────────────────────────────────── */
+.bp-page-break {
+  page-break-before: always;
+  padding-top: 20px;
+}
+
+/* ── Footer ──────────────────────────────────────────────── */
+.bp-footer {
+  border-top: 1px solid #e0e8f4;
+  padding: 10px 36px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: #aaa;
+  border-radius: 0 0 6px 6px;
+}
+
+/* ── Edit Modal Overlay ──────────────────────────────────── */
+.bp-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.bp-modal {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.25);
+  width: 100%;
+  max-width: 600px;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 28px 30px;
+}
+
+.bp-modal-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: #0d47a1;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #e3f2fd;
+  padding-bottom: 10px;
+}
+
+.bp-form-group {
+  margin-bottom: 14px;
+}
+
+.bp-form-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 5px;
+}
+
+.bp-form-input,
+.bp-form-textarea {
+  width: 100%;
+  border: 1.5px solid #b0bec5;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #222;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: border-color 0.18s;
+  outline: none;
+}
+
+.bp-form-input:focus,
+.bp-form-textarea:focus { border-color: #1976d2; }
+
+.bp-form-textarea { resize: vertical; min-height: 70px; }
+
+.bp-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.bp-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid #e0e8f4;
+}
+
+/* ============================================================
+   PRINT STYLES
+   ============================================================ */
+@media print {
+  @page {
+    size: A4;
+    margin: 8mm 10mm;
+  }
+
+  body * { visibility: hidden; }
+
+  .bp-page,
+  .bp-page * { visibility: visible; }
+
+  .bp-wrapper {
+    background: #fff;
+    padding: 0;
+  }
+
+  .bp-page {
+    box-shadow: none;
+    border-radius: 0;
+    max-width: 100%;
+  }
+
+  .no-print { display: none !important; }
+
+  .bp-features-list {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .bp-page-break {
+    page-break-before: always;
+  }
+}

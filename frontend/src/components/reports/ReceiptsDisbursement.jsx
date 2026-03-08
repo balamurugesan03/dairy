@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { message } from '../../utils/toast';
 import dayjs from 'dayjs';
 import { reportAPI } from '../../services/api';
+import { printReport } from '../../utils/printReport';
 import PageHeader from '../common/PageHeader';
 import DateFilterToolbar from '../common/DateFilterToolbar';
 import ExportButton from '../common/ExportButton';
@@ -36,6 +37,7 @@ const ReceiptsDisbursement = () => {
   const [reportData, setReportData] = useState(null);
   const [format, setFormat] = useState('singleColumnMonthly');
   const [currentFilter, setCurrentFilter] = useState(null);
+  const printRef = useRef(null);
 
   const fetchReport = async (filterData) => {
     setLoading(true);
@@ -144,6 +146,28 @@ const ReceiptsDisbursement = () => {
                   <Text fw={700}>₹{formatCurrency(reportData.formatted.grandTotal.payment)}</Text>
                 </Table.Td>
               </Table.Tr>
+
+              {/* Opening Balance */}
+              <Table.Tr style={{ backgroundColor: 'var(--mantine-color-blue-0)', borderTop: '2px solid var(--mantine-color-blue-3)' }}>
+                <Table.Td><Text fw={700} c="blue.8">Opening Balance</Text></Table.Td>
+                <Table.Td style={{ textAlign: 'right' }}>
+                  <Text fw={700} c="blue.8">₹{formatCurrency(openingBalance)}</Text>
+                </Table.Td>
+                <Table.Td style={{ textAlign: 'right' }}>
+                  <Text c="dimmed">—</Text>
+                </Table.Td>
+              </Table.Tr>
+
+              {/* Closing Balance */}
+              <Table.Tr style={{ backgroundColor: 'var(--mantine-color-teal-0)', borderTop: '1px solid var(--mantine-color-teal-3)' }}>
+                <Table.Td><Text fw={700} c="teal.8">Closing Balance</Text></Table.Td>
+                <Table.Td style={{ textAlign: 'right' }}>
+                  <Text c="dimmed">—</Text>
+                </Table.Td>
+                <Table.Td style={{ textAlign: 'right' }}>
+                  <Text fw={700} c="teal.8">₹{formatCurrency(closingBalance)}</Text>
+                </Table.Td>
+              </Table.Tr>
             </Table.Tbody>
           </Table>
         </ScrollArea>
@@ -241,6 +265,24 @@ const ReceiptsDisbursement = () => {
                 <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>₹{formatCurrency(reportData.formatted.grandTotal.payment?.uptoMonth || 0)}</Text></Table.Td>
                 <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>₹{formatCurrency(reportData.formatted.grandTotal.payment?.duringMonth || 0)}</Text></Table.Td>
                 <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>₹{formatCurrency(reportData.formatted.grandTotal.payment?.endOfMonth || 0)}</Text></Table.Td>
+              </Table.Tr>
+
+              {/* Opening Balance */}
+              <Table.Tr style={{ backgroundColor: 'var(--mantine-color-blue-0)', borderTop: '2px solid var(--mantine-color-blue-3)' }}>
+                <Table.Td><Text fw={700} c="blue.8">Opening Balance</Text></Table.Td>
+                <Table.Td colSpan={2} style={{ textAlign: 'right' }} />
+                <Table.Td style={{ textAlign: 'right' }}><Text fw={700} c="blue.8">₹{formatCurrency(openingBalance)}</Text></Table.Td>
+                <Table.Td colSpan={2} style={{ textAlign: 'right' }} />
+                <Table.Td style={{ textAlign: 'right' }}><Text c="dimmed">—</Text></Table.Td>
+              </Table.Tr>
+
+              {/* Closing Balance */}
+              <Table.Tr style={{ backgroundColor: 'var(--mantine-color-teal-0)', borderTop: '1px solid var(--mantine-color-teal-3)' }}>
+                <Table.Td><Text fw={700} c="teal.8">Closing Balance</Text></Table.Td>
+                <Table.Td colSpan={2} style={{ textAlign: 'right' }} />
+                <Table.Td style={{ textAlign: 'right' }}><Text c="dimmed">—</Text></Table.Td>
+                <Table.Td colSpan={2} style={{ textAlign: 'right' }} />
+                <Table.Td style={{ textAlign: 'right' }}><Text fw={700} c="teal.8">₹{formatCurrency(closingBalance)}</Text></Table.Td>
               </Table.Tr>
             </Table.Tbody>
           </Table>
@@ -360,6 +402,24 @@ const ReceiptsDisbursement = () => {
                   <Text fw={700}>{formatCurrency(reportData.formatted.grandTotal.payment?.total || reportData.formatted.grandTotal.payment || 0)}</Text>
                 </Table.Td>
               </Table.Tr>
+
+              {/* Opening Balance */}
+              <Table.Tr style={{ backgroundColor: 'var(--mantine-color-blue-0)', borderTop: '2px solid var(--mantine-color-blue-3)' }}>
+                <Table.Td><Text fw={700} c="blue.8">Opening Balance</Text></Table.Td>
+                <Table.Td colSpan={2} />
+                <Table.Td style={{ textAlign: 'right' }}><Text fw={700} c="blue.8">₹{formatCurrency(openingBalance)}</Text></Table.Td>
+                <Table.Td colSpan={2} />
+                <Table.Td style={{ textAlign: 'right' }}><Text c="dimmed">—</Text></Table.Td>
+              </Table.Tr>
+
+              {/* Closing Balance */}
+              <Table.Tr style={{ backgroundColor: 'var(--mantine-color-teal-0)', borderTop: '1px solid var(--mantine-color-teal-3)' }}>
+                <Table.Td><Text fw={700} c="teal.8">Closing Balance</Text></Table.Td>
+                <Table.Td colSpan={2} />
+                <Table.Td style={{ textAlign: 'right' }}><Text c="dimmed">—</Text></Table.Td>
+                <Table.Td colSpan={2} />
+                <Table.Td style={{ textAlign: 'right' }}><Text fw={700} c="teal.8">₹{formatCurrency(closingBalance)}</Text></Table.Td>
+              </Table.Tr>
             </Table.Tbody>
           </Table>
         </ScrollArea>
@@ -405,7 +465,7 @@ const ReceiptsDisbursement = () => {
 
       <DateFilterToolbar onFilterChange={handleFilterChange} />
 
-      <Paper p="lg" withBorder shadow="sm" mt="md" pos="relative">
+      <Paper p="lg" withBorder shadow="sm" mt="md" pos="relative" ref={printRef}>
         <LoadingOverlay visible={loading} overlayProps={{ blur: 2 }} />
 
         {reportData && !loading && (
@@ -496,7 +556,7 @@ const ReceiptsDisbursement = () => {
                 variant="light"
                 color="gray"
                 leftSection={<IconPrinter size={16} />}
-                onClick={() => window.print()}
+                onClick={() => printReport(printRef, { title: 'Receipts & Disbursement Report', orientation: 'landscape' })}
               >
                 Print Report
               </Button>

@@ -1,234 +1,262 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import dayjs from 'dayjs';
+import {
+  Container, Title, Text, Button, Group, Stack, Paper, Grid, Badge,
+  ActionIcon, Divider, Box, Table, Loader, Center, Modal, Select,
+  NumberInput, ThemeIcon, Card, Alert
+} from '@mantine/core';
+import { notifications } from '@mantine/notifications';
+import { modals } from '@mantine/modals';
+import {
+  IconArrowLeft, IconEdit, IconPrinter, IconArrowRight, IconCheck,
+  IconSend, IconX, IconFileInvoice, IconAlertCircle, IconBrandWhatsapp, IconMail
+} from '@tabler/icons-react';
 import { quotationAPI } from '../../services/api';
-import PageHeader from '../common/PageHeader';
-import LoadingSpinner from '../common/LoadingSpinner';
-import { message } from '../../utils/toast';
+import { printReport } from '../../utils/printReport';
+import QuotationSendModal from './QuotationSendModal';
+import dayjs from 'dayjs';
+
+const STATUS_CONFIG = {
+  Draft:     { color: 'gray' },
+  Sent:      { color: 'blue' },
+  Accepted:  { color: 'green' },
+  Rejected:  { color: 'red' },
+  Expired:   { color: 'orange' },
+  Converted: { color: 'teal' }
+};
 
 const QuotationView = () => {
   const navigate = useNavigate();
   const { id } = useParams();
+  const printRef = useRef(null);
   const [quotation, setQuotation] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [convertModal, setConvertModal] = useState(false);
+  const [sendModal, setSendModal] = useState(false);
+  const [paymentMode, setPaymentMode] = useState('Credit');
+  const [paidAmount, setPaidAmount] = useState(0);
+  const [converting, setConverting] = useState(false);
 
-  useEffect(() => {
-    fetchQuotation();
-  }, [id]);
+  useEffect(() => { fetchQuotation(); }, [id]);
 
   const fetchQuotation = async () => {
     setLoading(true);
     try {
-      const response = await quotationAPI.getById(id);
-      setQuotation(response.data);
-    } catch (error) {
-      message.error(error.message || 'Failed to fetch quotation details');
+      const res = await quotationAPI.getById(id);
+      setQuotation(res?.data || res);
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
       navigate('/quotations');
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading) {
-    return <LoadingSpinner />;
-  }
-
-  if (!quotation) {
-    return null;
-  }
-
-  const getStatusColor = (status) => {
-    const colors = {
-      'Draft': '#8c8c8c',
-      'Sent': '#1890ff',
-      'Accepted': '#52c41a',
-      'Rejected': '#ff4d4f',
-      'Expired': '#faad14'
-    };
-    return colors[status] || '#1890ff';
+  const handleStatusChange = async (newStatus) => {
+    try {
+      await quotationAPI.update(id, { status: newStatus });
+      notifications.show({ title: 'Updated', message: `Status changed to ${newStatus}`, color: 'green' });
+      fetchQuotation();
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
+    }
   };
 
-  const renderStatusTag = (status) => (
-    <span style={{
-      display: 'inline-block',
-      padding: '2px 8px',
-      borderRadius: '4px',
-      fontSize: '12px',
-      fontWeight: '500',
-      background: `${getStatusColor(status)}20`,
-      color: getStatusColor(status),
-      border: `1px solid ${getStatusColor(status)}`
-    }}>
-      {status}
-    </span>
-  );
-
-  const DescriptionRow = ({ label, value, span = 1 }) => (
-    <div style={{
-      gridColumn: span === 2 ? 'span 2' : 'span 1',
-      padding: '12px',
-      borderBottom: '1px solid var(--border-color)',
-      display: 'grid',
-      gridTemplateColumns: '150px 1fr',
-      gap: '12px'
-    }}>
-      <div style={{ fontWeight: '500', color: 'var(--text-secondary)' }}>{label}:</div>
-      <div style={{ color: 'var(--text-primary)' }}>{value}</div>
-    </div>
-  );
-
-  const calculateTotals = () => {
-    const subtotal = quotation.items?.reduce((sum, item) => sum + (item.quantity * item.rate), 0) || 0;
-    const taxAmount = quotation.items?.reduce((sum, item) => {
-      const itemTotal = item.quantity * item.rate;
-      return sum + (itemTotal * (item.taxPercent || 0) / 100);
-    }, 0) || 0;
-    const totalAmount = subtotal + taxAmount - (quotation.discount || 0);
-
-    return { subtotal, taxAmount, totalAmount };
+  const handleConvert = async () => {
+    setConverting(true);
+    try {
+      const res = await quotationAPI.convertToInvoice(id, { paymentMode, paidAmount });
+      const invoice = res?.data?.invoice || res?.data;
+      notifications.show({ title: 'Converted!', message: `Invoice ${invoice?.invoiceNumber || ''} created`, color: 'teal' });
+      setConvertModal(false);
+      navigate(`/business-inventory/sales/list`);
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
+    } finally {
+      setConverting(false);
+    }
   };
 
-  const totals = calculateTotals();
+  const handlePrint = () => printReport(printRef, { title: 'Quotation', orientation: 'landscape' });
+
+  if (loading) return <Center h={400}><Loader/></Center>;
+  if (!quotation) return null;
+
+  const q = quotation;
+  const statusCfg = STATUS_CONFIG[q.status] || { color: 'gray' };
+  const canConvert = ['Accepted', 'Sent', 'Draft'].includes(q.status);
 
   return (
-    <div>
-      <PageHeader
-        title="Quotation Details"
-        subtitle={`View details for quotation #${quotation.quotationNumber}`}
-        extra={[
-          <button
-            key="back"
-            className="btn btn-default"
-            onClick={() => navigate('/quotations')}
-          >
-            <svg className="icon" viewBox="0 0 16 16" fill="currentColor">
-              <path fillRule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z"/>
-            </svg>
-            Back
-          </button>,
-          <button
-            key="edit"
-            className="btn btn-primary"
-            onClick={() => navigate(`/quotations/edit/${id}`)}
-          >
-            <svg className="icon" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/>
-            </svg>
-            Edit
-          </button>
-        ]}
+    <Container size="xl" py="md" ref={printRef}>
+      {/* Action Bar */}
+      <Group justify="space-between" mb="md">
+        <Group gap="xs">
+          <ActionIcon variant="subtle" onClick={() => navigate('/quotations')}><IconArrowLeft size={18}/></ActionIcon>
+          <Box>
+            <Title order={2} fw={700}>{q.quotationNumber}</Title>
+            <Text size="sm" c="dimmed">{dayjs(q.quotationDate).format('DD MMM YYYY')} · Valid until {dayjs(q.validUntil).format('DD MMM YYYY')}</Text>
+          </Box>
+          <Badge color={statusCfg.color} size="lg" variant="light">{q.status}</Badge>
+        </Group>
+        <Group>
+          {q.status === 'Draft' && <Button size="sm" variant="light" leftSection={<IconSend size={14}/>} onClick={() => handleStatusChange('Sent')}>Mark Sent</Button>}
+          {q.status === 'Sent' && <Button size="sm" variant="light" color="green" leftSection={<IconCheck size={14}/>} onClick={() => handleStatusChange('Accepted')}>Accept</Button>}
+          {q.status === 'Sent' && <Button size="sm" variant="light" color="red" leftSection={<IconX size={14}/>} onClick={() => handleStatusChange('Rejected')}>Reject</Button>}
+          {canConvert && (
+            <Button size="sm" color="teal" leftSection={<IconArrowRight size={14}/>} onClick={() => setConvertModal(true)}>
+              Convert to Invoice
+            </Button>
+          )}
+          {q.status !== 'Converted' && (
+            <Button size="sm" variant="default" leftSection={<IconEdit size={14}/>} onClick={() => navigate(`/quotations/edit/${id}`)}>Edit</Button>
+          )}
+          <Button size="sm" color="green" variant="light" leftSection={<IconBrandWhatsapp size={14}/>} onClick={() => setSendModal(true)}>WhatsApp</Button>
+          <Button size="sm" color="blue" variant="light" leftSection={<IconMail size={14}/>} onClick={() => setSendModal(true)}>Email</Button>
+          <Button size="sm" variant="default" leftSection={<IconPrinter size={14}/>} onClick={handlePrint}>Print</Button>
+        </Group>
+      </Group>
+
+      {q.status === 'Converted' && q.convertedToInvoice?.invoiceNumber && (
+        <Alert icon={<IconFileInvoice size={16}/>} color="teal" mb="md" radius="md">
+          Converted to Invoice: <b>{q.convertedToInvoice.invoiceNumber}</b> on {dayjs(q.convertedToInvoice.convertedDate).format('DD MMM YYYY')}
+        </Alert>
+      )}
+
+      <Grid gutter="md">
+        <Grid.Col span={{ base: 12, md: 8 }}>
+          {/* Customer Info */}
+          <Paper withBorder radius="md" p="md" mb="md">
+            <Text fw={600} mb="sm" c="dimmed" tt="uppercase" size="xs">Bill To</Text>
+            <Text fw={700} size="lg">{q.partyName || '—'}</Text>
+            {q.partyPhone && <Text size="sm">{q.partyPhone}</Text>}
+            {q.partyEmail && <Text size="sm" c="dimmed">{q.partyEmail}</Text>}
+            {q.partyAddress && <Text size="sm">{q.partyAddress}</Text>}
+            {q.partyGstin && <Text size="sm">GSTIN: {q.partyGstin}</Text>}
+          </Paper>
+
+          {/* Items Table */}
+          <Paper withBorder radius="md" style={{ overflow: 'hidden' }} mb="md">
+            <Box p="sm" style={{ background: 'var(--mantine-color-gray-1)' }}>
+              <Text fw={600} size="sm">Items</Text>
+            </Box>
+            <Table striped>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>#</Table.Th>
+                  <Table.Th>Item</Table.Th>
+                  <Table.Th>HSN</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Qty</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Rate</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Disc%</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>GST%</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Amount</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {q.items?.map((item, i) => (
+                  <Table.Tr key={i}>
+                    <Table.Td>{i + 1}</Table.Td>
+                    <Table.Td>
+                      <Text size="sm" fw={500}>{item.itemName}</Text>
+                      {item.itemCode && <Text size="xs" c="dimmed">{item.itemCode}</Text>}
+                    </Table.Td>
+                    <Table.Td><Text size="sm">{item.hsnCode || '—'}</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}><Text size="sm">{item.quantity} {item.unit}</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}><Text size="sm">₹{(item.rate || 0).toFixed(2)}</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}><Text size="sm">{item.discountPercent || 0}%</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}><Text size="sm">{item.gstPercent || 0}%</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}><Text size="sm" fw={600}>₹{(item.totalAmount || 0).toFixed(2)}</Text></Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Paper>
+
+          {/* Notes */}
+          {(q.notes || q.termsAndConditions) && (
+            <Grid>
+              {q.notes && (
+                <Grid.Col span={6}>
+                  <Paper withBorder radius="md" p="md">
+                    <Text fw={600} size="sm" mb="xs">Notes</Text>
+                    <Text size="sm" c="dimmed">{q.notes}</Text>
+                  </Paper>
+                </Grid.Col>
+              )}
+              {q.termsAndConditions && (
+                <Grid.Col span={6}>
+                  <Paper withBorder radius="md" p="md">
+                    <Text fw={600} size="sm" mb="xs">Terms & Conditions</Text>
+                    <Text size="sm" c="dimmed">{q.termsAndConditions}</Text>
+                  </Paper>
+                </Grid.Col>
+              )}
+            </Grid>
+          )}
+        </Grid.Col>
+
+        {/* Summary */}
+        <Grid.Col span={{ base: 12, md: 4 }}>
+          <Paper withBorder radius="md" p="md">
+            <Text fw={700} mb="md">Amount Summary</Text>
+            <Stack gap={6}>
+              <Group justify="space-between"><Text size="sm" c="dimmed">Gross Amount</Text><Text size="sm">₹{(q.grossAmount || 0).toFixed(2)}</Text></Group>
+              <Group justify="space-between"><Text size="sm" c="dimmed">Item Discount</Text><Text size="sm" c="red">- ₹{(q.itemDiscount || 0).toFixed(2)}</Text></Group>
+              <Group justify="space-between"><Text size="sm" c="dimmed">Bill Discount</Text><Text size="sm" c="red">- ₹{(q.billDiscount || 0).toFixed(2)}</Text></Group>
+              <Divider/>
+              <Group justify="space-between"><Text size="sm" c="dimmed">Taxable Amount</Text><Text size="sm">₹{(q.taxableAmount || 0).toFixed(2)}</Text></Group>
+              <Group justify="space-between"><Text size="sm" c="dimmed">CGST</Text><Text size="sm">₹{(q.totalCgst || 0).toFixed(2)}</Text></Group>
+              <Group justify="space-between"><Text size="sm" c="dimmed">SGST</Text><Text size="sm">₹{(q.totalSgst || 0).toFixed(2)}</Text></Group>
+              <Group justify="space-between"><Text size="sm" c="dimmed">Round Off</Text><Text size="sm">₹{(q.roundOff || 0).toFixed(2)}</Text></Group>
+              <Divider/>
+              <Group justify="space-between">
+                <Text fw={700} size="lg">Grand Total</Text>
+                <Text fw={700} size="xl" c="blue">₹{(q.grandTotal || 0).toFixed(2)}</Text>
+              </Group>
+            </Stack>
+
+            {canConvert && (
+              <Button fullWidth mt="lg" color="teal" leftSection={<IconArrowRight size={16}/>} onClick={() => setConvertModal(true)}>
+                Convert to Invoice
+              </Button>
+            )}
+          </Paper>
+        </Grid.Col>
+      </Grid>
+
+      {/* Send Modal */}
+      <QuotationSendModal
+        opened={sendModal}
+        onClose={() => setSendModal(false)}
+        quotation={q}
+        onSent={fetchQuotation}
       />
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-        <div style={{ background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-          <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', fontWeight: '600', fontSize: '16px' }}>
-            Quotation Information
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)' }}>
-            <DescriptionRow label="Quotation Number" value={quotation.quotationNumber} />
-            <DescriptionRow label="Status" value={renderStatusTag(quotation.status || 'Draft')} />
-            <DescriptionRow label="Quotation Date" value={quotation.quotationDate ? dayjs(quotation.quotationDate).format('DD-MM-YYYY') : '-'} />
-            <DescriptionRow label="Valid Until" value={quotation.validUntil ? dayjs(quotation.validUntil).format('DD-MM-YYYY') : '-'} />
-          </div>
-        </div>
-
-        <div style={{ background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-          <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', fontWeight: '600', fontSize: '16px' }}>
-            Customer Information
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)' }}>
-            <DescriptionRow label="Customer Name" value={quotation.customerName || '-'} />
-            <DescriptionRow label="Phone" value={quotation.customerPhone || '-'} />
-            <DescriptionRow label="Email" value={quotation.customerEmail || '-'} />
-            <DescriptionRow label="Address" value={quotation.customerAddress || '-'} span={2} />
-          </div>
-        </div>
-
-        <div style={{ background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-          <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', fontWeight: '600', fontSize: '16px' }}>
-            Items
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
-                  <th style={{ padding: '12px', textAlign: 'left', fontWeight: '500', color: 'var(--text-secondary)' }}>#</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontWeight: '500', color: 'var(--text-secondary)' }}>Item Name</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontWeight: '500', color: 'var(--text-secondary)' }}>Description</th>
-                  <th style={{ padding: '12px', textAlign: 'right', fontWeight: '500', color: 'var(--text-secondary)' }}>Quantity</th>
-                  <th style={{ padding: '12px', textAlign: 'right', fontWeight: '500', color: 'var(--text-secondary)' }}>Rate</th>
-                  <th style={{ padding: '12px', textAlign: 'right', fontWeight: '500', color: 'var(--text-secondary)' }}>Tax %</th>
-                  <th style={{ padding: '12px', textAlign: 'right', fontWeight: '500', color: 'var(--text-secondary)' }}>Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {quotation.items && quotation.items.length > 0 ? (
-                  quotation.items.map((item, index) => (
-                    <tr key={index} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '12px', color: 'var(--text-primary)' }}>{index + 1}</td>
-                      <td style={{ padding: '12px', color: 'var(--text-primary)' }}>{item.itemName}</td>
-                      <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>{item.description || '-'}</td>
-                      <td style={{ padding: '12px', textAlign: 'right', color: 'var(--text-primary)' }}>{item.quantity}</td>
-                      <td style={{ padding: '12px', textAlign: 'right', color: 'var(--text-primary)' }}>₹{item.rate?.toFixed(2)}</td>
-                      <td style={{ padding: '12px', textAlign: 'right', color: 'var(--text-primary)' }}>{item.taxPercent || 0}%</td>
-                      <td style={{ padding: '12px', textAlign: 'right', color: 'var(--text-primary)' }}>₹{item.amount?.toFixed(2)}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="7" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                      No items added
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ padding: '16px', borderTop: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end', maxWidth: '300px', marginLeft: 'auto' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', padding: '4px 0' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Subtotal:</span>
-                <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>₹{totals.subtotal.toFixed(2)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', padding: '4px 0' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Tax Amount:</span>
-                <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>₹{totals.taxAmount.toFixed(2)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', padding: '4px 0' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Discount:</span>
-                <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>₹{(quotation.discount || 0).toFixed(2)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', padding: '8px 0', borderTop: '2px solid var(--border-color)' }}>
-                <span style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)' }}>Total Amount:</span>
-                <span style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)' }}>₹{totals.totalAmount.toFixed(2)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {(quotation.terms || quotation.notes) && (
-          <div style={{ background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-            <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', fontWeight: '600', fontSize: '16px' }}>
-              Additional Information
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(1, 1fr)' }}>
-              {quotation.terms && <DescriptionRow label="Terms & Conditions" value={quotation.terms} span={2} />}
-              {quotation.notes && <DescriptionRow label="Notes" value={quotation.notes} span={2} />}
-            </div>
-          </div>
-        )}
-
-        <div style={{ background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-          <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', fontWeight: '600', fontSize: '16px' }}>
-            System Information
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)' }}>
-            <DescriptionRow label="Created At" value={quotation.createdAt ? dayjs(quotation.createdAt).format('DD-MM-YYYY HH:mm') : '-'} />
-            <DescriptionRow label="Last Updated" value={quotation.updatedAt ? dayjs(quotation.updatedAt).format('DD-MM-YYYY HH:mm') : '-'} />
-          </div>
-        </div>
-      </div>
-    </div>
+      {/* Convert Modal */}
+      <Modal opened={convertModal} onClose={() => setConvertModal(false)} title="Convert to Invoice" size="sm">
+        <Stack>
+          <Text size="sm">This will create a sales invoice for <b>₹{(q.grandTotal || 0).toFixed(2)}</b></Text>
+          <Select
+            label="Payment Mode"
+            value={paymentMode}
+            onChange={setPaymentMode}
+            data={['Cash', 'Credit', 'Bank Transfer', 'UPI', 'Cheque']}
+          />
+          <NumberInput
+            label="Amount Received Now (₹)"
+            value={paidAmount}
+            onChange={setPaidAmount}
+            min={0}
+            max={q.grandTotal}
+            decimalScale={2}
+          />
+          <Group justify="flex-end" mt="sm">
+            <Button variant="default" onClick={() => setConvertModal(false)}>Cancel</Button>
+            <Button color="teal" loading={converting} onClick={handleConvert}>Convert</Button>
+          </Group>
+        </Stack>
+      </Modal>
+    </Container>
   );
 };
 

@@ -9,8 +9,10 @@ export const createStockTransaction = async (transactionData, session = null) =>
     quantity,
     freeQty,
     rate,
+    salesRate,
     referenceType,
     referenceId,
+    date,
     purchaseDate,
     invoiceDate,
     invoiceNumber,
@@ -57,10 +59,11 @@ export const createStockTransaction = async (transactionData, session = null) =>
     quantity,
     freeQty: freeQty || 0,
     rate: rate || 0,
+    salesRate: salesRate || 0,
     referenceType,
     referenceId,
     balanceAfter: newBalance,
-    date: new Date(),
+    date: date || new Date(),
     purchaseDate: purchaseDate || null,
     invoiceDate: invoiceDate || null,
     invoiceNumber: invoiceNumber || null,
@@ -200,6 +203,7 @@ export const getStockReport = async (category = null, status = 'Active') => {
     .select('itemCode itemName category unit currentBalance purchaseRate salesRate');
 
   return items.map(item => ({
+    _id: item._id,
     itemCode: item.itemCode,
     itemName: item.itemName,
     category: item.category,

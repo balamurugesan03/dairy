@@ -1,27 +1,22 @@
 import express from 'express';
 import {
   markAttendance,
-  updateAttendance,
-  getAttendanceById,
-  getAllAttendance,
-  getAttendanceByDate,
-  getMonthlyAttendanceSummary,
-  getAttendanceReport,
   bulkMarkAttendance,
-  deleteAttendance
+  getAllAttendance,
+  getAttendanceById,
+  updateAttendance,
+  deleteAttendance,
+  getAttendanceByDate,
+  getMonthlySummary,
+  getAttendanceReport
 } from '../controllers/attendanceController.js';
 
 const router = express.Router();
 
-// Reports
 router.get('/report', getAttendanceReport);
 router.get('/by-date', getAttendanceByDate);
-router.get('/:employeeId/summary', getMonthlyAttendanceSummary);
-
-// Bulk operations
+router.get('/:employeeId/summary', getMonthlySummary);
 router.post('/bulk', bulkMarkAttendance);
-
-// CRUD operations
 router.post('/', markAttendance);
 router.get('/', getAllAttendance);
 router.get('/:id', getAttendanceById);

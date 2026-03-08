@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCompany } from '../../../context/CompanyContext';
-import { reportAPI, itemAPI } from '../../../services/api';
+import { reportAPI, businessItemAPI } from '../../../services/api';
 import { message } from '../../../utils/toast';
 import dayjs from 'dayjs';
 import {
@@ -61,7 +61,7 @@ const VyaparStockSummary = () => {
   const fetchCategories = async () => {
     try {
       // Only fetch Business inventory items for Vyapar reports
-      const response = await itemAPI.getAll({ limit: 1000, inventoryType: 'Business' });
+      const response = await businessItemAPI.getAll({ limit: 1000 });
       const items = response.data?.items || response.data || [];
       const uniqueCategories = [...new Set(items.map(item => item.category).filter(Boolean))];
       setCategories(uniqueCategories.map(cat => ({ value: cat, label: cat })));
@@ -378,7 +378,7 @@ const VyaparStockSummary = () => {
             backgroundColor: '#fff'
           }}
         >
-          <LoadingOverlay visible={loading} overlayBlur={1} />
+          <LoadingOverlay visible={loading} overlayProps={{ blur: 1 }} />
 
           <div style={{ overflowX: 'auto' }}>
             <Table

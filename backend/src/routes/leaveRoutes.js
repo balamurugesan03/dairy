@@ -3,31 +3,20 @@ import {
   applyLeave,
   getAllLeaves,
   getLeaveById,
-  updateLeave,
   approveLeave,
   rejectLeave,
-  cancelLeave,
-  getPendingLeaves,
-  getLeaveSummary,
-  getUpcomingLeaves,
-  deleteLeave
+  deleteLeave,
+  getLeaveSummary
 } from '../controllers/leaveController.js';
 
 const router = express.Router();
 
-// Special operations
-router.get('/pending', getPendingLeaves);
-router.get('/upcoming', getUpcomingLeaves);
-router.get('/:employeeId/summary', getLeaveSummary);
-router.patch('/:id/approve', approveLeave);
-router.patch('/:id/reject', rejectLeave);
-router.patch('/:id/cancel', cancelLeave);
-
-// CRUD operations
 router.post('/', applyLeave);
 router.get('/', getAllLeaves);
+router.get('/:employeeId/summary', getLeaveSummary);
 router.get('/:id', getLeaveById);
-router.put('/:id', updateLeave);
+router.patch('/:id/approve', approveLeave);
+router.patch('/:id/reject', rejectLeave);
 router.delete('/:id', deleteLeave);
 
 export default router;

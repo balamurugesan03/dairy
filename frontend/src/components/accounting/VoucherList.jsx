@@ -198,11 +198,11 @@ const VoucherList = () => {
             <Box sx={{ color: getTypeColor(voucher.voucherType) }}>
               {getTypeIcon(voucher.voucherType)}
             </Box>
-            <Text size="sm" weight={500}>
+            <Text size="sm" fw={500}>
               {voucher.voucherNumber}
             </Text>
           </Group>
-          <Text size="xs" color="dimmed">
+          <Text size="xs" c="dimmed">
             Ref: {voucher.referenceNumber || '-'}
           </Text>
         </td>
@@ -220,23 +220,23 @@ const VoucherList = () => {
           </Badge>
         </td>
         <td style={{ textAlign: 'right' }}>
-          <Group spacing={4} position="right" noWrap>
+          <Group gap={4} justify="flex-end" noWrap>
             <IconTrendingUp size={14} color="red" />
-            <Text weight={600} color="red" size="sm">
+            <Text fw={600} c="red" size="sm">
               ₹{(voucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
           </Group>
         </td>
         <td style={{ textAlign: 'right' }}>
-          <Group spacing={4} position="right" noWrap>
+          <Group gap={4} justify="flex-end" noWrap>
             <IconTrendingDown size={14} color="green" />
-            <Text weight={600} color="green" size="sm">
+            <Text fw={600} c="green" size="sm">
               ₹{(voucher.totalCredit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
           </Group>
         </td>
         <td>
-          <Text size="sm" color={isManual ? 'blue' : 'dimmed'} weight={isManual ? 500 : 400}>
+          <Text size="sm" c={isManual ? 'blue' : 'dimmed'} fw={isManual ? 500 : 400}>
             {voucher.referenceType}
           </Text>
         </td>
@@ -299,10 +299,10 @@ const VoucherList = () => {
     <Container size="xl" py="md">
       {/* Header Section */}
       <Paper p="lg" mb="md" withBorder shadow="sm" radius="md" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-        <Group position="apart">
+        <Group justify="space-between">
           <Box>
-            <Title order={2} color="white">Voucher Management</Title>
-            <Text color="white" size="sm" opacity={0.9}>
+            <Title order={2} c="white">Voucher Management</Title>
+            <Text c="white" size="sm" opacity={0.9}>
               Manage all accounting vouchers in one place
             </Text>
           </Box>
@@ -438,9 +438,9 @@ const VoucherList = () => {
 
       {/* Financial Summary */}
       <Card withBorder p="lg" radius="md" mb="md">
-        <Group position="apart" mb="md">
+        <Group justify="space-between" mb="md">
           <Title order={4}>
-            <Group spacing="xs">
+            <Group gap="xs">
               <IconChartBar size={20} />
               Financial Summary
             </Group>
@@ -454,33 +454,33 @@ const VoucherList = () => {
           </Badge>
         </Group>
         
-        <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="lg">
+        <SimpleGrid cols={{ base: 1, sm: 3 }} gap="lg">
           <Paper p="md" withBorder>
-            <Group position="apart">
-              <Text size="sm" color="dimmed">Total Debits</Text>
+            <Group justify="space-between">
+              <Text size="sm" c="dimmed">Total Debits</Text>
               <IconTrendingUp size={18} color="red" />
             </Group>
-            <Text size="xl" weight={700} color="red" mt="xs">
+            <Text size="xl" fw={700} c="red" mt="xs">
               ₹{stats.totalDebits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
           </Paper>
           
           <Paper p="md" withBorder>
-            <Group position="apart">
-              <Text size="sm" color="dimmed">Total Credits</Text>
+            <Group justify="space-between">
+              <Text size="sm" c="dimmed">Total Credits</Text>
               <IconTrendingDown size={18} color="green" />
             </Group>
-            <Text size="xl" weight={700} color="green" mt="xs">
+            <Text size="xl" fw={700} c="green" mt="xs">
               ₹{stats.totalCredits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
           </Paper>
           
           <Paper p="md" withBorder>
-            <Group position="apart">
-              <Text size="sm" color="dimmed">Difference</Text>
+            <Group justify="space-between">
+              <Text size="sm" c="dimmed">Difference</Text>
               {stats.difference < 0.01 ? <IconCheck size={18} color="green" /> : <IconX size={18} color="red" />}
             </Group>
-            <Text size="xl" weight={700} color={stats.difference < 0.01 ? 'green' : 'red'} mt="xs">
+            <Text size="xl" fw={700} c={stats.difference < 0.01 ? 'green' : 'red'} mt="xs">
               ₹{stats.difference.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
           </Paper>
@@ -556,16 +556,16 @@ const VoucherList = () => {
       <Paper p="md" withBorder shadow="sm" radius="md">
         <LoadingOverlay visible={loading} overlayProps={{ blur: 2 }} />
 
-        <Group position="apart" mb="md">
+        <Group justify="space-between" mb="md">
           <Title order={4}>Voucher List</Title>
-          <Group spacing="xs">
+          <Group gap="xs">
             <ExportButton
               data={exportData}
               filename={`vouchers_${dayjs().format('YYYY-MM-DD')}`}
               buttonText="Export"
               variant="light"
             />
-            <Text size="sm" color="dimmed">
+            <Text size="sm" c="dimmed">
               Showing {filteredVouchers.length} of {vouchers.length} vouchers
             </Text>
           </Group>
@@ -573,10 +573,10 @@ const VoucherList = () => {
 
         {filteredVouchers.length === 0 ? (
           <Card p="xl" withBorder>
-            <Stack align="center" spacing="md">
+            <Stack align="center" gap="md">
               <IconReceipt2 size={64} color="gray" />
-              <Text color="dimmed" size="lg">No vouchers found</Text>
-              <Text color="dimmed" size="sm" ta="center">
+              <Text c="dimmed" size="lg">No vouchers found</Text>
+              <Text c="dimmed" size="sm" ta="center">
                 Try adjusting your search or filter criteria
               </Text>
               <Button
@@ -591,7 +591,7 @@ const VoucherList = () => {
         ) : (
           <>
             <ScrollArea>
-              <Table striped highlightOnHover withBorder verticalSpacing="sm">
+              <Table striped highlightOnHover withTableBorder verticalSpacing="sm">
                 <thead>
                   <tr style={{ backgroundColor: '#f8f9fa' }}>
                     <th style={{ width: '60px', textAlign: 'center' }}>#</th>
@@ -621,41 +621,41 @@ const VoucherList = () => {
         radius="md"
       >
         {selectedVoucher && (
-          <Stack spacing="md">
-            <Group position="apart">
+          <Stack gap="md">
+            <Group justify="space-between">
               <Badge color={getTypeColor(selectedVoucher.voucherType)} size="lg">
                 {selectedVoucher.voucherType}
               </Badge>
-              <Text weight={500}>{selectedVoucher.voucherNumber}</Text>
+              <Text fw={500}>{selectedVoucher.voucherNumber}</Text>
             </Group>
             
             <Divider />
             
-            <SimpleGrid cols={2}>
+            <SimpleGrid cols={2} gap="md">
               <Box>
-                <Text size="sm" color="dimmed">Date</Text>
-                <Text weight={500}>{dayjs(selectedVoucher.voucherDate).format('DD-MM-YYYY')}</Text>
+                <Text size="sm" c="dimmed">Date</Text>
+                <Text fw={500}>{dayjs(selectedVoucher.voucherDate).format('DD-MM-YYYY')}</Text>
               </Box>
               <Box>
-                <Text size="sm" color="dimmed">Reference</Text>
-                <Text weight={500}>{selectedVoucher.referenceNumber || '-'}</Text>
+                <Text size="sm" c="dimmed">Reference</Text>
+                <Text fw={500}>{selectedVoucher.referenceNumber || '-'}</Text>
               </Box>
               <Box>
-                <Text size="sm" color="dimmed">Total Debit</Text>
-                <Text weight={500} color="red">
+                <Text size="sm" c="dimmed">Total Debit</Text>
+                <Text fw={500} c="red">
                   ₹{(selectedVoucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </Text>
               </Box>
               <Box>
-                <Text size="sm" color="dimmed">Total Credit</Text>
-                <Text weight={500} color="green">
+                <Text size="sm" c="dimmed">Total Credit</Text>
+                <Text fw={500} c="green">
                   ₹{(selectedVoucher.totalCredit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </Text>
               </Box>
             </SimpleGrid>
             
             <Box>
-              <Text size="sm" color="dimmed">Narration</Text>
+              <Text size="sm" c="dimmed">Narration</Text>
               <Paper p="sm" withBorder bg="gray.0">
                 <Text size="sm">{selectedVoucher.narration || 'No narration'}</Text>
               </Paper>
@@ -663,7 +663,7 @@ const VoucherList = () => {
             
             <Divider />
             
-            <Group position="right">
+            <Group justify="flex-end">
               <Button
                 variant="light"
                 onClick={() => navigate(`/accounting/vouchers/view/${selectedVoucher._id}`)}

@@ -1,0 +1,232 @@
+import mongoose from 'mongoose';
+
+const dairyPurchaseReturnSchema = new mongoose.Schema({
+  returnNumber: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true
+  },
+  returnDate: {
+    type: Date,
+    required: true,
+    default: Date.now
+  },
+
+  // Supplier Details
+  supplierId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Supplier'
+  },
+  supplierName: {
+    type: String,
+    trim: true
+  },
+  supplierPhone: {
+    type: String,
+    trim: true
+  },
+  supplierAddress: {
+    type: String,
+    trim: true
+  },
+  supplierGstin: {
+    type: String,
+    trim: true
+  },
+  supplierState: {
+    type: String,
+    trim: true
+  },
+
+  // Original Invoice Reference
+  originalInvoiceRef: {
+    type: String,
+    trim: true
+  },
+  originalInvoiceDate: {
+    type: Date
+  },
+  reason: {
+    type: String,
+    trim: true
+  },
+
+  // Items
+  items: [{
+    itemId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Item',
+      required: true
+    },
+    itemCode: {
+      type: String,
+      trim: true
+    },
+    itemName: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    hsnCode: {
+      type: String,
+      trim: true
+    },
+    quantity: {
+      type: Number,
+      required: true,
+      min: 0
+    },
+    unit: {
+      type: String,
+      trim: true
+    },
+    rate: {
+      type: Number,
+      required: true,
+      min: 0
+    },
+    discountPercent: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    discountAmount: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    taxableAmount: {
+      type: Number,
+      required: true,
+      min: 0
+    },
+    gstPercent: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    cgstAmount: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    sgstAmount: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    igstAmount: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    totalAmount: {
+      type: Number,
+      required: true,
+      min: 0
+    }
+  }],
+
+  // Bill Summary
+  totalQty: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  grossAmount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  itemDiscount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  taxableAmount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  totalCgst: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  totalSgst: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  totalIgst: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  totalGst: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  roundOff: {
+    type: Number,
+    default: 0
+  },
+  grandTotal: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+
+  // Payment Details
+  paymentMode: {
+    type: String,
+    enum: ['Cash', 'Credit', 'Bank', 'UPI', 'Cheque', 'Adjustment'],
+    default: 'Cash'
+  },
+  paymentStatus: {
+    type: String,
+    enum: ['Received', 'Partial', 'Pending'],
+    default: 'Pending'
+  },
+  receivedAmount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  balanceAmount: {
+    type: Number,
+    default: 0
+  },
+
+  // Notes & Status
+  notes: {
+    type: String,
+    trim: true
+  },
+  status: {
+    type: String,
+    enum: ['Active', 'Cancelled'],
+    default: 'Active'
+  },
+
+  // Business Reference
+  businessType: {
+    type: String,
+    default: 'Dairy Cooperative'
+  }
+}, {
+  timestamps: true
+});
+
+// Indexes
+dairyPurchaseReturnSchema.index({ returnDate: -1 });
+dairyPurchaseReturnSchema.index({ supplierId: 1 });
+dairyPurchaseReturnSchema.index({ returnNumber: 1 });
+dairyPurchaseReturnSchema.index({ paymentStatus: 1 });
+dairyPurchaseReturnSchema.index({ status: 1 });
+
+const DairyPurchaseReturn = mongoose.model('DairyPurchaseReturn', dairyPurchaseReturnSchema);
+
+export default DairyPurchaseReturn;

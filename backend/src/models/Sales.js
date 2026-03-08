@@ -63,8 +63,22 @@ const salesSchema = new mongoose.Schema({
       type: Number,
       default: 0,
       min: 0
+    },
+    subsidyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Subsidy'
+    },
+    subsidyAmount: {
+      type: Number,
+      default: 0,
+      min: 0
     }
   }],
+  totalSubsidy: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   subtotal: {
     type: Number,
     required: true,
@@ -98,7 +112,7 @@ const salesSchema = new mongoose.Schema({
   },
   paymentMode: {
     type: String,
-    enum: ['Cash', 'Credit', 'Bank'],
+    enum: ['Cash', 'Credit', 'Bank', 'Card', 'UPI'],
     default: 'Cash'
   },
   paidAmount: {
@@ -109,6 +123,19 @@ const salesSchema = new mongoose.Schema({
   balanceAmount: {
     type: Number,
     default: 0
+  },
+  couponCode: {
+    type: String,
+    trim: true
+  },
+  promotionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'BusinessPromotion'
+  },
+  promotionDiscount: {
+    type: Number,
+    default: 0,
+    min: 0
   },
   ledgerEntries: [{
     type: mongoose.Schema.Types.ObjectId,
