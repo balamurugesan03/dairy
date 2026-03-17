@@ -1,8 +1,7 @@
 import BusinessItem from '../models/BusinessItem.js';
 import BusinessStockTransaction from '../models/BusinessStockTransaction.js';
-import Ledger from '../models/Ledger.js';
+import BusinessLedger from '../models/BusinessLedger.js';
 import Supplier from '../models/Supplier.js';
-import Voucher from '../models/Voucher.js';
 
 // Helper function to generate next business item code
 const generateBusinessItemCode = async (companyId) => {
@@ -28,26 +27,23 @@ const generateBusinessItemCode = async (companyId) => {
   }
 };
 
-// Helper function to find or create category-based ledger
+// Helper — find or create a category-based ledger in BusinessLedger (not Ledger/dairy)
 const findOrCreateCategoryLedger = async (category, ledgerType, companyId) => {
   const isPurchase = ledgerType === 'purchase';
   const ledgerName = `Business ${category} ${isPurchase ? 'Purchase' : 'Sales'}`;
 
-  let ledger = await Ledger.findOne({ ledgerName, status: 'Active', companyId });
+  let ledger = await BusinessLedger.findOne({ name: ledgerName, status: 'Active', companyId });
 
   if (!ledger) {
-    ledger = new Ledger({
-      ledgerName,
-      ledgerType: isPurchase ? 'Purchases A/c' : 'Sales A/c',
-      linkedEntity: {
-        entityType: 'None'
-      },
+    ledger = new BusinessLedger({
+      name: ledgerName,
+      group: isPurchase ? 'Purchase Accounts' : 'Sales Accounts',
+      type: isPurchase ? 'Expense' : 'Income',
       openingBalance: 0,
-      openingBalanceType: isPurchase ? 'Dr' : 'Cr',
+      openingBalanceType: isPurchase ? 'Debit' : 'Credit',
       currentBalance: 0,
-      balanceType: isPurchase ? 'Dr' : 'Cr',
-      parentGroup: isPurchase ? 'Purchase Accounts' : 'Sales Accounts',
       status: 'Active',
+      businessType: 'Private Firm',
       companyId
     });
     await ledger.save();

@@ -1,9 +1,12 @@
 import BusinessSales from '../models/BusinessSales.js';
 import BusinessItem from '../models/BusinessItem.js';
 import BusinessStockTransaction from '../models/BusinessStockTransaction.js';
-import Customer from '../models/Customer.js';
-import Voucher from '../models/Voucher.js';
-import Ledger from '../models/Ledger.js';
+import BusinessVoucher from '../models/BusinessVoucher.js';
+import BusinessLedger from '../models/BusinessLedger.js';
+import {
+  generateBusinessVoucherNumber,
+  applyLedgerBalanceChange
+} from './businessAccountingController.js';
 
 // Generate Invoice Number
 const generateInvoiceNumber = async (prefix = 'INV', companyId = null) => {
@@ -19,10 +22,20 @@ const generateInvoiceNumber = async (prefix = 'INV', companyId = null) => {
   let sequence = 1;
   if (lastSale) {
     const lastSequence = parseInt(lastSale.invoiceNumber.slice(-4));
-    sequence = lastSequence + 1;
+    if (!isNaN(lastSequence)) sequence = lastSequence + 1;
   }
 
   return `${prefix}${year}${month}${sequence.toString().padStart(4, '0')}`;
+};
+
+// Find or create a system ledger in BusinessLedger
+const getOrCreateBusinessLedger = async (name, group, type, companyId) => {
+  let ledger = await BusinessLedger.findOne({ name, companyId, status: 'Active' });
+  if (!ledger) {
+    ledger = new BusinessLedger({ name, group, type, companyId, businessType: 'Private Firm' });
+    await ledger.save();
+  }
+  return ledger;
 };
 
 // Create Business Sale
@@ -77,6 +90,7 @@ export const createBusinessSale = async (req, res) => {
     let totalCgst = 0;
     let totalSgst = 0;
     let totalIgst = 0;
+    let totalCOGS = 0;
 
     const processedItems = [];
 
@@ -85,8 +99,6 @@ export const createBusinessSale = async (req, res) => {
       if (!businessItem) {
         return res.status(404).json({ message: `Item not found: ${item.itemId}` });
       }
-
-      // Note: Negative stock is allowed (Vyapar-style — sell first, receive later)
 
       const qty = parseFloat(item.quantity) || 0;
       const rate = parseFloat(item.rate) || businessItem.salesRate || 0;
@@ -97,8 +109,8 @@ export const createBusinessSale = async (req, res) => {
       const discountAmount = (amount * discountPercent) / 100;
       const taxable = amount - discountAmount;
 
-      // Calculate GST (split into CGST/SGST for same state, IGST for different)
-      const isInterState = partyState && partyState !== 'Tamil Nadu'; // Assuming business is in TN
+      // IGST for inter-state, CGST+SGST for intra-state
+      const isInterState = partyState && partyState !== 'Tamil Nadu';
       let cgst = 0, sgst = 0, igst = 0;
 
       if (isInterState) {
@@ -109,6 +121,10 @@ export const createBusinessSale = async (req, res) => {
       }
 
       const totalAmount = taxable + cgst + sgst + igst;
+
+      // COGS = purchase price × qty (perpetual inventory)
+      const costPrice = businessItem.purchasePrice || 0;
+      totalCOGS += costPrice * qty;
 
       processedItems.push({
         itemId: item.itemId,
@@ -153,13 +169,9 @@ export const createBusinessSale = async (req, res) => {
     const paid = parseFloat(paidAmount) || 0;
     const balance = totalDue - paid;
 
-    // Determine payment status
     let paymentStatus = 'Unpaid';
-    if (paid >= totalDue) {
-      paymentStatus = 'Paid';
-    } else if (paid > 0) {
-      paymentStatus = 'Partial';
-    }
+    if (paid >= totalDue) paymentStatus = 'Paid';
+    else if (paid > 0) paymentStatus = 'Partial';
 
     // Create sale record
     const sale = new BusinessSales({
@@ -218,15 +230,12 @@ export const createBusinessSale = async (req, res) => {
         const totalQtyWithFree = item.quantity + (item.freeQty || 0);
 
         if (invoiceType === 'Sale') {
-          // Reduce stock for sales
           businessItem.currentBalance -= totalQtyWithFree;
         } else {
-          // Increase stock for returns
           businessItem.currentBalance += totalQtyWithFree;
         }
         await businessItem.save();
 
-        // Create stock transaction
         const stockTransaction = new BusinessStockTransaction({
           itemId: item.itemId,
           transactionType: invoiceType === 'Sale' ? 'Stock Out' : 'Stock In',
@@ -242,209 +251,153 @@ export const createBusinessSale = async (req, res) => {
       }
     }
 
-    // Create accounting voucher (for Sales only)
+    // ── Accounting Voucher (BusinessVoucher, not Voucher) ──
     if (invoiceType === 'Sale' && grandTotal > 0) {
       try {
-        // Find Sales ledger (ledgerName field, not name)
-        let salesLedger = await Ledger.findOne({ ledgerName: 'Business Sales', ledgerType: 'Sales A/c' });
-        if (!salesLedger) {
-          salesLedger = await Ledger.findOne({ ledgerType: 'Sales A/c' });
-        }
-        if (!salesLedger) {
-          salesLedger = new Ledger({
-            ledgerName: 'Business Sales',
-            ledgerType: 'Sales A/c',
-            linkedEntity: { entityType: 'None' },
-            openingBalance: 0,
-            openingBalanceType: 'Cr',
-            currentBalance: 0,
-            balanceType: 'Cr',
-            parentGroup: 'Sales Accounts',
-            status: 'Active'
-          });
-          await salesLedger.save();
-        }
+        // Resolve all required BusinessLedger accounts
+        const salesLedger = await getOrCreateBusinessLedger(
+          'Business Sales', 'Sales Accounts', 'Income', companyId
+        );
+        const cogsLedger = await getOrCreateBusinessLedger(
+          'Cost of Goods Sold', 'Direct Expenses', 'Expense', companyId
+        );
+        const stockLedger = await getOrCreateBusinessLedger(
+          'Stock In Hand', 'Stock-in-Hand', 'Asset', companyId
+        );
 
-        // Find Cash ledger (used by Cash in Hand report)
-        const cashLedger = await Ledger.findOne({ ledgerType: 'Cash', status: 'Active' });
-
-        // Find party/customer ledger for credit sales
-        let partyLedger = null;
-        if (partyId) {
-          const customer = await Customer.findById(partyId);
-          if (customer && customer.ledgerId) {
-            partyLedger = await Ledger.findById(customer.ledgerId);
-          }
-        }
-
-        // Build voucher entries based on payment mode
-        const voucherEntries = [];
         const effectivePaymentMode = paymentMode || 'Cash';
-        const paidAmt = paid;
-        const balanceAmt = grandTotal - paidAmt;
+        const voucherEntries = [];
 
-        if (effectivePaymentMode === 'Cash' && cashLedger && paidAmt > 0) {
-          // Dr. Cash (amount received)
-          voucherEntries.push({
-            ledgerId: cashLedger._id,
-            ledgerName: cashLedger.ledgerName,
-            debitAmount: paidAmt,
-            creditAmount: 0
+        // ── Debit side: who pays us ──
+        if (effectivePaymentMode === 'Cash' || effectivePaymentMode === 'UPI' || effectivePaymentMode === 'Card') {
+          // Fully cash/digital — debit cash ledger
+          const cashLedger = await BusinessLedger.findOne({
+            group: 'Cash-in-Hand', status: 'Active', companyId
           });
-
-          // Dr. Party ledger for remaining balance (credit portion)
-          if (balanceAmt > 0 && partyLedger) {
-            voucherEntries.push({
-              ledgerId: partyLedger._id,
-              ledgerName: partyLedger.ledgerName,
-              debitAmount: balanceAmt,
-              creditAmount: 0
-            });
+          if (cashLedger && paid > 0) {
+            voucherEntries.push({ ledgerId: cashLedger._id, ledgerName: cashLedger.name, type: 'debit', amount: paid });
+          }
+          if (balance > 0) {
+            // Remaining goes to Sundry Debtors (walkthrough or partial credit)
+            const debtorLedger = partyId
+              ? await BusinessLedger.findOne({ 'partyDetails._id': partyId, companyId })
+              : null;
+            const fallbackDebtor = await getOrCreateBusinessLedger(
+              partyName || 'Sundry Debtors', 'Sundry Debtors', 'Asset', companyId
+            );
+            const dl = debtorLedger || fallbackDebtor;
+            voucherEntries.push({ ledgerId: dl._id, ledgerName: dl.name, type: 'debit', amount: balance });
+          }
+        } else if (effectivePaymentMode === 'Bank' || effectivePaymentMode === 'Cheque') {
+          const bankLedger = await BusinessLedger.findOne({
+            group: 'Bank Accounts', status: 'Active', companyId
+          });
+          if (bankLedger && paid > 0) {
+            voucherEntries.push({ ledgerId: bankLedger._id, ledgerName: bankLedger.name, type: 'debit', amount: paid });
+          }
+          if (balance > 0) {
+            const fallbackDebtor = await getOrCreateBusinessLedger(
+              partyName || 'Sundry Debtors', 'Sundry Debtors', 'Asset', companyId
+            );
+            voucherEntries.push({ ledgerId: fallbackDebtor._id, ledgerName: fallbackDebtor.name, type: 'debit', amount: balance });
           }
         } else {
-          // Credit sale or bank payment — debit party ledger for full amount
-          if (partyLedger) {
-            voucherEntries.push({
-              ledgerId: partyLedger._id,
-              ledgerName: partyLedger.ledgerName,
-              debitAmount: grandTotal,
-              creditAmount: 0
-            });
-          } else if (cashLedger) {
-            // No party — walk-in cash sale
-            voucherEntries.push({
-              ledgerId: cashLedger._id,
-              ledgerName: cashLedger.ledgerName,
-              debitAmount: grandTotal,
-              creditAmount: 0
-            });
-          }
+          // Credit sale — full amount to debtor
+          const debtorLedger = await getOrCreateBusinessLedger(
+            partyName || 'Sundry Debtors', 'Sundry Debtors', 'Asset', companyId
+          );
+          voucherEntries.push({ ledgerId: debtorLedger._id, ledgerName: debtorLedger.name, type: 'debit', amount: grandTotal });
         }
 
-        // Cr. Sales ledger (taxable amount after bill discount + roundOff to balance)
+        // ── Credit side: revenue + GST output ──
+        const netSalesAmount = taxableAmount - calculatedBillDiscount + finalRoundOff;
         voucherEntries.push({
-          ledgerId: salesLedger._id,
-          ledgerName: salesLedger.ledgerName,
-          debitAmount: 0,
-          creditAmount: taxableAmount - calculatedBillDiscount + finalRoundOff
+          ledgerId: salesLedger._id, ledgerName: salesLedger.name,
+          type: 'credit', amount: netSalesAmount
         });
 
-        // Cr. GST ledgers if applicable
         if (totalCgst > 0) {
-          let cgstLedger = await Ledger.findOne({ ledgerName: 'CGST Payable' });
-          if (!cgstLedger) {
-            cgstLedger = new Ledger({
-              ledgerName: 'CGST Payable',
-              ledgerType: 'Other Payable',
-              linkedEntity: { entityType: 'None' },
-              openingBalance: 0,
-              openingBalanceType: 'Cr',
-              currentBalance: 0,
-              balanceType: 'Cr',
-              parentGroup: 'Duties & Taxes',
-              status: 'Active'
-            });
-            await cgstLedger.save();
-          }
+          const cgstLedger = await getOrCreateBusinessLedger('CGST Output', 'Duties & Taxes', 'Liability', companyId);
           voucherEntries.push({
-            ledgerId: cgstLedger._id,
-            ledgerName: cgstLedger.ledgerName,
-            debitAmount: 0,
-            creditAmount: totalCgst
+            ledgerId: cgstLedger._id, ledgerName: cgstLedger.name,
+            type: 'credit', amount: totalCgst,
+            isGSTLine: true, gstComponent: 'CGST'
           });
         }
-
         if (totalSgst > 0) {
-          let sgstLedger = await Ledger.findOne({ ledgerName: 'SGST Payable' });
-          if (!sgstLedger) {
-            sgstLedger = new Ledger({
-              ledgerName: 'SGST Payable',
-              ledgerType: 'Other Payable',
-              linkedEntity: { entityType: 'None' },
-              openingBalance: 0,
-              openingBalanceType: 'Cr',
-              currentBalance: 0,
-              balanceType: 'Cr',
-              parentGroup: 'Duties & Taxes',
-              status: 'Active'
-            });
-            await sgstLedger.save();
-          }
+          const sgstLedger = await getOrCreateBusinessLedger('SGST Output', 'Duties & Taxes', 'Liability', companyId);
           voucherEntries.push({
-            ledgerId: sgstLedger._id,
-            ledgerName: sgstLedger.ledgerName,
-            debitAmount: 0,
-            creditAmount: totalSgst
+            ledgerId: sgstLedger._id, ledgerName: sgstLedger.name,
+            type: 'credit', amount: totalSgst,
+            isGSTLine: true, gstComponent: 'SGST'
           });
         }
-
         if (totalIgst > 0) {
-          let igstLedger = await Ledger.findOne({ ledgerName: 'IGST Payable' });
-          if (!igstLedger) {
-            igstLedger = new Ledger({
-              ledgerName: 'IGST Payable',
-              ledgerType: 'Other Payable',
-              linkedEntity: { entityType: 'None' },
-              openingBalance: 0,
-              openingBalanceType: 'Cr',
-              currentBalance: 0,
-              balanceType: 'Cr',
-              parentGroup: 'Duties & Taxes',
-              status: 'Active'
-            });
-            await igstLedger.save();
-          }
+          const igstLedger = await getOrCreateBusinessLedger('IGST Output', 'Duties & Taxes', 'Liability', companyId);
           voucherEntries.push({
-            ledgerId: igstLedger._id,
-            ledgerName: igstLedger.ledgerName,
-            debitAmount: 0,
-            creditAmount: totalIgst
+            ledgerId: igstLedger._id, ledgerName: igstLedger.name,
+            type: 'credit', amount: totalIgst,
+            isGSTLine: true, gstComponent: 'IGST'
           });
         }
 
-        if (voucherEntries.length > 0) {
-          const totalDebit = voucherEntries.reduce((s, e) => s + (e.debitAmount || 0), 0);
-          const totalCredit = voucherEntries.reduce((s, e) => s + (e.creditAmount || 0), 0);
+        // ── COGS entry — Dr COGS / Cr Stock (perpetual inventory) ──
+        if (totalCOGS > 0) {
+          voucherEntries.push({
+            ledgerId: cogsLedger._id, ledgerName: cogsLedger.name,
+            type: 'debit', amount: totalCOGS,
+            isStockLine: true
+          });
+          voucherEntries.push({
+            ledgerId: stockLedger._id, ledgerName: stockLedger.name,
+            type: 'credit', amount: totalCOGS,
+            isStockLine: true
+          });
+        }
 
-          // voucherType: only 'Receipt','Payment','Journal' allowed in schema
-          // Cash sales = Receipt (money received); credit sales = Journal
-          const effectiveVoucherType = (effectivePaymentMode === 'Cash' && paidAmt > 0) ? 'Receipt' : 'Journal';
+        // Validate balance before saving
+        const checkDebit = voucherEntries.filter(e => e.type === 'debit').reduce((s, e) => s + e.amount, 0);
+        const checkCredit = voucherEntries.filter(e => e.type === 'credit').reduce((s, e) => s + e.amount, 0);
 
-          const voucher = new Voucher({
-            voucherNumber: `SV-${invoiceNumber}`,
-            voucherType: effectiveVoucherType,
-            voucherDate: invoiceDate ? new Date(invoiceDate) : new Date(),
+        if (Math.abs(checkDebit - checkCredit) <= 0.01 && voucherEntries.length >= 2) {
+          const voucherNumber = await generateBusinessVoucherNumber('Sales', companyId);
+
+          const voucher = new BusinessVoucher({
+            voucherNumber,
+            voucherType: 'Sales',
+            date: invoiceDate ? new Date(invoiceDate) : new Date(),
             entries: voucherEntries,
-            totalDebit,
-            totalCredit,
-            narration: `Business Sales Invoice ${invoiceNumber} - ${partyName || 'Walk-in Customer'}`,
-            referenceType: 'Sales',
-            referenceId: sale._id
+            totalDebit: checkDebit,
+            totalCredit: checkCredit,
+            narration: `Business Sales Invoice ${invoiceNumber} — ${partyName || 'Walk-in Customer'}`,
+            referenceType: 'BusinessSales',
+            referenceId: sale._id,
+            referenceNumber: invoiceNumber,
+            partyId: partyId || null,
+            partyName: partyName || '',
+            status: 'Posted',
+            businessType: 'Private Firm',
+            companyId
           });
           await voucher.save();
 
-          // Update ledger balances (debit increases Asset/Cash, credit increases Income/Liability)
+          // Update BusinessLedger balances — nature-aware
           for (const entry of voucherEntries) {
-            const ledger = await Ledger.findById(entry.ledgerId);
+            const ledger = await BusinessLedger.findById(entry.ledgerId);
             if (!ledger) continue;
-            const netChange = (entry.debitAmount || 0) - (entry.creditAmount || 0);
-            if (['Asset', 'Cash', 'Bank', 'Other Receivable', 'Party'].includes(ledger.ledgerType)) {
-              ledger.currentBalance += netChange;
-              ledger.balanceType = ledger.currentBalance >= 0 ? 'Dr' : 'Cr';
-            } else {
-              // Income, Liability, Sales A/c, Other Payable
-              ledger.currentBalance -= netChange;
-              ledger.balanceType = ledger.currentBalance >= 0 ? 'Cr' : 'Dr';
-            }
+            applyLedgerBalanceChange(ledger, entry.type, entry.amount);
             await ledger.save();
           }
 
           sale.voucherId = voucher._id;
-          sale.ledgerEntries.push(voucher._id);
+          if (sale.ledgerEntries) sale.ledgerEntries.push(voucher._id);
           await sale.save();
+        } else {
+          console.warn(`Sales voucher skipped — imbalanced: Dr=${checkDebit} Cr=${checkCredit}`);
         }
       } catch (voucherError) {
-        console.error('Voucher creation error:', voucherError);
+        console.error('Business sales voucher creation error:', voucherError.message);
+        // Non-fatal — sale record is already saved
       }
     }
 
@@ -478,27 +431,13 @@ export const getAllBusinessSales = async (req, res) => {
         { partyPhone: { $regex: search, $options: 'i' } }
       ];
     }
-
-    if (invoiceType) {
-      query.invoiceType = invoiceType;
-    }
-
-    if (paymentStatus) {
-      query.paymentStatus = paymentStatus;
-    }
-
-    if (partyId) {
-      query.partyId = partyId;
-    }
-
+    if (invoiceType) query.invoiceType = invoiceType;
+    if (paymentStatus) query.paymentStatus = paymentStatus;
+    if (partyId) query.partyId = partyId;
     if (startDate || endDate) {
       query.invoiceDate = {};
-      if (startDate) {
-        query.invoiceDate.$gte = new Date(startDate);
-      }
-      if (endDate) {
-        query.invoiceDate.$lte = new Date(endDate);
-      }
+      if (startDate) query.invoiceDate.$gte = new Date(startDate);
+      if (endDate) query.invoiceDate.$lte = new Date(endDate);
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -567,25 +506,17 @@ export const updateBusinessSale = async (req, res) => {
           await businessItem.save();
         }
       }
-
-      // Delete old stock transactions
       await BusinessStockTransaction.deleteMany({
         referenceType: sale.invoiceType === 'Sale' ? 'Sale' : 'Return',
         referenceId: sale._id
       });
     }
 
-    // Process new items (similar to create)
     const { items, ...updateData } = req.body;
 
     if (items && items.length > 0) {
-      let totalQty = 0;
-      let grossAmount = 0;
-      let itemDiscount = 0;
-      let taxableAmount = 0;
-      let totalCgst = 0;
-      let totalSgst = 0;
-      let totalIgst = 0;
+      let totalQty = 0, grossAmount = 0, itemDiscount = 0;
+      let taxableAmount = 0, totalCgst = 0, totalSgst = 0, totalIgst = 0;
 
       const processedItems = [];
 
@@ -604,7 +535,6 @@ export const updateBusinessSale = async (req, res) => {
 
         const isInterState = updateData.partyState && updateData.partyState !== 'Tamil Nadu';
         let cgst = 0, sgst = 0, igst = 0;
-
         if (isInterState) {
           igst = (taxable * gstPercent) / 100;
         } else {
@@ -613,100 +543,56 @@ export const updateBusinessSale = async (req, res) => {
         }
 
         const totalAmount = taxable + cgst + sgst + igst;
-
         processedItems.push({
-          itemId: item.itemId,
-          itemCode: businessItem.itemCode,
-          itemName: businessItem.itemName,
-          hsnCode: businessItem.hsnCode,
-          quantity: qty,
-          freeQty: parseFloat(item.freeQty) || 0,
-          unit: businessItem.unit,
-          mrp: businessItem.mrp || 0,
-          rate,
-          discountPercent,
-          discountAmount,
-          taxableAmount: taxable,
-          gstPercent,
-          cgstAmount: cgst,
-          sgstAmount: sgst,
-          igstAmount: igst,
-          totalAmount
+          itemId: item.itemId, itemCode: businessItem.itemCode, itemName: businessItem.itemName,
+          hsnCode: businessItem.hsnCode, quantity: qty, freeQty: parseFloat(item.freeQty) || 0,
+          unit: businessItem.unit, mrp: businessItem.mrp || 0, rate, discountPercent, discountAmount,
+          taxableAmount: taxable, gstPercent, cgstAmount: cgst, sgstAmount: sgst, igstAmount: igst, totalAmount
         });
 
-        totalQty += qty;
-        grossAmount += amount;
-        itemDiscount += discountAmount;
-        taxableAmount += taxable;
-        totalCgst += cgst;
-        totalSgst += sgst;
-        totalIgst += igst;
+        totalQty += qty; grossAmount += amount; itemDiscount += discountAmount;
+        taxableAmount += taxable; totalCgst += cgst; totalSgst += sgst; totalIgst += igst;
 
-        // Update stock
         if (sale.invoiceType === 'Sale' || sale.invoiceType === 'Sale Return') {
           const totalQtyWithFree = qty + (parseFloat(item.freeQty) || 0);
-          if (sale.invoiceType === 'Sale') {
-            businessItem.currentBalance -= totalQtyWithFree;
-          } else {
-            businessItem.currentBalance += totalQtyWithFree;
-          }
+          if (sale.invoiceType === 'Sale') businessItem.currentBalance -= totalQtyWithFree;
+          else businessItem.currentBalance += totalQtyWithFree;
           await businessItem.save();
 
-          const stockTransaction = new BusinessStockTransaction({
+          await new BusinessStockTransaction({
             itemId: item.itemId,
             transactionType: sale.invoiceType === 'Sale' ? 'Stock Out' : 'Stock In',
-            quantity: totalQtyWithFree,
-            rate,
+            quantity: totalQtyWithFree, rate,
             balanceAfter: businessItem.currentBalance,
             referenceType: sale.invoiceType === 'Sale' ? 'Sale' : 'Return',
             referenceId: sale._id,
             date: updateData.invoiceDate || sale.invoiceDate,
             notes: `${sale.invoiceType} - ${sale.invoiceNumber} (Updated)`
-          });
-          await stockTransaction.save();
+          }).save();
         }
       }
 
       const totalGst = totalCgst + totalSgst + totalIgst;
-      const calculatedBillDiscount = updateData.billDiscountPercent
+      const calcBillDiscount = updateData.billDiscountPercent
         ? (taxableAmount * updateData.billDiscountPercent) / 100
         : (parseFloat(updateData.billDiscount) || 0);
-
-      const netAmount = taxableAmount - calculatedBillDiscount + totalGst;
+      const netAmount = taxableAmount - calcBillDiscount + totalGst;
       const finalRoundOff = parseFloat(updateData.roundOff) || (Math.round(netAmount) - netAmount);
       const grandTotal = netAmount + finalRoundOff;
-
       const prevBalance = parseFloat(updateData.previousBalance) || 0;
       const totalDue = grandTotal + prevBalance;
       const paid = parseFloat(updateData.paidAmount) || 0;
       const balance = totalDue - paid;
 
       let paymentStatus = 'Unpaid';
-      if (paid >= totalDue) {
-        paymentStatus = 'Paid';
-      } else if (paid > 0) {
-        paymentStatus = 'Partial';
-      }
+      if (paid >= totalDue) paymentStatus = 'Paid';
+      else if (paid > 0) paymentStatus = 'Partial';
 
       Object.assign(sale, {
-        ...updateData,
-        items: processedItems,
-        totalQty,
-        grossAmount,
-        itemDiscount,
-        billDiscount: calculatedBillDiscount,
-        taxableAmount,
-        totalCgst,
-        totalSgst,
-        totalIgst,
-        totalGst,
-        roundOff: finalRoundOff,
-        grandTotal,
-        previousBalance: prevBalance,
-        totalDue,
-        paymentStatus,
-        paidAmount: paid,
-        balanceAmount: balance
+        ...updateData, items: processedItems, totalQty, grossAmount, itemDiscount,
+        billDiscount: calcBillDiscount, taxableAmount, totalCgst, totalSgst, totalIgst, totalGst,
+        roundOff: finalRoundOff, grandTotal, previousBalance: prevBalance, totalDue,
+        paymentStatus, paidAmount: paid, balanceAmount: balance
       });
     } else {
       Object.assign(sale, updateData);
@@ -728,30 +614,33 @@ export const deleteBusinessSale = async (req, res) => {
       return res.status(404).json({ message: 'Sale not found' });
     }
 
-    // Reverse stock for each item
+    // Reverse stock
     if (sale.invoiceType === 'Sale' || sale.invoiceType === 'Sale Return') {
       for (const item of sale.items) {
         const businessItem = await BusinessItem.findById(item.itemId);
         if (businessItem) {
           const totalQtyWithFree = item.quantity + (item.freeQty || 0);
-          if (sale.invoiceType === 'Sale') {
-            businessItem.currentBalance += totalQtyWithFree;
-          } else {
-            businessItem.currentBalance -= totalQtyWithFree;
-          }
+          if (sale.invoiceType === 'Sale') businessItem.currentBalance += totalQtyWithFree;
+          else businessItem.currentBalance -= totalQtyWithFree;
           await businessItem.save();
         }
       }
-
-      // Delete stock transactions
-      await BusinessStockTransaction.deleteMany({
-        referenceId: sale._id
-      });
+      await BusinessStockTransaction.deleteMany({ referenceId: sale._id });
     }
 
-    // Delete voucher if exists
+    // Reverse ledger balances and delete voucher
     if (sale.voucherId) {
-      await Voucher.findByIdAndDelete(sale.voucherId);
+      const voucher = await BusinessVoucher.findById(sale.voucherId);
+      if (voucher) {
+        for (const entry of voucher.entries) {
+          const ledger = await BusinessLedger.findById(entry.ledgerId);
+          if (!ledger) continue;
+          const reverseType = entry.type === 'debit' ? 'credit' : 'debit';
+          applyLedgerBalanceChange(ledger, reverseType, entry.amount);
+          await ledger.save();
+        }
+        await BusinessVoucher.findByIdAndDelete(sale.voucherId);
+      }
     }
 
     await BusinessSales.findByIdAndDelete(req.params.id);
@@ -777,10 +666,7 @@ export const getPartySalesHistory = async (req, res) => {
 
     const totalBalance = sales.reduce((sum, sale) => sum + (sale.balanceAmount || 0), 0);
 
-    res.json({
-      sales,
-      totalBalance
-    });
+    res.json({ sales, totalBalance });
   } catch (error) {
     console.error('Get party history error:', error);
     res.status(500).json({ message: error.message });
@@ -796,9 +682,11 @@ export const getBusinessSalesSummary = async (req, res) => {
     if (startDate) dateFilter.$gte = new Date(startDate);
     if (endDate) dateFilter.$lte = new Date(endDate);
 
-    const matchQuery = Object.keys(dateFilter).length > 0
-      ? { invoiceDate: dateFilter, invoiceType: 'Sale', companyId: req.companyId }
-      : { invoiceType: 'Sale', companyId: req.companyId };
+    const matchQuery = {
+      invoiceType: 'Sale',
+      companyId: req.companyId,
+      ...(Object.keys(dateFilter).length > 0 && { invoiceDate: dateFilter })
+    };
 
     const [summary] = await BusinessSales.aggregate([
       { $match: matchQuery },
@@ -821,11 +709,7 @@ export const getBusinessSalesSummary = async (req, res) => {
 
     res.json({
       summary: summary || {
-        totalSales: 0,
-        totalPaid: 0,
-        totalBalance: 0,
-        totalInvoices: 0,
-        totalItems: 0
+        totalSales: 0, totalPaid: 0, totalBalance: 0, totalInvoices: 0, totalItems: 0
       },
       recentSales
     });

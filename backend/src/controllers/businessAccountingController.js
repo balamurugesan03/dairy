@@ -1,7 +1,24 @@
-import BusinessLedger from '../models/BusinessLedger.js';
+import BusinessLedger, { GROUP_NATURE_MAP } from '../models/BusinessLedger.js';
 import BusinessVoucher from '../models/BusinessVoucher.js';
 
-// ==================== LEDGER CONTROLLERS ====================
+// Groups where credit increases balance (Credit-normal)
+const CREDIT_NATURE_GROUPS = [
+  'Sundry Creditors', 'Current Liabilities', 'Capital Account',
+  'Duties & Taxes', 'Provisions', 'Reserves & Surplus',
+  'Suspense Account', 'Sales Accounts', 'Direct Incomes', 'Indirect Incomes'
+];
+
+// Nature-aware balance update — the ONLY correct way to update ledger balance
+// For Assets/Expenses (Debit-normal): debit → +, credit → −
+// For Liabilities/Income/Equity (Credit-normal): credit → +, debit → −
+const applyLedgerBalanceChange = (ledger, entryType, amount) => {
+  const isCreditNature = CREDIT_NATURE_GROUPS.includes(ledger.group);
+  if (isCreditNature) {
+    ledger.currentBalance += (entryType === 'credit' ? amount : -amount);
+  } else {
+    ledger.currentBalance += (entryType === 'debit' ? amount : -amount);
+  }
+};
 
 // Generate Ledger Code
 const generateLedgerCode = async (group, companyId = null) => {
@@ -12,6 +29,50 @@ const generateLedgerCode = async (group, companyId = null) => {
   return `B${prefix}${(count + 1).toString().padStart(4, '0')}`;
 };
 
+// Generate Voucher Number — exported so businessSalesController can use it
+export const generateBusinessVoucherNumber = async (voucherType, companyId = null) => {
+  const prefixMap = {
+    'Income':          'BIN',
+    'Expense':         'BEX',
+    'Journal':         'BJV',
+    'Contra':          'BCT',
+    'Receipt':         'BRV',
+    'Payment':         'BPV',
+    'Sales':           'BSAL',
+    'Purchase':        'BPUR',
+    'CreditNote':      'BCN',
+    'DebitNote':       'BDN',
+    'FarmerPayment':   'FPY',
+    'LoanDisbursal':   'LDN',
+    'AdvancePayment':  'ADV',
+    'BulkBankTransfer':'BBT',
+    'GSTPayment':      'GSTP',
+    'TDSPayment':      'TDSP',
+    'OpeningBalance':  'OPB',
+  };
+
+  const prefix = prefixMap[voucherType] || 'BV';
+
+  const today = new Date();
+  const year = today.getFullYear().toString().slice(-2);
+  const month = (today.getMonth() + 1).toString().padStart(2, '0');
+
+  const query = { voucherNumber: { $regex: `^${prefix}${year}${month}` } };
+  if (companyId) query.companyId = companyId;
+
+  const lastVoucher = await BusinessVoucher.findOne(query).sort({ voucherNumber: -1 });
+
+  let sequence = 1;
+  if (lastVoucher) {
+    const lastSequence = parseInt(lastVoucher.voucherNumber.slice(-4));
+    if (!isNaN(lastSequence)) sequence = lastSequence + 1;
+  }
+
+  return `${prefix}${year}${month}${sequence.toString().padStart(4, '0')}`;
+};
+
+// ==================== LEDGER CONTROLLERS ====================
+
 // Create Business Ledger
 export const createBusinessLedger = async (req, res) => {
   try {
@@ -19,7 +80,6 @@ export const createBusinessLedger = async (req, res) => {
 
     const companyId = req.companyId;
 
-    // Check if ledger name already exists per company
     const existing = await BusinessLedger.findOne({ name: { $regex: new RegExp(`^${name}$`, 'i') }, companyId });
     if (existing) {
       return res.status(400).json({ message: 'Ledger with this name already exists' });
@@ -31,7 +91,7 @@ export const createBusinessLedger = async (req, res) => {
       name,
       code,
       group,
-      type,
+      type: type || (GROUP_NATURE_MAP[group] || 'Asset'),
       openingBalance: openingBalance || 0,
       openingBalanceType: openingBalanceType || 'Debit',
       currentBalance: openingBalance || 0,
@@ -75,7 +135,7 @@ export const getAllBusinessLedgers = async (req, res) => {
   }
 };
 
-// Get Business Ledger by ID
+// Get Business Ledger by ID with transaction history
 export const getBusinessLedgerById = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
@@ -85,8 +145,8 @@ export const getBusinessLedgerById = async (req, res) => {
       return res.status(404).json({ message: 'Ledger not found' });
     }
 
-    // Get voucher entries for this ledger
     const voucherQuery = {
+      companyId: req.companyId,
       'entries.ledgerId': req.params.id,
       status: 'Posted'
     };
@@ -97,40 +157,53 @@ export const getBusinessLedgerById = async (req, res) => {
       if (endDate) voucherQuery.date.$lte = new Date(endDate);
     }
 
-    const vouchers = await BusinessVoucher.find(voucherQuery)
-      .sort({ date: 1 })
-      .lean();
+    const vouchers = await BusinessVoucher.find(voucherQuery).sort({ date: 1 }).lean();
 
-    // Extract entries for this ledger
+    // Build running balance — nature-aware
+    const isCreditNature = CREDIT_NATURE_GROUPS.includes(ledger.group);
+    const obType = ledger.openingBalanceType === 'Credit' ? 'credit' : 'debit';
+    // Signed opening: positive = debit side for debit-normal, positive = credit side for credit-normal
+    let runningBalance = isCreditNature
+      ? (obType === 'credit' ? ledger.openingBalance : -ledger.openingBalance)
+      : (obType === 'debit' ? ledger.openingBalance : -ledger.openingBalance);
+
     const transactions = [];
-    let runningBalance = ledger.openingBalance || 0;
 
     vouchers.forEach(voucher => {
       voucher.entries.forEach(entry => {
         if (entry.ledgerId.toString() === req.params.id) {
-          if (entry.type === 'debit') {
-            runningBalance += entry.amount;
-          } else {
-            runningBalance -= entry.amount;
-          }
+          const change = isCreditNature
+            ? (entry.type === 'credit' ? entry.amount : -entry.amount)
+            : (entry.type === 'debit' ? entry.amount : -entry.amount);
+
+          runningBalance += change;
 
           transactions.push({
             date: voucher.date,
             voucherNumber: voucher.voucherNumber,
             voucherType: voucher.voucherType,
-            narration: voucher.narration,
+            narration: entry.description || voucher.narration,
             debit: entry.type === 'debit' ? entry.amount : 0,
             credit: entry.type === 'credit' ? entry.amount : 0,
-            balance: runningBalance
+            balance: Math.abs(runningBalance),
+            balanceType: runningBalance >= 0
+              ? (isCreditNature ? 'Cr' : 'Dr')
+              : (isCreditNature ? 'Dr' : 'Cr')
           });
         }
       });
     });
 
+    const closingBalanceAmount = Math.abs(runningBalance);
+    const closingBalanceType = runningBalance >= 0
+      ? (isCreditNature ? 'Cr' : 'Dr')
+      : (isCreditNature ? 'Dr' : 'Cr');
+
     res.json({
       ledger,
       transactions,
-      closingBalance: runningBalance
+      closingBalance: closingBalanceAmount,
+      closingBalanceType
     });
   } catch (error) {
     console.error('Get business ledger error:', error);
@@ -148,7 +221,6 @@ export const updateBusinessLedger = async (req, res) => {
       return res.status(404).json({ message: 'Ledger not found' });
     }
 
-    // Check for duplicate name per company
     if (name && name !== ledger.name) {
       const existing = await BusinessLedger.findOne({
         name: { $regex: new RegExp(`^${name}$`, 'i') },
@@ -160,7 +232,6 @@ export const updateBusinessLedger = async (req, res) => {
       }
     }
 
-    // Calculate balance difference if opening balance changed
     const balanceDiff = (openingBalance || 0) - (ledger.openingBalance || 0);
 
     Object.assign(ledger, {
@@ -187,8 +258,10 @@ export const updateBusinessLedger = async (req, res) => {
 // Delete Business Ledger
 export const deleteBusinessLedger = async (req, res) => {
   try {
-    // Check if ledger has any voucher entries
-    const hasEntries = await BusinessVoucher.exists({ 'entries.ledgerId': req.params.id });
+    const hasEntries = await BusinessVoucher.exists({
+      companyId: req.companyId,
+      'entries.ledgerId': req.params.id
+    });
     if (hasEntries) {
       return res.status(400).json({ message: 'Cannot delete ledger with existing transactions' });
     }
@@ -207,32 +280,7 @@ export const deleteBusinessLedger = async (req, res) => {
 
 // ==================== VOUCHER CONTROLLERS ====================
 
-// Generate Voucher Number
-const generateVoucherNumber = async (voucherType, companyId = null) => {
-  const prefix = voucherType === 'Income' ? 'BIN' :
-                 voucherType === 'Expense' ? 'BEX' :
-                 voucherType === 'Journal' ? 'BJV' :
-                 voucherType === 'Contra' ? 'BCT' : 'BV';
-
-  const today = new Date();
-  const year = today.getFullYear().toString().slice(-2);
-  const month = (today.getMonth() + 1).toString().padStart(2, '0');
-
-  const query = { voucherNumber: { $regex: `^${prefix}${year}${month}` } };
-  if (companyId) query.companyId = companyId;
-
-  const lastVoucher = await BusinessVoucher.findOne(query).sort({ voucherNumber: -1 });
-
-  let sequence = 1;
-  if (lastVoucher) {
-    const lastSequence = parseInt(lastVoucher.voucherNumber.slice(-4));
-    sequence = lastSequence + 1;
-  }
-
-  return `${prefix}${year}${month}${sequence.toString().padStart(4, '0')}`;
-};
-
-// Create Business Voucher (Income/Expense/Journal)
+// Create Business Voucher (Income/Expense/Journal/Receipt/Payment/Contra/etc.)
 export const createBusinessVoucher = async (req, res) => {
   try {
     const {
@@ -246,37 +294,37 @@ export const createBusinessVoucher = async (req, res) => {
       chequeDate,
       transactionId,
       partyId,
-      partyName
+      partyName,
+      originalVoucherId,
+      originalVoucherNumber
     } = req.body;
 
     if (!entries || entries.length < 2) {
-      return res.status(400).json({ message: 'At least two entries are required' });
+      return res.status(400).json({ message: 'At least two entry lines are required' });
     }
 
-    // Calculate totals
+    // Calculate and validate totals
     let totalDebit = 0;
     let totalCredit = 0;
 
     entries.forEach(entry => {
-      if (entry.type === 'debit') {
-        totalDebit += entry.amount;
-      } else {
-        totalCredit += entry.amount;
-      }
+      if (entry.type === 'debit') totalDebit += entry.amount;
+      else totalCredit += entry.amount;
     });
 
-    // Verify debit = credit
     if (Math.abs(totalDebit - totalCredit) > 0.01) {
-      return res.status(400).json({ message: 'Debit and Credit amounts must be equal' });
+      return res.status(400).json({
+        message: `Debit and Credit amounts must be equal. Debit: ${totalDebit.toFixed(2)}, Credit: ${totalCredit.toFixed(2)}`
+      });
     }
 
     const companyId = req.companyId;
-    const voucherNumber = await generateVoucherNumber(voucherType, companyId);
+    const voucherNumber = await generateBusinessVoucherNumber(voucherType, companyId);
 
-    // Populate ledger names
+    // Populate ledger names + validate all ledgers exist in this company
     const processedEntries = [];
     for (const entry of entries) {
-      const ledger = await BusinessLedger.findById(entry.ledgerId);
+      const ledger = await BusinessLedger.findOne({ _id: entry.ledgerId, companyId });
       if (!ledger) {
         return res.status(404).json({ message: `Ledger not found: ${entry.ledgerId}` });
       }
@@ -285,6 +333,15 @@ export const createBusinessVoucher = async (req, res) => {
         ledgerName: ledger.name,
         type: entry.type,
         amount: entry.amount,
+        isGSTLine: entry.isGSTLine || false,
+        gstComponent: entry.gstComponent || null,
+        gstRate: entry.gstRate,
+        hsnCode: entry.hsnCode,
+        isStockLine: entry.isStockLine || false,
+        itemId: entry.itemId,
+        itemName: entry.itemName,
+        quantity: entry.quantity,
+        unitCost: entry.unitCost,
         description: entry.description
       });
     }
@@ -304,6 +361,8 @@ export const createBusinessVoucher = async (req, res) => {
       transactionId,
       partyId,
       partyName,
+      originalVoucherId: originalVoucherId || null,
+      originalVoucherNumber: originalVoucherNumber || '',
       referenceType: 'Manual',
       status: 'Posted',
       businessType: 'Private Firm',
@@ -312,14 +371,11 @@ export const createBusinessVoucher = async (req, res) => {
 
     await voucher.save();
 
-    // Update ledger balances
+    // Update ledger balances — nature-aware
     for (const entry of processedEntries) {
       const ledger = await BusinessLedger.findById(entry.ledgerId);
-      if (entry.type === 'debit') {
-        ledger.currentBalance += entry.amount;
-      } else {
-        ledger.currentBalance -= entry.amount;
-      }
+      if (!ledger) continue;
+      applyLedgerBalanceChange(ledger, entry.type, entry.amount);
       await ledger.save();
     }
 
@@ -356,7 +412,7 @@ export const getAllBusinessVouchers = async (req, res) => {
 
     const [vouchers, total] = await Promise.all([
       BusinessVoucher.find(query)
-        .populate('entries.ledgerId', 'name code')
+        .populate('entries.ledgerId', 'name code group nature')
         .sort({ date: -1, createdAt: -1 })
         .skip(skip)
         .limit(parseInt(limit)),
@@ -381,8 +437,11 @@ export const getAllBusinessVouchers = async (req, res) => {
 // Get Business Voucher by ID
 export const getBusinessVoucherById = async (req, res) => {
   try {
-    const voucher = await BusinessVoucher.findById(req.params.id)
-      .populate('entries.ledgerId', 'name code group type')
+    const voucher = await BusinessVoucher.findOne({
+      _id: req.params.id,
+      companyId: req.companyId
+    })
+      .populate('entries.ledgerId', 'name code group type nature')
       .populate('partyId', 'name phone');
 
     if (!voucher) {
@@ -396,61 +455,60 @@ export const getBusinessVoucherById = async (req, res) => {
   }
 };
 
-// Delete/Cancel Business Voucher
+// Cancel Business Voucher (reversal + mark cancelled — never hard delete posted vouchers)
 export const deleteBusinessVoucher = async (req, res) => {
   try {
-    const voucher = await BusinessVoucher.findById(req.params.id);
+    const voucher = await BusinessVoucher.findOne({
+      _id: req.params.id,
+      companyId: req.companyId
+    });
     if (!voucher) {
       return res.status(404).json({ message: 'Voucher not found' });
     }
 
-    // Reverse ledger balances
+    // Reverse ledger balances — nature-aware
     for (const entry of voucher.entries) {
       const ledger = await BusinessLedger.findById(entry.ledgerId);
-      if (ledger) {
-        if (entry.type === 'debit') {
-          ledger.currentBalance -= entry.amount;
-        } else {
-          ledger.currentBalance += entry.amount;
-        }
-        await ledger.save();
-      }
+      if (!ledger) continue;
+      // Reversal = swap debit ↔ credit
+      const reverseType = entry.type === 'debit' ? 'credit' : 'debit';
+      applyLedgerBalanceChange(ledger, reverseType, entry.amount);
+      await ledger.save();
     }
 
     await BusinessVoucher.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Voucher deleted successfully' });
+    res.json({ message: 'Voucher deleted and ledger balances reversed successfully' });
   } catch (error) {
     console.error('Delete business voucher error:', error);
     res.status(500).json({ message: error.message });
   }
 };
 
-// Create Income Voucher (simplified)
+// Shorthand voucher creators
 export const createIncomeVoucher = async (req, res) => {
   req.body.voucherType = 'Income';
   return createBusinessVoucher(req, res);
 };
 
-// Create Expense Voucher (simplified)
 export const createExpenseVoucher = async (req, res) => {
   req.body.voucherType = 'Expense';
   return createBusinessVoucher(req, res);
 };
 
-// Create Journal Voucher (simplified)
 export const createJournalVoucher = async (req, res) => {
   req.body.voucherType = 'Journal';
   return createBusinessVoucher(req, res);
 };
 
+// Export the nature helper for use in other controllers
+export { applyLedgerBalanceChange, CREDIT_NATURE_GROUPS };
+
 export default {
-  // Ledger
   createBusinessLedger,
   getAllBusinessLedgers,
   getBusinessLedgerById,
   updateBusinessLedger,
   deleteBusinessLedger,
-  // Voucher
   createBusinessVoucher,
   getAllBusinessVouchers,
   getBusinessVoucherById,

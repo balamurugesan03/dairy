@@ -2,43 +2,66 @@ import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
 import Item from '../models/Item.js';
 
-// Generate voucher number based on type and date
+const VOUCHER_PREFIX_MAP = {
+  'Receipt':         'RV',
+  'Payment':         'PV',
+  'Journal':         'JV',
+  'Contra':          'CT',
+  'Purchase':        'PUR',
+  'MilkPurchase':    'MKP',
+  'MilkSales':       'MKS',
+  'FarmerPayment':   'FPY',
+  'LoanDisbursal':   'LDN',
+  'AdvancePayment':  'ADV',
+  'OpeningBalance':  'OPB',
+};
+
+// Generate voucher number — always scoped by companyId to prevent cross-company collisions
 export const generateVoucherNumber = async (voucherType, companyId = null) => {
-  const prefix = {
-    'Receipt': 'RV',
-    'Payment': 'PV',
-    'Journal': 'JV'
-  }[voucherType];
+  const prefix = VOUCHER_PREFIX_MAP[voucherType] || 'VCH';
 
   const today = new Date();
   const year = today.getFullYear().toString().slice(-2);
   const month = (today.getMonth() + 1).toString().padStart(2, '0');
+  const pattern = `${prefix}${year}${month}`;
 
-  const query = { voucherType };
+  const query = {
+    voucherNumber: { $regex: `^${pattern}` },
+    voucherType
+  };
   if (companyId) query.companyId = companyId;
 
-  const lastVoucher = await Voucher.findOne(query)
-    .sort({ createdAt: -1 })
-    .limit(1);
+  const lastVoucher = await Voucher.findOne(query).sort({ voucherNumber: -1 }).limit(1);
 
   let sequence = 1;
-  if (lastVoucher && lastVoucher.voucherNumber.startsWith(`${prefix}${year}${month}`)) {
+  if (lastVoucher) {
     const lastSeq = parseInt(lastVoucher.voucherNumber.slice(-4));
-    sequence = lastSeq + 1;
+    if (!isNaN(lastSeq)) sequence = lastSeq + 1;
   }
 
-  return `${prefix}${year}${month}${sequence.toString().padStart(4, '0')}`;
+  return `${pattern}${sequence.toString().padStart(4, '0')}`;
 };
 
-// Create accounting voucher for sales transaction
+// Helper: get Indian financial year string from a date
+export const getFinancialYear = (date) => {
+  const d = new Date(date || Date.now());
+  const year = d.getFullYear();
+  const month = d.getMonth() + 1; // 1-indexed
+  return month >= 4
+    ? `${String(year).slice(-2)}${String(year + 1).slice(-2)}`   // Apr–Mar next year
+    : `${String(year - 1).slice(-2)}${String(year).slice(-2)}`;  // Jan–Mar same year
+};
+
+// Create accounting voucher for dairy sales transaction
 export const createSalesVoucher = async (saleData, session = null) => {
   const entries = [];
 
-  // Entry 1: Debit Customer/Cash (if immediate payment) or Customer Ledger (if credit)
+  // Debit: customer/cash ledger
   if (saleData.customerId) {
     const farmerLedger = await Ledger.findOne({
       'linkedEntity.entityType': 'Farmer',
-      'linkedEntity.entityId': saleData.customerId
+      'linkedEntity.entityId': saleData.customerId,
+      ...(saleData.companyId && { companyId: saleData.companyId })
     });
 
     if (farmerLedger) {
@@ -48,15 +71,17 @@ export const createSalesVoucher = async (saleData, session = null) => {
         debitAmount: saleData.grandTotal,
         creditAmount: 0
       });
-    } else if (saleData.customerId) {
-      console.warn(`Warning: Farmer ledger not found for customer ${saleData.customerId}`);
     }
   }
 
-  // Entry 2: Credit Sales Ledger
-  const salesLedger = await Ledger.findOne({ ledgerName: 'Sales', ledgerType: 'Income' });
+  // Credit: Sales ledger
+  const salesLedger = await Ledger.findOne({
+    ledgerName: 'Sales',
+    ledgerType: 'Income',
+    ...(saleData.companyId && { companyId: saleData.companyId })
+  });
   if (!salesLedger) {
-    throw new Error('Sales ledger not found. Please create a "Sales" ledger with type "Income" in your accounting setup.');
+    throw new Error('Sales ledger not found. Create a "Sales" ledger with type "Income".');
   }
 
   entries.push({
@@ -66,48 +91,45 @@ export const createSalesVoucher = async (saleData, session = null) => {
     creditAmount: saleData.grandTotal
   });
 
-  // Entry 3: If payment received, Debit Cash/Bank and Credit Customer
-  if (saleData.paidAmount > 0) {
-    const paymentLedgerName = saleData.paymentMode === 'Cash' ? 'Cash' : 'Bank';
+  // If payment received, add Cash/Bank debit and Customer credit
+  if (saleData.paidAmount > 0 && saleData.customerId) {
     const paymentLedgerType = saleData.paymentMode === 'Cash' ? 'Cash' : 'Bank';
-
     const paymentLedger = await Ledger.findOne({
-      ledgerName: paymentLedgerName,
-      ledgerType: paymentLedgerType
+      ledgerType: paymentLedgerType,
+      ...(saleData.companyId && { companyId: saleData.companyId })
     });
 
     if (!paymentLedger) {
-      throw new Error(`${paymentLedgerName} ledger not found. Please create a "${paymentLedgerName}" ledger with type "${paymentLedgerType}" in your accounting setup.`);
+      throw new Error(`${paymentLedgerType} ledger not found.`);
     }
 
-    if (saleData.customerId) {
-      const farmerLedger = await Ledger.findOne({
-        'linkedEntity.entityType': 'Farmer',
-        'linkedEntity.entityId': saleData.customerId
-      });
+    const farmerLedger = await Ledger.findOne({
+      'linkedEntity.entityType': 'Farmer',
+      'linkedEntity.entityId': saleData.customerId,
+      ...(saleData.companyId && { companyId: saleData.companyId })
+    });
 
+    entries.push({
+      ledgerId: paymentLedger._id,
+      ledgerName: paymentLedger.ledgerName,
+      debitAmount: saleData.paidAmount,
+      creditAmount: 0
+    });
+
+    if (farmerLedger) {
       entries.push({
-        ledgerId: paymentLedger._id,
-        ledgerName: paymentLedger.ledgerName,
-        debitAmount: saleData.paidAmount,
-        creditAmount: 0
+        ledgerId: farmerLedger._id,
+        ledgerName: farmerLedger.ledgerName,
+        debitAmount: 0,
+        creditAmount: saleData.paidAmount
       });
-
-      if (farmerLedger) {
-        entries.push({
-          ledgerId: farmerLedger._id,
-          ledgerName: farmerLedger.ledgerName,
-          debitAmount: 0,
-          creditAmount: saleData.paidAmount
-        });
-      }
     }
   }
 
   const totalDebit = entries.reduce((sum, e) => sum + e.debitAmount, 0);
   const totalCredit = entries.reduce((sum, e) => sum + e.creditAmount, 0);
 
-  const voucherNumber = await generateVoucherNumber('Journal');
+  const voucherNumber = await generateVoucherNumber('Journal', saleData.companyId);
 
   const voucher = new Voucher({
     voucherType: 'Journal',
@@ -116,61 +138,56 @@ export const createSalesVoucher = async (saleData, session = null) => {
     entries,
     totalDebit,
     totalCredit,
-    narration: `Sales - Bill No: ${saleData.billNumber}`,
+    narration: `Sales — Bill No: ${saleData.billNumber}`,
     referenceType: 'Sales',
-    referenceId: saleData._id
+    referenceId: saleData._id,
+    companyId: saleData.companyId
   });
 
-  if (session) {
-    await voucher.save({ session });
-  } else {
-    await voucher.save();
-  }
+  if (session) await voucher.save({ session });
+  else await voucher.save();
 
-  // Update ledger balances
-  await updateLedgerBalances(entries, session);
+  await updateLedgerBalances(entries, session, saleData.companyId);
 
   return voucher;
 };
 
-// Update ledger balances based on voucher entries
-export const updateLedgerBalances = async (entries, session = null) => {
+// Nature-aware ledger balance update for dairy Ledger model
+export const updateLedgerBalances = async (entries, session = null, companyId = null) => {
+  // Ledger types that are debit-normal (debit increases balance)
+  const debitNormalTypes = [
+    'Asset', 'Expense', 'Cash', 'Bank', 'Other Receivable', 'Party',
+    'Fixed Assets', 'Movable Assets', 'Immovable Assets', 'Other Assets',
+    'Purchases A/c', 'Trade Expenses', 'Establishment Charges', 'Miscellaneous Expenses',
+    'Investment A/c', 'Other Investment', 'Government Securities'
+  ];
+  // Ledger types that are credit-normal (credit increases balance)
+  const creditNormalTypes = [
+    'Liability', 'Income', 'Capital', 'Other Payable',
+    'Sales A/c', 'Trade Income', 'Miscellaneous Income', 'Other Revenue',
+    'Grants & Aid', 'Subsidies', 'Accounts Due To (Sundry Creditors)',
+    'Other Liabilities', 'Deposit A/c', 'Contingency Fund', 'Education Fund',
+    'Share Capital', 'Profit & Loss A/c'
+  ];
+
   for (const entry of entries) {
     const ledger = await Ledger.findById(entry.ledgerId);
     if (!ledger) continue;
 
-    const netChange = entry.debitAmount - entry.creditAmount;
+    const netChange = (entry.debitAmount || 0) - (entry.creditAmount || 0);
 
-    // Update current balance based on ledger type
-    // Debit-normal (debit increases balance): Assets, Expenses, Cash, Bank
-    const debitNormal = [
-      'Asset', 'Expense', 'Cash', 'Bank', 'Other Receivable',
-      'Fixed Assets', 'Movable Assets', 'Immovable Assets', 'Other Assets',
-      'Purchases A/c', 'Trade Expenses', 'Establishment Charges', 'Miscellaneous Expenses',
-      'Investment A/c', 'Other Investment', 'Government Securities',
-      'Party'
-    ];
-    // Credit-normal (credit increases balance): Income, Liabilities, Capital
-    const creditNormal = [
-      'Liability', 'Income', 'Capital', 'Other Payable',
-      'Sales A/c', 'Trade Income', 'Miscellaneous Income', 'Other Revenue', 'Grants & Aid', 'Subsidies',
-      'Accounts Due To (Sundry Creditors)', 'Other Liabilities', 'Deposit A/c',
-      'Contingency Fund', 'Education Fund', 'Share Capital', 'Profit & Loss A/c'
-    ];
-
-    if (debitNormal.includes(ledger.ledgerType)) {
+    if (debitNormalTypes.includes(ledger.ledgerType)) {
+      // Debit normal: debit increases (+), credit decreases (-)
       ledger.currentBalance += netChange;
       ledger.balanceType = ledger.currentBalance >= 0 ? 'Dr' : 'Cr';
-    } else if (creditNormal.includes(ledger.ledgerType)) {
+    } else if (creditNormalTypes.includes(ledger.ledgerType)) {
+      // Credit normal: credit increases (+), debit decreases (-)
       ledger.currentBalance -= netChange;
       ledger.balanceType = ledger.currentBalance >= 0 ? 'Cr' : 'Dr';
     }
 
-    if (session) {
-      await ledger.save({ session });
-    } else {
-      await ledger.save();
-    }
+    if (session) await ledger.save({ session });
+    else await ledger.save();
   }
 };
 
@@ -178,11 +195,13 @@ export const updateLedgerBalances = async (entries, session = null) => {
 export const createPaymentVoucher = async (paymentData, session = null) => {
   const entries = [];
   const farmerId = paymentData.farmerId;
+  const companyId = paymentData.companyId;
 
-  // Entry 1: Debit Farmer Ledger
+  // Debit: farmer payable ledger
   const farmerLedger = await Ledger.findOne({
     'linkedEntity.entityType': 'Farmer',
-    'linkedEntity.entityId': farmerId
+    'linkedEntity.entityId': farmerId,
+    ...(companyId && { companyId })
   });
 
   if (farmerLedger) {
@@ -194,10 +213,11 @@ export const createPaymentVoucher = async (paymentData, session = null) => {
     });
   }
 
-  // Entry 2: Credit Cash/Bank
+  // Credit: Cash/Bank
+  const paymentLedgerType = paymentData.paymentMode === 'Cash' ? 'Cash' : 'Bank';
   const paymentLedger = await Ledger.findOne({
-    ledgerName: paymentData.paymentMode === 'Cash' ? 'Cash' : 'Bank',
-    ledgerType: paymentData.paymentMode === 'Cash' ? 'Cash' : 'Bank'
+    ledgerType: paymentLedgerType,
+    ...(companyId && { companyId })
   });
 
   if (paymentLedger) {
@@ -212,27 +232,25 @@ export const createPaymentVoucher = async (paymentData, session = null) => {
   const totalDebit = entries.reduce((sum, e) => sum + e.debitAmount, 0);
   const totalCredit = entries.reduce((sum, e) => sum + e.creditAmount, 0);
 
-  const voucherNumber = await generateVoucherNumber('Payment');
+  const voucherNumber = await generateVoucherNumber('FarmerPayment', companyId);
 
   const voucher = new Voucher({
-    voucherType: 'Payment',
+    voucherType: 'FarmerPayment',
     voucherNumber,
     voucherDate: paymentData.paymentDate,
     entries,
     totalDebit,
     totalCredit,
-    narration: `Farmer Payment`,
-    referenceType: 'Payment',
-    referenceId: paymentData._id
+    narration: `Farmer payment — ${farmerLedger?.ledgerName || farmerId}`,
+    referenceType: 'FarmerPayment',
+    referenceId: paymentData._id,
+    ...(companyId && { companyId })
   });
 
-  if (session) {
-    await voucher.save({ session });
-  } else {
-    await voucher.save();
-  }
+  if (session) await voucher.save({ session });
+  else await voucher.save();
 
-  await updateLedgerBalances(entries, session);
+  await updateLedgerBalances(entries, session, companyId);
 
   return voucher;
 };
@@ -240,13 +258,12 @@ export const createPaymentVoucher = async (paymentData, session = null) => {
 // Create purchase voucher for stock-in transactions
 export const createPurchaseVoucher = async (purchaseData, session = null) => {
   const entries = [];
+  const companyId = purchaseData.companyId;
 
-  // Step 1: Fetch item details with purchase ledgers populated
   const itemsWithLedgers = await Item.find({
     _id: { $in: purchaseData.items.map(i => i.itemId) }
   }).populate('purchaseLedger');
 
-  // Step 2: Group items by purchase ledger and calculate base amounts
   const ledgerGroups = {};
   let totalGst = 0;
 
@@ -256,7 +273,8 @@ export const createPurchaseVoucher = async (purchaseData, session = null) => {
 
     const gstPercent = item.gstPercent || 0;
     const itemTotal = purchaseItem.quantity * purchaseItem.rate;
-    const baseAmount = itemTotal / (1 + gstPercent / 100);
+    // Back-calculate base amount from total (if rate includes GST)
+    const baseAmount = gstPercent > 0 ? itemTotal / (1 + gstPercent / 100) : itemTotal;
     const gstAmount = itemTotal - baseAmount;
 
     totalGst += gstAmount;
@@ -266,17 +284,13 @@ export const createPurchaseVoucher = async (purchaseData, session = null) => {
 
     if (ledgerId) {
       if (!ledgerGroups[ledgerId]) {
-        ledgerGroups[ledgerId] = {
-          ledgerId,
-          ledgerName,
-          amount: 0
-        };
+        ledgerGroups[ledgerId] = { ledgerId, ledgerName, amount: 0 };
       }
       ledgerGroups[ledgerId].amount += baseAmount;
     }
   }
 
-  // Step 3: Add debit entries for purchase ledgers
+  // Debit: purchase ledgers
   for (const group of Object.values(ledgerGroups)) {
     entries.push({
       ledgerId: group.ledgerId,
@@ -286,13 +300,12 @@ export const createPurchaseVoucher = async (purchaseData, session = null) => {
     });
   }
 
-  // Step 4: Add debit entry for GST Input
+  // Debit: GST Input
   if (totalGst > 0) {
     const gstLedger = await Ledger.findOne({
       ledgerName: 'GST Input',
-      ledgerType: 'Other Receivable'
+      ...(companyId && { companyId })
     });
-
     if (gstLedger) {
       entries.push({
         ledgerId: gstLedger._id,
@@ -303,17 +316,16 @@ export const createPurchaseVoucher = async (purchaseData, session = null) => {
     }
   }
 
-  // Step 5: Add credit entries based on payment mode
   const totalAmount = purchaseData.totalAmount || 0;
   const paidAmount = purchaseData.paidAmount || 0;
   const balanceAmount = totalAmount - paidAmount;
 
-  if (purchaseData.paymentMode === 'Cash' && paidAmount > 0) {
+  // Credit: cash if paid
+  if (paidAmount > 0) {
     const cashLedger = await Ledger.findOne({
-      ledgerName: 'Cash',
-      ledgerType: 'Cash'
+      ledgerType: 'Cash',
+      ...(companyId && { companyId })
     });
-
     if (cashLedger) {
       entries.push({
         ledgerId: cashLedger._id,
@@ -324,18 +336,15 @@ export const createPurchaseVoucher = async (purchaseData, session = null) => {
     }
   }
 
-  // Step 6: Add supplier credit entry if there's a balance or full credit purchase
+  // Credit: supplier for unpaid balance
   if (balanceAmount > 0 || purchaseData.paymentMode === 'Adjustment') {
     const supplierLedger = await Ledger.findOne({
       'linkedEntity.entityType': 'Supplier',
-      'linkedEntity.entityId': purchaseData.supplierId
+      'linkedEntity.entityId': purchaseData.supplierId,
+      ...(companyId && { companyId })
     });
-
-    const creditAmount = purchaseData.paymentMode === 'Adjustment'
-      ? totalAmount
-      : balanceAmount;
-
     if (supplierLedger) {
+      const creditAmount = purchaseData.paymentMode === 'Adjustment' ? totalAmount : balanceAmount;
       entries.push({
         ledgerId: supplierLedger._id,
         ledgerName: supplierLedger.ledgerName,
@@ -345,18 +354,16 @@ export const createPurchaseVoucher = async (purchaseData, session = null) => {
     }
   }
 
-  // Step 7: Calculate totals and create voucher
   const totalDebit = entries.reduce((sum, e) => sum + e.debitAmount, 0);
   const totalCredit = entries.reduce((sum, e) => sum + e.creditAmount, 0);
 
-  const voucherNumber = await generateVoucherNumber('Journal');
-
+  const voucherNumber = await generateVoucherNumber('Purchase', companyId);
   const narration = purchaseData.invoiceNumber
-    ? `Purchase from ${purchaseData.supplierName} - Invoice ${purchaseData.invoiceNumber}`
+    ? `Purchase from ${purchaseData.supplierName} — Invoice ${purchaseData.invoiceNumber}`
     : `Purchase from ${purchaseData.supplierName || 'Supplier'}`;
 
   const voucher = new Voucher({
-    voucherType: 'Journal',
+    voucherType: 'Purchase',
     voucherNumber,
     voucherDate: purchaseData.purchaseDate || new Date(),
     entries,
@@ -364,33 +371,31 @@ export const createPurchaseVoucher = async (purchaseData, session = null) => {
     totalCredit,
     narration,
     referenceType: 'Purchase',
-    referenceId: purchaseData.referenceId
+    referenceId: purchaseData.referenceId,
+    ...(companyId && { companyId })
   });
 
-  if (session) {
-    await voucher.save({ session });
-  } else {
-    await voucher.save();
-  }
+  if (session) await voucher.save({ session });
+  else await voucher.save();
 
-  // Update ledger balances
-  await updateLedgerBalances(entries, session);
+  await updateLedgerBalances(entries, session, companyId);
 
   return voucher;
 };
 
-// Reverse ledger balances (used when deleting a voucher)
-export const reverseLedgerBalances = async (entries, session = null) => {
+// Reverse ledger balances (used when deleting/cancelling a voucher)
+export const reverseLedgerBalances = async (entries, session = null, companyId = null) => {
   const reversed = entries.map(e => ({
     ...e,
     debitAmount: e.creditAmount,
     creditAmount: e.debitAmount
   }));
-  return updateLedgerBalances(reversed, session);
+  return updateLedgerBalances(reversed, session, companyId);
 };
 
 export default {
   generateVoucherNumber,
+  getFinancialYear,
   createSalesVoucher,
   updateLedgerBalances,
   reverseLedgerBalances,

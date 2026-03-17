@@ -3,7 +3,15 @@ import mongoose from 'mongoose';
 const voucherSchema = new mongoose.Schema({
   voucherType: {
     type: String,
-    enum: ['Receipt', 'Payment', 'Journal'],
+    enum: [
+      // Standard dairy vouchers
+      'Receipt', 'Payment', 'Journal', 'Contra',
+      // Inventory
+      'Purchase',
+      // Dairy-specific
+      'MilkPurchase', 'MilkSales', 'FarmerPayment',
+      'LoanDisbursal', 'AdvancePayment', 'OpeningBalance'
+    ],
     required: true
   },
   voucherNumber: {
@@ -15,6 +23,10 @@ const voucherSchema = new mongoose.Schema({
     type: Date,
     required: true,
     default: Date.now
+  },
+  financialYear: {
+    type: String,
+    trim: true
   },
   entries: [{
     ledgerId: {
@@ -56,14 +68,36 @@ const voucherSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  status: {
+    type: String,
+    enum: ['Draft', 'Posted', 'Cancelled'],
+    default: 'Posted'
+  },
+  // Reference linkage
   referenceType: {
     type: String,
-    enum: ['Sales', 'Purchase', 'Payment', 'Manual'],
+    enum: [
+      'Sales', 'Purchase', 'Payment', 'Manual',
+      'MilkPurchase', 'MilkSales', 'FarmerPayment',
+      'LoanDisbursal', 'AdvancePayment', 'Opening'
+    ],
     default: 'Manual'
   },
   referenceId: {
     type: mongoose.Schema.Types.ObjectId
   },
+  referenceNumber: {
+    type: String,
+    trim: true
+  },
+  // For cancellation — points to the reversal voucher
+  cancelledVoucherId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Voucher'
+  },
+  cancelledAt: Date,
+  cancelledBy: mongoose.Schema.Types.ObjectId,
+  cancelReason: String,
   companyId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Company',
@@ -73,18 +107,33 @@ const voucherSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Indexes for faster queries
-voucherSchema.index({ voucherType: 1, voucherDate: -1 });
-voucherSchema.index({ referenceType: 1, referenceId: 1 });
-voucherSchema.index({ companyId: 1 });
+// Indexes
+voucherSchema.index({ companyId: 1, voucherDate: -1 });
+voucherSchema.index({ companyId: 1, voucherType: 1, voucherDate: -1 });
+voucherSchema.index({ companyId: 1, referenceType: 1, referenceId: 1 });
+voucherSchema.index({ companyId: 1, status: 1 });
 voucherSchema.index({ voucherNumber: 1, companyId: 1 }, { unique: true });
+voucherSchema.index({ companyId: 1, 'entries.ledgerId': 1, voucherDate: 1 });
 
 // Validation: Total Debit must equal Total Credit
-voucherSchema.pre('save', async function() {
+voucherSchema.pre('save', function(next) {
   if (Math.abs(this.totalDebit - this.totalCredit) > 0.01) {
-    throw new Error('Total Debit must equal Total Credit');
+    return next(new Error(`Voucher imbalanced: Debit=${this.totalDebit} Credit=${this.totalCredit}`));
   }
+  if (!this.financialYear) {
+    this.financialYear = getFinancialYear(this.voucherDate);
+  }
+  next();
 });
+
+function getFinancialYear(date) {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = d.getMonth() + 1;
+  return month >= 4
+    ? `${String(year).slice(-2)}${String(year + 1).slice(-2)}`
+    : `${String(year - 1).slice(-2)}${String(year).slice(-2)}`;
+}
 
 const Voucher = mongoose.model('Voucher', voucherSchema);
 
