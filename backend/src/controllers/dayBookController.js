@@ -16,8 +16,11 @@ export const getDayBook = async (req, res) => {
     const start = new Date(startDate);
     const end = new Date(endDate);
 
-    // Fetch all vouchers in date range
+    const companyId = req.companyId;
+
+    // Fetch all vouchers in date range for this company
     const vouchers = await Voucher.find({
+      companyId,
       voucherDate: { $gte: start, $lte: end }
     })
       .sort({ voucherDate: 1, voucherNumber: 1 })
@@ -25,6 +28,7 @@ export const getDayBook = async (req, res) => {
 
     // --- Calculate opening balance from Cash/Bank ledgers before startDate ---
     const cashBankLedgers = await Ledger.find({
+      companyId,
       ledgerType: { $in: ['Cash', 'Bank'] },
       status: 'Active'
     });
@@ -40,6 +44,7 @@ export const getDayBook = async (req, res) => {
     const cashBankLedgerIds = cashBankLedgers.map(l => l._id.toString());
 
     const preVouchers = await Voucher.find({
+      companyId,
       voucherDate: { $lt: start }
     }).populate('entries.ledgerId', 'ledgerName ledgerType');
 

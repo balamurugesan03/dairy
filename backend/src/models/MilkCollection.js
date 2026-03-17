@@ -88,6 +88,10 @@ const milkCollectionSchema = new mongoose.Schema({
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
+  },
+  voucherId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Voucher'
   }
 }, {
   timestamps: true

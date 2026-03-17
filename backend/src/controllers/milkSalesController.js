@@ -1,6 +1,72 @@
 import MilkSales from '../models/MilkSales.js';
 import Voucher   from '../models/Voucher.js';
 import Customer  from '../models/Customer.js';
+import Ledger    from '../models/Ledger.js';
+import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances } from '../utils/accountingHelper.js';
+
+// ── Helper: create accounting voucher for a milk sale ────────────────────────
+async function createMilkSaleVoucher(sale, companyId) {
+  const { saleMode, paymentType, creditorId, amount, date, billNo, session } = sale;
+  const shiftNote = session ? ` (${session})` : '';
+
+  if (saleMode === 'LOCAL' || saleMode === 'SAMPLE') {
+    // Receipt voucher: Dr Cash/Bank, Cr LOCAL SALES / SAMPLE SALES
+    const payLedgerName  = paymentType === 'Bank' ? 'Bank' : 'Cash';
+    const saleLedgerName = saleMode === 'SAMPLE' ? 'SAMPLE SALES' : 'LOCAL SALES';
+    const [payLedger, saleLedger] = await Promise.all([
+      Ledger.findOne({ ledgerName: payLedgerName,  companyId }),
+      Ledger.findOne({ ledgerName: saleLedgerName, companyId })
+    ]);
+    if (!payLedger)  console.warn(`[MilkSales] Ledger not found: "${payLedgerName}" — create it in Accounts`);
+    if (!saleLedger) console.warn(`[MilkSales] Ledger not found: "${saleLedgerName}" — create it in Accounts`);
+    if (!payLedger || !saleLedger) return null;
+    const entries = [
+      { ledgerId: payLedger._id,  ledgerName: payLedger.ledgerName,  debitAmount: amount, creditAmount: 0,      narration: shiftNote.trim() },
+      { ledgerId: saleLedger._id, ledgerName: saleLedger.ledgerName, debitAmount: 0,      creditAmount: amount, narration: shiftNote.trim() }
+    ];
+    const voucherNumber = await generateVoucherNumber('Receipt', companyId);
+    const voucher = new Voucher({
+      voucherType: 'Receipt', voucherNumber, voucherDate: date, entries,
+      totalDebit: amount, totalCredit: amount,
+      narration: `Milk Sales (${saleMode}) - ${billNo}${shiftNote}`,
+      referenceType: 'Sales', referenceId: sale._id, companyId
+    });
+    await voucher.save();
+    await updateLedgerBalances(entries);
+    return voucher;
+  }
+
+  if (saleMode === 'CREDIT') {
+    // Journal: Dr Creditor ledger, Cr MILK CREDIT SALES / SCHOOL MILK SALES
+    const customer = creditorId ? await Customer.findById(creditorId).lean() : null;
+    if (!customer) return null;
+    const isSchool = ['School', 'Anganwadi'].includes(customer.category);
+    const saleLedgerName = isSchool ? 'SCHOOL MILK SALES' : 'MILK CREDIT SALES';
+    const [creditorLedger, saleLedger] = await Promise.all([
+      customer.ledgerId ? Ledger.findById(customer.ledgerId) : null,
+      Ledger.findOne({ ledgerName: saleLedgerName, companyId })
+    ]);
+    if (!creditorLedger) console.warn(`[MilkSales] Creditor ledger not found for customer ${creditorId} — link a ledger to this customer`);
+    if (!saleLedger)     console.warn(`[MilkSales] Ledger not found: "${saleLedgerName}" — create it in Accounts`);
+    if (!creditorLedger || !saleLedger) return null;
+    const entries = [
+      { ledgerId: creditorLedger._id, ledgerName: creditorLedger.ledgerName, debitAmount: amount, creditAmount: 0,      narration: shiftNote.trim() },
+      { ledgerId: saleLedger._id,     ledgerName: saleLedger.ledgerName,     debitAmount: 0,      creditAmount: amount, narration: shiftNote.trim() }
+    ];
+    const voucherNumber = await generateVoucherNumber('Journal', companyId);
+    const voucher = new Voucher({
+      voucherType: 'Journal', voucherNumber, voucherDate: date, entries,
+      totalDebit: amount, totalCredit: amount,
+      narration: `Milk Sales (CREDIT) - ${billNo} - ${customer.name}${shiftNote}`,
+      referenceType: 'Sales', referenceId: sale._id, companyId
+    });
+    await voucher.save();
+    await updateLedgerBalances(entries);
+    return voucher;
+  }
+
+  return null;
+}
 
 // ────────────────────────────────────────────────────────────────
 //  GET ALL  (filter by date, session, saleMode; pagination)
@@ -91,6 +157,18 @@ export const getDailySummary = async (req, res) => {
 export const createMilkSale = async (req, res) => {
   try {
     const sale = await MilkSales.create({ ...req.body, companyId: req.companyId });
+
+    // Auto-create accounting voucher
+    try {
+      const voucher = await createMilkSaleVoucher(sale, req.companyId);
+      if (voucher) {
+        sale.voucherId = voucher._id;
+        await sale.save();
+      }
+    } catch (vErr) {
+      console.warn('[MilkSales] Voucher creation failed (non-fatal):', vErr.message);
+    }
+
     res.status(201).json({ success: true, data: sale });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -121,6 +199,20 @@ export const deleteMilkSale = async (req, res) => {
   try {
     const sale = await MilkSales.findOneAndDelete({ _id: req.params.id, companyId: req.companyId });
     if (!sale) return res.status(404).json({ success: false, message: 'Record not found' });
+
+    // Reverse ledger balances and delete linked voucher
+    if (sale.voucherId) {
+      try {
+        const voucher = await Voucher.findById(sale.voucherId);
+        if (voucher) {
+          await reverseLedgerBalances(voucher.entries);
+          await voucher.deleteOne();
+        }
+      } catch (vErr) {
+        console.warn('[MilkSales] Voucher reversal failed (non-fatal):', vErr.message);
+      }
+    }
+
     res.json({ success: true, message: 'Deleted successfully' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

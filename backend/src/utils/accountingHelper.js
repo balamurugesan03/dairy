@@ -3,7 +3,7 @@ import Ledger from '../models/Ledger.js';
 import Item from '../models/Item.js';
 
 // Generate voucher number based on type and date
-export const generateVoucherNumber = async (voucherType) => {
+export const generateVoucherNumber = async (voucherType, companyId = null) => {
   const prefix = {
     'Receipt': 'RV',
     'Payment': 'PV',
@@ -14,7 +14,10 @@ export const generateVoucherNumber = async (voucherType) => {
   const year = today.getFullYear().toString().slice(-2);
   const month = (today.getMonth() + 1).toString().padStart(2, '0');
 
-  const lastVoucher = await Voucher.findOne({ voucherType })
+  const query = { voucherType };
+  if (companyId) query.companyId = companyId;
+
+  const lastVoucher = await Voucher.findOne(query)
     .sort({ createdAt: -1 })
     .limit(1);
 
@@ -139,17 +142,28 @@ export const updateLedgerBalances = async (entries, session = null) => {
     const netChange = entry.debitAmount - entry.creditAmount;
 
     // Update current balance based on ledger type
-    // Asset-like ledgers (debit increases balance): Asset, Expense, Cash, Bank, Other Receivable
-    if (['Asset', 'Expense', 'Cash', 'Bank', 'Other Receivable'].includes(ledger.ledgerType)) {
+    // Debit-normal (debit increases balance): Assets, Expenses, Cash, Bank
+    const debitNormal = [
+      'Asset', 'Expense', 'Cash', 'Bank', 'Other Receivable',
+      'Fixed Assets', 'Movable Assets', 'Immovable Assets', 'Other Assets',
+      'Purchases A/c', 'Trade Expenses', 'Establishment Charges', 'Miscellaneous Expenses',
+      'Investment A/c', 'Other Investment', 'Government Securities',
+      'Party'
+    ];
+    // Credit-normal (credit increases balance): Income, Liabilities, Capital
+    const creditNormal = [
+      'Liability', 'Income', 'Capital', 'Other Payable',
+      'Sales A/c', 'Trade Income', 'Miscellaneous Income', 'Other Revenue', 'Grants & Aid', 'Subsidies',
+      'Accounts Due To (Sundry Creditors)', 'Other Liabilities', 'Deposit A/c',
+      'Contingency Fund', 'Education Fund', 'Share Capital', 'Profit & Loss A/c'
+    ];
+
+    if (debitNormal.includes(ledger.ledgerType)) {
       ledger.currentBalance += netChange;
       ledger.balanceType = ledger.currentBalance >= 0 ? 'Dr' : 'Cr';
-    } else if (['Liability', 'Income', 'Capital', 'Other Payable'].includes(ledger.ledgerType)) {
-      // Liability-like ledgers (credit increases balance)
+    } else if (creditNormal.includes(ledger.ledgerType)) {
       ledger.currentBalance -= netChange;
       ledger.balanceType = ledger.currentBalance >= 0 ? 'Cr' : 'Dr';
-    } else if (ledger.ledgerType === 'Party') {
-      ledger.currentBalance += netChange;
-      ledger.balanceType = ledger.currentBalance >= 0 ? 'Dr' : 'Cr';
     }
 
     if (session) {
@@ -365,10 +379,21 @@ export const createPurchaseVoucher = async (purchaseData, session = null) => {
   return voucher;
 };
 
+// Reverse ledger balances (used when deleting a voucher)
+export const reverseLedgerBalances = async (entries, session = null) => {
+  const reversed = entries.map(e => ({
+    ...e,
+    debitAmount: e.creditAmount,
+    creditAmount: e.debitAmount
+  }));
+  return updateLedgerBalances(reversed, session);
+};
+
 export default {
   generateVoucherNumber,
   createSalesVoucher,
   updateLedgerBalances,
+  reverseLedgerBalances,
   createPaymentVoucher,
   createPurchaseVoucher
 };

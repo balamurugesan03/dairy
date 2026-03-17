@@ -13,7 +13,7 @@ const milkSalesSchema = new mongoose.Schema({
   },
   saleMode: {
     type: String,
-    enum: ['LOCAL', 'CREDIT'],
+    enum: ['LOCAL', 'CREDIT', 'SAMPLE'],
     default: 'LOCAL'
   },
   date: {
@@ -75,6 +75,10 @@ const milkSalesSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Company',
     required: true
+  },
+  voucherId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Voucher'
   }
 }, { timestamps: true });
 

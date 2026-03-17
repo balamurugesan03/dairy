@@ -1,4 +1,7 @@
 import MilkCollection from '../models/MilkCollection.js';
+import Voucher from '../models/Voucher.js';
+import Ledger from '../models/Ledger.js';
+import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances } from '../utils/accountingHelper.js';
 
 // ── Auto-generate bill number: MC-YYMM-XXXXX ─────────────────────────────────
 const generateBillNo = async (companyId) => {
@@ -34,6 +37,39 @@ export const createCollection = async (req, res) => {
     });
 
     await entry.save();
+
+    // ── Auto-create Journal voucher: Dr PRODUCERS DUES / Cr MILK PURCHASE ──
+    try {
+      const [debitLedger, creditLedger] = await Promise.all([
+        Ledger.findOne({ ledgerName: 'PRODUCERS DUES', companyId: req.companyId }),
+        Ledger.findOne({ ledgerName: 'MILK PURCHASE',  companyId: req.companyId })
+      ]);
+      if (!debitLedger) console.warn('[MilkCollection] Ledger not found: "PRODUCERS DUES" — create it in Accounts');
+      if (!creditLedger) console.warn('[MilkCollection] Ledger not found: "MILK PURCHASE" — create it in Accounts');
+      if (debitLedger && creditLedger) {
+        const vEntries = [
+          { ledgerId: debitLedger._id, ledgerName: debitLedger.ledgerName, debitAmount: entry.amount, creditAmount: 0,
+            narration: `${entry.shift} shift` },
+          { ledgerId: creditLedger._id, ledgerName: creditLedger.ledgerName, debitAmount: 0, creditAmount: entry.amount,
+            narration: `${entry.shift} shift` }
+        ];
+        const voucherNumber = await generateVoucherNumber('Journal', req.companyId);
+        const voucher = new Voucher({
+          voucherType: 'Journal', voucherNumber,
+          voucherDate: entry.date, entries: vEntries,
+          totalDebit: entry.amount, totalCredit: entry.amount,
+          narration: `Milk Purchase - ${entry.billNo} - ${entry.farmerName || ''} (${entry.shift})`,
+          referenceType: 'Purchase', referenceId: entry._id,
+          companyId: req.companyId
+        });
+        await voucher.save();
+        await updateLedgerBalances(vEntries);
+        entry.voucherId = voucher._id;
+        await entry.save();
+      }
+    } catch (vErr) {
+      console.warn('[MilkCollection] Voucher creation failed (non-fatal):', vErr.message);
+    }
 
     const populated = await MilkCollection.findById(entry._id)
       .populate('collectionCenter', 'centerName')
@@ -138,6 +174,19 @@ export const deleteCollection = async (req, res) => {
     });
 
     if (!record) return res.status(404).json({ success: false, message: 'Record not found' });
+
+    // Reverse ledger balances and delete linked voucher
+    if (record.voucherId) {
+      try {
+        const voucher = await Voucher.findById(record.voucherId);
+        if (voucher) {
+          await reverseLedgerBalances(voucher.entries);
+          await voucher.deleteOne();
+        }
+      } catch (vErr) {
+        console.warn('[MilkCollection] Voucher reversal failed (non-fatal):', vErr.message);
+      }
+    }
 
     res.json({ success: true, message: 'Record deleted' });
   } catch (error) {
