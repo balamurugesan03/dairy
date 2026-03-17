@@ -4,14 +4,12 @@ const designationSchema = new mongoose.Schema({
   name: {
     type: String,
     required: true,
-    unique: true,
     trim: true
   },
 
   code: {
     type: String,
     required: true,
-    unique: true,
     trim: true,
     uppercase: true
   },
@@ -58,6 +56,12 @@ const designationSchema = new mongoose.Schema({
 
   remarks: {
     type: String
+  },
+
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true
   }
 
 }, {
@@ -65,11 +69,12 @@ const designationSchema = new mongoose.Schema({
 });
 
 // Indexes
-designationSchema.index({ name: 1 });
-designationSchema.index({ code: 1 });
+designationSchema.index({ name: 1, companyId: 1 }, { unique: true });
+designationSchema.index({ code: 1, companyId: 1 }, { unique: true });
 designationSchema.index({ status: 1 });
 designationSchema.index({ department: 1 });
 designationSchema.index({ level: 1 });
+designationSchema.index({ companyId: 1 });
 
 // Virtual to get all employees with this designation
 designationSchema.virtual('employees', {

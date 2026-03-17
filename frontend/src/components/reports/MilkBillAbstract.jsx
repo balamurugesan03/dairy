@@ -64,6 +64,7 @@ const thBase = {
   textAlign: 'center', background: NAVY2,
   border: '1px solid #3b6bc4', lineHeight: 1.3
 };
+const thBaseR = { ...thBase, textAlign: 'right' };
 const tdBase  = { padding: '5px 8px', fontSize: 11, border: '1px solid #e2e8f0' };
 const tdRight = { ...tdBase, textAlign: 'right', fontFamily: 'monospace' };
 const tdCtr   = { ...tdBase, textAlign: 'center' };
@@ -356,16 +357,16 @@ const MilkBillAbstract = () => {
                   <Table.Th style={{ ...thBase, minWidth: 55 }}>Shift</Table.Th>
                   <Table.Th style={{ ...thBase, minWidth: 65 }}>{'Farmer\nNo'}</Table.Th>
                   <Table.Th style={{ ...thBase, minWidth: 120 }}>Farmer Name</Table.Th>
-                  <Table.Th style={{ ...thBase, minWidth: 75 }}>{'Qty\n(Litre)'}</Table.Th>
-                  <Table.Th style={{ ...thBase, minWidth: 55 }}>FAT</Table.Th>
-                  <Table.Th style={{ ...thBase, minWidth: 55 }}>SNF</Table.Th>
-                  <Table.Th style={{ ...thBase, minWidth: 65 }}>Rate</Table.Th>
-                  <Table.Th style={{ ...thBase, minWidth: 70 }}>Incentive</Table.Th>
-                  <Table.Th style={{ ...thBase, minWidth: 85 }}>{'Milk\nAmount'}</Table.Th>
+                  <Table.Th style={{ ...thBaseR, minWidth: 75 }}>{'Qty\n(Litre)'}</Table.Th>
+                  <Table.Th style={{ ...thBaseR, minWidth: 55 }}>FAT</Table.Th>
+                  <Table.Th style={{ ...thBaseR, minWidth: 55 }}>SNF</Table.Th>
+                  <Table.Th style={{ ...thBaseR, minWidth: 65 }}>Rate</Table.Th>
+                  <Table.Th style={{ ...thBaseR, minWidth: 70 }}>Incentive</Table.Th>
+                  <Table.Th style={{ ...thBaseR, minWidth: 85 }}>{'Milk\nAmount'}</Table.Th>
                   {DEDUCTION_COLS.map(c => (
-                    <Table.Th key={c.key} style={{ ...thBase, minWidth: 75 }}>{c.label}</Table.Th>
+                    <Table.Th key={c.key} style={{ ...thBaseR, minWidth: 75 }}>{c.label}</Table.Th>
                   ))}
-                  <Table.Th style={{ ...thBase, minWidth: 90, background: '#0a1f42' }}>{'Payment\nTotal'}</Table.Th>
+                  <Table.Th style={{ ...thBaseR, minWidth: 90, background: '#0a1f42' }}>{'Payment\nTotal'}</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>{renderRows()}</Table.Tbody>

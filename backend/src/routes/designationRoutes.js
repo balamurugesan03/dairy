@@ -7,8 +7,10 @@ import {
   deleteDesignation,
   getActiveDesignations
 } from '../controllers/designationController.js';
+import { protect, addCompanyFilter } from '../middleware/auth.js';
 
 const router = express.Router();
+router.use(protect, addCompanyFilter);
 
 // Active designations
 router.get('/active', getActiveDesignations);

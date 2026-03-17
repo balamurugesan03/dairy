@@ -113,6 +113,16 @@ export const customerAPI = {
   }
 };
 
+// BUSINESS CUSTOMER APIs (Private Firm)
+export const businessCustomerAPI = {
+  getAll: (params) => api.get('/business-customers', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/business-customers/${id}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/business-customers', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/business-customers/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/business-customers/${id}`).then(res => res.data).catch(handleError),
+  search: (query) => api.get('/business-customers/search', { params: { query } }).then(res => res.data).catch(handleError)
+};
+
 // SUPPLIER APIs
 export const supplierAPI = {
   getAll: (params) => api.get('/suppliers', { params }).then(res => res.data).catch(handleError),
@@ -217,6 +227,9 @@ export const reportAPI = {
   stockRegister: (params) => api.get('/reports/stock-register', { params }).then(res => res.data).catch(handleError),
   inventoryPurchaseRegister: (params) => api.get('/reports/inventory-purchase-register', { params }).then(res => res.data).catch(handleError),
   milkBillAbstract: (params) => api.get('/reports/milk-bill-abstract', { params }).then(res => res.data).catch(handleError),
+  dairyAbstract: (params) => api.get('/reports/dairy-abstract', { params }).then(res => res.data).catch(handleError),
+  dairyRegister: (params) => api.get('/reports/dairy-register', { params }).then(res => res.data).catch(handleError),
+  cooperativeRD: (params) => api.get('/reports/cooperative-rd', { params }).then(res => res.data).catch(handleError),
   // New accounting reports
   cashBook: (params) => api.get('/reports/cash-book', { params }).then(res => res.data).catch(handleError),
   generalLedger: (params) => api.get('/reports/general-ledger', { params }).then(res => res.data).catch(handleError),
@@ -297,7 +310,7 @@ export const promotionAPI = {
   delete: (id) => api.delete(`/promotions/${id}`).then(res => res.data).catch(handleError)
 };
 
-// CLASSIFIED CASH BOOK APIs
+// CLASSIFIED CASH BOOK APIs 
 export const classifiedCashBookAPI = {
   // Create receipt
   createReceipt: (data) => api.post('/cashbook/receipts', data).then(res => res.data).catch(handleError),
@@ -811,6 +824,36 @@ export const individualTransactionAPI = {
   update:          (id, data)    => api.put(`/individual-transactions/${id}`, data).then(r => r.data).catch(handleError),
   delete:          (id)          => api.delete(`/individual-transactions/${id}`).then(r => r.data).catch(handleError),
   lookupProducer:  (code)        => api.get(`/individual-transactions/lookup/${code}`).then(r => r.data).catch(handleError),
+};
+
+// ── Thermal Printer API ───────────────────────────────────────────────────────
+// No auth header needed — hits /api/print/* which has no protect middleware
+const printApi = axios.create({
+  baseURL: 'http://localhost:5000/api/print',
+  timeout: 5000,
+  headers: { 'Content-Type': 'application/json' }
+});
+
+export const thermalPrintAPI = {
+  milkReceipt: (data) => printApi.post('/milk-receipt', data),
+  status:      ()     => printApi.get('/status')
+};
+
+// ── Milk Analyzer API ─────────────────────────────────────────────────────────
+export const milkAnalyzerAPI = {
+  save:    (data)   => api.post('/milk-analyzer', data).then(r => r.data).catch(handleError),
+  getAll:  (params) => api.get('/milk-analyzer', { params }).then(r => r.data).catch(handleError),
+  delete:  (id)     => api.delete(`/milk-analyzer/${id}`).then(r => r.data).catch(handleError)
+};
+
+// ── Machine Config API (Analyzer device settings + start/stop) ────────────────
+export const machineConfigAPI = {
+  getConfig:  ()     => api.get('/machine-config').then(r => r.data).catch(handleError),
+  save:       (data) => api.post('/machine-config', data).then(r => r.data).catch(handleError),
+  listPorts:  ()     => api.get('/machine-config/ports').then(r => r.data).catch(handleError),
+  getStatus:  ()     => api.get('/machine-config/status').then(r => r.data).catch(handleError),
+  start:      (data) => api.post('/machine-config/start', data || {}).then(r => r.data).catch(handleError),
+  stop:       ()     => api.post('/machine-config/stop').then(r => r.data).catch(handleError),
 };
 
 export default api;

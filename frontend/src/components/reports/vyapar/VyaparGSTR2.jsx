@@ -54,9 +54,10 @@ import * as XLSX from 'xlsx';
 import { useCompany } from '../../../context/CompanyContext';
 import { reportAPI } from '../../../services/api';
 import { message } from '../../../utils/toast';
+import { printVyaparReport } from '../../../utils/printReport';
 
 const VyaparGSTR2 = () => {
-  const { selectedBusinessType } = useCompany();
+  const { selectedBusinessType, selectedCompany } = useCompany();
   const navigate = useNavigate();
   const printRef = useRef();
 
@@ -185,32 +186,11 @@ const VyaparGSTR2 = () => {
 
   // Print functionality
   const handlePrint = () => {
-    const printContent = printRef.current;
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>GSTR-2 Report - ${reportData?.returnPeriod?.periodString || ''}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
-            th { background-color: #f5f5f5; font-weight: bold; }
-            .text-right { text-align: right; }
-            .text-center { text-align: center; }
-            h1, h2, h3 { color: #333; }
-            .summary-card { display: inline-block; padding: 10px 20px; margin: 5px; border: 1px solid #ddd; border-radius: 4px; }
-            .itc-highlight { background-color: #e6f7ff; padding: 15px; border-radius: 8px; margin: 10px 0; }
-            @media print { body { -webkit-print-color-adjust: exact; } }
-          </style>
-        </head>
-        <body>
-          ${printContent.innerHTML}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
+    printVyaparReport(printRef, {
+      title: 'GSTR-2 Report',
+      companyName: selectedCompany?.companyName || '',
+      orientation: 'landscape'
+    });
   };
 
   if (selectedBusinessType !== 'Private Firm') {

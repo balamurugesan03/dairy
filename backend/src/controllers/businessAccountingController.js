@@ -4,9 +4,11 @@ import BusinessVoucher from '../models/BusinessVoucher.js';
 // ==================== LEDGER CONTROLLERS ====================
 
 // Generate Ledger Code
-const generateLedgerCode = async (group) => {
+const generateLedgerCode = async (group, companyId = null) => {
   const prefix = group.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, '');
-  const count = await BusinessLedger.countDocuments({ group });
+  const query = { group };
+  if (companyId) query.companyId = companyId;
+  const count = await BusinessLedger.countDocuments(query);
   return `B${prefix}${(count + 1).toString().padStart(4, '0')}`;
 };
 
@@ -15,13 +17,15 @@ export const createBusinessLedger = async (req, res) => {
   try {
     const { name, group, type, openingBalance, openingBalanceType, description, partyDetails, bankDetails } = req.body;
 
-    // Check if ledger name already exists
-    const existing = await BusinessLedger.findOne({ name: { $regex: new RegExp(`^${name}$`, 'i') } });
+    const companyId = req.companyId;
+
+    // Check if ledger name already exists per company
+    const existing = await BusinessLedger.findOne({ name: { $regex: new RegExp(`^${name}$`, 'i') }, companyId });
     if (existing) {
       return res.status(400).json({ message: 'Ledger with this name already exists' });
     }
 
-    const code = await generateLedgerCode(group);
+    const code = await generateLedgerCode(group, companyId);
 
     const ledger = new BusinessLedger({
       name,
@@ -34,7 +38,8 @@ export const createBusinessLedger = async (req, res) => {
       description,
       partyDetails,
       bankDetails,
-      businessType: 'Private Firm'
+      businessType: 'Private Firm',
+      companyId
     });
 
     await ledger.save();
@@ -50,7 +55,7 @@ export const getAllBusinessLedgers = async (req, res) => {
   try {
     const { group, type, status, search } = req.query;
 
-    const query = { businessType: 'Private Firm' };
+    const query = { companyId: req.companyId };
 
     if (group) query.group = group;
     if (type) query.type = type;
@@ -143,11 +148,12 @@ export const updateBusinessLedger = async (req, res) => {
       return res.status(404).json({ message: 'Ledger not found' });
     }
 
-    // Check for duplicate name
+    // Check for duplicate name per company
     if (name && name !== ledger.name) {
       const existing = await BusinessLedger.findOne({
         name: { $regex: new RegExp(`^${name}$`, 'i') },
-        _id: { $ne: req.params.id }
+        _id: { $ne: req.params.id },
+        companyId: req.companyId
       });
       if (existing) {
         return res.status(400).json({ message: 'Ledger with this name already exists' });
@@ -202,7 +208,7 @@ export const deleteBusinessLedger = async (req, res) => {
 // ==================== VOUCHER CONTROLLERS ====================
 
 // Generate Voucher Number
-const generateVoucherNumber = async (voucherType) => {
+const generateVoucherNumber = async (voucherType, companyId = null) => {
   const prefix = voucherType === 'Income' ? 'BIN' :
                  voucherType === 'Expense' ? 'BEX' :
                  voucherType === 'Journal' ? 'BJV' :
@@ -212,9 +218,10 @@ const generateVoucherNumber = async (voucherType) => {
   const year = today.getFullYear().toString().slice(-2);
   const month = (today.getMonth() + 1).toString().padStart(2, '0');
 
-  const lastVoucher = await BusinessVoucher.findOne({
-    voucherNumber: { $regex: `^${prefix}${year}${month}` }
-  }).sort({ voucherNumber: -1 });
+  const query = { voucherNumber: { $regex: `^${prefix}${year}${month}` } };
+  if (companyId) query.companyId = companyId;
+
+  const lastVoucher = await BusinessVoucher.findOne(query).sort({ voucherNumber: -1 });
 
   let sequence = 1;
   if (lastVoucher) {
@@ -263,7 +270,8 @@ export const createBusinessVoucher = async (req, res) => {
       return res.status(400).json({ message: 'Debit and Credit amounts must be equal' });
     }
 
-    const voucherNumber = await generateVoucherNumber(voucherType);
+    const companyId = req.companyId;
+    const voucherNumber = await generateVoucherNumber(voucherType, companyId);
 
     // Populate ledger names
     const processedEntries = [];
@@ -298,7 +306,8 @@ export const createBusinessVoucher = async (req, res) => {
       partyName,
       referenceType: 'Manual',
       status: 'Posted',
-      businessType: 'Private Firm'
+      businessType: 'Private Firm',
+      companyId
     });
 
     await voucher.save();
@@ -326,7 +335,7 @@ export const getAllBusinessVouchers = async (req, res) => {
   try {
     const { voucherType, startDate, endDate, search, status, page = 1, limit = 50 } = req.query;
 
-    const query = { businessType: 'Private Firm' };
+    const query = { companyId: req.companyId };
 
     if (voucherType) query.voucherType = voucherType;
     if (status) query.status = status;

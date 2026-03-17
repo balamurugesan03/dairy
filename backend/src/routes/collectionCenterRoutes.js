@@ -7,8 +7,10 @@ import {
   deleteCollectionCenter,
   toggleStatus
 } from '../controllers/collectionCenterController.js';
+import { protect, addCompanyFilter } from '../middleware/auth.js';
 
 const router = express.Router();
+router.use(protect, addCompanyFilter);
 
 // Create new collection center
 router.post('/', createCollectionCenter);

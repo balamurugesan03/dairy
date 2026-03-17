@@ -4,7 +4,6 @@ const businessVoucherSchema = new mongoose.Schema({
   voucherNumber: {
     type: String,
     required: true,
-    unique: true,
     trim: true
   },
   voucherType: {
@@ -73,7 +72,7 @@ const businessVoucherSchema = new mongoose.Schema({
   // Party details
   partyId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Customer'
+    ref: 'BusinessCustomer'
   },
   partyName: String,
   // Status
@@ -85,6 +84,11 @@ const businessVoucherSchema = new mongoose.Schema({
   businessType: {
     type: String,
     default: 'Private Firm'
+  },
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true
   }
 }, {
   timestamps: true
@@ -93,8 +97,9 @@ const businessVoucherSchema = new mongoose.Schema({
 // Indexes
 businessVoucherSchema.index({ date: -1 });
 businessVoucherSchema.index({ voucherType: 1 });
-businessVoucherSchema.index({ voucherNumber: 1 });
+businessVoucherSchema.index({ voucherNumber: 1, companyId: 1 }, { unique: true });
 businessVoucherSchema.index({ status: 1 });
+businessVoucherSchema.index({ companyId: 1 });
 
 const BusinessVoucher = mongoose.model('BusinessVoucher', businessVoucherSchema);
 

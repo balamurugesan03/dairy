@@ -29,7 +29,8 @@ export const createStockTransaction = async (transactionData, session = null) =>
     subsidyAmount,
     ledgerDeduction,
     netTotal,
-    notes
+    notes,
+    companyId
   } = transactionData;
 
   // Get current item
@@ -80,7 +81,8 @@ export const createStockTransaction = async (transactionData, session = null) =>
     subsidyAmount: subsidyAmount || 0,
     ledgerDeduction: ledgerDeduction || 0,
     netTotal: netTotal || 0,
-    notes
+    notes,
+    companyId
   });
 
   if (session) {
@@ -101,7 +103,7 @@ export const createStockTransaction = async (transactionData, session = null) =>
 };
 
 // Create multiple stock transactions (for sales with multiple items)
-export const createBulkStockTransactions = async (items, referenceType, referenceId, session = null) => {
+export const createBulkStockTransactions = async (items, referenceType, referenceId, session = null, companyId = null) => {
   const transactions = [];
 
   for (const itemData of items) {
@@ -112,7 +114,8 @@ export const createBulkStockTransactions = async (items, referenceType, referenc
       rate: itemData.rate,
       referenceType,
       referenceId,
-      notes: `${referenceType} - Item: ${itemData.itemName}`
+      notes: `${referenceType} - Item: ${itemData.itemName}`,
+      companyId
     }, session);
 
     transactions.push(transaction);
@@ -153,7 +156,8 @@ export const reverseStockTransaction = async (referenceType, referenceId, sessio
       referenceId: transaction._id,
       balanceAfter: newBalance,
       date: new Date(),
-      notes: `Reversal of ${transaction.referenceType}`
+      notes: `Reversal of ${transaction.referenceType}`,
+      companyId: transaction.companyId
     });
 
     if (session) {
@@ -192,10 +196,13 @@ export const getItemStockHistory = async (itemId, startDate = null, endDate = nu
 };
 
 // Get current stock report for all items
-export const getStockReport = async (category = null, status = 'Active') => {
+export const getStockReport = async (category = null, status = 'Active', companyId = null) => {
   const query = { status };
   if (category) {
     query.category = category;
+  }
+  if (companyId) {
+    query.companyId = companyId;
   }
 
   const items = await Item.find(query)

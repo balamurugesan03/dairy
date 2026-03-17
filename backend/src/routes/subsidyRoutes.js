@@ -6,8 +6,10 @@ import {
   updateSubsidy,
   deleteSubsidy
 } from '../controllers/subsidyController.js';
+import { protect, addCompanyFilter } from '../middleware/auth.js';
 
 const router = express.Router();
+router.use(protect, addCompanyFilter);
 
 // Subsidy routes
 router.get('/subsidies', getAllSubsidies);

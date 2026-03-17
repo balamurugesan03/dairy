@@ -304,6 +304,30 @@ export default function MilkSales() {
                 styles={{ root: { background: '#f1f5f9', border: '1.5px solid #bfdbfe' } }}
               />
             </Box>
+
+            {/* Collection Centre & Agent (CREDIT & SAMPLE) */}
+            {(mode === 'CREDIT' || mode === 'SAMPLE') && (
+              <>
+                <Box style={{ flexShrink: 0, minWidth: 160 }}>
+                  <Text size="9px" fw={700} c="#64748b" tt="uppercase" mb={3} style={{ letterSpacing: '0.4px' }}>Collection Centre</Text>
+                  <Select
+                    data={centers} value={center} onChange={setCenter}
+                    placeholder="Select centre..." searchable clearable
+                    size="xs" radius="md"
+                    styles={{ input: { fontWeight: 600, border: '1.5px solid #c4b5fd', height: 28, fontSize: 12 } }}
+                  />
+                </Box>
+                <Box style={{ flexShrink: 0, minWidth: 160 }}>
+                  <Text size="9px" fw={700} c="#64748b" tt="uppercase" mb={3} style={{ letterSpacing: '0.4px' }}>Collection Agent</Text>
+                  <Select
+                    data={agents} value={agent} onChange={setAgent}
+                    placeholder="Select agent..." searchable clearable
+                    size="xs" radius="md"
+                    styles={{ input: { fontWeight: 600, border: '1.5px solid #c4b5fd', height: 28, fontSize: 12 } }}
+                  />
+                </Box>
+              </>
+            )}
           </Group>
 
           {/* RIGHT: Clear */}
@@ -394,16 +418,6 @@ export default function MilkSales() {
                     min={0} decimalScale={2} placeholder="0.00" size="xs" radius="sm"
                     styles={{ input: { fontWeight: 600, border: '1.5px solid #c4b5fd', height: 28 } }} />
                 </Box>
-                <Box>
-                  <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Collection Center</Text>
-                  <Select data={centers} value={center} onChange={setCenter} placeholder="Select center..." searchable clearable
-                    size="xs" radius="sm" styles={{ input: { fontWeight: 600, border: '1.5px solid #c4b5fd', height: 28 } }} />
-                </Box>
-                <Box>
-                  <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Agent</Text>
-                  <Select data={agents} value={agent} onChange={setAgent} placeholder="Select agent..." searchable clearable
-                    size="xs" radius="sm" styles={{ input: { fontWeight: 600, border: '1.5px solid #c4b5fd', height: 28 } }} />
-                </Box>
               </Stack>
             )}
           </Card>
@@ -480,55 +494,64 @@ export default function MilkSales() {
                 />
               )}
 
+              {/* Save — emerald green */}
               <Button leftSection={saving ? <Loader size={10} color="white" /> : <IconDeviceFloppy size={12} />}
                 onClick={handleSave} disabled={saving} size="compact-xs" radius="sm"
-                style={{ background: editingId ? '#b45309' : '#166534', border: '1px solid rgba(255,255,255,0.3)', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                style={{ background: editingId ? '#b45309' : '#059669', border: '1px solid #34d399', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 {editingId ? 'Update' : 'Save'}
               </Button>
+              {/* Save & Close — sky blue */}
               <Button leftSection={saving ? <Loader size={10} color="white" /> : <IconDeviceFloppy size={12} />}
                 onClick={handleSaveClose} disabled={saving} size="compact-xs" radius="sm"
-                style={{ background: '#0369a1', border: '1px solid rgba(255,255,255,0.3)', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                style={{ background: '#0284c7', border: '1px solid #38bdf8', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Save &amp; Close
               </Button>
 
               <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
 
+              {/* New — indigo */}
               <Button leftSection={<IconPlus size={12} />} onClick={handleNew} size="compact-xs" radius="sm"
-                style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                style={{ background: '#4f46e5', border: '1px solid #818cf8', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 New
               </Button>
+              {/* Edit — amber */}
               <Button leftSection={<IconEdit size={12} />} disabled={!selRow} onClick={handleEdit} size="compact-xs" radius="sm"
-                style={{ background: selRow ? '#166534' : 'rgba(255,255,255,0.07)', border: 'none', fontWeight: 700, fontSize: 10, height: 24 }}>
+                style={{ background: selRow ? '#d97706' : 'rgba(255,255,255,0.07)', border: selRow ? '1px solid #fbbf24' : 'none', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Edit
               </Button>
+              {/* Clear / Cancel — slate */}
               <Button leftSection={<IconBan size={12} />} onClick={handleNew} size="compact-xs" radius="sm"
-                style={{ background: editingId ? '#b45309' : 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                style={{ background: editingId ? '#b45309' : '#475569', border: '1px solid #94a3b8', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 {editingId ? 'Cancel Edit' : 'Clear'}
               </Button>
 
               <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
 
+              {/* Search — teal */}
               <Button leftSection={<IconHistory size={12} />} onClick={() => { setShowHistory(v => !v); if (showHistory) setHistorySearch(''); }} size="compact-xs" radius="sm"
-                style={{ background: showHistory ? '#166534' : 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                style={{ background: showHistory ? '#0f766e' : '#0d9488', border: '1px solid #2dd4bf', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 {showHistory ? 'Hide' : 'Search'}
               </Button>
+              {/* Refresh — cyan */}
               <Button leftSection={<IconRefresh size={12} />} onClick={loadEntries} size="compact-xs" radius="sm"
-                style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                style={{ background: '#0891b2', border: '1px solid #67e8f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Refresh
               </Button>
 
               <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
 
+              {/* Print — rose */}
               <Button leftSection={<IconPrinter size={12} />} disabled={!selRow}
                 onClick={() => selRow && printSlip(selRow)}
                 size="compact-xs" radius="sm"
-                style={{ background: selRow ? '#b91c1c' : 'rgba(255,255,255,0.07)', border: 'none', fontWeight: 700, fontSize: 10, height: 24 }}>
+                style={{ background: selRow ? '#e11d48' : 'rgba(255,255,255,0.07)', border: selRow ? '1px solid #fb7185' : 'none', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Print
               </Button>
+              {/* Delete — deep red */}
               <Button leftSection={<IconTrash size={12} />} disabled={!selRow}
                 onClick={handleDelete}
                 size="compact-xs" radius="sm"
-                style={{ background: selRow ? '#7f1d1d' : 'rgba(255,255,255,0.07)', border: 'none', fontWeight: 700, fontSize: 10, height: 24 }}>
+                style={{ background: selRow ? '#991b1b' : 'rgba(255,255,255,0.07)', border: selRow ? '1px solid #f87171' : 'none', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Delete
               </Button>
             </Group>

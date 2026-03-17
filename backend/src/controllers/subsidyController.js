@@ -24,7 +24,7 @@ export const getAllSubsidies = async (req, res) => {
       search = ''
     } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
 
     if (status) {
       query.status = status;
@@ -63,10 +63,13 @@ export const createSubsidy = async (req, res) => {
   try {
     const subsidyData = req.body;
 
-    // Check for duplicate subsidy name
+    const companyId = req.companyId;
+
+    // Check for duplicate subsidy name per company
     const existingSubsidy = await Subsidy.findOne({
       subsidyName: subsidyData.subsidyName,
-      status: 'Active'
+      status: 'Active',
+      companyId
     });
 
     if (existingSubsidy) {
@@ -76,6 +79,7 @@ export const createSubsidy = async (req, res) => {
       });
     }
 
+    subsidyData.companyId = companyId;
     const subsidy = new Subsidy(subsidyData);
     await subsidy.save();
 
@@ -90,7 +94,8 @@ export const createSubsidy = async (req, res) => {
         currentBalance: 0,
         balanceType: 'Dr',
         parentGroup: subsidyData.ledgerGroup,
-        status: 'Active'
+        status: 'Active',
+        companyId
       });
       await ledger.save();
     } catch (ledgerError) {

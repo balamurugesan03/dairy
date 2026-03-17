@@ -7,8 +7,10 @@ import {
   deleteSale,
   getCustomerHistory
 } from '../controllers/salesController.js';
+import { protect, addCompanyFilter } from '../middleware/auth.js';
 
 const router = express.Router();
+router.use(protect, addCompanyFilter);
 
 // Create new sale
 router.post('/', createSale);

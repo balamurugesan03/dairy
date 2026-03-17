@@ -9,7 +9,6 @@ const voucherSchema = new mongoose.Schema({
   voucherNumber: {
     type: String,
     required: true,
-    unique: true,
     trim: true
   },
   voucherDate: {
@@ -64,6 +63,11 @@ const voucherSchema = new mongoose.Schema({
   },
   referenceId: {
     type: mongoose.Schema.Types.ObjectId
+  },
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true
   }
 }, {
   timestamps: true
@@ -72,6 +76,8 @@ const voucherSchema = new mongoose.Schema({
 // Indexes for faster queries
 voucherSchema.index({ voucherType: 1, voucherDate: -1 });
 voucherSchema.index({ referenceType: 1, referenceId: 1 });
+voucherSchema.index({ companyId: 1 });
+voucherSchema.index({ voucherNumber: 1, companyId: 1 }, { unique: true });
 
 // Validation: Total Debit must equal Total Credit
 voucherSchema.pre('save', async function() {

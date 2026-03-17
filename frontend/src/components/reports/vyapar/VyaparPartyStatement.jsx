@@ -44,12 +44,13 @@ import dayjs from 'dayjs';
 import quarterOfYear from 'dayjs/plugin/quarterOfYear';
 dayjs.extend(quarterOfYear);
 import { useCompany } from '../../../context/CompanyContext';
-import { reportAPI, customerAPI, supplierAPI } from '../../../services/api';
+import { reportAPI, businessCustomerAPI, supplierAPI } from '../../../services/api';
 import { message } from '../../../utils/toast';
 import * as XLSX from 'xlsx';
+import { printVyaparReport } from '../../../utils/printReport';
 
 const VyaparPartyStatement = () => {
-  const { selectedBusinessType } = useCompany();
+  const { selectedBusinessType, selectedCompany } = useCompany();
   const navigate = useNavigate();
   const printRef = useRef();
 
@@ -126,7 +127,7 @@ const VyaparPartyStatement = () => {
     setPartiesLoading(true);
     try {
       const [custRes, suppRes] = await Promise.all([
-        customerAPI.getAll({ limit: 1000 }),
+        businessCustomerAPI.getAll({ limit: 1000 }),
         supplierAPI.getAll({ limit: 1000 })
       ]);
 
@@ -210,27 +211,11 @@ const VyaparPartyStatement = () => {
   };
 
   const handlePrint = () => {
-    const printContent = printRef.current;
-    if (!printContent) return;
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Party Statement - ${reportData?.party?.name || 'Report'}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; font-size: 12px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
-            th { background-color: #f5f5f5; font-weight: 600; }
-            .text-right { text-align: right; }
-            @media print { body { -webkit-print-color-adjust: exact; } }
-          </style>
-        </head>
-        <body>${printContent.innerHTML}</body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
+    printVyaparReport(printRef, {
+      title: 'Party Statement',
+      companyName: selectedCompany?.companyName || '',
+      orientation: 'landscape'
+    });
   };
 
   const getStatusBadge = (status) => {
@@ -245,10 +230,13 @@ const VyaparPartyStatement = () => {
 
   const getTxnBadge = (type) => {
     const cfg = {
-      'Sale':     { color: 'green' },
-      'Purchase': { color: 'red' },
-      'Receipt':  { color: 'teal' },
-      'Payment':  { color: 'orange' }
+      'Sale':             { color: 'green' },
+      'Purchase':         { color: 'red' },
+      'Receipt':          { color: 'teal' },
+      'Payment':          { color: 'orange' },
+      'Estimate':         { color: 'yellow' },
+      'Delivery Challan': { color: 'cyan' },
+      'Proforma':         { color: 'violet' }
     };
     const c = cfg[type] || { color: 'gray' };
     return <Badge variant="light" color={c.color} size="sm">{type || '-'}</Badge>;

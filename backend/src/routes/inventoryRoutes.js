@@ -15,8 +15,10 @@ import {
   updateOpeningBalance,
   updateSalesPrice
 } from '../controllers/inventoryController.js';
+import { protect, addCompanyFilter } from '../middleware/auth.js';
 
 const router = express.Router();
+router.use(protect, addCompanyFilter);
 
 // Item routes
 router.post('/items', createItem);

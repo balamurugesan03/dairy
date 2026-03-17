@@ -5,7 +5,6 @@ const farmerSchema = new mongoose.Schema({
   farmerNumber: {
     type: String,
     required: true,
-    unique: true,
     trim: true
   },
   memberId: {
@@ -271,6 +270,11 @@ const farmerSchema = new mongoose.Schema({
     terminatedAt: {
       type: Date
     }
+  },
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true
   }
 }, {
   timestamps: true
@@ -279,6 +283,8 @@ const farmerSchema = new mongoose.Schema({
 // Indexes for faster queries
 farmerSchema.index({ 'personalDetails.phone': 1 });
 farmerSchema.index({ status: 1 });
+farmerSchema.index({ companyId: 1 });
+farmerSchema.index({ farmerNumber: 1, companyId: 1 }, { unique: true });
 
 const Farmer = mongoose.model('Farmer', farmerSchema);
 

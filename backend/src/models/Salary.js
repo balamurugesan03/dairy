@@ -122,18 +122,25 @@ const salarySchema = new mongoose.Schema({
 
   remarks: {
     type: String
+  },
+
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true
   }
 
 }, {
   timestamps: true
 });
 
-// Compound index for employee, month, and year (one record per employee per month)
-salarySchema.index({ employee: 1, month: 1, year: 1 }, { unique: true });
+// Compound index for employee, month, year, and companyId (one record per employee per month per company)
+salarySchema.index({ employee: 1, month: 1, year: 1, companyId: 1 }, { unique: true });
 salarySchema.index({ employee: 1 });
 salarySchema.index({ month: 1, year: 1 });
 salarySchema.index({ status: 1 });
 salarySchema.index({ 'paymentDetails.isPaid': 1 });
+salarySchema.index({ companyId: 1 });
 
 // Pre-save middleware to calculate gross, deductions, and net salary
 salarySchema.pre('save', function() {

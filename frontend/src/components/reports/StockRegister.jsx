@@ -51,6 +51,7 @@ const thStyle = {
   fontWeight: 700, fontSize: 11, textTransform: 'uppercase',
   color: GREEN, padding: '8px 10px', whiteSpace: 'nowrap', background: TH_BG
 };
+const thStyleR = { ...thStyle, textAlign: 'right' };
 const tdStyle = { padding: '6px 10px', fontSize: 12 };
 
 const StockRegister = () => {
@@ -192,7 +193,20 @@ const StockRegister = () => {
       </Table.Tr>
     ));
 
-  const COL_HEADERS = ['#', 'Item Name', 'Unit', 'Rate', 'Opening', 'Purchase', 'Sale Return', 'Total', 'Sales', 'Purch. Return', 'Closing', 'Stock Value'];
+  const COL_HEADERS = [
+    { label: '#',            style: thStyle },
+    { label: 'Item Name',    style: thStyle },
+    { label: 'Unit',         style: { ...thStyle, textAlign: 'center' } },
+    { label: 'Rate',         style: thStyleR },
+    { label: 'Opening',      style: thStyleR },
+    { label: 'Purchase',     style: thStyleR },
+    { label: 'Sale Return',  style: thStyleR },
+    { label: 'Total',        style: thStyleR },
+    { label: 'Sales',        style: thStyleR },
+    { label: 'Purch. Return',style: thStyleR },
+    { label: 'Closing',      style: thStyleR },
+    { label: 'Stock Value',  style: thStyleR },
+  ];
 
   return (
     <Box p="md" ref={printRef}>
@@ -325,7 +339,7 @@ const StockRegister = () => {
               <Table.Thead>
                 <Table.Tr>
                   {COL_HEADERS.map(col => (
-                    <Table.Th key={col} style={thStyle}>{col}</Table.Th>
+                    <Table.Th key={col.label} style={col.style}>{col.label}</Table.Th>
                   ))}
                 </Table.Tr>
               </Table.Thead>

@@ -4,8 +4,7 @@ const collectionCenterSchema = new mongoose.Schema({
   centerName: {
     type: String,
     required: [true, 'Center name is required'],
-    trim: true,
-    unique: true
+    trim: true
   },
   startDate: {
     type: Date,
@@ -62,6 +61,11 @@ const collectionCenterSchema = new mongoose.Schema({
   description: {
     type: String,
     trim: true
+  },
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true
   }
 }, {
   timestamps: true
@@ -71,6 +75,7 @@ const collectionCenterSchema = new mongoose.Schema({
 collectionCenterSchema.index({ centerName: 1 });
 collectionCenterSchema.index({ status: 1 });
 collectionCenterSchema.index({ centerType: 1 });
+collectionCenterSchema.index({ companyId: 1 });
 
 const CollectionCenter = mongoose.model('CollectionCenter', collectionCenterSchema);
 

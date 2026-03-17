@@ -45,9 +45,10 @@ import { useCompany } from '../../../context/CompanyContext';
 import { reportAPI } from '../../../services/api';
 import { message } from '../../../utils/toast';
 import * as XLSX from 'xlsx';
+import { printVyaparReport } from '../../../utils/printReport';
 
 const VyaparAllParties = () => {
-  const { selectedBusinessType } = useCompany();
+  const { selectedBusinessType, selectedCompany } = useCompany();
   const navigate = useNavigate();
   const printRef = useRef();
 
@@ -159,46 +160,11 @@ const VyaparAllParties = () => {
   };
 
   const handlePrint = () => {
-    const printContent = printRef.current;
-    if (!printContent) return;
-
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>All Parties Report</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
-            th { background-color: #f5f5f5; font-weight: 600; }
-            .text-right { text-align: right; }
-            .text-center { text-align: center; }
-            .header { margin-bottom: 20px; }
-            .footer { margin-top: 20px; display: flex; justify-content: space-between; }
-            .total-box { padding: 10px 20px; background: #e8f5e9; border-radius: 4px; }
-            @media print { body { -webkit-print-color-adjust: exact; } }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h2>All Parties Report</h2>
-            <p>Date: ${dayjs(selectedDate).format('DD/MM/YYYY')}</p>
-          </div>
-          ${printContent.innerHTML}
-          <div class="footer">
-            <div class="total-box">
-              <strong>Total Receivable:</strong> ${formatCurrency(totalReceivable)}
-            </div>
-            <div class="total-box">
-              <strong>Total Payable:</strong> ${formatCurrency(totalPayable)}
-            </div>
-          </div>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
+    printVyaparReport(printRef, {
+      title: 'All Parties Report',
+      companyName: selectedCompany?.companyName || '',
+      orientation: 'landscape'
+    });
   };
 
   const handleSort = (field) => {

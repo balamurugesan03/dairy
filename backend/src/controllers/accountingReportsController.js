@@ -441,12 +441,13 @@ export const getReceiptsDisbursementEnhanced = async (req, res) => {
 
     vouchers.forEach(voucher => {
       voucher.entries.forEach(entry => {
+        if (!entry.ledgerId?._id) return; // null guard — deleted ledger
         const isCashBank = ledgerIds.some(id => id.toString() === entry.ledgerId._id.toString());
 
         if (isCashBank) {
-          // Find contra ledger
+          // Find contra ledger (null guard on each entry's ledgerId)
           const contraEntry = voucher.entries.find(
-            e => !ledgerIds.some(id => id.toString() === e.ledgerId._id.toString())
+            e => e.ledgerId?._id && !ledgerIds.some(id => id.toString() === e.ledgerId._id.toString())
           );
 
           const contraLedgerName = contraEntry?.ledgerName || 'Various';
@@ -564,91 +565,114 @@ export const getReceiptsDisbursementEnhanced = async (req, res) => {
       };
     } else if (format === 'threeColumnLedgerwise') {
       // Three Column Ledger-wise format
-      // Fetch ALL active ledgers (not just cash/bank)
-      const allLedgers = await Ledger.find({ status: 'Active' }).sort({ ledgerName: 1 });
+      // Uses CUMULATIVE CASH FLOWS (not balance sheet values) so that
+      // endOfMonth = uptoMonth + duringMonth is always guaranteed.
 
-      // Process each ledger to calculate opening, during, and end balances
-      const ledgerData = await Promise.all(
-        allLedgers.map(async ledger => {
-          // Calculate opening balance at start of period
-          const openingBalance = await calculateOpeningBalance(Ledger, Voucher, ledger._id, dateFilter.startDate);
+      // Step 1: Get cash/bank ledger IDs
+      const cashBankLedgers = await Ledger.find({
+        ledgerType: { $in: ['Cash', 'Bank'] },
+        status: 'Active'
+      });
+      const cashBankIds = new Set(cashBankLedgers.map(l => l._id.toString()));
+      const cashBankObjectIds = cashBankLedgers.map(l => l._id);
 
-          // Get transactions during the period
-          const vouchers = await Voucher.find({
-            voucherDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
-            'entries.ledgerId': ledger._id
-          });
+      // Step 2: Financial year start (April 1) — uptoMonth = FY start → period start (exclusive)
+      const fyStartYear = dateFilter.startDate.getUTCMonth() >= 3
+        ? dateFilter.startDate.getUTCFullYear()
+        : dateFilter.startDate.getUTCFullYear() - 1;
+      const fyStart = new Date(Date.UTC(fyStartYear, 3, 1, 0, 0, 0, 0)); // April 1
 
-          // Aggregate debits and credits during period
-          let duringMonthDebit = 0;
-          let duringMonthCredit = 0;
-          vouchers.forEach(voucher => {
-            voucher.entries.forEach(entry => {
-              if (entry.ledgerId.toString() === ledger._id.toString()) {
-                duringMonthDebit += entry.debitAmount;
-                duringMonthCredit += entry.creditAmount;
-              }
-            });
-          });
+      // Step 3: Fetch vouchers for both windows (only cash/bank involved vouchers)
+      const [vouchersBefore, vouchersDuring] = await Promise.all([
+        Voucher.find({
+          voucherDate: { $gte: fyStart, $lt: dateFilter.startDate },
+          'entries.ledgerId': { $in: cashBankObjectIds }
+        }).populate('entries.ledgerId', 'ledgerName ledgerType'),
 
-          // Classify to receipt/payment based on ledger nature
-          const isDebitNature = isDebitNatureLedger(ledger.ledgerType);
-          let receiptUptoMonth = 0, receiptDuringMonth = 0;
-          let paymentUptoMonth = 0, paymentDuringMonth = 0;
+        Voucher.find({
+          voucherDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
+          'entries.ledgerId': { $in: cashBankObjectIds }
+        }).populate('entries.ledgerId', 'ledgerName ledgerType')
+      ]);
 
-          if (isDebitNature) {
-            // Asset/Expense: Dr balance = Payment, Cr balance = Receipt
-            if (openingBalance >= 0) {
-              paymentUptoMonth = openingBalance;
-            } else {
-              receiptUptoMonth = Math.abs(openingBalance);
+      // Step 4: Aggregate cash flows per contra ledger
+      // receipt = cash DEBITED (money came IN), payment = cash CREDITED (money went OUT)
+      const contraMap = {};
+
+      const aggregateVouchers = (vouchers, isBefore) => {
+        vouchers.forEach(voucher => {
+          voucher.entries.forEach(entry => {
+            // Null guard: populated ledgerId can be null if ledger was deleted
+            if (!entry.ledgerId?._id) return;
+
+            const entryLedgerId = entry.ledgerId._id.toString();
+            if (!cashBankIds.has(entryLedgerId)) return; // skip non-cash entries
+
+            // Find the contra (non-cash) side — guard against null ledgerIds in same loop
+            const contraEntry = voucher.entries.find(e =>
+              e.ledgerId?._id && !cashBankIds.has(e.ledgerId._id.toString())
+            );
+            if (!contraEntry) return; // contra voucher (cash↔bank) — skip
+
+            const key = contraEntry.ledgerId._id.toString();
+            if (!contraMap[key]) {
+              const lType = contraEntry.ledgerId.ledgerType || 'Other';
+              contraMap[key] = {
+                ledgerName: contraEntry.ledgerName || contraEntry.ledgerId.ledgerName || 'Unknown',
+                ledgerType: lType,
+                category: getLedgerCategory(lType),
+                receipt: { uptoMonth: 0, duringMonth: 0 },
+                payment: { uptoMonth: 0, duringMonth: 0 }
+              };
             }
-            paymentDuringMonth = duringMonthDebit;
-            receiptDuringMonth = duringMonthCredit;
-          } else {
-            // Liability/Income: Cr balance = Receipt, Dr balance = Payment
-            if (openingBalance >= 0) {
-              receiptUptoMonth = openingBalance;
-            } else {
-              paymentUptoMonth = Math.abs(openingBalance);
+
+            const col = contraMap[key];
+            if (entry.debitAmount > 0) {
+              // Cash DEBITED → RECEIPT
+              if (isBefore) col.receipt.uptoMonth  += entry.debitAmount;
+              else          col.receipt.duringMonth += entry.debitAmount;
+            } else if (entry.creditAmount > 0) {
+              // Cash CREDITED → PAYMENT
+              if (isBefore) col.payment.uptoMonth  += entry.creditAmount;
+              else          col.payment.duringMonth += entry.creditAmount;
             }
-            receiptDuringMonth = duringMonthCredit;
-            paymentDuringMonth = duringMonthDebit;
+          });
+        });
+      };
+
+      aggregateVouchers(vouchersBefore, true);
+      aggregateVouchers(vouchersDuring, false);
+
+      // Step 5: Derive endOfMonth = uptoMonth + duringMonth (GUARANTEED by construction)
+      const activeLedgers = Object.values(contraMap)
+        .filter(l =>
+          l.receipt.uptoMonth > 0 || l.receipt.duringMonth > 0 ||
+          l.payment.uptoMonth > 0 || l.payment.duringMonth > 0
+        )
+        .map(l => ({
+          ledgerName: l.ledgerName,
+          ledgerType: l.ledgerType,
+          category: l.category,
+          receipt: {
+            uptoMonth:   l.receipt.uptoMonth,
+            duringMonth: l.receipt.duringMonth,
+            endOfMonth:  l.receipt.uptoMonth + l.receipt.duringMonth   // always correct
+          },
+          payment: {
+            uptoMonth:   l.payment.uptoMonth,
+            duringMonth: l.payment.duringMonth,
+            endOfMonth:  l.payment.uptoMonth + l.payment.duringMonth   // always correct
           }
+        }));
 
-          return {
-            ledgerId: ledger._id,
-            ledgerName: ledger.ledgerName,
-            ledgerType: ledger.ledgerType,
-            category: getLedgerCategory(ledger.ledgerType),
-            receipt: {
-              uptoMonth: receiptUptoMonth,
-              duringMonth: receiptDuringMonth,
-              endOfMonth: receiptUptoMonth + receiptDuringMonth
-            },
-            payment: {
-              uptoMonth: paymentUptoMonth,
-              duringMonth: paymentDuringMonth,
-              endOfMonth: paymentUptoMonth + paymentDuringMonth
-            }
-          };
-        })
-      );
-
-      // Filter out zero-activity ledgers
-      const activeLedgers = ledgerData.filter(l =>
-        l.receipt.uptoMonth !== 0 || l.receipt.duringMonth !== 0 ||
-        l.payment.uptoMonth !== 0 || l.payment.duringMonth !== 0
-      );
-
-      // Group by sections with custom names
+      // Step 6: Group by section
       const sectionMap = {
         'LIABILITIES': { name: 'Advance due by Society (LIABILITY)', ledgers: [], order: 1 },
-        'ASSETS': { name: 'Advance due to Society (ASSET)', ledgers: [], order: 2 },
-        'EXPENSES': { name: 'Contingencies/Expenses', ledgers: [], order: 3 },
-        'INCOME': { name: 'Income Accounts', ledgers: [], order: 4 },
-        'CAPITAL': { name: 'Capital & Reserves', ledgers: [], order: 5 },
-        'OTHER': { name: 'Other Accounts', ledgers: [], order: 6 }
+        'ASSETS':      { name: 'Advance due to Society (ASSET)',      ledgers: [], order: 2 },
+        'EXPENSES':    { name: 'Contingencies/Expenses',              ledgers: [], order: 3 },
+        'INCOME':      { name: 'Income Accounts',                     ledgers: [], order: 4 },
+        'CAPITAL':     { name: 'Capital & Reserves',                  ledgers: [], order: 5 },
+        'OTHER':       { name: 'Other Accounts',                      ledgers: [], order: 6 }
       };
 
       activeLedgers.forEach(ledger => {
@@ -656,56 +680,54 @@ export const getReceiptsDisbursementEnhanced = async (req, res) => {
         section.ledgers.push(ledger);
       });
 
-      // Calculate section totals and build sections array
+      // Step 7: Section totals — sum uptoMonth and duringMonth; endOfMonth = their sum
       const sections = Object.values(sectionMap)
-        .filter(section => section.ledgers.length > 0)
+        .filter(s => s.ledgers.length > 0)
         .sort((a, b) => a.order - b.order)
         .map(section => {
-          const groupTotal = section.ledgers.reduce((total, ledger) => ({
+          const groupTotal = section.ledgers.reduce((acc, l) => ({
             receipt: {
-              uptoMonth: total.receipt.uptoMonth + ledger.receipt.uptoMonth,
-              duringMonth: total.receipt.duringMonth + ledger.receipt.duringMonth,
-              endOfMonth: total.receipt.endOfMonth + ledger.receipt.endOfMonth
+              uptoMonth:   acc.receipt.uptoMonth   + l.receipt.uptoMonth,
+              duringMonth: acc.receipt.duringMonth + l.receipt.duringMonth,
+              endOfMonth:  acc.receipt.endOfMonth  + l.receipt.endOfMonth
             },
             payment: {
-              uptoMonth: total.payment.uptoMonth + ledger.payment.uptoMonth,
-              duringMonth: total.payment.duringMonth + ledger.payment.duringMonth,
-              endOfMonth: total.payment.endOfMonth + ledger.payment.endOfMonth
+              uptoMonth:   acc.payment.uptoMonth   + l.payment.uptoMonth,
+              duringMonth: acc.payment.duringMonth + l.payment.duringMonth,
+              endOfMonth:  acc.payment.endOfMonth  + l.payment.endOfMonth
             }
-          }), {
-            receipt: { uptoMonth: 0, duringMonth: 0, endOfMonth: 0 },
-            payment: { uptoMonth: 0, duringMonth: 0, endOfMonth: 0 }
-          });
+          }), { receipt: { uptoMonth: 0, duringMonth: 0, endOfMonth: 0 },
+                payment: { uptoMonth: 0, duringMonth: 0, endOfMonth: 0 } });
 
-          return {
-            sectionName: section.name,
-            ledgers: section.ledgers,
-            groupTotal
-          };
+          return { sectionName: section.name, ledgers: section.ledgers, groupTotal };
         });
 
-      // Calculate grand totals
-      const grandTotal = sections.reduce((total, section) => ({
+      // Step 8: Grand total — same guarantee flows up
+      const grandTotal = sections.reduce((acc, s) => ({
         receipt: {
-          uptoMonth: total.receipt.uptoMonth + section.groupTotal.receipt.uptoMonth,
-          duringMonth: total.receipt.duringMonth + section.groupTotal.receipt.duringMonth,
-          endOfMonth: total.receipt.endOfMonth + section.groupTotal.receipt.endOfMonth
+          uptoMonth:   acc.receipt.uptoMonth   + s.groupTotal.receipt.uptoMonth,
+          duringMonth: acc.receipt.duringMonth + s.groupTotal.receipt.duringMonth,
+          endOfMonth:  acc.receipt.endOfMonth  + s.groupTotal.receipt.endOfMonth
         },
         payment: {
-          uptoMonth: total.payment.uptoMonth + section.groupTotal.payment.uptoMonth,
-          duringMonth: total.payment.duringMonth + section.groupTotal.payment.duringMonth,
-          endOfMonth: total.payment.endOfMonth + section.groupTotal.payment.endOfMonth
+          uptoMonth:   acc.payment.uptoMonth   + s.groupTotal.payment.uptoMonth,
+          duringMonth: acc.payment.duringMonth + s.groupTotal.payment.duringMonth,
+          endOfMonth:  acc.payment.endOfMonth  + s.groupTotal.payment.endOfMonth
         }
-      }), {
-        receipt: { uptoMonth: 0, duringMonth: 0, endOfMonth: 0 },
-        payment: { uptoMonth: 0, duringMonth: 0, endOfMonth: 0 }
-      });
+      }), { receipt: { uptoMonth: 0, duringMonth: 0, endOfMonth: 0 },
+            payment: { uptoMonth: 0, duringMonth: 0, endOfMonth: 0 } });
 
-      formattedData = { sections, grandTotal };
+      // FY end = March 31 of next year
+      const fyEnd = new Date(Date.UTC(fyStartYear + 1, 2, 31, 23, 59, 59, 999));
+
+      formattedData = { sections, grandTotal, fyStart, fyEnd };
     } else if (format === 'singleColumnMonthly') {
       // Single Column Monthly format - Only during month transactions
-      // Get ALL active ledgers
-      const allLedgers = await Ledger.find({ status: 'Active' }).sort({ ledgerName: 1 });
+      // Exclude Cash/Bank ledgers — they are the account being tracked; show only contra entries
+      const allLedgers = await Ledger.find({
+        status: 'Active',
+        ledgerType: { $nin: ['Cash', 'Bank'] }
+      }).sort({ ledgerName: 1 });
 
       // Process each ledger for during-month transactions only
       const ledgerData = await Promise.all(
@@ -733,13 +755,18 @@ export const getReceiptsDisbursementEnhanced = async (req, res) => {
             return null;
           }
 
+          // NET: each ledger appears on ONE side only
+          // Net credit → Receipt side; Net debit → Payment side
+          const net = duringMonthCredit - duringMonthDebit;
+          if (net === 0) return null; // perfectly offset — skip
+
           return {
             ledgerId: ledger._id,
             ledgerName: ledger.ledgerName,
             ledgerType: ledger.ledgerType,
             category: getLedgerCategory(ledger.ledgerType),
-            receipt: duringMonthCredit, // Credit = Receipt
-            payment: duringMonthDebit   // Debit = Payment
+            receipt: net > 0 ? net : 0,   // only on receipt side if net credit
+            payment: net < 0 ? -net : 0   // only on payment side if net debit
           };
         })
       );

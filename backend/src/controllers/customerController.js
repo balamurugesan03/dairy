@@ -2,10 +2,10 @@ import Customer from '../models/Customer.js';
 import Ledger from '../models/Ledger.js';
 
 // Helper function to generate next customer ID
-const generateCustomerId = async () => {
+const generateCustomerId = async (companyId) => {
   try {
-    // Find the last customer by sorting in descending order
-    const lastCustomer = await Customer.findOne()
+    // Find the last customer by sorting in descending order within this company
+    const lastCustomer = await Customer.findOne({ companyId })
       .sort({ createdAt: -1 })
       .select('customerId');
 
@@ -28,16 +28,18 @@ const generateCustomerId = async () => {
 // Create new customer
 export const createCustomer = async (req, res) => {
   try {
-    const customerData = req.body;
+    const companyId = req.companyId;
+    const customerData = { ...req.body, companyId };
 
     // Auto-generate customer ID if not provided
     if (!customerData.customerId) {
-      customerData.customerId = await generateCustomerId();
+      customerData.customerId = await generateCustomerId(companyId);
     }
 
-    // Check for duplicate customerId
+    // Check for duplicate customerId within this company
     const existingCustomer = await Customer.findOne({
-      customerId: customerData.customerId
+      customerId: customerData.customerId,
+      companyId
     });
 
     if (existingCustomer) {
@@ -47,9 +49,10 @@ export const createCustomer = async (req, res) => {
       });
     }
 
-    // Check for duplicate phone
+    // Check for duplicate phone within this company
     const existingPhone = await Customer.findOne({
-      phone: customerData.phone
+      phone: customerData.phone,
+      companyId
     });
 
     if (existingPhone) {
@@ -76,7 +79,8 @@ export const createCustomer = async (req, res) => {
       currentBalance: 0,
       balanceType: 'Cr',
       parentGroup: 'Current Liabilities',
-      status: 'Active'
+      status: 'Active',
+      companyId
     });
 
     await dueToSocietyLedger.save();
@@ -94,7 +98,8 @@ export const createCustomer = async (req, res) => {
       currentBalance: customerData.openingBalance || 0,
       balanceType: 'Dr',
       parentGroup: customerData.category || 'Sundry Debtors',
-      status: 'Active'
+      status: 'Active',
+      companyId
     });
 
     await dueByLedger.save();
@@ -133,7 +138,7 @@ export const getAllCustomers = async (req, res) => {
       maxBalance = ''
     } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
 
     // Search by customerId, name, phone, or email
     if (search) {
@@ -217,6 +222,7 @@ export const updateCustomer = async (req, res) => {
     if (req.body.customerId) {
       const existingCustomer = await Customer.findOne({
         customerId: req.body.customerId,
+        companyId: req.companyId,
         _id: { $ne: req.params.id }
       });
 
@@ -232,6 +238,7 @@ export const updateCustomer = async (req, res) => {
     if (req.body.phone) {
       const existingPhone = await Customer.findOne({
         phone: req.body.phone,
+        companyId: req.companyId,
         _id: { $ne: req.params.id }
       });
 
@@ -317,7 +324,8 @@ export const searchCustomer = async (req, res) => {
         { name: { $regex: query, $options: 'i' } },
         { phone: { $regex: query, $options: 'i' } }
       ],
-      active: true
+      active: true,
+      companyId: req.companyId
     }).limit(10);
 
     res.status(200).json({
@@ -338,7 +346,8 @@ export const getCustomerByCustomerId = async (req, res) => {
   try {
     const customer = await Customer.findOne({
       customerId: req.params.customerId,
-      active: true
+      active: true,
+      companyId: req.companyId
     });
 
     if (!customer) {

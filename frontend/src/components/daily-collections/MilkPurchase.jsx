@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { io as socketIO } from 'socket.io-client';
 import {
   Box, Group, Text, TextInput, NumberInput, Select, Button,
   Table, ScrollArea, ActionIcon, Badge, Divider, Center,
@@ -19,10 +20,12 @@ import {
   IconAlertCircle, IconRefresh, IconId, IconReceipt,
   IconDroplet, IconFlame, IconChartBar,
   IconPlus, IconEdit, IconBan, IconHistory,
+  IconPlugConnected, IconPlugConnectedX,
 } from '@tabler/icons-react';
 import {
   agentAPI, collectionCenterAPI, farmerAPI,
   milkCollectionAPI, milkPurchaseSettingsAPI, rateChartAPI, milkSalesAPI,
+  thermalPrintAPI, machineConfigAPI,
 } from '../../services/api';
 
 // ── Rate Calculation ─────────────────────────────────────────────────────────
@@ -69,43 +72,70 @@ const calcValues = (qty, fat, clr, snf, chartType, chartRows) => {
   return { snf: autoSnf, incentive, rate: parseFloat(rate.toFixed(2)), amount };
 };
 
-// ── Print Slip ───────────────────────────────────────────────────────────────
+// ── Thermal Print — fires ESC/POS via backend → USB port, zero dialog ─────────
 const printBill = (entry, dateStr, shift, centerName) => {
-  const html = `<html><head><title>Milk Receipt</title>
-  <style>
-    body{font-family:monospace;font-size:13px;padding:14px;width:300px;margin:0}
-    h3{text-align:center;margin:0 0 2px;font-size:15px;letter-spacing:1px}
-    .sub{text-align:center;font-size:11px;color:#555;margin-bottom:8px}
-    .line{border-top:1px dashed #000;margin:7px 0}
-    .row{display:flex;justify-content:space-between;margin:3px 0}
-    .bold{font-weight:bold}
-    .total{font-size:18px;font-weight:900}
-    .foot{text-align:center;font-size:10px;color:#777;margin-top:6px}
-    @media print{body{margin:0}}
-  </style></head><body>
-  <h3>MILK PURCHASE RECEIPT</h3>
-  <div class="sub">${dateStr} | ${shift} Shift${centerName ? `<br>${centerName}` : ''}</div>
-  <div class="line"></div>
-  <div class="row"><span>Bill No</span><span class="bold">${entry.billNo}</span></div>
-  <div class="row"><span>Member No</span><span class="bold">${entry.producerNo}</span></div>
-  <div class="row"><span>Name</span><span>${entry.producerName}</span></div>
-  <div class="line"></div>
-  <div class="row"><span>Litres</span><span class="bold">${entry.qty.toFixed(2)} L</span></div>
-  <div class="row"><span>FAT %</span><span>${entry.fat.toFixed(2)}</span></div>
-  <div class="row"><span>CLR</span><span>${entry.clr.toFixed(1)}</span></div>
-  <div class="row"><span>SNF %</span><span>${entry.snf.toFixed(2)}</span></div>
-  <div class="row"><span>Rate / Ltr</span><span>&#8377; ${entry.rate.toFixed(2)}</span></div>
-  <div class="row"><span>Incentive</span><span>&#8377; ${entry.incentive.toFixed(2)}</span></div>
-  <div class="line"></div>
-  <div class="row total"><span>AMOUNT</span><span>&#8377; ${entry.amount.toFixed(2)}</span></div>
-  <div class="line"></div>
-  <div class="foot">Thank You</div>
-  </body></html>`;
-  const win = window.open('', '_blank', 'width=340,height=520');
-  win.document.write(html);
-  win.document.close();
-  win.focus();
-  setTimeout(() => { win.print(); win.close(); }, 300);
+  thermalPrintAPI.milkReceipt({
+    billNo:       entry.billNo,
+    producerNo:   entry.producerNo,
+    producerName: entry.producerName,
+    qty:          entry.qty,
+    fat:          entry.fat,
+    clr:          entry.clr,
+    snf:          entry.snf,
+    water:        entry.addedWater || 0,
+    rate:         entry.rate,
+    incentive:    entry.incentive,
+    amount:       entry.amount,
+    dateStr,
+    shift,
+    centerName:   centerName || ''
+  }).catch(err => {
+    // Show the actual error so user can fix PRINTER_NAME in .env
+    const msg = err?.response?.data?.message || err.message || 'Thermal print failed';
+    console.warn('[ThermalPrint] API failed:', msg);
+    notifications.show({ color: 'orange', title: 'Thermal Print Failed — using PDF fallback', message: msg, autoClose: 8000 });
+    const html = `<html><head><title>Milk Receipt</title>
+    <style>
+      @page{size:58mm auto;margin:2mm 3mm}
+      body{font-family:'Courier New',monospace;font-size:10px;width:52mm;margin:0}
+      h3{text-align:center;margin:0 0 1px;font-size:11px;font-weight:900}
+      .sub{text-align:center;font-size:9px;color:#444;margin-bottom:4px}
+      .line{border-top:1px dashed #000;margin:3px 0}
+      .row{display:flex;justify-content:space-between;margin:2px 0}
+      .val{font-weight:bold;white-space:nowrap}
+      .big{font-size:12px;font-weight:900}
+      .foot{text-align:center;font-size:9px;color:#666;margin-top:4px}
+    </style></head><body>
+    <h3>MILK RECEIPT</h3>
+    <div class="sub">${dateStr} | ${shift}${centerName ? `<br>${centerName}` : ''}</div>
+    <div class="line"></div>
+    <div class="row"><span>Bill No</span><span class="val">${entry.billNo}</span></div>
+    <div class="row"><span>Mem No</span><span class="val">${entry.producerNo}</span></div>
+    <div class="row"><span colspan="2">${entry.producerName}</span></div>
+    <div class="line"></div>
+    <div class="row"><span>Litres</span><span class="val">${Number(entry.qty).toFixed(2)} L</span></div>
+    <div class="row"><span>FAT %</span><span>${Number(entry.fat).toFixed(2)}</span></div>
+    <div class="row"><span>CLR</span><span>${Number(entry.clr).toFixed(1)}</span></div>
+    <div class="row"><span>SNF %</span><span>${Number(entry.snf).toFixed(2)}</span></div>
+    ${Number(entry.addedWater || 0) > 0 ? `<div class="row"><span>Water</span><span>${Number(entry.addedWater).toFixed(2)} L</span></div>` : ''}
+    <div class="row"><span>Rate/Ltr</span><span class="val">Rs.${Number(entry.rate).toFixed(2)}</span></div>
+    ${Number(entry.incentive || 0) > 0 ? `<div class="row"><span>Incentive</span><span>Rs.${Number(entry.incentive).toFixed(2)}</span></div>` : ''}
+    <div class="line"></div>
+    <div class="row big"><span>AMOUNT</span><span>Rs.${Number(entry.amount).toFixed(2)}</span></div>
+    <div class="line"></div>
+    <div class="foot">Thank You</div>
+    </body></html>`;
+    const old = document.getElementById('__milk_print_frame__');
+    if (old) old.remove();
+    const iframe = document.createElement('iframe');
+    iframe.id = '__milk_print_frame__';
+    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:58mm;height:1px;border:none;visibility:hidden;';
+    document.body.appendChild(iframe);
+    iframe.contentDocument.open();
+    iframe.contentDocument.write(html);
+    iframe.contentDocument.close();
+    setTimeout(() => { iframe.contentWindow.focus(); iframe.contentWindow.print(); setTimeout(() => iframe.remove(), 1000); }, 250);
+  });
 };
 
 // ── Small stat card for 10-day avg ───────────────────────────────────────────
@@ -166,6 +196,13 @@ const MilkPurchase = () => {
   const [dupInfo,     setDupInfo]     = useState(null); // { name, billNo, amount, center }
   const [speakEnabled, setSpeakEnabled] = useState(false);
   const [cpMode,      setCpMode]      = useState([]);
+  // Keep ref in sync so the socket handler (which captures nothing) can read latest value
+  useEffect(() => { analyzerModeRef.current = cpMode.includes('Analyzer'); }, [cpMode]);
+  const [entryMode,   setEntryMode]   = useState('chart'); // 'chart' = auto from rate chart | 'rate' = manual rate→auto amount | 'amount' = manual amount→auto rate
+  const [manualRate,  setManualRate]  = useState('');
+  const [manualAmount,setManualAmount]= useState('');
+  const manualRateRef   = useRef(null);
+  const manualAmountRef = useRef(null);
 
   const clrAutoSetRef  = useRef(false);   // prevents SNF recompute when CLR is auto-filled from SNF
   const autoSaveRef    = useRef(false);   // triggers auto-save after SNF/CLR is computed
@@ -174,7 +211,272 @@ const MilkPurchase = () => {
   const lastEntryRef  = useRef(null);
   const centerNameRef = useRef('');
   const formRef       = useRef({});
-  formRef.current = { producer, ltr, water, fat, clr, snf, date, shift, center, agent, calcResult, editingId, speakEnabled, entries, dupBlocked };
+
+  // ── Machine / Analyzer State ───────────────────────────────────────────────
+  const [machineConnected,   setMachineConnected]   = useState(false);
+  const [machineStatus,      setMachineStatus]      = useState('');
+  const [socketConnected,    setSocketConnected]    = useState(false);
+  const [analyzerDeviceName, setAnalyzerDeviceName] = useState('');
+  const [analyzerRunning,    setAnalyzerRunning]    = useState(false);
+  const [analyzerStarting,   setAnalyzerStarting]   = useState(false);
+  const [liveAnalyzerData,   setLiveAnalyzerData]   = useState(null); // { fat, snf, density, addedWater, timestamp }
+  const [availablePorts,     setAvailablePorts]     = useState([]);
+  const [portsLoading,       setPortsLoading]       = useState(false);
+  const [selectedPort,       setSelectedPort]       = useState('COM2');
+  const [selectedBaud,       setSelectedBaud]       = useState('2400');
+  const [portError,          setPortError]          = useState('');
+  const analyzerModeRef         = useRef(false);  // tracks cpMode.includes('Analyzer') for use inside socket handler
+  const analyzerDeviceNameRef   = useRef('');
+  const analyzerDataCapturedRef = useRef(false);  // true after reading captured — blocks re-fill until NEW reading
+  const lastCapturedReadingRef  = useRef(null);   // rawData key of last captured reading — skip same reading after save
+  useEffect(() => { analyzerDeviceNameRef.current = analyzerDeviceName; }, [analyzerDeviceName]);
+  const serialPortRef   = useRef(null);
+  const serialReaderRef = useRef(null);
+  const machineBufferRef = useRef('');    // accumulate partial serial data
+  formRef.current = { producer, ltr, water, fat, clr, snf, date, shift, center, agent, calcResult, editingId, speakEnabled, entries, dupBlocked, entryMode, manualRate, manualAmount };
+
+  // ── Machine Serial Data Parser ────────────────────────────────────────────
+  // Format 0: 31-char ASCII  (XXXXXXXXXXXXXXXXXXXXXXXXXXXXX)
+  //   inside[0..3]=FAT/100  inside[4..7]=SNF/100  inside[8..11]=Density  inside[12..13]=Water%
+  // Format 1: Lactoscan      F=4.50 SNF=8.35 D=26.50 L=5.000 W=0.0
+  // Format 2: CSV            5.00,4.50,26.5,8.30,0.00  (LTR,FAT,CLR,SNF,WATER)
+  // Format 3: Key:Value      FAT:4.5 CLR:26.5 SNF:8.3 LTR:5.0
+  const parseMachineData = useCallback((raw) => {
+    const text = raw.trim();
+    if (!text) return;
+
+    let ltrVal, fatVal, clrVal, snfVal, waterVal;
+
+    // Format 0 — 31-char frame: (XXXXXXXXXXXXXXXXXXXXXXXXXXXXX)
+    const frameIdx = text.indexOf('(');
+    if (frameIdx !== -1) {
+      const closeIdx = text.indexOf(')', frameIdx);
+      if (closeIdx !== -1 && closeIdx - frameIdx === 30) {
+        const inner = text.slice(frameIdx + 1, frameIdx + 30);
+        const fat4  = parseInt(inner.slice(0, 4),  10);
+        const snf4  = parseInt(inner.slice(4, 8),  10);
+        const water2= parseInt(inner.slice(14, 16),10);  // positions 15-16
+        if (!isNaN(fat4) && !isNaN(snf4)) {
+          fatVal   = fat4 / 100;
+          snfVal   = snf4 / 100;
+          waterVal = isNaN(water2) ? 0 : water2;
+          // no CLR or LTR in this format
+        }
+      }
+    }
+
+    // Format 1 — Lactoscan
+    if (fatVal == null && /\bF=\d/.test(text)) {
+      const g = (re) => { const m = text.match(re); return m ? parseFloat(m[1]) : null; };
+      fatVal   = g(/\bF=(\d+\.?\d*)/i);
+      snfVal   = g(/\bSNF=(\d+\.?\d*)/i);
+      clrVal   = g(/\bD=(\d+\.?\d*)/i);
+      ltrVal   = g(/\bL=(\d+\.?\d*)/i);
+      waterVal = g(/\bW=(\d+\.?\d*)/i);
+    }
+    // Format 2 — CSV
+    else if (fatVal == null && /^\d+\.?\d*,\d/.test(text) && !text.includes(':')) {
+      const parts = text.split(',').map(parseFloat);
+      if (parts.length >= 4) [ltrVal, fatVal, clrVal, snfVal, waterVal] = parts;
+    }
+    // Format 3 — Key:Value
+    else if (fatVal == null && /FAT:|CLR:|SNF:/i.test(text)) {
+      const g = (re) => { const m = text.match(re); return m ? parseFloat(m[1]) : null; };
+      fatVal   = g(/FAT:(\d+\.?\d*)/i);
+      clrVal   = g(/CLR:(\d+\.?\d*)/i);
+      snfVal   = g(/SNF:(\d+\.?\d*)/i);
+      ltrVal   = g(/LTR:(\d+\.?\d*)/i);
+      waterVal = g(/WATER:(\d+\.?\d*)/i);
+    }
+
+    if (fatVal == null) return; // unrecognised format
+
+    if (ltrVal   != null) setLtr(String(parseFloat(ltrVal).toFixed(2)));
+    if (fatVal   != null) setFat(String(parseFloat(fatVal).toFixed(2)));
+    if (clrVal   != null) setClr(String(parseFloat(clrVal).toFixed(1)));
+    if (snfVal   != null) setSnf(String(parseFloat(snfVal).toFixed(2)));
+    if (waterVal != null && waterVal > 0) setWater(String(parseFloat(waterVal).toFixed(2)));
+
+    const status = `FAT:${parseFloat(fatVal).toFixed(2)}  SNF:${parseFloat(snfVal ?? 0).toFixed(2)}${clrVal != null ? `  CLR:${parseFloat(clrVal).toFixed(1)}` : ''}`;
+    setMachineStatus(status);
+    notifications.show({ title: 'Machine Reading', message: `FAT ${parseFloat(fatVal).toFixed(2)} | SNF ${parseFloat(snfVal ?? 0).toFixed(2)}${waterVal > 0 ? ` | Water ${waterVal}%` : ''}`, color: 'green', autoClose: 2000 });
+
+    if (!formRef.current.producer) memberRef.current?.focus();
+  }, []);
+
+  // ── Machine Connect / Disconnect ──────────────────────────────────────────
+  const connectMachine = useCallback(async () => {
+    if (!('serial' in navigator)) {
+      notifications.show({ title: 'Not Supported', message: 'Web Serial API requires Chrome/Edge browser (HTTPS or localhost)', color: 'red' });
+      return;
+    }
+    try {
+      const port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 9600, dataBits: 8, stopBits: 1, parity: 'none' });
+      serialPortRef.current = port;
+
+      const decoder = new TextDecoderStream();
+      port.readable.pipeTo(decoder.writable);
+      const reader = decoder.readable.getReader();
+      serialReaderRef.current = reader;
+
+      setMachineConnected(true);
+      setMachineStatus('Connected — waiting for reading…');
+      notifications.show({ title: 'Machine Connected', message: 'Serial port opened. Send reading from machine.', color: 'teal' });
+
+      // Read loop
+      (async () => {
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            machineBufferRef.current += value;
+            // Process complete lines
+            const lines = machineBufferRef.current.split(/[\r\n]+/);
+            machineBufferRef.current = lines.pop(); // keep partial last line
+            lines.forEach(line => { if (line.trim()) parseMachineData(line); });
+          }
+        } catch {
+          // port closed or error — already handled by disconnect
+        } finally {
+          setMachineConnected(false);
+          setMachineStatus('');
+        }
+      })();
+    } catch (err) {
+      if (err.name !== 'NotFoundError') {
+        notifications.show({ title: 'Connection Failed', message: err.message, color: 'red' });
+      }
+    }
+  }, [parseMachineData]);
+
+  const disconnectMachine = useCallback(async () => {
+    try { serialReaderRef.current?.cancel(); } catch {}
+    try { await serialPortRef.current?.close(); } catch {}
+    serialPortRef.current  = null;
+    serialReaderRef.current = null;
+    machineBufferRef.current = '';
+    setMachineConnected(false);
+    setMachineStatus('');
+    notifications.show({ title: 'Machine Disconnected', color: 'orange', autoClose: 1500 });
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => () => { disconnectMachine(); }, [disconnectMachine]);
+
+  // ── Start backend analyzer via API ────────────────────────────────────────
+  const handleStartAnalyzer = async () => {
+    if (!selectedPort) {
+      setPortError('Select a COM port first');
+      return;
+    }
+    setPortError('');
+    setAnalyzerStarting(true);
+    try {
+      const res = await machineConfigAPI.start({ port: selectedPort, baudRate: parseInt(selectedBaud, 10) });
+      if (res?.success) {
+        setAnalyzerRunning(true);
+        notifications.show({ color: 'teal', title: 'Analyzer Started', message: res.message, autoClose: 3000 });
+      } else {
+        setPortError(res?.message || 'Failed to open port');
+        notifications.show({ color: 'red', title: 'Start Failed', message: res?.message, autoClose: 5000 });
+      }
+    } catch (err) {
+      const msg = err?.message || 'Failed to start analyzer';
+      setPortError(msg);
+      notifications.show({ color: 'red', title: 'Error', message: msg, autoClose: 5000 });
+    } finally {
+      setAnalyzerStarting(false);
+    }
+  };
+
+  const handleScanPorts = async () => {
+    setPortsLoading(true);
+    try {
+      const res = await machineConfigAPI.listPorts();
+      const list = (res?.data || []).map(p => p.path);
+      setAvailablePorts(list);
+      if (list.length && !selectedPort) setSelectedPort(list[0]);
+      if (!list.length) setPortError('No COM ports found. Check USB/RS-232 cable.');
+      else setPortError('');
+    } catch { /* silent */ }
+    finally { setPortsLoading(false); }
+  };
+
+  const handleStopAnalyzer = async () => {
+    try {
+      await machineConfigAPI.stop();
+      setAnalyzerRunning(false);
+      setLiveAnalyzerData(null);
+      notifications.show({ color: 'orange', title: 'Analyzer Stopped', autoClose: 2000 });
+    } catch { /* silent */ }
+  };
+
+  // ── Socket.io — Backend Serial Port ───────────────────────────────────────
+  // Receives data from Node.js serialport service and feeds into parseMachineData
+  useEffect(() => {
+    const socket = socketIO('http://localhost:5000');
+
+    socket.on('connect', () => {
+      setSocketConnected(true);
+    });
+    socket.on('disconnect', () => {
+      setSocketConnected(false);
+      setMachineStatus('');
+    });
+
+    socket.on('milk-analyzer-data', (data) => {
+      // Always store live reading regardless of Analyzer mode toggle
+      setLiveAnalyzerData({
+        fat:        data.fat,
+        snf:        data.snf,
+        clr:        data.clr,
+        ltr:        data.ltr,
+        density:    data.density,
+        addedWater: data.addedWater ?? 0,
+        timestamp:  data.timestamp,
+        rawData:    data.rawData,
+      });
+      setAnalyzerRunning(true);
+
+      // Only fill the form when "Analyzer" is ticked in MODE panel
+      if (!analyzerModeRef.current) return;
+
+      // Use rawData (or fat-snf) as a unique key for this reading
+      const readingKey = data.rawData || `${data.fat}-${data.snf}`;
+
+      // If machine sends a NEW different reading, unlock capture for next entry
+      if (analyzerDataCapturedRef.current && readingKey !== lastCapturedReadingRef.current) {
+        analyzerDataCapturedRef.current = false;
+      }
+
+      // Block re-fill for the SAME reading (already captured / just saved)
+      if (analyzerDataCapturedRef.current) return;
+      analyzerDataCapturedRef.current = true;
+      lastCapturedReadingRef.current  = readingKey;
+
+      const f = data;
+      if (f.fat  != null) setFat(String(parseFloat(f.fat).toFixed(2)));
+      if (f.snf  != null) setSnf(String(parseFloat(f.snf).toFixed(2)));
+      if (f.ltr  != null) setLtr(String(parseFloat(f.ltr).toFixed(2)));
+      if (f.addedWater != null && f.addedWater > 0) setWater(String(parseFloat(f.addedWater).toFixed(2)));
+      // CLR: use machine value if given; otherwise auto-calculate from FAT+SNF
+      if (f.clr != null) {
+        setClr(String(parseFloat(f.clr).toFixed(1)));
+      } else if (f.fat != null && f.snf != null) {
+        const autoClr = parseFloat(((4 * f.snf) - (0.8 * f.fat) - 2).toFixed(1));
+        setClr(String(autoClr));
+      }
+
+      const status = `FAT:${f.fat ?? '-'}  SNF:${f.snf ?? '-'}  CLR:${f.clr != null ? f.clr : (f.fat != null && f.snf != null ? parseFloat(((4*f.snf)-(0.8*f.fat)-2).toFixed(1)) : '-')}`;
+      setMachineStatus(status);
+      notifications.show({ title: `${analyzerDeviceNameRef.current || 'Analyzer'} Reading`, message: `FAT ${f.fat ?? '-'} | SNF ${f.snf ?? '-'}${f.addedWater > 0 ? ` | Water ${f.addedWater}%` : ''}`, color: 'green', autoClose: 2000 });
+
+      if (!formRef.current.producer) memberRef.current?.focus();
+    });
+
+    return () => socket.disconnect();
+  }, [parseMachineData]);
 
   // ── Loaders ───────────────────────────────────────────────────────────────
   const loadTodayEntries = async (d, sh, ct) => {
@@ -223,6 +525,25 @@ const MilkPurchase = () => {
         setActiveChart(chartType);
         await loadChartData(chartType);
         await loadTodayEntries(new Date(), 'AM', firstCenter);
+
+        // Load analyzer device config + scan ports
+        try {
+          const [cfgRes, portsRes] = await Promise.all([
+            machineConfigAPI.getConfig(),
+            machineConfigAPI.listPorts(),
+          ]);
+          const portList = (portsRes?.data || []).map(p => p.path);
+          setAvailablePorts(portList);
+
+          const savedPort = cfgRes?.data?.port || settingsRes?.data?.milkAnalyzerConfig?.comPort || '';
+          const savedBaud = String(cfgRes?.data?.baudRate || settingsRes?.data?.milkAnalyzerConfig?.baudRate || 9600);
+          if (savedPort) setSelectedPort(savedPort);
+          if (savedBaud) setSelectedBaud(savedBaud);
+
+          const devName = cfgRes?.data?.deviceName || settingsRes?.data?.milkAnalyzerConfig?.deviceName || '';
+          if (devName) setAnalyzerDeviceName(devName);
+          setAnalyzerRunning(cfgRes?.analyzerRunning || false);
+        } catch { /* silent */ }
       } catch { /* silent */ }
     })();
   }, []); // eslint-disable-line
@@ -261,8 +582,10 @@ const MilkPurchase = () => {
 
   // SNF = (CLR/4) + (0.20 × FAT) + 0.50
   // Debounced 600ms — waits until user stops typing CLR before computing SNF + auto-save
+  // Skip when analyzer has already set SNF directly (no CLR from machine)
   useEffect(() => {
     if (clrAutoSetRef.current) { clrAutoSetRef.current = false; return; }
+    if (analyzerDataCapturedRef.current) return; // analyzer set SNF directly — don't overwrite
     const fatVal = parseFloat(fat);
     const clrVal = parseFloat(clr);
     if (!clrVal) { setSnf(''); return; }
@@ -276,7 +599,9 @@ const MilkPurchase = () => {
 
   // CLR = (4 × SNF) − (0.8 × FAT) − 2
   // Debounced 600ms — waits until user stops typing SNF before computing CLR + auto-save
+  // Skip when analyzer has already set SNF (machine doesn't provide CLR in 31-char format)
   useEffect(() => {
+    if (analyzerDataCapturedRef.current) return; // analyzer mode — no CLR auto-calc
     const fatVal = parseFloat(fat);
     const snfVal = parseFloat(snf);
     if (!snfVal || !fatVal || clr) return;
@@ -301,14 +626,38 @@ const MilkPurchase = () => {
     return () => clearTimeout(timer);
   }, [snf, clr]); // eslint-disable-line
 
+  // Auto-save when LTR is manually entered in analyzer mode (machine gave FAT+SNF, user types LTR)
+  useEffect(() => {
+    if (!analyzerDataCapturedRef.current) return;
+    if (!ltr) return;
+    const timer = setTimeout(() => {
+      const f = formRef.current;
+      if (f.producer && f.ltr && f.fat && f.snf && !f.dupBlocked && !f.editingId) {
+        handleSave();
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [ltr]); // eslint-disable-line
+
   // Auto-calc — Net LTR → KG (× 1.03), then calc rate/amount
   useEffect(() => {
     const grossLtr = parseFloat(ltr) || 0;
     const waterLtr = parseFloat(water) || 0;
     const netLtr   = Math.max(0, grossLtr - waterLtr);
     const netKg    = parseFloat((netLtr * 1.03).toFixed(3));
-    setCalcResult(calcValues(netKg, parseFloat(fat) || 0, parseFloat(clr) || 0, parseFloat(snf) || 0, activeChart, chartRows));
-  }, [ltr, water, fat, clr, snf, activeChart, chartRows]);
+    const base = calcValues(netKg, parseFloat(fat) || 0, parseFloat(clr) || 0, parseFloat(snf) || 0, activeChart, chartRows);
+    if (entryMode === 'rate' && manualRate !== '') {
+      const rate = parseFloat(manualRate) || 0;
+      const amount = parseFloat((netKg * rate + base.incentive).toFixed(2));
+      setCalcResult({ ...base, rate, amount });
+    } else if (entryMode === 'amount' && manualAmount !== '') {
+      const amount = parseFloat(manualAmount) || 0;
+      const rate = netKg > 0 ? parseFloat((amount / netKg).toFixed(2)) : 0;
+      setCalcResult({ ...base, rate, amount });
+    } else {
+      setCalcResult(base);
+    }
+  }, [ltr, water, fat, clr, snf, activeChart, chartRows, entryMode, manualRate, manualAmount]); // eslint-disable-line
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -382,7 +731,7 @@ const MilkPurchase = () => {
 
   // ── Save / Update ─────────────────────────────────────────────────────────
   const handleSave = async () => {
-    const { producer: p, ltr: q, water: w, fat: f, clr: c, snf: s, date: d, shift: sh, center: ct, agent: ag, calcResult: cr, editingId: eid } = formRef.current;
+    const { producer: p, ltr: q, water: w, fat: f, clr: c, snf: s, date: d, shift: sh, center: ct, agent: ag, calcResult: cr, editingId: eid, entryMode: em, manualRate: mr, manualAmount: ma } = formRef.current;
     if (formRef.current.dupBlocked) return;
     if (!p || !q || !f) { notifications.show({ message: 'Member, Litres and FAT are required', color: 'red', autoClose: 2500 }); return; }
     setSaving(true);
@@ -390,8 +739,14 @@ const MilkPurchase = () => {
     const waterLtr = parseFloat(w) || 0;
     const netLtr   = Math.max(0, grossLtr - waterLtr);
     const netKg    = parseFloat((netLtr * 1.03).toFixed(3));
+    // Always recalculate fresh to avoid stale calcResult (race condition on fast Enter)
+    const fresh = calcValues(netKg, parseFloat(f) || 0, parseFloat(c) || 0, parseFloat(s) || 0, activeChart, chartRows);
+    let freshRate   = fresh.rate;
+    let freshAmount = fresh.amount;
+    if (em === 'rate' && mr !== '') { freshRate = parseFloat(mr) || 0; freshAmount = parseFloat((netKg * freshRate + fresh.incentive).toFixed(2)); }
+    if (em === 'amount' && ma !== '') { freshAmount = parseFloat(ma) || 0; freshRate = netKg > 0 ? parseFloat((freshAmount / netKg).toFixed(2)) : 0; }
     try {
-      const payload = { date: d.toISOString(), shift: sh, collectionCenter: ct || undefined, agent: ag || undefined, farmer: p._id, farmerNumber: p.no, farmerName: p.name, qty: netKg, ltr: netLtr, clr: parseFloat(c) || 0, fat: parseFloat(f), snf: parseFloat(s) || cr.snf || 0, addedWater: waterLtr, rate: cr.rate, incentive: cr.incentive, amount: cr.amount };
+      const payload = { date: d.toISOString(), shift: sh, collectionCenter: ct || undefined, agent: ag || undefined, farmer: p._id, farmerNumber: p.no, farmerName: p.name, qty: netKg, ltr: netLtr, clr: parseFloat(c) || 0, fat: parseFloat(f), snf: parseFloat(s) || fresh.snf || 0, addedWater: waterLtr, rate: freshRate, incentive: fresh.incentive, amount: freshAmount };
 
       if (eid) {
         // UPDATE existing entry
@@ -408,9 +763,10 @@ const MilkPurchase = () => {
         setEntries(prev => [...prev, { ...newEntry, sl: prev.length + 1 }]);
         tableScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
         lastEntryRef.current = newEntry;
-        justSavedRef.current = true;
-        setTimeout(() => { justSavedRef.current = false; }, 2000);
-        notifications.show({ message: `Saved: ${saved.billNo} \u2014 \u20B9${saved.amount.toFixed(2)}  |  Press Enter to print`, color: 'teal', autoClose: 2000 });
+        // Auto-print immediately after save
+        const dateStr = formRef.current.date.toLocaleDateString('en-IN');
+        printBill(newEntry, dateStr, formRef.current.shift, centerNameRef.current);
+        notifications.show({ message: `Saved & Printing: ${saved.billNo} \u2014 \u20B9${saved.amount.toFixed(2)}`, color: 'teal', autoClose: 2000 });
         if (formRef.current.speakEnabled) {
           const utterance = new SpeechSynthesisUtterance(
             `Fat ${saved.fat.toFixed(1)}. Rate ${saved.rate.toFixed(2)}. Amount ${saved.amount.toFixed(2)}.`
@@ -430,7 +786,9 @@ const MilkPurchase = () => {
   const handleClear = () => {
     setMemberInput(''); setProducer(null); setSearchResults([]); setShowDropdown(false);
     setLtr(''); setWater(''); setFat(''); setClr(''); setSnf('');
+    setManualRate(''); setManualAmount('');
     setSelectedRow(null); setEditingId(null);
+    // analyzerDataCapturedRef stays true — only resets when machine sends a NEW different reading
     setTimeout(() => memberRef.current?.focus({ preventScroll: true }), 60);
   };
 
@@ -469,10 +827,7 @@ const MilkPurchase = () => {
   const handleMemberKeyDown = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (!memberInput.trim() && justSavedRef.current && lastEntryRef.current) {
-        printBill(lastEntryRef.current, formRef.current.date.toLocaleDateString('en-IN'), formRef.current.shift, centerNameRef.current);
-        justSavedRef.current = false;
-      } else { lookupMember(memberInput); }
+      lookupMember(memberInput);
     }
   };
   const focusNext = (ref) => (e) => { if (e.key === 'Enter') { e.preventDefault(); ref.current?.focus(); } };
@@ -682,13 +1037,40 @@ const MilkPurchase = () => {
           </Card>
 
           {/* ── CARD 3: Current Entry ── */}
-          <Card shadow="xs" radius="lg" withBorder style={{ flex: 1, borderColor: '#fde68a', borderTop: '3px solid #d97706', padding: '8px 12px' }}>
+          <Card shadow="xs" radius="lg" withBorder style={{ flex: 1, borderColor: (machineConnected || socketConnected) ? '#6ee7b7' : '#fde68a', borderTop: `3px solid ${(machineConnected || socketConnected) ? '#059669' : '#d97706'}`, padding: '8px 12px' }}>
             <Group gap={6} mb={6} justify="space-between">
               <Group gap={6}>
                 <Box style={{ background: '#fef9c3', borderRadius: 7, padding: '4px 6px' }}><IconMilk size={15} color="#d97706" /></Box>
                 <Text size="12px" fw={800} c="#78350f" tt="uppercase" style={{ letterSpacing: '0.5px' }}>Current Entry</Text>
+                {(machineConnected || socketConnected) && (
+                  <Badge size="xs" color="teal" variant="filled" radius="sm"
+                    leftSection={<Box style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff', animation: 'pulse 1s infinite' }} />}>
+                    MACHINE LIVE
+                  </Badge>
+                )}
               </Group>
-              <Text size="9px" c="#94a3b8">Tab to move · Enter to save</Text>
+              <Group gap={6}>
+                {machineStatus && <Text size="9px" c="teal.7" fw={600}>{machineStatus}</Text>}
+                {/* Backend serial port status (Socket.io) */}
+                <Badge
+                  size="xs"
+                  color={socketConnected ? 'teal' : 'gray'}
+                  variant={socketConnected ? 'filled' : 'outline'}
+                  title="Backend serial port (Node.js)"
+                >
+                  {socketConnected ? 'COM ✓' : 'COM —'}
+                </Badge>
+                {/* Web Serial API connect button */}
+                <ActionIcon
+                  size="sm" radius="sm" variant={machineConnected ? 'filled' : 'light'}
+                  color={machineConnected ? 'teal' : 'gray'}
+                  title={machineConnected ? 'Disconnect Web Serial' : 'Connect via Web Serial API (Chrome/Edge)'}
+                  onClick={machineConnected ? disconnectMachine : connectMachine}
+                >
+                  {machineConnected ? <IconPlugConnectedX size={14} /> : <IconPlugConnected size={14} />}
+                </ActionIcon>
+                <Text size="9px" c="#94a3b8">Tab to move · Enter to save</Text>
+              </Group>
             </Group>
 
             {/* Input row */}
@@ -705,7 +1087,12 @@ const MilkPurchase = () => {
                   <NumberInput
                     ref={iRef} value={value}
                     onChange={v => setter(String(v ?? ''))}
-                    onKeyDown={next ? focusNext(next) : onLastEnter}
+                    onKeyDown={
+                      // LTR: in analyzer mode jump straight to save; otherwise go to FAT
+                      label === 'LTR'
+                        ? (e) => { if (e.key === 'Enter') { e.preventDefault(); analyzerDataCapturedRef.current ? handleSave() : fatRef.current?.focus(); } }
+                        : (next ? focusNext(next) : onLastEnter)
+                    }
                     step={step} decimalScale={dec} min={0}
                     size="sm" radius="md" hideControls
                     styles={{ input: { height: 36, fontSize: 15, fontWeight: 900, background: bg, border: `2px solid ${border}`, color, textAlign: 'center' } }}
@@ -730,17 +1117,48 @@ const MilkPurchase = () => {
                     <Text size="9px" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>KG</Text>
                     <Text size="14px" fw={700} style={{ color: '#065f46', lineHeight: 1.2 }}>{netKg.toFixed(3)}</Text>
                   </Box>
-                  {[
-                    { label: 'SNF (Auto)',  val: calcResult.snf ? calcResult.snf.toFixed(2) : snf || '—', c: '#166534', bg: '#f0fdf4', border: '#bbf7d0' },
-                    { label: 'Rate / KG',  val: `\u20B9 ${calcResult.rate.toFixed(2)}`,                   c: '#1e40af', bg: '#eff6ff', border: '#bfdbfe' },
-                    { label: 'Incentive',  val: `\u20B9 ${calcResult.incentive.toFixed(2)}`,              c: '#92400e', bg: '#fffbeb', border: '#fde68a' },
-                    { label: 'Amount',     val: `\u20B9 ${calcResult.amount.toFixed(2)}`,                 c: 'white',   bg: '#1e40af', border: '#1e40af', bold: true, large: true },
-                  ].map(({ label, val, c, bg, border, bold, large }) => (
-                    <Box key={label} style={{ flex: large ? 1.3 : 1, background: bg, border: `1.5px solid ${border}`, borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
-                      <Text size="9px" fw={600} style={{ color: large ? 'rgba(255,255,255,0.75)' : '#64748b' }} tt="uppercase">{label}</Text>
-                      <Text size={large ? '18px' : '14px'} fw={large ? 900 : 700} style={{ color: c, lineHeight: 1.2 }}>{val}</Text>
-                    </Box>
-                  ))}
+                  {/* SNF (Auto) */}
+                  <Box style={{ flex: 1, background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
+                    <Text size="9px" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>SNF (Auto)</Text>
+                    <Text size="14px" fw={700} style={{ color: '#166534', lineHeight: 1.2 }}>{calcResult.snf ? calcResult.snf.toFixed(2) : snf || '—'}</Text>
+                  </Box>
+                  {/* Rate — editable in 'rate' mode */}
+                  <Box style={{ flex: 1, background: entryMode === 'rate' ? '#e0f2fe' : '#eff6ff', border: `2px solid ${entryMode === 'rate' ? '#0284c7' : '#bfdbfe'}`, borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
+                    <Text size="9px" fw={700} style={{ color: entryMode === 'rate' ? '#0284c7' : '#64748b' }} tt="uppercase">{entryMode === 'rate' ? '✏ Rate/KG' : 'Rate/KG'}</Text>
+                    {entryMode === 'rate' ? (
+                      <NumberInput
+                        ref={manualRateRef}
+                        value={manualRate === '' ? '' : parseFloat(manualRate)}
+                        onChange={v => setManualRate(String(v ?? ''))}
+                        step={0.01} decimalScale={2} min={0}
+                        size="xs" hideControls
+                        styles={{ input: { height: 22, fontSize: 14, fontWeight: 900, background: 'transparent', border: 'none', color: '#1e40af', textAlign: 'center', padding: '0 4px' } }}
+                      />
+                    ) : (
+                      <Text size="14px" fw={700} style={{ color: '#1e40af', lineHeight: 1.2 }}>₹ {calcResult.rate.toFixed(2)}</Text>
+                    )}
+                  </Box>
+                  {/* Incentive */}
+                  <Box style={{ flex: 1, background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
+                    <Text size="9px" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>Incentive</Text>
+                    <Text size="14px" fw={700} style={{ color: '#92400e', lineHeight: 1.2 }}>₹ {calcResult.incentive.toFixed(2)}</Text>
+                  </Box>
+                  {/* Amount — editable in 'amount' mode */}
+                  <Box style={{ flex: 1.3, background: entryMode === 'amount' ? '#fef3c7' : '#1e40af', border: `2px solid ${entryMode === 'amount' ? '#f59e0b' : '#1e40af'}`, borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
+                    <Text size="9px" fw={700} style={{ color: entryMode === 'amount' ? '#92400e' : 'rgba(255,255,255,0.75)' }} tt="uppercase">{entryMode === 'amount' ? '✏ Amount' : 'Amount'}</Text>
+                    {entryMode === 'amount' ? (
+                      <NumberInput
+                        ref={manualAmountRef}
+                        value={manualAmount === '' ? '' : parseFloat(manualAmount)}
+                        onChange={v => setManualAmount(String(v ?? ''))}
+                        step={1} decimalScale={2} min={0}
+                        size="xs" hideControls
+                        styles={{ input: { height: 22, fontSize: 16, fontWeight: 900, background: 'transparent', border: 'none', color: '#92400e', textAlign: 'center', padding: '0 4px' } }}
+                      />
+                    ) : (
+                      <Text size="18px" fw={900} style={{ color: 'white', lineHeight: 1.2 }}>₹ {calcResult.amount.toFixed(2)}</Text>
+                    )}
+                  </Box>
                 </Group>
               );
             })()}
@@ -1062,6 +1480,196 @@ const MilkPurchase = () => {
                   style={{ accentColor: '#006064', width: 12, height: 12 }}
                 />
                 <span style={{ color: '#004d40', fontWeight: 600 }}>{opt}</span>
+                {opt === 'Analyzer' && cpMode.includes('Analyzer') && (
+                  <Box style={{
+                    width: 7, height: 7, borderRadius: '50%',
+                    background: analyzerRunning ? '#22c55e' : '#f59e0b',
+                    boxShadow: analyzerRunning ? '0 0 4px #22c55e' : 'none',
+                    flexShrink: 0
+                  }} title={analyzerRunning ? 'Analyzer running' : 'Analyzer not started'} />
+                )}
+              </label>
+            ))}
+          </Box>
+        </Box>
+
+        {/* ANALYZER Panel — shown when Analyzer mode is checked */}
+        {cpMode.includes('Analyzer') && (
+          <Box style={{ margin: '6px 8px 0', borderRadius: 4, border: `1px solid ${analyzerRunning ? '#6ee7b7' : '#fde68a'}`, background: analyzerRunning ? 'rgba(240,255,244,0.9)' : 'rgba(255,251,235,0.9)', overflow: 'hidden' }}>
+            {/* Header row */}
+            <Box style={{ background: analyzerRunning ? '#059669' : '#d97706', padding: '3px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Box style={{ width: 7, height: 7, borderRadius: '50%', background: analyzerRunning ? '#a7f3d0' : '#fef3c7', animation: analyzerRunning ? 'pulse 1.2s infinite' : 'none' }} />
+                <Text size="10px" fw={800} c="white" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                  {analyzerDeviceName || 'Milk Analyzer'}
+                </Text>
+              </Box>
+              <Text size="9px" c="white" style={{ opacity: 0.85 }}>
+                {analyzerRunning ? 'LIVE' : 'STOPPED'}
+              </Text>
+            </Box>
+
+            {/* Port selector + Baud (shown when not running) */}
+            {!analyzerRunning && (
+              <Box style={{ padding: '6px 8px 4px' }}>
+                {/* Port row */}
+                <Box style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
+                  <select
+                    value={selectedPort}
+                    onChange={e => { setSelectedPort(e.target.value); setPortError(''); }}
+                    style={{
+                      flex: 1, fontSize: 11, fontWeight: 700, padding: '3px 4px', borderRadius: 4,
+                      border: portError ? '1.5px solid #dc2626' : '1.5px solid #d1d5db',
+                      background: '#fff', color: selectedPort ? '#111' : '#9ca3af',
+                    }}
+                  >
+                    <option value="">-- Select COM Port --</option>
+                    {/* Always show COM1–COM10 */}
+                    {['COM1','COM2','COM3','COM4','COM5','COM6','COM7','COM8','COM9','COM10'].map(p => (
+                      <option key={p} value={p}>{p}{availablePorts.includes(p) ? ' ✓' : ''}</option>
+                    ))}
+                    {/* Extra ports detected by scan that are outside COM1–COM10 */}
+                    {availablePorts.filter(p => !['COM1','COM2','COM3','COM4','COM5','COM6','COM7','COM8','COM9','COM10'].includes(p)).map(p => (
+                      <option key={p} value={p}>{p} ✓</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleScanPorts}
+                    disabled={portsLoading}
+                    title="Scan available COM ports"
+                    style={{
+                      fontSize: 11, padding: '3px 6px', borderRadius: 4, cursor: 'pointer',
+                      background: '#f0f9ff', border: '1px solid #7dd3fc', color: '#0369a1', fontWeight: 700,
+                    }}
+                  >
+                    {portsLoading ? '…' : '⟳'}
+                  </button>
+                </Box>
+                {/* Baud rate row */}
+                <Box style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
+                  <Text size="9px" fw={700} c="dimmed" style={{ whiteSpace: 'nowrap' }}>Baud:</Text>
+                  <select
+                    value={selectedBaud}
+                    onChange={e => setSelectedBaud(e.target.value)}
+                    style={{ flex: 1, fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid #d1d5db', background: '#fff' }}
+                  >
+                    {['1200','2400','4800','9600','19200','38400','57600','115200'].map(b => (
+                      <option key={b} value={b}>{b}</option>
+                    ))}
+                  </select>
+                </Box>
+                {/* Error message */}
+                {portError && (
+                  <Text size="9px" c="red" fw={600} mb={4} style={{ wordBreak: 'break-all' }}>{portError}</Text>
+                )}
+                {/* Available ports hint */}
+                {availablePorts.length > 0 && !selectedPort && (
+                  <Text size="9px" c="blue.6" fw={600}>
+                    Found: {availablePorts.join(', ')}
+                  </Text>
+                )}
+                {availablePorts.length === 0 && !portsLoading && (
+                  <Text size="9px" c="dimmed">Click ⟳ to scan COM ports</Text>
+                )}
+              </Box>
+            )}
+
+            {/* Live values grid */}
+            {liveAnalyzerData ? (
+              <Box style={{ padding: '4px 8px 6px' }}>
+                <Box style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 4 }}>
+                  {[
+                    { label: 'FAT',     value: liveAnalyzerData.fat != null ? `${parseFloat(liveAnalyzerData.fat).toFixed(2)}%` : '—', color: '#c2410c', bg: '#fff7ed' },
+                    { label: 'SNF',     value: liveAnalyzerData.snf != null ? `${parseFloat(liveAnalyzerData.snf).toFixed(2)}%` : '—', color: '#166534', bg: '#f0fdf4' },
+                    { label: 'Density', value: liveAnalyzerData.density != null ? String(liveAnalyzerData.density) : '—',             color: '#6d28d9', bg: '#f5f3ff' },
+                    { label: 'Water',   value: liveAnalyzerData.addedWater != null ? `${liveAnalyzerData.addedWater}%` : '0%',         color: '#be123c', bg: '#fff1f2' },
+                  ].map(({ label, value, color, bg }) => (
+                    <Box key={label} style={{ background: bg, border: `1px solid ${color}33`, borderRadius: 4, padding: '3px 5px', textAlign: 'center' }}>
+                      <Text size="8px" fw={700} tt="uppercase" style={{ color, opacity: 0.75, letterSpacing: '0.3px' }}>{label}</Text>
+                      <Text size="12px" fw={900} style={{ color, lineHeight: 1.2 }}>{value}</Text>
+                    </Box>
+                  ))}
+                </Box>
+                {liveAnalyzerData.rawData && (() => {
+                  const raw = liveAnalyzerData.rawData;
+                  const inner = raw.length === 31 ? raw.slice(1, 30) : null;
+                  return (
+                    <Box style={{ background: '#f1f5f9', borderRadius: 4, padding: '4px 6px', marginTop: 4 }}>
+                      <Text size="8px" fw={700} c="dimmed" mb={2}>RAW DATA</Text>
+                      <Text size="9px" style={{ fontFamily: 'monospace', wordBreak: 'break-all', color: '#334155' }}>{raw}</Text>
+                      {inner && (
+                        <Box style={{ marginTop: 4 }}>
+                          <Text size="8px" style={{ fontFamily: 'monospace', color: '#c2410c' }}>FAT  [{inner.slice(0,4)}] = {(parseInt(inner.slice(0,4),10)/100).toFixed(2)}</Text>
+                          <Text size="8px" style={{ fontFamily: 'monospace', color: '#166534' }}>SNF  [{inner.slice(4,8)}] = {(parseInt(inner.slice(4,8),10)/100).toFixed(2)}</Text>
+                          <Text size="8px" style={{ fontFamily: 'monospace', color: '#6d28d9' }}>DEN  [{inner.slice(8,12)}] = {parseInt(inner.slice(8,12),10)}</Text>
+                          <Text size="8px" style={{ fontFamily: 'monospace', color: '#9ca3af' }}>??   [{inner.slice(12,14)}]</Text>
+                          <Text size="8px" style={{ fontFamily: 'monospace', color: '#be123c' }}>WATER[{inner.slice(14,16)}] = {parseInt(inner.slice(14,16),10)}%</Text>
+                          <Text size="8px" style={{ fontFamily: 'monospace', color: '#9ca3af' }}>REST [{inner.slice(16)}]</Text>
+                        </Box>
+                      )}
+                    </Box>
+                  );
+                })()}
+              </Box>
+            ) : analyzerRunning ? (
+              <Box style={{ padding: '4px 8px 6px' }}>
+                <Text size="10px" c="teal.7" fw={600} ta="center">Waiting for reading…</Text>
+              </Box>
+            ) : null}
+
+            {/* Start / Stop buttons */}
+            <Box style={{ padding: '0 8px 8px', display: 'flex', gap: 4 }}>
+              <button
+                onClick={handleStartAnalyzer}
+                disabled={analyzerRunning || analyzerStarting || !selectedPort}
+                style={{
+                  flex: 1, fontSize: 10, fontWeight: 700, padding: '4px 0', borderRadius: 4,
+                  cursor: (analyzerRunning || !selectedPort) ? 'not-allowed' : 'pointer',
+                  background: analyzerRunning ? '#d1fae5' : '#059669', color: analyzerRunning ? '#065f46' : 'white',
+                  border: `1px solid ${analyzerRunning ? '#6ee7b7' : '#047857'}`,
+                  opacity: (analyzerRunning || !selectedPort) ? 0.6 : 1,
+                }}
+              >
+                {analyzerStarting ? '...' : analyzerRunning ? '● Running' : '▶ Start'}
+              </button>
+              <button
+                onClick={handleStopAnalyzer}
+                disabled={!analyzerRunning}
+                style={{
+                  flex: 1, fontSize: 10, fontWeight: 700, padding: '4px 0', borderRadius: 4, cursor: !analyzerRunning ? 'not-allowed' : 'pointer',
+                  background: !analyzerRunning ? '#fef2f2' : '#dc2626', color: !analyzerRunning ? '#9ca3af' : 'white',
+                  border: `1px solid ${!analyzerRunning ? '#fecaca' : '#b91c1c'}`, opacity: !analyzerRunning ? 0.5 : 1,
+                }}
+              >
+                ■ Stop
+              </button>
+            </Box>
+          </Box>
+        )}
+
+        {/* PARAMETER Section */}
+        <Box style={{ margin: '6px 8px 0', borderRadius: 4, border: '1px solid #80deea', background: 'rgba(255,255,255,0.45)', overflow: 'hidden' }}>
+          <Box style={{ background: '#006064', padding: '2px 8px', color: '#e0f7fa', fontSize: 10, fontWeight: 700, letterSpacing: '0.5px' }}>PARAMETER</Box>
+          <Box style={{ padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {[
+              { value: 'chart',  label: 'Auto (Chart)',  desc: 'Rate from chart'  },
+              { value: 'rate',   label: 'Rate Entry',    desc: 'LTR × Rate → Amt' },
+              { value: 'amount', label: 'Amount Entry',  desc: 'LTR × Amt → Rate' },
+            ].map(opt => (
+              <label key={opt.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 5, cursor: 'pointer', fontSize: 11 }}
+                onClick={() => { setEntryMode(opt.value); setManualRate(''); setManualAmount(''); }}>
+                <Box style={{
+                  width: 13, height: 13, borderRadius: '50%', flexShrink: 0, marginTop: 1,
+                  border: `2px solid ${entryMode === opt.value ? '#006064' : '#9ca3af'}`,
+                  background: entryMode === opt.value ? '#006064' : 'white',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {entryMode === opt.value && <Box style={{ width: 5, height: 5, borderRadius: '50%', background: 'white' }} />}
+                </Box>
+                <Box>
+                  <span style={{ color: '#004d40', fontWeight: 700 }}>{opt.label}</span>
+                  <span style={{ display: 'block', color: '#6b7280', fontSize: 9 }}>{opt.desc}</span>
+                </Box>
               </label>
             ))}
           </Box>

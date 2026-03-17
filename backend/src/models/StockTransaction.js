@@ -157,6 +157,11 @@ const stockTransactionSchema = new mongoose.Schema({
   notes: {
     type: String,
     trim: true
+  },
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true
   }
 }, {
   timestamps: true
@@ -166,6 +171,7 @@ const stockTransactionSchema = new mongoose.Schema({
 stockTransactionSchema.index({ itemId: 1, date: -1 });
 stockTransactionSchema.index({ referenceType: 1, referenceId: 1 });
 stockTransactionSchema.index({ transactionType: 1, date: -1 });
+stockTransactionSchema.index({ companyId: 1 });
 
 const StockTransaction = mongoose.model('StockTransaction', stockTransactionSchema);
 

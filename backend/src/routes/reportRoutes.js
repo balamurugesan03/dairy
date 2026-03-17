@@ -10,7 +10,10 @@ import {
   getStockRegister,
   getInventoryPurchaseRegister,
   getSalesRegister,
-  getMilkBillAbstractReport
+  getMilkBillAbstractReport,
+  getDairyAbstractReport,
+  getDairyRegisterReport,
+  getCooperativeRDReport
 } from '../controllers/reportController.js';
 import { getDayBook } from '../controllers/dayBookController.js';
 import {
@@ -61,6 +64,9 @@ router.get('/stock-register', getStockRegister);
 router.get('/inventory-purchase-register', getInventoryPurchaseRegister);
 router.get('/sales-register', getSalesRegister);
 router.get('/milk-bill-abstract', getMilkBillAbstractReport);
+router.get('/dairy-abstract', getDairyAbstractReport);
+router.get('/dairy-register', getDairyRegisterReport);
+router.get('/cooperative-rd', getCooperativeRDReport);
 
 // New accounting reports routes
 router.get('/cash-book', getCashBook);

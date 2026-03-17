@@ -45,6 +45,7 @@ const ledDisplayConfigSchema = new mongoose.Schema(
 // ─── Sub-schema: Milk Analyzer Configuration ──────────────────────────────────
 const milkAnalyzerConfigSchema = new mongoose.Schema(
   {
+    deviceName             : { type: String, default: '' },
     device                 : { type: String, enum: ['LACTO SURE ECO', 'LACTO STAR', 'MILKO TESTER', 'EKOMILK', 'NONE'], default: 'LACTO SURE ECO' },
     comPort                : { type: String, default: 'ttyS1' },
     baudRate               : { type: Number, enum: [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200], default: 9600 },

@@ -1,7 +1,9 @@
+import http from 'http';
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { Server as SocketIOServer } from 'socket.io';
 
 dotenv.config();
 
@@ -12,7 +14,23 @@ if (!process.env.JWT_SECRET) {
 }
 
 const app = express();
+const httpServer = http.createServer(app);
 const PORT = process.env.PORT || 5000;
+
+// Socket.io — allow frontend origin
+export const io = new SocketIOServer(httpServer, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST']
+  }
+});
+
+io.on('connection', (socket) => {
+  console.log(`[Socket.io] Client connected: ${socket.id}`);
+  socket.on('disconnect', () => {
+    console.log(`[Socket.io] Client disconnected: ${socket.id}`);
+  });
+});
 
 // Middleware
 app.use(cors());
@@ -21,7 +39,16 @@ app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB connected successfully'))
+  .then(async () => {
+    console.log('MongoDB connected successfully');
+    // Drop old global unique index on quotationNumber (replaced by compound index per companyId)
+    try {
+      await mongoose.connection.collection('quotations').dropIndex('quotationNumber_1');
+      console.log('Dropped old quotationNumber_1 index');
+    } catch (e) {
+      if (e.codeName !== 'IndexNotFound') console.warn('Index drop warning:', e.message);
+    }
+  })
   .catch((err) => console.error('MongoDB connection error:', err));
 
 // Test route
@@ -36,6 +63,7 @@ import { protect, addCompanyFilter } from './middleware/auth.js';
 import authRoutes from './routes/authRoutes.js';
 import farmerRoutes from './routes/farmerRoutes.js';
 import customerRoutes from './routes/customerRoutes.js';
+import businessCustomerRoutes from './routes/businessCustomerRoutes.js';
 import supplierRoutes from './routes/supplierRoutes.js';
 import inventoryRoutes from './routes/inventoryRoutes.js';
 import salesRoutes from './routes/salesRoutes.js';
@@ -137,6 +165,15 @@ import historicalRuleRoutes from './routes/historicalRuleRoutes.js';
 // Periodical Rule routes
 import periodicalRuleRoutes from './routes/periodicalRuleRoutes.js';
 
+// Thermal Print routes (no auth — local printer, same machine)
+import thermalPrintRoutes from './routes/thermalPrintRoutes.js';
+
+// Milk Analyzer routes
+import milkAnalyzerRoutes from './routes/milkAnalyzerRoutes.js';
+
+// Machine Config routes
+import machineConfigRoutes from './routes/machineConfigRoutes.js';
+
 // Auth routes (public login, protected user management)
 app.use('/api/auth', authRoutes);
 
@@ -162,9 +199,13 @@ app.get('/api/companies/public', async (req, res) => {
   }
 });
 
+// Thermal Print routes — MUST be before any app.use('/api', protect, ...) catch-all
+app.use('/api/print', thermalPrintRoutes);
+
 // Apply authentication and company filter to all protected routes
 app.use('/api/farmers', protect, addCompanyFilter, farmerRoutes);
 app.use('/api/customers', protect, addCompanyFilter, customerRoutes);
+app.use('/api/business-customers', protect, addCompanyFilter, businessCustomerRoutes);
 app.use('/api/suppliers', protect, addCompanyFilter, supplierRoutes);
 app.use('/api', protect, addCompanyFilter, inventoryRoutes);
 app.use('/api/sales', protect, addCompanyFilter, salesRoutes);
@@ -263,6 +304,12 @@ app.use('/api/historical-rules', protect, addCompanyFilter, historicalRuleRoutes
 // Periodical Rules
 app.use('/api/periodical-rules', protect, addCompanyFilter, periodicalRuleRoutes);
 
+// Milk Analyzer routes
+app.use('/api/milk-analyzer', protect, addCompanyFilter, milkAnalyzerRoutes);
+
+// Machine Config routes (analyzer device configuration + start/stop)
+app.use('/api/machine-config', protect, addCompanyFilter, machineConfigRoutes);
+
 // Protected company routes (for superadmin management)
 app.use('/api/companies', protect, companyRoutes);
 
@@ -285,8 +332,10 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+
+  console.log('[SerialPort] Analyzer managed via /api/machine-config (DB-driven, start/stop from UI).');
 });
 
 export default app;

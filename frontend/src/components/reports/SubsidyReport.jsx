@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Box, Paper, Group, Text, Title, Button, Table, ScrollArea,
   Badge, Stack, SimpleGrid, ThemeIcon, Loader, Center, Divider
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import {
-  IconLeaf, IconCalendar, IconRefresh, IconFileExport, IconInbox
+  IconLeaf, IconCalendar, IconRefresh, IconFileExport, IconInbox, IconPrinter
 } from '@tabler/icons-react';
+import { printReport } from '../../utils/printReport';
 import { notifications } from '@mantine/notifications';
 import * as XLSX from 'xlsx';
 import dayjs from 'dayjs';
@@ -16,6 +17,7 @@ const fmt = (n, dec = 2) => parseFloat(n || 0).toFixed(dec);
 const fmtDate = (d) => d ? dayjs(d).format('DD-MM-YYYY') : '-';
 
 const SubsidyReport = () => {
+  const printRef = useRef(null);
   const [loading, setLoading] = useState(false);
   const [subsidyData, setSubsidyData] = useState([]);
   const [summary, setSummary] = useState({ totalFarmers: 0, totalMilkAmount: 0, totalSubsidy: 0, totalNetPayable: 0 });
@@ -72,8 +74,12 @@ const SubsidyReport = () => {
     notifications.show({ title: 'Success', message: 'Exported to Excel', color: 'green' });
   };
 
+  const periodLabel = dateRange[0] && dateRange[1]
+    ? `${fmtDate(dateRange[0])} — ${fmtDate(dateRange[1])}`
+    : '';
+
   return (
-    <Box p="md">
+    <Box p="md" ref={printRef}>
       {/* Header */}
       <Paper radius="lg" mb="md" style={{ background: 'linear-gradient(135deg, #fff8e1 0%, #ffe082 40%, #ffffff 100%)', border: '1px solid #ffd54f', overflow: 'hidden' }}>
         <Box style={{ background: 'linear-gradient(90deg, #f57f17 0%, #f9a825 50%, #ffca28 100%)', padding: '10px 20px' }}>
@@ -108,7 +114,7 @@ const SubsidyReport = () => {
       </Paper>
 
       {/* Filters */}
-      <Paper radius="md" p="md" mb="md" withBorder>
+      <Paper radius="md" p="md" mb="md" withBorder data-no-print>
         <Group gap="md" wrap="wrap" align="flex-end">
           <DatePickerInput
             type="range"
@@ -124,9 +130,17 @@ const SubsidyReport = () => {
             Generate
           </Button>
           {subsidyData.length > 0 && (
-            <Button leftSection={<IconFileExport size={16} />} variant="light" color="green" onClick={handleExport} size="sm">
-              Export Excel
-            </Button>
+            <>
+              <Button leftSection={<IconFileExport size={16} />} variant="light" color="green" onClick={handleExport} size="sm">
+                Export Excel
+              </Button>
+              <Button
+                leftSection={<IconPrinter size={16} />} variant="outline" color="gray" size="sm"
+                onClick={() => printReport(printRef, { title: `Subsidy Register — ${periodLabel}`, orientation: 'portrait' })}
+              >
+                Print
+              </Button>
+            </>
           )}
         </Group>
       </Paper>
@@ -159,9 +173,19 @@ const SubsidyReport = () => {
             <Table striped highlightOnHover withColumnBorders style={{ fontSize: 12 }}>
               <Table.Thead style={{ background: 'linear-gradient(180deg, #fff8e1 0%, #ffe082 100%)' }}>
                 <Table.Tr>
-                  {['#', 'Farmer No', 'Farmer Name', 'Aadhaar', 'Ksheerasree ID', 'Payment Date', 'Milk Amount', 'Subsidy Amt', 'Net Payable'].map(col => (
-                    <Table.Th key={col} style={{ fontWeight: 700, fontSize: 11, textTransform: 'uppercase', color: '#e65100', padding: '8px 10px', whiteSpace: 'nowrap' }}>
-                      {col}
+                  {[
+                    { label: '#',              align: 'center' },
+                    { label: 'Farmer No',      align: 'center' },
+                    { label: 'Farmer Name',    align: 'left' },
+                    { label: 'Aadhaar',        align: 'left' },
+                    { label: 'Ksheerasree ID', align: 'left' },
+                    { label: 'Payment Date',   align: 'left' },
+                    { label: 'Milk Amount',    align: 'right' },
+                    { label: 'Subsidy Amt',    align: 'right' },
+                    { label: 'Net Payable',    align: 'right' },
+                  ].map(col => (
+                    <Table.Th key={col.label} style={{ fontWeight: 700, fontSize: 11, textTransform: 'uppercase', color: '#e65100', padding: '8px 10px', whiteSpace: 'nowrap', textAlign: col.align }}>
+                      {col.label}
                     </Table.Th>
                   ))}
                 </Table.Tr>

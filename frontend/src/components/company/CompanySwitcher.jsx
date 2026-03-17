@@ -3,23 +3,15 @@ import { useCompany } from '../../context/CompanyContext';
 import './CompanySwitcher.css';
 
 const CompanySwitcher = () => {
-  const { selectedCompany, selectedBusinessType, companies, fetchCompanies, switchCompany } = useCompany();
+  const { selectedCompany, selectedBusinessType, switchCompany } = useCompany();
   const [showDropdown, setShowDropdown] = useState(false);
-  const [tempCompanyId, setTempCompanyId] = useState('');
   const [tempBusinessType, setTempBusinessType] = useState('');
   const dropdownRef = useRef(null);
-
-  useEffect(() => {
-    if (showDropdown && companies.length === 0) {
-      fetchCompanies();
-    }
-  }, [showDropdown]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setShowDropdown(false);
-        setTempCompanyId('');
         setTempBusinessType('');
       }
     };
@@ -28,29 +20,22 @@ const CompanySwitcher = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleCompanyChange = (companyId) => {
-    setTempCompanyId(companyId);
-    setTempBusinessType(''); // Reset business type when company changes
-  };
-
   const handleSwitch = () => {
-    if (!tempCompanyId || !tempBusinessType) {
-      alert('Please select both company and business type');
+    if (!tempBusinessType) {
+      alert('Please select a business type');
       return;
     }
 
-    const company = companies.find(c => c._id === tempCompanyId);
-    if (company) {
-      switchCompany(company, tempBusinessType);
-      setShowDropdown(false);
-    }
+    switchCompany(selectedCompany, tempBusinessType);
+    setShowDropdown(false);
   };
 
-  const tempCompanyData = companies.find(c => c._id === tempCompanyId);
-  const availableBusinessTypes = tempCompanyData?.businessTypes || [];
+  const availableBusinessTypes = selectedCompany?.businessTypes || [];
 
-  if (!selectedCompany || !selectedBusinessType) {
-    return null;
+  // Only show switcher if this company has more than one business type
+  if (!selectedCompany || !selectedBusinessType || availableBusinessTypes.length <= 1) {
+    if (!selectedCompany || !selectedBusinessType) return null;
+    // Still render button (read-only) if only one type
   }
 
   return (
@@ -58,7 +43,7 @@ const CompanySwitcher = () => {
       <button
         className="company-switcher-button"
         onClick={() => setShowDropdown(!showDropdown)}
-        title="Switch Company"
+        title="Switch Business Type"
       >
         <div className="company-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -69,56 +54,40 @@ const CompanySwitcher = () => {
           <div className="company-name">{selectedCompany.companyName}</div>
           <div className="business-type">{selectedBusinessType}</div>
         </div>
-        <svg className={`dropdown-arrow ${showDropdown ? 'open' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path d="M6 9l6 6 6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
+        {availableBusinessTypes.length > 1 && (
+          <svg className={`dropdown-arrow ${showDropdown ? 'open' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path d="M6 9l6 6 6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        )}
       </button>
 
-      {showDropdown && (
+      {showDropdown && availableBusinessTypes.length > 1 && (
         <div className="company-switcher-dropdown">
           <div className="dropdown-header">
-            <h3>Switch Company</h3>
+            <h3>{selectedCompany.companyName}</h3>
           </div>
 
           <div className="dropdown-content">
             <div className="dropdown-section">
-              <label className="dropdown-label">Select Company</label>
-              <select
-                className="dropdown-select"
-                value={tempCompanyId}
-                onChange={(e) => handleCompanyChange(e.target.value)}
-              >
-                <option value="">-- Select a company --</option>
-                {companies.map((company) => (
-                  <option key={company._id} value={company._id}>
-                    {company.companyName}
-                  </option>
+              <label className="dropdown-label">Switch Business Type</label>
+              <div className="business-type-options">
+                {availableBusinessTypes.map((type) => (
+                  <label
+                    key={type}
+                    className={`business-type-option ${(tempBusinessType || selectedBusinessType) === type ? 'selected' : ''}`}
+                  >
+                    <input
+                      type="radio"
+                      name="tempBusinessType"
+                      value={type}
+                      checked={(tempBusinessType || selectedBusinessType) === type}
+                      onChange={(e) => setTempBusinessType(e.target.value)}
+                    />
+                    <span className="option-text">{type}</span>
+                  </label>
                 ))}
-              </select>
-            </div>
-
-            {tempCompanyId && availableBusinessTypes.length > 0 && (
-              <div className="dropdown-section">
-                <label className="dropdown-label">Select Business Type</label>
-                <div className="business-type-options">
-                  {availableBusinessTypes.map((type) => (
-                    <label
-                      key={type}
-                      className={`business-type-option ${tempBusinessType === type ? 'selected' : ''}`}
-                    >
-                      <input
-                        type="radio"
-                        name="tempBusinessType"
-                        value={type}
-                        checked={tempBusinessType === type}
-                        onChange={(e) => setTempBusinessType(e.target.value)}
-                      />
-                      <span className="option-text">{type}</span>
-                    </label>
-                  ))}
-                </div>
               </div>
-            )}
+            </div>
           </div>
 
           <div className="dropdown-footer">
@@ -126,7 +95,6 @@ const CompanySwitcher = () => {
               className="dropdown-btn btn-cancel"
               onClick={() => {
                 setShowDropdown(false);
-                setTempCompanyId('');
                 setTempBusinessType('');
               }}
             >
@@ -135,7 +103,7 @@ const CompanySwitcher = () => {
             <button
               className="dropdown-btn btn-switch"
               onClick={handleSwitch}
-              disabled={!tempCompanyId || !tempBusinessType}
+              disabled={!tempBusinessType || tempBusinessType === selectedBusinessType}
             >
               Switch
             </button>

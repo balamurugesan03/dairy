@@ -18,7 +18,7 @@ const warrantySchema = new mongoose.Schema({
   category: String,
   serialNumber: String,
   batchNumber: String,
-  customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer' },
+  customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'BusinessCustomer' },
   customerName: String,
   customerPhone: String,
   customerEmail: String,

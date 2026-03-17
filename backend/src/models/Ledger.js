@@ -91,6 +91,11 @@ const ledgerSchema = new mongoose.Schema({
     type: String,
     enum: ['Active', 'Inactive'],
     default: 'Active'
+  },
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true
   }
 }, {
   timestamps: true
@@ -100,6 +105,7 @@ const ledgerSchema = new mongoose.Schema({
 ledgerSchema.index({ ledgerType: 1 });
 ledgerSchema.index({ 'linkedEntity.entityType': 1, 'linkedEntity.entityId': 1 });
 ledgerSchema.index({ status: 1 });
+ledgerSchema.index({ companyId: 1 });
 
 const Ledger = mongoose.model('Ledger', ledgerSchema);
 

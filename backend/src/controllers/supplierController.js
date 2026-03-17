@@ -2,9 +2,10 @@ import Supplier from '../models/Supplier.js';
 import Ledger from '../models/Ledger.js';
 
 // Generate next supplier ID (SUP0001 format)
-const generateSupplierId = async () => {
+const generateSupplierId = async (companyId) => {
   const lastSupplier = await Supplier.findOne({
-    supplierId: { $regex: /^SUP\d+$/ }
+    supplierId: { $regex: /^SUP\d+$/ },
+    companyId
   }).sort({ supplierId: -1 });
 
   let nextNumber = 1;
@@ -21,7 +22,7 @@ const generateSupplierId = async () => {
 // Get next supplier ID for frontend
 export const getNextSupplierId = async (req, res) => {
   try {
-    const nextId = await generateSupplierId();
+    const nextId = await generateSupplierId(req.companyId);
     res.status(200).json({
       success: true,
       data: { supplierId: nextId }
@@ -38,16 +39,18 @@ export const getNextSupplierId = async (req, res) => {
 // Create new supplier
 export const createSupplier = async (req, res) => {
   try {
-    const supplierData = req.body;
+    const companyId = req.companyId;
+    const supplierData = { ...req.body, companyId };
 
     // Auto-generate supplier ID if not provided
     if (!supplierData.supplierId) {
-      supplierData.supplierId = await generateSupplierId();
+      supplierData.supplierId = await generateSupplierId(companyId);
     }
 
-    // Check for duplicate supplierId
+    // Check for duplicate supplierId within this company
     const existingSupplier = await Supplier.findOne({
-      supplierId: supplierData.supplierId
+      supplierId: supplierData.supplierId,
+      companyId
     });
 
     if (existingSupplier) {
@@ -57,9 +60,10 @@ export const createSupplier = async (req, res) => {
       });
     }
 
-    // Check for duplicate phone
+    // Check for duplicate phone within this company
     const existingPhone = await Supplier.findOne({
-      phone: supplierData.phone
+      phone: supplierData.phone,
+      companyId
     });
 
     if (existingPhone) {
@@ -88,7 +92,8 @@ export const createSupplier = async (req, res) => {
         currentBalance: 0,
         balanceType: 'Dr',
         parentGroup: 'Sundry Debtors',
-        status: 'Active'
+        status: 'Active',
+        companyId
       });
       await dueByLedger.save();
 
@@ -105,7 +110,8 @@ export const createSupplier = async (req, res) => {
         currentBalance: supplierData.openingBalance || 0,
         balanceType: 'Cr',
         parentGroup: 'Sundry Creditors',
-        status: 'Active'
+        status: 'Active',
+        companyId
       });
       await dueToLedger.save();
 
@@ -143,7 +149,7 @@ export const getAllSuppliers = async (req, res) => {
       active = ''
     } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
 
     // Search by supplierId, name, phone, or email
     if (search) {
@@ -218,6 +224,7 @@ export const updateSupplier = async (req, res) => {
     if (req.body.supplierId) {
       const existingSupplier = await Supplier.findOne({
         supplierId: req.body.supplierId,
+        companyId: req.companyId,
         _id: { $ne: req.params.id }
       });
 
@@ -233,6 +240,7 @@ export const updateSupplier = async (req, res) => {
     if (req.body.phone) {
       const existingPhone = await Supplier.findOne({
         phone: req.body.phone,
+        companyId: req.companyId,
         _id: { $ne: req.params.id }
       });
 
@@ -318,7 +326,8 @@ export const searchSupplier = async (req, res) => {
         { name: { $regex: query, $options: 'i' } },
         { phone: { $regex: query, $options: 'i' } }
       ],
-      active: true
+      active: true,
+      companyId: req.companyId
     }).limit(10);
 
     res.status(200).json({
@@ -339,7 +348,8 @@ export const getSupplierBySupplierId = async (req, res) => {
   try {
     const supplier = await Supplier.findOne({
       supplierId: req.params.supplierId,
-      active: true
+      active: true,
+      companyId: req.companyId
     });
 
     if (!supplier) {

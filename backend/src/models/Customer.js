@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 const customerSchema = new mongoose.Schema({
-  customerId: { type: String, required: true, unique: true },
+  customerId: { type: String, required: true },
   name: { type: String, required: true },
   phone: { type: String, required: true },
   email: { type: String },
@@ -29,13 +29,15 @@ const customerSchema = new mongoose.Schema({
     incomeProof: { type: String }
   },
 
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true }
 }, { timestamps: true });
 
 // Create indexes for better query performance
-customerSchema.index({ customerId: 1 });
+customerSchema.index({ customerId: 1, companyId: 1 }, { unique: true });
 customerSchema.index({ phone: 1 });
 customerSchema.index({ active: 1 });
 customerSchema.index({ name: 1 });
+customerSchema.index({ companyId: 1 });
 
 export default mongoose.model('Customer', customerSchema);

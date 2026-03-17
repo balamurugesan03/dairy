@@ -8,8 +8,10 @@ import {
   searchCustomer,
   getCustomerByCustomerId
 } from '../controllers/customerController.js';
+import { protect, addCompanyFilter } from '../middleware/auth.js';
 
 const router = express.Router();
+router.use(protect, addCompanyFilter);
 
 // Create new customer
 router.post('/', createCustomer);

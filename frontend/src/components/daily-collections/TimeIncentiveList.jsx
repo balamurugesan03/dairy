@@ -56,24 +56,26 @@ const numOrNull = (v) => {
 };
 
 // ── Reusable section card with enable/disable checkbox ───────────
-function SectionCard({ enabled, onToggle, title, children }) {
+function SectionCard({ enabled, onToggle, title, children, disabled }) {
   return (
     <Paper
       withBorder
       radius="xs"
       style={{
-        borderColor: enabled ? '#228be6' : '#dee2e6',
+        borderColor: disabled ? '#fde68a' : enabled ? '#228be6' : '#dee2e6',
         background:  'white',
         overflow:    'hidden',
         transition:  'border-color 0.15s',
+        opacity:     disabled ? 0.6 : 1,
       }}
     >
       <Box
         px="sm"
         py={7}
         style={{
-          background:   enabled ? '#e8f0fe' : '#f8f9fa',
-          borderBottom: enabled ? '1px solid #c5d8fd' : '1px solid #e9ecef',
+          background:   disabled ? '#fefce8' : enabled ? '#e8f0fe' : '#f8f9fa',
+          borderBottom: disabled ? '1px solid #fde68a' : enabled ? '1px solid #c5d8fd' : '1px solid #e9ecef',
+          cursor:       disabled ? 'not-allowed' : 'default',
         }}
       >
         <Checkbox
@@ -81,8 +83,9 @@ function SectionCard({ enabled, onToggle, title, children }) {
           onChange={(e) => onToggle(e.currentTarget.checked)}
           color="blue"
           size="sm"
+          disabled={disabled}
           label={
-            <Text fw={600} size="sm" c={enabled ? 'blue.8' : 'dimmed'}>
+            <Text fw={600} size="sm" c={disabled ? 'yellow.8' : enabled ? 'blue.8' : 'dimmed'}>
               {title}
             </Text>
           }
@@ -91,7 +94,7 @@ function SectionCard({ enabled, onToggle, title, children }) {
       <Box
         px="sm"
         py="xs"
-        style={{ opacity: enabled ? 1 : 0.4, pointerEvents: enabled ? 'auto' : 'none' }}
+        style={{ opacity: enabled && !disabled ? 1 : 0.4, pointerEvents: enabled && !disabled ? 'auto' : 'none' }}
       >
         {children}
       </Box>
@@ -726,25 +729,38 @@ export default function TimeIncentiveList() {
                 />
               </Grid.Col>
               <Grid.Col span={4}>
-                <Text size="xs" fw={500} mb={4}>Rate</Text>
+                <Text size="xs" fw={500} mb={4}>
+                  Rate
+                  {v.paramsEnabled && (
+                    <Text span size="xs" c="orange.7" fw={700} ml={6}>(Based on Performance)</Text>
+                  )}
+                </Text>
                 <Group gap={6} align="center">
                   <NumberInput
-                    placeholder="0.00"
-                    value={v.rate}
-                    onChange={(val) => form.setFieldValue('rate', val)}
+                    placeholder={v.paramsEnabled ? 'Blocked' : '0.00'}
+                    value={v.paramsEnabled ? '' : v.rate}
+                    onChange={(val) => { if (!v.paramsEnabled) form.setFieldValue('rate', val); }}
                     min={0}
                     decimalScale={4}
                     hideControls
-                    readOnly={v.rateLocked}
+                    readOnly={v.rateLocked || v.paramsEnabled}
+                    disabled={v.paramsEnabled}
                     size="xs"
                     radius="sm"
                     style={{ flex: 1 }}
-                    styles={v.rateLocked ? { input: { background: '#f1f3f5', color: '#868e96', cursor: 'not-allowed', borderColor: '#ced4da' } } : {}}
+                    styles={{
+                      input: (v.paramsEnabled)
+                        ? { background: '#fff3e0', color: '#e65100', cursor: 'not-allowed', borderColor: '#ffb74d', fontWeight: 700 }
+                        : v.rateLocked
+                          ? { background: '#f1f3f5', color: '#868e96', cursor: 'not-allowed', borderColor: '#ced4da' }
+                          : {},
+                    }}
                   />
-                  <Tooltip label={v.rateLocked ? 'Rate locked — click to unlock' : 'Click to lock rate'}>
+                  <Tooltip label={v.paramsEnabled ? 'Rate blocked — disable Based on Parameter to set rate' : v.rateLocked ? 'Rate locked — click to unlock' : 'Click to lock rate'}>
                     <Checkbox
                       checked={v.rateLocked}
-                      onChange={(e) => form.setFieldValue('rateLocked', e.currentTarget.checked)}
+                      onChange={(e) => { if (!v.paramsEnabled) form.setFieldValue('rateLocked', e.currentTarget.checked); }}
+                      disabled={v.paramsEnabled}
                       color="orange"
                       size="sm"
                     />
@@ -757,8 +773,9 @@ export default function TimeIncentiveList() {
           {/* ── PARAMETER SECTION : Based on Parameter (with enable checkbox) ── */}
           <SectionCard
             enabled={v.paramsEnabled}
-            onToggle={(val) => form.setFieldValue('paramsEnabled', val)}
-            title="Based on Parameter"
+            onToggle={(val) => { if (!v.rateLocked) form.setFieldValue('paramsEnabled', val); }}
+            title={v.rateLocked ? 'Based on Parameter (Rate locked — untick Rate lock to enable)' : 'Based on Parameter'}
+            disabled={v.rateLocked}
           >
             <Box
               style={{

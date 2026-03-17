@@ -4,14 +4,12 @@ const departmentSchema = new mongoose.Schema({
   name: {
     type: String,
     required: true,
-    unique: true,
     trim: true
   },
 
   code: {
     type: String,
     required: true,
-    unique: true,
     trim: true,
     uppercase: true
   },
@@ -44,6 +42,12 @@ const departmentSchema = new mongoose.Schema({
 
   remarks: {
     type: String
+  },
+
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true
   }
 
 }, {
@@ -51,9 +55,10 @@ const departmentSchema = new mongoose.Schema({
 });
 
 // Indexes
-departmentSchema.index({ name: 1 });
-departmentSchema.index({ code: 1 });
+departmentSchema.index({ name: 1, companyId: 1 }, { unique: true });
+departmentSchema.index({ code: 1, companyId: 1 }, { unique: true });
 departmentSchema.index({ status: 1 });
+departmentSchema.index({ companyId: 1 });
 
 // Virtual to get all employees in this department
 departmentSchema.virtual('employees', {

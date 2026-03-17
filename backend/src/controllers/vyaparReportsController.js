@@ -4,7 +4,10 @@ import BusinessLedger from '../models/BusinessLedger.js';
 import BusinessVoucher from '../models/BusinessVoucher.js';
 import BusinessSales from '../models/BusinessSales.js';
 import BusinessStockTransaction from '../models/BusinessStockTransaction.js';
+import StockTransaction from '../models/StockTransaction.js';
 import BusinessItem from '../models/BusinessItem.js';
+import BusinessCustomer from '../models/BusinessCustomer.js';
+import Supplier from '../models/Supplier.js';
 import SalesReturn from '../models/SalesReturn.js';
 import PurchaseReturn from '../models/PurchaseReturn.js';
 import {
@@ -249,20 +252,19 @@ export const getPartyStatement = async (req, res) => {
     let runningBalance = 0;
 
     if (partyType === 'supplier') {
-      // ── Supplier: fetch BusinessStockTransaction purchases ──
-      const purchases = await BusinessStockTransaction.find({
-        supplierId: partyId,
-        referenceType: 'Purchase',
-        date: { $gte: startDate, $lte: endDate }
-      }).sort({ date: 1 });
+      // ── Supplier: get supplier name ──
+      const supplier = await Supplier.findById(partyId).select('name supplierId phone');
+      partyName = supplier?.name || '';
 
-      if (purchases.length > 0) {
-        partyName = purchases[0].supplierName || 'Supplier';
-      } else {
-        // Try to get supplier name even if no transactions in range
+      // Fetch purchase stock transactions
+      const supplierQuery = { supplierId: partyId, referenceType: 'Purchase', date: { $gte: startDate, $lte: endDate } };
+      if (!partyName) {
         const anyPurchase = await BusinessStockTransaction.findOne({ supplierId: partyId });
         partyName = anyPurchase?.supplierName || 'Supplier';
       }
+
+      // Also build OR query: match by supplierId OR by supplierName for backward compat
+      const purchases = await BusinessStockTransaction.find(supplierQuery).sort({ date: 1 });
 
       purchases.forEach(p => {
         const invoiceTotal = p.totalAmount || p.netTotal || 0;
@@ -282,23 +284,62 @@ export const getPartyStatement = async (req, res) => {
           transactionBalance: due,
           receivableBalance: 0,
           payableBalance: runningBalance > 0 ? runningBalance : 0,
-          paymentStatus: p.paidAmount >= invoiceTotal ? 'Paid' : p.paidAmount > 0 ? 'Partial' : 'Unpaid'
+          paymentStatus: paid >= invoiceTotal ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid'
         });
       });
 
-      const totalReceivable = 0;
+      // Also include Expense vouchers linked to this supplier (payments made)
+      const expenseVouchers = await BusinessVoucher.find({
+        partyId: partyId,
+        voucherType: 'Expense',
+        status: 'Posted',
+        date: { $gte: startDate, $lte: endDate }
+      }).sort({ date: 1 });
+
+      expenseVouchers.forEach(v => {
+        const amount = v.totalDebit || v.totalCredit || 0;
+        totalPaid += amount;
+        runningBalance -= amount;
+        transactions.push({
+          date: v.date,
+          transactionType: 'Payment',
+          referenceNo: v.voucherNumber,
+          paymentType: v.paymentMode || 'Cash',
+          totalAmount: amount,
+          receivedAmount: amount,
+          transactionBalance: 0,
+          receivableBalance: 0,
+          payableBalance: runningBalance > 0 ? runningBalance : 0,
+          paymentStatus: 'Paid'
+        });
+      });
+
+      // Sort all transactions by date
+      transactions.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      // Recalculate running balance in order
+      runningBalance = 0;
+      transactions.forEach(t => {
+        if (t.transactionType === 'Purchase') {
+          runningBalance += t.totalAmount - t.receivedAmount;
+        } else if (t.transactionType === 'Payment') {
+          runningBalance -= t.totalAmount;
+        }
+        t.payableBalance = runningBalance > 0 ? runningBalance : 0;
+      });
+
       const totalPayable = totalPurchase - totalPaid;
 
-      res.json({
+      return res.json({
         success: true,
         data: {
           party: { _id: partyId, name: partyName, type: 'Supplier' },
           summary: {
             totalPurchase,
             totalPaid,
-            totalPayable,
-            totalReceivable,
-            closingBalance: totalPayable,
+            totalPayable: totalPayable > 0 ? totalPayable : 0,
+            totalReceivable: 0,
+            closingBalance: totalPayable > 0 ? totalPayable : 0,
             closingBalanceType: 'Cr',
             totalDebits: totalPurchase,
             totalCredits: totalPaid
@@ -309,21 +350,37 @@ export const getPartyStatement = async (req, res) => {
       });
 
     } else {
-      // ── Customer: fetch BusinessSales ──
+      // ── Customer: get customer name for fallback search ──
+      const customer = await BusinessCustomer.findById(partyId).select('name phone');
+      partyName = customer?.name || '';
+
+      // Search by partyId OR partyName (backward compat for old sales that had dairy customer ID)
+      const salesOrQuery = [{ partyId: partyId }];
+      if (partyName) {
+        salesOrQuery.push({ partyId: null, partyName: { $regex: `^${partyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } });
+        salesOrQuery.push({ partyName: { $regex: `^${partyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } });
+      }
+
       const sales = await BusinessSales.find({
-        partyId: partyId,
-        invoiceType: 'Sale',
+        $or: salesOrQuery,
+        invoiceType: { $in: ['Sale', 'Estimate', 'Delivery Challan', 'Proforma'] },
         invoiceDate: { $gte: startDate, $lte: endDate }
       }).sort({ invoiceDate: 1 });
 
-      if (sales.length > 0) {
-        partyName = sales[0].partyName || 'Customer';
-      } else {
-        const anySale = await BusinessSales.findOne({ partyId: partyId, invoiceType: 'Sale' });
-        partyName = anySale?.partyName || 'Customer';
+      // Deduplicate (same _id can match multiple $or conditions)
+      const seenIds = new Set();
+      const uniqueSales = sales.filter(s => {
+        const id = s._id.toString();
+        if (seenIds.has(id)) return false;
+        seenIds.add(id);
+        return true;
+      });
+
+      if (!partyName && uniqueSales.length > 0) {
+        partyName = uniqueSales[0].partyName || 'Customer';
       }
 
-      sales.forEach(sale => {
+      uniqueSales.forEach(sale => {
         const invoiceTotal = sale.grandTotal || 0;
         const paid = sale.paidAmount || 0;
         const due = sale.balanceAmount ?? (invoiceTotal - paid);
@@ -333,7 +390,7 @@ export const getPartyStatement = async (req, res) => {
 
         transactions.push({
           date: sale.invoiceDate,
-          transactionType: 'Sale',
+          transactionType: sale.invoiceType === 'Sale' ? 'Sale' : sale.invoiceType,
           referenceNo: sale.invoiceNumber,
           paymentType: sale.paymentMode || 'Credit',
           totalAmount: invoiceTotal,
@@ -345,18 +402,58 @@ export const getPartyStatement = async (req, res) => {
         });
       });
 
+      // Also include Income vouchers (receipts from customer)
+      const receiptVouchers = await BusinessVoucher.find({
+        partyId: partyId,
+        voucherType: 'Income',
+        status: 'Posted',
+        date: { $gte: startDate, $lte: endDate }
+      }).sort({ date: 1 });
+
+      receiptVouchers.forEach(v => {
+        const amount = v.totalCredit || v.totalDebit || 0;
+        totalReceived += amount;
+        runningBalance -= amount;
+        transactions.push({
+          date: v.date,
+          transactionType: 'Receipt',
+          referenceNo: v.voucherNumber,
+          paymentType: v.paymentMode || 'Cash',
+          totalAmount: amount,
+          receivedAmount: amount,
+          transactionBalance: 0,
+          receivableBalance: runningBalance > 0 ? runningBalance : 0,
+          payableBalance: 0,
+          paymentStatus: 'Paid'
+        });
+      });
+
+      // Sort all transactions by date
+      transactions.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      // Recalculate running receivable balance in order
+      runningBalance = 0;
+      transactions.forEach(t => {
+        if (t.transactionType === 'Sale' || t.transactionType === 'Estimate' || t.transactionType === 'Delivery Challan' || t.transactionType === 'Proforma') {
+          runningBalance += t.transactionBalance;
+        } else if (t.transactionType === 'Receipt') {
+          runningBalance -= t.totalAmount;
+        }
+        t.receivableBalance = runningBalance > 0 ? runningBalance : 0;
+      });
+
       const totalReceivable = totalSale - totalReceived;
 
-      res.json({
+      return res.json({
         success: true,
         data: {
-          party: { _id: partyId, name: partyName, type: 'Customer' },
+          party: { _id: partyId, name: partyName || 'Customer', type: 'Customer' },
           summary: {
             totalSale,
             totalReceived,
-            totalReceivable,
+            totalReceivable: totalReceivable > 0 ? totalReceivable : 0,
             totalPayable: 0,
-            closingBalance: totalReceivable,
+            closingBalance: totalReceivable > 0 ? totalReceivable : 0,
             closingBalanceType: 'Dr',
             totalDebits: totalSale,
             totalCredits: totalReceived

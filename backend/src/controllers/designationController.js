@@ -6,8 +6,10 @@ export const createDesignation = async (req, res) => {
   try {
     const { name, code } = req.body;
 
-    // Check if designation name already exists
-    const existingName = await Designation.findOne({ name });
+    const companyId = req.companyId;
+
+    // Check if designation name already exists per company
+    const existingName = await Designation.findOne({ name, companyId });
     if (existingName) {
       return res.status(400).json({
         success: false,
@@ -15,8 +17,8 @@ export const createDesignation = async (req, res) => {
       });
     }
 
-    // Check if designation code already exists
-    const existingCode = await Designation.findOne({ code });
+    // Check if designation code already exists per company
+    const existingCode = await Designation.findOne({ code, companyId });
     if (existingCode) {
       return res.status(400).json({
         success: false,
@@ -24,7 +26,7 @@ export const createDesignation = async (req, res) => {
       });
     }
 
-    const designation = new Designation(req.body);
+    const designation = new Designation({ ...req.body, companyId });
     await designation.save();
 
     if (designation.department) {
@@ -56,7 +58,7 @@ export const getAllDesignations = async (req, res) => {
       level = ''
     } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
 
     if (search) {
       query.$or = [
@@ -145,9 +147,9 @@ export const updateDesignation = async (req, res) => {
       });
     }
 
-    // Check if name is being changed and if it already exists
+    // Check if name is being changed and if it already exists per company
     if (name && name !== designation.name) {
-      const existingName = await Designation.findOne({ name, _id: { $ne: id } });
+      const existingName = await Designation.findOne({ name, _id: { $ne: id }, companyId: req.companyId });
       if (existingName) {
         return res.status(400).json({
           success: false,
@@ -156,9 +158,9 @@ export const updateDesignation = async (req, res) => {
       }
     }
 
-    // Check if code is being changed and if it already exists
+    // Check if code is being changed and if it already exists per company
     if (code && code !== designation.code) {
-      const existingCode = await Designation.findOne({ code, _id: { $ne: id } });
+      const existingCode = await Designation.findOne({ code, _id: { $ne: id }, companyId: req.companyId });
       if (existingCode) {
         return res.status(400).json({
           success: false,
@@ -234,11 +236,11 @@ export const getActiveDesignations = async (req, res) => {
 
     let designations;
     if (department) {
-      designations = await Designation.findByDepartment(department)
+      designations = await Designation.find({ department, companyId: req.companyId, status: 'Active' })
         .sort({ name: 1 })
         .select('name code level salaryRange');
     } else {
-      designations = await Designation.findActive()
+      designations = await Designation.find({ companyId: req.companyId, status: 'Active' })
         .sort({ name: 1 })
         .select('name code level salaryRange')
         .populate('department', 'name');

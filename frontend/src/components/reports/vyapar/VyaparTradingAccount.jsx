@@ -39,7 +39,8 @@ import {
 import * as XLSX from 'xlsx';
 
 const VyaparTradingAccount = () => {
-  const { selectedBusinessType } = useCompany();
+  const { selectedBusinessType, selectedCompany } = useCompany();
+  const companyName = selectedCompany?.companyName || '';
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState(null);
@@ -159,6 +160,7 @@ const VyaparTradingAccount = () => {
       </head>
       <body>
         <div class="header">
+          ${companyName ? `<h2 style="margin: 0 0 4px; font-size: 18px; text-transform: uppercase; letter-spacing: 2px;">${companyName}</h2>` : ''}
           <h1>TRADING ACCOUNT</h1>
           <p>For the period ${dayjs(dateRange[0]).format('DD/MM/YYYY')} to ${dayjs(dateRange[1]).format('DD/MM/YYYY')}</p>
         </div>

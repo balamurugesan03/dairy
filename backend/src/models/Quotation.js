@@ -23,7 +23,7 @@ const quotationItemSchema = new mongoose.Schema({
 });
 
 const quotationSchema = new mongoose.Schema({
-  quotationNumber: { type: String, unique: true },
+  quotationNumber: { type: String },
   quotationDate: { type: Date, default: Date.now },
   validUntil: { type: Date },
   status: {
@@ -31,7 +31,7 @@ const quotationSchema = new mongoose.Schema({
     enum: ['Draft', 'Sent', 'Accepted', 'Rejected', 'Expired', 'Converted'],
     default: 'Draft'
   },
-  partyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer' },
+  partyId: { type: mongoose.Schema.Types.ObjectId, ref: 'BusinessCustomer' },
   partyName: String,
   partyOrganization: String,
   partyPhone: String,
@@ -65,6 +65,7 @@ const quotationSchema = new mongoose.Schema({
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });
 
+quotationSchema.index({ quotationNumber: 1, companyId: 1 }, { unique: true, sparse: true });
 quotationSchema.index({ status: 1 });
 quotationSchema.index({ quotationDate: -1 });
 quotationSchema.index({ companyId: 1 });

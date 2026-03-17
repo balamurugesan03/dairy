@@ -20,7 +20,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Box, Grid, Paper, Title, Text, Group, Stack, Button,
   Select, TextInput, NumberInput, Radio, Switch, Badge,
-  Divider, Loader, Alert, Tooltip, NavLink, SegmentedControl,
+  Divider, Loader, Alert, Tooltip, NavLink, SegmentedControl, ActionIcon,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
@@ -44,8 +44,12 @@ import {
   IconSettings2,
   IconPrinter,
   IconChevronRight,
+  IconPlug,
+  IconPlugConnectedX,
+  IconCircleCheck,
+  IconCircleX,
 } from '@tabler/icons-react';
-import { milkPurchaseSettingsAPI } from '../../services/api';
+import { milkPurchaseSettingsAPI, machineConfigAPI } from '../../services/api';
 
 // ─── Theme tokens ──────────────────────────────────────────────────────────────
 const TEAL        = '#0d9488';
@@ -197,6 +201,13 @@ export default function MilkPurchaseSettings() {
   const [error,      setError]      = useState(null);
   const [activeMenu, setActiveMenu] = useState('milk-chart');
 
+  // ── Analyzer start/stop state ───────────────────────────────────────────────
+  const [analyzerRunning,  setAnalyzerRunning]  = useState(false);
+  const [analyzerStarting, setAnalyzerStarting] = useState(false);
+  const [analyzerStopping, setAnalyzerStopping] = useState(false);
+  const [dynamicPorts,     setDynamicPorts]     = useState([]);
+  const [portsLoading,     setPortsLoading]     = useState(false);
+
   // ── Form state ─────────────────────────────────────────────────────────────
   const [form, setForm] = useState({
     // General purchase settings
@@ -231,6 +242,7 @@ export default function MilkPurchaseSettings() {
 
     // Milk Analyzer config
     milkAnalyzerConfig: {
+      deviceName            : '',
       device                : 'LACTO SURE ECO',
       comPort               : 'ttyS1',
       baudRate              : 9600,
@@ -261,7 +273,58 @@ export default function MilkPurchaseSettings() {
     }
   }, []);
 
-  useEffect(() => { loadSettings(); }, [loadSettings]);
+  useEffect(() => { loadSettings(); loadAnalyzerStatus(); fetchDynamicPorts(); }, [loadSettings]);
+
+  // ── Analyzer helpers ────────────────────────────────────────────────────────
+  const loadAnalyzerStatus = async () => {
+    try {
+      const res = await machineConfigAPI.getStatus();
+      setAnalyzerRunning(res?.isOpen || false);
+    } catch { /* silent */ }
+  };
+
+  const fetchDynamicPorts = async () => {
+    setPortsLoading(true);
+    try {
+      const res = await machineConfigAPI.listPorts();
+      const list = (res?.data || []).map(p => p.path);
+      setDynamicPorts(list);
+    } catch { setDynamicPorts([]); }
+    finally { setPortsLoading(false); }
+  };
+
+  const handleStartAnalyzer = async () => {
+    setAnalyzerStarting(true);
+    try {
+      const res = await machineConfigAPI.start({
+        port    : form.milkAnalyzerConfig.comPort,
+        baudRate: form.milkAnalyzerConfig.baudRate,
+      });
+      if (res?.success) {
+        setAnalyzerRunning(true);
+        notifications.show({ color: 'teal', title: 'Analyzer Started', message: res.message });
+      } else {
+        notifications.show({ color: 'red', title: 'Failed', message: res?.message || 'Could not start analyzer' });
+      }
+    } catch (err) {
+      notifications.show({ color: 'red', title: 'Error', message: err?.message || 'Failed to start analyzer' });
+    } finally {
+      setAnalyzerStarting(false);
+    }
+  };
+
+  const handleStopAnalyzer = async () => {
+    setAnalyzerStopping(true);
+    try {
+      await machineConfigAPI.stop();
+      setAnalyzerRunning(false);
+      notifications.show({ color: 'orange', title: 'Analyzer Stopped', message: 'Serial port closed' });
+    } catch (err) {
+      notifications.show({ color: 'red', title: 'Error', message: err?.message || 'Failed to stop analyzer' });
+    } finally {
+      setAnalyzerStopping(false);
+    }
+  };
 
   function mergeServerData(data) {
     setForm(prev => ({
@@ -287,7 +350,8 @@ export default function MilkPurchaseSettings() {
       milkAnalyzerConfig: {
         ...prev.milkAnalyzerConfig,
         ...(data.milkAnalyzerConfig || {}),
-        baudRate: Number(data.milkAnalyzerConfig?.baudRate ?? prev.milkAnalyzerConfig.baudRate),
+        baudRate  : Number(data.milkAnalyzerConfig?.baudRate   ?? prev.milkAnalyzerConfig.baudRate),
+        deviceName: data.milkAnalyzerConfig?.deviceName ?? prev.milkAnalyzerConfig.deviceName,
       },
       otherAnalyzerConfig: {
         ...prev.otherAnalyzerConfig,
@@ -913,8 +977,40 @@ export default function MilkPurchaseSettings() {
               <Grid.Col span={{ base: 12, md: 6 }}>
                 <SectionCard icon={IconDroplet} title="Milk Analyzer" badge="COM Config">
                   <Stack gap="sm">
+
+                    {/* Status indicator */}
+                    <Box
+                      px="sm" py={6}
+                      style={{
+                        background  : analyzerRunning ? '#f0fff4' : '#fff8f0',
+                        border      : `1px solid ${analyzerRunning ? '#4caf50' : '#ff9800'}`,
+                        borderRadius: 6,
+                      }}
+                    >
+                      <Group gap={6}>
+                        {analyzerRunning
+                          ? <IconCircleCheck size={14} color="#4caf50" />
+                          : <IconCircleX    size={14} color="#ff9800" />}
+                        <Text size="xs" fw={700} c={analyzerRunning ? 'green.7' : 'orange.7'}>
+                          {analyzerRunning ? 'Analyzer Running' : 'Analyzer Stopped'}
+                        </Text>
+                      </Group>
+                    </Box>
+
                     <Box>
-                      <FieldLabel>Device</FieldLabel>
+                      <FieldLabel>Device Name</FieldLabel>
+                      <TextInput
+                        placeholder="e.g., Lactoscan SMA, Milkotester"
+                        value={form.milkAnalyzerConfig.deviceName}
+                        onChange={e => setSub('milkAnalyzerConfig', 'deviceName', e.target.value)}
+                        size="sm"
+                        radius="sm"
+                        styles={{ input: { borderColor: TEAL_BORDER, fontSize: 13 } }}
+                      />
+                    </Box>
+
+                    <Box>
+                      <FieldLabel>Device Model</FieldLabel>
                       <Select
                         data={ANALYZER_DEVICES}
                         value={form.milkAnalyzerConfig.device}
@@ -924,17 +1020,30 @@ export default function MilkPurchaseSettings() {
                         styles={{ input: { borderColor: TEAL_BORDER, fontSize: 13 } }}
                       />
                     </Box>
+
                     <Box>
-                      <FieldLabel>Com Port</FieldLabel>
+                      <Group justify="space-between" mb={4}>
+                        <FieldLabel>Com Port</FieldLabel>
+                        <Tooltip label="Refresh port list">
+                          <ActionIcon size="xs" variant="light" color="teal" onClick={fetchDynamicPorts} loading={portsLoading}>
+                            <IconRefresh size={12} />
+                          </ActionIcon>
+                        </Tooltip>
+                      </Group>
                       <Select
-                        data={COM_PORTS}
+                        data={dynamicPorts.length > 0
+                          ? dynamicPorts
+                          : COM_PORTS}
                         value={form.milkAnalyzerConfig.comPort}
                         onChange={v => setSub('milkAnalyzerConfig', 'comPort', v)}
+                        searchable
                         size="sm"
                         radius="sm"
                         styles={{ input: { borderColor: TEAL_BORDER, fontSize: 13 } }}
+                        placeholder="Select or type port"
                       />
                     </Box>
+
                     <Box>
                       <FieldLabel>Baud Rate</FieldLabel>
                       <Select
@@ -947,65 +1056,33 @@ export default function MilkPurchaseSettings() {
                       />
                     </Box>
 
-                    {/* <Divider
-                      label={
-                        <Text
-                          size="xs"
-                          fw={700}
-                          style={{ color: TITLE_COLOR, textTransform: 'uppercase', letterSpacing: '0.05em' }}
-                        >
-                          Manual Entry Combination
-                        </Text>
-                      }
-                      labelPosition="left"
-                      my={2}
-                      color={TEAL_BORDER}
-                    /> */}
+                    <Divider color={TEAL_BORDER} my={2} />
 
-                    {/* <Radio.Group
-                      value={form.milkAnalyzerConfig.manualEntryCombination}
-                      onChange={v => setSub('milkAnalyzerConfig', 'manualEntryCombination', v)}
-                    >
-                      <Stack gap={6}>
-                        <Box
-                          px="sm"
-                          py={7}
-                          style={{
-                            background  : form.milkAnalyzerConfig.manualEntryCombination === 'CLR-FAT' ? '#f0fdfa' : '#f8fafc',
-                            border      : `1px solid ${form.milkAnalyzerConfig.manualEntryCombination === 'CLR-FAT' ? TEAL_BORDER : '#e2e8f0'}`,
-                            borderRadius: 6,
-                          }}
-                        >
-                          <Radio
-                            value="CLR-FAT"
-                            label={<Text size="sm" fw={500}>CLR &ndash; FAT</Text>}
-                            color="teal"
-                            size="sm"
-                          />
-                        </Box>
-                        <Box
-                          px="sm"
-                          py={7}
-                          style={{
-                            background  : form.milkAnalyzerConfig.manualEntryCombination === 'FAT-SNF' ? '#f0fdfa' : '#f8fafc',
-                            border      : `1px solid ${form.milkAnalyzerConfig.manualEntryCombination === 'FAT-SNF' ? TEAL_BORDER : '#e2e8f0'}`,
-                            borderRadius: 6,
-                          }}
-                        >
-                          <Radio
-                            value="FAT-SNF"
-                            label={
-                              <Group gap={8}>
-                                <Text size="sm" fw={500}>FAT &ndash; SNF</Text>
-                                <Badge size="xs" color="teal" variant="light">Default</Badge>
-                              </Group>
-                            }
-                            color="teal"
-                            size="sm"
-                          />
-                        </Box>
-                      </Stack>
-                    </Radio.Group> */}
+                    {/* Start / Stop buttons */}
+                    <Group gap="xs" grow>
+                      <Button
+                        size="xs"
+                        color="teal"
+                        leftSection={<IconPlug size={13} />}
+                        disabled={analyzerRunning}
+                        loading={analyzerStarting}
+                        onClick={handleStartAnalyzer}
+                      >
+                        Start Analyzer
+                      </Button>
+                      <Button
+                        size="xs"
+                        color="red"
+                        variant="outline"
+                        leftSection={<IconPlugConnectedX size={13} />}
+                        disabled={!analyzerRunning}
+                        loading={analyzerStopping}
+                        onClick={handleStopAnalyzer}
+                      >
+                        Stop Analyzer
+                      </Button>
+                    </Group>
+
                   </Stack>
                 </SectionCard>
               </Grid.Col>

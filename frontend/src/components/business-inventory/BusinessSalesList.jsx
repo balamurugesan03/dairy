@@ -296,11 +296,11 @@ const BusinessSalesList = () => {
       width: 80,
       render: (record) => (
         <Group gap={4} justify="flex-end">
-          <Tooltip label="View">
+          <Tooltip label="Print / View">
             <ActionIcon
               variant="light"
               size="sm"
-              onClick={() => navigate(`/business-inventory/sales/${record._id}`)}
+              onClick={() => navigate(`/business-inventory/sales/print/${record._id}`)}
             >
               <IconEye size={14} />
             </ActionIcon>
@@ -320,9 +320,7 @@ const BusinessSalesList = () => {
               </Menu.Item>
               <Menu.Item
                 leftSection={<IconPrinter size={14} />}
-                onClick={() => {
-                  // Handle print
-                }}
+                onClick={() => navigate(`/business-inventory/sales/print/${record._id}`)}
               >
                 Print
               </Menu.Item>

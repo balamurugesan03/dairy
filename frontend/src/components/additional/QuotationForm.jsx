@@ -10,7 +10,7 @@ import { notifications } from '@mantine/notifications';
 import {
   IconPlus, IconTrash, IconArrowLeft, IconDeviceFloppy, IconRefresh
 } from '@tabler/icons-react';
-import { quotationAPI, customerAPI, businessItemAPI } from '../../services/api';
+import { quotationAPI, businessCustomerAPI, businessItemAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 import dayjs from 'dayjs';
 
@@ -137,7 +137,7 @@ const QuotationForm = () => {
   const loadMasterData = async () => {
     try {
       const [custRes, itemRes] = await Promise.all([
-        customerAPI.getAll({ limit: 500 }),
+        businessCustomerAPI.getAll({ limit: 500 }),
         businessItemAPI.getAll({ limit: 500, status: 'Active' })
       ]);
       setCustomers(Array.isArray(custRes?.data) ? custRes.data : custRes?.data?.data || []);
@@ -285,7 +285,7 @@ const QuotationForm = () => {
       {/* ── Header ── */}
       <Group justify="space-between" mb="md">
         <Group gap="xs">
-          <ActionIcon variant="subtle" onClick={() => navigate('/quotations')}>
+          <ActionIcon variant="subtle" onClick={() => navigate('/')}>
             <IconArrowLeft size={18} />
           </ActionIcon>
           <Box>
@@ -297,7 +297,7 @@ const QuotationForm = () => {
           <Button variant="default" leftSection={<IconRefresh size={15} />} onClick={handleReset}>
             Reset
           </Button>
-          <Button variant="default" onClick={() => navigate('/quotations')}>Cancel</Button>
+          <Button variant="default" onClick={() => navigate('/')}>Cancel</Button>
           <Button
             leftSection={<IconDeviceFloppy size={16} />}
             loading={saving}

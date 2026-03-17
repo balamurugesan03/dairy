@@ -5,7 +5,6 @@ const businessSalesSchema = new mongoose.Schema({
   invoiceNumber: {
     type: String,
     required: true,
-    unique: true,
     trim: true
   },
   invoiceDate: {
@@ -22,7 +21,7 @@ const businessSalesSchema = new mongoose.Schema({
   // Party/Customer Details
   partyId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Customer'
+    ref: 'BusinessCustomer'
   },
   partyName: {
     type: String,
@@ -300,6 +299,11 @@ const businessSalesSchema = new mongoose.Schema({
   businessType: {
     type: String,
     default: 'Private Firm'
+  },
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true
   }
 }, {
   timestamps: true
@@ -308,9 +312,10 @@ const businessSalesSchema = new mongoose.Schema({
 // Indexes for faster queries
 businessSalesSchema.index({ invoiceDate: -1 });
 businessSalesSchema.index({ partyId: 1 });
-businessSalesSchema.index({ invoiceNumber: 1 });
+businessSalesSchema.index({ invoiceNumber: 1, companyId: 1 }, { unique: true });
 businessSalesSchema.index({ paymentStatus: 1 });
 businessSalesSchema.index({ invoiceType: 1 });
+businessSalesSchema.index({ companyId: 1 });
 
 const BusinessSales = mongoose.model('BusinessSales', businessSalesSchema);
 

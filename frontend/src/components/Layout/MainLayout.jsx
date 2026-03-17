@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Outlet, useLocation } from 'react-router-dom';
 import {
   AppShell,
@@ -24,7 +24,7 @@ import {
   IconHome, IconUsers, IconBox, IconShoppingCart, IconBook,
   IconCash, IconFileReport, IconShield, IconTool, IconSearch,
   IconSpeakerphone, IconBriefcase, IconChevronDown, IconMenu2, IconLogout, IconUser,
-  IconUserCog, IconBuildingStore, IconSettings, IconMilk
+  IconUserCog, IconBuildingStore, IconSettings, IconMilk, IconArrowLeft
 } from '@tabler/icons-react';
 import { useCompany } from '../../context/CompanyContext';
 import { useAuth } from '../../context/AuthContext';
@@ -41,6 +41,28 @@ const MainLayout = () => {
   const { colorScheme, currentThemeConfig } = useTheme();
 
   const isDark = colorScheme === 'dark';
+
+  // ── App-internal navigation stack for Back button ───────────────────────
+  const navStack = useRef([location.pathname]);
+
+  useEffect(() => {
+    const stack = navStack.current;
+    if (stack[stack.length - 1] !== location.pathname) {
+      stack.push(location.pathname);
+    }
+  }, [location.pathname]);
+
+  const handleBack = () => {
+    const stack = navStack.current;
+    if (stack.length > 1) {
+      stack.pop(); // remove current
+      navigate(stack[stack.length - 1]);
+    } else {
+      navigate('/');
+    }
+  };
+
+  const isOnDashboard = location.pathname === '/';
 
   // ── Global hotkeys ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -105,7 +127,7 @@ const MainLayout = () => {
       label: 'Customer',
       color: 'green',
       children: [
-        { key: '/customers', label: 'Customer Details' },
+        { key: '/business-customers', label: 'Customer Details' },
         { key: '/business-inventory/salesman', label: 'Salesman' },
       ]
     }] : []),
@@ -133,6 +155,7 @@ const MainLayout = () => {
         { key: '/daily-collections/farmer-wise-summary',    label: 'Farmer-Wise Summary'    },
         { key: '/daily-collections/rate-chart-settings',    label: 'Rate Chart Settings'    },
         { key: '/daily-collections/milk-purchase-settings', label: 'Machine Configuration'  },
+        { key: '/milk-analyzer',                             label: 'Milk Analyzer'           },
        
         { key: '/daily-collections/milk-sales-rate',        label: 'Milk Sales Rate'         },
         { key: '/daily-collections/shift-incentive',         label: 'Shift Incentive'         },
@@ -187,6 +210,30 @@ const MainLayout = () => {
         { key: '/reports/vyapar/low-stock', label: 'Low Stock Alert' }
       ]
     }] : []),
+     ...(selectedBusinessType === 'Private Firm' ? [{
+      key: 'vyapar-reports-menu',
+      icon: <IconFileReport size={18} />,
+      label: 'Business Reports',
+      color: 'pink',
+      children: [
+        { key: '/reports/vyapar/sale-report', label: 'Sale Report' },
+        { key: '/reports/vyapar/purchase-report', label: 'Purchase Report' },
+        { key: '/reports/vyapar/party-statement', label: 'Party Statement' },
+        { key: '/reports/vyapar/all-parties', label: 'All Parties' },
+         { key: '/reports/vyapar/cash-in-hand', label: 'CashFlow' },
+        // { key: '/reports/vyapar/cashflow', label: 'Cashflow' },
+        { key: '/reports/vyapar/all-transactions', label: 'All Transactions' },
+    
+        { key: '/reports/vyapar/bill-profit', label: 'Bill Wise Party Report' },
+        { key: '/reports/vyapar/party-profit', label: 'Party Wise Profit' },
+        { key: '/reports/vyapar/item-profit', label: 'Item Wise Profit' },
+        { key: '/reports/vyapar/item-by-party', label: 'Item by Party' },
+              { key: '/reports/vyapar/bank-statement', label: 'Bank Statement' },
+        { key: '/reports/vyapar/gstr1', label: 'GSTR-1' },
+        { key: '/reports/vyapar/gstr2', label: 'GSTR-2' },
+        { key: '/reports/cooperative-rd', label: 'R&D – Ledger Statement' }
+      ]
+    }] : []),
     // DAIRY COOPERATIVE - Producers dues (Only for Dairy)
     ...(selectedBusinessType === 'Dairy Cooperative Society' ? [{
       key: 'payments-menu',
@@ -231,7 +278,9 @@ const MainLayout = () => {
         { key: '/reports/final-accounts', label: 'Final Accounts' },
         { key: '/reports/balance-sheet', label: 'Balance Sheet' },
         { key: '/reports/milk-bill-abstract', label: 'Milk Bill Abstract' },
-       
+        { key: '/reports/dairy-abstract', label: 'Dairy Abstract' },
+        { key: '/reports/dairy-register', label: 'Dairy Register' },
+
       ]
     }] : []),
     // PRIVATE FIRM - Business Accounts (Separate from Dairy)
@@ -271,36 +320,15 @@ const MainLayout = () => {
         { key: '/reports/purchase-register', label: 'Purchase Register' },
         { key: '/reports/subsidy', label: 'Subsidy Report' },
         { key: '/reports/milk-bill-abstract', label: 'Milk Bill Abstract' },
+        { key: '/reports/dairy-abstract', label: 'Dairy Abstract' },
+        { key: '/reports/dairy-register', label: 'Dairy Register' },
         { key: '/reports/rd-enhanced', label: 'R&D Statement' },
         { key: '/reports/final-accounts', label: 'Final Accounts' },
         { key: '/reports/balance-sheet', label: 'Balance Sheet' }
       ]
     }] : []),
     // BUSINESS (VYAPAR) REPORTS - Only show for Private Firm
-    ...(selectedBusinessType === 'Private Firm' ? [{
-      key: 'vyapar-reports-menu',
-      icon: <IconFileReport size={18} />,
-      label: 'Business Reports',
-      color: 'pink',
-      children: [
-        { key: '/reports/vyapar/sale-report', label: 'Sale Report' },
-        { key: '/reports/vyapar/purchase-report', label: 'Purchase Report' },
-        { key: '/reports/vyapar/party-statement', label: 'Party Statement' },
-        { key: '/reports/vyapar/all-parties', label: 'All Parties' },
-         { key: '/reports/vyapar/cash-in-hand', label: 'CashFlow' },
-        // { key: '/reports/vyapar/cashflow', label: 'Cashflow' },
-        { key: '/reports/vyapar/all-transactions', label: 'All Transactions' },
-    
-        { key: '/reports/vyapar/bill-profit', label: 'Bill Wise Party Report' },
-        { key: '/reports/vyapar/party-profit', label: 'Party Wise Profit' },
-        { key: '/reports/vyapar/item-profit', label: 'Item Wise Profit' },
-        { key: '/reports/vyapar/item-by-party', label: 'Item by Party' },
-              { key: '/reports/vyapar/bank-statement', label: 'Bank Statement' },
-        { key: '/reports/vyapar/gstr1', label: 'GSTR-1' },
-        { key: '/reports/vyapar/gstr2', label: 'GSTR-2' }
-        
-      ]
-    }] : []),
+   
  
      {
       key: 'quotations-menu',
@@ -308,8 +336,9 @@ const MainLayout = () => {
       label: 'Quotations',
       color: 'lime',
       children: [
-        { key: '/quotations', label: 'Quotation List' },
-        { key: '/quotations/add', label: 'Add Quotation' }
+          { key: '/quotations/add', label: 'Add Quotation' },
+        { key: '/quotations', label: 'Quotation List' }
+      
       ]
     },
     {
@@ -318,8 +347,9 @@ const MainLayout = () => {
       label: 'Machines',
       color: 'indigo',
       children: [
-        { key: '/machines', label: 'Machine List' },
-        { key: '/machines/add', label: 'Add Machine' }
+         { key: '/machines/add', label: 'Add Machine' },
+        { key: '/machines', label: 'Machine List' }
+       
       ]
     },
        {
@@ -328,8 +358,9 @@ const MainLayout = () => {
       label: 'Warranty',
       color: 'grape',
       children: [
-        { key: '/warranty', label: 'Warranty List' },
         { key: '/warranty/add', label: 'Add Warranty' },
+        { key: '/warranty', label: 'Warranty List' },
+        
   
         
       ]
@@ -762,6 +793,32 @@ const MainLayout = () => {
           minHeight: 'calc(100vh - 120px)',
         }}
       >
+        {!isOnDashboard && (
+          <Box px="md" pt="sm" pb={0}>
+            <Button
+              variant="gradient"
+              gradient={{ from: 'violet', to: 'indigo', deg: 135 }}
+              size="sm"
+              radius="xl"
+              leftSection={<IconArrowLeft size={16} />}
+              onClick={handleBack}
+              styles={{
+                root: {
+                  fontWeight: 700,
+                  letterSpacing: 0.5,
+                  boxShadow: '0 4px 14px rgba(102,126,234,0.45)',
+                  '&:hover': {
+                    boxShadow: '0 6px 20px rgba(102,126,234,0.6)',
+                    transform: 'translateY(-1px)',
+                  },
+                  transition: 'all 0.2s ease',
+                },
+              }}
+            >
+              Back
+            </Button>
+          </Box>
+        )}
         <Outlet />
       </AppShell.Main>
     </AppShell>

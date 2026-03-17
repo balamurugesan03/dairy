@@ -6,14 +6,15 @@ import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
 
 // Generate Invoice Number
-const generateInvoiceNumber = async (prefix = 'INV') => {
+const generateInvoiceNumber = async (prefix = 'INV', companyId = null) => {
   const today = new Date();
   const year = today.getFullYear().toString().slice(-2);
   const month = (today.getMonth() + 1).toString().padStart(2, '0');
 
-  const lastSale = await BusinessSales.findOne({
-    invoiceNumber: { $regex: `^${prefix}${year}${month}` }
-  }).sort({ invoiceNumber: -1 });
+  const query = { invoiceNumber: { $regex: `^${prefix}${year}${month}` } };
+  if (companyId) query.companyId = companyId;
+
+  const lastSale = await BusinessSales.findOne(query).sort({ invoiceNumber: -1 });
 
   let sequence = 1;
   if (lastSale) {
@@ -59,12 +60,14 @@ export const createBusinessSale = async (req, res) => {
       salesmanName
     } = req.body;
 
+    const companyId = req.companyId;
+
     // Generate invoice number
     const prefix = invoiceType === 'Sale Return' ? 'SRN' :
                    invoiceType === 'Estimate' ? 'EST' :
                    invoiceType === 'Delivery Challan' ? 'DC' :
                    invoiceType === 'Proforma' ? 'PI' : 'INV';
-    const invoiceNumber = await generateInvoiceNumber(prefix);
+    const invoiceNumber = await generateInvoiceNumber(prefix, companyId);
 
     // Calculate totals
     let totalQty = 0;
@@ -83,12 +86,7 @@ export const createBusinessSale = async (req, res) => {
         return res.status(404).json({ message: `Item not found: ${item.itemId}` });
       }
 
-      // Check stock availability (skip for returns)
-      if (invoiceType !== 'Sale Return' && item.quantity > businessItem.currentBalance) {
-        return res.status(400).json({
-          message: `Insufficient stock for ${businessItem.itemName}. Available: ${businessItem.currentBalance}`
-        });
-      }
+      // Note: Negative stock is allowed (Vyapar-style — sell first, receive later)
 
       const qty = parseFloat(item.quantity) || 0;
       const rate = parseFloat(item.rate) || businessItem.salesRate || 0;
@@ -207,7 +205,8 @@ export const createBusinessSale = async (req, res) => {
       termsAndConditions,
       salesmanId: salesmanId || null,
       salesmanName: salesmanName || '',
-      businessType: 'Private Firm'
+      businessType: 'Private Firm',
+      companyId
     });
 
     await sale.save();
@@ -470,7 +469,7 @@ export const getAllBusinessSales = async (req, res) => {
       partyId
     } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
 
     if (search) {
       query.$or = [
@@ -770,7 +769,8 @@ export const getPartySalesHistory = async (req, res) => {
 
     const sales = await BusinessSales.find({
       partyId,
-      invoiceType: 'Sale'
+      invoiceType: 'Sale',
+      companyId: req.companyId
     })
     .select('invoiceNumber invoiceDate grandTotal paidAmount balanceAmount paymentStatus')
     .sort({ invoiceDate: -1 });
@@ -797,8 +797,8 @@ export const getBusinessSalesSummary = async (req, res) => {
     if (endDate) dateFilter.$lte = new Date(endDate);
 
     const matchQuery = Object.keys(dateFilter).length > 0
-      ? { invoiceDate: dateFilter, invoiceType: 'Sale' }
-      : { invoiceType: 'Sale' };
+      ? { invoiceDate: dateFilter, invoiceType: 'Sale', companyId: req.companyId }
+      : { invoiceType: 'Sale', companyId: req.companyId };
 
     const [summary] = await BusinessSales.aggregate([
       { $match: matchQuery },

@@ -21,6 +21,9 @@ import {
   ActionIcon,
   Timeline,
   Progress,
+  Modal,
+  NumberInput,
+  Textarea,
 } from '@mantine/core';
 import {
   IconArrowLeft,
@@ -31,6 +34,7 @@ import {
   IconCheck,
   IconClock,
   IconAlertTriangle,
+  IconCash,
 } from '@tabler/icons-react';
 
 const ProducerLoanView = () => {
@@ -39,6 +43,11 @@ const ProducerLoanView = () => {
   const printRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [loan, setLoan] = useState(null);
+  const [payModal, setPayModal] = useState(false);
+  const [selectedEMI, setSelectedEMI] = useState(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [payRemarks, setPayRemarks] = useState('');
+  const [payLoading, setPayLoading] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -108,6 +117,40 @@ const ProducerLoanView = () => {
 
   const handlePrint = () => {
     printReport(printRef, { title: 'Producer Loan Statement', orientation: 'landscape' });
+  };
+
+  const openPayModal = (emi) => {
+    setSelectedEMI(emi);
+    setPayAmount(emi.amount - emi.paidAmount);
+    setPayRemarks('');
+    setPayModal(true);
+  };
+
+  const handleRecordPayment = async () => {
+    if (!payAmount || payAmount <= 0) {
+      message.error('Enter a valid amount');
+      return;
+    }
+    const remaining = selectedEMI.amount - selectedEMI.paidAmount;
+    if (payAmount > remaining) {
+      message.error(`Amount cannot exceed remaining ₹${remaining.toFixed(2)}`);
+      return;
+    }
+    setPayLoading(true);
+    try {
+      await producerLoanAPI.recordEMI(id, {
+        emiNumber: selectedEMI.emiNumber,
+        amount: parseFloat(payAmount),
+        remarks: payRemarks
+      });
+      message.success('EMI payment recorded');
+      setPayModal(false);
+      fetchLoan();
+    } catch (err) {
+      message.error(err.message || 'Failed to record payment');
+    } finally {
+      setPayLoading(false);
+    }
   };
 
   if (loading) {
@@ -315,10 +358,12 @@ const ProducerLoanView = () => {
               <Table.Tr>
                 <Table.Th>EMI #</Table.Th>
                 <Table.Th>Due Date</Table.Th>
-                <Table.Th>Amount</Table.Th>
-                <Table.Th>Paid Amount</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>Amount</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>Paid</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>Balance</Table.Th>
                 <Table.Th>Paid Date</Table.Th>
                 <Table.Th>Status</Table.Th>
+                <Table.Th></Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -328,10 +373,15 @@ const ProducerLoanView = () => {
                     <Text fw={500}>EMI {emi.emiNumber}</Text>
                   </Table.Td>
                   <Table.Td>{formatDate(emi.dueDate)}</Table.Td>
-                  <Table.Td>{formatCurrency(emi.amount)}</Table.Td>
-                  <Table.Td>
+                  <Table.Td style={{ textAlign: 'right' }}>{formatCurrency(emi.amount)}</Table.Td>
+                  <Table.Td style={{ textAlign: 'right' }}>
                     <Text c={emi.paidAmount > 0 ? 'green' : 'dimmed'}>
                       {formatCurrency(emi.paidAmount)}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td style={{ textAlign: 'right' }}>
+                    <Text c={(emi.amount - emi.paidAmount) > 0 ? 'orange' : 'green'} fw={600}>
+                      {formatCurrency(emi.amount - emi.paidAmount)}
                     </Text>
                   </Table.Td>
                   <Table.Td>{emi.paidDate ? formatDate(emi.paidDate) : '-'}</Table.Td>
@@ -343,6 +393,19 @@ const ProducerLoanView = () => {
                     >
                       {emi.status}
                     </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    {(emi.status === 'Pending' || emi.status === 'Overdue' || emi.status === 'Partial') && loan.status === 'Active' && (
+                      <Button
+                        size="xs"
+                        variant="light"
+                        color="green"
+                        leftSection={<IconCash size={12} />}
+                        onClick={() => openPayModal(emi)}
+                      >
+                        Pay
+                      </Button>
+                    )}
                   </Table.Td>
                 </Table.Tr>
               ))}
@@ -358,6 +421,67 @@ const ProducerLoanView = () => {
           </Card>
         )}
       </Stack>
+
+      {/* Record EMI Payment Modal */}
+      <Modal
+        opened={payModal}
+        onClose={() => setPayModal(false)}
+        title={<Text fw={600}>Record EMI Payment — EMI {selectedEMI?.emiNumber}</Text>}
+        centered
+        size="sm"
+      >
+        <Stack gap="md">
+          {selectedEMI && (
+            <Box p="sm" style={{ background: '#f8f9fa', borderRadius: 8 }}>
+              <Group justify="space-between">
+                <Text size="sm" c="dimmed">Due Date</Text>
+                <Text size="sm" fw={500}>{formatDate(selectedEMI.dueDate)}</Text>
+              </Group>
+              <Group justify="space-between">
+                <Text size="sm" c="dimmed">EMI Amount</Text>
+                <Text size="sm" fw={500}>{formatCurrency(selectedEMI.amount)}</Text>
+              </Group>
+              <Group justify="space-between">
+                <Text size="sm" c="dimmed">Already Paid</Text>
+                <Text size="sm" fw={500} c="green">{formatCurrency(selectedEMI.paidAmount)}</Text>
+              </Group>
+              <Group justify="space-between">
+                <Text size="sm" c="dimmed">Remaining</Text>
+                <Text size="sm" fw={700} c="orange">{formatCurrency(selectedEMI.amount - selectedEMI.paidAmount)}</Text>
+              </Group>
+            </Box>
+          )}
+          <NumberInput
+            label="Payment Amount"
+            value={payAmount}
+            onChange={setPayAmount}
+            min={0.01}
+            max={selectedEMI ? selectedEMI.amount - selectedEMI.paidAmount : undefined}
+            leftSection={<IconCurrencyRupee size={16} />}
+            thousandSeparator=","
+            decimalScale={2}
+            required
+          />
+          <Textarea
+            label="Remarks"
+            value={payRemarks}
+            onChange={(e) => setPayRemarks(e.target.value)}
+            placeholder="Optional notes"
+            rows={2}
+          />
+          <Group justify="flex-end">
+            <Button variant="light" onClick={() => setPayModal(false)}>Cancel</Button>
+            <Button
+              color="green"
+              loading={payLoading}
+              onClick={handleRecordPayment}
+              disabled={!payAmount || payAmount <= 0}
+            >
+              Record Payment
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Container>
   );
 };

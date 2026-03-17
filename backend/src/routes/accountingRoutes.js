@@ -10,8 +10,10 @@ import {
   updateLedger,
   getOutstandingReport
 } from '../controllers/accountingController.js';
+import { protect, addCompanyFilter } from '../middleware/auth.js';
 
 const router = express.Router();
+router.use(protect, addCompanyFilter);
 
 // Voucher routes
 router.post('/vouchers', createVoucher);

@@ -3,7 +3,7 @@ import CollectionCenter from '../models/CollectionCenter.js';
 // Create new collection center
 export const createCollectionCenter = async (req, res) => {
   try {
-    const collectionCenter = new CollectionCenter(req.body);
+    const collectionCenter = new CollectionCenter({ ...req.body, companyId: req.companyId });
     await collectionCenter.save();
 
     res.status(201).json({
@@ -33,7 +33,7 @@ export const getAllCollectionCenters = async (req, res) => {
   try {
     const { page = 1, limit = 10, search = '', centerType = '', status = '' } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
 
     if (search) {
       query.$or = [

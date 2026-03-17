@@ -4,7 +4,6 @@ const salesSchema = new mongoose.Schema({
   billNumber: {
     type: String,
     required: true,
-    unique: true,
     trim: true
   },
   billDate: {
@@ -145,6 +144,11 @@ const salesSchema = new mongoose.Schema({
     type: String,
     enum: ['Paid', 'Partial', 'Pending'],
     default: 'Pending'
+  },
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true
   }
 }, {
   timestamps: true
@@ -154,6 +158,8 @@ const salesSchema = new mongoose.Schema({
 salesSchema.index({ billDate: -1 });
 salesSchema.index({ customerId: 1 });
 salesSchema.index({ status: 1 });
+salesSchema.index({ companyId: 1 });
+salesSchema.index({ billNumber: 1, companyId: 1 }, { unique: true });
 
 const Sales = mongoose.model('Sales', salesSchema);
 

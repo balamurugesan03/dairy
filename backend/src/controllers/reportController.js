@@ -1,10 +1,14 @@
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
+import BusinessVoucher from '../models/BusinessVoucher.js';
+import BusinessLedger from '../models/BusinessLedger.js';
 import Sales from '../models/Sales.js';
 import Item from '../models/Item.js';
 import StockTransaction from '../models/StockTransaction.js';
 import FarmerPayment from '../models/FarmerPayment.js';
 import MilkCollection from '../models/MilkCollection.js';
+import MilkSales from '../models/MilkSales.js';
+import UnionSalesSlip from '../models/UnionSalesSlip.js';
 import { getDateRange } from '../utils/dateFilters.js';
 
 // Helper function to get financial year string (e.g., "2024-25")
@@ -1003,6 +1007,663 @@ export const getMilkBillAbstractReport = async (req, res) => {
   }
 };
 
+// ── Dairy Abstract Report ──────────────────────────────────────────────────
+export const getDairyAbstractReport = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ success: false, message: 'startDate and endDate are required' });
+    }
+
+    const start = new Date(startDate); start.setHours(0, 0, 0, 0);
+    const end   = new Date(endDate);   end.setHours(23, 59, 59, 999);
+
+    const companyFilter = req.userCompany ? { companyId: req.userCompany } : {};
+
+    // ── 1. Milk Purchase (MilkCollection) grouped by month
+    const purchaseAgg = await MilkCollection.aggregate([
+      { $match: { ...companyFilter, date: { $gte: start, $lte: end } } },
+      { $group: {
+        _id: { year: { $year: '$date' }, month: { $month: '$date' } },
+        qty:    { $sum: '$qty' },
+        amount: { $sum: '$amount' },
+        days:   { $addToSet: { $dateToString: { format: '%Y-%m-%d', date: '$date' } } }
+      }},
+      { $sort: { '_id.year': 1, '_id.month': 1 } }
+    ]);
+
+    // ── 2. Local Sales (saleMode=LOCAL) grouped by month
+    const localAgg = await MilkSales.aggregate([
+      { $match: { ...companyFilter, date: { $gte: start, $lte: end }, saleMode: 'LOCAL' } },
+      { $group: {
+        _id: { year: { $year: '$date' }, month: { $month: '$date' } },
+        qty:    { $sum: '$litre' },
+        amount: { $sum: '$amount' }
+      }},
+      { $sort: { '_id.year': 1, '_id.month': 1 } }
+    ]);
+
+    // ── 3. Credit Sales with Customer category lookup, grouped by month + category
+    const creditAgg = await MilkSales.aggregate([
+      { $match: { ...companyFilter, date: { $gte: start, $lte: end }, saleMode: 'CREDIT' } },
+      { $lookup: { from: 'customers', localField: 'creditorId', foreignField: '_id', as: 'creditor' } },
+      { $addFields: { creditorCategory: { $ifNull: [{ $arrayElemAt: ['$creditor.category', 0] }, 'Others'] } } },
+      { $group: {
+        _id: {
+          year: { $year: '$date' }, month: { $month: '$date' },
+          category: '$creditorCategory'
+        },
+        qty:    { $sum: '$litre' },
+        amount: { $sum: '$amount' }
+      }},
+      { $sort: { '_id.year': 1, '_id.month': 1 } }
+    ]);
+
+    // ── 4. Union Sales (UnionSalesSlip) grouped by month
+    const unionAgg = await UnionSalesSlip.aggregate([
+      { $match: { ...companyFilter, date: { $gte: start, $lte: end } } },
+      { $group: {
+        _id: { year: { $year: '$date' }, month: { $month: '$date' } },
+        sendQty:  { $sum: '$qty' },
+        spoilage: { $sum: { $add: ['$unionSpoilage', '$transportationSpoilage'] } },
+        amount:   { $sum: '$amount' },
+        rateSum:  { $sum: { $multiply: ['$qty', '$rate'] } }
+      }},
+      { $sort: { '_id.year': 1, '_id.month': 1 } }
+    ]);
+
+    // ── Build month map
+    const SCHOOL_CATS = new Set(['School', 'Anganwadi']);
+    const SAMPLE_CATS = new Set(['Sample']);
+    const monthMap = {};
+
+    const getM = (year, month) => {
+      const key = `${year}-${String(month).padStart(2, '0')}`;
+      if (!monthMap[key]) {
+        monthMap[key] = {
+          year, month, key,
+          collectionDays: 0,
+          purchase:    { qty: 0, amount: 0 },
+          localSales:  { qty: 0, amount: 0 },
+          creditSales: { qty: 0, amount: 0 },
+          schoolSales: { qty: 0, amount: 0 },
+          sampleSales: { qty: 0, amount: 0 },
+          union:       { sendQty: 0, spoilage: 0, amount: 0, rateSum: 0 }
+        };
+      }
+      return monthMap[key];
+    };
+
+    for (const p of purchaseAgg) {
+      const m = getM(p._id.year, p._id.month);
+      m.purchase.qty    = p.qty;
+      m.purchase.amount = p.amount;
+      m.collectionDays  = p.days.length;
+    }
+
+    for (const s of localAgg) {
+      const m = getM(s._id.year, s._id.month);
+      m.localSales.qty    += s.qty;
+      m.localSales.amount += s.amount;
+    }
+
+    for (const s of creditAgg) {
+      const m = getM(s._id.year, s._id.month);
+      if (SCHOOL_CATS.has(s._id.category)) {
+        m.schoolSales.qty    += s.qty;
+        m.schoolSales.amount += s.amount;
+      } else if (SAMPLE_CATS.has(s._id.category)) {
+        m.sampleSales.qty    += s.qty;
+        m.sampleSales.amount += s.amount;
+      } else {
+        m.creditSales.qty    += s.qty;
+        m.creditSales.amount += s.amount;
+      }
+    }
+
+    for (const u of unionAgg) {
+      const m = getM(u._id.year, u._id.month);
+      m.union.sendQty  = u.sendQty;
+      m.union.spoilage = u.spoilage;
+      m.union.amount   = u.amount;
+      m.union.rateSum  = u.rateSum;
+    }
+
+    // ── Derive values per month
+    const months = Object.values(monthMap)
+      .sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month)
+      .map(m => {
+        const unionReceived = Math.max(0, m.union.sendQty - m.union.spoilage);
+        const unionShortage = m.union.sendQty > unionReceived ? m.union.sendQty - unionReceived : 0;
+        const unionExcess   = unionReceived > m.union.sendQty ? unionReceived - m.union.sendQty : 0;
+
+        const totalSalesQty    = m.localSales.qty + m.creditSales.qty + m.schoolSales.qty + m.sampleSales.qty + unionReceived;
+        const totalSalesAmount = m.localSales.amount + m.creditSales.amount + m.schoolSales.amount + m.sampleSales.amount + m.union.amount;
+
+        const handledQty      = totalSalesQty;
+        const diff            = m.purchase.qty - handledQty;
+        const purchShortage   = diff > 0 ? diff : 0;
+        const purchExcess     = diff < 0 ? Math.abs(diff) : 0;
+        const profit          = totalSalesAmount - m.purchase.amount;
+
+        const avg = (amt, qty) => qty > 0 ? amt / qty : 0;
+
+        return {
+          year: m.year, month: m.month, key: m.key,
+          collectionDays: m.collectionDays,
+          purchase: {
+            qty: m.purchase.qty,
+            avgRate: avg(m.purchase.amount, m.purchase.qty),
+            value: m.purchase.amount,
+            shortage: purchShortage,
+            excess:   purchExcess,
+            handledQty
+          },
+          localSales:  { qty: m.localSales.qty,  avgRate: avg(m.localSales.amount,  m.localSales.qty),  value: m.localSales.amount },
+          creditSales: { qty: m.creditSales.qty, avgRate: avg(m.creditSales.amount, m.creditSales.qty), value: m.creditSales.amount },
+          schoolSales: { qty: m.schoolSales.qty, avgRate: avg(m.schoolSales.amount, m.schoolSales.qty), value: m.schoolSales.amount },
+          sampleSales: { qty: m.sampleSales.qty, avgRate: avg(m.sampleSales.amount, m.sampleSales.qty), value: m.sampleSales.amount },
+          union: {
+            sendQty:     m.union.sendQty,
+            receivedQty: unionReceived,
+            avgRate:     avg(m.union.rateSum, m.union.sendQty),
+            value:       m.union.amount,
+            spoilage:    m.union.spoilage,
+            excess:      unionExcess,
+            shortage:    unionShortage
+          },
+          salesTotal: { qty: totalSalesQty, avgRate: avg(totalSalesAmount, totalSalesQty), value: totalSalesAmount },
+          profit,
+          bmc: 0,
+          prodUnit: 0
+        };
+      });
+
+    // ── Grand totals
+    const gt = {
+      collectionDays: 0,
+      purchase:    { qty: 0, value: 0, shortage: 0, excess: 0, handledQty: 0 },
+      localSales:  { qty: 0, value: 0 },
+      creditSales: { qty: 0, value: 0 },
+      schoolSales: { qty: 0, value: 0 },
+      sampleSales: { qty: 0, value: 0 },
+      union:       { sendQty: 0, receivedQty: 0, value: 0, spoilage: 0, excess: 0, shortage: 0 },
+      salesTotal:  { qty: 0, value: 0 },
+      profit: 0
+    };
+
+    for (const m of months) {
+      gt.collectionDays     += m.collectionDays;
+      gt.purchase.qty       += m.purchase.qty;
+      gt.purchase.value     += m.purchase.value;
+      gt.purchase.shortage  += m.purchase.shortage;
+      gt.purchase.excess    += m.purchase.excess;
+      gt.purchase.handledQty+= m.purchase.handledQty;
+      gt.localSales.qty     += m.localSales.qty;
+      gt.localSales.value   += m.localSales.value;
+      gt.creditSales.qty    += m.creditSales.qty;
+      gt.creditSales.value  += m.creditSales.value;
+      gt.schoolSales.qty    += m.schoolSales.qty;
+      gt.schoolSales.value  += m.schoolSales.value;
+      gt.sampleSales.qty    += m.sampleSales.qty;
+      gt.sampleSales.value  += m.sampleSales.value;
+      gt.union.sendQty      += m.union.sendQty;
+      gt.union.receivedQty  += m.union.receivedQty;
+      gt.union.value        += m.union.value;
+      gt.union.spoilage     += m.union.spoilage;
+      gt.union.excess       += m.union.excess;
+      gt.union.shortage     += m.union.shortage;
+      gt.salesTotal.qty     += m.salesTotal.qty;
+      gt.salesTotal.value   += m.salesTotal.value;
+      gt.profit             += m.profit;
+    }
+
+    const avg = (amt, qty) => qty > 0 ? amt / qty : 0;
+    gt.purchase.avgRate    = avg(gt.purchase.value,    gt.purchase.qty);
+    gt.localSales.avgRate  = avg(gt.localSales.value,  gt.localSales.qty);
+    gt.creditSales.avgRate = avg(gt.creditSales.value, gt.creditSales.qty);
+    gt.schoolSales.avgRate = avg(gt.schoolSales.value, gt.schoolSales.qty);
+    gt.sampleSales.avgRate = avg(gt.sampleSales.value, gt.sampleSales.qty);
+    gt.union.avgRate       = avg(gt.union.value,       gt.union.sendQty);
+    gt.salesTotal.avgRate  = avg(gt.salesTotal.value,  gt.salesTotal.qty);
+
+    const summary = {
+      collectionDays:      gt.collectionDays,
+      avgPurchaseRate:     gt.purchase.avgRate,
+      totalShortage:       gt.purchase.shortage,
+      avgProductionPerDay: gt.collectionDays > 0 ? gt.purchase.qty / gt.collectionDays : 0,
+      avgShortagePerDay:   gt.collectionDays > 0 ? gt.purchase.shortage / gt.collectionDays : 0,
+      totalHandledQty:     gt.purchase.handledQty
+    };
+
+    res.status(200).json({ success: true, data: { months, grandTotal: gt, summary, startDate: start, endDate: end } });
+  } catch (error) {
+    console.error('Error generating dairy abstract:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ── Dairy Register Report (Date-wise with AM/PM/Total rows) ────────────────
+export const getDairyRegisterReport = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ success: false, message: 'startDate and endDate are required' });
+    }
+
+    const start = new Date(startDate); start.setHours(0, 0, 0, 0);
+    const end   = new Date(endDate);   end.setHours(23, 59, 59, 999);
+    const companyFilter = req.userCompany ? { companyId: req.userCompany } : {};
+
+    const SCHOOL_CATS = new Set(['School', 'Anganwadi']);
+
+    // ── 1. MilkCollection with farmer membership lookup
+    const collectionAgg = await MilkCollection.aggregate([
+      { $match: { ...companyFilter, date: { $gte: start, $lte: end } } },
+      { $lookup: { from: 'farmers', localField: 'farmer', foreignField: '_id', as: 'farmerDoc' } },
+      { $addFields: {
+        isMember:  { $ifNull: [{ $arrayElemAt: ['$farmerDoc.isMembership', 0] }, false] },
+        dateStr:   { $dateToString: { format: '%Y-%m-%d', date: '$date' } }
+      }},
+      { $group: {
+        _id: { dateStr: '$dateStr', shift: '$shift', isMember: '$isMember' },
+        farmerIds: { $addToSet: '$farmer' },
+        qty:       { $sum: '$qty' },
+        amount:    { $sum: '$amount' }
+      }},
+      { $sort: { '_id.dateStr': 1, '_id.shift': 1 } }
+    ]);
+
+    // ── 2. MilkSales with customer category lookup
+    const salesAgg = await MilkSales.aggregate([
+      { $match: { ...companyFilter, date: { $gte: start, $lte: end } } },
+      { $lookup: { from: 'customers', localField: 'creditorId', foreignField: '_id', as: 'creditor' } },
+      { $addFields: {
+        creditorCategory: { $ifNull: [{ $arrayElemAt: ['$creditor.category', 0] }, 'Others'] },
+        dateStr:          { $dateToString: { format: '%Y-%m-%d', date: '$date' } }
+      }},
+      { $group: {
+        _id: { dateStr: '$dateStr', session: '$session', saleMode: '$saleMode', category: '$creditorCategory' },
+        qty:    { $sum: '$litre' },
+        amount: { $sum: '$amount' }
+      }},
+      { $sort: { '_id.dateStr': 1, '_id.session': 1 } }
+    ]);
+
+    // ── 3. UnionSalesSlip
+    const unionAgg = await UnionSalesSlip.aggregate([
+      { $match: { ...companyFilter, date: { $gte: start, $lte: end } } },
+      { $group: {
+        _id: { dateStr: { $dateToString: { format: '%Y-%m-%d', date: '$date' } }, shift: '$time' },
+        sendQty:  { $sum: '$qty' },
+        amount:   { $sum: '$amount' },
+        spoilage: { $sum: { $add: ['$unionSpoilage', '$transportationSpoilage'] } }
+      }},
+      { $sort: { '_id.dateStr': 1, '_id.shift': 1 } }
+    ]);
+
+    // ── Build slot map: dateStr → shift → raw buckets
+    const slotMap = {};
+
+    const getSlot = (dateStr, shift) => {
+      if (!slotMap[dateStr]) slotMap[dateStr] = {};
+      if (!slotMap[dateStr][shift]) {
+        slotMap[dateStr][shift] = {
+          memberNos: 0, memberQty: 0, memberAmt: 0,
+          nonMemberNos: 0, nonMemberQty: 0, nonMemberAmt: 0,
+          localQty: 0, localAmt: 0,
+          creditQty: 0, creditAmt: 0,
+          schoolQty: 0, schoolAmt: 0,
+          sampleQty: 0, sampleAmt: 0,
+          unionSendQty: 0, unionAmt: 0, unionSpoilage: 0
+        };
+      }
+      return slotMap[dateStr][shift];
+    };
+
+    // Fill collection data
+    for (const c of collectionAgg) {
+      const s = getSlot(c._id.dateStr, c._id.shift);
+      if (c._id.isMember) {
+        s.memberNos   += c.farmerIds.length;
+        s.memberQty   += c.qty;
+        s.memberAmt   += c.amount;
+      } else {
+        s.nonMemberNos  += c.farmerIds.length;
+        s.nonMemberQty  += c.qty;
+        s.nonMemberAmt  += c.amount;
+      }
+    }
+
+    // Fill sales data  (session AM/PM → shift)
+    for (const s of salesAgg) {
+      const slot = getSlot(s._id.dateStr, s._id.session);
+      if (s._id.saleMode === 'LOCAL') {
+        slot.localQty  += s.qty;
+        slot.localAmt  += s.amount;
+      } else if (SCHOOL_CATS.has(s._id.category)) {
+        slot.schoolQty += s.qty;
+        slot.schoolAmt += s.amount;
+      } else if (s._id.category === 'Sample') {
+        slot.sampleQty += s.qty;
+        slot.sampleAmt += s.amount;
+      } else {
+        slot.creditQty += s.qty;
+        slot.creditAmt += s.amount;
+      }
+    }
+
+    // Fill union data
+    for (const u of unionAgg) {
+      const slot = getSlot(u._id.dateStr, u._id.shift);
+      slot.unionSendQty  += u.sendQty;
+      slot.unionAmt      += u.amount;
+      slot.unionSpoilage += u.spoilage;
+    }
+
+    // ── Derive row values from a raw slot
+    const deriveRow = (raw) => {
+      const procQty      = raw.memberQty + raw.nonMemberQty;
+      const purchaseAmt  = raw.memberAmt + raw.nonMemberAmt;
+      const totalNos     = raw.memberNos + raw.nonMemberNos;
+
+      const unionReceived = Math.max(0, raw.unionSendQty - raw.unionSpoilage);
+      const unionExcess   = unionReceived > raw.unionSendQty ? unionReceived - raw.unionSendQty : 0;
+      const unionShortage = raw.unionSendQty > unionReceived ? raw.unionSendQty - unionReceived : 0;
+      const unionTotalQty = unionReceived;
+
+      const milmaTotalQty = raw.localQty + raw.creditQty + raw.schoolQty + raw.sampleQty + unionTotalQty;
+      const milmaTotalAmt = raw.localAmt + raw.creditAmt + raw.schoolAmt + raw.sampleAmt + raw.unionAmt;
+
+      const handQty   = milmaTotalQty;
+      const shortage  = procQty > handQty ? procQty - handQty : 0;
+      const excess    = handQty > procQty ? handQty - procQty : 0;
+      const profit    = milmaTotalAmt - purchaseAmt;
+
+      return {
+        memberNos:      raw.memberNos,
+        memberQty:      raw.memberQty,
+        memberAmt:      raw.memberAmt,
+        nonMemberNos:   raw.nonMemberNos,
+        nonMemberQty:   raw.nonMemberQty,
+        nonMemberAmt:   raw.nonMemberAmt,
+        totalNos,
+        procQty,
+        handQty,
+        purchaseAmt,
+        shortage,
+        excess,
+        localQty:      raw.localQty,
+        localAmt:      raw.localAmt,
+        creditQty:     raw.creditQty,
+        creditAmt:     raw.creditAmt,
+        schoolQty:     raw.schoolQty,
+        schoolAmt:     raw.schoolAmt,
+        sampleQty:     raw.sampleQty,
+        sampleAmt:     raw.sampleAmt,
+        unionSendQty:  raw.unionSendQty,
+        unionAmt:      raw.unionAmt,
+        unionSpoilage: raw.unionSpoilage,
+        unionExcess,
+        unionShortage,
+        unionTotalQty,
+        milmaTotalQty,
+        milmaTotalAmt,
+        profit
+      };
+    };
+
+    // ── Merge two raw slots (for daily Total)
+    const mergeRaw = (a, b) => ({
+      memberNos:      a.memberNos      + b.memberNos,
+      memberQty:      a.memberQty      + b.memberQty,
+      memberAmt:      a.memberAmt      + b.memberAmt,
+      nonMemberNos:   a.nonMemberNos   + b.nonMemberNos,
+      nonMemberQty:   a.nonMemberQty   + b.nonMemberQty,
+      nonMemberAmt:   a.nonMemberAmt   + b.nonMemberAmt,
+      localQty:       a.localQty       + b.localQty,
+      localAmt:       a.localAmt       + b.localAmt,
+      creditQty:      a.creditQty      + b.creditQty,
+      creditAmt:      a.creditAmt      + b.creditAmt,
+      schoolQty:      a.schoolQty      + b.schoolQty,
+      schoolAmt:      a.schoolAmt      + b.schoolAmt,
+      sampleQty:      a.sampleQty      + b.sampleQty,
+      sampleAmt:      a.sampleAmt      + b.sampleAmt,
+      unionSendQty:   a.unionSendQty   + b.unionSendQty,
+      unionAmt:       a.unionAmt       + b.unionAmt,
+      unionSpoilage:  a.unionSpoilage  + b.unionSpoilage
+    });
+
+    const EMPTY_RAW = {
+      memberNos: 0, memberQty: 0, memberAmt: 0,
+      nonMemberNos: 0, nonMemberQty: 0, nonMemberAmt: 0,
+      localQty: 0, localAmt: 0, creditQty: 0, creditAmt: 0,
+      schoolQty: 0, schoolAmt: 0, sampleQty: 0, sampleAmt: 0,
+      unionSendQty: 0, unionAmt: 0, unionSpoilage: 0
+    };
+
+    // ── Build days array
+    const allDates = [...new Set(Object.keys(slotMap))].sort();
+    const days = allDates.map(dateStr => {
+      const amRaw    = slotMap[dateStr]?.AM || { ...EMPTY_RAW };
+      const pmRaw    = slotMap[dateStr]?.PM || { ...EMPTY_RAW };
+      const totalRaw = mergeRaw(amRaw, pmRaw);
+      return {
+        dateStr,
+        am:    deriveRow(amRaw),
+        pm:    deriveRow(pmRaw),
+        total: deriveRow(totalRaw)
+      };
+    });
+
+    // ── Grand total (sum of all daily totals)
+    const gtRaw = days.reduce((acc, d) => {
+      const totalRaw = mergeRaw(
+        slotMap[d.dateStr]?.AM || { ...EMPTY_RAW },
+        slotMap[d.dateStr]?.PM || { ...EMPTY_RAW }
+      );
+      return mergeRaw(acc, totalRaw);
+    }, { ...EMPTY_RAW });
+
+    res.status(200).json({
+      success: true,
+      data: { days, grandTotal: deriveRow(gtRaw), startDate: start, endDate: end }
+    });
+  } catch (error) {
+    console.error('Error generating dairy register:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ── Private Firm Receipt & Disbursement Report ────────────────────────────
+export const getCooperativeRDReport = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    const SECTION_MAP = [
+      { name: 'Advance due by Society', subtitle: '(LIABILITY)',
+        groups: ['Sundry Creditors', 'Current Liabilities', 'Provisions', 'Duties & Taxes'] },
+      { name: 'Advance due to Society', subtitle: '(ASSET)',
+        groups: ['Sundry Debtors', 'Current Assets', 'Fixed Assets', 'Loans & Advances'] },
+      { name: 'Bank Accounts',          subtitle: '(ASSET)',   groups: ['Bank Accounts'] },
+      { name: 'Cash in Hand',           subtitle: '(ASSET)',   groups: ['Cash-in-Hand'] },
+      { name: 'Deposits & Investments', subtitle: '',          groups: ['Investments'] },
+      { name: 'Contingencies',          subtitle: '(EXPENSE)', groups: ['Direct Expenses', 'Indirect Expenses'] },
+      { name: 'Income & Sales',         subtitle: '',          groups: ['Sales Accounts', 'Purchase Accounts', 'Direct Incomes', 'Indirect Incomes'] },
+      { name: 'Capital & Reserves',     subtitle: '',          groups: ['Capital Account', 'Reserves & Surplus'] },
+      { name: 'Stock',                  subtitle: '',          groups: ['Stock-in-Hand'] },
+      { name: 'Suspense & Others',      subtitle: '',          groups: ['Suspense Account'] }
+    ];
+
+    const groupToSection = {};
+    SECTION_MAP.forEach((sec, idx) => sec.groups.forEach(g => { groupToSection[g] = idx; }));
+
+    // Helper: accumulate vouchers into a ledger map
+    const accumulate = (vouchers, target) => {
+      vouchers.forEach(voucher => {
+        const isCash = voucher.paymentMode === 'Cash';
+        voucher.entries.forEach(entry => {
+          if (!entry.ledgerId) return;
+          const id = entry.ledgerId._id.toString();
+          if (!target[id]) {
+            target[id] = {
+              ledgerName: entry.ledgerId.name || entry.ledgerName,
+              group:      entry.ledgerId.group || 'Other',
+              receiptCash: 0, receiptAdj: 0,
+              paymentCash: 0, paymentAdj: 0
+            };
+          }
+          const amt = entry.amount || 0;
+          if (entry.type === 'debit') {
+            if (isCash) target[id].receiptCash += amt; else target[id].receiptAdj += amt;
+          } else {
+            if (isCash) target[id].paymentCash += amt; else target[id].paymentAdj += amt;
+          }
+        });
+      });
+    };
+
+    // ── Query 1: Upto Month (all before startDate) ──────────────────────
+    const uptoMap = {};
+    if (startDate) {
+      const uptoVouchers = await BusinessVoucher.find({
+        status: { $ne: 'Cancelled' },
+        date:   { $lt: new Date(startDate) }
+      }).populate('entries.ledgerId', 'name group type');
+      accumulate(uptoVouchers, uptoMap);
+    }
+
+    // ── Query 2: During the Month (startDate to endDate) ────────────────
+    const duringMap = {};
+    const duringQuery = { status: { $ne: 'Cancelled' } };
+    if (startDate || endDate) {
+      duringQuery.date = {};
+      if (startDate) duringQuery.date.$gte = new Date(startDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        duringQuery.date.$lte = end;
+      }
+    }
+    const duringVouchers = await BusinessVoucher.find(duringQuery)
+      .populate('entries.ledgerId', 'name group type');
+    accumulate(duringVouchers, duringMap);
+
+    // ── Merge all known ledger IDs ──────────────────────────────────────
+    const allIds = new Set([...Object.keys(uptoMap), ...Object.keys(duringMap)]);
+
+    const buildSections = () => {
+      const sectionData = SECTION_MAP.map(sec => ({
+        name: sec.name, subtitle: sec.subtitle, items: [],
+        totUptoR: 0, totDuringR: 0, totEomR: 0,
+        totUptoP: 0, totDuringP: 0, totEomP: 0,
+        totUptoReceiptAdj: 0, totUptoReceiptCash: 0,
+        totDuringReceiptAdj: 0, totDuringReceiptCash: 0,
+        totUptoPayAdj: 0, totUptoPayCash: 0,
+        totDuringPayAdj: 0, totDuringPayCash: 0
+      }));
+      const others = {
+        name: 'Other Accounts', subtitle: '', items: [],
+        totUptoR: 0, totDuringR: 0, totEomR: 0,
+        totUptoP: 0, totDuringP: 0, totEomP: 0,
+        totUptoReceiptAdj: 0, totUptoReceiptCash: 0,
+        totDuringReceiptAdj: 0, totDuringReceiptCash: 0,
+        totUptoPayAdj: 0, totUptoPayCash: 0,
+        totDuringPayAdj: 0, totDuringPayCash: 0
+      };
+
+      allIds.forEach(id => {
+        const u = uptoMap[id]   || { ledgerName: duringMap[id]?.ledgerName || '', group: duringMap[id]?.group || 'Other', receiptCash: 0, receiptAdj: 0, paymentCash: 0, paymentAdj: 0 };
+        const d = duringMap[id] || { ledgerName: uptoMap[id]?.ledgerName   || '', group: uptoMap[id]?.group   || 'Other', receiptCash: 0, receiptAdj: 0, paymentCash: 0, paymentAdj: 0 };
+
+        const ledgerName = u.ledgerName || d.ledgerName;
+        const group      = u.group || d.group;
+
+        const uptoR   = u.receiptCash + u.receiptAdj;
+        const uptoP   = u.paymentCash + u.paymentAdj;
+        const duringR = d.receiptCash + d.receiptAdj;
+        const duringP = d.paymentCash + d.paymentAdj;
+        const eomR    = uptoR + duringR;
+        const eomP    = uptoP + duringP;
+
+        if (uptoR === 0 && uptoP === 0 && duringR === 0 && duringP === 0) return;
+
+        const idx = groupToSection[group];
+        const target = idx !== undefined ? sectionData[idx] : others;
+
+        target.items.push({
+          ledgerName,
+          // 2-col (adj/cash split) — during period only
+          receiptAdj:  d.receiptAdj,  receiptCash: d.receiptCash,
+          receiptTotal: duringR,
+          paymentAdj:  d.paymentAdj,  paymentCash: d.paymentCash,
+          paymentTotal: duringP,
+          // 3-col (upto/during/eom)
+          uptoR, duringR, eomR,
+          uptoP, duringP, eomP
+        });
+
+        target.totUptoR   += uptoR;   target.totDuringR += duringR; target.totEomR += eomR;
+        target.totUptoP   += uptoP;   target.totDuringP += duringP; target.totEomP += eomP;
+        target.totUptoReceiptAdj    += u.receiptAdj;
+        target.totUptoReceiptCash   += u.receiptCash;
+        target.totDuringReceiptAdj  += d.receiptAdj;
+        target.totDuringReceiptCash += d.receiptCash;
+        target.totUptoPayAdj    += u.paymentAdj;
+        target.totUptoPayCash   += u.paymentCash;
+        target.totDuringPayAdj  += d.paymentAdj;
+        target.totDuringPayCash += d.paymentCash;
+
+        // compute totals for 2-col view
+        target.totalReceiptAdj  = (target.totalReceiptAdj  || 0) + d.receiptAdj;
+        target.totalReceiptCash = (target.totalReceiptCash || 0) + d.receiptCash;
+        target.totalReceiptTotal= (target.totalReceiptTotal|| 0) + duringR;
+        target.totalPaymentAdj  = (target.totalPaymentAdj  || 0) + d.paymentAdj;
+        target.totalPaymentCash = (target.totalPaymentCash || 0) + d.paymentCash;
+        target.totalPaymentTotal= (target.totalPaymentTotal|| 0) + duringP;
+      });
+
+      if (others.items.length > 0) sectionData.push(others);
+      return sectionData.filter(s => s.items.length > 0);
+    };
+
+    const activeSections = buildSections();
+
+    // Grand totals — 2-col view (during period)
+    const grandTotalReceiptAdj   = activeSections.reduce((a, s) => a + (s.totalReceiptAdj  || 0), 0);
+    const grandTotalReceiptCash  = activeSections.reduce((a, s) => a + (s.totalReceiptCash || 0), 0);
+    const grandTotalReceiptTotal = activeSections.reduce((a, s) => a + (s.totalReceiptTotal|| 0), 0);
+    const grandTotalPaymentAdj   = activeSections.reduce((a, s) => a + (s.totalPaymentAdj  || 0), 0);
+    const grandTotalPaymentCash  = activeSections.reduce((a, s) => a + (s.totalPaymentCash || 0), 0);
+    const grandTotalPaymentTotal = activeSections.reduce((a, s) => a + (s.totalPaymentTotal|| 0), 0);
+
+    // Grand totals — 3-col view
+    const grandUptoR   = activeSections.reduce((a, s) => a + s.totUptoR,   0);
+    const grandDuringR = activeSections.reduce((a, s) => a + s.totDuringR, 0);
+    const grandEomR    = activeSections.reduce((a, s) => a + s.totEomR,    0);
+    const grandUptoP   = activeSections.reduce((a, s) => a + s.totUptoP,   0);
+    const grandDuringP = activeSections.reduce((a, s) => a + s.totDuringP, 0);
+    const grandEomP    = activeSections.reduce((a, s) => a + s.totEomP,    0);
+
+    res.json({
+      success: true,
+      data: {
+        sections: activeSections,
+        // 2-col totals
+        grandTotalReceiptAdj, grandTotalReceiptCash, grandTotalReceiptTotal,
+        grandTotalPaymentAdj, grandTotalPaymentCash, grandTotalPaymentTotal,
+        // 3-col totals
+        grandUptoR, grandDuringR, grandEomR,
+        grandUptoP, grandDuringP, grandEomP,
+        period: { startDate: startDate || null, endDate: endDate || null }
+      }
+    });
+  } catch (error) {
+    console.error('Error in R&D report:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export default {
   getReceiptsDisbursementReport,
   getTradingAccount,
@@ -1014,5 +1675,8 @@ export default {
   getStockRegister,
   getInventoryPurchaseRegister,
   getSalesRegister,
-  getMilkBillAbstractReport
+  getMilkBillAbstractReport,
+  getDairyAbstractReport,
+  getDairyRegisterReport,
+  getCooperativeRDReport
 };

@@ -123,6 +123,11 @@ const businessStockTransactionSchema = new mongoose.Schema({
   notes: {
     type: String,
     trim: true
+  },
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true
   }
 }, {
   timestamps: true
@@ -134,6 +139,7 @@ businessStockTransactionSchema.index({ referenceType: 1, referenceId: 1 });
 businessStockTransactionSchema.index({ transactionType: 1, date: -1 });
 businessStockTransactionSchema.index({ supplierId: 1 });
 businessStockTransactionSchema.index({ invoiceNumber: 1 });
+businessStockTransactionSchema.index({ companyId: 1 });
 
 const BusinessStockTransaction = mongoose.model('BusinessStockTransaction', businessStockTransactionSchema);
 

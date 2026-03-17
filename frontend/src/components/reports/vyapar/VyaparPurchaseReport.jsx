@@ -39,7 +39,8 @@ import {
 import { useReactToPrint } from 'react-to-print';
 
 const VyaparPurchaseReport = () => {
-  const { selectedBusinessType } = useCompany();
+  const { selectedBusinessType, selectedCompany } = useCompany();
+  const companyName = selectedCompany?.companyName || '';
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState(null);
@@ -199,7 +200,8 @@ const VyaparPurchaseReport = () => {
     <div style={{ display: 'none' }}>
       <div ref={printRef} style={{ padding: '20px' }}>
         <div className="print-header">
-          <h2 style={{ margin: '0 0 5px 0' }}>Purchase Report</h2>
+          {companyName && <h1 style={{ margin: '0 0 4px 0', fontSize: '18px', textTransform: 'uppercase', letterSpacing: '2px' }}>{companyName}</h1>}
+          <h2 style={{ margin: '0 0 5px 0', fontSize: '14px', letterSpacing: '3px', textTransform: 'uppercase', display: 'inline-block', borderTop: '1px solid #333', borderBottom: '1px solid #333', padding: '2px 12px' }}>Purchase Report</h2>
           <p style={{ margin: '0', color: '#666' }}>
             {dateRange[0] && dateRange[1] 
               ? `Period: ${dayjs(dateRange[0]).format('DD/MM/YYYY')} - ${dayjs(dateRange[1]).format('DD/MM/YYYY')}`
@@ -492,32 +494,28 @@ const VyaparPurchaseReport = () => {
                   verticalSpacing="xs"
                   fontSize="xs"
                   highlightOnHover
-                  style={{ 
-                    borderCollapse: 'separate',
-                    borderSpacing: 0
+                  style={{
+                    borderCollapse: 'collapse'
                   }}
                 >
                   <thead style={{ backgroundColor: '#f5f7fa' }}>
                     <tr>
                       <th style={{ 
-                        border: '1px solid #e0e0e0', 
-                        borderRight: 'none',
+                        border: '1px solid #e0e0e0',
                         padding: '10px 12px',
                         color: '#455a64',
                         fontWeight: 600,
                         fontSize: '12px'
                       }}>Date</th>
                       <th style={{ 
-                        border: '1px solid #e0e0e0', 
-                        borderRight: 'none',
+                        border: '1px solid #e0e0e0',
                         padding: '10px 12px',
                         color: '#455a64',
                         fontWeight: 600,
                         fontSize: '12px'
                       }}>Invoice No.</th>
                       <th style={{ 
-                        border: '1px solid #e0e0e0', 
-                        borderRight: 'none',
+                        border: '1px solid #e0e0e0',
                         padding: '10px 12px',
                         color: '#455a64',
                         fontWeight: 600,
@@ -525,15 +523,13 @@ const VyaparPurchaseReport = () => {
                       }}>Supplier Name</th>
                       <th style={{
                         border: '1px solid #e0e0e0',
-                        borderRight: 'none',
                         padding: '10px 12px',
                         color: '#455a64',
                         fontWeight: 600,
                         fontSize: '12px'
                       }}>Items (Name × Qty)</th>
                       <th style={{ 
-                        border: '1px solid #e0e0e0', 
-                        borderRight: 'none',
+                        border: '1px solid #e0e0e0',
                         padding: '10px 12px',
                         color: '#455a64',
                         fontWeight: 600,
@@ -541,8 +537,7 @@ const VyaparPurchaseReport = () => {
                         textAlign: 'right'
                       }}>Subtotal</th>
                       <th style={{ 
-                        border: '1px solid #e0e0e0', 
-                        borderRight: 'none',
+                        border: '1px solid #e0e0e0',
                         padding: '10px 12px',
                         color: '#455a64',
                         fontWeight: 600,
@@ -550,8 +545,7 @@ const VyaparPurchaseReport = () => {
                         textAlign: 'right'
                       }}>Tax</th>
                       <th style={{ 
-                        border: '1px solid #e0e0e0', 
-                        borderRight: 'none',
+                        border: '1px solid #e0e0e0',
                         padding: '10px 12px',
                         color: '#455a64',
                         fontWeight: 600,
@@ -559,8 +553,7 @@ const VyaparPurchaseReport = () => {
                         textAlign: 'right'
                       }}>Total</th>
                       <th style={{ 
-                        border: '1px solid #e0e0e0', 
-                        borderRight: 'none',
+                        border: '1px solid #e0e0e0',
                         padding: '10px 12px',
                         color: '#455a64',
                         fontWeight: 600,
@@ -568,8 +561,7 @@ const VyaparPurchaseReport = () => {
                         textAlign: 'right'
                       }}>Paid</th>
                       <th style={{ 
-                        border: '1px solid #e0e0e0', 
-                        borderRight: 'none',
+                        border: '1px solid #e0e0e0',
                         padding: '10px 12px',
                         color: '#455a64',
                         fontWeight: 600,
@@ -606,30 +598,22 @@ const VyaparPurchaseReport = () => {
                         >
                           <td style={{ 
                             border: '1px solid #e0e0e0',
-                            borderTop: 'none',
-                            borderRight: 'none',
                             padding: '10px 12px',
                             fontSize: '12px'
                           }}>{formatDate(record.date)}</td>
                           <td style={{ 
                             border: '1px solid #e0e0e0',
-                            borderTop: 'none',
-                            borderRight: 'none',
                             padding: '10px 12px',
                             fontSize: '12px',
                             fontWeight: 500
                           }}>{record.invoiceNumber}</td>
                           <td style={{ 
                             border: '1px solid #e0e0e0',
-                            borderTop: 'none',
-                            borderRight: 'none',
                             padding: '10px 12px',
                             fontSize: '12px'
                           }}>{record.supplierName}</td>
                           <td style={{
                             border: '1px solid #e0e0e0',
-                            borderTop: 'none',
-                            borderRight: 'none',
                             padding: '8px 12px',
                             fontSize: '12px'
                           }}>
@@ -644,24 +628,18 @@ const VyaparPurchaseReport = () => {
                           </td>
                           <td style={{ 
                             border: '1px solid #e0e0e0',
-                            borderTop: 'none',
-                            borderRight: 'none',
                             padding: '10px 12px',
                             fontSize: '12px',
                             textAlign: 'right'
                           }}>{formatCurrency(record.subtotal)}</td>
                           <td style={{ 
                             border: '1px solid #e0e0e0',
-                            borderTop: 'none',
-                            borderRight: 'none',
                             padding: '10px 12px',
                             fontSize: '12px',
                             textAlign: 'right'
                           }}>{formatCurrency(record.tax)}</td>
                           <td style={{ 
                             border: '1px solid #e0e0e0',
-                            borderTop: 'none',
-                            borderRight: 'none',
                             padding: '10px 12px',
                             fontSize: '12px',
                             textAlign: 'right',
@@ -670,8 +648,6 @@ const VyaparPurchaseReport = () => {
                           }}>{formatCurrency(record.total)}</td>
                           <td style={{ 
                             border: '1px solid #e0e0e0',
-                            borderTop: 'none',
-                            borderRight: 'none',
                             padding: '10px 12px',
                             fontSize: '12px',
                             textAlign: 'right',
@@ -680,8 +656,6 @@ const VyaparPurchaseReport = () => {
                           }}>{formatCurrency(record.paid)}</td>
                           <td style={{ 
                             border: '1px solid #e0e0e0',
-                            borderTop: 'none',
-                            borderRight: 'none',
                             padding: '10px 12px',
                             fontSize: '12px',
                             textAlign: 'right',
@@ -690,7 +664,6 @@ const VyaparPurchaseReport = () => {
                           }}>{formatCurrency(record.balance)}</td>
                           <td style={{ 
                             border: '1px solid #e0e0e0',
-                            borderTop: 'none',
                             padding: '10px 12px',
                             textAlign: 'center'
                           }}>
@@ -704,8 +677,6 @@ const VyaparPurchaseReport = () => {
                     <tr style={{ backgroundColor: '#f1f3f4' }}>
                       <td colSpan="4" style={{ 
                         border: '1px solid #e0e0e0',
-                        borderTop: 'none',
-                        borderRight: 'none',
                         padding: '12px',
                         textAlign: 'right',
                         fontWeight: 600,
@@ -716,8 +687,6 @@ const VyaparPurchaseReport = () => {
                       </td>
                       <td style={{ 
                         border: '1px solid #e0e0e0',
-                        borderTop: 'none',
-                        borderRight: 'none',
                         padding: '12px',
                         textAlign: 'right',
                         fontWeight: 600,
@@ -728,8 +697,6 @@ const VyaparPurchaseReport = () => {
                       </td>
                       <td style={{ 
                         border: '1px solid #e0e0e0',
-                        borderTop: 'none',
-                        borderRight: 'none',
                         padding: '12px',
                         textAlign: 'right',
                         fontWeight: 600,
@@ -740,8 +707,6 @@ const VyaparPurchaseReport = () => {
                       </td>
                       <td style={{ 
                         border: '1px solid #e0e0e0',
-                        borderTop: 'none',
-                        borderRight: 'none',
                         padding: '12px',
                         textAlign: 'right',
                         fontWeight: 600,
@@ -752,8 +717,6 @@ const VyaparPurchaseReport = () => {
                       </td>
                       <td style={{ 
                         border: '1px solid #e0e0e0',
-                        borderTop: 'none',
-                        borderRight: 'none',
                         padding: '12px',
                         textAlign: 'right',
                         fontWeight: 600,
@@ -764,8 +727,6 @@ const VyaparPurchaseReport = () => {
                       </td>
                       <td style={{ 
                         border: '1px solid #e0e0e0',
-                        borderTop: 'none',
-                        borderRight: 'none',
                         padding: '12px',
                         textAlign: 'right',
                         fontWeight: 600,
@@ -776,7 +737,6 @@ const VyaparPurchaseReport = () => {
                       </td>
                       <td style={{ 
                         border: '1px solid #e0e0e0',
-                        borderTop: 'none',
                         padding: '12px'
                       }}></td>
                     </tr>
@@ -784,8 +744,6 @@ const VyaparPurchaseReport = () => {
                       <tr style={{ backgroundColor: '#e8eaf6' }}>
                         <td colSpan="4" style={{ 
                           border: '1px solid #e0e0e0',
-                          borderTop: 'none',
-                          borderRight: 'none',
                           padding: '12px',
                           textAlign: 'right',
                           fontWeight: 700,
@@ -796,8 +754,6 @@ const VyaparPurchaseReport = () => {
                         </td>
                         <td style={{ 
                           border: '1px solid #e0e0e0',
-                          borderTop: 'none',
-                          borderRight: 'none',
                           padding: '12px',
                           textAlign: 'right',
                           fontWeight: 700,
@@ -808,8 +764,6 @@ const VyaparPurchaseReport = () => {
                         </td>
                         <td style={{ 
                           border: '1px solid #e0e0e0',
-                          borderTop: 'none',
-                          borderRight: 'none',
                           padding: '12px',
                           textAlign: 'right',
                           fontWeight: 700,
@@ -820,8 +774,6 @@ const VyaparPurchaseReport = () => {
                         </td>
                         <td style={{ 
                           border: '1px solid #e0e0e0',
-                          borderTop: 'none',
-                          borderRight: 'none',
                           padding: '12px',
                           textAlign: 'right',
                           fontWeight: 700,
@@ -832,8 +784,6 @@ const VyaparPurchaseReport = () => {
                         </td>
                         <td style={{ 
                           border: '1px solid #e0e0e0',
-                          borderTop: 'none',
-                          borderRight: 'none',
                           padding: '12px',
                           textAlign: 'right',
                           fontWeight: 700,
@@ -844,8 +794,6 @@ const VyaparPurchaseReport = () => {
                         </td>
                         <td style={{ 
                           border: '1px solid #e0e0e0',
-                          borderTop: 'none',
-                          borderRight: 'none',
                           padding: '12px',
                           textAlign: 'right',
                           fontWeight: 700,
@@ -856,7 +804,6 @@ const VyaparPurchaseReport = () => {
                         </td>
                         <td style={{ 
                           border: '1px solid #e0e0e0',
-                          borderTop: 'none',
                           padding: '12px'
                         }}></td>
                       </tr>

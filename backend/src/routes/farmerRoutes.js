@@ -12,8 +12,10 @@ import {
   terminateFarmer,
   bulkImportFarmers
 } from '../controllers/farmerController.js';
+import { protect, addCompanyFilter } from '../middleware/auth.js';
 
 const router = express.Router();
+router.use(protect, addCompanyFilter);
 
 // Bulk import farmers (must be before other routes)
 router.post('/bulk-import', bulkImportFarmers);

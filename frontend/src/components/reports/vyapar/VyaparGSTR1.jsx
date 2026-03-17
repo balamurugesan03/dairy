@@ -50,7 +50,8 @@ import { reportAPI } from '../../../services/api';
 import { message } from '../../../utils/toast';
 
 const VyaparGSTR1 = () => {
-  const { selectedBusinessType } = useCompany();
+  const { selectedBusinessType, selectedCompany } = useCompany();
+  const companyName = selectedCompany?.companyName || '';
   const navigate = useNavigate();
   const printRef = useRef();
 
@@ -229,6 +230,7 @@ const VyaparGSTR1 = () => {
       </head>
       <body>
         <div class="header">
+          ${companyName ? `<h2 style="margin: 0 0 4px; font-size: 18px; text-transform: uppercase; letter-spacing: 2px; color: #1a1a2e;">${companyName}</h2>` : ''}
           <h1>GSTR-1 - OUTWARD SUPPLIES RETURN</h1>
           <p>Return Period: ${periodString} | Generated on: ${dayjs().format('DD/MM/YYYY HH:mm')}</p>
         </div>

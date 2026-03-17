@@ -7,8 +7,10 @@ import {
   deleteDepartment,
   getActiveDepartments
 } from '../controllers/departmentController.js';
+import { protect, addCompanyFilter } from '../middleware/auth.js';
 
 const router = express.Router();
+router.use(protect, addCompanyFilter);
 
 // Active departments
 router.get('/active', getActiveDepartments);

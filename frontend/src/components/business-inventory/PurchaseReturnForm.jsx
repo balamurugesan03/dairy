@@ -65,7 +65,7 @@ import {
   IconFileInvoice,
   IconReceipt2
 } from '@tabler/icons-react';
-import { businessItemAPI, purchaseReturnAPI, salesReturnAPI, supplierAPI, customerAPI } from '../../services/api';
+import { businessItemAPI, purchaseReturnAPI, salesReturnAPI, supplierAPI, businessCustomerAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 
 const PurchaseReturnForm = () => {
@@ -169,7 +169,7 @@ const PurchaseReturnForm = () => {
         const data = response?.data || response || [];
         setParties(Array.isArray(data) ? data.filter(s => s.active !== false) : []);
       } else {
-        const response = await customerAPI.getAll();
+        const response = await businessCustomerAPI.getAll();
         const data = response?.data || response || [];
         setParties(Array.isArray(data) ? data : []);
       }
@@ -1163,7 +1163,7 @@ const PurchaseReturnForm = () => {
                 <Button
                   variant="light"
                   color="gray"
-                  onClick={() => navigate('/business-inventory/returns/list')}
+                  onClick={() => navigate('/')}
                 >
                   Cancel
                 </Button>

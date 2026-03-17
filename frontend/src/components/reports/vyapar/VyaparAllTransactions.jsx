@@ -49,9 +49,10 @@ dayjs.extend(quarterOfYear);
 import { reportAPI } from '../../../services/api';
 import { message } from '../../../utils/toast';
 import * as XLSX from 'xlsx';
+import { printVyaparReport } from '../../../utils/printReport';
 
 const VyaparAllTransactions = () => {
-  const { selectedBusinessType } = useCompany();
+  const { selectedBusinessType, selectedCompany } = useCompany();
   const navigate = useNavigate();
   const printRef = useRef();
 
@@ -234,60 +235,11 @@ const VyaparAllTransactions = () => {
   };
 
   const handlePrint = () => {
-    const printContent = printRef.current;
-    if (!printContent) return;
-
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>All Transactions Report</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; font-size: 12px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f5f5f5; font-weight: 600; }
-            .text-right { text-align: right; }
-            .text-center { text-align: center; }
-            .header { margin-bottom: 20px; text-align: center; }
-            .header h2 { margin: 0 0 5px 0; }
-            .header p { margin: 0; color: #666; }
-            .summary { display: flex; justify-content: space-between; margin-bottom: 20px; padding: 10px; background: #f9f9f9; border-radius: 4px; }
-            .summary-item { text-align: center; }
-            .summary-label { font-size: 11px; color: #666; }
-            .summary-value { font-size: 14px; font-weight: bold; }
-            @media print { body { -webkit-print-color-adjust: exact; } }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h2>All Transactions Report</h2>
-            <p>Period: ${formatDate(dateRange[0])} to ${formatDate(dateRange[1])}</p>
-          </div>
-          <div class="summary">
-            <div class="summary-item">
-              <div class="summary-label">Total Transactions</div>
-              <div class="summary-value">${reportData?.summary?.totalTransactions || 0}</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-label">Total Amount</div>
-              <div class="summary-value">${formatCurrency(reportData?.summary?.totalAmount)}</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-label">Total Received</div>
-              <div class="summary-value">${formatCurrency(reportData?.summary?.totalReceived)}</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-label">Total Balance</div>
-              <div class="summary-value">${formatCurrency(reportData?.summary?.totalBalance)}</div>
-            </div>
-          </div>
-          ${printContent.innerHTML}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
+    printVyaparReport(printRef, {
+      title: 'All Transactions Report',
+      companyName: selectedCompany?.companyName || '',
+      orientation: 'landscape'
+    });
   };
 
   const handleSort = (field) => {

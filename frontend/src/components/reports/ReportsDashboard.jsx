@@ -201,6 +201,30 @@ const ReportsDashboard = () => {
       ),
       path: '/reports/milk-bill-abstract',
       color: '#e6f7ff'
+    },
+    {
+      title: 'Dairy Abstract',
+      description: 'Consolidated monthly dairy abstract with purchase, sales & union data',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="#0d6b5e">
+          <path d="M3 3h18v18H3z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M3 9h18M3 15h18M9 3v18M15 3v18" strokeWidth="1.5" strokeLinecap="round"/>
+        </svg>
+      ),
+      path: '/reports/dairy-abstract',
+      color: '#f0fdf4'
+    },
+    {
+      title: 'Dairy Register',
+      description: 'Date-wise dairy register with AM/PM shift breakdown, member/non-member purchase & sales',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="#1c3557">
+          <rect x="3" y="3" width="18" height="18" rx="2" strokeWidth="2"/>
+          <path d="M3 8h18M3 13h18M8 8v13M16 8v13" strokeWidth="1.5" strokeLinecap="round"/>
+        </svg>
+      ),
+      path: '/reports/dairy-register',
+      color: '#eef4ff'
     }
   ];
 
@@ -411,6 +435,20 @@ const ReportsDashboard = () => {
           <line x1="3" y1="18" x2="3.01" y2="18" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       )
+    },
+    {
+      title: 'R&D – Ledger Statement',
+      description: 'A4 Receipt & Disbursement statement grouped by account type',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="#0050b3">
+          <rect x="3" y="3" width="18" height="18" rx="2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <line x1="3" y1="9" x2="21" y2="9" strokeWidth="2" strokeLinecap="round"/>
+          <line x1="3" y1="15" x2="21" y2="15" strokeWidth="2" strokeLinecap="round"/>
+          <line x1="9" y1="9" x2="9" y2="21" strokeWidth="2" strokeLinecap="round"/>
+        </svg>
+      ),
+      path: '/reports/cooperative-rd',
+      color: '#e6f0ff'
     }
   ];
 

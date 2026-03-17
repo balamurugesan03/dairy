@@ -44,6 +44,7 @@ const MemberList = lazy(() => import('./components/farmer/MemberList'));
 
 // Customer Components
 const CustomerManagement = lazy(() => import('./components/customer/CustomerManagement'));
+const BusinessCustomerList = lazy(() => import('./components/business-customer/BusinessCustomerList'));
 
 // Supplier Components
 const SupplierList = lazy(() => import('./components/supplier/SupplierList'));
@@ -70,6 +71,7 @@ const PurchaseReturnForm = lazy(() => import('./components/business-inventory/Pu
 const PurchaseReturnList = lazy(() => import('./components/business-inventory/PurchaseReturnList'));
 const SalesReturnList = lazy(() => import('./components/business-inventory/SalesReturnList'));
 const SalesmanList = lazy(() => import('./components/business-inventory/SalesmanList'));
+const BusinessSalesInvoicePrint = lazy(() => import('./components/business-inventory/BusinessSalesInvoicePrint'));
 
 // Business Accounting Components (Private Firm - Separate from Dairy)
 const BusinessLedgerList = lazy(() => import('./components/business-accounting/BusinessLedgerList'));
@@ -138,7 +140,10 @@ const BalanceSheet = lazy(() => import('./components/reports/BalanceSheet'));
 const InventoryPurchaseRegister = lazy(() => import('./components/reports/InventoryPurchaseRegister'));
 const StockRegister = lazy(() => import('./components/reports/StockRegister'));
 const MilkBillAbstract = lazy(() => import('./components/reports/MilkBillAbstract'));
+const DairyAbstractReport = lazy(() => import('./components/reports/DairyAbstractReport'));
+const DairyRegisterReport = lazy(() => import('./components/reports/DairyRegisterReport'));
 const SalesmanBalanceReport = lazy(() => import('./components/reports/SalesmanBalanceReport'));
+const CooperativeRDReport = lazy(() => import('./components/reports/CooperativeRDReport'));
 
 // Vyapar Report Components - Private Firm
 const VyaparReportsHub = lazy(() => import('./components/reports/vyapar/VyaparReportsHub'));
@@ -177,6 +182,8 @@ const QuotationList = lazy(() => import('./components/additional/QuotationList')
 const QuotationForm = lazy(() => import('./components/additional/QuotationForm'));
 const QuotationView = lazy(() => import('./components/additional/QuotationView'));
 const QuotationPrint = lazy(() => import('./components/additional/QuotationPrint'));
+const QuotationProposalLetter = lazy(() => import('./components/additional/QuotationProposalLetter'));
+const QuotationGTechTemplate = lazy(() => import('./components/additional/QuotationGTechTemplate'));
 const BusinessProposal = lazy(() => import('./components/additional/BusinessProposal'));
 const PromotionList = lazy(() => import('./components/additional/PromotionList'));
 const PromotionForm = lazy(() => import('./components/additional/PromotionForm'));
@@ -191,6 +198,9 @@ const CollectionCenterManagement = lazy(() => import('./components/collectioncen
 
 // Agent Components
 const AgentManagement = lazy(() => import('./components/agents/AgentManagement'));
+
+// Milk Analyzer
+const MilkAnalyzerDashboard = lazy(() => import('./components/milk-analyzer/MilkAnalyzerDashboard'));
 
 // HRM Components
 const EmployeeList = lazy(() => import('./components/hrm/EmployeeList'));
@@ -241,14 +251,9 @@ const AppContent = () => {
     return <Login />;
   }
 
-  // If superadmin, check if accessing admin route specifically
-  // Only show admin dashboard if accessed via /admin route
+  // If superadmin → redirect to standalone super-admin app (port 5174)
   if (isSuperAdmin) {
-    if (window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin')) {
-      return <SuperAdminDashboard />;
-    }
-    // For regular routes, redirect superadmin to admin dashboard
-    window.location.href = '/admin';
+    window.location.replace('http://localhost:5174');
     return null;
   }
 
@@ -278,6 +283,9 @@ const AppContent = () => {
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           <Route path="/login" element={<Navigate to="/" replace />} />
+          {/* Print routes — no sidebar/layout */}
+          <Route path="/business-inventory/sales/print/:id" element={<BusinessSalesInvoicePrint />} />
+
           <Route path="/" element={<MainLayout />}>
               {/* Dashboard */}
               <Route index element={<Dashboard />} />
@@ -292,6 +300,11 @@ const AppContent = () => {
               {/* Customer Management Routes */}
               <Route path="customers">
                 <Route index element={<CustomerManagement />} />
+              </Route>
+
+              {/* Business Customer Routes (Private Firm) */}
+              <Route path="business-customers">
+                <Route index element={<BusinessCustomerList />} />
               </Route>
 
               {/* Supplier Management Routes */}
@@ -455,7 +468,10 @@ const AppContent = () => {
                 <Route path="stock-register" element={<StockRegister />} />
                 <Route path="purchase-register" element={<InventoryPurchaseRegister />} />
                 <Route path="milk-bill-abstract"    element={<MilkBillAbstract />} />
+                <Route path="dairy-abstract"        element={<DairyAbstractReport />} />
+                <Route path="dairy-register"        element={<DairyRegisterReport />} />
                 <Route path="salesman-balance"      element={<SalesmanBalanceReport />} />
+                <Route path="cooperative-rd"        element={<CooperativeRDReport />} />
               </Route>
 
               {/* Warranty Routes */}
@@ -481,6 +497,8 @@ const AppContent = () => {
                 <Route path="edit/:id" element={<QuotationForm />} />
                 <Route path="view/:id" element={<QuotationView />} />
                 <Route path="print/:id" element={<QuotationPrint />} />
+                <Route path="proposal-letter/:id" element={<QuotationProposalLetter />} />
+                <Route path="gtech-template/:id" element={<QuotationGTechTemplate />} />
                 <Route path="proposal" element={<BusinessProposal />} />
               </Route>
 
@@ -518,6 +536,9 @@ const AppContent = () => {
               <Route path="agents">
                 <Route index element={<AgentManagement />} />
               </Route>
+
+              {/* Milk Analyzer Routes */}
+              <Route path="milk-analyzer" element={<MilkAnalyzerDashboard />} />
 
               {/* HRM Routes */}
               <Route path="hrm">

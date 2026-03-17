@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCompany } from '../../../context/CompanyContext';
 import { reportAPI } from '../../../services/api';
-import { printReport } from '../../../utils/printReport';
+import { printVyaparReport } from '../../../utils/printReport';
 import { message } from '../../../utils/toast';
 import dayjs from 'dayjs';
 import {
@@ -54,7 +54,7 @@ import PageHeader from '../../common/PageHeader';
 import DateFilterToolbar from '../../common/DateFilterToolbar';
 
 const VyaparBillWiseProfit = () => {
-  const { selectedBusinessType } = useCompany();
+  const { selectedBusinessType, selectedCompany } = useCompany();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState(null);
@@ -262,7 +262,11 @@ const VyaparBillWiseProfit = () => {
   };
 
   const handlePrint = () => {
-    printReport(printRef, { title: 'Bill-wise Party Report', orientation: 'landscape' });
+    printVyaparReport(printRef, {
+      title: 'Bill-wise Party Report',
+      companyName: selectedCompany?.companyName || '',
+      orientation: 'landscape'
+    });
   };
 
   const summary = reportData?.summary || {};
@@ -271,14 +275,16 @@ const VyaparBillWiseProfit = () => {
     <Box pos="relative" style={{ minHeight: '100vh' }} ref={printRef}>
       <LoadingOverlay visible={loading} overlayProps={{ blur: 2 }} />
 
-      <PageHeader
-        title="Bill-wise Party Report"
-        subtitle="View all bills grouped by party with payment details"
-        icon={<IconFileInvoice size={28} />}
-      />
+      <div data-no-print>
+        <PageHeader
+          title="Bill-wise Party Report"
+          subtitle="View all bills grouped by party with payment details"
+          icon={<IconFileInvoice size={28} />}
+        />
 
-      {/* Date Filter */}
-      <DateFilterToolbar onFilterChange={handleFilterChange} />
+        {/* Date Filter */}
+        <DateFilterToolbar onFilterChange={handleFilterChange} />
+      </div>
 
       {/* Additional Filters */}
       <Paper shadow="sm" p="md" mb="md" withBorder data-no-print>

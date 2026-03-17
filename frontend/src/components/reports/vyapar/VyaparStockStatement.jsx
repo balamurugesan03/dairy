@@ -26,7 +26,8 @@ import {
 import * as XLSX from 'xlsx';
 
 const VyaparStockStatement = () => {
-  const { selectedBusinessType } = useCompany();
+  const { selectedBusinessType, selectedCompany } = useCompany();
+  const companyName = selectedCompany?.companyName || '';
   const navigate = useNavigate();
   const printRef = useRef(null);
 
@@ -186,7 +187,8 @@ const VyaparStockStatement = () => {
 
     printContent.innerHTML = `
       <div style="text-align: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #000;">
-        <h2 style="margin: 0 0 8px 0; font-size: 18px; font-weight: 600; color: #000;">STOCK STATEMENT</h2>
+        ${companyName ? `<h1 style="margin: 0 0 4px 0; font-size: 18px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px;">${companyName}</h1>` : ''}
+        <h2 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; display: inline-block; border-top: 1px solid #333; border-bottom: 1px solid #333; padding: 2px 10px;">STOCK STATEMENT</h2>
         <p style="margin: 0; font-size: 12px; color: #666;">
           Period: ${dayjs(fromDate).format('DD/MM/YYYY')} to ${dayjs(toDate).format('DD/MM/YYYY')}
         </p>

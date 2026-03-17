@@ -45,7 +45,8 @@ import { message } from '../../../utils/toast';
 import * as XLSX from 'xlsx';
 
 const VyaparBankStatement = () => {
-  const { selectedBusinessType } = useCompany();
+  const { selectedBusinessType, selectedCompany } = useCompany();
+  const companyName = selectedCompany?.companyName || '';
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(false);
@@ -218,6 +219,7 @@ const VyaparBankStatement = () => {
         </head>
         <body>
           <div class="header">
+            ${companyName ? `<h1 style="font-size: 17px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: 2px;">${companyName}</h1>` : ''}
             <h2>BANK STATEMENT</h2>
             <p>${bankName}</p>
             <p>Period: ${formatDate(fromDate)} to ${formatDate(toDate)}</p>

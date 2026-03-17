@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { message } from '../../utils/toast';
 import dayjs from 'dayjs';
 import { ledgerAPI, voucherAPI } from '../../services/api';
@@ -186,7 +185,6 @@ const EntryPanel = ({ title, icon, color, entries, onAdd, onRemove, onUpdate, to
 );
 
 const JournalVoucher = () => {
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [fetchingVouchers, setFetchingVouchers] = useState(false);
   const [ledgers, setLedgers] = useState([]);
@@ -236,9 +234,6 @@ const JournalVoucher = () => {
   const handleMilkBillChange = (event) => {
     const checked = event.currentTarget.checked;
     setIsMilkBill(checked);
-    if (checked) {
-      navigate(`/reports/milk-bill-abstract?from=journal&date=${voucherDate}`);
-    }
   };
 
   // Ledger options with grouping

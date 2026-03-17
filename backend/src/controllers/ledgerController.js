@@ -9,7 +9,7 @@ export const getAllLedgers = async (req, res) => {
       search = ''
     } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
 
     if (status) {
       query.status = status;
@@ -45,10 +45,13 @@ export const createLedger = async (req, res) => {
   try {
     const ledgerData = req.body;
 
-    // Check for duplicate ledger name
+    const companyId = req.companyId;
+
+    // Check for duplicate ledger name per company
     const existingLedger = await Ledger.findOne({
       ledgerName: ledgerData.ledgerName,
-      status: 'Active'
+      status: 'Active',
+      companyId
     });
 
     if (existingLedger) {
@@ -61,6 +64,7 @@ export const createLedger = async (req, res) => {
     // Set current balance same as opening balance
     ledgerData.currentBalance = ledgerData.openingBalance || 0;
     ledgerData.balanceType = ledgerData.openingBalanceType || 'Dr';
+    ledgerData.companyId = companyId;
 
     const ledger = new Ledger(ledgerData);
     await ledger.save();

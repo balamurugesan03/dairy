@@ -29,7 +29,8 @@ export const createVoucher = async (req, res) => {
     voucherData.totalCredit = totalCredit;
 
     // Generate voucher number
-    voucherData.voucherNumber = await generateVoucherNumber(voucherData.voucherType);
+    voucherData.voucherNumber = await generateVoucherNumber(voucherData.voucherType, req.companyId);
+    voucherData.companyId = req.companyId;
 
     // Create voucher
     const voucher = new Voucher(voucherData);
@@ -63,7 +64,7 @@ export const getAllVouchers = async (req, res) => {
       endDate = ''
     } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
 
     if (voucherType) {
       query.voucherType = voucherType;
@@ -159,8 +160,10 @@ export const createLedger = async (req, res) => {
   try {
     const ledgerData = req.body;
 
-    // Check for duplicate ledger name
-    const existingLedger = await Ledger.findOne({ ledgerName: ledgerData.ledgerName });
+    const companyId = req.companyId;
+
+    // Check for duplicate ledger name per company
+    const existingLedger = await Ledger.findOne({ ledgerName: ledgerData.ledgerName, companyId });
     if (existingLedger) {
       return res.status(400).json({
         success: false,
@@ -171,6 +174,7 @@ export const createLedger = async (req, res) => {
     // Set initial current balance same as opening balance
     ledgerData.currentBalance = ledgerData.openingBalance || 0;
     ledgerData.balanceType = ledgerData.openingBalanceType || 'Dr';
+    ledgerData.companyId = companyId;
 
     const ledger = new Ledger(ledgerData);
     await ledger.save();
@@ -194,7 +198,7 @@ export const getAllLedgers = async (req, res) => {
   try {
     const { ledgerType = '', status = 'Active', search = '' } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
 
     if (ledgerType) {
       query.ledgerType = ledgerType;
@@ -321,6 +325,7 @@ export const updateLedger = async (req, res) => {
 export const getOutstandingReport = async (req, res) => {
   try {
     const ledgers = await Ledger.find({
+      companyId: req.companyId,
       ledgerType: { $in: ['Party', 'Accounts Due To (Sundry Creditors)'] },
       status: 'Active',
       currentBalance: { $ne: 0 }

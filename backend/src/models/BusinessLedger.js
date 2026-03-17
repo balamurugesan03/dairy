@@ -9,7 +9,6 @@ const businessLedgerSchema = new mongoose.Schema({
   code: {
     type: String,
     trim: true,
-    unique: true,
     sparse: true
   },
   group: {
@@ -91,6 +90,11 @@ const businessLedgerSchema = new mongoose.Schema({
   businessType: {
     type: String,
     default: 'Private Firm'
+  },
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true
   }
 }, {
   timestamps: true
@@ -101,6 +105,7 @@ businessLedgerSchema.index({ name: 1 });
 businessLedgerSchema.index({ group: 1 });
 businessLedgerSchema.index({ type: 1 });
 businessLedgerSchema.index({ code: 1 });
+businessLedgerSchema.index({ companyId: 1 });
 
 const BusinessLedger = mongoose.model('BusinessLedger', businessLedgerSchema);
 

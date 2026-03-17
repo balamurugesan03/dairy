@@ -1,10 +1,11 @@
 /**
- * UnionSalesSlip.jsx — redesigned like MilkPurchase (card-based, keyboard-first)
+ * UnionSalesSlip — MilkSales-style design (white header, cards, colored buttons)
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box, Group, Stack, Text, Badge, Button, ActionIcon,
-  NumberInput, TextInput, Table, ScrollArea, Loader, Center, Checkbox,
+  NumberInput, TextInput, Table, ScrollArea, Loader, Center,
+  Checkbox, Card, Divider, Select,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
@@ -12,88 +13,17 @@ import { modals } from '@mantine/modals';
 import {
   IconPlus, IconEdit, IconX, IconSearch, IconRefresh,
   IconTrash, IconPrinter, IconMilk, IconFilter,
-  IconDeviceFloppy, IconCheck,
+  IconDeviceFloppy, IconCheck, IconReceipt, IconDroplet,
+  IconAlertTriangle, IconHistory, IconBan,
 } from '@tabler/icons-react';
+import { SegmentedControl } from '@mantine/core';
 import { unionSalesSlipAPI } from '../../services/api';
 import dayjs from 'dayjs';
 
-/* ── small helpers ─────────────────────────────────────────────────────────── */
+/* ── helpers ── */
 const fmt2 = v => parseFloat(v || 0).toFixed(2);
 const fmt3 = v => parseFloat(v || 0).toFixed(3);
 const fmtInr = v => `₹${parseFloat(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
-
-/* ── Session Pill ──────────────────────────────────────────────────────────── */
-const SessionPill = ({ label, active, onClick }) => (
-  <Box
-    onClick={onClick}
-    style={{
-      cursor: 'pointer', userSelect: 'none',
-      padding: '3px 14px', borderRadius: 4,
-      fontWeight: 800, fontSize: 12,
-      background: active
-        ? (label === 'AM' ? '#fef08a' : '#c7d2fe')
-        : 'rgba(255,255,255,0.12)',
-      border: `2px solid ${active ? (label === 'AM' ? '#ca8a04' : '#4338ca') : 'rgba(255,255,255,0.25)'}`,
-      color: active ? (label === 'AM' ? '#713f12' : '#1e1b4b') : 'white',
-      transition: 'all 0.12s',
-    }}
-  >
-    {label === 'AM' ? '☀ AM' : '🌙 PM'}
-  </Box>
-);
-
-/* ── AvgCard ───────────────────────────────────────────────────────────────── */
-const AvgCard = ({ label, value, unit, color }) => (
-  <Box style={{
-    flex: 1, textAlign: 'center', padding: '3px 6px',
-    background: 'rgba(255,255,255,0.15)',
-    border: '1.5px solid rgba(255,255,255,0.25)',
-    borderRadius: 5,
-  }}>
-    <Text style={{ fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{label}</Text>
-    <Text style={{ fontSize: 13, fontWeight: 900, color, lineHeight: 1.15 }}>{value ?? '—'}</Text>
-    {unit && <Text style={{ fontSize: 7, color: 'rgba(255,255,255,0.45)' }}>{unit}</Text>}
-  </Box>
-);
-
-/* ── SummaryChip ───────────────────────────────────────────────────────────── */
-const SummaryChip = ({ label, value, color, border }) => (
-  <Box style={{
-    padding: '5px 18px', borderRadius: 6, textAlign: 'center',
-    background: 'rgba(255,255,255,0.12)',
-    border: `2px solid ${border || 'rgba(255,255,255,0.2)'}`,
-  }}>
-    <Text style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>{label}</Text>
-    <Text style={{ fontSize: 16, fontWeight: 900, color: color || 'white', lineHeight: 1.2 }}>{value}</Text>
-  </Box>
-);
-
-/* ── TableBtn ──────────────────────────────────────────────────────────────── */
-const TableBtn = ({ icon, label, onClick, color = '#fff', bg = 'rgba(255,255,255,0.09)', border = 'rgba(255,255,255,0.2)', loading: ld, badge }) => (
-  <Box style={{ position: 'relative', display: 'inline-flex' }}>
-    <Button
-      size="xs"
-      leftSection={icon}
-      onClick={onClick}
-      loading={ld}
-      style={{
-        height: 26, padding: '0 10px', fontSize: 10, fontWeight: 700,
-        background: bg, border: `1.5px solid ${border}`,
-        color, letterSpacing: '0.1px',
-      }}
-    >
-      {label}
-    </Button>
-    {badge && (
-      <Box style={{
-        position: 'absolute', top: -5, right: -5,
-        background: '#ef4444', color: 'white',
-        borderRadius: 9, fontSize: 8, fontWeight: 800,
-        padding: '0 4px', lineHeight: '14px', minWidth: 14, textAlign: 'center',
-      }}>{badge}</Box>
-    )}
-  </Box>
-);
 
 const months = [
   { value: '1', label: 'January' }, { value: '2', label: 'February' },
@@ -109,12 +39,11 @@ const years = Array.from({ length: 5 }, (_, i) => {
   return { value: String(y), label: String(y) };
 });
 
-/* ══════════════════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════════════
    MAIN COMPONENT
-══════════════════════════════════════════════════════════════════════════════ */
+══════════════════════════════════════════════════════════════════ */
 export default function UnionSalesSlip() {
 
-  /* ── form state ── */
   const initForm = () => ({
     date: new Date(), time: 'AM',
     qty: '', fat: '', snf: '',
@@ -126,42 +55,31 @@ export default function UnionSalesSlip() {
 
   const setField = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
-  /* auto-calc amount */
   const amount = parseFloat(
     ((parseFloat(form.qty) || 0) * (parseFloat(form.rate) || 0)).toFixed(2)
   );
 
-  /* ── edit / UI state ── */
-  const [editingId,    setEditingId]    = useState(null);
-  const [saving,       setSaving]       = useState(false);
-  const [loading,      setLoading]      = useState(false);
-  const [showSearch,   setShowSearch]   = useState(false);
+  const [editingId,     setEditingId]     = useState(null);
+  const [saving,        setSaving]        = useState(false);
+  const [loading,       setLoading]       = useState(false);
+  const [showSearch,    setShowSearch]    = useState(false);
   const [historySearch, setHistorySearch] = useState('');
-  const [selRow,       setSelRow]       = useState(null);
+  const [selRow,        setSelRow]        = useState(null);
+  const [entries,       setEntries]       = useState([]);
+  const [totals,        setTotals]        = useState({ totalQty: 0, totalAmount: 0, totalUnionSpoilage: 0, totalTransportationSpoilage: 0 });
+  const [filterMonth,   setFilterMonth]   = useState(String(new Date().getMonth() + 1));
+  const [filterYear,    setFilterYear]    = useState(String(new Date().getFullYear()));
 
-  /* ── table / filter state ── */
-  const [entries,  setEntries]  = useState([]);
-  const [totals,   setTotals]   = useState({ totalQty: 0, totalAmount: 0, totalUnionSpoilage: 0, totalTransportationSpoilage: 0 });
-  const [filterMonth, setFilterMonth] = useState(String(new Date().getMonth() + 1));
-  const [filterYear,  setFilterYear]  = useState(String(new Date().getFullYear()));
-
-  /* ── refs for keyboard nav ── */
-  const qtyRef  = useRef(null);
-  const fatRef  = useRef(null);
-  const snfRef  = useRef(null);
-  const rateRef = useRef(null);
+  const qtyRef    = useRef(null);
+  const fatRef    = useRef(null);
+  const snfRef    = useRef(null);
+  const rateRef   = useRef(null);
   const uSpoilRef = useRef(null);
   const tSpoilRef = useRef(null);
 
-  /* focus helper */
   const focusRef = r => setTimeout(() => r?.current?.querySelector?.('input')?.focus(), 30);
+  const moveOn   = nextRef => e => { if (e.key === 'Enter') { e.preventDefault(); focusRef(nextRef); } };
 
-  /* Tab → Enter navigation */
-  const moveOn = nextRef => e => {
-    if (e.key === 'Enter') { e.preventDefault(); focusRef(nextRef); }
-  };
-
-  /* ── load entries ── */
   const loadEntries = useCallback(async (month = filterMonth, year = filterYear) => {
     setLoading(true);
     try {
@@ -177,7 +95,6 @@ export default function UnionSalesSlip() {
 
   useEffect(() => { loadEntries(); }, []); // eslint-disable-line
 
-  /* ── filtered rows ── */
   const filteredEntries = historySearch.trim()
     ? entries.filter(e =>
         (e.slipNo || '').toLowerCase().includes(historySearch.toLowerCase()) ||
@@ -186,16 +103,10 @@ export default function UnionSalesSlip() {
       )
     : entries;
 
-  /* ── clear / new ── */
-  const handleClear = () => {
-    setForm(initForm());
-    setEditingId(null);
-    setSelRow(null);
-  };
+  const handleClear = () => { setForm(initForm()); setEditingId(null); setSelRow(null); focusRef(qtyRef); };
 
-  /* ── save / update ── */
   const handleSave = async () => {
-    const f = formRef.current;
+    const f = form;
     if (!f.qty || !f.rate) return notifications.show({ color: 'red', message: 'Qty and Rate are required' });
 
     const payload = {
@@ -231,12 +142,8 @@ export default function UnionSalesSlip() {
     }
   };
 
-  /* Enter on last field → save */
-  const handleLastEnter = e => {
-    if (e.key === 'Enter') { e.preventDefault(); handleSave(); }
-  };
+  const handleLastEnter = e => { if (e.key === 'Enter') { e.preventDefault(); handleSave(); } };
 
-  /* ── edit row ── */
   const handleEdit = (row) => {
     const r = row || selRow;
     if (!r) return notifications.show({ color: 'yellow', message: 'Select a row to edit' });
@@ -256,16 +163,13 @@ export default function UnionSalesSlip() {
     focusRef(qtyRef);
   };
 
-  /* ── delete ── */
   const handleDelete = (row) => {
     const r = row || selRow;
     if (!r) return notifications.show({ color: 'yellow', message: 'Select a row to delete' });
     modals.openConfirmModal({
       title: 'Delete Record',
       children: (
-        <Text size="sm">
-          Delete slip <b>{r.slipNo}</b> for <b>{dayjs(r.date).format('DD MMM YYYY')}</b> - <b>{r.time}</b>?
-        </Text>
+        <Text size="sm">Delete slip <b>{r.slipNo}</b> for <b>{dayjs(r.date).format('DD MMM YYYY')}</b> - <b>{r.time}</b>?</Text>
       ),
       labels: { confirm: 'Delete', cancel: 'Cancel' },
       confirmProps: { color: 'red' },
@@ -283,7 +187,6 @@ export default function UnionSalesSlip() {
     });
   };
 
-  /* ── print slip ── */
   const handlePrint = (row) => {
     const r = row || selRow;
     if (!r) return notifications.show({ color: 'yellow', message: 'Select a row to print' });
@@ -321,459 +224,344 @@ export default function UnionSalesSlip() {
     w.print();
   };
 
-  /* ══════════════════════════════════════════════════════════
-     RENDER
-  ══════════════════════════════════════════════════════════ */
+  /* ══ RENDER ══════════════════════════════════════════════════════════════ */
   return (
-    <Box style={{
-      background: 'linear-gradient(150deg,#e8f5e9 0%,#c8e6c9 45%,#f1f8e9 100%)',
-      height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
-      fontFamily: '"Segoe UI", Tahoma, sans-serif',
-    }}>
+    <Box style={{ height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#eef4fb' }}>
 
-      {/* ══ HEADER BAR ═════════════════════════════════════════════════════════ */}
-      <Box style={{
-        background: 'linear-gradient(135deg,#1b5e20 0%,#2e7d32 60%,#388e3c 100%)',
-        flexShrink: 0, padding: '7px 16px',
-        boxShadow: '0 3px 14px rgba(0,0,0,0.35)',
-      }}>
-        <Group justify="space-between" align="center">
+      {/* ══ HEADER ══════════════════════════════════════════════════════════ */}
+      <Box style={{ background: 'white', borderBottom: '1px solid #dbeafe', padding: '8px 20px', flexShrink: 0, boxShadow: '0 1px 6px rgba(37,99,235,0.08)' }}>
+        <Group justify="space-between" align="center" wrap="nowrap">
 
-          {/* Logo + Title */}
-          <Group gap={10} align="center">
-            <Box style={{
-              background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.25)',
-              borderRadius: 7, padding: '5px 8px', display: 'flex', alignItems: 'center',
-            }}>
-              <IconMilk size={18} color="white" />
+          {/* LEFT */}
+          <Group gap={12} align="center" wrap="nowrap" style={{ flex: 1 }}>
+            <Box style={{ background: '#ede9fe', borderRadius: 10, padding: '7px 9px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+              <IconMilk size={22} color="#7c3aed" />
             </Box>
-            <Stack gap={0}>
+            <Box style={{ flexShrink: 0 }}>
               <Group gap={8} align="center">
-                <Text style={{ fontSize: 17, fontWeight: 900, color: 'white', letterSpacing: '2px', lineHeight: 1 }}>
-                  UNION SALES SLIP
-                </Text>
-                {editingId && (
-                  <Badge size="xs" color="orange" variant="filled" style={{ fontSize: 8, letterSpacing: '0.5px' }}>
-                    EDIT MODE
-                  </Badge>
-                )}
+                <Text size="16px" fw={800} c="#4c1d95" style={{ lineHeight: 1.1, letterSpacing: '-0.3px' }}>Union Sales Slip</Text>
+                {editingId && <Badge color="orange" size="sm" variant="filled">EDIT MODE</Badge>}
               </Group>
-              <Text size="8px" c="rgba(255,255,255,0.5)" style={{ letterSpacing: '1px' }}>
-                MILK SOCIETY MANAGEMENT SYSTEM
-              </Text>
-            </Stack>
+              <Text size="10px" c="#64748b">Daily Union Sales Entry</Text>
+            </Box>
+
+            <Box style={{ width: 1, height: 36, background: '#dbeafe', flexShrink: 0 }} />
+
+            {/* Date */}
+            <Box style={{ flexShrink: 0 }}>
+              <Text size="9px" fw={700} c="#64748b" tt="uppercase" mb={3} style={{ letterSpacing: '0.4px' }}>Date</Text>
+              <DatePickerInput
+                value={form.date} onChange={d => d && setField('date', d)} valueFormat="DD MMM YYYY"
+                size="xs" radius="md" style={{ width: 120 }}
+                styles={{ input: { fontWeight: 700, fontSize: 12, border: '1.5px solid #bfdbfe', height: 28 } }}
+              />
+            </Box>
+
+            {/* Session */}
+            <Box style={{ flexShrink: 0 }}>
+              <Text size="9px" fw={700} c="#64748b" tt="uppercase" mb={3} style={{ letterSpacing: '0.4px' }}>Session</Text>
+              <SegmentedControl
+                value={form.time} onChange={v => setField('time', v)}
+                data={[{ value: 'AM', label: 'AM' }, { value: 'PM', label: 'PM' }]}
+                size="xs" radius="md"
+                styles={{ root: { background: '#f1f5f9', border: '1.5px solid #bfdbfe' } }}
+              />
+            </Box>
+
+            {/* Month filter */}
+          
           </Group>
 
-          {/* Date + Session */}
-          <Group gap={14} align="center">
-            <DatePickerInput
-              value={form.date}
-              onChange={d => d && setField('date', d)}
-              valueFormat="DD MMM YYYY"
-              size="xs"
-              styles={{
-                input: {
-                  height: 28, fontSize: 12, fontWeight: 700,
-                  background: 'rgba(255,255,255,0.15)',
-                  border: '1.5px solid rgba(255,255,255,0.3)',
-                  color: 'white', borderRadius: 5, width: 120,
-                },
-              }}
-            />
-            <Group gap={5}>
-              <SessionPill label="AM" active={form.time === 'AM'} onClick={() => setField('time', 'AM')} />
-              <SessionPill label="PM" active={form.time === 'PM'} onClick={() => setField('time', 'PM')} />
+          {/* RIGHT */}
+          <Button leftSection={<IconX size={14} />} onClick={handleClear} radius="md" size="sm" variant="default" style={{ fontWeight: 700, flexShrink: 0 }}>
+            Clear
+          </Button>
+        </Group>
+      </Box>
+
+      {/* ══ CARD ROW ════════════════════════════════════════════════════════ */}
+      <Box style={{ flexShrink: 0, padding: '8px 20px 0' }}>
+        <Group gap={8} align="stretch" wrap="nowrap">
+
+          {/* Card 1 — Slip Info */}
+          <Card shadow="xs" radius="md" withBorder style={{ flex: '0 0 190px', borderColor: '#bfdbfe', borderTop: '3px solid #2563eb', padding: '8px 12px' }}>
+            <Group gap={5} mb={7}>
+              <Box style={{ background: '#dbeafe', borderRadius: 6, padding: '3px 5px' }}><IconReceipt size={13} color="#2563eb" /></Box>
+              <Text size="11px" fw={800} c="#1e3a8a" tt="uppercase" style={{ letterSpacing: '0.4px' }}>Slip Info</Text>
             </Group>
-            <Box style={{ width: 1, height: 28, background: 'rgba(255,255,255,0.15)' }} />
-            <Group gap={6}>
-              <Button
-                size="xs"
-                leftSection={<IconDeviceFloppy size={13} />}
-                loading={saving}
-                onClick={handleSave}
-                style={{
-                  height: 30, padding: '0 14px', fontSize: 11, fontWeight: 800,
-                  background: editingId ? '#d97706' : '#16a34a',
-                  border: 'none', color: 'white', letterSpacing: '0.3px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-                }}
+            <Stack gap={5}>
+              <Box>
+                <Text size="9px" fw={700} c="#64748b" mb={1} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Slip No</Text>
+                <Text size="12px" fw={900} c="#2563eb" style={{ fontFamily: 'monospace' }}>
+                  {selRow?.slipNo || (editingId ? '—' : 'AUTO')}
+                </Text>
+              </Box>
+              <Box>
+                <Text size="9px" fw={700} c="#64748b" mb={1} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Date</Text>
+                <Text size="12px" fw={700} c="#1e293b">{dayjs(form.date).format('DD MMM YYYY')}</Text>
+              </Box>
+              <Badge
+                color={form.time === 'AM' ? 'orange' : 'indigo'} size="sm" variant="filled"
+                style={{ alignSelf: 'flex-start' }}
               >
+                {form.time === 'AM' ? '☀ AM' : '🌙 PM'}
+              </Badge>
+            </Stack>
+          </Card>
+
+          {/* Card 2 — Qty & Quality */}
+          <Card shadow="xs" radius="md" withBorder style={{ flex: 1, borderColor: '#c4b5fd', borderTop: '3px solid #7c3aed', padding: '8px 12px' }}>
+            <Group gap={5} mb={7} justify="space-between">
+              <Group gap={5}>
+                <Box style={{ background: '#ede9fe', borderRadius: 6, padding: '3px 5px' }}><IconDroplet size={13} color="#7c3aed" /></Box>
+                <Text size="11px" fw={800} c="#4c1d95" tt="uppercase" style={{ letterSpacing: '0.4px' }}>Milk Qty &amp; Quality</Text>
+              </Group>
+              <Text size="9px" c="#94a3b8">Tab → Qty → FAT → SNF → Rate → Enter</Text>
+            </Group>
+            <Group gap={8} align="flex-end">
+              <Box ref={qtyRef} style={{ flex: 1.3 }}>
+                <Text size="9px" fw={700} c="#0369a1" tt="uppercase" mb={2} style={{ letterSpacing: '0.4px' }}>Qty (L)</Text>
+                <NumberInput
+                  placeholder="0.000"
+                  value={form.qty === '' ? '' : parseFloat(form.qty)}
+                  onChange={v => setField('qty', String(v ?? ''))}
+                  min={0} decimalScale={3} step={0.5} hideControls
+                  styles={{ input: { height: 36, fontSize: 16, fontWeight: 900, background: '#f0f9ff', border: '2px solid #7dd3fc', color: '#0369a1', textAlign: 'center' } }}
+                  onKeyDown={moveOn(fatRef)}
+                />
+              </Box>
+              <Box ref={fatRef} style={{ flex: 1 }}>
+                <Text size="9px" fw={700} c="#7c3aed" tt="uppercase" mb={2} style={{ letterSpacing: '0.4px' }}>FAT</Text>
+                <NumberInput
+                  placeholder="0.0"
+                  value={form.fat === '' ? '' : parseFloat(form.fat)}
+                  onChange={v => setField('fat', String(v ?? ''))}
+                  min={0} decimalScale={1} hideControls
+                  styles={{ input: { height: 36, fontSize: 16, fontWeight: 900, background: '#f5f3ff', border: '2px solid #c4b5fd', color: '#7c3aed', textAlign: 'center' } }}
+                  onKeyDown={moveOn(snfRef)}
+                />
+              </Box>
+              <Box ref={snfRef} style={{ flex: 1 }}>
+                <Text size="9px" fw={700} c="#0891b2" tt="uppercase" mb={2} style={{ letterSpacing: '0.4px' }}>SNF</Text>
+                <NumberInput
+                  placeholder="0.0"
+                  value={form.snf === '' ? '' : parseFloat(form.snf)}
+                  onChange={v => setField('snf', String(v ?? ''))}
+                  min={0} decimalScale={1} hideControls
+                  styles={{ input: { height: 36, fontSize: 16, fontWeight: 900, background: '#ecfeff', border: '2px solid #67e8f9', color: '#0891b2', textAlign: 'center' } }}
+                  onKeyDown={moveOn(rateRef)}
+                />
+              </Box>
+              {/* Monthly totals mini */}
+              <Box style={{ flex: '0 0 160px', background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '6px 10px' }}>
+                <Text size="8px" fw={700} c="#94a3b8" tt="uppercase" mb={4} style={{ letterSpacing: '0.5px' }}>Monthly Totals</Text>
+                <Group gap={6} grow>
+                  {[
+                    { label: 'Qty', val: fmt3(totals.totalQty), c: '#0369a1' },
+                    { label: 'FAT', val: '—', c: '#7c3aed' },
+                    { label: 'SNF', val: '—', c: '#0891b2' },
+                  ].map(({ label, val, c }) => (
+                    <Box key={label} style={{ textAlign: 'center' }}>
+                      <Text size="8px" fw={600} c="#94a3b8" tt="uppercase">{label}</Text>
+                      <Text size="12px" fw={800} style={{ color: c }}>{val}</Text>
+                    </Box>
+                  ))}
+                </Group>
+              </Box>
+            </Group>
+          </Card>
+
+          {/* Card 3 — Rate & Spoilage */}
+          <Card shadow="xs" radius="md" withBorder style={{ flex: '0 0 300px', borderColor: '#fde68a', borderTop: '3px solid #d97706', padding: '8px 12px' }}>
+            <Group gap={5} mb={7}>
+              <Box style={{ background: '#fef9c3', borderRadius: 6, padding: '3px 5px' }}><IconAlertTriangle size={13} color="#d97706" /></Box>
+              <Text size="11px" fw={800} c="#78350f" tt="uppercase" style={{ letterSpacing: '0.4px' }}>Rate &amp; Spoilage</Text>
+            </Group>
+
+            {/* Rate + Amount */}
+            <Group gap={8} align="flex-end" mb={8}>
+              <Box ref={rateRef} style={{ flex: 1 }}>
+                <Text size="9px" fw={700} c="#c2410c" tt="uppercase" mb={2} style={{ letterSpacing: '0.4px' }}>Rate ₹/L</Text>
+                <NumberInput
+                  placeholder="0.00"
+                  value={form.rate === '' ? '' : parseFloat(form.rate)}
+                  onChange={v => setField('rate', String(v ?? ''))}
+                  min={0} decimalScale={2} hideControls
+                  styles={{ input: { height: 36, fontSize: 15, fontWeight: 900, background: '#fff7ed', border: '2px solid #fdba74', color: '#c2410c', textAlign: 'center' } }}
+                  onKeyDown={form.spoilage ? moveOn(uSpoilRef) : handleLastEnter}
+                />
+              </Box>
+              <Box style={{ flex: 1.2 }}>
+                <Text size="9px" fw={700} c="#64748b" tt="uppercase" mb={2} style={{ letterSpacing: '0.4px' }}>Amount (Auto)</Text>
+                <Box style={{
+                  height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'linear-gradient(135deg,#1e3a5f,#1e40af)',
+                  borderRadius: 6, fontSize: 15, fontWeight: 900, color: 'white',
+                }}>
+                  {fmtInr(amount)}
+                </Box>
+              </Box>
+            </Group>
+
+            {/* Spoilage */}
+            <Group gap={6} align="flex-end">
+              <Box style={{ flexShrink: 0, paddingBottom: 2 }}>
+                <Text size="8px" fw={700} c="#64748b" mb={3} tt="uppercase" style={{ letterSpacing: '0.3px' }}>Spoilage</Text>
+                <Checkbox
+                  checked={form.spoilage}
+                  onChange={e => setField('spoilage', e.currentTarget.checked)}
+                  label={<Text size="11px" fw={700} c={form.spoilage ? '#16a34a' : '#94a3b8'}>{form.spoilage ? 'Yes' : 'No'}</Text>}
+                  size="sm" color="green"
+                />
+              </Box>
+              <Box ref={uSpoilRef} style={{ flex: 1 }}>
+                <Text size="8px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.3px' }}>Union Spoilage</Text>
+                <NumberInput
+                  placeholder="0.00"
+                  value={form.unionSpoilage === '' ? '' : parseFloat(form.unionSpoilage)}
+                  onChange={v => setField('unionSpoilage', String(v ?? ''))}
+                  min={0} decimalScale={2} disabled={!form.spoilage} hideControls
+                  styles={{ input: { height: 28, fontSize: 12, fontWeight: 700, border: '1.5px solid #fecaca', color: '#dc2626', textAlign: 'center', opacity: form.spoilage ? 1 : 0.4 } }}
+                  onKeyDown={moveOn(tSpoilRef)}
+                />
+              </Box>
+              <Box ref={tSpoilRef} style={{ flex: 1 }}>
+                <Text size="8px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.3px' }}>Trans. Spoilage</Text>
+                <NumberInput
+                  placeholder="0.00"
+                  value={form.transportationSpoilage === '' ? '' : parseFloat(form.transportationSpoilage)}
+                  onChange={v => setField('transportationSpoilage', String(v ?? ''))}
+                  min={0} decimalScale={2} disabled={!form.spoilage} hideControls
+                  styles={{ input: { height: 28, fontSize: 12, fontWeight: 700, border: '1.5px solid #fecaca', color: '#dc2626', textAlign: 'center', opacity: form.spoilage ? 1 : 0.4 } }}
+                  onKeyDown={handleLastEnter}
+                />
+              </Box>
+            </Group>
+          </Card>
+
+        </Group>
+      </Box>
+
+      {/* ══ TABLE SECTION ═══════════════════════════════════════════════════ */}
+      <Box style={{ flex: 1, overflow: 'hidden', minHeight: 0, padding: '10px 20px 12px', display: 'flex', flexDirection: 'column' }}>
+
+        {/* Table header bar */}
+        <Box style={{ background: '#1e1b4b', borderRadius: '10px 10px 0 0', padding: '7px 14px' }}>
+          <Group justify="space-between" align="center" wrap="nowrap">
+            <Group gap={8} style={{ flexShrink: 0 }}>
+              <Text fw={700} size="12px" c="white" style={{ letterSpacing: '0.3px' }}>Union Sales Register</Text>
+              <Badge size="sm" style={{ background: 'rgba(255,255,255,0.12)', color: '#c4b5fd', border: '1px solid rgba(255,255,255,0.2)' }}>
+                {loading ? <Loader size={10} color="white" /> : `${filteredEntries.length}${historySearch ? ` / ${entries.length}` : ''} records`}
+              </Badge>
+              {editingId && <Badge size="sm" color="yellow" variant="filled" radius="sm">EDIT MODE</Badge>}
+                <Box style={{ flexShrink: 0 }}>
+              <Text size="9px" fw={700} c="#64748b" tt="uppercase" mb={3} style={{ letterSpacing: '0.4px' }}>Month</Text>
+              <Group gap={4} wrap="nowrap">
+                <Select
+                  data={months} value={filterMonth} onChange={v => v && setFilterMonth(v)}
+                  size="xs" radius="md" style={{ width: 110 }}
+                  styles={{ input: { fontWeight: 600, border: '1.5px solid #bfdbfe', height: 28, fontSize: 11 } }}
+                />
+                <Select
+                  data={years} value={filterYear} onChange={v => v && setFilterYear(v)}
+                  size="xs" radius="md" style={{ width: 72 }}
+                  styles={{ input: { fontWeight: 600, border: '1.5px solid #bfdbfe', height: 28, fontSize: 11 } }}
+                />
+                <Button
+                  leftSection={<IconFilter size={11} />} onClick={() => loadEntries(filterMonth, filterYear)}
+                  size="xs" radius="md"
+                  style={{ height: 28, padding: '0 10px', fontSize: 10, fontWeight: 700, background: '#6d28d9', color: 'white' }}
+                >
+                  Go
+                </Button>
+              </Group>
+            </Box>
+            </Group>
+
+            <Group gap={4} wrap="nowrap">
+              {showSearch && (
+                <TextInput
+                  placeholder="Search slip, date, session..."
+                  value={historySearch}
+                  onChange={e => setHistorySearch(e.currentTarget.value)}
+                  size="xs" radius="sm" style={{ width: 210 }}
+                  leftSection={<IconSearch size={12} color="#c4b5fd" />}
+                  rightSection={historySearch ? <ActionIcon size={14} variant="subtle" onClick={() => setHistorySearch('')}><IconX size={10} color="white" /></ActionIcon> : null}
+                  styles={{ input: { background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.3)', color: 'white', fontSize: 11, height: 24 } }}
+                  autoFocus
+                />
+              )}
+
+              {/* Save — emerald */}
+              <Button leftSection={saving ? <Loader size={10} color="white" /> : <IconDeviceFloppy size={12} />}
+                onClick={handleSave} disabled={saving} size="compact-xs" radius="sm"
+                style={{ background: editingId ? '#b45309' : '#059669', border: '1px solid #34d399', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 {editingId ? 'Update' : 'Save'}
               </Button>
-              <Button
-                size="xs"
-                leftSection={<IconX size={12} />}
-                onClick={handleClear}
-                style={{
-                  height: 30, padding: '0 12px', fontSize: 11, fontWeight: 700,
-                  background: 'rgba(255,255,255,0.12)',
-                  border: '1.5px solid rgba(255,255,255,0.25)',
-                  color: 'white',
-                }}
-              >
-                Clear
+
+              <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
+
+              {/* New — indigo */}
+              <Button leftSection={<IconPlus size={12} />} onClick={handleClear} size="compact-xs" radius="sm"
+                style={{ background: '#4f46e5', border: '1px solid #818cf8', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                New
+              </Button>
+              {/* Edit — amber */}
+              <Button leftSection={<IconEdit size={12} />} disabled={!selRow} onClick={() => handleEdit(null)} size="compact-xs" radius="sm"
+                style={{ background: selRow ? '#d97706' : 'rgba(255,255,255,0.07)', border: selRow ? '1px solid #fbbf24' : 'none', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                Edit
+              </Button>
+              {/* Clear — slate */}
+              <Button leftSection={<IconBan size={12} />} onClick={handleClear} size="compact-xs" radius="sm"
+                style={{ background: editingId ? '#b45309' : '#475569', border: '1px solid #94a3b8', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                {editingId ? 'Cancel Edit' : 'Clear'}
+              </Button>
+
+              <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
+
+              {/* Search — teal */}
+              <Button leftSection={<IconHistory size={12} />} onClick={() => { setShowSearch(s => !s); if (showSearch) setHistorySearch(''); }} size="compact-xs" radius="sm"
+                style={{ background: showSearch ? '#0f766e' : '#0d9488', border: '1px solid #2dd4bf', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                {showSearch ? 'Hide' : 'Search'}
+              </Button>
+              {/* Refresh — cyan */}
+              <Button leftSection={<IconRefresh size={12} />} onClick={() => loadEntries()} size="compact-xs" radius="sm"
+                style={{ background: '#0891b2', border: '1px solid #67e8f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                Refresh
+              </Button>
+
+              <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
+
+              {/* Print — rose */}
+              <Button leftSection={<IconPrinter size={12} />} disabled={!selRow}
+                onClick={() => handlePrint(null)}
+                size="compact-xs" radius="sm"
+                style={{ background: selRow ? '#e11d48' : 'rgba(255,255,255,0.07)', border: selRow ? '1px solid #fb7185' : 'none', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                Print
+              </Button>
+              {/* Delete — deep red */}
+              <Button leftSection={<IconTrash size={12} />} disabled={!selRow}
+                onClick={() => handleDelete(null)}
+                size="compact-xs" radius="sm"
+                style={{ background: selRow ? '#991b1b' : 'rgba(255,255,255,0.07)', border: selRow ? '1px solid #f87171' : 'none', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                Delete
               </Button>
             </Group>
           </Group>
-        </Group>
-      </Box>
-
-      {/* ══ CARDS ══════════════════════════════════════════════════════════════ */}
-      <Box style={{ flexShrink: 0, padding: '5px 12px 4px', display: 'flex', gap: 7 }}>
-
-        {/* Card 1 — Slip Info (blue) */}
-        <Box style={{
-          background: 'linear-gradient(135deg,#1565c0 0%,#1976d2 100%)',
-          borderRadius: 8, padding: '6px 10px', flexShrink: 0, width: 160,
-          boxShadow: '0 2px 8px rgba(21,101,192,0.3)',
-        }}>
-          <Text style={{ fontSize: 8, fontWeight: 800, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 5 }}>
-            Slip Info
-          </Text>
-          <Stack gap={4}>
-            <Box>
-              <Text style={{ fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Slip No</Text>
-              <Text style={{ fontSize: 12, fontWeight: 900, color: '#bfdbfe', fontFamily: 'monospace', lineHeight: 1.2 }}>
-                {selRow?.slipNo || (editingId ? '—' : 'AUTO')}
-              </Text>
-            </Box>
-            <Box>
-              <Text style={{ fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Date</Text>
-              <Text style={{ fontSize: 11, fontWeight: 800, color: 'white', lineHeight: 1.2 }}>
-                {dayjs(form.date).format('DD MMM YYYY')}
-              </Text>
-            </Box>
-            <Box style={{
-              display: 'inline-flex', alignItems: 'center',
-              background: form.time === 'AM' ? 'rgba(254,240,138,0.22)' : 'rgba(199,210,254,0.22)',
-              border: `1.5px solid ${form.time === 'AM' ? 'rgba(202,138,4,0.45)' : 'rgba(67,56,202,0.45)'}`,
-              borderRadius: 4, padding: '2px 8px',
-            }}>
-              <Text style={{ fontSize: 10, fontWeight: 800, color: form.time === 'AM' ? '#fef08a' : '#c7d2fe' }}>
-                {form.time === 'AM' ? '☀ AM' : '🌙 PM'}
-              </Text>
-            </Box>
-          </Stack>
         </Box>
 
-        {/* Card 2 — Qty & Quality (green) */}
-        <Box style={{
-          background: 'linear-gradient(135deg,#14532d 0%,#166534 100%)',
-          borderRadius: 8, padding: '6px 10px', flex: 1,
-          boxShadow: '0 2px 8px rgba(20,83,45,0.3)',
-        }}>
-          <Text style={{ fontSize: 8, fontWeight: 800, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 5 }}>
-            Milk Quantity &amp; Quality
-          </Text>
-          <Group gap={8} align="flex-start">
-            <Box ref={qtyRef} style={{ flex: 1.3 }}>
-              <Text style={{ fontSize: 8, fontWeight: 700, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 2 }}>Qty (L)</Text>
-              <NumberInput
-                placeholder="0.000"
-                value={form.qty === '' ? '' : parseFloat(form.qty)}
-                onChange={v => setField('qty', String(v ?? ''))}
-                min={0} decimalScale={3} step={0.5}
-                styles={{
-                  input: { height: 34, fontSize: 15, fontWeight: 800, background: 'rgba(255,255,255,0.12)', border: '2px solid rgba(255,255,255,0.22)', color: '#86efac', borderRadius: 5, textAlign: 'center' },
-                }}
-                onKeyDown={moveOn(fatRef)}
-              />
-            </Box>
-            <Box ref={fatRef} style={{ flex: 1 }}>
-              <Text style={{ fontSize: 8, fontWeight: 700, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 2 }}>FAT</Text>
-              <NumberInput
-                placeholder="0.0"
-                value={form.fat === '' ? '' : parseFloat(form.fat)}
-                onChange={v => setField('fat', String(v ?? ''))}
-                min={0} decimalScale={1}
-                styles={{
-                  input: { height: 34, fontSize: 15, fontWeight: 800, background: 'rgba(255,255,255,0.12)', border: '2px solid rgba(255,255,255,0.22)', color: '#86efac', borderRadius: 5, textAlign: 'center' },
-                }}
-                onKeyDown={moveOn(snfRef)}
-              />
-            </Box>
-            <Box ref={snfRef} style={{ flex: 1 }}>
-              <Text style={{ fontSize: 8, fontWeight: 700, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 2 }}>SNF</Text>
-              <NumberInput
-                placeholder="0.0"
-                value={form.snf === '' ? '' : parseFloat(form.snf)}
-                onChange={v => setField('snf', String(v ?? ''))}
-                min={0} decimalScale={1}
-                styles={{
-                  input: { height: 34, fontSize: 15, fontWeight: 800, background: 'rgba(255,255,255,0.12)', border: '2px solid rgba(255,255,255,0.22)', color: '#86efac', borderRadius: 5, textAlign: 'center' },
-                }}
-                onKeyDown={moveOn(rateRef)}
-              />
-            </Box>
-
-            {/* Monthly Totals mini tiles */}
-            <Box style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 190 }}>
-              <Text style={{ fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Monthly Totals</Text>
-              <Group gap={5} grow>
-                <AvgCard label="Qty" value={fmt3(totals.totalQty)} unit="L" color="#86efac" />
-                <AvgCard label="FAT" value="—" unit="" color="#fde68a" />
-                <AvgCard label="SNF" value="—" unit="" color="#bfdbfe" />
-              </Group>
-            </Box>
-          </Group>
-        </Box>
-
-        {/* Card 3 — Rate & Spoilage (amber) */}
-        <Box style={{
-          background: 'linear-gradient(135deg,#92400e 0%,#b45309 100%)',
-          borderRadius: 8, padding: '6px 10px', flexShrink: 0, width: 280,
-          boxShadow: '0 2px 8px rgba(146,64,14,0.3)',
-        }}>
-          <Text style={{ fontSize: 8, fontWeight: 800, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 5 }}>
-            Rate &amp; Spoilage
-          </Text>
-
-          {/* Rate row */}
-          <Group gap={8} align="flex-end" mb={5}>
-            <Box ref={rateRef} style={{ flex: 1 }}>
-              <Text style={{ fontSize: 8, fontWeight: 700, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 2 }}>Rate ₹/L</Text>
-              <NumberInput
-                placeholder="0.00"
-                value={form.rate === '' ? '' : parseFloat(form.rate)}
-                onChange={v => setField('rate', String(v ?? ''))}
-                min={0} decimalScale={2}
-                styles={{
-                  input: { height: 34, fontSize: 14, fontWeight: 800, background: 'rgba(255,255,255,0.12)', border: '2px solid rgba(255,255,255,0.22)', color: '#fde68a', borderRadius: 5, textAlign: 'center' },
-                }}
-                onKeyDown={moveOn(uSpoilRef)}
-              />
-            </Box>
-            {/* Amount display */}
-            <Box style={{ flex: 1.2 }}>
-              <Text style={{ fontSize: 8, fontWeight: 700, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 2 }}>Amount</Text>
-              <Box style={{
-                height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: 'rgba(255,255,255,0.08)', border: '2px solid rgba(255,193,7,0.45)',
-                borderRadius: 5, fontSize: 16, fontWeight: 900, color: '#fbbf24',
-              }}>
-                {fmtInr(amount)}
-              </Box>
-            </Box>
-          </Group>
-
-          {/* Spoilage toggle + inputs */}
-          <Group gap={6} align="flex-end">
-            {/* Tick */}
-            <Box style={{ flexShrink: 0, paddingBottom: 4 }}>
-              <Text style={{ fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: 4 }}>Spoilage</Text>
-              <Checkbox
-                checked={form.spoilage}
-                onChange={e => setField('spoilage', e.currentTarget.checked)}
-                label={<Text style={{ fontSize: 10, fontWeight: 700, color: form.spoilage ? '#86efac' : 'rgba(255,255,255,0.4)' }}>{form.spoilage ? 'Yes' : 'No'}</Text>}
-                size="sm"
-                color="green"
-                styles={{
-                  input: { background: 'rgba(255,255,255,0.1)', border: '1.5px solid rgba(255,255,255,0.3)', cursor: 'pointer' },
-                }}
-              />
-            </Box>
-
-            <Box ref={uSpoilRef} style={{ flex: 1 }}>
-              <Text style={{ fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: 2 }}>Union Spoilage</Text>
-              <NumberInput
-                placeholder="0.00"
-                value={form.unionSpoilage === '' ? '' : parseFloat(form.unionSpoilage)}
-                onChange={v => setField('unionSpoilage', String(v ?? ''))}
-                min={0} decimalScale={2}
-                disabled={!form.spoilage}
-                styles={{
-                  input: { height: 26, fontSize: 12, fontWeight: 700, background: form.spoilage ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)', border: `1.5px solid ${form.spoilage ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.08)'}`, color: '#fca5a5', borderRadius: 4, textAlign: 'center', opacity: form.spoilage ? 1 : 0.4 },
-                }}
-                onKeyDown={moveOn(tSpoilRef)}
-              />
-            </Box>
-            <Box ref={tSpoilRef} style={{ flex: 1 }}>
-              <Text style={{ fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: 2 }}>Trans. Spoilage</Text>
-              <NumberInput
-                placeholder="0.00"
-                value={form.transportationSpoilage === '' ? '' : parseFloat(form.transportationSpoilage)}
-                onChange={v => setField('transportationSpoilage', String(v ?? ''))}
-                min={0} decimalScale={2}
-                disabled={!form.spoilage}
-                styles={{
-                  input: { height: 26, fontSize: 12, fontWeight: 700, background: form.spoilage ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)', border: `1.5px solid ${form.spoilage ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.08)'}`, color: '#fca5a5', borderRadius: 4, textAlign: 'center', opacity: form.spoilage ? 1 : 0.4 },
-                }}
-                onKeyDown={handleLastEnter}
-              />
-            </Box>
-          </Group>
-        </Box>
-
-      </Box>
-
-      {/* ══ TABLE ACTION BAR ════════════════════════════════════════════════════ */}
-      <Box style={{
-        background: 'linear-gradient(90deg,#14532d 0%,#166534 100%)',
-        flexShrink: 0, padding: '5px 12px',
-        borderTop: '2px solid rgba(255,255,255,0.08)',
-      }}>
-        <Group justify="space-between" align="center">
-          <Group gap={4}>
-            <TableBtn
-              icon={<IconPlus size={11} />}
-              label="New"
-              onClick={handleClear}
-              bg="rgba(255,255,255,0.1)"
-              border="rgba(255,255,255,0.2)"
-            />
-            <TableBtn
-              icon={<IconEdit size={11} />}
-              label={editingId ? 'EDIT MODE' : 'Edit'}
-              onClick={() => handleEdit(null)}
-              bg={editingId ? 'rgba(217,119,6,0.4)' : 'rgba(255,255,255,0.1)'}
-              border={editingId ? '#d97706' : 'rgba(255,255,255,0.2)'}
-            />
-            <TableBtn
-              icon={<IconX size={11} />}
-              label={editingId ? 'Cancel Edit' : 'Clear'}
-              onClick={handleClear}
-              bg="rgba(255,255,255,0.08)"
-              border="rgba(255,255,255,0.18)"
-            />
-            <Box style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.15)', margin: '0 2px' }} />
-            <TableBtn
-              icon={<IconSearch size={11} />}
-              label="Search"
-              onClick={() => setShowSearch(s => !s)}
-              bg={showSearch ? 'rgba(139,92,246,0.35)' : 'rgba(255,255,255,0.08)'}
-              border={showSearch ? '#8b5cf6' : 'rgba(255,255,255,0.18)'}
-              badge={showSearch && historySearch ? filteredEntries.length : null}
-            />
-            <TableBtn
-              icon={<IconRefresh size={11} />}
-              label="Refresh"
-              onClick={() => loadEntries()}
-              bg="rgba(255,255,255,0.08)"
-              border="rgba(255,255,255,0.18)"
-            />
-            <Box style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.15)', margin: '0 2px' }} />
-            {/* Month/Year filter inline */}
-            <Group gap={4} align="center">
-              <Text style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Month:</Text>
-              <select
-                value={filterMonth}
-                onChange={e => setFilterMonth(e.target.value)}
-                style={{
-                  height: 22, fontSize: 10, fontWeight: 600, borderRadius: 3,
-                  border: '1.5px solid rgba(255,255,255,0.25)',
-                  background: 'rgba(255,255,255,0.1)', color: 'white',
-                  padding: '0 4px', cursor: 'pointer',
-                }}
-              >
-                {months.map(m => <option key={m.value} value={m.value} style={{ color: '#000', background: '#fff' }}>{m.label}</option>)}
-              </select>
-              <select
-                value={filterYear}
-                onChange={e => setFilterYear(e.target.value)}
-                style={{
-                  height: 22, fontSize: 10, fontWeight: 600, borderRadius: 3,
-                  border: '1.5px solid rgba(255,255,255,0.25)',
-                  background: 'rgba(255,255,255,0.1)', color: 'white',
-                  padding: '0 4px', cursor: 'pointer',
-                }}
-              >
-                {years.map(y => <option key={y.value} value={y.value} style={{ color: '#000', background: '#fff' }}>{y.label}</option>)}
-              </select>
-              <Button
-                size="xs"
-                leftSection={<IconFilter size={10} />}
-                onClick={() => loadEntries(filterMonth, filterYear)}
-                style={{ height: 22, padding: '0 10px', fontSize: 9, fontWeight: 800, background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.25)', color: 'white' }}
-              >
-                Go
-              </Button>
-            </Group>
-            <Box style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.15)', margin: '0 2px' }} />
-            <TableBtn
-              icon={<IconPrinter size={11} />}
-              label="Print"
-              onClick={() => handlePrint(null)}
-              bg="rgba(255,255,255,0.08)"
-              border="rgba(255,255,255,0.18)"
-            />
-            <TableBtn
-              icon={<IconTrash size={11} />}
-              label="Delete"
-              onClick={() => handleDelete(null)}
-              bg="rgba(239,68,68,0.15)"
-              border="rgba(239,68,68,0.35)"
-              color="#fca5a5"
-            />
-          </Group>
-
-          {/* Search input + count */}
-          <Group gap={8} align="center">
-            {showSearch && (
-              <TextInput
-                value={historySearch}
-                onChange={e => setHistorySearch(e.target.value)}
-                placeholder="Search slip / date…"
-                size="xs"
-                autoFocus
-                leftSection={<IconSearch size={11} color="rgba(255,255,255,0.5)" />}
-                rightSection={historySearch ? <IconX size={11} style={{ cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }} onClick={() => setHistorySearch('')} /> : null}
-                styles={{
-                  root: { width: 190 },
-                  input: { height: 24, fontSize: 11, background: 'rgba(255,255,255,0.1)', border: '1.5px solid rgba(255,255,255,0.25)', color: 'white' },
-                }}
-              />
-            )}
-            <Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>
-              {historySearch ? `${filteredEntries.length} / ${entries.length}` : entries.length} records
-            </Text>
-          </Group>
-        </Group>
-      </Box>
-
-      {/* ══ TABLE ══════════════════════════════════════════════════════════════ */}
-      <Box style={{ flex: 1, overflow: 'hidden', padding: '0 12px', minHeight: 0 }}>
-        <Box style={{
-          height: '100%', overflow: 'hidden',
-          background: 'rgba(255,255,255,0.65)',
-          border: '1.5px solid #81c784',
-          borderRadius: 8,
-          boxShadow: '0 1px 8px rgba(46,125,50,0.08)',
-        }}>
-          {loading ? (
-            <Center h="100%">
-              <Stack align="center" gap={6}>
-                <Loader size="sm" color="green" />
-                <Text size="10px" c="dimmed">Loading…</Text>
-              </Stack>
-            </Center>
-          ) : (
-            <ScrollArea h="100%" type="auto">
-              <Table style={{ fontSize: 11, borderCollapse: 'collapse', tableLayout: 'fixed', width: '100%' }}>
-                <Table.Thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
-                  <Table.Tr style={{ background: 'linear-gradient(90deg,#1b5e20 0%,#2e7d32 100%)' }}>
-                    {[
-                      { label: '#',          w: '4%'  },
-                      { label: 'Slip No',    w: '11%' },
-                      { label: 'Date',       w: '10%' },
-                      { label: 'Session',    w: '7%'  },
-                      { label: 'Qty (L)',    w: '9%'  },
-                      { label: 'FAT',        w: '6%'  },
-                      { label: 'SNF',        w: '6%'  },
-                      { label: 'Rate ₹',    w: '7%'  },
-                      { label: 'Amount ₹', w: '11%' },
-                      { label: 'Union Spg', w: '9%'  },
-                      { label: 'Trans Spg', w: '9%'  },
-                      { label: 'Actions',    w: '11%' },
-                    ].map(col => (
-                      <Table.Th key={col.label} style={{
-                        width: col.w, padding: '7px 8px',
-                        color: 'white', fontWeight: 700, fontSize: 9,
-                        textTransform: 'uppercase', letterSpacing: '0.5px',
-                        borderBottom: '2px solid rgba(255,255,255,0.12)',
-                        borderRight: '1px solid rgba(255,255,255,0.07)',
-                        whiteSpace: 'nowrap',
-                      }}>
-                        {col.label}
+        {/* Table */}
+        <Box style={{ flex: 1, overflow: 'hidden', background: 'white', borderRadius: '0 0 10px 10px', border: '1px solid #c4b5fd', borderTop: 'none' }}>
+          <ScrollArea h="100%" type="auto">
+            {loading ? (
+              <Center py="xl"><Loader size="sm" color="violet" /></Center>
+            ) : (
+              <Table striped highlightOnHover stickyHeader withColumnBorders style={{ fontSize: 12 }}>
+                <Table.Thead style={{ background: 'linear-gradient(180deg,#ede9fe 0%,#ddd6fe 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
+                  <Table.Tr>
+                    {['#', 'Slip No', 'Date', 'Session', 'Qty (L)', 'FAT', 'SNF', 'Rate ₹', 'Amount ₹', 'Union Spg', 'Trans Spg', 'Actions'].map((col, i) => (
+                      <Table.Th key={i} style={{ fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#4c1d95', whiteSpace: 'nowrap', padding: '9px 12px', borderBottom: '2px solid #c4b5fd' }}>
+                        {col}
                       </Table.Th>
                     ))}
                   </Table.Tr>
@@ -782,72 +570,49 @@ export default function UnionSalesSlip() {
                 <Table.Tbody>
                   {filteredEntries.length === 0 ? (
                     <Table.Tr>
-                      <Table.Td colSpan={12} style={{ textAlign: 'center', padding: 32 }}>
-                        <Stack align="center" gap={6}>
-                          <IconMilk size={28} style={{ color: '#9e9e9e', opacity: 0.4 }} />
-                          <Text size="11px" c="dimmed">
-                            {historySearch ? 'No records match your search.' : 'No slips found for this month.'}
-                          </Text>
-                        </Stack>
+                      <Table.Td colSpan={12}>
+                        <Center py="xl">
+                          <Stack align="center" gap={6}>
+                            <IconMilk size={48} color="#ddd6fe" />
+                            <Text c="dimmed" size="sm" fw={600}>{historySearch ? `No results for "${historySearch}"` : 'No slips found for this month'}</Text>
+                          </Stack>
+                        </Center>
                       </Table.Td>
                     </Table.Tr>
                   ) : filteredEntries.map((e, idx) => {
-                    const isEditing = editingId === e._id;
-                    const isSel = selRow?._id === e._id;
+                    const isSel   = selRow?._id === e._id;
+                    const isEdit  = editingId === e._id;
                     return (
-                      <Table.Tr
-                        key={e._id}
-                        onClick={() => setSelRow(isSel ? null : e)}
-                        style={{
-                          cursor: 'pointer',
-                          background: isEditing
-                            ? '#fffbeb'
-                            : isSel
-                              ? 'rgba(46,125,50,0.1)'
-                              : idx % 2 === 0 ? 'rgba(200,230,201,0.35)' : 'transparent',
-                          borderLeft: isEditing ? '3px solid #d97706' : isSel ? '3px solid #2e7d32' : '3px solid transparent',
-                        }}
-                      >
-                        <Table.Td style={{ padding: '4px 8px', color: '#9e9e9e', fontWeight: 600, fontSize: 10 }}>{idx + 1}</Table.Td>
-                        <Table.Td style={{ padding: '4px 8px', color: '#1565c0', fontWeight: 700, fontFamily: 'monospace', fontSize: 10 }}>{e.slipNo}</Table.Td>
-                        <Table.Td style={{ padding: '4px 8px', color: '#455a64', fontSize: 10 }}>{dayjs(e.date).format('DD MMM YYYY')}</Table.Td>
-                        <Table.Td style={{ padding: '4px 8px' }}>
-                          <Badge size="xs" color={e.time === 'AM' ? 'yellow' : 'indigo'} variant="light" style={{ fontSize: 8 }}>
-                            {e.time === 'AM' ? '☀ AM' : '🌙 PM'}
-                          </Badge>
+                      <Table.Tr key={e._id} onClick={() => setSelRow(isSel ? null : e)}
+                        style={{ cursor: 'pointer', background: isEdit ? '#fffbeb' : isSel ? '#f5f3ff' : undefined, borderLeft: isEdit ? '3px solid #d97706' : isSel ? '3px solid #7c3aed' : '3px solid transparent', transition: 'background 0.1s' }}>
+                        <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#94a3b8', width: 32 }}>{idx + 1}</Table.Td>
+                        <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#2563eb', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{e.slipNo}</Table.Td>
+                        <Table.Td style={{ padding: '6px 12px', color: '#475569', whiteSpace: 'nowrap' }}>{dayjs(e.date).format('DD MMM YYYY')}</Table.Td>
+                        <Table.Td style={{ padding: '6px 12px' }}>
+                          <Badge size="xs" color={e.time === 'AM' ? 'orange' : 'indigo'} variant="light">{e.time}</Badge>
                         </Table.Td>
-                        <Table.Td style={{ padding: '4px 8px', color: '#1565c0', fontWeight: 700, textAlign: 'right' }}>{fmt3(e.qty)}</Table.Td>
-                        <Table.Td style={{ padding: '4px 8px', color: '#37474f', textAlign: 'right' }}>{fmt2(e.fat)}</Table.Td>
-                        <Table.Td style={{ padding: '4px 8px', color: '#37474f', textAlign: 'right' }}>{fmt2(e.snf)}</Table.Td>
-                        <Table.Td style={{ padding: '4px 8px', color: '#bf360c', textAlign: 'right' }}>{fmt2(e.rate)}</Table.Td>
-                        <Table.Td style={{ padding: '4px 8px', color: '#1b5e20', fontWeight: 800, textAlign: 'right' }}>{fmtInr(e.amount)}</Table.Td>
-                        <Table.Td style={{ padding: '4px 8px', color: '#880e4f', textAlign: 'right' }}>
-                          {e.spoilage ? fmt2(e.unionSpoilage) : <Badge size="xs" color="gray" variant="dot" style={{ fontSize: 8 }}>—</Badge>}
+                        <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0369a1', textAlign: 'right' }}>{fmt3(e.qty)}</Table.Td>
+                        <Table.Td style={{ padding: '6px 12px', color: '#7c3aed', textAlign: 'right' }}>{fmt2(e.fat)}</Table.Td>
+                        <Table.Td style={{ padding: '6px 12px', color: '#0891b2', textAlign: 'right' }}>{fmt2(e.snf)}</Table.Td>
+                        <Table.Td style={{ padding: '6px 12px', color: '#c2410c', textAlign: 'right' }}>₹{fmt2(e.rate)}</Table.Td>
+                        <Table.Td style={{ padding: '6px 12px', textAlign: 'right' }}>
+                          <Text size="13px" fw={800} c="violet.7">{fmtInr(e.amount)}</Text>
                         </Table.Td>
-                        <Table.Td style={{ padding: '4px 8px', color: '#880e4f', textAlign: 'right' }}>
-                          {e.spoilage ? fmt2(e.transportationSpoilage) : <Badge size="xs" color="gray" variant="dot" style={{ fontSize: 8 }}>—</Badge>}
+                        <Table.Td style={{ padding: '6px 12px', color: '#dc2626', textAlign: 'right' }}>
+                          {e.spoilage ? fmt2(e.unionSpoilage) : <Badge size="xs" color="gray" variant="dot">—</Badge>}
                         </Table.Td>
-                        <Table.Td style={{ padding: '3px 6px' }}>
+                        <Table.Td style={{ padding: '6px 12px', color: '#dc2626', textAlign: 'right' }}>
+                          {e.spoilage ? fmt2(e.transportationSpoilage) : <Badge size="xs" color="gray" variant="dot">—</Badge>}
+                        </Table.Td>
+                        <Table.Td style={{ padding: '6px 8px' }}>
                           <Group gap={3} wrap="nowrap">
-                            <ActionIcon
-                              size={22} variant="light" color="orange"
-                              onClick={ev => { ev.stopPropagation(); handleEdit(e); }}
-                              title="Edit"
-                            >
+                            <ActionIcon size={22} variant="light" color="orange" onClick={ev => { ev.stopPropagation(); handleEdit(e); }} title="Edit">
                               <IconEdit size={11} />
                             </ActionIcon>
-                            <ActionIcon
-                              size={22} variant="light" color="blue"
-                              onClick={ev => { ev.stopPropagation(); handlePrint(e); }}
-                              title="Print"
-                            >
+                            <ActionIcon size={22} variant="light" color="blue" onClick={ev => { ev.stopPropagation(); handlePrint(e); }} title="Print">
                               <IconPrinter size={11} />
                             </ActionIcon>
-                            <ActionIcon
-                              size={22} variant="light" color="red"
-                              onClick={ev => { ev.stopPropagation(); handleDelete(e); }}
-                              title="Delete"
-                            >
+                            <ActionIcon size={22} variant="light" color="red" onClick={ev => { ev.stopPropagation(); handleDelete(e); }} title="Delete">
                               <IconTrash size={11} />
                             </ActionIcon>
                           </Group>
@@ -857,91 +622,52 @@ export default function UnionSalesSlip() {
                   })}
                 </Table.Tbody>
 
-                {/* Totals footer row */}
                 {filteredEntries.length > 0 && (
                   <Table.Tfoot>
-                    <Table.Tr style={{ background: 'linear-gradient(90deg,#1b5e20,#2e7d32)', position: 'sticky', bottom: 0 }}>
-                      <Table.Td colSpan={4} style={{ padding: '5px 8px', color: 'rgba(255,255,255,0.7)', fontSize: 9, fontWeight: 700, textTransform: 'uppercase' }}>
-                        Totals ({filteredEntries.length})
+                    <Table.Tr style={{ background: '#1e1b4b' }}>
+                      <Table.Td colSpan={4} style={{ padding: '8px 12px', fontWeight: 700, color: '#c4b5fd', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Totals &amp; Summary
                       </Table.Td>
-                      <Table.Td style={{ padding: '5px 8px', color: '#86efac', fontWeight: 800, textAlign: 'right', fontSize: 11 }}>
-                        {fmt3(totals.totalQty)}
-                      </Table.Td>
+                      <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#7dd3fc', textAlign: 'right', fontSize: 13 }}>{fmt3(totals.totalQty)}</Table.Td>
                       <Table.Td colSpan={3} />
-                      <Table.Td style={{ padding: '5px 8px', color: '#bbf7d0', fontWeight: 900, textAlign: 'right', fontSize: 12 }}>
-                        {fmtInr(totals.totalAmount)}
+                      <Table.Td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                        <Text size="14px" fw={900} c="white">{fmtInr(totals.totalAmount)}</Text>
                       </Table.Td>
-                      <Table.Td style={{ padding: '5px 8px', color: '#fca5a5', fontWeight: 700, textAlign: 'right', fontSize: 11 }}>
-                        {fmt2(totals.totalUnionSpoilage)}
-                      </Table.Td>
-                      <Table.Td style={{ padding: '5px 8px', color: '#fca5a5', fontWeight: 700, textAlign: 'right', fontSize: 11 }}>
-                        {fmt2(totals.totalTransportationSpoilage)}
-                      </Table.Td>
+                      <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#fca5a5', textAlign: 'right' }}>{fmt2(totals.totalUnionSpoilage)}</Table.Td>
+                      <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#fca5a5', textAlign: 'right' }}>{fmt2(totals.totalTransportationSpoilage)}</Table.Td>
                       <Table.Td />
                     </Table.Tr>
                   </Table.Tfoot>
                 )}
               </Table>
-            </ScrollArea>
-          )}
-        </Box>
-      </Box>
-
-      {/* ══ SUMMARY FOOTER ═════════════════════════════════════════════════════ */}
-      <Box style={{
-        background: 'linear-gradient(90deg,#1b5e20 0%,#2e7d32 50%,#1b5e20 100%)',
-        flexShrink: 0, padding: '6px 16px',
-        borderTop: '2px solid rgba(255,255,255,0.1)',
-        boxShadow: '0 -3px 12px rgba(0,0,0,0.2)',
-      }}>
-        <Group justify="space-between" align="center">
-          <Group gap={6}>
-            <SummaryChip
-              label="Total Qty"
-              value={`${fmt3(totals.totalQty)} L`}
-              color="#86efac"
-              border="rgba(134,239,172,0.4)"
-            />
-            <SummaryChip
-              label="Total Amount"
-              value={fmtInr(totals.totalAmount)}
-              color="#fbbf24"
-              border="rgba(251,191,36,0.4)"
-            />
-            <SummaryChip
-              label="Union Spoilage"
-              value={fmt2(totals.totalUnionSpoilage)}
-              color="#fca5a5"
-              border="rgba(252,165,165,0.3)"
-            />
-            <SummaryChip
-              label="Trans. Spoilage"
-              value={fmt2(totals.totalTransportationSpoilage)}
-              color="#fca5a5"
-              border="rgba(252,165,165,0.3)"
-            />
-          </Group>
-
-          {/* Status */}
-          <Group gap={10} align="center">
-            <Group gap={4} align="center">
-              <Box style={{ width: 7, height: 7, borderRadius: '50%', background: '#4ade80', boxShadow: '0 0 6px #4ade80' }} />
-              <Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.55)', fontWeight: 600 }}>
-                {editingId ? 'EDIT MODE' : 'NEW MODE'}
-              </Text>
-            </Group>
-            {selRow && (
-              <Badge size="xs" color="yellow" variant="light" style={{ fontSize: 8 }}>
-                {selRow.slipNo}
-              </Badge>
             )}
-            <Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.45)', fontWeight: 600 }}>
-              {months.find(m => m.value === filterMonth)?.label} {filterYear}
-            </Text>
-          </Group>
-        </Group>
-      </Box>
+          </ScrollArea>
+        </Box>
 
+        {/* Footer Summary Strip */}
+        <Box style={{ background: 'white', border: '1px solid #c4b5fd', borderTop: '2px solid #ddd6fe', borderRadius: '0 0 10px 10px', padding: '8px 16px' }}>
+          <Group gap={10} wrap="nowrap" align="center">
+            <Box style={{ flexShrink: 0 }}>
+              <Text size="10px" fw={800} c="#4c1d95" tt="uppercase" style={{ letterSpacing: '0.5px' }}>Summary</Text>
+              <Text size="9px" c="#94a3b8">{entries.length} records · {months.find(m => m.value === filterMonth)?.label} {filterYear}</Text>
+            </Box>
+            <Divider orientation="vertical" style={{ height: 36 }} />
+            {[
+              { label: 'Total Qty',     val: `${fmt3(totals.totalQty)} L`,          c: '#0369a1', bg: '#f0f9ff',  border: '#bae6fd' },
+              { label: 'Total Amt',     val: fmtInr(totals.totalAmount),             c: 'white',   bg: '#1e1b4b',  border: '#1e1b4b', bold: true },
+              { label: 'Union Spg',     val: fmt2(totals.totalUnionSpoilage),        c: '#dc2626', bg: '#fef2f2',  border: '#fecaca' },
+              { label: 'Trans Spg',     val: fmt2(totals.totalTransportationSpoilage), c: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
+              { label: 'Mode',          val: editingId ? 'EDIT' : 'NEW',             c: editingId ? '#d97706' : '#059669', bg: editingId ? '#fffbeb' : '#f0fdf4', border: editingId ? '#fde68a' : '#bbf7d0' },
+            ].map(({ label, val, c, bg, border, bold }) => (
+              <Box key={label} style={{ background: bg, border: `1.5px solid ${border}`, borderRadius: 8, padding: '5px 18px', textAlign: 'center', flexShrink: 0 }}>
+                <Text size="10px" fw={600} c={bold ? 'rgba(255,255,255,0.75)' : '#64748b'} tt="uppercase" style={{ letterSpacing: '0.4px' }}>{label}</Text>
+                <Text size={bold ? '18px' : '16px'} fw={900} style={{ color: c, lineHeight: 1.2 }}>{val}</Text>
+              </Box>
+            ))}
+          </Group>
+        </Box>
+
+      </Box>
     </Box>
   );
 }

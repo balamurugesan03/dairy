@@ -39,8 +39,9 @@ import {
 } from '@tabler/icons-react';
 import * as XLSX from 'xlsx';
 import { reportAPI } from '../../../services/api';
-import { printReport } from '../../../utils/printReport';
+import { printVyaparReport } from '../../../utils/printReport';
 import { notifications } from '@mantine/notifications';
+import { useCompany } from '../../../context/CompanyContext';
 
 const periodOptions = [
   { value: 'today', label: 'Today' },
@@ -74,6 +75,7 @@ const SOURCE_LABELS = {
 };
 
 const VyaparCashInHand = () => {
+  const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -242,7 +244,7 @@ const VyaparCashInHand = () => {
   return (
     <Container size="xl" py="md" ref={printRef}>
       {/* Title */}
-      <Group justify="space-between" mb="md">
+      <Group justify="space-between" mb="md" data-no-print>
         <Group gap="xs">
           <ThemeIcon size="lg" variant="light" color="green">
             <IconCash size={20} />
@@ -264,7 +266,7 @@ const VyaparCashInHand = () => {
             </ActionIcon>
           </Tooltip>
           <Tooltip label="Print">
-            <ActionIcon size="lg" variant="light" color="blue" onClick={() => printReport(printRef, { title: 'Cash In Hand Report', orientation: 'landscape' })}>
+            <ActionIcon size="lg" variant="light" color="blue" onClick={() => printVyaparReport(printRef, { title: 'Cash In Hand Report', companyName: selectedCompany?.companyName || '', orientation: 'landscape' })}>
               <IconPrinter size={18} />
             </ActionIcon>
           </Tooltip>

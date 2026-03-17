@@ -77,7 +77,7 @@ import {
   IconEdit,
   IconEye
 } from '@tabler/icons-react';
-import { businessItemAPI, businessSalesAPI, customerAPI, businessPromotionAPI, salesmanAPI } from '../../services/api';
+import { businessItemAPI, businessSalesAPI, businessCustomerAPI, businessPromotionAPI, salesmanAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 
 const BusinessBillingForm = () => {
@@ -204,7 +204,7 @@ const BusinessBillingForm = () => {
 
   const fetchCustomers = async () => {
     try {
-      const response = await customerAPI.getAll();
+      const response = await businessCustomerAPI.getAll();
       const customersData = response?.data || response || [];
       setCustomers(Array.isArray(customersData) ? customersData.filter(c => c.active !== false) : []);
     } catch (error) {
@@ -296,6 +296,9 @@ const BusinessBillingForm = () => {
       if (invoice.partyId) {
         setSelectedCustomer(typeof invoice.partyId === 'object' ? invoice.partyId : null);
       }
+
+      // Set savedInvoice so Print button is enabled when viewing existing invoice
+      setSavedInvoice(invoice);
     } catch (error) {
       notifications.show({
         title: 'Error',
@@ -420,14 +423,13 @@ const BusinessBillingForm = () => {
     const discount = parseFloat(discountPercent) || 0;
     const gstPercent = item.gstPercent || 0;
 
-    // Check stock
+    // Warn if low stock (but allow — negative stock is permitted)
     if (form.values.invoiceType !== 'Sale Return' && qty > item.currentBalance) {
       notifications.show({
-        title: 'Insufficient Stock',
-        message: `Available: ${item.currentBalance} ${item.unit}`,
-        color: 'red'
+        title: 'Low Stock Warning',
+        message: `Stock available: ${item.currentBalance} ${item.unit}. Sale will proceed.`,
+        color: 'orange'
       });
-      return;
     }
 
     const amount = qty * itemRate;
@@ -724,7 +726,7 @@ const BusinessBillingForm = () => {
         });
       }
 
-      const savedData = response.data;
+      const savedData = response?.data || response;
       setSavedInvoice(savedData);
 
       // Record coupon redemption if coupon was applied
@@ -1481,14 +1483,18 @@ const BusinessBillingForm = () => {
                 <Button
                   variant="light"
                   color="gray"
-                  onClick={() => navigate('/business-inventory/sales/list')}
+                  onClick={() => navigate('/')}
                 >
                   Cancel
                 </Button>
                 <Button
                   variant="light"
                   leftSection={<IconPrinter size={16} />}
-                  onClick={() => savedInvoice && handlePrint()}
+                  onClick={() => {
+                    if (savedInvoice) {
+                      navigate(`/business-inventory/sales/print/${savedInvoice._id}`);
+                    }
+                  }}
                   disabled={!savedInvoice}
                 >
                   Print
@@ -1527,7 +1533,12 @@ const BusinessBillingForm = () => {
             </Button>
             <Button
               leftSection={<IconPrinter size={16} />}
-              onClick={handlePrint}
+              onClick={() => {
+                setPrintModalOpened(false);
+                if (savedInvoice?._id) {
+                  navigate(`/business-inventory/sales/print/${savedInvoice._id}`);
+                }
+              }}
               color="green"
             >
               Print Invoice

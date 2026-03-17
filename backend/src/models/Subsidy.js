@@ -33,6 +33,11 @@ const subsidySchema = new mongoose.Schema({
     type: String,
     trim: true,
     default: ''
+  },
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true
   }
 }, {
   timestamps: true
@@ -43,6 +48,7 @@ subsidySchema.index({ subsidyName: 1 });
 subsidySchema.index({ subsidyType: 1 });
 subsidySchema.index({ ledgerGroup: 1 });
 subsidySchema.index({ status: 1 });
+subsidySchema.index({ companyId: 1 });
 
 const Subsidy = mongoose.model('Subsidy', subsidySchema);
 

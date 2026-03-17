@@ -8,8 +8,10 @@ import {
   getPartySalesHistory,
   getBusinessSalesSummary
 } from '../controllers/businessSalesController.js';
+import { protect, addCompanyFilter } from '../middleware/auth.js';
 
 const router = express.Router();
+router.use(protect, addCompanyFilter);
 
 // Summary/Dashboard - must be before :id routes
 router.get('/summary', getBusinessSalesSummary);

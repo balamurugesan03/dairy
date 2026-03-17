@@ -115,7 +115,7 @@ const MachineForm = () => {
         await machineAPI.create(payload);
         notifications.show({ title: 'Created', message: 'Machine added', color: 'green' });
       }
-      navigate('/machines');
+      navigate('/');
     } catch (err) {
       notifications.show({ title: 'Error', message: err.message, color: 'red' });
     } finally {

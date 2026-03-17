@@ -41,9 +41,10 @@ import { useCompany } from '../../../context/CompanyContext';
 import { reportAPI } from '../../../services/api';
 import { message } from '../../../utils/toast';
 import * as XLSX from 'xlsx';
+import { printVyaparReport } from '../../../utils/printReport';
 
 const VyaparCashflowReport = () => {
-  const { selectedBusinessType } = useCompany();
+  const { selectedBusinessType, selectedCompany } = useCompany();
   const navigate = useNavigate();
   const printRef = useRef();
 
@@ -173,29 +174,11 @@ const VyaparCashflowReport = () => {
   };
 
   const handlePrint = () => {
-    const printContent = printRef.current;
-    if (!printContent) return;
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Cashflow Report</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; font-size: 12px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
-            th { background: #f5f5f5; font-weight: 600; }
-            .text-right { text-align: right; }
-            .inflow { color: #2e7d32; }
-            .outflow { color: #c62828; }
-            @media print { body { -webkit-print-color-adjust: exact; } }
-          </style>
-        </head>
-        <body>${printContent.innerHTML}</body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
+    printVyaparReport(printRef, {
+      title: 'Cashflow Report',
+      companyName: selectedCompany?.companyName || '',
+      orientation: 'landscape'
+    });
   };
 
   const summary = reportData?.summary || {};

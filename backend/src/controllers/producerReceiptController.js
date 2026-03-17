@@ -66,6 +66,24 @@ export const createReceipt = async (req, res) => {
       reference.recoveredAmount += receiptData.amount;
       reference.outstandingAmount -= receiptData.amount;
 
+      // Update individual EMI statuses (earliest pending first)
+      let remaining = receiptData.amount;
+      for (const emi of reference.emiSchedule) {
+        if (remaining <= 0) break;
+        if (emi.status === 'Paid') continue;
+        const needed = emi.amount - emi.paidAmount;
+        const pay = Math.min(needed, remaining);
+        emi.paidAmount += pay;
+        remaining -= pay;
+        if (emi.paidAmount >= emi.amount) {
+          emi.status = 'Paid';
+          emi.paidDate = new Date();
+        } else {
+          emi.status = 'Partial';
+          emi.paidDate = new Date();
+        }
+      }
+
       if (reference.outstandingAmount <= 0) {
         reference.status = 'Closed';
         reference.closedAt = new Date();
@@ -372,6 +390,21 @@ export const cancelReceipt = async (req, res) => {
       if (loan) {
         loan.recoveredAmount -= receipt.amount;
         loan.outstandingAmount += receipt.amount;
+        // Revert EMI statuses (reverse from last paid EMI)
+        let toReverse = receipt.amount;
+        for (let i = loan.emiSchedule.length - 1; i >= 0 && toReverse > 0; i--) {
+          const emi = loan.emiSchedule[i];
+          if (emi.paidAmount <= 0) continue;
+          const revert = Math.min(emi.paidAmount, toReverse);
+          emi.paidAmount -= revert;
+          toReverse -= revert;
+          if (emi.paidAmount <= 0) {
+            emi.status = 'Pending';
+            emi.paidDate = null;
+          } else {
+            emi.status = 'Partial';
+          }
+        }
         if (loan.status === 'Closed') {
           loan.status = 'Active';
           loan.closedAt = null;

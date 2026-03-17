@@ -40,7 +40,7 @@ const businessPromotionSchema = new mongoose.Schema({
   },
   targetCustomers: [{
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Customer'
+    ref: 'BusinessCustomer'
   }],
   targetGroup: {
     type: String,

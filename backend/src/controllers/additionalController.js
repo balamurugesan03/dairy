@@ -32,28 +32,24 @@ const generateNumber = async (Model, field, prefix, companyId) => {
 // ─── WARRANTY CONTROLLERS ────────────────────────────────────────────────────
 
 export const createWarranty = async (req, res) => {
-  try {
-    const companyId = req.companyId;
-    const warrantyNumber = await generateNumber(Warranty, 'warrantyNumber', 'WRT', companyId);
+  const companyId = req.companyId;
+  let { warrantyEndDate, warrantyStartDate, warrantyPeriod } = req.body;
+  if (!warrantyEndDate && warrantyStartDate && warrantyPeriod) {
+    const start = new Date(warrantyStartDate);
+    start.setMonth(start.getMonth() + Number(warrantyPeriod));
+    warrantyEndDate = start;
+  }
 
-    // Auto-compute warrantyEndDate from period if not provided
-    let { warrantyEndDate, warrantyStartDate, warrantyPeriod } = req.body;
-    if (!warrantyEndDate && warrantyStartDate && warrantyPeriod) {
-      const start = new Date(warrantyStartDate);
-      start.setMonth(start.getMonth() + Number(warrantyPeriod));
-      warrantyEndDate = start;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const warrantyNumber = await generateNumber(Warranty, 'warrantyNumber', 'WRT', companyId);
+      const warranty = new Warranty({ ...req.body, warrantyNumber, warrantyEndDate, companyId });
+      await warranty.save();
+      return res.status(201).json({ success: true, message: 'Warranty created successfully', data: warranty });
+    } catch (error) {
+      if (error.code === 11000 && attempt < 4) continue;
+      return res.status(500).json({ success: false, message: error.message });
     }
-
-    const warranty = new Warranty({
-      ...req.body,
-      warrantyNumber,
-      warrantyEndDate,
-      companyId
-    });
-    await warranty.save();
-    res.status(201).json({ success: true, message: 'Warranty created successfully', data: warranty });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -174,14 +170,17 @@ export const updateWarrantyClaim = async (req, res) => {
 // ─── MACHINE CONTROLLERS ─────────────────────────────────────────────────────
 
 export const createMachine = async (req, res) => {
-  try {
-    const companyId = req.companyId;
-    const machineCode = await generateNumber(Machine, 'machineCode', 'MCH', companyId);
-    const machine = new Machine({ ...req.body, machineCode, companyId });
-    await machine.save();
-    res.status(201).json({ success: true, message: 'Machine created successfully', data: machine });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+  const companyId = req.companyId;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const machineCode = await generateNumber(Machine, 'machineCode', 'MCH', companyId);
+      const machine = new Machine({ ...req.body, machineCode, companyId });
+      await machine.save();
+      return res.status(201).json({ success: true, message: 'Machine created successfully', data: machine });
+    } catch (error) {
+      if (error.code === 11000 && attempt < 4) continue;
+      return res.status(500).json({ success: false, message: error.message });
+    }
   }
 };
 
@@ -292,28 +291,23 @@ export const updateMaintenanceLog = async (req, res) => {
 // ─── QUOTATION CONTROLLERS ───────────────────────────────────────────────────
 
 export const createQuotation = async (req, res) => {
-  try {
-    const companyId = req.companyId;
-    const quotationNumber = await generateNumber(Quotation, 'quotationNumber', 'EST', companyId);
+  const companyId = req.companyId;
+  const validUntil = req.body.validUntil || (() => {
+    const d = new Date(); d.setDate(d.getDate() + 30); return d;
+  })();
 
-    // Default validUntil to +30 days
-    const validUntil = req.body.validUntil || (() => {
-      const d = new Date();
-      d.setDate(d.getDate() + 30);
-      return d;
-    })();
-
-    const quotation = new Quotation({
-      ...req.body,
-      quotationNumber,
-      validUntil,
-      companyId,
-      createdBy: req.user?._id
-    });
-    await quotation.save();
-    res.status(201).json({ success: true, message: 'Quotation created successfully', data: quotation });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const quotationNumber = await generateNumber(Quotation, 'quotationNumber', 'EST', companyId);
+      const quotation = new Quotation({
+        ...req.body, quotationNumber, validUntil, companyId, createdBy: req.user?._id
+      });
+      await quotation.save();
+      return res.status(201).json({ success: true, message: 'Quotation created successfully', data: quotation });
+    } catch (error) {
+      if (error.code === 11000 && attempt < 4) continue;
+      return res.status(500).json({ success: false, message: error.message });
+    }
   }
 };
 

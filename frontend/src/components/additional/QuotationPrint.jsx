@@ -81,6 +81,20 @@ const QuotationPrint = () => {
         <button className="qp-btn qp-btn-outline" onClick={() => navigate(`/quotations/edit/${id}`)}>
           ✏ Edit
         </button>
+        <button
+          className="qp-btn"
+          style={{ background: '#c9a84c', color: '#1a1a2e', fontWeight: 700, border: 'none', padding: '7px 18px', borderRadius: 6, cursor: 'pointer' }}
+          onClick={() => navigate(`/quotations/proposal-letter/${id}`)}
+        >
+          📄 Proposal Letter →
+        </button>
+        <button
+          className="qp-btn"
+          style={{ background: '#1a3c6e', color: '#fff', fontWeight: 700, border: 'none', padding: '7px 18px', borderRadius: 6, cursor: 'pointer' }}
+          onClick={() => navigate(`/quotations/gtech-template/${id}`)}
+        >
+          🏭 G-TECH Template →
+        </button>
         <button className="qp-btn qp-btn-primary" onClick={handlePrint}>
           🖨 Print / Download
         </button>

@@ -38,7 +38,7 @@ import {
   IconX
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
-import { businessPromotionAPI, businessItemAPI, customerAPI } from '../../services/api';
+import { businessPromotionAPI, businessItemAPI, businessCustomerAPI } from '../../services/api';
 
 const OFFER_TYPE_OPTIONS = [
   { value: 'Buy X Get Y', label: 'Buy X Get Y' },
@@ -186,7 +186,7 @@ const OfferManager = () => {
 
   const fetchCustomers = async () => {
     try {
-      const response = await customerAPI.getAll();
+      const response = await businessCustomerAPI.getAll();
       const data = response?.data || response || [];
       const customerList = Array.isArray(data) ? data : [];
       setCustomers(

@@ -7,7 +7,7 @@ import {
   Text
 } from '@mantine/core';
 import { IconUsers } from '@tabler/icons-react';
-import { customerAPI } from '../../services/api';
+import { businessCustomerAPI } from '../../services/api';
 
 const CustomerTargeting = ({ targetType, targetCustomers, targetGroup, onChange }) => {
   const [customerOptions, setCustomerOptions] = useState([]);
@@ -22,7 +22,7 @@ const CustomerTargeting = ({ targetType, targetCustomers, targetGroup, onChange 
   const fetchCustomers = async () => {
     try {
       setLoading(true);
-      const response = await customerAPI.getAll();
+      const response = await businessCustomerAPI.getAll();
       const data = response?.data || response || [];
       const options = (Array.isArray(data) ? data : [])
         .filter(c => c.active !== false)

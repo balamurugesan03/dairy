@@ -7,7 +7,7 @@ import {
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import { IconArrowLeft, IconDeviceFloppy } from '@tabler/icons-react';
-import { warrantyAPI, customerAPI, businessItemAPI } from '../../services/api';
+import { warrantyAPI, businessCustomerAPI, businessItemAPI } from '../../services/api';
 import dayjs from 'dayjs';
 
 const WarrantyForm = () => {
@@ -55,7 +55,7 @@ const WarrantyForm = () => {
   const loadMasterData = async () => {
     try {
       const [custRes, itemRes] = await Promise.all([
-        customerAPI.getAll({ limit: 500 }),
+        businessCustomerAPI.getAll({ limit: 500 }),
         businessItemAPI.getAll({ limit: 500, status: 'Active' })
       ]);
       setCustomers(Array.isArray(custRes?.data) ? custRes.data : custRes?.data?.data || []);
@@ -129,7 +129,7 @@ const WarrantyForm = () => {
         await warrantyAPI.create(payload);
         notifications.show({ title: 'Created', message: 'Warranty created', color: 'green' });
       }
-      navigate('/warranty');
+      navigate('/');
     } catch (err) {
       notifications.show({ title: 'Error', message: err.message, color: 'red' });
     } finally {

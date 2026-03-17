@@ -46,7 +46,8 @@ import { reportAPI } from '../../../services/api';
 import { message } from '../../../utils/toast';
 
 const VyaparTrialBalance = () => {
-  const { selectedBusinessType } = useCompany();
+  const { selectedBusinessType, selectedCompany } = useCompany();
+  const companyName = selectedCompany?.companyName || '';
   const navigate = useNavigate();
   const printRef = useRef();
 
@@ -239,6 +240,7 @@ const VyaparTrialBalance = () => {
       </head>
       <body>
         <div class="header">
+          ${companyName ? `<h2 style="margin: 0 0 4px; font-size: 18px; text-transform: uppercase; letter-spacing: 2px;">${companyName}</h2>` : ''}
           <h1>TRIAL BALANCE</h1>
           <p>Period: ${startDate} to ${endDate}</p>
         </div>

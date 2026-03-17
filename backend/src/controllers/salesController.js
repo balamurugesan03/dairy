@@ -6,12 +6,12 @@ import { createBulkStockTransactions, reverseStockTransaction } from '../utils/s
 import { createSalesVoucher } from '../utils/accountingHelper.js';
 
 // Generate bill number
-const generateBillNumber = async () => {
+const generateBillNumber = async (companyId) => {
   const today = new Date();
   const year = today.getFullYear().toString().slice(-2);
   const month = (today.getMonth() + 1).toString().padStart(2, '0');
 
-  const lastBill = await Sales.findOne()
+  const lastBill = await Sales.findOne({ companyId })
     .sort({ createdAt: -1 })
     .limit(1);
 
@@ -29,8 +29,10 @@ export const createSale = async (req, res) => {
   try {
     const saleData = req.body;
 
+    const companyId = req.companyId;
     // Generate bill number
-    saleData.billNumber = await generateBillNumber();
+    saleData.billNumber = await generateBillNumber(companyId);
+    saleData.companyId = companyId;
 
     // Set customerModel based on customerType
     if (saleData.customerType === 'Farmer') {
@@ -99,7 +101,9 @@ export const createSale = async (req, res) => {
       await createBulkStockTransactions(
         saleData.items,
         'Sale',
-        sale._id
+        sale._id,
+        null,
+        companyId
       );
     } catch (stockError) {
       console.error('Error creating stock transactions:', stockError);
@@ -142,7 +146,7 @@ export const getAllSales = async (req, res) => {
       endDate = ''
     } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
 
     if (search) {
       query.$or = [

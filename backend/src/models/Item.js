@@ -3,7 +3,6 @@ import mongoose from 'mongoose';
 const itemSchema = new mongoose.Schema({
   itemCode: {
     type: String,
-    unique: true,
     trim: true
   },
   itemName: {
@@ -84,6 +83,11 @@ const itemSchema = new mongoose.Schema({
     type: String,
     enum: ['Active', 'Inactive'],
     default: 'Active'
+  },
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true
   }
 }, {
   timestamps: true
@@ -92,6 +96,8 @@ const itemSchema = new mongoose.Schema({
 // Indexes for faster queries
 itemSchema.index({ status: 1 });
 itemSchema.index({ category: 1 });
+itemSchema.index({ companyId: 1 });
+itemSchema.index({ itemCode: 1, companyId: 1 }, { unique: true, sparse: true });
 
 const Item = mongoose.model('Item', itemSchema);
 

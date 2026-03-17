@@ -50,6 +50,7 @@ import BarChart from '../components/common/charts/BarChart';
 import {
   farmerAPI,
   customerAPI,
+  businessCustomerAPI,
   salesAPI,
   itemAPI,
   stockAPI,
@@ -184,7 +185,7 @@ const Dashboard = () => {
           employeesRes,
           vouchersRes
         ] = await Promise.allSettled([
-          customerAPI.getAll({ limit: 1 }),
+          businessCustomerAPI.getAll({ limit: 1 }),
           businessSalesAPI.getAll({ limit: 10 }),
           businessItemAPI.getAll(),
           businessStockAPI.getBalance(),
@@ -196,7 +197,7 @@ const Dashboard = () => {
         const salesData = salesRes.status === 'fulfilled' ? salesRes.value : {};
         const sales = salesData.data || [];
         const today = new Date().toISOString().split('T')[0];
-        const todaySales = sales.filter(s => (s.billDate || s.date)?.split('T')[0] === today);
+        const todaySales = sales.filter(s => (s.invoiceDate || s.billDate || s.date)?.split('T')[0] === today);
         const todayAmount = todaySales.reduce((sum, s) => sum + (s.grandTotal || s.totalAmount || 0), 0);
         const itemsData = itemsRes.status === 'fulfilled' ? itemsRes.value : {};
         const items = itemsData.data || [];
@@ -238,7 +239,7 @@ const Dashboard = () => {
     try {
       const api = isDairyCooperative ? salesAPI : businessSalesAPI;
       const response = await api.getAll({ limit: 5, sort: '-createdAt' });
-      if (response.success) {
+      if (response.success || response.data) {
         setRecentSales(response.data || []);
       }
     } catch (error) {
@@ -251,7 +252,7 @@ const Dashboard = () => {
       const api = isDairyCooperative ? stockAPI : businessStockAPI;
       const reorderField = isDairyCooperative ? 'reorderLevel' : 'lowStockAlert';
       const response = await api.getBalance();
-      if (response.success) {
+      if (response.success || response.data) {
         const items = response.data || [];
         const lowStock = items
           .filter(item => {
@@ -270,7 +271,7 @@ const Dashboard = () => {
     try {
       const api = isDairyCooperative ? salesAPI : businessSalesAPI;
       const response = await api.getAll({ limit: 100 });
-      if (response.success) {
+      if (response.success || response.data) {
         const sales = response.data || [];
 
         // Group sales by date (last 7 days)
@@ -282,7 +283,7 @@ const Dashboard = () => {
         }
 
         const salesByDate = last7Days.map(date => {
-          const daySales = sales.filter(s => (s.billDate || s.date)?.split('T')[0] === date);
+          const daySales = sales.filter(s => (s.invoiceDate || s.billDate || s.date)?.split('T')[0] === date);
           return daySales.reduce((sum, s) => sum + (s.grandTotal || s.totalAmount || 0), 0);
         });
 
@@ -322,7 +323,8 @@ const Dashboard = () => {
     switch (status?.toLowerCase()) {
       case 'paid': return 'green';
       case 'partial': return 'yellow';
-      case 'pending': return 'red';
+      case 'pending':
+      case 'unpaid': return 'red';
       default: return 'gray';
     }
   };
@@ -596,7 +598,7 @@ const Dashboard = () => {
                     border: '1px solid rgba(17, 153, 142, 0.2)',
                     transition: 'all 0.3s ease',
                   }}
-                  onClick={() => navigate('/customers')}
+                  onClick={() => navigate('/business-customers')}
                   className="quick-action-card"
                 >
                   <ThemeIcon
@@ -717,7 +719,7 @@ const Dashboard = () => {
             icon={<IconShoppingCart size={20} />}
             color="blue"
             trend={{ direction: 'up', value: metrics.customers.trend }}
-            onClick={() => navigate('/customers')}
+            onClick={() => navigate(isDairyCooperative ? '/customers' : '/business-customers')}
           />
 
           <AnalyticCard
@@ -1097,16 +1099,16 @@ const Dashboard = () => {
                     <Table.Tbody>
                       {recentSales.map((sale) => (
                         <Table.Tr key={sale._id}>
-                          <Table.Td>{sale.billNumber}</Table.Td>
-                          <Table.Td>{sale.customername || sale.customerName || '-'}</Table.Td>
-                          <Table.Td fw={500}>{formatCurrency(sale.grandTotal)}</Table.Td>
+                          <Table.Td>{sale.invoiceNumber || sale.billNumber || '-'}</Table.Td>
+                          <Table.Td>{sale.partyName || sale.customername || sale.customerName || '-'}</Table.Td>
+                          <Table.Td fw={500}>{formatCurrency(sale.grandTotal || sale.totalAmount)}</Table.Td>
                           <Table.Td>
                             <Badge
-                              color={getStatusColor(sale.status)}
+                              color={getStatusColor(sale.paymentStatus || sale.status)}
                               variant="light"
                               size="sm"
                             >
-                              {sale.status}
+                              {sale.paymentStatus || sale.status || '-'}
                             </Badge>
                           </Table.Td>
                         </Table.Tr>

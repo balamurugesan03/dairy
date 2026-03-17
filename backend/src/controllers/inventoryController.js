@@ -10,11 +10,12 @@ import {
 import { createPurchaseVoucher } from '../utils/accountingHelper.js';
 
 // Helper function to generate next item code
-const generateItemCode = async () => {
+const generateItemCode = async (companyId) => {
   try {
-    // Find the last item by sorting itemCode in descending order
+    // Find the last item by sorting itemCode in descending order within this company
     const lastItem = await Item.findOne({
-      itemCode: { $regex: /^ITEM-\d+$/ }
+      itemCode: { $regex: /^ITEM-\d+$/ },
+      companyId
     }).sort({ itemCode: -1 });
 
     let nextNumber = 1;
@@ -36,12 +37,12 @@ const generateItemCode = async () => {
 };
 
 // Helper function to find or create category-based ledger
-const findOrCreateCategoryLedger = async (category, ledgerType) => {
+const findOrCreateCategoryLedger = async (category, ledgerType, companyId) => {
   const isPurchase = ledgerType === 'purchase';
   const ledgerName = `${category} ${isPurchase ? 'Purchase Ledger' : 'Sales Ledger'}`;
 
-  // Try to find existing ledger
-  let ledger = await Ledger.findOne({ ledgerName, status: 'Active' });
+  // Try to find existing ledger within this company
+  let ledger = await Ledger.findOne({ ledgerName, status: 'Active', companyId });
 
   if (!ledger) {
     // Create new ledger
@@ -56,7 +57,8 @@ const findOrCreateCategoryLedger = async (category, ledgerType) => {
       currentBalance: 0,
       balanceType: isPurchase ? 'Dr' : 'Cr',
       parentGroup: isPurchase ? 'Purchase Accounts' : 'Sales Accounts',
-      status: 'Active'
+      status: 'Active',
+      companyId
     });
     await ledger.save();
   }
@@ -67,14 +69,15 @@ const findOrCreateCategoryLedger = async (category, ledgerType) => {
 // Create new item
 export const createItem = async (req, res) => {
   try {
-    const itemData = req.body;
+    const companyId = req.companyId;
+    const itemData = { ...req.body, companyId };
 
     // Auto-generate item code if not provided
     if (!itemData.itemCode) {
-      itemData.itemCode = await generateItemCode();
+      itemData.itemCode = await generateItemCode(companyId);
     } else {
-      // Check for duplicate itemCode if manually provided
-      const existingItem = await Item.findOne({ itemCode: itemData.itemCode });
+      // Check for duplicate itemCode within this company if manually provided
+      const existingItem = await Item.findOne({ itemCode: itemData.itemCode, companyId });
       if (existingItem) {
         return res.status(400).json({
           success: false,
@@ -88,8 +91,8 @@ export const createItem = async (req, res) => {
 
     // Auto-create/find category-based purchase and sales ledgers
     if (itemData.category) {
-      const purchaseLedger = await findOrCreateCategoryLedger(itemData.category, 'purchase');
-      const salesLedger = await findOrCreateCategoryLedger(itemData.category, 'sales');
+      const purchaseLedger = await findOrCreateCategoryLedger(itemData.category, 'purchase', companyId);
+      const salesLedger = await findOrCreateCategoryLedger(itemData.category, 'sales', companyId);
 
       itemData.purchaseLedger = purchaseLedger._id;
       itemData.salesLedger = salesLedger._id;
@@ -135,7 +138,7 @@ export const getAllItems = async (req, res) => {
       category = ''
     } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
 
     if (search) {
       query.$or = [
@@ -226,8 +229,8 @@ export const updateItem = async (req, res) => {
 
     // If category changed, update ledgers
     if (updateData.category && updateData.category !== existingItem.category) {
-      const purchaseLedger = await findOrCreateCategoryLedger(updateData.category, 'purchase');
-      const salesLedger = await findOrCreateCategoryLedger(updateData.category, 'sales');
+      const purchaseLedger = await findOrCreateCategoryLedger(updateData.category, 'purchase', req.companyId);
+      const salesLedger = await findOrCreateCategoryLedger(updateData.category, 'sales', req.companyId);
 
       updateData.purchaseLedger = purchaseLedger._id;
       updateData.salesLedger = salesLedger._id;
@@ -382,7 +385,8 @@ export const stockIn = async (req, res) => {
         subsidyAmount: calculatedSubsidyAmount,
         ledgerDeduction: calculatedLedgerDeduction,
         netTotal: calculatedNetTotal,
-        notes: notes || null
+        notes: notes || null,
+        companyId: req.companyId
       });
       transactions.push(transaction);
 
@@ -534,7 +538,7 @@ export const getStockTransactions = async (req, res) => {
     }
 
     // Otherwise, get all transactions with filters
-    const query = {};
+    const query = { companyId: req.companyId };
 
     if (transactionType) {
       query.transactionType = transactionType === 'in' ? 'Stock In' : 'Stock Out';
@@ -585,7 +589,7 @@ export const getStockBalance = async (req, res) => {
   try {
     const { category, status } = req.query;
 
-    const report = await getStockReport(category, status || 'Active');
+    const report = await getStockReport(category, status || 'Active', req.companyId);
 
     res.status(200).json({
       success: true,

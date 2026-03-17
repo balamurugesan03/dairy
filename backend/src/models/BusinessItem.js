@@ -3,7 +3,6 @@ import mongoose from 'mongoose';
 const businessItemSchema = new mongoose.Schema({
   itemCode: {
     type: String,
-    unique: true,
     trim: true
   },
   itemName: {
@@ -31,8 +30,7 @@ const businessItemSchema = new mongoose.Schema({
   },
   currentBalance: {
     type: Number,
-    default: 0,
-    min: 0
+    default: 0
   },
   purchasePrice: {
     type: Number,
@@ -98,6 +96,11 @@ const businessItemSchema = new mongoose.Schema({
     type: String,
     enum: ['Active', 'Inactive'],
     default: 'Active'
+  },
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true
   }
 }, {
   timestamps: true
@@ -106,8 +109,9 @@ const businessItemSchema = new mongoose.Schema({
 // Indexes for faster queries
 businessItemSchema.index({ status: 1 });
 businessItemSchema.index({ category: 1 });
-businessItemSchema.index({ itemCode: 1 });
+businessItemSchema.index({ itemCode: 1, companyId: 1 }, { unique: true, sparse: true });
 businessItemSchema.index({ barcode: 1 });
+businessItemSchema.index({ companyId: 1 });
 
 const BusinessItem = mongoose.model('BusinessItem', businessItemSchema);
 

@@ -5,11 +5,13 @@ import mongoose from 'mongoose';
 // Create new farmer with auto ledger creation
 export const createFarmer = async (req, res) => {
   try {
-    const farmerData = req.body;
+    const companyId = req.companyId;
+    const farmerData = { ...req.body, companyId };
 
-    // Check for duplicate farmerNumber
+    // Check for duplicate farmerNumber within this company
     const existingFarmer = await Farmer.findOne({
-      farmerNumber: farmerData.farmerNumber
+      farmerNumber: farmerData.farmerNumber,
+      companyId
     });
 
     if (existingFarmer) {
@@ -36,7 +38,8 @@ export const createFarmer = async (req, res) => {
       currentBalance: 0,
       balanceType: 'Dr',
       parentGroup: 'Advance / Due',
-      status: 'Active'
+      status: 'Active',
+      companyId
     });
 
     await ledger.save();
@@ -80,7 +83,7 @@ export const getAllFarmers = async (req, res) => {
       maxShares = ''
     } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
 
     // Search by farmer number, name, or phone
     if (search) {
@@ -294,7 +297,8 @@ export const searchFarmer = async (req, res) => {
         { 'personalDetails.name': { $regex: query, $options: 'i' } },
         { 'personalDetails.phone': { $regex: query, $options: 'i' } }
       ],
-      status: 'Active'
+      status: 'Active',
+      companyId: req.companyId
     }).populate('ledgerId', 'ledgerName currentBalance balanceType')
       .populate('collectionCenter', 'centerName centerType')
       .limit(10);
@@ -610,9 +614,10 @@ export const bulkImportFarmers = async (req, res) => {
           continue;
         }
 
-        // Check if farmer exists
+        // Check if farmer exists (within this company)
         const existingFarmer = await Farmer.findOne({
-          farmerNumber: farmerData.farmerNumber
+          farmerNumber: farmerData.farmerNumber,
+          companyId: req.companyId
         });
 
         if (existingFarmer) {
@@ -645,7 +650,8 @@ export const bulkImportFarmers = async (req, res) => {
               phone: phoneStr
             },
             status: 'Active',
-            isMembership: false
+            isMembership: false,
+            companyId: req.companyId
           });
 
           await newFarmer.save();
@@ -663,7 +669,8 @@ export const bulkImportFarmers = async (req, res) => {
             currentBalance: 0,
             balanceType: 'Dr',
             parentGroup: 'Advance / Due',
-            status: 'Active'
+            status: 'Active',
+            companyId: req.companyId
           });
 
           await ledger.save();

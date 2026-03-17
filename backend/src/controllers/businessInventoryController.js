@@ -5,10 +5,11 @@ import Supplier from '../models/Supplier.js';
 import Voucher from '../models/Voucher.js';
 
 // Helper function to generate next business item code
-const generateBusinessItemCode = async () => {
+const generateBusinessItemCode = async (companyId) => {
   try {
     const lastItem = await BusinessItem.findOne({
-      itemCode: { $regex: /^BITEM-\d+$/ }
+      itemCode: { $regex: /^BITEM-\d+$/ },
+      companyId
     }).sort({ itemCode: -1 });
 
     let nextNumber = 1;
@@ -28,11 +29,11 @@ const generateBusinessItemCode = async () => {
 };
 
 // Helper function to find or create category-based ledger
-const findOrCreateCategoryLedger = async (category, ledgerType) => {
+const findOrCreateCategoryLedger = async (category, ledgerType, companyId) => {
   const isPurchase = ledgerType === 'purchase';
   const ledgerName = `Business ${category} ${isPurchase ? 'Purchase' : 'Sales'}`;
 
-  let ledger = await Ledger.findOne({ ledgerName, status: 'Active' });
+  let ledger = await Ledger.findOne({ ledgerName, status: 'Active', companyId });
 
   if (!ledger) {
     ledger = new Ledger({
@@ -46,7 +47,8 @@ const findOrCreateCategoryLedger = async (category, ledgerType) => {
       currentBalance: 0,
       balanceType: isPurchase ? 'Dr' : 'Cr',
       parentGroup: isPurchase ? 'Purchase Accounts' : 'Sales Accounts',
-      status: 'Active'
+      status: 'Active',
+      companyId
     });
     await ledger.save();
   }
@@ -55,7 +57,7 @@ const findOrCreateCategoryLedger = async (category, ledgerType) => {
 };
 
 // Helper function to create business stock transaction
-const createBusinessStockTransaction = async (data) => {
+const createBusinessStockTransaction = async (data, companyId = null) => {
   const item = await BusinessItem.findById(data.itemId);
   if (!item) {
     throw new Error('Business item not found');
@@ -73,7 +75,8 @@ const createBusinessStockTransaction = async (data) => {
 
   const transaction = new BusinessStockTransaction({
     ...data,
-    balanceAfter
+    balanceAfter,
+    ...(companyId && { companyId })
   });
   await transaction.save();
 
@@ -87,12 +90,13 @@ const createBusinessStockTransaction = async (data) => {
 // Create new business item
 export const createBusinessItem = async (req, res) => {
   try {
-    const itemData = req.body;
+    const companyId = req.companyId;
+    const itemData = { ...req.body, companyId };
 
     if (!itemData.itemCode) {
-      itemData.itemCode = await generateBusinessItemCode();
+      itemData.itemCode = await generateBusinessItemCode(companyId);
     } else {
-      const existingItem = await BusinessItem.findOne({ itemCode: itemData.itemCode });
+      const existingItem = await BusinessItem.findOne({ itemCode: itemData.itemCode, companyId });
       if (existingItem) {
         return res.status(400).json({
           success: false,
@@ -105,8 +109,8 @@ export const createBusinessItem = async (req, res) => {
     itemData.currentBalance = 0;
 
     if (itemData.category) {
-      const purchaseLedger = await findOrCreateCategoryLedger(itemData.category, 'purchase');
-      const salesLedger = await findOrCreateCategoryLedger(itemData.category, 'sales');
+      const purchaseLedger = await findOrCreateCategoryLedger(itemData.category, 'purchase', companyId);
+      const salesLedger = await findOrCreateCategoryLedger(itemData.category, 'sales', companyId);
       itemData.purchaseLedger = purchaseLedger._id;
       itemData.salesLedger = salesLedger._id;
     }
@@ -122,7 +126,7 @@ export const createBusinessItem = async (req, res) => {
         rate: itemData.purchasePrice || 0,
         referenceType: 'Opening',
         notes: 'Opening Stock'
-      });
+      }, companyId);
     }
 
     res.status(201).json({
@@ -150,7 +154,7 @@ export const getAllBusinessItems = async (req, res) => {
       category = ''
     } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
 
     if (search) {
       query.$or = [
@@ -240,8 +244,8 @@ export const updateBusinessItem = async (req, res) => {
     const updateData = { ...req.body };
 
     if (updateData.category && updateData.category !== existingItem.category) {
-      const purchaseLedger = await findOrCreateCategoryLedger(updateData.category, 'purchase');
-      const salesLedger = await findOrCreateCategoryLedger(updateData.category, 'sales');
+      const purchaseLedger = await findOrCreateCategoryLedger(updateData.category, 'purchase', req.companyId);
+      const salesLedger = await findOrCreateCategoryLedger(updateData.category, 'sales', req.companyId);
       updateData.purchaseLedger = purchaseLedger._id;
       updateData.salesLedger = salesLedger._id;
     }
@@ -373,7 +377,7 @@ export const businessStockIn = async (req, res) => {
         gstAmount: calculatedGstAmount,
         netTotal: calculatedNetTotal,
         notes: notes || null
-      });
+      }, req.companyId);
       transactions.push(transaction);
 
       // Update item prices if provided
@@ -571,7 +575,7 @@ export const businessStockOut = async (req, res) => {
       rate: rate || 0,
       referenceType: referenceType || 'Adjustment',
       notes
-    });
+    }, req.companyId);
 
     res.status(201).json({
       success: true,
@@ -592,7 +596,7 @@ export const getBusinessStockTransactions = async (req, res) => {
   try {
     const { itemId, startDate, endDate, transactionType, referenceType } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
 
     if (itemId) {
       query.itemId = itemId;
@@ -770,7 +774,7 @@ export const getBusinessStockBalance = async (req, res) => {
   try {
     const { category, status } = req.query;
 
-    const query = { status: status || 'Active' };
+    const query = { status: status || 'Active', companyId: req.companyId };
     if (category) {
       query.category = category;
     }
@@ -846,7 +850,7 @@ export const updateBusinessOpeningBalance = async (req, res) => {
         rate: rate || item.purchasePrice || 0,
         referenceType: 'Adjustment',
         notes: 'Opening balance adjusted'
-      });
+      }, req.companyId);
     }
 
     res.status(200).json({

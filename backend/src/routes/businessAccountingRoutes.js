@@ -15,8 +15,10 @@ import {
   createExpenseVoucher,
   createJournalVoucher
 } from '../controllers/businessAccountingController.js';
+import { protect, addCompanyFilter } from '../middleware/auth.js';
 
 const router = express.Router();
+router.use(protect, addCompanyFilter);
 
 // ==================== LEDGER ROUTES ====================
 router.post('/ledgers', createBusinessLedger);
