@@ -145,7 +145,7 @@ const businessLedgerSchema = new mongoose.Schema({
 });
 
 // Pre-save: auto-derive nature from group
-businessLedgerSchema.pre('save', function(next) {
+businessLedgerSchema.pre('save', async function() {
   if (this.group) {
     const derivedNature = GROUP_NATURE_MAP[this.group];
     if (derivedNature) {
@@ -156,7 +156,6 @@ businessLedgerSchema.pre('save', function(next) {
       }
     }
   }
-  next();
 });
 
 // Indexes
@@ -164,7 +163,7 @@ businessLedgerSchema.index({ name: 1 });
 businessLedgerSchema.index({ group: 1 });
 businessLedgerSchema.index({ nature: 1 });
 businessLedgerSchema.index({ type: 1 });
-businessLedgerSchema.index({ code: 1 });
+businessLedgerSchema.index({ code: 1, companyId: 1 }, { unique: true, sparse: true });
 businessLedgerSchema.index({ companyId: 1 });
 businessLedgerSchema.index({ companyId: 1, group: 1, status: 1 });
 

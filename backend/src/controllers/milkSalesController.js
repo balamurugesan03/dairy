@@ -13,13 +13,30 @@ async function createMilkSaleVoucher(sale, companyId) {
     // Receipt voucher: Dr Cash/Bank, Cr LOCAL SALES / SAMPLE SALES
     const payLedgerName  = paymentType === 'Bank' ? 'Bank' : 'Cash';
     const saleLedgerName = saleMode === 'SAMPLE' ? 'SAMPLE SALES' : 'LOCAL SALES';
-    const [payLedger, saleLedger] = await Promise.all([
+
+    let [payLedger, saleLedger] = await Promise.all([
       Ledger.findOne({ ledgerName: payLedgerName,  companyId }),
       Ledger.findOne({ ledgerName: saleLedgerName, companyId })
     ]);
-    if (!payLedger)  console.warn(`[MilkSales] Ledger not found: "${payLedgerName}" — create it in Accounts`);
-    if (!saleLedger) console.warn(`[MilkSales] Ledger not found: "${saleLedgerName}" — create it in Accounts`);
-    if (!payLedger || !saleLedger) return null;
+
+    // Auto-create Cash/Bank ledger if missing
+    if (!payLedger) {
+      payLedger = await Ledger.create({
+        ledgerName: payLedgerName,
+        ledgerType: payLedgerName === 'Bank' ? 'Bank' : 'Cash',
+        openingBalance: 0, currentBalance: 0, balanceType: 'Dr', companyId
+      });
+      console.log(`[MilkSales] Auto-created ledger: "${payLedgerName}"`);
+    }
+    // Auto-create sales ledger if missing
+    if (!saleLedger) {
+      saleLedger = await Ledger.create({
+        ledgerName: saleLedgerName,
+        ledgerType: 'Income',
+        openingBalance: 0, currentBalance: 0, balanceType: 'Cr', companyId
+      });
+      console.log(`[MilkSales] Auto-created ledger: "${saleLedgerName}"`);
+    }
     const entries = [
       { ledgerId: payLedger._id,  ledgerName: payLedger.ledgerName,  debitAmount: amount, creditAmount: 0,      narration: shiftNote.trim() },
       { ledgerId: saleLedger._id, ledgerName: saleLedger.ledgerName, debitAmount: 0,      creditAmount: amount, narration: shiftNote.trim() }
@@ -42,13 +59,21 @@ async function createMilkSaleVoucher(sale, companyId) {
     if (!customer) return null;
     const isSchool = ['School', 'Anganwadi'].includes(customer.category);
     const saleLedgerName = isSchool ? 'SCHOOL MILK SALES' : 'MILK CREDIT SALES';
-    const [creditorLedger, saleLedger] = await Promise.all([
+    let [creditorLedger, saleLedger] = await Promise.all([
       customer.ledgerId ? Ledger.findById(customer.ledgerId) : null,
       Ledger.findOne({ ledgerName: saleLedgerName, companyId })
     ]);
     if (!creditorLedger) console.warn(`[MilkSales] Creditor ledger not found for customer ${creditorId} — link a ledger to this customer`);
-    if (!saleLedger)     console.warn(`[MilkSales] Ledger not found: "${saleLedgerName}" — create it in Accounts`);
-    if (!creditorLedger || !saleLedger) return null;
+    // Auto-create sales ledger if missing
+    if (!saleLedger) {
+      saleLedger = await Ledger.create({
+        ledgerName: saleLedgerName,
+        ledgerType: 'Income',
+        openingBalance: 0, currentBalance: 0, balanceType: 'Cr', companyId
+      });
+      console.log(`[MilkSales] Auto-created ledger: "${saleLedgerName}"`);
+    }
+    if (!creditorLedger) return null;
     const entries = [
       { ledgerId: creditorLedger._id, ledgerName: creditorLedger.ledgerName, debitAmount: amount, creditAmount: 0,      narration: shiftNote.trim() },
       { ledgerId: saleLedger._id,     ledgerName: saleLedger.ledgerName,     debitAmount: 0,      creditAmount: amount, narration: shiftNote.trim() }

@@ -295,7 +295,7 @@ export const getAllReceipts = async (req, res) => {
 // Get single receipt by ID
 export const getReceiptById = async (req, res) => {
   try {
-    const receipt = await ProducerReceipt.findById(req.params.id)
+    const receipt = await ProducerReceipt.findOne({ _id: req.params.id, companyId: req.companyId })
       .populate('farmerId', 'farmerNumber personalDetails bankDetails address')
       .populate('createdBy', 'name')
       .populate('cancelledBy', 'name');
@@ -368,7 +368,7 @@ export const cancelReceipt = async (req, res) => {
 
   try {
     const { reason } = req.body;
-    const receipt = await ProducerReceipt.findById(req.params.id);
+    const receipt = await ProducerReceipt.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!receipt) {
       return res.status(404).json({
@@ -471,7 +471,7 @@ export const cancelReceipt = async (req, res) => {
 // Get receipt print data
 export const getReceiptPrintData = async (req, res) => {
   try {
-    const receipt = await ProducerReceipt.findById(req.params.id)
+    const receipt = await ProducerReceipt.findOne({ _id: req.params.id, companyId: req.companyId })
       .populate('farmerId', 'farmerNumber personalDetails address')
       .populate('createdBy', 'name');
 

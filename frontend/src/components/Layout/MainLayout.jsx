@@ -24,7 +24,7 @@ import {
   IconHome, IconUsers, IconBox, IconShoppingCart, IconBook,
   IconCash, IconFileReport, IconShield, IconTool, IconSearch,
   IconSpeakerphone, IconBriefcase, IconChevronDown, IconMenu2, IconLogout, IconUser,
-  IconUserCog, IconBuildingStore, IconSettings, IconMilk, IconArrowLeft
+  IconUserCog, IconBuildingStore, IconSettings, IconMilk, IconArrowLeft, IconBuildingCommunity
 } from '@tabler/icons-react';
 import { useCompany } from '../../context/CompanyContext';
 import { useAuth } from '../../context/AuthContext';
@@ -195,7 +195,7 @@ const MainLayout = () => {
       label: 'Business Inventory',
       color: 'orange',
       children: [
-        { key: '/suppliers', label: 'Supplier' },
+        { key: '/business-suppliers', label: 'Supplier' },
         { key: '/business-inventory/items', label: 'Item Master' },
         { key: '/business-inventory/stock-in', label: 'Purchase / Stock In' },
         { key: '/business-inventory/sales/new', label: 'Create Invoice' },
@@ -404,6 +404,13 @@ const MainLayout = () => {
         { key: '/hrm/loans', label: 'Loans / Advance' }
       ]
     },
+    // Society Info — Dairy Cooperative only
+    {
+      key: '/society-info',
+      icon: <IconBuildingCommunity size={18} />,
+      label: 'Society Info',
+      color: 'indigo',
+    },
     // User Management - Only show for admins
     ...(isAdmin ? [{
       key: '/user-management',
@@ -430,7 +437,8 @@ const MainLayout = () => {
           'dairy-reports-menu',
           'subsidies-menu',
           'promotions-menu',
-          'hrm-menu'
+          'hrm-menu',
+          '/society-info',
         ];
         return allowedKeys.includes(item.key);
       });
@@ -459,7 +467,7 @@ const MainLayout = () => {
 
   const allMenuItems = getFilteredMenuItems();
   // Separate right-floated items (HRM, User Management)
-  const rightKeys = ['hrm-menu', '/user-management'];
+  const rightKeys = ['hrm-menu', '/society-info', '/user-management'];
   const menuItems = allMenuItems.filter(item => !rightKeys.includes(item.key));
   const rightMenuItems = allMenuItems.filter(item => rightKeys.includes(item.key));
 

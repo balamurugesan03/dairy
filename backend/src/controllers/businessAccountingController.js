@@ -1,5 +1,6 @@
 import BusinessLedger, { GROUP_NATURE_MAP } from '../models/BusinessLedger.js';
 import BusinessVoucher from '../models/BusinessVoucher.js';
+import Counter, { getNextSequence } from '../models/Counter.js';
 
 // Groups where credit increases balance (Credit-normal)
 const CREDIT_NATURE_GROUPS = [
@@ -56,19 +57,23 @@ export const generateBusinessVoucherNumber = async (voucherType, companyId = nul
   const today = new Date();
   const year = today.getFullYear().toString().slice(-2);
   const month = (today.getMonth() + 1).toString().padStart(2, '0');
+  const pattern = `${prefix}${year}${month}`;
+  const counterKey = `bvoucher-${pattern}-${companyId || 'global'}`;
 
-  const query = { voucherNumber: { $regex: `^${prefix}${year}${month}` } };
-  if (companyId) query.companyId = companyId;
-
-  const lastVoucher = await BusinessVoucher.findOne(query).sort({ voucherNumber: -1 });
-
-  let sequence = 1;
-  if (lastVoucher) {
-    const lastSequence = parseInt(lastVoucher.voucherNumber.slice(-4));
-    if (!isNaN(lastSequence)) sequence = lastSequence + 1;
+  let seedValue = 0;
+  const existingCounter = await Counter.findById(counterKey).lean();
+  if (!existingCounter) {
+    const query = { voucherNumber: { $regex: `^${pattern}` } };
+    if (companyId) query.companyId = companyId;
+    const lastVoucher = await BusinessVoucher.findOne(query).sort({ voucherNumber: -1 }).lean();
+    if (lastVoucher) {
+      const lastSeq = parseInt(lastVoucher.voucherNumber.slice(-4));
+      if (!isNaN(lastSeq)) seedValue = lastSeq;
+    }
   }
 
-  return `${prefix}${year}${month}${sequence.toString().padStart(4, '0')}`;
+  const seq = await getNextSequence(counterKey, seedValue);
+  return `${pattern}${seq.toString().padStart(4, '0')}`;
 };
 
 // ==================== LEDGER CONTROLLERS ====================
@@ -140,7 +145,7 @@ export const getBusinessLedgerById = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    const ledger = await BusinessLedger.findById(req.params.id);
+    const ledger = await BusinessLedger.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!ledger) {
       return res.status(404).json({ message: 'Ledger not found' });
     }
@@ -216,7 +221,7 @@ export const updateBusinessLedger = async (req, res) => {
   try {
     const { name, group, type, openingBalance, openingBalanceType, description, partyDetails, bankDetails, status } = req.body;
 
-    const ledger = await BusinessLedger.findById(req.params.id);
+    const ledger = await BusinessLedger.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!ledger) {
       return res.status(404).json({ message: 'Ledger not found' });
     }
@@ -266,7 +271,7 @@ export const deleteBusinessLedger = async (req, res) => {
       return res.status(400).json({ message: 'Cannot delete ledger with existing transactions' });
     }
 
-    const ledger = await BusinessLedger.findByIdAndDelete(req.params.id);
+    const ledger = await BusinessLedger.findOneAndDelete({ _id: req.params.id, companyId: req.companyId });
     if (!ledger) {
       return res.status(404).json({ message: 'Ledger not found' });
     }
@@ -476,7 +481,7 @@ export const deleteBusinessVoucher = async (req, res) => {
       await ledger.save();
     }
 
-    await BusinessVoucher.findByIdAndDelete(req.params.id);
+    await BusinessVoucher.findOneAndDelete({ _id: req.params.id, companyId: req.companyId });
     res.json({ message: 'Voucher deleted and ledger balances reversed successfully' });
   } catch (error) {
     console.error('Delete business voucher error:', error);

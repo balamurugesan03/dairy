@@ -83,7 +83,7 @@ export const getAllCollectionCenters = async (req, res) => {
 // Get collection center by ID
 export const getCollectionCenterById = async (req, res) => {
   try {
-    const center = await CollectionCenter.findById(req.params.id);
+    const center = await CollectionCenter.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!center) {
       return res.status(404).json({
@@ -108,8 +108,8 @@ export const getCollectionCenterById = async (req, res) => {
 // Update collection center
 export const updateCollectionCenter = async (req, res) => {
   try {
-    const center = await CollectionCenter.findByIdAndUpdate(
-      req.params.id,
+    const center = await CollectionCenter.findOneAndUpdate(
+      { _id: req.params.id, companyId: req.companyId },
       req.body,
       { new: true, runValidators: true }
     );
@@ -146,7 +146,7 @@ export const updateCollectionCenter = async (req, res) => {
 // Delete/Deactivate collection center
 export const deleteCollectionCenter = async (req, res) => {
   try {
-    const center = await CollectionCenter.findById(req.params.id);
+    const center = await CollectionCenter.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!center) {
       return res.status(404).json({
@@ -176,7 +176,7 @@ export const deleteCollectionCenter = async (req, res) => {
 // Toggle status (Active/Inactive)
 export const toggleStatus = async (req, res) => {
   try {
-    const center = await CollectionCenter.findById(req.params.id);
+    const center = await CollectionCenter.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!center) {
       return res.status(404).json({

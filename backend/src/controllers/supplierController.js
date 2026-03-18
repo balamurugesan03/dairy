@@ -195,7 +195,7 @@ export const getAllSuppliers = async (req, res) => {
 // Get supplier by ID
 export const getSupplierById = async (req, res) => {
   try {
-    const supplier = await Supplier.findById(req.params.id);
+    const supplier = await Supplier.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!supplier) {
       return res.status(404).json({
@@ -282,7 +282,7 @@ export const updateSupplier = async (req, res) => {
 // Delete/Deactivate supplier
 export const deleteSupplier = async (req, res) => {
   try {
-    const supplier = await Supplier.findById(req.params.id);
+    const supplier = await Supplier.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!supplier) {
       return res.status(404).json({

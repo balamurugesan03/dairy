@@ -98,6 +98,9 @@ itemSchema.index({ status: 1 });
 itemSchema.index({ category: 1 });
 itemSchema.index({ companyId: 1 });
 itemSchema.index({ itemCode: 1, companyId: 1 }, { unique: true, sparse: true });
+// Compound indexes for report queries
+itemSchema.index({ companyId: 1, status: 1 });
+itemSchema.index({ companyId: 1, category: 1 });
 
 const Item = mongoose.model('Item', itemSchema);
 

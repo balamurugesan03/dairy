@@ -193,7 +193,7 @@ export const getAllCustomers = async (req, res) => {
 // Get customer by ID
 export const getCustomerById = async (req, res) => {
   try {
-    const customer = await Customer.findById(req.params.id);
+    const customer = await Customer.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!customer) {
       return res.status(404).json({
@@ -280,7 +280,7 @@ export const updateCustomer = async (req, res) => {
 // Delete/Deactivate customer
 export const deleteCustomer = async (req, res) => {
   try {
-    const customer = await Customer.findById(req.params.id);
+    const customer = await Customer.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!customer) {
       return res.status(404).json({

@@ -223,7 +223,7 @@ const dairyPurchaseReturnSchema = new mongoose.Schema({
 // Indexes
 dairyPurchaseReturnSchema.index({ returnDate: -1 });
 dairyPurchaseReturnSchema.index({ supplierId: 1 });
-dairyPurchaseReturnSchema.index({ returnNumber: 1 });
+dairyPurchaseReturnSchema.index({ returnNumber: 1, companyId: 1 }, { unique: true, partialFilterExpression: { companyId: { $type: 'objectId' } } });
 dairyPurchaseReturnSchema.index({ paymentStatus: 1 });
 dairyPurchaseReturnSchema.index({ status: 1 });
 

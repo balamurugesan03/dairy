@@ -112,6 +112,9 @@ businessItemSchema.index({ category: 1 });
 businessItemSchema.index({ itemCode: 1, companyId: 1 }, { unique: true, sparse: true });
 businessItemSchema.index({ barcode: 1 });
 businessItemSchema.index({ companyId: 1 });
+// Compound indexes for report queries
+businessItemSchema.index({ companyId: 1, status: 1 });
+businessItemSchema.index({ companyId: 1, category: 1 });
 
 const BusinessItem = mongoose.model('BusinessItem', businessItemSchema);
 

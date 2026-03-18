@@ -44,7 +44,7 @@ const shiftIncentiveSchema = new mongoose.Schema(
     // ── Core fields ─────────────────────────────────────────────
     shift: {
       type:     String,
-      enum:     ['MOR', 'PRO', 'ALL'],
+      enum:     ['AM', 'PM', 'BOTH'],
       required: [true, 'Shift is required']
     },
     center: {
@@ -69,7 +69,7 @@ const shiftIncentiveSchema = new mongoose.Schema(
     },
     endDate: {
       type:     Date,
-      required: [true, 'End date is required']
+      required: false
     },
 
     // ── Calculation sections (independently enabled) ─────────────

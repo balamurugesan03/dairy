@@ -108,14 +108,15 @@ const PaymentVoucher = () => {
     setLoading(true);
     try {
       const selectedLedger = ledgers.find(l => l._id === values.ledgerId);
-      const cashLedger = ledgers.find(l => l.ledgerType === 'Cash');
       const amount = parseFloat(values.amount);
 
+      let cashLedger = ledgers.find(l => l.ledgerType === 'Cash');
       if (!cashLedger) {
-        message.error('Cash ledger not found. Please create a Cash ledger first.');
-        setLoading(false);
-        return;
+        const res = await ledgerAPI.create({ ledgerName: 'Cash in Hand', ledgerType: 'Cash', openingBalance: 0, openingBalanceType: 'Dr' });
+        cashLedger = res?.data;
+        if (cashLedger) setLedgers(prev => [...prev, cashLedger]);
       }
+      if (!cashLedger) { message.error('Could not create Cash ledger. Please try again.'); setLoading(false); return; }
 
       const payload = {
         voucherType: 'Payment',
@@ -279,11 +280,13 @@ const PaymentVoucher = () => {
   };
 
   const handleSaveMultiple = async () => {
-    const cashLedger = ledgers.find(l => l.ledgerType === 'Cash');
+    let cashLedger = ledgers.find(l => l.ledgerType === 'Cash');
     if (!cashLedger) {
-      message.error('Cash ledger not found. Please create a Cash ledger first.');
-      return;
+      const res = await ledgerAPI.create({ ledgerName: 'Cash in Hand', ledgerType: 'Cash', openingBalance: 0, openingBalanceType: 'Dr' });
+      cashLedger = res?.data;
+      if (cashLedger) setLedgers(prev => [...prev, cashLedger]);
     }
+    if (!cashLedger) { message.error('Could not create Cash ledger. Please try again.'); return; }
 
     const validEntries = multipleEntries.filter(entry => {
       const amount = parseFloat(entry.amount) || 0;

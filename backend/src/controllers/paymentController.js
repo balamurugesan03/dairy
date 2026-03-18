@@ -194,7 +194,7 @@ export const getAllPayments = async (req, res) => {
 // Get single payment by ID
 export const getPaymentById = async (req, res) => {
   try {
-    const payment = await FarmerPayment.findById(req.params.id)
+    const payment = await FarmerPayment.findOne({ _id: req.params.id, companyId: req.companyId })
       .populate('farmerId', 'farmerNumber personalDetails bankDetails contactDetails')
       .populate('advancesAdjusted.advanceId', 'advanceNumber advanceAmount')
       .populate('createdBy', 'name')
@@ -263,7 +263,7 @@ export const getFarmerPaymentHistory = async (req, res) => {
 // Update payment
 export const updatePayment = async (req, res) => {
   try {
-    const payment = await FarmerPayment.findById(req.params.id);
+    const payment = await FarmerPayment.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!payment) {
       return res.status(404).json({
@@ -291,8 +291,8 @@ export const updatePayment = async (req, res) => {
       }
     }
 
-    const updatedPayment = await FarmerPayment.findByIdAndUpdate(
-      req.params.id,
+    const updatedPayment = await FarmerPayment.findOneAndUpdate(
+      { _id: req.params.id, companyId: req.companyId },
       updateData,
       { new: true, runValidators: true }
     ).populate('farmerId', 'farmerNumber personalDetails');
@@ -318,7 +318,7 @@ export const cancelPayment = async (req, res) => {
 
   try {
     const { cancellationReason } = req.body;
-    const payment = await FarmerPayment.findById(req.params.id);
+    const payment = await FarmerPayment.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!payment) {
       return res.status(404).json({
@@ -547,7 +547,7 @@ export const getAllAdvances = async (req, res) => {
 // Get single advance by ID
 export const getAdvanceById = async (req, res) => {
   try {
-    const advance = await Advance.findById(req.params.id)
+    const advance = await Advance.findOne({ _id: req.params.id, companyId: req.companyId })
       .populate('farmerId', 'farmerNumber personalDetails bankDetails contactDetails')
       .populate('adjustments.adjustedBy', 'name')
       .populate('createdBy', 'name')
@@ -611,7 +611,7 @@ export const getFarmerAdvances = async (req, res) => {
 // Update advance
 export const updateAdvance = async (req, res) => {
   try {
-    const advance = await Advance.findById(req.params.id);
+    const advance = await Advance.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!advance) {
       return res.status(404).json({
@@ -637,8 +637,8 @@ export const updateAdvance = async (req, res) => {
       });
     }
 
-    const updatedAdvance = await Advance.findByIdAndUpdate(
-      req.params.id,
+    const updatedAdvance = await Advance.findOneAndUpdate(
+      { _id: req.params.id, companyId: req.companyId },
       updateData,
       { new: true, runValidators: true }
     ).populate('farmerId', 'farmerNumber personalDetails');
@@ -662,7 +662,7 @@ export const adjustAdvance = async (req, res) => {
   try {
     const { adjustmentAmount, referenceType, referenceId, paymentNumber, remarks } = req.body;
 
-    const advance = await Advance.findById(req.params.id);
+    const advance = await Advance.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!advance) {
       return res.status(404).json({
@@ -725,7 +725,7 @@ export const adjustAdvance = async (req, res) => {
 export const cancelAdvance = async (req, res) => {
   try {
     const { cancellationReason } = req.body;
-    const advance = await Advance.findById(req.params.id);
+    const advance = await Advance.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!advance) {
       return res.status(404).json({

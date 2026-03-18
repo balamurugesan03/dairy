@@ -89,6 +89,11 @@ export const createItem = async (req, res) => {
     // Set currentBalance same as openingBalance initially
     itemData.currentBalance = itemData.openingBalance || 0;
 
+    // Strip empty-string ObjectId fields to avoid cast errors
+    if (!itemData.supplier) itemData.supplier = undefined;
+    if (!itemData.purchaseLedger) itemData.purchaseLedger = undefined;
+    if (!itemData.salesLedger) itemData.salesLedger = undefined;
+
     // Auto-create/find category-based purchase and sales ledgers
     if (itemData.category) {
       const purchaseLedger = await findOrCreateCategoryLedger(itemData.category, 'purchase', companyId);
@@ -189,7 +194,7 @@ export const getAllItems = async (req, res) => {
 // Get item by ID
 export const getItemById = async (req, res) => {
   try {
-    const item = await Item.findById(req.params.id)
+    const item = await Item.findOne({ _id: req.params.id, companyId: req.companyId })
       .populate('purchaseLedger', 'ledgerName ledgerType')
       .populate('salesLedger', 'ledgerName ledgerType')
       .populate('supplier', 'supplierId name phone');
@@ -217,7 +222,7 @@ export const getItemById = async (req, res) => {
 // Update item
 export const updateItem = async (req, res) => {
   try {
-    const existingItem = await Item.findById(req.params.id);
+    const existingItem = await Item.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!existingItem) {
       return res.status(404).json({
         success: false,
@@ -236,8 +241,8 @@ export const updateItem = async (req, res) => {
       updateData.salesLedger = salesLedger._id;
     }
 
-    const item = await Item.findByIdAndUpdate(
-      req.params.id,
+    const item = await Item.findOneAndUpdate(
+      { _id: req.params.id, companyId: req.companyId },
       updateData,
       { new: true, runValidators: true }
     );
@@ -259,7 +264,7 @@ export const updateItem = async (req, res) => {
 // Delete item
 export const deleteItem = async (req, res) => {
   try {
-    const item = await Item.findById(req.params.id);
+    const item = await Item.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!item) {
       return res.status(404).json({
@@ -269,10 +274,10 @@ export const deleteItem = async (req, res) => {
     }
 
     // Delete all related stock transactions
-    await StockTransaction.deleteMany({ itemId: req.params.id });
+    await StockTransaction.deleteMany({ itemId: req.params.id, companyId: req.companyId });
 
     // Permanently delete the item
-    await Item.findByIdAndDelete(req.params.id);
+    await Item.findOneAndDelete({ _id: req.params.id, companyId: req.companyId });
 
     res.status(200).json({
       success: true,
@@ -622,7 +627,7 @@ export const updateOpeningBalance = async (req, res) => {
     // Parse rate with fallback to 0
     rate = parseFloat(rate) || 0;
 
-    const item = await Item.findById(id);
+    const item = await Item.findOne({ _id: id, companyId: req.companyId });
     if (!item) {
       return res.status(404).json({
         success: false,
@@ -667,7 +672,7 @@ export const updateOpeningBalance = async (req, res) => {
 // Get stock transaction by ID
 export const getStockTransactionById = async (req, res) => {
   try {
-    const transaction = await StockTransaction.findById(req.params.id)
+    const transaction = await StockTransaction.findOne({ _id: req.params.id, companyId: req.companyId })
       .populate('itemId', 'itemCode itemName measurement category')
       .populate('issueCentre', 'centerName centerType')
       .populate('subsidyId', 'subsidyName subsidyType')
@@ -703,7 +708,7 @@ export const updateStockTransaction = async (req, res) => {
     const { id } = req.params;
     const updateData = req.body;
 
-    const transaction = await StockTransaction.findById(id);
+    const transaction = await StockTransaction.findOne({ _id: id, companyId: req.companyId });
     if (!transaction) {
       return res.status(404).json({
         success: false,
@@ -805,7 +810,7 @@ export const deleteStockTransaction = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const transaction = await StockTransaction.findById(id);
+    const transaction = await StockTransaction.findOne({ _id: id, companyId: req.companyId });
     if (!transaction) {
       return res.status(404).json({
         success: false,
@@ -852,7 +857,7 @@ export const updateSalesPrice = async (req, res) => {
       });
     }
 
-    const item = await Item.findById(id);
+    const item = await Item.findOne({ _id: id, companyId: req.companyId });
     if (!item) {
       return res.status(404).json({
         success: false,

@@ -223,7 +223,7 @@ const salesReturnSchema = new mongoose.Schema({
 // Indexes
 salesReturnSchema.index({ returnDate: -1 });
 salesReturnSchema.index({ customerId: 1 });
-salesReturnSchema.index({ returnNumber: 1 });
+salesReturnSchema.index({ returnNumber: 1, companyId: 1 }, { unique: true, partialFilterExpression: { companyId: { $type: 'objectId' } } });
 salesReturnSchema.index({ paymentStatus: 1 });
 salesReturnSchema.index({ status: 1 });
 

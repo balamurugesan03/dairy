@@ -120,7 +120,7 @@ export const createSubsidy = async (req, res) => {
 // Get subsidy by ID
 export const getSubsidyById = async (req, res) => {
   try {
-    const subsidy = await Subsidy.findById(req.params.id);
+    const subsidy = await Subsidy.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!subsidy) {
       return res.status(404).json({
@@ -145,8 +145,8 @@ export const getSubsidyById = async (req, res) => {
 // Update subsidy
 export const updateSubsidy = async (req, res) => {
   try {
-    const subsidy = await Subsidy.findByIdAndUpdate(
-      req.params.id,
+    const subsidy = await Subsidy.findOneAndUpdate(
+      { _id: req.params.id, companyId: req.companyId },
       req.body,
       { new: true, runValidators: true }
     );
@@ -175,7 +175,7 @@ export const updateSubsidy = async (req, res) => {
 // Delete subsidy (soft delete)
 export const deleteSubsidy = async (req, res) => {
   try {
-    const subsidy = await Subsidy.findById(req.params.id);
+    const subsidy = await Subsidy.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!subsidy) {
       return res.status(404).json({

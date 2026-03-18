@@ -160,6 +160,10 @@ salesSchema.index({ customerId: 1 });
 salesSchema.index({ status: 1 });
 salesSchema.index({ companyId: 1 });
 salesSchema.index({ billNumber: 1, companyId: 1 }, { unique: true });
+// Compound indexes for report queries
+salesSchema.index({ companyId: 1, billDate: -1 });
+salesSchema.index({ companyId: 1, customerId: 1, billDate: -1 });
+salesSchema.index({ companyId: 1, status: 1, billDate: -1 });
 
 const Sales = mongoose.model('Sales', salesSchema);
 

@@ -184,7 +184,7 @@ export const getAllFarmers = async (req, res) => {
 // Get farmer by ID
 export const getFarmerById = async (req, res) => {
   try {
-    const farmer = await Farmer.findById(req.params.id)
+    const farmer = await Farmer.findOne({ _id: req.params.id, companyId: req.companyId })
       .populate('ledgerId', 'ledgerName currentBalance balanceType')
       .populate('collectionCenter', 'centerName centerType');
 
@@ -211,8 +211,8 @@ export const getFarmerById = async (req, res) => {
 // Update farmer
 export const updateFarmer = async (req, res) => {
   try {
-    const farmer = await Farmer.findByIdAndUpdate(
-      req.params.id,
+    const farmer = await Farmer.findOneAndUpdate(
+      { _id: req.params.id, companyId: req.companyId },
       req.body,
       { new: true, runValidators: true }
     ).populate('ledgerId');
@@ -248,7 +248,7 @@ export const updateFarmer = async (req, res) => {
 // Delete/Deactivate farmer
 export const deleteFarmer = async (req, res) => {
   try {
-    const farmer = await Farmer.findById(req.params.id);
+    const farmer = await Farmer.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!farmer) {
       return res.status(404).json({
@@ -294,6 +294,7 @@ export const searchFarmer = async (req, res) => {
     const farmers = await Farmer.find({
       $or: [
         { farmerNumber: { $regex: query, $options: 'i' } },
+        { memberId: { $regex: query, $options: 'i' } },
         { 'personalDetails.name': { $regex: query, $options: 'i' } },
         { 'personalDetails.phone': { $regex: query, $options: 'i' } }
       ],
@@ -319,7 +320,7 @@ export const searchFarmer = async (req, res) => {
 // Toggle farmer membership status
 export const toggleMembership = async (req, res) => {
   try {
-    const farmer = await Farmer.findById(req.params.id);
+    const farmer = await Farmer.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!farmer) {
       return res.status(404).json({
@@ -367,7 +368,7 @@ export const addShareToFarmer = async (req, res) => {
       });
     }
 
-    const farmer = await Farmer.findById(id);
+    const farmer = await Farmer.findOne({ _id: id, companyId: req.companyId });
 
     if (!farmer) {
       return res.status(404).json({
@@ -459,7 +460,7 @@ export const getShareHistory = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const farmer = await Farmer.findById(id).select('shareHistory personalDetails.name farmerNumber');
+    const farmer = await Farmer.findOne({ _id: id, companyId: req.companyId }).select('shareHistory personalDetails.name farmerNumber');
 
     if (!farmer) {
       return res.status(404).json({
@@ -507,7 +508,7 @@ export const terminateFarmer = async (req, res) => {
       });
     }
 
-    const farmer = await Farmer.findById(id);
+    const farmer = await Farmer.findOne({ _id: id, companyId: req.companyId });
 
     if (!farmer) {
       return res.status(404).json({

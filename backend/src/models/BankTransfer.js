@@ -214,7 +214,7 @@ bankTransferSchema.statics.getProducerBalances = async function(companyId, asOnD
         $group: {
           _id: null,
           totalMilkAmount: { $sum: '$milkAmount' },
-          totalDeductions: { $sum: '$totalDeductions' },
+          totalDeductions: { $sum: '$totalDeduction' },
           totalPaid: { $sum: '$paidAmount' }
         }
       }

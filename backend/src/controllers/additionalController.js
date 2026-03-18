@@ -7,6 +7,7 @@ import Promotion from '../models/Promotion.js';
 import BusinessSales from '../models/BusinessSales.js';
 import BusinessItem from '../models/BusinessItem.js';
 import BusinessStockTransaction from '../models/BusinessStockTransaction.js';
+import { generateInvoiceNumber } from './businessSalesController.js';
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
@@ -562,16 +563,8 @@ export const convertQuotationToInvoice = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Quotation already converted to invoice' });
     }
 
-    // Generate invoice number
-    const yy = new Date().getFullYear().toString().slice(-2);
-    const mm = (new Date().getMonth() + 1).toString().padStart(2, '0');
-    const lastSale = await BusinessSales.findOne(
-      { invoiceNumber: { $regex: `^INV${yy}${mm}` }, companyId: req.companyId },
-      { invoiceNumber: 1 }
-    ).sort({ invoiceNumber: -1 });
-    let seq = 1;
-    if (lastSale) { const n = parseInt(lastSale.invoiceNumber.slice(-4)); if (!isNaN(n)) seq = n + 1; }
-    const invoiceNumber = `INV${yy}${mm}${seq.toString().padStart(4, '0')}`;
+    // Generate invoice number (atomic — shared counter with businessSalesController)
+    const invoiceNumber = await generateInvoiceNumber('INV', req.companyId);
 
     const { paymentMode = 'Credit', paidAmount = 0 } = req.body;
 
@@ -617,14 +610,15 @@ export const convertQuotationToInvoice = async (req, res) => {
     // Update stock for each item
     for (const item of quotation.items) {
       if (item.itemId) {
-        await BusinessItem.findByIdAndUpdate(
-          item.itemId,
-          { $inc: { currentBalance: -item.quantity } }
+        const totalQty = item.quantity + (item.freeQty || 0);
+        await BusinessItem.findOneAndUpdate(
+          { _id: item.itemId, companyId: req.companyId },
+          { $inc: { currentBalance: -totalQty } }
         );
         await BusinessStockTransaction.create({
           itemId: item.itemId,
           transactionType: 'Stock Out',
-          quantity: item.quantity,
+          quantity: totalQty,
           rate: item.rate,
           referenceType: 'Sale',
           referenceId: sale._id,

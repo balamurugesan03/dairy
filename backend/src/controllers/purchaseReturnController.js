@@ -1,25 +1,31 @@
 import PurchaseReturn from '../models/PurchaseReturn.js';
 import BusinessItem from '../models/BusinessItem.js';
 import BusinessStockTransaction from '../models/BusinessStockTransaction.js';
+import Counter, { getNextSequence } from '../models/Counter.js';
 
 // Generate Debit Note Number (DN2602-0001)
-const generateReturnNumber = async () => {
+const generateReturnNumber = async (companyId) => {
   const today = new Date();
   const year = today.getFullYear().toString().slice(-2);
   const month = (today.getMonth() + 1).toString().padStart(2, '0');
   const prefix = `DN${year}${month}`;
+  const counterKey = `dn-${year}${month}-${companyId || 'global'}`;
 
-  const lastReturn = await PurchaseReturn.findOne({
-    returnNumber: { $regex: `^${prefix}` }
-  }).sort({ returnNumber: -1 });
-
-  let sequence = 1;
-  if (lastReturn) {
-    const lastSequence = parseInt(lastReturn.returnNumber.slice(-4));
-    sequence = lastSequence + 1;
+  let seedValue = 0;
+  const existingCounter = await Counter.findById(counterKey).lean();
+  if (!existingCounter) {
+    const lastReturn = await PurchaseReturn.findOne({
+      companyId,
+      returnNumber: { $regex: `^${prefix}` }
+    }).sort({ returnNumber: -1 }).lean();
+    if (lastReturn) {
+      const lastSeq = parseInt(lastReturn.returnNumber.slice(-4));
+      if (!isNaN(lastSeq)) seedValue = lastSeq;
+    }
   }
 
-  return `${prefix}-${sequence.toString().padStart(4, '0')}`;
+  const seq = await getNextSequence(counterKey, seedValue);
+  return `${prefix}-${seq.toString().padStart(4, '0')}`;
 };
 
 // Create Purchase Return (Debit Note)
@@ -43,7 +49,8 @@ export const createPurchaseReturn = async (req, res) => {
       notes
     } = req.body;
 
-    const returnNumber = await generateReturnNumber();
+    const companyId = req.companyId;
+    const returnNumber = await generateReturnNumber(companyId);
 
     // Calculate totals
     let totalQty = 0;
@@ -133,7 +140,7 @@ export const createPurchaseReturn = async (req, res) => {
       paymentStatus = 'Partial';
     }
 
-    const purchaseReturn = new PurchaseReturn({
+    const returnData = {
       returnNumber,
       returnDate: returnDate || new Date(),
       supplierId: supplierId || null,
@@ -161,9 +168,11 @@ export const createPurchaseReturn = async (req, res) => {
       receivedAmount: received,
       balanceAmount: balance,
       notes,
-      businessType: 'Private Firm'
-    });
+      businessType: 'Private Firm',
+      companyId
+    };
 
+    const purchaseReturn = new PurchaseReturn(returnData);
     await purchaseReturn.save();
 
     // Update stock - purchase return reduces stock (Stock Out)
@@ -182,7 +191,8 @@ export const createPurchaseReturn = async (req, res) => {
         referenceId: purchaseReturn._id,
         date: returnDate || new Date(),
         supplierName: supplierName || '',
-        notes: `Purchase Return - ${returnNumber} to ${supplierName || 'Unknown'}`
+        notes: `Purchase Return - ${returnNumber} to ${supplierName || 'Unknown'}`,
+        companyId
       });
       await stockTransaction.save();
     }
@@ -208,7 +218,7 @@ export const getAllPurchaseReturns = async (req, res) => {
       supplierId
     } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
 
     if (search) {
       query.$or = [
@@ -233,7 +243,7 @@ export const getAllPurchaseReturns = async (req, res) => {
 
     const [returns, total] = await Promise.all([
       PurchaseReturn.find(query)
-        .populate('supplierId', 'supplierName phone')
+        .populate('supplierId', 'name phone')
         .sort({ returnDate: -1, createdAt: -1 })
         .skip(skip)
         .limit(parseInt(limit)),
@@ -259,8 +269,8 @@ export const getAllPurchaseReturns = async (req, res) => {
 // Get Purchase Return by ID
 export const getPurchaseReturnById = async (req, res) => {
   try {
-    const purchaseReturn = await PurchaseReturn.findById(req.params.id)
-      .populate('supplierId', 'supplierName phone address gstNumber')
+    const purchaseReturn = await PurchaseReturn.findOne({ _id: req.params.id, companyId: req.companyId })
+      .populate('supplierId', 'name phone address gstin')
       .populate('items.itemId', 'itemName itemCode hsnCode unit');
 
     if (!purchaseReturn) {
@@ -277,7 +287,7 @@ export const getPurchaseReturnById = async (req, res) => {
 // Update Purchase Return
 export const updatePurchaseReturn = async (req, res) => {
   try {
-    const purchaseReturn = await PurchaseReturn.findById(req.params.id);
+    const purchaseReturn = await PurchaseReturn.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!purchaseReturn) {
       return res.status(404).json({ message: 'Purchase return not found' });
     }
@@ -397,7 +407,8 @@ export const updatePurchaseReturn = async (req, res) => {
         referenceId: purchaseReturn._id,
         date: returnDate || purchaseReturn.returnDate,
         supplierName: supplierName || '',
-        notes: `Purchase Return - ${purchaseReturn.returnNumber} (Updated)`
+        notes: `Purchase Return - ${purchaseReturn.returnNumber} (Updated)`,
+        companyId: req.companyId
       });
       await stockTransaction.save();
     }
@@ -457,7 +468,7 @@ export const updatePurchaseReturn = async (req, res) => {
 // Delete Purchase Return
 export const deletePurchaseReturn = async (req, res) => {
   try {
-    const purchaseReturn = await PurchaseReturn.findById(req.params.id);
+    const purchaseReturn = await PurchaseReturn.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!purchaseReturn) {
       return res.status(404).json({ message: 'Purchase return not found' });
     }
@@ -493,9 +504,8 @@ export const getPurchaseReturnSummary = async (req, res) => {
     if (startDate) dateFilter.$gte = new Date(startDate);
     if (endDate) dateFilter.$lte = new Date(endDate);
 
-    const matchQuery = Object.keys(dateFilter).length > 0
-      ? { returnDate: dateFilter, status: 'Active' }
-      : { status: 'Active' };
+    const matchQuery = { companyId: req.companyId, status: 'Active' };
+    if (Object.keys(dateFilter).length > 0) matchQuery.returnDate = dateFilter;
 
     const [summary] = await PurchaseReturn.aggregate([
       { $match: matchQuery },

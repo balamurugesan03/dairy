@@ -86,7 +86,7 @@ export const createLedger = async (req, res) => {
 // Get ledger by ID
 export const getLedgerById = async (req, res) => {
   try {
-    const ledger = await Ledger.findById(req.params.id);
+    const ledger = await Ledger.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!ledger) {
       return res.status(404).json({
@@ -111,8 +111,8 @@ export const getLedgerById = async (req, res) => {
 // Update ledger
 export const updateLedger = async (req, res) => {
   try {
-    const ledger = await Ledger.findByIdAndUpdate(
-      req.params.id,
+    const ledger = await Ledger.findOneAndUpdate(
+      { _id: req.params.id, companyId: req.companyId },
       req.body,
       { new: true, runValidators: true }
     );
@@ -141,7 +141,7 @@ export const updateLedger = async (req, res) => {
 // Delete ledger (soft delete)
 export const deleteLedger = async (req, res) => {
   try {
-    const ledger = await Ledger.findById(req.params.id);
+    const ledger = await Ledger.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!ledger) {
       return res.status(404).json({

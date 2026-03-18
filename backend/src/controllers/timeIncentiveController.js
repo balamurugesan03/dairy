@@ -37,6 +37,65 @@ async function hasOverlap(data, excludeId, companyId) {
 }
 
 // ════════════════════════════════════════════════════════════════
+//  GET ACTIVE — for MilkPurchase: find active incentive for
+//  given shift + center + date + current server time
+//  GET /time-incentives/active?shift=AM&center=CenterName&date=YYYY-MM-DD
+// ════════════════════════════════════════════════════════════════
+export const getActiveTimeIncentive = async (req, res) => {
+  try {
+    const { shift, center, date } = req.query;
+
+    const targetDate = date ? new Date(date) : new Date();
+    targetDate.setHours(0, 0, 0, 0);
+    const targetDateEnd = new Date(targetDate);
+    targetDateEnd.setHours(23, 59, 59, 999);
+
+    // Current time as HH:mm string (server time)
+    const now = new Date();
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    const filter = {
+      companyId: req.companyId,
+      status:    true,
+      startDate: { $lte: targetDateEnd },
+      timeFrom:  { $lte: currentTime },
+      timeTo:    { $gt:  currentTime },
+      $and: [
+        {
+          $or: [
+            { endDate: { $gte: targetDate } },
+            { endDate: null },
+            { endDate: { $exists: false } }
+          ]
+        }
+      ]
+    };
+
+    // Shift match (shift is stored as array ['AM','PM'])
+    if (shift) filter.shift = { $in: [shift] };
+
+    // Center match
+    if (center) {
+      filter.$and.push({
+        $or: [
+          { centerType: 'ALL' },
+          { centerType: 'LIST', centers: center }
+        ]
+      });
+    } else {
+      // No center specified — only ALL-type incentives apply
+      filter.$and.push({ centerType: 'ALL' });
+    }
+
+    const incentive = await TimeIncentive.findOne(filter).sort({ createdAt: -1 }).lean();
+
+    res.json({ success: true, data: incentive || null });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ════════════════════════════════════════════════════════════════
 //  GET ALL — paginated + search + filters
 // ════════════════════════════════════════════════════════════════
 export const getAllTimeIncentives = async (req, res) => {

@@ -149,7 +149,7 @@ businessVoucherSchema.index({ voucherNumber: 1, companyId: 1 }, { unique: true }
 businessVoucherSchema.index({ companyId: 1, 'entries.ledgerId': 1, date: 1 });
 
 // Pre-save: validate balance + compute totals + set financialYear
-businessVoucherSchema.pre('save', function(next) {
+businessVoucherSchema.pre('save', async function() {
   if (this.entries && this.entries.length > 0) {
     const totalDr = this.entries
       .filter(e => e.type === 'debit')
@@ -159,9 +159,9 @@ businessVoucherSchema.pre('save', function(next) {
       .reduce((s, e) => s + e.amount, 0);
 
     if (Math.abs(totalDr - totalCr) > 0.01) {
-      return next(new Error(
+      throw new Error(
         `Voucher imbalanced: Debit=${totalDr.toFixed(2)} Credit=${totalCr.toFixed(2)}`
-      ));
+      );
     }
 
     this.totalDebit = totalDr;
@@ -171,8 +171,6 @@ businessVoucherSchema.pre('save', function(next) {
   if (!this.financialYear) {
     this.financialYear = getFinancialYear(this.date);
   }
-
-  next();
 });
 
 function getFinancialYear(date) {

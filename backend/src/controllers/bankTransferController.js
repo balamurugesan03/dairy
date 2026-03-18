@@ -1,5 +1,5 @@
 import BankTransfer from '../models/BankTransfer.js';
-import Farmer from '../models/Customer.js';
+import Farmer from '../models/Farmer.js';
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
 import mongoose from 'mongoose';
@@ -59,7 +59,7 @@ export const retrieveBalances = async (req, res) => {
             $group: {
               _id: null,
               totalMilkAmount: { $sum: '$milkAmount' },
-              totalDeductions: { $sum: '$totalDeductions' },
+              totalDeductions: { $sum: '$totalDeduction' },
               totalPaid: { $sum: '$paidAmount' }
             }
           }

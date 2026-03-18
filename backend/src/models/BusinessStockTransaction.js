@@ -140,6 +140,12 @@ businessStockTransactionSchema.index({ transactionType: 1, date: -1 });
 businessStockTransactionSchema.index({ supplierId: 1 });
 businessStockTransactionSchema.index({ invoiceNumber: 1 });
 businessStockTransactionSchema.index({ companyId: 1 });
+// Compound indexes — cover the most common report query patterns
+businessStockTransactionSchema.index({ companyId: 1, date: -1 });
+businessStockTransactionSchema.index({ companyId: 1, itemId: 1, date: -1 });
+businessStockTransactionSchema.index({ companyId: 1, transactionType: 1, date: -1 });
+businessStockTransactionSchema.index({ companyId: 1, referenceType: 1, date: -1 });
+businessStockTransactionSchema.index({ companyId: 1, supplierId: 1, date: -1 });
 
 const BusinessStockTransaction = mongoose.model('BusinessStockTransaction', businessStockTransactionSchema);
 

@@ -223,7 +223,7 @@ export const getAllLoans = async (req, res) => {
 // Get single loan by ID
 export const getLoanById = async (req, res) => {
   try {
-    const loan = await ProducerLoan.findById(req.params.id)
+    const loan = await ProducerLoan.findOne({ _id: req.params.id, companyId: req.companyId })
       .populate('farmerId', 'farmerNumber personalDetails bankDetails address')
       .populate('createdBy', 'name')
       .populate('cancelledBy', 'name')
@@ -291,7 +291,7 @@ export const getFarmerLoans = async (req, res) => {
 // Update loan
 export const updateLoan = async (req, res) => {
   try {
-    const loan = await ProducerLoan.findById(req.params.id);
+    const loan = await ProducerLoan.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!loan) {
       return res.status(404).json({
@@ -326,8 +326,8 @@ export const updateLoan = async (req, res) => {
       }
     }
 
-    const updatedLoan = await ProducerLoan.findByIdAndUpdate(
-      req.params.id,
+    const updatedLoan = await ProducerLoan.findOneAndUpdate(
+      { _id: req.params.id, companyId: req.companyId },
       updateData,
       { new: true, runValidators: true }
     ).populate('farmerId', 'farmerNumber personalDetails');
@@ -353,7 +353,7 @@ export const cancelLoan = async (req, res) => {
 
   try {
     const { reason } = req.body;
-    const loan = await ProducerLoan.findById(req.params.id);
+    const loan = await ProducerLoan.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!loan) {
       return res.status(404).json({
@@ -431,7 +431,7 @@ export const recordEMIPayment = async (req, res) => {
 
   try {
     const { emiNumber, amount, paymentId, remarks } = req.body;
-    const loan = await ProducerLoan.findById(req.params.id);
+    const loan = await ProducerLoan.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!loan) {
       return res.status(404).json({

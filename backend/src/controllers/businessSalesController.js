@@ -7,26 +7,33 @@ import {
   generateBusinessVoucherNumber,
   applyLedgerBalanceChange
 } from './businessAccountingController.js';
+import Counter, { getNextSequence } from '../models/Counter.js';
 
 // Generate Invoice Number
 const generateInvoiceNumber = async (prefix = 'INV', companyId = null) => {
   const today = new Date();
   const year = today.getFullYear().toString().slice(-2);
   const month = (today.getMonth() + 1).toString().padStart(2, '0');
+  const pattern = `${prefix}${year}${month}`;
+  const counterKey = `invoice-${pattern}-${companyId || 'global'}`;
 
-  const query = { invoiceNumber: { $regex: `^${prefix}${year}${month}` } };
-  if (companyId) query.companyId = companyId;
-
-  const lastSale = await BusinessSales.findOne(query).sort({ invoiceNumber: -1 });
-
-  let sequence = 1;
-  if (lastSale) {
-    const lastSequence = parseInt(lastSale.invoiceNumber.slice(-4));
-    if (!isNaN(lastSequence)) sequence = lastSequence + 1;
+  let seedValue = 0;
+  const existingCounter = await Counter.findById(counterKey).lean();
+  if (!existingCounter) {
+    const query = { invoiceNumber: { $regex: `^${pattern}` } };
+    if (companyId) query.companyId = companyId;
+    const lastSale = await BusinessSales.findOne(query).sort({ invoiceNumber: -1 }).lean();
+    if (lastSale) {
+      const lastSeq = parseInt(lastSale.invoiceNumber.slice(-4));
+      if (!isNaN(lastSeq)) seedValue = lastSeq;
+    }
   }
 
-  return `${prefix}${year}${month}${sequence.toString().padStart(4, '0')}`;
+  const seq = await getNextSequence(counterKey, seedValue);
+  return `${pattern}${seq.toString().padStart(4, '0')}`;
 };
+
+export { generateInvoiceNumber };
 
 // Find or create a system ledger in BusinessLedger
 const getOrCreateBusinessLedger = async (name, group, type, companyId) => {
@@ -94,8 +101,13 @@ export const createBusinessSale = async (req, res) => {
 
     const processedItems = [];
 
+    // Batch fetch all items instead of N individual queries
+    const itemIds = items.map(i => i.itemId);
+    const businessItemsList = await BusinessItem.find({ _id: { $in: itemIds }, companyId });
+    const itemMap = new Map(businessItemsList.map(b => [b._id.toString(), b]));
+
     for (const item of items) {
-      const businessItem = await BusinessItem.findById(item.itemId);
+      const businessItem = itemMap.get(item.itemId?.toString());
       if (!businessItem) {
         return res.status(404).json({ message: `Item not found: ${item.itemId}` });
       }
@@ -245,7 +257,8 @@ export const createBusinessSale = async (req, res) => {
           referenceType: invoiceType === 'Sale' ? 'Sale' : 'Return',
           referenceId: sale._id,
           date: invoiceDate || new Date(),
-          notes: `${invoiceType} - ${invoiceNumber} to ${partyName || 'Walk-in'}`
+          notes: `${invoiceType} - ${invoiceNumber} to ${partyName || 'Walk-in'}`,
+          companyId
         });
         await stockTransaction.save();
       }
@@ -401,10 +414,10 @@ export const createBusinessSale = async (req, res) => {
       }
     }
 
-    res.status(201).json(sale);
+    res.status(201).json({ success: true, data: sale });
   } catch (error) {
     console.error('Create business sale error:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -452,6 +465,7 @@ export const getAllBusinessSales = async (req, res) => {
     ]);
 
     res.json({
+      success: true,
       data: sales,
       pagination: {
         page: parseInt(page),
@@ -462,40 +476,43 @@ export const getAllBusinessSales = async (req, res) => {
     });
   } catch (error) {
     console.error('Get all business sales error:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 // Get Business Sale by ID
 export const getBusinessSaleById = async (req, res) => {
   try {
-    const sale = await BusinessSales.findById(req.params.id)
+    const sale = await BusinessSales.findOne({ _id: req.params.id, companyId: req.companyId })
       .populate('partyId', 'name phone customerId address gstNumber')
       .populate('items.itemId', 'itemName itemCode hsnCode unit');
 
     if (!sale) {
-      return res.status(404).json({ message: 'Sale not found' });
+      return res.status(404).json({ success: false, message: 'Sale not found' });
     }
 
-    res.json(sale);
+    res.json({ success: true, data: sale });
   } catch (error) {
     console.error('Get business sale error:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 // Update Business Sale
 export const updateBusinessSale = async (req, res) => {
   try {
-    const sale = await BusinessSales.findById(req.params.id);
+    const sale = await BusinessSales.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!sale) {
       return res.status(404).json({ message: 'Sale not found' });
     }
 
-    // Reverse stock transactions for original items
+    // Reverse stock transactions for original items — batch fetch
     if (sale.invoiceType === 'Sale' || sale.invoiceType === 'Sale Return') {
+      const origItemIds = sale.items.map(i => i.itemId);
+      const origItemsList = await BusinessItem.find({ _id: { $in: origItemIds }, companyId: req.companyId });
+      const origItemMap = new Map(origItemsList.map(b => [b._id.toString(), b]));
       for (const item of sale.items) {
-        const businessItem = await BusinessItem.findById(item.itemId);
+        const businessItem = origItemMap.get(item.itemId?.toString());
         if (businessItem) {
           const totalQtyWithFree = item.quantity + (item.freeQty || 0);
           if (sale.invoiceType === 'Sale') {
@@ -520,8 +537,13 @@ export const updateBusinessSale = async (req, res) => {
 
       const processedItems = [];
 
+      // Batch fetch new items
+      const newItemIds = items.map(i => i.itemId);
+      const newBusinessItemsList = await BusinessItem.find({ _id: { $in: newItemIds }, companyId: req.companyId });
+      const newItemMap = new Map(newBusinessItemsList.map(b => [b._id.toString(), b]));
+
       for (const item of items) {
-        const businessItem = await BusinessItem.findById(item.itemId);
+        const businessItem = newItemMap.get(item.itemId?.toString());
         if (!businessItem) continue;
 
         const qty = parseFloat(item.quantity) || 0;
@@ -567,7 +589,8 @@ export const updateBusinessSale = async (req, res) => {
             referenceType: sale.invoiceType === 'Sale' ? 'Sale' : 'Return',
             referenceId: sale._id,
             date: updateData.invoiceDate || sale.invoiceDate,
-            notes: `${sale.invoiceType} - ${sale.invoiceNumber} (Updated)`
+            notes: `${sale.invoiceType} - ${sale.invoiceNumber} (Updated)`,
+            companyId: req.companyId
           }).save();
         }
       }
@@ -599,25 +622,28 @@ export const updateBusinessSale = async (req, res) => {
     }
 
     await sale.save();
-    res.json(sale);
+    res.json({ success: true, data: sale });
   } catch (error) {
     console.error('Update business sale error:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 // Delete Business Sale
 export const deleteBusinessSale = async (req, res) => {
   try {
-    const sale = await BusinessSales.findById(req.params.id);
+    const sale = await BusinessSales.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!sale) {
-      return res.status(404).json({ message: 'Sale not found' });
+      return res.status(404).json({ success: false, message: 'Sale not found' });
     }
 
-    // Reverse stock
+    // Reverse stock — batch fetch items
     if (sale.invoiceType === 'Sale' || sale.invoiceType === 'Sale Return') {
+      const delItemIds = sale.items.map(i => i.itemId);
+      const delItemsList = await BusinessItem.find({ _id: { $in: delItemIds }, companyId: req.companyId });
+      const delItemMap = new Map(delItemsList.map(b => [b._id.toString(), b]));
       for (const item of sale.items) {
-        const businessItem = await BusinessItem.findById(item.itemId);
+        const businessItem = delItemMap.get(item.itemId?.toString());
         if (businessItem) {
           const totalQtyWithFree = item.quantity + (item.freeQty || 0);
           if (sale.invoiceType === 'Sale') businessItem.currentBalance += totalQtyWithFree;
@@ -644,10 +670,10 @@ export const deleteBusinessSale = async (req, res) => {
     }
 
     await BusinessSales.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Sale deleted successfully' });
+    res.json({ success: true, message: 'Sale deleted successfully' });
   } catch (error) {
     console.error('Delete business sale error:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 

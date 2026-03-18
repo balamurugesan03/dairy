@@ -106,6 +106,10 @@ ledgerSchema.index({ ledgerType: 1 });
 ledgerSchema.index({ 'linkedEntity.entityType': 1, 'linkedEntity.entityId': 1 });
 ledgerSchema.index({ status: 1 });
 ledgerSchema.index({ companyId: 1 });
+// Compound indexes — heavily used in report queries (Trading Account, P&L, Balance Sheet)
+ledgerSchema.index({ companyId: 1, ledgerType: 1 });
+ledgerSchema.index({ companyId: 1, status: 1 });
+ledgerSchema.index({ companyId: 1, ledgerType: 1, status: 1 });
 
 const Ledger = mongoose.model('Ledger', ledgerSchema);
 

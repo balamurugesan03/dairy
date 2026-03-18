@@ -3,25 +3,31 @@ import Item from '../models/Item.js';
 import StockTransaction from '../models/StockTransaction.js';
 import Farmer from '../models/Farmer.js';
 import Customer from '../models/Customer.js';
+import Counter, { getNextSequence } from '../models/Counter.js';
 
 // Generate Dairy Credit Note Number (DCN2602-0001)
-const generateReturnNumber = async () => {
+const generateReturnNumber = async (companyId) => {
   const today = new Date();
   const year = today.getFullYear().toString().slice(-2);
   const month = (today.getMonth() + 1).toString().padStart(2, '0');
   const prefix = `DCN${year}${month}`;
+  const counterKey = `dcn-${year}${month}-${companyId || 'global'}`;
 
-  const lastReturn = await DairySalesReturn.findOne({
-    returnNumber: { $regex: `^${prefix}` }
-  }).sort({ returnNumber: -1 });
-
-  let sequence = 1;
-  if (lastReturn) {
-    const lastSequence = parseInt(lastReturn.returnNumber.slice(-4));
-    sequence = lastSequence + 1;
+  let seedValue = 0;
+  const existingCounter = await Counter.findById(counterKey).lean();
+  if (!existingCounter) {
+    const lastReturn = await DairySalesReturn.findOne({
+      companyId,
+      returnNumber: { $regex: `^${prefix}` }
+    }).sort({ returnNumber: -1 }).lean();
+    if (lastReturn) {
+      const lastSeq = parseInt(lastReturn.returnNumber.slice(-4));
+      if (!isNaN(lastSeq)) seedValue = lastSeq;
+    }
   }
 
-  return `${prefix}-${sequence.toString().padStart(4, '0')}`;
+  const seq = await getNextSequence(counterKey, seedValue);
+  return `${prefix}-${seq.toString().padStart(4, '0')}`;
 };
 
 // Create Dairy Sales Return (Credit Note)
@@ -46,7 +52,8 @@ export const createDairySalesReturn = async (req, res) => {
       notes
     } = req.body;
 
-    const returnNumber = await generateReturnNumber();
+    const companyId = req.companyId;
+    const returnNumber = await generateReturnNumber(companyId);
 
     // Set customerModel based on customerType
     let customerModel = null;
@@ -150,7 +157,7 @@ export const createDairySalesReturn = async (req, res) => {
       paymentStatus = 'Partial';
     }
 
-    const salesReturn = new DairySalesReturn({
+    const returnData = {
       returnNumber,
       returnDate: returnDate || new Date(),
       customerType: customerType || 'Other',
@@ -180,9 +187,11 @@ export const createDairySalesReturn = async (req, res) => {
       paidAmount: paid,
       balanceAmount: balance,
       notes,
-      businessType: 'Dairy Cooperative'
-    });
+      businessType: 'Dairy Cooperative',
+      companyId
+    };
 
+    const salesReturn = new DairySalesReturn(returnData);
     await salesReturn.save();
 
     // Update stock - sales return adds stock back (Stock In)
@@ -200,7 +209,8 @@ export const createDairySalesReturn = async (req, res) => {
         referenceType: 'Return',
         referenceId: salesReturn._id,
         date: returnDate || new Date(),
-        notes: `Sales Return - ${returnNumber} from ${resolvedCustomerName || 'Unknown'}`
+        notes: `Sales Return - ${returnNumber} from ${resolvedCustomerName || 'Unknown'}`,
+        companyId
       });
       await stockTransaction.save();
     }
@@ -226,7 +236,7 @@ export const getAllDairySalesReturns = async (req, res) => {
       customerId
     } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
 
     if (search) {
       query.$or = [
@@ -276,7 +286,7 @@ export const getAllDairySalesReturns = async (req, res) => {
 // Get Dairy Sales Return by ID
 export const getDairySalesReturnById = async (req, res) => {
   try {
-    const salesReturn = await DairySalesReturn.findById(req.params.id)
+    const salesReturn = await DairySalesReturn.findOne({ _id: req.params.id, companyId: req.companyId })
       .populate('customerId')
       .populate('items.itemId', 'itemName itemCode hsnCode unit measurement');
 
@@ -294,7 +304,7 @@ export const getDairySalesReturnById = async (req, res) => {
 // Update Dairy Sales Return
 export const updateDairySalesReturn = async (req, res) => {
   try {
-    const salesReturn = await DairySalesReturn.findById(req.params.id);
+    const salesReturn = await DairySalesReturn.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!salesReturn) {
       return res.status(404).json({ message: 'Sales return not found' });
     }
@@ -406,7 +416,8 @@ export const updateDairySalesReturn = async (req, res) => {
         referenceType: 'Return',
         referenceId: salesReturn._id,
         date: returnDate || salesReturn.returnDate,
-        notes: `Sales Return - ${salesReturn.returnNumber} (Updated)`
+        notes: `Sales Return - ${salesReturn.returnNumber} (Updated)`,
+        companyId: req.companyId
       });
       await stockTransaction.save();
     }
@@ -473,7 +484,7 @@ export const updateDairySalesReturn = async (req, res) => {
 // Delete Dairy Sales Return
 export const deleteDairySalesReturn = async (req, res) => {
   try {
-    const salesReturn = await DairySalesReturn.findById(req.params.id);
+    const salesReturn = await DairySalesReturn.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!salesReturn) {
       return res.status(404).json({ message: 'Sales return not found' });
     }

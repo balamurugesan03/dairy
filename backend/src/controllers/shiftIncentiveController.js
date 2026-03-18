@@ -74,7 +74,11 @@ export const getActiveIncentives = async (req, res) => {
       companyId: req.companyId,
       status:    true,
       startDate: { $lte: targetDate },
-      endDate:   { $gte: targetDate }
+      $or: [
+        { endDate: { $gte: targetDate } },
+        { endDate: null },
+        { endDate: { $exists: false } }
+      ]
     };
 
     if (shift)  filter.shift  = shift;

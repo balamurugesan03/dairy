@@ -202,6 +202,40 @@ const sendRaw = (buffer) => {
   }
 };
 
+// ── Build 58mm ESC/POS receipt for Milk Sales ──────────────────────────────────
+const buildMilkSalesReceipt = (d) => {
+  const isLocal = d.saleMode === 'LOCAL' || d.saleMode === 'SAMPLE';
+  return Buffer.concat([
+    CMD.init,
+    CMD.alignCtr,
+    CMD.boldOn, CMD.dblSize,
+    ascii('MILK SALES'), lf(),
+    CMD.normSize, CMD.boldOff,
+    center((d.dateStr || '') + ' | ' + (d.session || '') + ' | ' + (d.saleMode || '')),
+    CMD.alignLeft,
+    dashes(),
+    row('Bill No',  d.billNo),
+    isLocal
+      ? (d.centerName ? row('Center', d.centerName) : b())
+      : (d.creditorName ? row('Creditor', d.creditorName) : b()),
+    !isLocal && d.centerName  ? row('Center', d.centerName)  : b(),
+    !isLocal && d.agentName   ? row('Agent',  d.agentName)   : b(),
+    dashes(),
+    row('Litres',   Number(d.litre  || 0).toFixed(2) + ' L'),
+    row('Rate/Ltr', 'Rs.' + Number(d.rate || 0).toFixed(2)),
+    isLocal ? row('Payment', d.paymentType || 'Cash') : b(),
+    dashes(),
+    CMD.boldOn,
+    row('AMOUNT', 'Rs.' + Number(d.amount || 0).toFixed(2)),
+    CMD.boldOff,
+    dashes(),
+    CMD.alignCtr,
+    center('Thank You'),
+    CMD.feed(4),
+    CMD.cut
+  ]);
+};
+
 // ── Route handlers ─────────────────────────────────────────────────────────────
 
 // POST /api/print/milk-receipt
@@ -213,6 +247,18 @@ export const printMilkReceipt = async (req, res) => {
   } catch (err) {
     console.error('[ThermalPrint] FAILED:', err.message);
     // Return the full error so frontend can show useful notification
+    res.status(500).json({ success: false, message: err.message, hint: 'Check PRINTER_NAME in backend/.env' });
+  }
+};
+
+// POST /api/print/milk-sales-receipt
+export const printMilkSalesReceipt = async (req, res) => {
+  try {
+    const buffer = buildMilkSalesReceipt(req.body);
+    sendRaw(buffer);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[ThermalPrint] FAILED:', err.message);
     res.status(500).json({ success: false, message: err.message, hint: 'Check PRINTER_NAME in backend/.env' });
   }
 };

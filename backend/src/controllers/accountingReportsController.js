@@ -36,13 +36,18 @@ export const getCashBook = async (req, res) => {
       });
     }
 
-    // Find cash ledger
-    const cashLedger = await Ledger.findOne({ ledgerType: 'Cash', status: 'Active' });
+    // Find cash ledger — auto-create if missing
+    let cashLedger = await Ledger.findOne({ ledgerType: 'Cash', status: 'Active', companyId: req.companyId });
     if (!cashLedger) {
-      return res.status(404).json({
-        success: false,
-        message: 'Cash ledger not found'
+      cashLedger = new Ledger({
+        ledgerName: 'Cash in Hand',
+        ledgerType: 'Cash',
+        openingBalance: 0,
+        currentBalance: 0,
+        balanceType: 'Dr',
+        companyId: req.companyId
       });
+      await cashLedger.save();
     }
 
     // Calculate opening balance
@@ -50,11 +55,13 @@ export const getCashBook = async (req, res) => {
       Ledger,
       Voucher,
       cashLedger._id,
-      dateFilter.startDate
+      dateFilter.startDate,
+      req.companyId
     );
 
     // Get all vouchers affecting cash in the period
     const vouchers = await Voucher.find({
+      companyId: req.companyId,
       voucherDate: {
         $gte: dateFilter.startDate,
         $lte: dateFilter.endDate
@@ -161,7 +168,7 @@ export const getGeneralLedger = async (req, res) => {
     }
 
     // Get ledger details
-    const ledger = await Ledger.findById(ledgerId);
+    const ledger = await Ledger.findOne({ _id: ledgerId, companyId: req.companyId });
     if (!ledger) {
       return res.status(404).json({
         success: false,
@@ -174,11 +181,13 @@ export const getGeneralLedger = async (req, res) => {
       Ledger,
       Voucher,
       ledgerId,
-      dateFilter.startDate
+      dateFilter.startDate,
+      req.companyId
     );
 
     // Get all voucher entries for this ledger in the period
     const vouchers = await Voucher.find({
+      companyId: req.companyId,
       voucherDate: {
         $gte: dateFilter.startDate,
         $lte: dateFilter.endDate
@@ -288,7 +297,7 @@ export const getGeneralLedgerAbstract = async (req, res) => {
     }
 
     // Get ledgers (optionally filtered by type)
-    const query = { status: 'Active' };
+    const query = { status: 'Active', companyId: req.companyId };
     if (ledgerType) query.ledgerType = ledgerType;
 
     const ledgers = await Ledger.find(query).sort({ ledgerName: 1 });
@@ -301,11 +310,13 @@ export const getGeneralLedgerAbstract = async (req, res) => {
           Ledger,
           Voucher,
           ledger._id,
-          dateFilter.startDate
+          dateFilter.startDate,
+          req.companyId
         );
 
         // Get transactions in period
         const vouchers = await Voucher.find({
+          companyId: req.companyId,
           voucherDate: {
             $gte: dateFilter.startDate,
             $lte: dateFilter.endDate
@@ -411,7 +422,8 @@ export const getReceiptsDisbursementEnhanced = async (req, res) => {
     // Get cash/bank ledgers
     const cashBankLedgers = await Ledger.find({
       ledgerType: { $in: ['Cash', 'Bank'] },
-      status: 'Active'
+      status: 'Active',
+      companyId: req.companyId
     });
 
     const ledgerIds = cashBankLedgers.map(l => l._id);
@@ -419,11 +431,12 @@ export const getReceiptsDisbursementEnhanced = async (req, res) => {
     // Calculate opening balance for all cash/bank ledgers
     let openingBalance = 0;
     for (const ledger of cashBankLedgers) {
-      openingBalance += await calculateOpeningBalance(Ledger, Voucher, ledger._id, dateFilter.startDate);
+      openingBalance += await calculateOpeningBalance(Ledger, Voucher, ledger._id, dateFilter.startDate, req.companyId);
     }
 
     // Get all vouchers affecting cash/bank in the period
     const vouchers = await Voucher.find({
+      companyId: req.companyId,
       voucherDate: {
         $gte: dateFilter.startDate,
         $lte: dateFilter.endDate
@@ -571,7 +584,8 @@ export const getReceiptsDisbursementEnhanced = async (req, res) => {
       // Step 1: Get cash/bank ledger IDs
       const cashBankLedgers = await Ledger.find({
         ledgerType: { $in: ['Cash', 'Bank'] },
-        status: 'Active'
+        status: 'Active',
+        companyId: req.companyId
       });
       const cashBankIds = new Set(cashBankLedgers.map(l => l._id.toString()));
       const cashBankObjectIds = cashBankLedgers.map(l => l._id);
@@ -585,11 +599,13 @@ export const getReceiptsDisbursementEnhanced = async (req, res) => {
       // Step 3: Fetch vouchers for both windows (only cash/bank involved vouchers)
       const [vouchersBefore, vouchersDuring] = await Promise.all([
         Voucher.find({
+          companyId: req.companyId,
           voucherDate: { $gte: fyStart, $lt: dateFilter.startDate },
           'entries.ledgerId': { $in: cashBankObjectIds }
         }).populate('entries.ledgerId', 'ledgerName ledgerType'),
 
         Voucher.find({
+          companyId: req.companyId,
           voucherDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
           'entries.ledgerId': { $in: cashBankObjectIds }
         }).populate('entries.ledgerId', 'ledgerName ledgerType')
@@ -726,6 +742,7 @@ export const getReceiptsDisbursementEnhanced = async (req, res) => {
       // Exclude Cash/Bank ledgers — they are the account being tracked; show only contra entries
       const allLedgers = await Ledger.find({
         status: 'Active',
+        companyId: req.companyId,
         ledgerType: { $nin: ['Cash', 'Bank'] }
       }).sort({ ledgerName: 1 });
 
@@ -734,6 +751,7 @@ export const getReceiptsDisbursementEnhanced = async (req, res) => {
         allLedgers.map(async ledger => {
           // Get transactions during the period
           const vouchers = await Voucher.find({
+            companyId: req.companyId,
             voucherDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
             'entries.ledgerId': ledger._id
           });
@@ -853,7 +871,7 @@ export const getLedgersForDropdown = async (req, res) => {
   try {
     const { type } = req.query;
 
-    const query = { status: 'Active' };
+    const query = { status: 'Active', companyId: req.companyId };
     if (type) query.ledgerType = type;
 
     const ledgers = await Ledger.find(query)

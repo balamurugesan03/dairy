@@ -104,6 +104,11 @@ export const createBusinessItem = async (req, res) => {
     // Start currentBalance at 0; the opening stock transaction below will set it correctly
     itemData.currentBalance = 0;
 
+    // Strip empty-string ObjectId fields to avoid cast errors
+    if (!itemData.supplier) itemData.supplier = undefined;
+    if (!itemData.purchaseLedger) itemData.purchaseLedger = undefined;
+    if (!itemData.salesLedger) itemData.salesLedger = undefined;
+
     if (itemData.category) {
       const purchaseLedger = await findOrCreateCategoryLedger(itemData.category, 'purchase', companyId);
       const salesLedger = await findOrCreateCategoryLedger(itemData.category, 'sales', companyId);
@@ -201,7 +206,7 @@ export const getAllBusinessItems = async (req, res) => {
 // Get business item by ID
 export const getBusinessItemById = async (req, res) => {
   try {
-    const item = await BusinessItem.findById(req.params.id)
+    const item = await BusinessItem.findOne({ _id: req.params.id, companyId: req.companyId })
       .populate('purchaseLedger', 'ledgerName ledgerType')
       .populate('salesLedger', 'ledgerName ledgerType')
       .populate('supplier', 'supplierId name phone');
@@ -229,7 +234,7 @@ export const getBusinessItemById = async (req, res) => {
 // Update business item
 export const updateBusinessItem = async (req, res) => {
   try {
-    const existingItem = await BusinessItem.findById(req.params.id);
+    const existingItem = await BusinessItem.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!existingItem) {
       return res.status(404).json({
         success: false,
@@ -269,7 +274,7 @@ export const updateBusinessItem = async (req, res) => {
 // Delete business item
 export const deleteBusinessItem = async (req, res) => {
   try {
-    const item = await BusinessItem.findById(req.params.id);
+    const item = await BusinessItem.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!item) {
       return res.status(404).json({
@@ -278,8 +283,8 @@ export const deleteBusinessItem = async (req, res) => {
       });
     }
 
-    await BusinessStockTransaction.deleteMany({ itemId: req.params.id });
-    await BusinessItem.findByIdAndDelete(req.params.id);
+    await BusinessStockTransaction.deleteMany({ itemId: req.params.id, companyId: req.companyId });
+    await BusinessItem.findOneAndDelete({ _id: req.params.id, companyId: req.companyId });
 
     res.status(200).json({
       success: true,
@@ -642,7 +647,7 @@ export const getBusinessStockTransactions = async (req, res) => {
 // Get business stock transaction by ID
 export const getBusinessStockTransactionById = async (req, res) => {
   try {
-    const transaction = await BusinessStockTransaction.findById(req.params.id)
+    const transaction = await BusinessStockTransaction.findOne({ _id: req.params.id, companyId: req.companyId })
       .populate('itemId', 'itemCode itemName measurement category')
       .populate('supplierId', 'supplierId name phone')
       .populate('voucherId', 'voucherNumber voucherType')
@@ -674,7 +679,7 @@ export const updateBusinessStockTransaction = async (req, res) => {
     const { id } = req.params;
     const updateData = req.body;
 
-    const transaction = await BusinessStockTransaction.findById(id);
+    const transaction = await BusinessStockTransaction.findOne({ _id: id, companyId: req.companyId });
     if (!transaction) {
       return res.status(404).json({
         success: false,
@@ -684,7 +689,7 @@ export const updateBusinessStockTransaction = async (req, res) => {
 
     if (updateData.quantity !== undefined && updateData.quantity !== transaction.quantity) {
       const quantityDiff = parseFloat(updateData.quantity) - transaction.quantity;
-      const item = await BusinessItem.findById(transaction.itemId);
+      const item = await BusinessItem.findOne({ _id: transaction.itemId, companyId: req.companyId });
 
       if (item) {
         if (transaction.transactionType === 'Stock In') {
@@ -704,8 +709,8 @@ export const updateBusinessStockTransaction = async (req, res) => {
       }));
     }
 
-    const updatedTransaction = await BusinessStockTransaction.findByIdAndUpdate(
-      id,
+    const updatedTransaction = await BusinessStockTransaction.findOneAndUpdate(
+      { _id: id, companyId: req.companyId },
       updateData,
       { new: true, runValidators: true }
     )
@@ -732,7 +737,7 @@ export const deleteBusinessStockTransaction = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const transaction = await BusinessStockTransaction.findById(id);
+    const transaction = await BusinessStockTransaction.findOne({ _id: id, companyId: req.companyId });
     if (!transaction) {
       return res.status(404).json({
         success: false,
@@ -824,7 +829,7 @@ export const updateBusinessOpeningBalance = async (req, res) => {
 
     rate = parseFloat(rate) || 0;
 
-    const item = await BusinessItem.findById(id);
+    const item = await BusinessItem.findOne({ _id: id, companyId: req.companyId });
     if (!item) {
       return res.status(404).json({
         success: false,
@@ -869,7 +874,7 @@ export const updateBusinessSalesPrice = async (req, res) => {
     const { id } = req.params;
     const { salesRate, wholesalePrice, retailPrice, mrp } = req.body;
 
-    const item = await BusinessItem.findById(id);
+    const item = await BusinessItem.findOne({ _id: id, companyId: req.companyId });
     if (!item) {
       return res.status(404).json({
         success: false,

@@ -46,7 +46,8 @@ export const createSalesman = async (req, res) => {
         ledgerName: `Salesman - ${name} (${salesmanId})`,
         ledgerType: 'Party',
         linkedEntity: { entityType: 'None' },
-        status: 'Active'
+        status: 'Active',
+        companyId: req.companyId
       });
       await ledger.save();
       salesman.ledgerId = ledger._id;

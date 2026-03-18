@@ -107,7 +107,7 @@ export const getAllVouchers = async (req, res) => {
 // Get voucher by ID
 export const getVoucherById = async (req, res) => {
   try {
-    const voucher = await Voucher.findById(req.params.id)
+    const voucher = await Voucher.findOne({ _id: req.params.id, companyId: req.companyId })
       .populate('entries.ledgerId');
 
     if (!voucher) {
@@ -133,7 +133,7 @@ export const getVoucherById = async (req, res) => {
 // Delete voucher
 export const deleteVoucher = async (req, res) => {
   try {
-    const voucher = await Voucher.findByIdAndDelete(req.params.id);
+    const voucher = await Voucher.findOneAndDelete({ _id: req.params.id, companyId: req.companyId });
 
     if (!voucher) {
       return res.status(404).json({
@@ -232,7 +232,7 @@ export const getLedgerById = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    const ledger = await Ledger.findById(req.params.id);
+    const ledger = await Ledger.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!ledger) {
       return res.status(404).json({

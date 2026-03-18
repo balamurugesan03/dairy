@@ -316,6 +316,11 @@ businessSalesSchema.index({ invoiceNumber: 1, companyId: 1 }, { unique: true });
 businessSalesSchema.index({ paymentStatus: 1 });
 businessSalesSchema.index({ invoiceType: 1 });
 businessSalesSchema.index({ companyId: 1 });
+// Compound indexes — cover the most common report + billing query patterns
+businessSalesSchema.index({ companyId: 1, invoiceDate: -1 });
+businessSalesSchema.index({ companyId: 1, invoiceType: 1, invoiceDate: -1 });
+businessSalesSchema.index({ companyId: 1, partyId: 1, invoiceDate: -1 });
+businessSalesSchema.index({ companyId: 1, paymentStatus: 1, invoiceDate: -1 });
 
 const BusinessSales = mongoose.model('BusinessSales', businessSalesSchema);
 

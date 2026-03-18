@@ -28,7 +28,7 @@ export const getReceiptsDisbursementReport = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
     if (startDate || endDate) {
       query.voucherDate = {};
       if (startDate) query.voucherDate.$gte = new Date(startDate);
@@ -108,7 +108,7 @@ export const getTradingAccount = async (req, res) => {
     const financialYear = getFinancialYear(dateFilter.startDate);
 
     // Calculate Opening Stock
-    const items = await Item.find({ status: 'Active' });
+    const items = await Item.find({ status: 'Active', companyId: req.companyId });
     const openingStockTotal = items.reduce((sum, item) => {
       return sum + (item.openingBalance || 0) * (item.salesRate || 0);
     }, 0);
@@ -136,11 +136,13 @@ export const getTradingAccount = async (req, res) => {
     // Get Purchases (all ledgers with type "Purchases A/c")
     const purchaseLedgers = await Ledger.find({
       ledgerType: 'Purchases A/c',
-      status: 'Active'
+      status: 'Active',
+      companyId: req.companyId
     });
 
     const purchaseLedgerIds = purchaseLedgers.map(l => l._id);
     const purchaseVouchers = await Voucher.find({
+      companyId: req.companyId,
       voucherDate: {
         $gte: dateFilter.startDate,
         $lte: dateFilter.endDate
@@ -171,11 +173,13 @@ export const getTradingAccount = async (req, res) => {
     // Get Trade Expenses (all ledgers with type "Trade Expenses")
     const expenseLedgers = await Ledger.find({
       ledgerType: 'Trade Expenses',
-      status: 'Active'
+      status: 'Active',
+      companyId: req.companyId
     });
 
     const expenseLedgerIds = expenseLedgers.map(l => l._id);
     const expenseVouchers = await Voucher.find({
+      companyId: req.companyId,
       voucherDate: {
         $gte: dateFilter.startDate,
         $lte: dateFilter.endDate
@@ -206,11 +210,13 @@ export const getTradingAccount = async (req, res) => {
     // Get Sales (all ledgers with type "Sales A/c")
     const salesLedgers = await Ledger.find({
       ledgerType: 'Sales A/c',
-      status: 'Active'
+      status: 'Active',
+      companyId: req.companyId
     });
 
     const salesLedgerIds = salesLedgers.map(l => l._id);
     const salesVouchers = await Voucher.find({
+      companyId: req.companyId,
       voucherDate: {
         $gte: dateFilter.startDate,
         $lte: dateFilter.endDate
@@ -241,11 +247,13 @@ export const getTradingAccount = async (req, res) => {
     // Get Trade Income (all ledgers with type "Trade Income")
     const incomeLedgers = await Ledger.find({
       ledgerType: 'Trade Income',
-      status: 'Active'
+      status: 'Active',
+      companyId: req.companyId
     });
 
     const incomeLedgerIds = incomeLedgers.map(l => l._id);
     const incomeVouchers = await Voucher.find({
+      companyId: req.companyId,
       voucherDate: {
         $gte: dateFilter.startDate,
         $lte: dateFilter.endDate
@@ -346,11 +354,11 @@ export const getProfitLoss = async (req, res) => {
     const { startDate, endDate } = req.query;
 
     // Get income ledgers
-    const incomeLedgers = await Ledger.find({ ledgerType: 'Income' });
+    const incomeLedgers = await Ledger.find({ ledgerType: 'Income', companyId: req.companyId });
     const incomeIds = incomeLedgers.map(l => l._id);
 
     // Get expense ledgers
-    const expenseLedgers = await Ledger.find({ ledgerType: 'Expense' });
+    const expenseLedgers = await Ledger.find({ ledgerType: 'Expense', companyId: req.companyId });
     const expenseIds = expenseLedgers.map(l => l._id);
 
     // Calculate total income
@@ -383,35 +391,64 @@ export const getProfitLoss = async (req, res) => {
 // Balance Sheet
 export const getBalanceSheet = async (req, res) => {
   try {
-    // Get asset ledgers
-    const assets = await Ledger.find({ ledgerType: 'Asset', status: 'Active' });
-    const totalAssets = assets.reduce((sum, l) => sum + Math.abs(l.currentBalance), 0);
+    const { fromDate, toDate } = req.query;
 
-    // Get liability ledgers
-    const liabilities = await Ledger.find({ ledgerType: 'Liability', status: 'Active' });
-    const totalLiabilities = liabilities.reduce((sum, l) => sum + Math.abs(l.currentBalance), 0);
+    // Default: financial year start → today
+    const now = new Date();
+    const fyStart = now.getMonth() >= 3
+      ? new Date(now.getFullYear(), 3, 1)
+      : new Date(now.getFullYear() - 1, 3, 1);
 
-    // Get capital ledgers
-    const capital = await Ledger.find({ ledgerType: 'Capital', status: 'Active' });
-    const totalCapital = capital.reduce((sum, l) => sum + Math.abs(l.currentBalance), 0);
+    const start = fromDate ? new Date(fromDate) : fyStart;
+    const end   = toDate   ? new Date(toDate)   : now;
+    end.setHours(23, 59, 59, 999);
 
-    // Calculate net profit from P&L
-    const incomeLedgers = await Ledger.find({ ledgerType: 'Income' });
-    const expenseLedgers = await Ledger.find({ ledgerType: 'Expense' });
-    const netProfit = incomeLedgers.reduce((sum, l) => sum + l.currentBalance, 0) -
-                      expenseLedgers.reduce((sum, l) => sum + l.currentBalance, 0);
+    // Assets, Liabilities, Capital — snapshot from running ledger balance
+    const [assets, liabilities, capital, incomeLedgers, expenseLedgers] = await Promise.all([
+      Ledger.find({ ledgerType: 'Asset',     status: 'Active', companyId: req.companyId }),
+      Ledger.find({ ledgerType: 'Liability', status: 'Active', companyId: req.companyId }),
+      Ledger.find({ ledgerType: 'Capital',   status: 'Active', companyId: req.companyId }),
+      Ledger.find({ ledgerType: 'Income',    status: 'Active', companyId: req.companyId }),
+      Ledger.find({ ledgerType: 'Expense',   status: 'Active', companyId: req.companyId }),
+    ]);
 
+    const totalAssets      = assets.reduce((s, l)      => s + Math.abs(l.currentBalance), 0);
+    const totalLiabilities = liabilities.reduce((s, l) => s + Math.abs(l.currentBalance), 0);
+    const totalCapital     = capital.reduce((s, l)     => s + Math.abs(l.currentBalance), 0);
+
+    // Net Profit — from voucher entries within the selected date range
+    const incomeLedgerIds  = incomeLedgers.map(l => l._id);
+    const expenseLedgerIds = expenseLedgers.map(l => l._id);
+
+    const plVouchers = await Voucher.find({
+      companyId:   req.companyId,
+      voucherDate: { $gte: start, $lte: end },
+      'entries.ledgerId': { $in: [...incomeLedgerIds, ...expenseLedgerIds] }
+    });
+
+    let totalIncome = 0, totalExpense = 0;
+    plVouchers.forEach(v => {
+      v.entries.forEach(e => {
+        const lid = e.ledgerId?.toString();
+        if (incomeLedgerIds.some(id => id.toString() === lid))  totalIncome  += e.creditAmount || 0;
+        if (expenseLedgerIds.some(id => id.toString() === lid)) totalExpense += e.debitAmount  || 0;
+      });
+    });
+
+    const netProfit = totalIncome - totalExpense;
     const totalLiabilitiesAndCapital = totalLiabilities + totalCapital + netProfit;
     const difference = totalAssets - totalLiabilitiesAndCapital;
 
     res.status(200).json({
       success: true,
       data: {
-        assets: assets.map(l => ({ name: l.ledgerName, amount: Math.abs(l.currentBalance) })),
+        fromDate: start,
+        toDate:   end,
+        assets:      assets.map(l =>      ({ name: l.ledgerName, amount: Math.abs(l.currentBalance) })),
         totalAssets,
         liabilities: liabilities.map(l => ({ name: l.ledgerName, amount: Math.abs(l.currentBalance) })),
         totalLiabilities,
-        capital: capital.map(l => ({ name: l.ledgerName, amount: Math.abs(l.currentBalance) })),
+        capital:     capital.map(l =>     ({ name: l.ledgerName, amount: Math.abs(l.currentBalance) })),
         totalCapital,
         netProfit,
         totalLiabilitiesAndCapital,
@@ -433,7 +470,7 @@ export const getSalesReport = async (req, res) => {
   try {
     const { startDate, endDate, customerId } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
     if (startDate || endDate) {
       query.billDate = {};
       if (startDate) query.billDate.$gte = new Date(startDate);
@@ -468,7 +505,7 @@ export const getSalesReport = async (req, res) => {
 // Stock Report
 export const getStockReport = async (req, res) => {
   try {
-    const items = await Item.find({ status: 'Active' }).sort({ itemName: 1 });
+    const items = await Item.find({ status: 'Active', companyId: req.companyId }).sort({ itemName: 1 });
 
     const report = items.map(item => ({
       _id: item._id,
@@ -502,7 +539,7 @@ export const getSubsidyReport = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    const query = {};
+    const query = { companyId: req.companyId };
     if (startDate || endDate) {
       query.paymentDate = {};
       if (startDate) query.paymentDate.$gte = new Date(startDate);
@@ -559,6 +596,7 @@ export const getInventoryPurchaseRegister = async (req, res) => {
     end.setHours(23, 59, 59, 999);
 
     const transactions = await StockTransaction.find({
+      companyId: req.companyId,
       transactionType: 'Stock In',
       referenceType: 'Purchase',
       date: { $gte: start, $lte: end }
@@ -620,6 +658,7 @@ export const getSalesRegister = async (req, res) => {
     end.setHours(23, 59, 59, 999);
 
     const sales = await Sales.find({
+      companyId: req.companyId,
       billDate: { $gte: start, $lte: end }
     })
       .populate('collectionCenterId', 'centerName')
@@ -695,7 +734,7 @@ export const getStockRegister = async (req, res) => {
     const financialYear = getFinancialYear(start);
 
     // Fetch all active items
-    const items = await Item.find({ status: 'Active' })
+    const items = await Item.find({ status: 'Active', companyId: req.companyId })
       .select('itemCode itemName category measurement unit salesRate openingBalance currentBalance')
       .sort({ itemName: 1 });
 
@@ -704,7 +743,7 @@ export const getStockRegister = async (req, res) => {
     items.forEach(item => { initialOB[item._id.toString()] = item.openingBalance || 0; });
 
     // Calculate OB at start of the period from pre-period transactions
-    const preTxns = await StockTransaction.find({ date: { $lt: start } })
+    const preTxns = await StockTransaction.find({ companyId: req.companyId, date: { $lt: start } })
       .select('itemId transactionType quantity');
     const obMap = { ...initialOB };
     preTxns.forEach(txn => {
@@ -715,7 +754,7 @@ export const getStockRegister = async (req, res) => {
     });
 
     // Fetch transactions within the period
-    const transactions = await StockTransaction.find({ date: { $gte: start, $lte: end } })
+    const transactions = await StockTransaction.find({ companyId: req.companyId, date: { $gte: start, $lte: end } })
       .populate('itemId', 'itemCode itemName measurement unit salesRate')
       .sort({ date: 1 });
 
@@ -1527,6 +1566,7 @@ export const getCooperativeRDReport = async (req, res) => {
     const uptoMap = {};
     if (startDate) {
       const uptoVouchers = await BusinessVoucher.find({
+        companyId: req.companyId,
         status: { $ne: 'Cancelled' },
         date:   { $lt: new Date(startDate) }
       }).populate('entries.ledgerId', 'name group type');
@@ -1535,7 +1575,7 @@ export const getCooperativeRDReport = async (req, res) => {
 
     // ── Query 2: During the Month (startDate to endDate) ────────────────
     const duringMap = {};
-    const duringQuery = { status: { $ne: 'Cancelled' } };
+    const duringQuery = { companyId: req.companyId, status: { $ne: 'Cancelled' } };
     if (startDate || endDate) {
       duringQuery.date = {};
       if (startDate) duringQuery.date.$gte = new Date(startDate);

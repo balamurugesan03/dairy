@@ -4,6 +4,7 @@ import Ledger from '../models/Ledger.js';
 import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances } from '../utils/accountingHelper.js';
 
 // ── Auto-generate bill number: MC-YYMM-XXXXX ─────────────────────────────────
+// Reads actual DB max each call — always returns next available number
 const generateBillNo = async (companyId) => {
   const now   = new Date();
   const yy    = String(now.getFullYear()).slice(2);
@@ -15,28 +16,34 @@ const generateBillNo = async (companyId) => {
     { billNo: 1 },
     { sort: { billNo: -1 } }
   );
-
-  let seq = 1;
-  if (last) {
-    const parts = last.billNo.split('-');
-    seq = parseInt(parts[parts.length - 1], 10) + 1;
-  }
+  const seq = last ? parseInt(last.billNo.split('-').pop(), 10) + 1 : 1;
   return `${prefix}${String(seq).padStart(5, '0')}`;
 };
 
 // ── CREATE ────────────────────────────────────────────────────────────────────
 export const createCollection = async (req, res) => {
   try {
-    const billNo = await generateBillNo(req.companyId);
-
-    const entry = new MilkCollection({
-      ...req.body,
-      billNo,
-      companyId: req.companyId,
-      createdBy: req.user?._id
-    });
-
-    await entry.save();
+    // Retry loop: if two requests race and grab the same billNo,
+    // re-read the DB max and try the next one — guaranteed to converge.
+    let entry;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const billNo = await generateBillNo(req.companyId);
+      entry = new MilkCollection({
+        ...req.body,
+        billNo,
+        companyId: req.companyId,
+        createdBy: req.user?._id
+      });
+      try {
+        await entry.save();
+        break; // success — exit retry loop
+      } catch (dupErr) {
+        if (dupErr.code === 11000 && dupErr.keyPattern?.billNo && attempt < 9) {
+          continue; // duplicate billNo — re-read DB and retry
+        }
+        throw dupErr; // other error or exhausted retries
+      }
+    }
 
     // ── Auto-create Journal voucher: Dr PRODUCERS DUES / Cr MILK PURCHASE ──
     try {

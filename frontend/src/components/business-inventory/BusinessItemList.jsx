@@ -43,7 +43,7 @@ import { useDisclosure } from '@mantine/hooks';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { DataTable } from 'mantine-datatable';
-import { businessItemAPI, businessLedgerAPI, supplierAPI } from '../../services/api';
+import { businessItemAPI, businessLedgerAPI, businessSupplierAPI } from '../../services/api';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -167,7 +167,7 @@ const BusinessItemList = () => {
 
   const fetchSuppliers = async () => {
     try {
-      const response = await supplierAPI.getAll({ active: 'true' });
+      const response = await businessSupplierAPI.getAll({ active: 'true', limit: 1000 });
       setSuppliers(response.data || []);
     } catch (error) {
       console.error('Failed to fetch suppliers:', error);

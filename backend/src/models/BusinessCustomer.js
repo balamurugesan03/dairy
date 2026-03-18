@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 const businessCustomerSchema = new mongoose.Schema({
-  customerId: { type: String, required: true, unique: true },
+  customerId: { type: String, required: true },
   name: { type: String, required: true },
   phone: { type: String, required: true },
   email: { type: String },
@@ -18,7 +18,7 @@ const businessCustomerSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 }, { timestamps: true });
 
-businessCustomerSchema.index({ customerId: 1 });
+businessCustomerSchema.index({ customerId: 1, companyId: 1 }, { unique: true });
 businessCustomerSchema.index({ phone: 1 });
 businessCustomerSchema.index({ active: 1 });
 businessCustomerSchema.index({ name: 1 });

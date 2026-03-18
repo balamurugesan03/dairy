@@ -97,16 +97,26 @@ const SideTable = ({ title, color, items, capital, netProfit, showExtra }) => {
   );
 };
 
+const getFYStart = (date = new Date()) => {
+  const m = date.getMonth();
+  const y = date.getFullYear();
+  return new Date(m >= 3 ? y : y - 1, 3, 1); // April 1
+};
+
 const BalanceSheet = () => {
   const [loading, setLoading] = useState(false);
-  const [data, setData] = useState(null);
-  const [asOnDate, setAsOnDate] = useState(new Date());
+  const [data, setData]       = useState(null);
+  const [fromDate, setFromDate] = useState(() => getFYStart());
+  const [toDate,   setToDate]   = useState(() => new Date());
   const printRef = useRef(null);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await reportAPI.balanceSheet({ asOnDate: dayjs(asOnDate).toISOString() });
+      const res = await reportAPI.balanceSheet({
+        fromDate: dayjs(fromDate).format('YYYY-MM-DD'),
+        toDate:   dayjs(toDate).format('YYYY-MM-DD'),
+      });
       setData(res.data);
     } catch (err) {
       notifications.show({ title: 'Error', message: err.message || 'Failed to fetch balance sheet', color: 'red' });
@@ -115,7 +125,7 @@ const BalanceSheet = () => {
     }
   };
 
-  const fy = getFinancialYear(asOnDate);
+  const fy = getFinancialYear(toDate);
   const isBalanced = data ? Math.abs((data.totalLiabilitiesAndCapital || 0) - (data.totalAssets || 0)) < 0.01 : true;
 
   return (
@@ -141,13 +151,22 @@ const BalanceSheet = () => {
       <Paper withBorder p="sm" radius="md">
         <Group align="flex-end" gap="md">
           <DateInput
-            label="As On Date"
-            value={asOnDate}
-            onChange={setAsOnDate}
+            label="From Date"
+            value={fromDate}
+            onChange={v => v && setFromDate(v)}
             valueFormat="DD-MM-YYYY"
             maxDate={new Date()}
             clearable={false}
-            w={180}
+            w={160}
+          />
+          <DateInput
+            label="To Date"
+            value={toDate}
+            onChange={v => v && setToDate(v)}
+            valueFormat="DD-MM-YYYY"
+            maxDate={new Date()}
+            clearable={false}
+            w={160}
           />
           <Box>
             <Text size="xs" c="dimmed" mb={4}>Financial Year</Text>
@@ -204,8 +223,8 @@ const BalanceSheet = () => {
         <Box ref={printRef}>
           {/* Report Title (print header) */}
           <Box ta="center" style={{ display: 'none' }} className="print-only">
-            <Title order={2}>BALANCE SHEET AS ON {dayjs(asOnDate).format('DD-MMM-YYYY').toUpperCase()}</Title>
-            <Text size="sm">Financial Year: {fy}</Text>
+            <Title order={2}>BALANCE SHEET AS ON {dayjs(toDate).format('DD-MMM-YYYY').toUpperCase()}</Title>
+            <Text size="sm">Financial Year: {fy} | Period: {dayjs(fromDate).format('DD-MMM-YYYY')} to {dayjs(toDate).format('DD-MMM-YYYY')}</Text>
           </Box>
 
           {/* Summary Cards */}
@@ -241,7 +260,9 @@ const BalanceSheet = () => {
           {/* Report Date */}
           <Group justify="space-between">
             <Text size="sm" c="dimmed" fw={500}>
-              Balance Sheet as on: <Text span fw={700} c="dark">{dayjs(asOnDate).format('DD MMMM YYYY')}</Text>
+              Period: <Text span fw={700} c="dark">{dayjs(fromDate).format('DD MMM YYYY')}</Text>
+              {' to '}
+              <Text span fw={700} c="dark">{dayjs(toDate).format('DD MMM YYYY')}</Text>
             </Text>
             <Text size="xs" c="dimmed">Generated: {dayjs().format('DD/MM/YYYY hh:mm A')}</Text>
           </Group>

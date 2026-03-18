@@ -172,6 +172,11 @@ stockTransactionSchema.index({ itemId: 1, date: -1 });
 stockTransactionSchema.index({ referenceType: 1, referenceId: 1 });
 stockTransactionSchema.index({ transactionType: 1, date: -1 });
 stockTransactionSchema.index({ companyId: 1 });
+// Compound indexes — dramatically faster for reports and history queries
+stockTransactionSchema.index({ companyId: 1, date: -1 });
+stockTransactionSchema.index({ companyId: 1, itemId: 1, date: -1 });
+stockTransactionSchema.index({ companyId: 1, transactionType: 1, date: -1 });
+stockTransactionSchema.index({ companyId: 1, referenceType: 1, date: -1 });
 
 const StockTransaction = mongoose.model('StockTransaction', stockTransactionSchema);
 

@@ -4,7 +4,6 @@ const salesmanSchema = new mongoose.Schema({
   salesmanId: {
     type: String,
     required: true,
-    unique: true,
     trim: true
   },
   name: {
@@ -44,7 +43,7 @@ const salesmanSchema = new mongoose.Schema({
   timestamps: true
 });
 
-salesmanSchema.index({ salesmanId: 1 });
+salesmanSchema.index({ companyId: 1, salesmanId: 1 }, { unique: true });
 salesmanSchema.index({ name: 1 });
 salesmanSchema.index({ status: 1 });
 salesmanSchema.index({ companyId: 1 });

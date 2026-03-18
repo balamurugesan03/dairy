@@ -29,7 +29,7 @@ import {
   IconUser
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
-import { businessStockAPI, businessItemAPI, supplierAPI, businessLedgerAPI } from '../../services/api';
+import { businessStockAPI, businessItemAPI, businessSupplierAPI, businessLedgerAPI } from '../../services/api';
 
 const BusinessStockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
   const [formData, setFormData] = useState({
@@ -125,7 +125,7 @@ const BusinessStockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
 
   const fetchSuppliers = async () => {
     try {
-      const response = await supplierAPI.getAll({ status: 'Active', limit: 1000 });
+      const response = await businessSupplierAPI.getAll({ active: 'true', limit: 1000 });
       const suppliersData = response.data || [];
       setSuppliers(suppliersData.map(supplier => ({
         value: supplier._id,

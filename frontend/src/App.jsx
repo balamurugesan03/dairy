@@ -7,6 +7,7 @@ import MainLayout from './components/Layout/MainLayout';
 import CompanySelection from './components/company/CompanySelection';
 import Login from './pages/Login';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
+import BusinessTypeGuard from './components/common/BusinessTypeGuard';
 import './styles/theme.css';
 
 // Loading fallback component
@@ -37,6 +38,9 @@ const LoadingFallback = () => (
 // Lazy load all page components
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 
+// Society Info & Document Management
+const SocietyInfoPage = lazy(() => import('./components/society/SocietyInfoPage'));
+
 // Farmer Components
 const FarmerManagement = lazy(() => import('./components/farmer/FarmerManagement'));
 const FarmerView = lazy(() => import('./components/farmer/FarmerView'));
@@ -45,6 +49,9 @@ const MemberList = lazy(() => import('./components/farmer/MemberList'));
 // Customer Components
 const CustomerManagement = lazy(() => import('./components/customer/CustomerManagement'));
 const BusinessCustomerList = lazy(() => import('./components/business-customer/BusinessCustomerList'));
+
+// Business Supplier Components (Private Firm)
+const BusinessSupplierList = lazy(() => import('./components/business-supplier/BusinessSupplierList'));
 
 // Supplier Components
 const SupplierList = lazy(() => import('./components/supplier/SupplierList'));
@@ -305,6 +312,11 @@ const AppContent = () => {
               {/* Business Customer Routes (Private Firm) */}
               <Route path="business-customers">
                 <Route index element={<BusinessCustomerList />} />
+              </Route>
+
+              {/* Business Supplier Routes (Private Firm) */}
+              <Route path="business-suppliers">
+                <Route index element={<BusinessSupplierList />} />
               </Route>
 
               {/* Supplier Management Routes */}
@@ -570,6 +582,9 @@ const AppContent = () => {
                   <Route index element={<LoanList />} />
                 </Route>
               </Route>
+
+              {/* Society Info & Document Management */}
+              <Route path="society-info" element={<SocietyInfoPage />} />
 
               {/* User Management - Admin Only */}
               <Route path="user-management" element={<UserManagement />} />

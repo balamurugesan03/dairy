@@ -116,14 +116,13 @@ voucherSchema.index({ voucherNumber: 1, companyId: 1 }, { unique: true });
 voucherSchema.index({ companyId: 1, 'entries.ledgerId': 1, voucherDate: 1 });
 
 // Validation: Total Debit must equal Total Credit
-voucherSchema.pre('save', function(next) {
+voucherSchema.pre('save', async function() {
   if (Math.abs(this.totalDebit - this.totalCredit) > 0.01) {
-    return next(new Error(`Voucher imbalanced: Debit=${this.totalDebit} Credit=${this.totalCredit}`));
+    throw new Error(`Voucher imbalanced: Debit=${this.totalDebit} Credit=${this.totalCredit}`);
   }
   if (!this.financialYear) {
     this.financialYear = getFinancialYear(this.voucherDate);
   }
-  next();
 });
 
 function getFinancialYear(date) {

@@ -8,12 +8,12 @@ const milkSalesRateSchema = new mongoose.Schema({
   },
   partyId: {
     type: mongoose.Schema.Types.ObjectId,
-    required: [true, 'Party is required'],
+    required: false,
     refPath: 'partyType'
   },
   partyName: {
     type: String,
-    required: [true, 'Party name is required'],
+    required: false,
     trim: true
   },
   salesItem: {

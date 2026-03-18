@@ -4,7 +4,6 @@ const purchaseReturnSchema = new mongoose.Schema({
   returnNumber: {
     type: String,
     required: true,
-    unique: true,
     trim: true
   },
   returnDate: {
@@ -16,7 +15,7 @@ const purchaseReturnSchema = new mongoose.Schema({
   // Supplier Details
   supplierId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Supplier'
+    ref: 'BusinessSupplier'
   },
   supplierName: {
     type: String,
@@ -215,6 +214,13 @@ const purchaseReturnSchema = new mongoose.Schema({
   businessType: {
     type: String,
     default: 'Private Firm'
+  },
+
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true,
+    index: true
   }
 }, {
   timestamps: true
@@ -223,7 +229,7 @@ const purchaseReturnSchema = new mongoose.Schema({
 // Indexes
 purchaseReturnSchema.index({ returnDate: -1 });
 purchaseReturnSchema.index({ supplierId: 1 });
-purchaseReturnSchema.index({ returnNumber: 1 });
+purchaseReturnSchema.index({ returnNumber: 1, companyId: 1 }, { unique: true, partialFilterExpression: { companyId: { $type: 'objectId' } } });
 purchaseReturnSchema.index({ paymentStatus: 1 });
 purchaseReturnSchema.index({ status: 1 });
 

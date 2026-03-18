@@ -25,7 +25,7 @@ import {
 import {
   agentAPI, collectionCenterAPI, farmerAPI,
   milkCollectionAPI, milkPurchaseSettingsAPI, rateChartAPI, milkSalesAPI,
-  thermalPrintAPI, machineConfigAPI,
+  thermalPrintAPI, machineConfigAPI, timeIncentiveAPI,
 } from '../../services/api';
 
 // ── Rate Calculation ─────────────────────────────────────────────────────────
@@ -204,6 +204,8 @@ const MilkPurchase = () => {
   const manualRateRef   = useRef(null);
   const manualAmountRef = useRef(null);
 
+  const [activeTimeIncentive, setActiveTimeIncentive] = useState(null);
+
   const clrAutoSetRef  = useRef(false);   // prevents SNF recompute when CLR is auto-filled from SNF
   const autoSaveRef    = useRef(false);   // triggers auto-save after SNF/CLR is computed
   const tableScrollRef = useRef(null);
@@ -233,7 +235,7 @@ const MilkPurchase = () => {
   const serialPortRef   = useRef(null);
   const serialReaderRef = useRef(null);
   const machineBufferRef = useRef('');    // accumulate partial serial data
-  formRef.current = { producer, ltr, water, fat, clr, snf, date, shift, center, agent, calcResult, editingId, speakEnabled, entries, dupBlocked, entryMode, manualRate, manualAmount };
+  formRef.current = { producer, ltr, water, fat, clr, snf, date, shift, center, agent, calcResult, editingId, speakEnabled, entries, dupBlocked, entryMode, manualRate, manualAmount, activeTimeIncentive };
 
   // ── Machine Serial Data Parser ────────────────────────────────────────────
   // Format 0: 31-char ASCII  (XXXXXXXXXXXXXXXXXXXXXXXXXXXXX)
@@ -574,6 +576,28 @@ const MilkPurchase = () => {
     fetchSalesSummary();
   }, [date]); // eslint-disable-line
 
+  // ── Auto-detect active time incentive for current center + shift + date ───
+  useEffect(() => {
+    const fetch = async () => {
+      const centerName = centerNameRef.current;
+      if (!centerName && !center) { setActiveTimeIncentive(null); return; }
+      try {
+        const res = await timeIncentiveAPI.getActive({
+          shift,
+          center: centerName || '',
+          date: date instanceof Date ? date.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+        });
+        setActiveTimeIncentive(res?.data || null);
+      } catch {
+        setActiveTimeIncentive(null);
+      }
+    };
+    fetch();
+    // Re-check every minute so time window changes are reflected
+    const interval = setInterval(fetch, 60000);
+    return () => clearInterval(interval);
+  }, [center, shift, date]); // eslint-disable-line
+
   const filteredAgents = useCallback(() => {
     if (!center) return agentsData;
     const f = agentsData.filter(a => !a.centerId || a.centerId === center);
@@ -705,7 +729,7 @@ const MilkPurchase = () => {
     }
 
     setProducer(base);
-    setMemberInput(farmer.farmerNumber);
+    setMemberInput(farmer.memberId || farmer.farmerNumber);
     setShowDropdown(false);
     setTimeout(() => ltrRef.current?.focus({ preventScroll: true }), 50);
     try {
@@ -721,7 +745,7 @@ const MilkPurchase = () => {
     try {
       const res = await farmerAPI.search(query.trim());
       const farmers = res?.data || [];
-      const exact = farmers.find(f => f.farmerNumber?.toLowerCase() === query.trim().toLowerCase());
+      const exact = farmers.find(f => f.memberId?.toLowerCase() === query.trim().toLowerCase() || f.farmerNumber?.toLowerCase() === query.trim().toLowerCase());
       if (exact) { selectProducer(exact); }
       else if (farmers.length === 1) { selectProducer(farmers[0]); }
       else { setSearchResults(farmers); setShowDropdown(farmers.length > 0); }
@@ -731,7 +755,7 @@ const MilkPurchase = () => {
 
   // ── Save / Update ─────────────────────────────────────────────────────────
   const handleSave = async () => {
-    const { producer: p, ltr: q, water: w, fat: f, clr: c, snf: s, date: d, shift: sh, center: ct, agent: ag, calcResult: cr, editingId: eid, entryMode: em, manualRate: mr, manualAmount: ma } = formRef.current;
+    const { producer: p, ltr: q, water: w, fat: f, clr: c, snf: s, date: d, shift: sh, center: ct, agent: ag, calcResult: cr, editingId: eid, entryMode: em, manualRate: mr, manualAmount: ma, activeTimeIncentive: ati } = formRef.current;
     if (formRef.current.dupBlocked) return;
     if (!p || !q || !f) { notifications.show({ message: 'Member, Litres and FAT are required', color: 'red', autoClose: 2500 }); return; }
     setSaving(true);
@@ -745,8 +769,12 @@ const MilkPurchase = () => {
     let freshAmount = fresh.amount;
     if (em === 'rate' && mr !== '') { freshRate = parseFloat(mr) || 0; freshAmount = parseFloat((netKg * freshRate + fresh.incentive).toFixed(2)); }
     if (em === 'amount' && ma !== '') { freshAmount = parseFloat(ma) || 0; freshRate = netKg > 0 ? parseFloat((freshAmount / netKg).toFixed(2)) : 0; }
+    // Add time incentive if active
+    const timeIncRate   = ati?.rate || 0;
+    const timeIncAmount = parseFloat((timeIncRate * netLtr).toFixed(2));
+    freshAmount = parseFloat((freshAmount + timeIncAmount).toFixed(2));
     try {
-      const payload = { date: d.toISOString(), shift: sh, collectionCenter: ct || undefined, agent: ag || undefined, farmer: p._id, farmerNumber: p.no, farmerName: p.name, qty: netKg, ltr: netLtr, clr: parseFloat(c) || 0, fat: parseFloat(f), snf: parseFloat(s) || fresh.snf || 0, addedWater: waterLtr, rate: freshRate, incentive: fresh.incentive, amount: freshAmount };
+      const payload = { date: d.toISOString(), shift: sh, collectionCenter: ct || undefined, agent: ag || undefined, farmer: p._id, farmerNumber: p.no, farmerName: p.name, qty: netKg, ltr: netLtr, clr: parseFloat(c) || 0, fat: parseFloat(f), snf: parseFloat(s) || fresh.snf || 0, addedWater: waterLtr, rate: freshRate, incentive: fresh.incentive, timeIncentiveRate: timeIncRate || undefined, timeIncentiveAmount: timeIncAmount || undefined, amount: freshAmount };
 
       if (eid) {
         // UPDATE existing entry
@@ -808,7 +836,7 @@ const MilkPurchase = () => {
     farmerAPI.search(selectedRow.producerNo).then(res => {
       const farmers = res?.data || [];
       const match = farmers.find(f => f.farmerNumber === selectedRow.producerNo);
-      if (match) setProducer(prev => ({ ...prev, _id: match._id, memberId: match.memberId || '', phone: match.personalDetails?.phone || '' }));
+      if (match) { setProducer(prev => ({ ...prev, _id: match._id, memberId: match.memberId || '', phone: match.personalDetails?.phone || '' })); setMemberInput(match.memberId || match.farmerNumber); }
     }).catch(() => {});
     setTimeout(() => ltrRef.current?.focus({ preventScroll: true }), 60);
     notifications.show({ message: `Editing: ${selectedRow.billNo} — modify values and press Save`, color: 'blue', autoClose: 3000 });
@@ -982,7 +1010,7 @@ const MilkPurchase = () => {
                         <Box style={{ flex: 1, minWidth: 0 }}>
                           <Text size="12px" fw={700} style={{ lineHeight: 1.2 }}>{f.personalDetails?.name || 'Unknown'}</Text>
                           <Group gap={4}>
-                            <Badge size="xs" color="blue" radius="sm">{f.farmerNumber}</Badge>
+                            <Badge size="xs" color="blue" radius="sm">{f.memberId || f.farmerNumber}</Badge>
                             {f.personalDetails?.phone && <Text size="9px" c="dimmed">{f.personalDetails.phone}</Text>}
                           </Group>
                         </Box>
@@ -1046,6 +1074,12 @@ const MilkPurchase = () => {
                   <Badge size="xs" color="teal" variant="filled" radius="sm"
                     leftSection={<Box style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff', animation: 'pulse 1s infinite' }} />}>
                     MACHINE LIVE
+                  </Badge>
+                )}
+                {activeTimeIncentive && (
+                  <Badge size="xs" color="green" variant="filled" radius="sm"
+                    title={`Time: ${activeTimeIncentive.timeFrom}–${activeTimeIncentive.timeTo}`}>
+                    ⏱ TIME INC ₹{activeTimeIncentive.rate}/L
                   </Badge>
                 )}
               </Group>
@@ -1143,6 +1177,19 @@ const MilkPurchase = () => {
                     <Text size="9px" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>Incentive</Text>
                     <Text size="14px" fw={700} style={{ color: '#92400e', lineHeight: 1.2 }}>₹ {calcResult.incentive.toFixed(2)}</Text>
                   </Box>
+                  {/* Time Incentive (shown only when active) */}
+                  {activeTimeIncentive && (() => {
+                    const grossLtr = parseFloat(ltr) || 0;
+                    const waterLtr = parseFloat(water) || 0;
+                    const netLtr   = Math.max(0, grossLtr - waterLtr);
+                    const tAmt     = parseFloat((activeTimeIncentive.rate * netLtr).toFixed(2));
+                    return (
+                      <Box style={{ flex: 1, background: '#f0fdf4', border: '2px solid #4ade80', borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
+                        <Text size="9px" fw={700} c="#166534" tt="uppercase" style={{ letterSpacing: '0.4px' }}>⏱ Time Inc</Text>
+                        <Text size="14px" fw={700} style={{ color: '#16a34a', lineHeight: 1.2 }}>₹ {tAmt.toFixed(2)}</Text>
+                      </Box>
+                    );
+                  })()}
                   {/* Amount — editable in 'amount' mode */}
                   <Box style={{ flex: 1.3, background: entryMode === 'amount' ? '#fef3c7' : '#1e40af', border: `2px solid ${entryMode === 'amount' ? '#f59e0b' : '#1e40af'}`, borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
                     <Text size="9px" fw={700} style={{ color: entryMode === 'amount' ? '#92400e' : 'rgba(255,255,255,0.75)' }} tt="uppercase">{entryMode === 'amount' ? '✏ Amount' : 'Amount'}</Text>
@@ -1155,9 +1202,13 @@ const MilkPurchase = () => {
                         size="xs" hideControls
                         styles={{ input: { height: 22, fontSize: 16, fontWeight: 900, background: 'transparent', border: 'none', color: '#92400e', textAlign: 'center', padding: '0 4px' } }}
                       />
-                    ) : (
-                      <Text size="18px" fw={900} style={{ color: 'white', lineHeight: 1.2 }}>₹ {calcResult.amount.toFixed(2)}</Text>
-                    )}
+                    ) : (() => {
+                      const grossLtr  = parseFloat(ltr) || 0;
+                      const waterLtr  = parseFloat(water) || 0;
+                      const netLtr    = Math.max(0, grossLtr - waterLtr);
+                      const tAmt      = activeTimeIncentive ? parseFloat((activeTimeIncentive.rate * netLtr).toFixed(2)) : 0;
+                      return <Text size="18px" fw={900} style={{ color: 'white', lineHeight: 1.2 }}>₹ {(calcResult.amount + tAmt).toFixed(2)}</Text>;
+                    })()}
                   </Box>
                 </Group>
               );

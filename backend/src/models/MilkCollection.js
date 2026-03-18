@@ -4,7 +4,6 @@ const milkCollectionSchema = new mongoose.Schema({
   billNo: {
     type: String,
     required: true,
-    unique: true,
     trim: true
   },
   date: {
@@ -97,8 +96,11 @@ const milkCollectionSchema = new mongoose.Schema({
   timestamps: true
 });
 
+milkCollectionSchema.index({ billNo: 1, companyId: 1 }, { unique: true }); // compound — allows same billNo across companies
 milkCollectionSchema.index({ date: 1, shift: 1, companyId: 1 });
 milkCollectionSchema.index({ farmerNumber: 1, date: -1 });
+milkCollectionSchema.index({ companyId: 1, date: -1 });
+milkCollectionSchema.index({ companyId: 1, farmerNumber: 1, date: -1 });
 
 const MilkCollection = mongoose.model('MilkCollection', milkCollectionSchema);
 

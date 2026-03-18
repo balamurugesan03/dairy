@@ -125,18 +125,15 @@ const BusinessExpenseVoucher = () => {
     setLoading(true);
     try {
       const selectedLedger = ledgers.find(l => l._id === values.ledgerId);
-      const cashLedger = ledgers.find(l => l.group === 'Cash-in-Hand');
       const amount = parseFloat(values.amount);
 
+      let cashLedger = ledgers.find(l => l.group === 'Cash-in-Hand');
       if (!cashLedger) {
-        notifications.show({
-          title: 'Error',
-          message: 'Cash ledger not found. Please create a Cash ledger first.',
-          color: 'red'
-        });
-        setLoading(false);
-        return;
+        const res = await businessLedgerAPI.create({ name: 'Cash in Hand', group: 'Cash-in-Hand', openingBalance: 0, openingBalanceType: 'Debit' });
+        cashLedger = res?.data;
+        if (cashLedger) setLedgers(prev => [...prev, cashLedger]);
       }
+      if (!cashLedger) { notifications.show({ title: 'Error', message: 'Could not create Cash ledger. Please try again.', color: 'red' }); setLoading(false); return; }
 
       const payload = {
         voucherType: 'Expense',
@@ -326,15 +323,13 @@ const BusinessExpenseVoucher = () => {
   };
 
   const handleSaveMultiple = async () => {
-    const cashLedger = ledgers.find(l => l.group === 'Cash-in-Hand');
+    let cashLedger = ledgers.find(l => l.group === 'Cash-in-Hand');
     if (!cashLedger) {
-      notifications.show({
-        title: 'Error',
-        message: 'Cash ledger not found. Please create a Cash ledger first.',
-        color: 'red'
-      });
-      return;
+      const res = await businessLedgerAPI.create({ name: 'Cash in Hand', group: 'Cash-in-Hand', openingBalance: 0, openingBalanceType: 'Debit' });
+      cashLedger = res?.data;
+      if (cashLedger) setLedgers(prev => [...prev, cashLedger]);
     }
+    if (!cashLedger) { notifications.show({ title: 'Error', message: 'Could not create Cash ledger. Please try again.', color: 'red' }); return; }
 
     const validEntries = multipleEntries.filter(entry => {
       const amount = parseFloat(entry.amount) || 0;
