@@ -251,17 +251,19 @@ const AppContent = () => {
 
   // If not authenticated, show login page
   if (!isAuthenticated) {
-    // Check if trying to access admin route
-    if (window.location.pathname === '/admin') {
-      return <Login />;
-    }
     return <Login />;
   }
 
-  // If superadmin → redirect to standalone super-admin app (port 5174)
+  // Super admin gets its own protected panel — no company selection needed
   if (isSuperAdmin) {
-    window.location.replace('http://localhost:5174');
-    return null;
+    return (
+      <Router>
+        <Routes>
+          <Route path="/superadmin" element={<SuperAdminDashboard />} />
+          <Route path="*" element={<Navigate to="/superadmin" replace />} />
+        </Routes>
+      </Router>
+    );
   }
 
   // Show loading state while checking for saved company
@@ -589,6 +591,9 @@ const AppContent = () => {
               {/* User Management - Admin Only */}
               <Route path="user-management" element={<UserManagement />} />
             </Route>
+
+          {/* Block superadmin route for regular users */}
+          <Route path="/superadmin" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
     </Router>

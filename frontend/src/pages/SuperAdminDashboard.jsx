@@ -1,718 +1,482 @@
 import { useState, useEffect } from 'react';
+import {
+  AppShell, Box, Button, Badge, Card, Divider, Grid, Group, Loader,
+  Modal, PasswordInput, Stack, Table, Text, TextInput, Textarea,
+  Title, Tooltip, ActionIcon, Avatar, Paper, Checkbox, SimpleGrid,
+  Center, ThemeIcon, Anchor
+} from '@mantine/core';
+import { useForm } from '@mantine/form';
+import { notifications } from '@mantine/notifications';
+import { modals } from '@mantine/modals';
+import {
+  IconBuilding, IconUsers, IconPlus, IconLock, IconTrash,
+  IconToggleLeft, IconToggleRight, IconLogout, IconShieldCheck,
+  IconBuildingStore, IconRefresh, IconChartBar
+} from '@tabler/icons-react';
 import { useAuth } from '../context/AuthContext';
 import { companyAPI } from '../services/api';
-import './SuperAdminDashboard.css';
 
-const SuperAdminDashboard = () => {
+// ─── Stat Card ───────────────────────────────────────────────────────────────
+const StatCard = ({ icon: Icon, label, value, color }) => (
+  <Paper withBorder p="lg" radius="md">
+    <Group>
+      <ThemeIcon size={48} radius="md" color={color} variant="light">
+        <Icon size={26} />
+      </ThemeIcon>
+      <Box>
+        <Text size="xl" fw={700} lh={1}>{value}</Text>
+        <Text size="sm" c="dimmed" mt={4}>{label}</Text>
+      </Box>
+    </Group>
+  </Paper>
+);
+
+// ─── Business type badge ──────────────────────────────────────────────────────
+const TypeBadge = ({ type }) => (
+  <Badge
+    size="xs"
+    variant="light"
+    color={type === 'Dairy Cooperative Society' ? 'blue' : 'grape'}
+  >
+    {type === 'Dairy Cooperative Society' ? 'Dairy' : 'Private'}
+  </Badge>
+);
+
+const BUSINESS_TYPES = ['Dairy Cooperative Society', 'Private Firm'];
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+export default function SuperAdminDashboard() {
   const { user, logout } = useAuth();
-  const [companies, setCompanies] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [companies, setCompanies]   = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [addOpen, setAddOpen]       = useState(false);
+  const [pwdOpen, setPwdOpen]       = useState(false);
   const [selectedCompany, setSelectedCompany] = useState(null);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-
-  // Form state for adding company
-  const [formData, setFormData] = useState({
-    // Login credentials
-    username: '',
-    password: '',
-    // Company details
-    companyName: '',
-    businessTypes: [],
-    societyName: '',
-    societyCode: '',
-    state: '',
-    district: '',
-    address: '',
-    phone: '',
-    email: '',
-    gstNumber: '',
-    panNumber: '',
-    milmaCode: '',
-    dateOfRegistration: '',
-    startDate: '',
-    ssiRegistration: '',
-    ssiRegistrationDate: '',
-    yearOfAudit: '',
-    auditClassification: ''
-  });
-
+  const [saving, setSaving]         = useState(false);
   const [newPassword, setNewPassword] = useState('');
 
-  useEffect(() => {
-    fetchCompanies();
-  }, []);
+  // ── Add company form ────────────────────────────────────────────────────────
+  const form = useForm({
+    initialValues: {
+      username: '', password: '', companyName: '', businessTypes: [],
+      societyName: '', societyCode: '', state: '', district: '', address: '',
+      phone: '', email: '', gstNumber: '', panNumber: '', milmaCode: '',
+      dateOfRegistration: '', startDate: '', ssiRegistration: '',
+      ssiRegistrationDate: '', yearOfAudit: '', auditClassification: ''
+    },
+    validate: {
+      companyName:   (v) => (!v.trim() ? 'Company name is required' : null),
+      username:      (v) => (!v.trim() ? 'Username is required' : null),
+      password:      (v) => (v.length < 6 ? 'Password must be at least 6 characters' : null),
+      businessTypes: (v) => (v.length === 0 ? 'Select at least one business type' : null),
+    }
+  });
 
+  // ── Fetch companies ─────────────────────────────────────────────────────────
   const fetchCompanies = async () => {
     setLoading(true);
     try {
-      // Fetch all companies including inactive ones for admin view
-      const response = await companyAPI.getAll({ all: true });
-      if (response.success) {
-        setCompanies(response.data || []);
-      }
-    } catch (err) {
-      console.error('Error fetching companies:', err);
-      setError('Failed to load companies');
+      const res = await companyAPI.getAll({ all: true });
+      if (res.success) setCompanies(res.data || []);
+    } catch {
+      notifications.show({ color: 'red', message: 'Failed to load companies' });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
+  useEffect(() => { fetchCompanies(); }, []);
 
-  const handleBusinessTypeChange = (type) => {
-    setFormData(prev => {
-      const types = prev.businessTypes.includes(type)
-        ? prev.businessTypes.filter(t => t !== type)
-        : [...prev.businessTypes, type];
-      return { ...prev, businessTypes: types };
-    });
-  };
-
-  const resetForm = () => {
-    setFormData({
-      username: '',
-      password: '',
-      companyName: '',
-      businessTypes: [],
-      societyName: '',
-      societyCode: '',
-      state: '',
-      district: '',
-      address: '',
-      phone: '',
-      email: '',
-      gstNumber: '',
-      panNumber: '',
-      milmaCode: '',
-      dateOfRegistration: '',
-      startDate: '',
-      ssiRegistration: '',
-      ssiRegistrationDate: '',
-      yearOfAudit: '',
-      auditClassification: ''
-    });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
-
-    // Validation
-    if (!formData.companyName.trim()) {
-      setError('Company name is required');
-      return;
-    }
-    if (formData.businessTypes.length === 0) {
-      setError('Select at least one business type');
-      return;
-    }
-    if (!formData.username.trim()) {
-      setError('Username is required');
-      return;
-    }
-    if (!formData.password || formData.password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-
+  // ── Create company ──────────────────────────────────────────────────────────
+  const handleCreate = async (values) => {
+    setSaving(true);
     try {
-      // Create company with login credentials
-      const companyData = {
-        username: formData.username.trim().toLowerCase(),
-        password: formData.password,
-        companyName: formData.companyName.trim(),
-        businessTypes: formData.businessTypes,
-        societyName: formData.societyName,
-        societyCode: formData.societyCode,
-        state: formData.state,
-        district: formData.district,
-        address: formData.address,
-        phone: formData.phone,
-        email: formData.email,
-        gstNumber: formData.gstNumber,
-        panNumber: formData.panNumber,
-        milmaCode: formData.milmaCode,
-        dateOfRegistration: formData.dateOfRegistration || undefined,
-        startDate: formData.startDate || undefined,
-        ssiRegistration: formData.ssiRegistration,
-        ssiRegistrationDate: formData.ssiRegistrationDate || undefined,
-        yearOfAudit: formData.yearOfAudit,
-        auditClassification: formData.auditClassification
+      const payload = {
+        ...values,
+        username: values.username.trim().toLowerCase(),
+        dateOfRegistration:  values.dateOfRegistration  || undefined,
+        startDate:           values.startDate           || undefined,
+        ssiRegistrationDate: values.ssiRegistrationDate || undefined,
       };
-
-      const response = await companyAPI.create(companyData);
-
-      if (!response.success) {
-        setError(response.message || 'Failed to create company');
-        return;
-      }
-
-      setSuccess('Company created successfully!');
-      setShowModal(false);
-      resetForm();
+      const res = await companyAPI.create(payload);
+      if (!res.success) throw new Error(res.message);
+      notifications.show({ color: 'green', title: 'Success', message: 'Company created successfully' });
+      setAddOpen(false);
+      form.reset();
       fetchCompanies();
     } catch (err) {
-      setError(err.message || 'Failed to create company');
+      notifications.show({ color: 'red', title: 'Error', message: err.message || 'Failed to create company' });
+    } finally {
+      setSaving(false);
     }
   };
 
+  // ── Reset password ──────────────────────────────────────────────────────────
   const handleResetPassword = async () => {
     if (!newPassword || newPassword.length < 6) {
-      setError('Password must be at least 6 characters');
+      notifications.show({ color: 'red', message: 'Password must be at least 6 characters' });
       return;
     }
-
+    setSaving(true);
     try {
-      const response = await companyAPI.update(selectedCompany._id, {
-        password: newPassword
-      });
-      if (response.success) {
-        setSuccess('Password reset successfully');
-        setShowPasswordModal(false);
-        setSelectedCompany(null);
-        setNewPassword('');
-      } else {
-        setError(response.message || 'Failed to reset password');
-      }
+      const res = await companyAPI.update(selectedCompany._id, { password: newPassword });
+      if (!res.success) throw new Error(res.message);
+      notifications.show({ color: 'green', message: 'Password reset successfully' });
+      setPwdOpen(false);
+      setNewPassword('');
+      setSelectedCompany(null);
     } catch (err) {
-      setError(err.message || 'Failed to reset password');
+      notifications.show({ color: 'red', message: err.message || 'Failed to reset password' });
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleToggleStatus = async (company) => {
+  // ── Toggle status ───────────────────────────────────────────────────────────
+  const handleToggleStatus = (company) => {
     const newStatus = company.status === 'Active' ? 'Inactive' : 'Active';
-    if (!confirm(`Are you sure you want to ${newStatus === 'Inactive' ? 'deactivate' : 'activate'} this company?`)) return;
-
-    try {
-      const response = await companyAPI.update(company._id, { status: newStatus });
-      if (response.success) {
-        setSuccess(`Company ${newStatus === 'Active' ? 'activated' : 'deactivated'} successfully`);
-        fetchCompanies();
-      } else {
-        setError(response.message || 'Failed to update status');
+    modals.openConfirmModal({
+      title: `${newStatus === 'Inactive' ? 'Deactivate' : 'Activate'} Company`,
+      children: (
+        <Text size="sm">
+          Are you sure you want to <b>{newStatus === 'Inactive' ? 'deactivate' : 'activate'}</b>{' '}
+          <b>{company.companyName}</b>?
+        </Text>
+      ),
+      labels: { confirm: newStatus === 'Inactive' ? 'Deactivate' : 'Activate', cancel: 'Cancel' },
+      confirmProps: { color: newStatus === 'Inactive' ? 'orange' : 'green' },
+      onConfirm: async () => {
+        try {
+          const res = await companyAPI.update(company._id, { status: newStatus });
+          if (!res.success) throw new Error(res.message);
+          notifications.show({ color: 'green', message: `Company ${newStatus === 'Active' ? 'activated' : 'deactivated'} successfully` });
+          fetchCompanies();
+        } catch (err) {
+          notifications.show({ color: 'red', message: err.message || 'Failed to update status' });
+        }
       }
-    } catch (err) {
-      setError(err.message || 'Failed to update status');
-    }
+    });
   };
 
-  const handleDeleteCompany = async (company) => {
-    if (!confirm(`Are you sure you want to permanently delete "${company.companyName}"?\n\nThis action cannot be undone and will delete all associated data!`)) return;
-
-    // Double confirmation for safety
-    if (!confirm(`FINAL WARNING: This will permanently delete the company and ALL its data. Type 'yes' mentally and click OK to proceed.`)) return;
-
-    try {
-      const response = await companyAPI.delete(company._id);
-      if (response.success) {
-        setSuccess(`Company "${company.companyName}" deleted successfully`);
-        fetchCompanies();
-      } else {
-        setError(response.message || 'Failed to delete company');
+  // ── Delete company ──────────────────────────────────────────────────────────
+  const handleDelete = (company) => {
+    modals.openConfirmModal({
+      title: 'Delete Company',
+      children: (
+        <Stack gap="xs">
+          <Text size="sm">
+            Are you sure you want to permanently delete <b>{company.companyName}</b>?
+          </Text>
+          <Text size="xs" c="red" fw={600}>
+            This action cannot be undone. All associated data will be lost.
+          </Text>
+        </Stack>
+      ),
+      labels: { confirm: 'Delete Permanently', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          const res = await companyAPI.delete(company._id);
+          if (!res.success) throw new Error(res.message);
+          notifications.show({ color: 'green', message: `Company "${company.companyName}" deleted` });
+          fetchCompanies();
+        } catch (err) {
+          notifications.show({ color: 'red', message: err.message || 'Failed to delete company' });
+        }
       }
-    } catch (err) {
-      setError(err.message || 'Failed to delete company');
-    }
+    });
   };
 
-  if (loading) {
-    return (
-      <div className="admin-loading">
-        <div className="spinner"></div>
-        <p>Loading...</p>
-      </div>
-    );
-  }
+  // ── Stats ───────────────────────────────────────────────────────────────────
+  const totalCompanies  = companies.length;
+  const activeCompanies = companies.filter(c => c.status === 'Active').length;
+  const dairyCompanies  = companies.filter(c => c.businessTypes?.includes('Dairy Cooperative Society')).length;
+  const privateCompanies = companies.filter(c => c.businessTypes?.includes('Private Firm')).length;
+
+  // ── Rows ────────────────────────────────────────────────────────────────────
+  const rows = companies.map((company) => (
+    <Table.Tr key={company._id}>
+      <Table.Td>
+        <Group gap="sm">
+          <Avatar size={34} radius="xl" color="blue" variant="light">
+            {company.companyName?.charAt(0)?.toUpperCase()}
+          </Avatar>
+          <Box>
+            <Text size="sm" fw={600}>{company.companyName}</Text>
+            {company.societyCode && <Text size="xs" c="dimmed">{company.societyCode}</Text>}
+          </Box>
+        </Group>
+      </Table.Td>
+      <Table.Td>
+        <Group gap={4}>
+          {company.businessTypes?.map((t, i) => <TypeBadge key={i} type={t} />)}
+        </Group>
+      </Table.Td>
+      <Table.Td>
+        <Text size="sm" c="dimmed">{company.username || '—'}</Text>
+      </Table.Td>
+      <Table.Td>
+        <Text size="sm">{company.phone || '—'}</Text>
+      </Table.Td>
+      <Table.Td>
+        <Text size="sm" c="dimmed">{company.state || '—'}</Text>
+      </Table.Td>
+      <Table.Td>
+        <Badge
+          size="sm"
+          variant="dot"
+          color={company.status === 'Active' ? 'green' : 'red'}
+        >
+          {company.status}
+        </Badge>
+      </Table.Td>
+      <Table.Td>
+        <Group gap={4} justify="flex-end">
+          <Tooltip label="Reset Password" withArrow>
+            <ActionIcon
+              variant="light" color="blue" size="sm" radius="sm"
+              onClick={() => { setSelectedCompany(company); setPwdOpen(true); }}
+            >
+              <IconLock size={14} />
+            </ActionIcon>
+          </Tooltip>
+          <Tooltip label={company.status === 'Active' ? 'Deactivate' : 'Activate'} withArrow>
+            <ActionIcon
+              variant="light"
+              color={company.status === 'Active' ? 'orange' : 'green'}
+              size="sm" radius="sm"
+              onClick={() => handleToggleStatus(company)}
+            >
+              {company.status === 'Active'
+                ? <IconToggleLeft size={14} />
+                : <IconToggleRight size={14} />}
+            </ActionIcon>
+          </Tooltip>
+          <Tooltip label="Delete" withArrow>
+            <ActionIcon
+              variant="light" color="red" size="sm" radius="sm"
+              onClick={() => handleDelete(company)}
+            >
+              <IconTrash size={14} />
+            </ActionIcon>
+          </Tooltip>
+        </Group>
+      </Table.Td>
+    </Table.Tr>
+  ));
 
   return (
-    <div className="admin-dashboard">
-      {/* Header */}
-      <header className="admin-header">
-        <div className="header-left">
-          <h1>Super Admin Dashboard</h1>
-          <span className="user-badge">Logged in as: {user?.username}</span>
-        </div>
-        <button className="btn-logout" onClick={logout}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-            <polyline points="16 17 21 12 16 7"/>
-            <line x1="21" y1="12" x2="9" y2="12"/>
-          </svg>
-          Logout
-        </button>
-      </header>
+    <Box style={{ minHeight: '100vh', background: '#f8fafc' }}>
+      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      <Paper
+        shadow="xs"
+        style={{ borderRadius: 0, borderBottom: '1px solid #e2e8f0', background: '#fff' }}
+        px="xl" py="sm"
+      >
+        <Group justify="space-between">
+          <Group gap="sm">
+            <ThemeIcon size={38} radius="md" color="blue" variant="filled">
+              <IconShieldCheck size={22} />
+            </ThemeIcon>
+            <Box>
+              <Title order={5} lh={1}>Super Admin Panel</Title>
+              <Text size="xs" c="dimmed">Dairy ERP Management System</Text>
+            </Box>
+          </Group>
+          <Group gap="sm">
+            <Badge variant="light" color="blue" size="sm" leftSection={<IconShieldCheck size={11} />}>
+              {user?.username}
+            </Badge>
+            <Button
+              leftSection={<IconLogout size={14} />}
+              variant="subtle" color="red" size="xs"
+              onClick={logout}
+            >
+              Logout
+            </Button>
+          </Group>
+        </Group>
+      </Paper>
 
-      {/* Messages */}
-      {error && (
-        <div className="message error">
-          <span>{error}</span>
-          <button onClick={() => setError('')}>&times;</button>
-        </div>
-      )}
-      {success && (
-        <div className="message success">
-          <span>{success}</span>
-          <button onClick={() => setSuccess('')}>&times;</button>
-        </div>
-      )}
+      <Box p="xl">
+        {/* ── Stats ─────────────────────────────────────────────────────────── */}
+        <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} mb="xl">
+          <StatCard icon={IconBuilding}      label="Total Companies"   value={totalCompanies}   color="blue" />
+          <StatCard icon={IconChartBar}      label="Active Companies"  value={activeCompanies}  color="green" />
+          <StatCard icon={IconUsers}         label="Dairy Societies"   value={dairyCompanies}   color="cyan" />
+          <StatCard icon={IconBuildingStore} label="Private Firms"     value={privateCompanies} color="grape" />
+        </SimpleGrid>
 
-      {/* Stats */}
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon company">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M3 21h18"/>
-              <path d="M9 8h1"/>
-              <path d="M9 12h1"/>
-              <path d="M9 16h1"/>
-              <path d="M14 8h1"/>
-              <path d="M14 12h1"/>
-              <path d="M14 16h1"/>
-              <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"/>
-            </svg>
-          </div>
-          <div className="stat-info">
-            <span className="stat-value">{companies.length}</span>
-            <span className="stat-label">Total Companies</span>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon user">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10"/>
-              <path d="M12 6v6l4 2"/>
-            </svg>
-          </div>
-          <div className="stat-info">
-            <span className="stat-value">{companies.filter(c => c.status === 'Active').length}</span>
-            <span className="stat-label">Active Companies</span>
-          </div>
-        </div>
-      </div>
+        {/* ── Companies Table ────────────────────────────────────────────────── */}
+        <Paper withBorder radius="md" style={{ overflow: 'hidden' }}>
+          <Group justify="space-between" p="md" style={{ borderBottom: '1px solid #e2e8f0' }}>
+            <Title order={5}>Companies</Title>
+            <Group gap="xs">
+              <ActionIcon variant="subtle" color="gray" onClick={fetchCompanies} title="Refresh">
+                <IconRefresh size={16} />
+              </ActionIcon>
+              <Button
+                leftSection={<IconPlus size={14} />}
+                size="xs" radius="sm"
+                onClick={() => { form.reset(); setAddOpen(true); }}
+              >
+                Add Company
+              </Button>
+            </Group>
+          </Group>
 
-      {/* Add Company Button */}
-      <div className="action-bar">
-        <h2>Companies</h2>
-        <button className="btn-primary" onClick={() => setShowModal(true)}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="12" y1="5" x2="12" y2="19"/>
-            <line x1="5" y1="12" x2="19" y2="12"/>
-          </svg>
-          Add Company
-        </button>
-      </div>
+          {loading ? (
+            <Center py={60}>
+              <Stack align="center" gap="sm">
+                <Loader size="md" />
+                <Text size="sm" c="dimmed">Loading companies...</Text>
+              </Stack>
+            </Center>
+          ) : companies.length === 0 ? (
+            <Center py={60}>
+              <Stack align="center" gap="xs">
+                <ThemeIcon size={48} radius="xl" color="gray" variant="light">
+                  <IconBuilding size={24} />
+                </ThemeIcon>
+                <Text size="sm" c="dimmed">No companies yet. Click "Add Company" to get started.</Text>
+              </Stack>
+            </Center>
+          ) : (
+            <Table striped highlightOnHover withRowBorders={false} verticalSpacing="sm" horizontalSpacing="md">
+              <Table.Thead style={{ background: '#f8fafc' }}>
+                <Table.Tr>
+                  <Table.Th><Text size="xs" fw={600} tt="uppercase" c="dimmed">Company</Text></Table.Th>
+                  <Table.Th><Text size="xs" fw={600} tt="uppercase" c="dimmed">Type</Text></Table.Th>
+                  <Table.Th><Text size="xs" fw={600} tt="uppercase" c="dimmed">Username</Text></Table.Th>
+                  <Table.Th><Text size="xs" fw={600} tt="uppercase" c="dimmed">Phone</Text></Table.Th>
+                  <Table.Th><Text size="xs" fw={600} tt="uppercase" c="dimmed">State</Text></Table.Th>
+                  <Table.Th><Text size="xs" fw={600} tt="uppercase" c="dimmed">Status</Text></Table.Th>
+                  <Table.Th ta="right"><Text size="xs" fw={600} tt="uppercase" c="dimmed">Actions</Text></Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>{rows}</Table.Tbody>
+            </Table>
+          )}
+        </Paper>
+      </Box>
 
-      {/* Companies Table */}
-      <div className="table-container">
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th>Company Name</th>
-              <th>Business Type</th>
-              <th>Username</th>
-              <th>Phone</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {companies.map(company => (
-              <tr key={company._id}>
-                <td className="company-name">{company.companyName}</td>
-                <td>
-                  <div className="business-types">
-                    {company.businessTypes?.map((type, idx) => (
-                      <span key={idx} className={`type-badge ${type.includes('Dairy') ? 'dairy' : 'private'}`}>
-                        {type === 'Dairy Cooperative Society' ? 'Dairy' : 'Private'}
-                      </span>
-                    ))}
-                  </div>
-                </td>
-                <td className="username">{company.username || '-'}</td>
-                <td>{company.phone || '-'}</td>
-                <td>
-                  <span className={`status-badge ${company.status?.toLowerCase()}`}>
-                    {company.status}
-                  </span>
-                </td>
-                <td>
-                  <div className="action-buttons">
-                    <button
-                      className="btn-icon"
-                      title="Reset Password"
-                      onClick={() => {
-                        setSelectedCompany(company);
-                        setShowPasswordModal(true);
-                      }}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                      </svg>
-                    </button>
-                    <button
-                      className={`btn-icon ${company.status === 'Active' ? 'warning' : 'success'}`}
-                      title={company.status === 'Active' ? 'Deactivate' : 'Activate'}
-                      onClick={() => handleToggleStatus(company)}
-                    >
-                      {company.status === 'Active' ? (
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <circle cx="12" cy="12" r="10"/>
-                          <line x1="4" y1="12" x2="20" y2="12"/>
-                        </svg>
-                      ) : (
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                          <polyline points="22 4 12 14.01 9 11.01"/>
-                        </svg>
-                      )}
-                    </button>
-                    <button
-                      className="btn-icon danger"
-                      title="Delete Permanently"
-                      onClick={() => handleDeleteCompany(company)}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="3 6 5 6 21 6"/>
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                        <line x1="10" y1="11" x2="10" y2="17"/>
-                        <line x1="14" y1="11" x2="14" y2="17"/>
-                      </svg>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {companies.length === 0 && (
-              <tr>
-                <td colSpan="6" className="empty-row">
-                  No companies added yet. Click "Add Company" to get started.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {/* ── Add Company Modal ─────────────────────────────────────────────────── */}
+      <Modal
+        opened={addOpen}
+        onClose={() => setAddOpen(false)}
+        title={<Group gap="xs"><ThemeIcon size={24} radius="sm" color="blue"><IconBuilding size={14} /></ThemeIcon><Text fw={600}>Add New Company</Text></Group>}
+        size="xl"
+        radius="md"
+        padding="xl"
+      >
+        <form onSubmit={form.onSubmit(handleCreate)}>
+          {/* Login Credentials */}
+          <Text size="xs" fw={700} tt="uppercase" c="dimmed" mb="xs">Login Credentials</Text>
+          <SimpleGrid cols={2} mb="md">
+            <TextInput label="Username" placeholder="Login username" required {...form.getInputProps('username')} />
+            <PasswordInput label="Password" placeholder="Min 6 characters" required {...form.getInputProps('password')} />
+          </SimpleGrid>
+          <Divider mb="md" />
 
-      {/* Add Company Modal */}
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal-content large" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Add New Company</h2>
-              <button className="modal-close" onClick={() => setShowModal(false)}>&times;</button>
-            </div>
-            <form onSubmit={handleSubmit} className="modal-form">
-              {/* Login Credentials Section */}
-              <div className="form-section">
-                <h3>Login Credentials</h3>
-                <div className="form-row two-cols">
-                  <div className="form-group">
-                    <label>Username *</label>
-                    <input
-                      type="text"
-                      name="username"
-                      value={formData.username}
-                      onChange={handleInputChange}
-                      placeholder="Login username"
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Password *</label>
-                    <input
-                      type="text"
-                      name="password"
-                      value={formData.password}
-                      onChange={handleInputChange}
-                      placeholder="Login password (min 6 chars)"
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Basic Company Info */}
-              <div className="form-section">
-                <h3>Basic Information</h3>
-                <div className="form-group">
-                  <label>Company Name *</label>
-                  <input
-                    type="text"
-                    name="companyName"
-                    value={formData.companyName}
-                    onChange={handleInputChange}
-                    placeholder="Enter company name"
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Business Type *</label>
-                  <div className="checkbox-group">
-                    <label className="checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={formData.businessTypes.includes('Dairy Cooperative Society')}
-                        onChange={() => handleBusinessTypeChange('Dairy Cooperative Society')}
-                      />
-                      Dairy Cooperative Society
-                    </label>
-                    <label className="checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={formData.businessTypes.includes('Private Firm')}
-                        onChange={() => handleBusinessTypeChange('Private Firm')}
-                      />
-                      Private Firm
-                    </label>
-                  </div>
-                </div>
-
-                <div className="form-row two-cols">
-                  <div className="form-group">
-                    <label>Society Name</label>
-                    <input
-                      type="text"
-                      name="societyName"
-                      value={formData.societyName}
-                      onChange={handleInputChange}
-                      placeholder="Society name"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Society Code</label>
-                    <input
-                      type="text"
-                      name="societyCode"
-                      value={formData.societyCode}
-                      onChange={handleInputChange}
-                      placeholder="Society code"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Contact & Address */}
-              <div className="form-section">
-                <h3>Contact & Address</h3>
-                <div className="form-row two-cols">
-                  <div className="form-group">
-                    <label>Phone</label>
-                    <input
-                      type="text"
-                      name="phone"
-                      value={formData.phone}
-                      onChange={handleInputChange}
-                      placeholder="Phone number"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Email</label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleInputChange}
-                      placeholder="Email address"
-                    />
-                  </div>
-                </div>
-
-                <div className="form-row two-cols">
-                  <div className="form-group">
-                    <label>State</label>
-                    <input
-                      type="text"
-                      name="state"
-                      value={formData.state}
-                      onChange={handleInputChange}
-                      placeholder="State"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>District</label>
-                    <input
-                      type="text"
-                      name="district"
-                      value={formData.district}
-                      onChange={handleInputChange}
-                      placeholder="District"
-                    />
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label>Address</label>
-                  <textarea
-                    name="address"
-                    value={formData.address}
-                    onChange={handleInputChange}
-                    placeholder="Full address"
-                    rows="2"
-                  />
-                </div>
-              </div>
-
-              {/* Registration Details */}
-              <div className="form-section">
-                <h3>Registration Details</h3>
-                <div className="form-row two-cols">
-                  <div className="form-group">
-                    <label>GST Number</label>
-                    <input
-                      type="text"
-                      name="gstNumber"
-                      value={formData.gstNumber}
-                      onChange={handleInputChange}
-                      placeholder="GST Number"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>PAN Number</label>
-                    <input
-                      type="text"
-                      name="panNumber"
-                      value={formData.panNumber}
-                      onChange={handleInputChange}
-                      placeholder="PAN Number"
-                    />
-                  </div>
-                </div>
-
-                <div className="form-row two-cols">
-                  <div className="form-group">
-                    <label>Milma Code</label>
-                    <input
-                      type="text"
-                      name="milmaCode"
-                      value={formData.milmaCode}
-                      onChange={handleInputChange}
-                      placeholder="Milma Code"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>SSI Registration</label>
-                    <input
-                      type="text"
-                      name="ssiRegistration"
-                      value={formData.ssiRegistration}
-                      onChange={handleInputChange}
-                      placeholder="SSI Registration No"
-                    />
-                  </div>
-                </div>
-
-                <div className="form-row two-cols">
-                  <div className="form-group">
-                    <label>Date of Registration</label>
-                    <input
-                      type="date"
-                      name="dateOfRegistration"
-                      value={formData.dateOfRegistration}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Start Date</label>
-                    <input
-                      type="date"
-                      name="startDate"
-                      value={formData.startDate}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-row two-cols">
-                  <div className="form-group">
-                    <label>SSI Registration Date</label>
-                    <input
-                      type="date"
-                      name="ssiRegistrationDate"
-                      value={formData.ssiRegistrationDate}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Year of Audit</label>
-                    <input
-                      type="text"
-                      name="yearOfAudit"
-                      value={formData.yearOfAudit}
-                      onChange={handleInputChange}
-                      placeholder="e.g., 2023-24"
-                    />
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label>Audit Classification</label>
-                  <input
-                    type="text"
-                    name="auditClassification"
-                    value={formData.auditClassification}
-                    onChange={handleInputChange}
-                    placeholder="Audit classification"
-                  />
-                </div>
-              </div>
-
-              <div className="modal-actions">
-                <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary">
-                  Create Company
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Reset Password Modal */}
-      {showPasswordModal && selectedCompany && (
-        <div className="modal-overlay" onClick={() => setShowPasswordModal(false)}>
-          <div className="modal-content small" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Reset Password</h2>
-              <button className="modal-close" onClick={() => setShowPasswordModal(false)}>&times;</button>
-            </div>
-            <div className="modal-body">
-              <p>Reset password for: <strong>{selectedCompany.companyName}</strong></p>
-              <p className="text-muted">Username: {selectedCompany.username}</p>
-              <div className="form-group">
-                <label>New Password</label>
-                <input
-                  type="text"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Enter new password (min 6 chars)"
-                  minLength={6}
+          {/* Basic Info */}
+          <Text size="xs" fw={700} tt="uppercase" c="dimmed" mb="xs">Basic Information</Text>
+          <TextInput label="Company Name" placeholder="Enter company name" required mb="sm" {...form.getInputProps('companyName')} />
+          <Box mb="sm">
+            <Text size="sm" fw={500} mb={6}>Business Type <Text span c="red">*</Text></Text>
+            <Group gap="lg">
+              {BUSINESS_TYPES.map(type => (
+                <Checkbox
+                  key={type}
+                  label={type}
+                  checked={form.values.businessTypes.includes(type)}
+                  onChange={() => {
+                    const cur = form.values.businessTypes;
+                    form.setFieldValue('businessTypes',
+                      cur.includes(type) ? cur.filter(t => t !== type) : [...cur, type]
+                    );
+                  }}
                 />
-              </div>
-            </div>
-            <div className="modal-actions">
-              <button className="btn-secondary" onClick={() => setShowPasswordModal(false)}>
-                Cancel
-              </button>
-              <button className="btn-primary" onClick={handleResetPassword}>
-                Reset Password
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
+              ))}
+            </Group>
+            {form.errors.businessTypes && <Text size="xs" c="red" mt={4}>{form.errors.businessTypes}</Text>}
+          </Box>
+          <SimpleGrid cols={2} mb="md">
+            <TextInput label="Society Name" placeholder="Society name" {...form.getInputProps('societyName')} />
+            <TextInput label="Society Code" placeholder="Society code" {...form.getInputProps('societyCode')} />
+          </SimpleGrid>
+          <Divider mb="md" />
 
-export default SuperAdminDashboard;
+          {/* Contact */}
+          <Text size="xs" fw={700} tt="uppercase" c="dimmed" mb="xs">Contact & Address</Text>
+          <SimpleGrid cols={2} mb="sm">
+            <TextInput label="Phone" placeholder="Phone number" {...form.getInputProps('phone')} />
+            <TextInput label="Email" placeholder="Email address" type="email" {...form.getInputProps('email')} />
+          </SimpleGrid>
+          <SimpleGrid cols={2} mb="sm">
+            <TextInput label="State" placeholder="State" {...form.getInputProps('state')} />
+            <TextInput label="District" placeholder="District" {...form.getInputProps('district')} />
+          </SimpleGrid>
+          <Textarea label="Address" placeholder="Full address" rows={2} mb="md" {...form.getInputProps('address')} />
+          <Divider mb="md" />
+
+          {/* Registration */}
+          <Text size="xs" fw={700} tt="uppercase" c="dimmed" mb="xs">Registration Details</Text>
+          <SimpleGrid cols={2} mb="sm">
+            <TextInput label="GST Number" placeholder="GST Number" {...form.getInputProps('gstNumber')} />
+            <TextInput label="PAN Number" placeholder="PAN Number" {...form.getInputProps('panNumber')} />
+          </SimpleGrid>
+          <SimpleGrid cols={2} mb="sm">
+            <TextInput label="Milma Code" placeholder="Milma Code" {...form.getInputProps('milmaCode')} />
+            <TextInput label="SSI Registration" placeholder="SSI Registration No" {...form.getInputProps('ssiRegistration')} />
+          </SimpleGrid>
+          <SimpleGrid cols={2} mb="sm">
+            <TextInput label="Date of Registration" type="date" {...form.getInputProps('dateOfRegistration')} />
+            <TextInput label="Start Date" type="date" {...form.getInputProps('startDate')} />
+          </SimpleGrid>
+          <SimpleGrid cols={2} mb="sm">
+            <TextInput label="SSI Registration Date" type="date" {...form.getInputProps('ssiRegistrationDate')} />
+            <TextInput label="Year of Audit" placeholder="e.g., 2023-24" {...form.getInputProps('yearOfAudit')} />
+          </SimpleGrid>
+          <TextInput label="Audit Classification" placeholder="Audit classification" mb="xl" {...form.getInputProps('auditClassification')} />
+
+          <Group justify="flex-end">
+            <Button variant="subtle" color="gray" onClick={() => setAddOpen(false)}>Cancel</Button>
+            <Button type="submit" loading={saving} leftSection={<IconBuilding size={14} />}>Create Company</Button>
+          </Group>
+        </form>
+      </Modal>
+
+      {/* ── Reset Password Modal ───────────────────────────────────────────────── */}
+      <Modal
+        opened={pwdOpen}
+        onClose={() => { setPwdOpen(false); setNewPassword(''); setSelectedCompany(null); }}
+        title={<Group gap="xs"><ThemeIcon size={24} radius="sm" color="blue"><IconLock size={14} /></ThemeIcon><Text fw={600}>Reset Password</Text></Group>}
+        size="sm"
+        radius="md"
+        padding="xl"
+      >
+        {selectedCompany && (
+          <Stack>
+            <Paper withBorder p="sm" radius="sm" bg="gray.0">
+              <Text size="sm" fw={600}>{selectedCompany.companyName}</Text>
+              <Text size="xs" c="dimmed">Username: {selectedCompany.username}</Text>
+            </Paper>
+            <PasswordInput
+              label="New Password"
+              placeholder="Enter new password (min 6 chars)"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              minLength={6}
+            />
+            <Group justify="flex-end">
+              <Button variant="subtle" color="gray" onClick={() => setPwdOpen(false)}>Cancel</Button>
+              <Button loading={saving} color="blue" onClick={handleResetPassword} leftSection={<IconLock size={14} />}>
+                Reset Password
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
+    </Box>
+  );
+}
