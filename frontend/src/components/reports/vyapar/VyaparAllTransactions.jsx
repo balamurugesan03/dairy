@@ -47,7 +47,7 @@ import { useCompany } from '../../../context/CompanyContext';
 // Extend dayjs with quarter plugin
 dayjs.extend(quarterOfYear);
 import { reportAPI } from '../../../services/api';
-import { message } from '../../../utils/toast';
+import { notifications } from '@mantine/notifications';
 import * as XLSX from 'xlsx';
 import { printVyaparReport } from '../../../utils/printReport';
 
@@ -112,8 +112,8 @@ const VyaparAllTransactions = () => {
 
   // Redirect if wrong business type
   useEffect(() => {
-    if (selectedBusinessType !== 'Private Firm') {
-      message.warning('This report is only available for Private Firm');
+    if (selectedBusinessType && selectedBusinessType !== 'Private Firm') {
+      notifications.show({ color: 'orange', message: 'This report is only available for Private Firm' });
       navigate('/');
     }
   }, [selectedBusinessType, navigate]);
@@ -192,7 +192,7 @@ const VyaparAllTransactions = () => {
       const response = await reportAPI.vyaparAllTransactions(params);
       setReportData(response.data);
     } catch (error) {
-      message.error(error.message || 'Failed to fetch transactions');
+      notifications.show({ color: 'red', title: 'Error', message: error.message || 'Failed to fetch transactions' });
     } finally {
       setLoading(false);
     }
@@ -210,10 +210,7 @@ const VyaparAllTransactions = () => {
   const formatDate = (date) => dayjs(date).format('DD/MM/YYYY');
 
   const handleExportExcel = () => {
-    if (!filteredTransactions?.length) {
-      message.warning('No data to export');
-      return;
-    }
+    if (!filteredTransactions?.length) return;
 
     const exportData = filteredTransactions.map((txn, index) => ({
       '#': index + 1,
@@ -231,7 +228,7 @@ const VyaparAllTransactions = () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'All Transactions');
     XLSX.writeFile(wb, `All_Transactions_${dayjs().format('YYYY-MM-DD')}.xlsx`);
-    message.success('Exported to Excel successfully');
+    notifications.show({ color: 'green', message: 'Exported to Excel successfully' });
   };
 
   const handlePrint = () => {
@@ -252,10 +249,8 @@ const VyaparAllTransactions = () => {
   };
 
   const handleRowClick = (txn) => {
-    if (txn.referenceType === 'Sales' && txn.referenceId) {
-      navigate(`/sales/view/${txn.referenceId}`);
-    } else if (txn.type === 'Receipt' || txn.type === 'Payment') {
-      navigate(`/accounting/vouchers`);
+    if (txn.referenceType === 'BusinessSales' && txn.referenceId) {
+      navigate(`/business-sales/view/${txn.referenceId}`);
     }
   };
 

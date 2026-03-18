@@ -13,6 +13,34 @@ export const getDateRange = (filterType, customStart, customEnd, financialYearSt
   let startDate, endDate;
 
   switch (filterType) {
+    case 'today':
+      startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      endDate   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      break;
+
+    case 'yesterday': {
+      const y = new Date(now);
+      y.setDate(y.getDate() - 1);
+      startDate = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 0, 0, 0, 0);
+      endDate   = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 23, 59, 59, 999);
+      break;
+    }
+
+    case 'thisWeek': {
+      const day = now.getDay(); // 0=Sun
+      startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day, 0, 0, 0, 0);
+      endDate   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (6 - day), 23, 59, 59, 999);
+      break;
+    }
+
+    case 'lastWeek': {
+      const day = now.getDay();
+      const lastSun = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day - 7);
+      startDate = new Date(lastSun.getFullYear(), lastSun.getMonth(), lastSun.getDate(), 0, 0, 0, 0);
+      endDate   = new Date(lastSun.getFullYear(), lastSun.getMonth(), lastSun.getDate() + 6, 23, 59, 59, 999);
+      break;
+    }
+
     case 'thisMonth':
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -23,15 +51,30 @@ export const getDateRange = (filterType, customStart, customEnd, financialYearSt
       endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
       break;
 
-    case 'thisQuarter':
+    case 'thisQuarter': {
       const quarterMonth = Math.floor(now.getMonth() / 3) * 3;
       startDate = new Date(now.getFullYear(), quarterMonth, 1);
       endDate = new Date(now.getFullYear(), quarterMonth + 3, 0, 23, 59, 59, 999);
       break;
+    }
+
+    case 'lastQuarter': {
+      const lqMonth = Math.floor(now.getMonth() / 3) * 3 - 3;
+      const lqYear  = lqMonth < 0 ? now.getFullYear() - 1 : now.getFullYear();
+      const lqStart = ((lqMonth % 12) + 12) % 12;
+      startDate = new Date(lqYear, lqStart, 1);
+      endDate   = new Date(lqYear, lqStart + 3, 0, 23, 59, 59, 999);
+      break;
+    }
 
     case 'thisYear':
       startDate = new Date(now.getFullYear(), 0, 1);
       endDate = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+      break;
+
+    case 'lastYear':
+      startDate = new Date(now.getFullYear() - 1, 0, 1);
+      endDate   = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59, 999);
       break;
 
     case 'financialYear':

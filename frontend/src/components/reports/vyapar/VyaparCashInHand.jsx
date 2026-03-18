@@ -42,6 +42,7 @@ import { reportAPI } from '../../../services/api';
 import { printVyaparReport } from '../../../utils/printReport';
 import { notifications } from '@mantine/notifications';
 import { useCompany } from '../../../context/CompanyContext';
+import { useNavigate } from 'react-router-dom';
 
 const periodOptions = [
   { value: 'today', label: 'Today' },
@@ -75,7 +76,8 @@ const SOURCE_LABELS = {
 };
 
 const VyaparCashInHand = () => {
-  const { selectedCompany } = useCompany();
+  const { selectedCompany, selectedBusinessType } = useCompany();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -155,6 +157,13 @@ const VyaparCashInHand = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (selectedBusinessType && selectedBusinessType !== 'Private Firm') {
+      notifications.show({ color: 'orange', message: 'This report is only available for Private Firm' });
+      navigate('/');
+    }
+  }, [selectedBusinessType, navigate]);
 
   useEffect(() => {
     fetchReport();

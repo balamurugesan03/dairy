@@ -45,32 +45,30 @@ export const getLatestRate = async (req, res) => {
   try {
     const { partyId, salesItem, date } = req.query;
 
-    if (!partyId || !salesItem) {
+    if (!salesItem) {
       return res.status(400).json({
         success: false,
-        message: 'partyId and salesItem are required'
+        message: 'salesItem is required'
       });
     }
 
     const targetDate = date ? new Date(date) : new Date();
+    targetDate.setHours(23, 59, 59, 999);
 
-    const rate = await MilkSalesRate.findOne({
+    const filter = {
       companyId: req.companyId,
-      partyId,
       salesItem,
       wefDate: { $lte: targetDate }
-    })
+    };
+    // partyId is required for Credit Sales; optional for Local/Sample Sales
+    if (partyId) filter.partyId = partyId;
+
+    const rate = await MilkSalesRate.findOne(filter)
       .sort({ wefDate: -1 })
       .lean();
 
-    if (!rate) {
-      return res.status(404).json({
-        success: false,
-        message: 'No rate found for this party and sales item on the given date'
-      });
-    }
-
-    res.json({ success: true, data: rate });
+    // Return null data (not 404) when no rate is configured — avoids console errors
+    res.json({ success: true, data: rate || null });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -101,10 +99,11 @@ export const getRateHistory = async (req, res) => {
 // ════════════════════════════════════════════════════════════════
 export const createMilkSalesRate = async (req, res) => {
   try {
-    const rate = await MilkSalesRate.create({
-      ...req.body,
-      companyId: req.companyId
-    });
+    const body = { ...req.body, companyId: req.companyId };
+    // For Local/Sample Sales, partyId is not needed — strip empty strings
+    if (!body.partyId || body.partyId === '') delete body.partyId;
+    if (!body.partyName || body.partyName === '') delete body.partyName;
+    const rate = await MilkSalesRate.create(body);
     res.status(201).json({ success: true, data: rate });
   } catch (err) {
     if (err.code === 11000) {
@@ -122,9 +121,12 @@ export const createMilkSalesRate = async (req, res) => {
 // ════════════════════════════════════════════════════════════════
 export const updateMilkSalesRate = async (req, res) => {
   try {
+    const body = { ...req.body };
+    if (!body.partyId || body.partyId === '') delete body.partyId;
+    if (!body.partyName || body.partyName === '') delete body.partyName;
     const rate = await MilkSalesRate.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId },
-      req.body,
+      body,
       { new: true, runValidators: true }
     );
     if (!rate) {

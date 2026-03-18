@@ -41,12 +41,38 @@ app.use(express.urlencoded({ limit: '10mb', extended: true }));
 mongoose.connect(process.env.MONGODB_URI)
   .then(async () => {
     console.log('MongoDB connected successfully');
-    // Drop old global unique index on quotationNumber (replaced by compound index per companyId)
-    try {
-      await mongoose.connection.collection('quotations').dropIndex('quotationNumber_1');
-      console.log('Dropped old quotationNumber_1 index');
-    } catch (e) {
-      if (e.codeName !== 'IndexNotFound') console.warn('Index drop warning:', e.message);
+    // Drop old global unique indexes (replaced by compound indexes per companyId)
+    const oldIndexes = [
+      { collection: 'quotations',        index: 'quotationNumber_1' },
+      { collection: 'items',             index: 'itemCode_1' },
+      { collection: 'businessitems',     index: 'itemCode_1' },
+      { collection: 'businesscustomers', index: 'customerId_1' },
+      { collection: 'suppliers',         index: 'supplierId_1' },
+      { collection: 'customers',         index: 'customerId_1' },
+      { collection: 'businessledgers',   index: 'code_1' },
+      { collection: 'businessledgers',   index: 'name_1' },
+      { collection: 'businessvouchers',  index: 'voucherNumber_1' },
+      { collection: 'sales',                    index: 'billNumber_1' },    // replaced by {billNumber,companyId} compound
+      { collection: 'dairypurchasereturns',     index: 'returnNumber_1' },             // old global unique
+      { collection: 'dairypurchasereturns',     index: 'returnNumber_1_companyId_1' }, // recreate with partialFilter
+      { collection: 'dairysalesreturns',        index: 'returnNumber_1' },
+      { collection: 'dairysalesreturns',        index: 'returnNumber_1_companyId_1' },
+      { collection: 'purchasereturns',          index: 'returnNumber_1' },
+      { collection: 'purchasereturns',          index: 'returnNumber_1_companyId_1' },
+      { collection: 'salesreturns',             index: 'returnNumber_1' },
+      { collection: 'salesreturns',             index: 'returnNumber_1_companyId_1' },
+      { collection: 'milkcollections',          index: 'billNo_1' }, // replaced by compound {billNo,companyId}
+      { collection: 'purchasereturns',          index: 'returnNumber_1' }, // replaced by compound {returnNumber,companyId}
+      { collection: 'machines',                 index: 'machineId_1' },    // old field removed
+      { collection: 'machines',                 index: 'machineCode_1' },  // replaced by sparse index
+    ];
+    for (const { collection, index } of oldIndexes) {
+      try {
+        await mongoose.connection.collection(collection).dropIndex(index);
+        console.log(`Dropped old index ${index} on ${collection}`);
+      } catch (e) {
+        if (e.codeName !== 'IndexNotFound') console.warn(`Index drop warning (${collection}.${index}):`, e.message);
+      }
     }
   })
   .catch((err) => console.error('MongoDB connection error:', err));
@@ -65,6 +91,7 @@ import farmerRoutes from './routes/farmerRoutes.js';
 import customerRoutes from './routes/customerRoutes.js';
 import businessCustomerRoutes from './routes/businessCustomerRoutes.js';
 import supplierRoutes from './routes/supplierRoutes.js';
+import businessSupplierRoutes from './routes/businessSupplierRoutes.js';
 import inventoryRoutes from './routes/inventoryRoutes.js';
 import salesRoutes from './routes/salesRoutes.js';
 import accountingRoutes from './routes/accountingRoutes.js';
@@ -174,6 +201,9 @@ import milkAnalyzerRoutes from './routes/milkAnalyzerRoutes.js';
 // Machine Config routes
 import machineConfigRoutes from './routes/machineConfigRoutes.js';
 
+// Society Info & Document Management routes
+import societyInfoRoutes from './routes/societyInfoRoutes.js';
+
 // Auth routes (public login, protected user management)
 app.use('/api/auth', authRoutes);
 
@@ -207,6 +237,7 @@ app.use('/api/farmers', protect, addCompanyFilter, farmerRoutes);
 app.use('/api/customers', protect, addCompanyFilter, customerRoutes);
 app.use('/api/business-customers', protect, addCompanyFilter, businessCustomerRoutes);
 app.use('/api/suppliers', protect, addCompanyFilter, supplierRoutes);
+app.use('/api/business-suppliers', protect, addCompanyFilter, businessSupplierRoutes);
 app.use('/api', protect, addCompanyFilter, inventoryRoutes);
 app.use('/api/sales', protect, addCompanyFilter, salesRoutes);
 app.use('/api', protect, addCompanyFilter, accountingRoutes);
@@ -309,6 +340,9 @@ app.use('/api/milk-analyzer', protect, addCompanyFilter, milkAnalyzerRoutes);
 
 // Machine Config routes (analyzer device configuration + start/stop)
 app.use('/api/machine-config', protect, addCompanyFilter, machineConfigRoutes);
+
+// Society Info & Document Management routes
+app.use('/api/society-info', protect, addCompanyFilter, societyInfoRoutes);
 
 // Protected company routes (for superadmin management)
 app.use('/api/companies', protect, companyRoutes);

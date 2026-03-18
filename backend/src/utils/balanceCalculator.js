@@ -10,7 +10,7 @@
  * @param {Date} startDate - Start date for the report period
  * @returns {Promise<number>} Opening balance
  */
-export const calculateOpeningBalance = async (Ledger, Voucher, ledgerId, startDate) => {
+export const calculateOpeningBalance = async (Ledger, Voucher, ledgerId, startDate, companyId) => {
   try {
     // Validate startDate
     if (!startDate || isNaN(new Date(startDate).getTime())) {
@@ -19,7 +19,8 @@ export const calculateOpeningBalance = async (Ledger, Voucher, ledgerId, startDa
     }
 
     // Get ledger details
-    const ledger = await Ledger.findById(ledgerId);
+    const ledgerQuery = companyId ? { _id: ledgerId, companyId } : { _id: ledgerId };
+    const ledger = await Ledger.findOne(ledgerQuery);
     if (!ledger) return 0;
 
     // Determine if this is a debit nature account
@@ -46,10 +47,13 @@ export const calculateOpeningBalance = async (Ledger, Voucher, ledgerId, startDa
     const startDateObj = new Date(startDate);
     startDateObj.setUTCHours(0, 0, 0, 0); // normalise to midnight UTC
 
-    const vouchers = await Voucher.find({
+    const voucherQuery = {
       voucherDate: { $lt: startDateObj },
       'entries.ledgerId': ledgerId
-    }).sort({ voucherDate: 1 });
+    };
+    if (companyId) voucherQuery.companyId = companyId;
+
+    const vouchers = await Voucher.find(voucherQuery).sort({ voucherDate: 1 });
 
     // Process each voucher entry
     vouchers.forEach(voucher => {

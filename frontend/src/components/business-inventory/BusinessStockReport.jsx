@@ -16,7 +16,8 @@ import {
   Paper,
   ThemeIcon,
   SimpleGrid,
-  Menu
+  Menu,
+  Pagination
 } from '@mantine/core';
 import {
   IconSearch,
@@ -36,9 +37,12 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 
+const PER_PAGE = 15;
+
 const BusinessStockReport = () => {
   const [stockData, setStockData] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
   const [filters, setFilters] = useState({
     category: '',
     status: 'Active',
@@ -97,14 +101,12 @@ const BusinessStockReport = () => {
 
   const handleFilterChange = (field, value) => {
     setFilters(prev => ({ ...prev, [field]: value }));
+    setPage(1);
   };
 
   const clearFilters = () => {
-    setFilters({
-      category: '',
-      status: 'Active',
-      search: ''
-    });
+    setFilters({ category: '', status: 'Active', search: '' });
+    setPage(1);
   };
 
   const formatCurrency = (amount) => {
@@ -395,9 +397,9 @@ const BusinessStockReport = () => {
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {stockData.map((item, index) => (
+              {stockData.slice((page - 1) * PER_PAGE, page * PER_PAGE).map((item, index) => (
                 <Table.Tr key={item._id}>
-                  <Table.Td>{index + 1}</Table.Td>
+                  <Table.Td>{(page - 1) * PER_PAGE + index + 1}</Table.Td>
                   <Table.Td>
                     <Badge color="blue" variant="light">{item.itemCode}</Badge>
                   </Table.Td>
@@ -444,6 +446,22 @@ const BusinessStockReport = () => {
               No stock data found
             </Text>
           </Paper>
+        )}
+
+        {stockData.length > PER_PAGE && (
+          <Group justify="space-between" mt="md">
+            <Text fz="xs" c="dimmed">
+              Showing {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, stockData.length)} of {stockData.length} items
+            </Text>
+            <Pagination
+              value={page}
+              onChange={setPage}
+              total={Math.ceil(stockData.length / PER_PAGE)}
+              size="sm"
+              radius="md"
+              siblings={1}
+            />
+          </Group>
         )}
       </Card>
     </Container>

@@ -184,7 +184,12 @@ export default function MilkSalesRateList() {
         partyName: values.partyName,
         salesItem: values.salesItem,
         category: values.category,
-        wefDate: values.wefDate instanceof Date ? values.wefDate.toISOString() : values.wefDate,
+        // Normalize to IST noon (06:30 UTC) so timezone never shifts the date
+        wefDate: (() => {
+          const d = values.wefDate instanceof Date ? values.wefDate : new Date(values.wefDate);
+          const ist = new Date(d.getTime() + 5.5 * 60 * 60000); // shift to IST
+          return new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), 6, 30, 0, 0)).toISOString(); // noon IST = 06:30 UTC
+        })(),
         rate: Number(values.rate),
       };
 

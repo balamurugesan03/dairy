@@ -1,6 +1,7 @@
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
 import Item from '../models/Item.js';
+import Counter, { getNextSequence } from '../models/Counter.js';
 
 const VOUCHER_PREFIX_MAP = {
   'Receipt':         'RV',
@@ -24,22 +25,23 @@ export const generateVoucherNumber = async (voucherType, companyId = null) => {
   const year = today.getFullYear().toString().slice(-2);
   const month = (today.getMonth() + 1).toString().padStart(2, '0');
   const pattern = `${prefix}${year}${month}`;
+  const counterKey = `voucher-${pattern}-${companyId || 'global'}`;
 
-  const query = {
-    voucherNumber: { $regex: `^${pattern}` },
-    voucherType
-  };
-  if (companyId) query.companyId = companyId;
-
-  const lastVoucher = await Voucher.findOne(query).sort({ voucherNumber: -1 }).limit(1);
-
-  let sequence = 1;
-  if (lastVoucher) {
-    const lastSeq = parseInt(lastVoucher.voucherNumber.slice(-4));
-    if (!isNaN(lastSeq)) sequence = lastSeq + 1;
+  // Seed from existing data on first use (avoids duplicating existing records)
+  let seedValue = 0;
+  const existingCounter = await Counter.findById(counterKey).lean();
+  if (!existingCounter) {
+    const query = { voucherNumber: { $regex: `^${pattern}` }, voucherType };
+    if (companyId) query.companyId = companyId;
+    const lastVoucher = await Voucher.findOne(query).sort({ voucherNumber: -1 }).lean();
+    if (lastVoucher) {
+      const lastSeq = parseInt(lastVoucher.voucherNumber.slice(-4));
+      if (!isNaN(lastSeq)) seedValue = lastSeq;
+    }
   }
 
-  return `${pattern}${sequence.toString().padStart(4, '0')}`;
+  const seq = await getNextSequence(counterKey, seedValue);
+  return `${pattern}${seq.toString().padStart(4, '0')}`;
 };
 
 // Helper: get Indian financial year string from a date
@@ -55,74 +57,86 @@ export const getFinancialYear = (date) => {
 // Create accounting voucher for dairy sales transaction
 export const createSalesVoucher = async (saleData, session = null) => {
   const entries = [];
+  const grandTotal  = parseFloat(saleData.grandTotal)  || 0;
+  const paidAmount  = parseFloat(saleData.paidAmount)  || 0;
+  const balanceAmount = Math.max(0, grandTotal - paidAmount);
 
-  // Debit: customer/cash ledger
-  if (saleData.customerId) {
-    const farmerLedger = await Ledger.findOne({
-      'linkedEntity.entityType': 'Farmer',
+  // ── Helper: find customer/farmer ledger ──────────────────────────────────
+  const findCustomerLedger = async () => {
+    if (!saleData.customerId) return null;
+    // Try farmer-linked first, then customer-linked
+    const linked = await Ledger.findOne({
       'linkedEntity.entityId': saleData.customerId,
       ...(saleData.companyId && { companyId: saleData.companyId })
     });
-
-    if (farmerLedger) {
-      entries.push({
-        ledgerId: farmerLedger._id,
-        ledgerName: farmerLedger.ledgerName,
-        debitAmount: saleData.grandTotal,
-        creditAmount: 0
+    if (linked) return linked;
+    // Fall back to generic trade debtors ledger (auto-create)
+    let debtors = await Ledger.findOne({
+      ledgerName: 'Trade Debtors',
+      ...(saleData.companyId && { companyId: saleData.companyId })
+    });
+    if (!debtors) {
+      debtors = new Ledger({
+        ledgerName: 'Trade Debtors',
+        ledgerType: 'Party',
+        openingBalance: 0,
+        currentBalance: 0,
+        balanceType: 'Dr',
+        companyId: saleData.companyId
       });
+      if (session) await debtors.save({ session }); else await debtors.save();
     }
-  }
+    return debtors;
+  };
 
-  // Credit: Sales ledger
-  const salesLedger = await Ledger.findOne({
+  // ── Credit: Sales ledger (always) ────────────────────────────────────────
+  let salesLedger = await Ledger.findOne({
     ledgerName: 'Sales',
     ledgerType: 'Income',
     ...(saleData.companyId && { companyId: saleData.companyId })
   });
   if (!salesLedger) {
-    throw new Error('Sales ledger not found. Create a "Sales" ledger with type "Income".');
+    salesLedger = new Ledger({
+      ledgerName: 'Sales',
+      ledgerType: 'Income',
+      openingBalance: 0,
+      currentBalance: 0,
+      balanceType: 'Cr',
+      companyId: saleData.companyId
+    });
+    if (session) await salesLedger.save({ session }); else await salesLedger.save();
   }
+  entries.push({ ledgerId: salesLedger._id, ledgerName: salesLedger.ledgerName, debitAmount: 0, creditAmount: grandTotal });
 
-  entries.push({
-    ledgerId: salesLedger._id,
-    ledgerName: salesLedger.ledgerName,
-    debitAmount: 0,
-    creditAmount: saleData.grandTotal
-  });
-
-  // If payment received, add Cash/Bank debit and Customer credit
-  if (saleData.paidAmount > 0 && saleData.customerId) {
+  // ── Debit: Cash/Bank for the paid portion ────────────────────────────────
+  if (paidAmount > 0) {
     const paymentLedgerType = saleData.paymentMode === 'Cash' ? 'Cash' : 'Bank';
-    const paymentLedger = await Ledger.findOne({
+    let paymentLedger = await Ledger.findOne({
       ledgerType: paymentLedgerType,
       ...(saleData.companyId && { companyId: saleData.companyId })
     });
-
     if (!paymentLedger) {
-      throw new Error(`${paymentLedgerType} ledger not found.`);
-    }
-
-    const farmerLedger = await Ledger.findOne({
-      'linkedEntity.entityType': 'Farmer',
-      'linkedEntity.entityId': saleData.customerId,
-      ...(saleData.companyId && { companyId: saleData.companyId })
-    });
-
-    entries.push({
-      ledgerId: paymentLedger._id,
-      ledgerName: paymentLedger.ledgerName,
-      debitAmount: saleData.paidAmount,
-      creditAmount: 0
-    });
-
-    if (farmerLedger) {
-      entries.push({
-        ledgerId: farmerLedger._id,
-        ledgerName: farmerLedger.ledgerName,
-        debitAmount: 0,
-        creditAmount: saleData.paidAmount
+      paymentLedger = new Ledger({
+        ledgerName: paymentLedgerType === 'Cash' ? 'Cash in Hand' : 'Bank Account',
+        ledgerType: paymentLedgerType,
+        openingBalance: 0,
+        currentBalance: 0,
+        balanceType: 'Dr',
+        companyId: saleData.companyId
       });
+      if (session) await paymentLedger.save({ session }); else await paymentLedger.save();
+    }
+    entries.push({ ledgerId: paymentLedger._id, ledgerName: paymentLedger.ledgerName, debitAmount: paidAmount, creditAmount: 0 });
+  }
+
+  // ── Debit: Customer ledger for the unpaid balance ────────────────────────
+  if (balanceAmount > 0) {
+    const customerLedger = await findCustomerLedger();
+    if (customerLedger) {
+      entries.push({ ledgerId: customerLedger._id, ledgerName: customerLedger.ledgerName, debitAmount: balanceAmount, creditAmount: 0 });
+    } else {
+      // No customer ledger at all — put entire balance to cash to keep voucher balanced
+      entries[entries.length - 1].debitAmount += balanceAmount;
     }
   }
 

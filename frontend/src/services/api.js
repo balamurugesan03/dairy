@@ -133,12 +133,21 @@ export const supplierAPI = {
   update: (id, data) => api.put(`/suppliers/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/suppliers/${id}`).then(res => res.data).catch(handleError),
   search: (query) => {
-    // Validate query parameter - must be non-empty string
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
       return Promise.reject({ message: 'Search query cannot be empty' });
     }
     return api.get('/suppliers/search', { params: { query: query.trim() } }).then(res => res.data).catch(handleError);
   }
+};
+
+export const businessSupplierAPI = {
+  getAll: (params) => api.get('/business-suppliers', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/business-suppliers/${id}`).then(res => res.data).catch(handleError),
+  getNextId: () => api.get('/business-suppliers/next-id').then(res => res.data).catch(handleError),
+  create: (data) => api.post('/business-suppliers', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/business-suppliers/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/business-suppliers/${id}`).then(res => res.data).catch(handleError),
+  search: (query) => api.get('/business-suppliers/search', { params: { query } }).then(res => res.data).catch(handleError)
 };
 
 // ITEM APIs
@@ -220,7 +229,7 @@ export const reportAPI = {
   receiptsDisbursement: (params) => api.get('/reports/receipts-disbursement', { params }).then(res => res.data).catch(handleError),
   tradingAccount: (params) => api.get('/reports/trading-account', { params }).then(res => res.data).catch(handleError),
   profitLoss: (params) => api.get('/reports/profit-loss', { params }).then(res => res.data).catch(handleError),
-  balanceSheet: () => api.get('/reports/balance-sheet').then(res => res.data).catch(handleError),
+  balanceSheet: (params) => api.get('/reports/balance-sheet', { params }).then(res => res.data).catch(handleError),
   sales: (params) => api.get('/reports/sales', { params }).then(res => res.data).catch(handleError),
   stock: (params) => api.get('/reports/stock', { params }).then(res => res.data).catch(handleError),
   subsidy: (params) => api.get('/reports/subsidy', { params }).then(res => res.data).catch(handleError),
@@ -267,6 +276,7 @@ export const reportAPI = {
 export const dayBookAPI = {
   get: (params) => api.get('/reports/day-book', { params }).then(res => res.data).catch(handleError)
 };
+
 
 // WARRANTY APIs
 export const warrantyAPI = {
@@ -785,6 +795,7 @@ export const shiftIncentiveAPI = {
 
 export const timeIncentiveAPI = {
   getAll:       (params = {}) => api.get('/time-incentives', { params }).then(r => r.data).catch(handleError),
+  getActive:    (params = {}) => api.get('/time-incentives/active', { params }).then(r => r.data).catch(handleError),
   getById:      (id)          => api.get(`/time-incentives/${id}`).then(r => r.data).catch(handleError),
   create:       (data)        => api.post('/time-incentives', data).then(r => r.data).catch(handleError),
   update:       (id, data)    => api.put(`/time-incentives/${id}`, data).then(r => r.data).catch(handleError),
@@ -835,8 +846,9 @@ const printApi = axios.create({
 });
 
 export const thermalPrintAPI = {
-  milkReceipt: (data) => printApi.post('/milk-receipt', data),
-  status:      ()     => printApi.get('/status')
+  milkReceipt:      (data) => printApi.post('/milk-receipt',       data),
+  milkSalesReceipt: (data) => printApi.post('/milk-sales-receipt', data),
+  status:           ()     => printApi.get('/status')
 };
 
 // ── Milk Analyzer API ─────────────────────────────────────────────────────────
@@ -854,6 +866,14 @@ export const machineConfigAPI = {
   getStatus:  ()     => api.get('/machine-config/status').then(r => r.data).catch(handleError),
   start:      (data) => api.post('/machine-config/start', data || {}).then(r => r.data).catch(handleError),
   stop:       ()     => api.post('/machine-config/stop').then(r => r.data).catch(handleError),
+};
+
+// ── Society Info & Document Management API ────────────────────────────────────
+export const societyInfoAPI = {
+  get:            ()           => api.get('/society-info').then(r => r.data).catch(handleError),
+  upsert:         (data)       => api.put('/society-info', data).then(r => r.data).catch(handleError),
+  upsertDocument: (key, data)  => api.put(`/society-info/documents/${key}`, data).then(r => r.data).catch(handleError),
+  deleteDocument: (key)        => api.delete(`/society-info/documents/${key}`).then(r => r.data).catch(handleError),
 };
 
 export default api;

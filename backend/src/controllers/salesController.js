@@ -5,23 +5,27 @@ import mongoose from 'mongoose';
 import { createBulkStockTransactions, reverseStockTransaction } from '../utils/stockHelper.js';
 import { createSalesVoucher } from '../utils/accountingHelper.js';
 
-// Generate bill number
+// Generate bill number — scoped by companyId to prevent cross-company collisions
 const generateBillNumber = async (companyId) => {
   const today = new Date();
-  const year = today.getFullYear().toString().slice(-2);
+  const year  = today.getFullYear().toString().slice(-2);
   const month = (today.getMonth() + 1).toString().padStart(2, '0');
+  const prefix = `BILL${year}${month}`;
 
-  const lastBill = await Sales.findOne({ companyId })
-    .sort({ createdAt: -1 })
+  const lastBill = await Sales.findOne({
+    companyId,
+    billNumber: { $regex: `^${prefix}` }
+  })
+    .sort({ billNumber: -1 })
     .limit(1);
 
   let sequence = 1;
-  if (lastBill && lastBill.billNumber.startsWith(`BILL${year}${month}`)) {
-    const lastSeq = parseInt(lastBill.billNumber.slice(-4));
-    sequence = lastSeq + 1;
+  if (lastBill) {
+    const lastSeq = parseInt(lastBill.billNumber.slice(-4), 10);
+    if (!isNaN(lastSeq)) sequence = lastSeq + 1;
   }
 
-  return `BILL${year}${month}${sequence.toString().padStart(4, '0')}`;
+  return `${prefix}${sequence.toString().padStart(4, '0')}`;
 };
 
 // Create new sale
@@ -92,14 +96,29 @@ export const createSale = async (req, res) => {
       saleData.status = 'Pending';
     }
 
-    // Create sale record
-    const sale = new Sales(saleData);
-    await sale.save();
+    // Create sale record — retry up to 5 times on duplicate billNumber (race condition)
+    let sale;
+    let attempts = 0;
+    while (attempts < 5) {
+      try {
+        sale = new Sales(saleData);
+        await sale.save();
+        break; // success
+      } catch (saveErr) {
+        if (saveErr.code === 11000 && saveErr.keyPattern?.billNumber && attempts < 4) {
+          // Regenerate bill number and retry
+          attempts++;
+          saleData.billNumber = await generateBillNumber(companyId);
+          continue;
+        }
+        throw saveErr; // non-duplicate or max retries reached
+      }
+    }
 
     // Create stock transactions (deduct stock)
     try {
       await createBulkStockTransactions(
-        saleData.items,
+        sale.items,
         'Sale',
         sale._id,
         null,
@@ -199,7 +218,7 @@ export const getAllSales = async (req, res) => {
 // Get sale by ID
 export const getSaleById = async (req, res) => {
   try {
-    const sale = await Sales.findById(req.params.id)
+    const sale = await Sales.findOne({ _id: req.params.id, companyId: req.companyId })
       .populate('customerId')
       .populate('items.itemId')
       .populate('ledgerEntries')
@@ -229,7 +248,7 @@ export const getSaleById = async (req, res) => {
 // Update sale
 export const updateSale = async (req, res) => {
   try {
-    const existingSale = await Sales.findById(req.params.id);
+    const existingSale = await Sales.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!existingSale) {
       return res.status(404).json({
@@ -292,7 +311,7 @@ export const updateSale = async (req, res) => {
 // Delete sale
 export const deleteSale = async (req, res) => {
   try {
-    const sale = await Sales.findById(req.params.id);
+    const sale = await Sales.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!sale) {
       return res.status(404).json({
@@ -323,7 +342,7 @@ export const deleteSale = async (req, res) => {
 // Get customer purchase history
 export const getCustomerHistory = async (req, res) => {
   try {
-    const sales = await Sales.find({ customerId: req.params.customerId })
+    const sales = await Sales.find({ customerId: req.params.customerId, companyId: req.companyId })
       .sort({ billDate: -1 })
       .limit(20);
 

@@ -18,7 +18,7 @@ import {
   IconTrash, IconPrinter, IconRefresh, IconSearch, IconHistory,
   IconAlertCircle, IconCash, IconCreditCard,
 } from '@tabler/icons-react';
-import { customerAPI, collectionCenterAPI, milkSalesAPI, agentAPI } from '../../services/api';
+import { customerAPI, collectionCenterAPI, milkSalesAPI, agentAPI, milkSalesRateAPI, thermalPrintAPI } from '../../services/api';
 
 // ── Bill No generator ─────────────────────────────────────────────────────────
 const genBillNo = () => {
@@ -27,43 +27,71 @@ const genBillNo = () => {
   return `MS-${yymm}-${String(Math.floor(Math.random() * 9000) + 1000)}`;
 };
 
-// ── Print Slip ────────────────────────────────────────────────────────────────
+// ── Thermal Print — fires ESC/POS via backend, falls back to iframe PDF ───────
 const printSlip = (entry) => {
   const isLocal = entry.saleMode === 'LOCAL' || entry.saleMode === 'SAMPLE';
-  const html = `<html><head><title>Milk Sales Receipt</title>
-  <style>
-    body{font-family:monospace;font-size:13px;padding:14px;width:300px;margin:0}
-    h3{text-align:center;margin:0 0 2px;font-size:15px;letter-spacing:1px}
-    .sub{text-align:center;font-size:11px;color:#555;margin-bottom:8px}
-    .line{border-top:1px dashed #000;margin:7px 0}
-    .row{display:flex;justify-content:space-between;margin:3px 0}
-    .bold{font-weight:bold}
-    .total{font-size:18px;font-weight:900}
-    .foot{text-align:center;font-size:10px;color:#777;margin-top:6px}
-    @media print{body{margin:0}}
-  </style></head><body>
-  <h3>MILK SALES RECEIPT</h3>
-  <div class="sub">${entry.date ? new Date(entry.date).toLocaleDateString('en-IN') : ''} | ${entry.session || ''} Shift | ${entry.saleMode || ''}</div>
-  <div class="line"></div>
-  <div class="row"><span>Bill No</span><span class="bold">${entry.billNo || ''}</span></div>
-  <div class="row"><span>${isLocal ? 'Center' : 'Creditor'}</span><span>${isLocal ? (entry.centerName || '—') : (entry.creditorName || '—')}</span></div>
-  ${!isLocal ? `<div class="row"><span>Opening Credit</span><span>&#8377; ${parseFloat(entry.openingCredit || 0).toFixed(2)}</span></div>` : ''}
-  ${!isLocal && entry.centerName ? `<div class="row"><span>Center</span><span>${entry.centerName}</span></div>` : ''}
-  ${!isLocal && entry.agentName ? `<div class="row"><span>Agent</span><span>${entry.agentName}</span></div>` : ''}
-  <div class="line"></div>
-  <div class="row"><span>Litres</span><span class="bold">${parseFloat(entry.litre || 0).toFixed(2)} L</span></div>
-  <div class="row"><span>Rate / L</span><span>&#8377; ${parseFloat(entry.rate || 0).toFixed(2)}</span></div>
-  ${isLocal ? `<div class="row"><span>Payment</span><span>${entry.paymentType || 'Cash'}</span></div>` : ''}
-  <div class="line"></div>
-  <div class="row total"><span>AMOUNT</span><span>&#8377; ${parseFloat(entry.amount || 0).toFixed(2)}</span></div>
-  <div class="line"></div>
-  <div class="foot">Thank You</div>
-  </body></html>`;
-  const win = window.open('', '_blank', 'width=340,height=480');
-  win.document.write(html);
-  win.document.close();
-  win.focus();
-  setTimeout(() => { win.print(); win.close(); }, 300);
+  const dateStr = entry.date ? new Date(entry.date).toLocaleDateString('en-IN') : '';
+
+  thermalPrintAPI.milkSalesReceipt({
+    billNo:       entry.billNo,
+    dateStr,
+    session:      entry.session,
+    saleMode:     entry.saleMode,
+    centerName:   entry.centerName  || '',
+    agentName:    entry.agentName   || '',
+    creditorName: entry.creditorName || '',
+    litre:        entry.litre,
+    rate:         entry.rate,
+    amount:       entry.amount,
+    paymentType:  entry.paymentType || 'Cash',
+  }).catch(err => {
+    // Fallback to iframe PDF print (no new window/dialog)
+    const msg = err?.response?.data?.message || err.message || 'Thermal print failed';
+    console.warn('[ThermalPrint] API failed:', msg);
+    notifications.show({ color: 'orange', title: 'Thermal Print Failed — PDF fallback', message: msg, autoClose: 6000 });
+
+    const html = `<html><head><title>Milk Sales Receipt</title>
+    <style>
+      @page{size:58mm auto;margin:2mm 3mm}
+      body{font-family:'Courier New',monospace;font-size:10px;width:52mm;margin:0}
+      h3{text-align:center;margin:0 0 1px;font-size:11px;font-weight:900}
+      .sub{text-align:center;font-size:9px;color:#444;margin-bottom:4px}
+      .line{border-top:1px dashed #000;margin:3px 0}
+      .row{display:flex;justify-content:space-between;margin:2px 0}
+      .val{font-weight:bold}
+      .big{font-size:12px;font-weight:900}
+      .foot{text-align:center;font-size:9px;color:#666;margin-top:4px}
+    </style></head><body>
+    <h3>MILK SALES</h3>
+    <div class="sub">${dateStr} | ${entry.session || ''} | ${entry.saleMode || ''}</div>
+    <div class="line"></div>
+    <div class="row"><span>Bill No</span><span class="val">${entry.billNo || ''}</span></div>
+    ${isLocal
+      ? (entry.centerName ? `<div class="row"><span>Center</span><span>${entry.centerName}</span></div>` : '')
+      : (entry.creditorName ? `<div class="row"><span>Creditor</span><span>${entry.creditorName}</span></div>` : '')}
+    ${!isLocal && entry.centerName ? `<div class="row"><span>Center</span><span>${entry.centerName}</span></div>` : ''}
+    ${!isLocal && entry.agentName  ? `<div class="row"><span>Agent</span><span>${entry.agentName}</span></div>`  : ''}
+    <div class="line"></div>
+    <div class="row"><span>Litres</span><span class="val">${parseFloat(entry.litre || 0).toFixed(2)} L</span></div>
+    <div class="row"><span>Rate/Ltr</span><span>Rs.${parseFloat(entry.rate || 0).toFixed(2)}</span></div>
+    ${isLocal ? `<div class="row"><span>Payment</span><span>${entry.paymentType || 'Cash'}</span></div>` : ''}
+    <div class="line"></div>
+    <div class="row big"><span>AMOUNT</span><span>Rs.${parseFloat(entry.amount || 0).toFixed(2)}</span></div>
+    <div class="line"></div>
+    <div class="foot">Thank You</div>
+    </body></html>`;
+
+    const old = document.getElementById('__milk_sales_print_frame__');
+    if (old) old.remove();
+    const iframe = document.createElement('iframe');
+    iframe.id = '__milk_sales_print_frame__';
+    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:58mm;height:1px;border:none;visibility:hidden;';
+    document.body.appendChild(iframe);
+    iframe.contentDocument.open();
+    iframe.contentDocument.write(html);
+    iframe.contentDocument.close();
+    setTimeout(() => { iframe.contentWindow.focus(); iframe.contentWindow.print(); setTimeout(() => iframe.remove(), 1000); }, 250);
+  });
 };
 
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
@@ -99,7 +127,6 @@ export default function MilkSales() {
 
   const litrRef   = useRef(null);
   const rateRef   = useRef(null);
-  const justSavedRef = useRef(false);
   const lastEntryRef = useRef(null);
   const formRef      = useRef({});
   formRef.current = { mode, session, date, billNo, center, agent, category, creditor, opCr, litre, rate, amount, pType, editingId };
@@ -108,6 +135,37 @@ export default function MilkSales() {
   useEffect(() => {
     setAmount(parseFloat(((parseFloat(litre) || 0) * (parseFloat(rate) || 0)).toFixed(2)));
   }, [litre, rate]);
+
+  // ── Auto-fetch rate ────────────────────────────────────────────────────────
+  const fetchRate = async (currentMode, currentCreditor, currentDate) => {
+    try {
+      const m   = currentMode    ?? mode;
+      const cr  = currentCreditor !== undefined ? currentCreditor : creditor;
+      const dt  = currentDate    ?? date;
+      const base = dt instanceof Date ? dt : new Date();
+      // Convert to IST (UTC+5:30) for correct date
+      const istDate = new Date(base.getTime() + 5.5 * 60 * 60000);
+      const dateStr = istDate.toISOString().slice(0, 10);
+
+      let salesItemKey = null;
+      let partyId = null;
+      if (m === 'CREDIT' && cr) { salesItemKey = 'Credit Sales'; partyId = cr; }
+      else if (m === 'SAMPLE')  { salesItemKey = 'Sample Sales'; }
+      if (!salesItemKey) return;
+
+      console.log('[fetchRate] calling getLatest:', { partyId, salesItemKey, dateStr });
+      const res = await milkSalesRateAPI.getLatest(partyId, salesItemKey, dateStr);
+      console.log('[fetchRate] response:', res);
+      if (res?.data?.rate != null) {
+        setRate(String(res.data.rate));
+        notifications.show({ color: 'blue', message: `Rate auto-filled: ₹${res.data.rate} (W.E.F ${new Date(res.data.wefDate).toLocaleDateString('en-IN')})`, autoClose: 2500 });
+      }
+    } catch (err) {
+      console.error('[fetchRate] error:', err);
+    }
+  };
+
+  useEffect(() => { fetchRate(); }, [creditor, mode, date]);
 
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -145,6 +203,9 @@ export default function MilkSales() {
     setBillNo(genBillNo());
     setCenter(null); setAgent(null); setCategory(null); setCreditor(null);
     setOpCr(''); setLitre(''); setRate(''); setAmount(0); setPType('Cash');
+    // Re-fetch rate only for CREDIT (creditor was just cleared so pass null explicitly)
+    // LOCAL rate is entered manually — do not auto-fill
+    if (mode === 'CREDIT') fetchRate(mode, null, date);
     setTimeout(() => litrRef.current?.focus(), 60);
   };
 
@@ -182,9 +243,9 @@ export default function MilkSales() {
         const saved = result?.data || { ...payload, _id: Date.now().toString() };
         setEntries(p => [saved, ...p]);
         lastEntryRef.current = saved;
-        justSavedRef.current = true;
-        setTimeout(() => { justSavedRef.current = false; }, 2000);
-        notifications.show({ color: 'teal', message: `Saved: ${saved.billNo} — \u20B9${am.toFixed(2)}  |  Press Enter to print`, autoClose: 2000 });
+        // Auto-print immediately after save (like MilkPurchase)
+        printSlip(saved);
+        notifications.show({ color: 'teal', message: `Saved & Printing: ${saved.billNo} — \u20B9${am.toFixed(2)}`, autoClose: 2000 });
         handleNew();
       }
     } catch {
@@ -374,7 +435,7 @@ export default function MilkSales() {
               <Box style={{ background: modeBg, borderRadius: 6, padding: '3px 5px' }}>
                 {isLocal ? <IconBuilding size={13} color={modeColor} /> : <IconUser size={13} color={modeColor} />}
               </Box>
-              <Text size="11px" fw={800} style={{ color: modeColor }} tt="uppercase" style={{ letterSpacing: '0.4px' }}>
+              <Text size="11px" fw={800} style={{ color: modeColor, letterSpacing: '0.4px' }} tt="uppercase">
                 {isLocal ? 'Center Info' : 'Credit Party'}
               </Text>
             </Group>
@@ -564,7 +625,7 @@ export default function MilkSales() {
             <Table striped highlightOnHover stickyHeader withColumnBorders style={{ fontSize: 12 }}>
               <Table.Thead style={{ background: 'linear-gradient(180deg,#dcfce7 0%,#bbf7d0 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
                 <Table.Tr>
-                  {['#', 'Bill No', 'Date', 'Sess', 'Mode', isLocal ? 'Center' : 'Creditor', ...(isLocal ? ['Agent'] : ['Op. Credit', 'Center', 'Agent']), 'Litres', 'Rate/L', 'Amount', isLocal ? 'Payment' : '', ''].map((col, i) => col !== undefined && (
+                  {['#', 'Bill No', 'Date', 'Sess', 'Mode', isLocal ? 'Center' : 'Creditor', ...(isLocal ? ['Agent'] : ['Op. Credit', 'Center', 'Agent']), 'Litres', 'Rate/L', 'Amount', ...(isLocal ? ['Payment'] : []), ''].map((col, i) => (
                     <Table.Th key={i} style={{ fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#14532d', whiteSpace: 'nowrap', padding: '9px 12px', borderBottom: '2px solid #86efac' }}>
                       {col}
                     </Table.Th>

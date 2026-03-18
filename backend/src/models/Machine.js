@@ -16,7 +16,7 @@ const maintenanceLogSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const machineSchema = new mongoose.Schema({
-  machineCode: { type: String, unique: true },
+  machineCode: { type: String, sparse: true },
   machineName: { type: String, required: true },
   category: String,
   make: String,
@@ -46,6 +46,7 @@ const machineSchema = new mongoose.Schema({
   companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true }
 }, { timestamps: true });
 
+machineSchema.index({ machineCode: 1 }, { unique: true, sparse: true });
 machineSchema.index({ status: 1 });
 machineSchema.index({ companyId: 1 });
 
