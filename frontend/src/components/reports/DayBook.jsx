@@ -93,23 +93,21 @@ const DayBook = () => {
       if (dayData) {
         // Build receipt/payment entries
         const receipts = dayData.receiptSide.map(entry => {
-          const isAdj = entry.voucherType === 'Journal';
           return {
             description: entry.ledgerName || entry.narration || 'Miscellaneous',
             voucherNumber: entry.voucherNumber || '',
-            cash: isAdj ? 0 : entry.amount,
-            adjustment: isAdj ? entry.amount : 0,
+            cash: entry.amount,
+            adjustment: 0,
             total: entry.amount
           };
         });
 
         const payments = dayData.paymentSide.map(entry => {
-          const isAdj = entry.voucherType === 'Journal';
           return {
             description: entry.ledgerName || entry.narration || 'Miscellaneous',
             voucherNumber: entry.voucherNumber || '',
-            cash: isAdj ? 0 : entry.amount,
-            adjustment: isAdj ? entry.amount : 0,
+            cash: entry.amount,
+            adjustment: 0,
             total: entry.amount
           };
         });

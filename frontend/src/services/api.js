@@ -745,9 +745,12 @@ export const milkSalesRateAPI = {
     api.get('/milk-sales-rates', { params }).then(res => res.data).catch(handleError),
 
   // Get latest active rate for a party + salesItem (used during billing)
-  getLatest: (partyId, salesItem, date) =>
-    api.get('/milk-sales-rates/latest', { params: { partyId, salesItem, date } })
-      .then(res => res.data).catch(handleError),
+  getLatest: (partyId, salesItem, date) => {
+    const params = { salesItem, date };
+    if (partyId) params.partyId = partyId;
+    return api.get('/milk-sales-rates/latest', { params })
+      .then(res => res.data).catch(handleError);
+  },
 
   // Get full rate history for a specific party
   getHistory: (partyId) =>
@@ -760,6 +763,10 @@ export const milkSalesRateAPI = {
   // Update existing rate entry
   update: (id, data) =>
     api.put(`/milk-sales-rates/${id}`, data).then(res => res.data).catch(handleError),
+
+  // Delete rate entry
+  delete: (id) =>
+    api.delete(`/milk-sales-rates/${id}`).then(res => res.data).catch(handleError),
 };
 
 // ─── SHIFT INCENTIVE APIs ─────────────────────────────────────────────────────

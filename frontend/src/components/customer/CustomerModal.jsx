@@ -22,8 +22,10 @@ import {
   IconCurrencyRupee,
   IconCheck,
   IconX,
-  IconUpload
+  IconUpload,
+  IconCalendar
 } from '@tabler/icons-react';
+import { DateInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import { customerAPI } from '../../services/api';
 
@@ -44,6 +46,7 @@ const CustomerModal = ({ isOpen, onClose, onSuccess, customerId = null }) => {
     panNumber: '',
     category: 'Others',
     active: true,
+    dateOfJoining: new Date(),
     documents: {
       aadhaar: '',
       passbook: '',
@@ -78,6 +81,7 @@ const CustomerModal = ({ isOpen, onClose, onSuccess, customerId = null }) => {
       panNumber: '',
       category: 'School',
       active: true,
+      dateOfJoining: new Date(),
       documents: {
         aadhaar: '',
         passbook: '',
@@ -91,7 +95,11 @@ const CustomerModal = ({ isOpen, onClose, onSuccess, customerId = null }) => {
   const fetchCustomer = async () => {
     try {
       const response = await customerAPI.getById(customerId);
-      setFormData(response.data);
+      const c = response.data;
+      setFormData({
+        ...c,
+        dateOfJoining: c.dateOfJoining ? new Date(c.dateOfJoining) : new Date()
+      });
     } catch (error) {
       notifications.show({
         title: 'Error',
@@ -305,6 +313,16 @@ const CustomerModal = ({ isOpen, onClose, onSuccess, customerId = null }) => {
                 { value: 'true', label: 'Active' },
                 { value: 'false', label: 'Inactive' }
               ]}
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <DateInput
+              label="Date of Joining"
+              placeholder="Select date"
+              leftSection={<IconCalendar size={16} />}
+              value={formData.dateOfJoining}
+              onChange={(v) => handleChange('dateOfJoining', v)}
+              maxDate={new Date()}
             />
           </Grid.Col>
         </Grid>

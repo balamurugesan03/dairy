@@ -79,7 +79,8 @@ const voucherSchema = new mongoose.Schema({
     enum: [
       'Sales', 'Purchase', 'Payment', 'Manual',
       'MilkPurchase', 'MilkSales', 'FarmerPayment',
-      'LoanDisbursal', 'AdvancePayment', 'Opening'
+      'LoanDisbursal', 'AdvancePayment', 'Opening',
+      'ShareCapital', 'AdmissionFee'
     ],
     default: 'Manual'
   },

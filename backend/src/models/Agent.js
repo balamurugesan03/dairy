@@ -30,6 +30,9 @@ const agentSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  dateOfJoining: {
+    type: Date
+  },
   status: {
     type: String,
     enum: ['Active', 'Inactive'],

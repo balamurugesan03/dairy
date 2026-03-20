@@ -63,6 +63,7 @@ const MainLayout = () => {
   };
 
   const isOnDashboard = location.pathname === '/';
+  const hideBackButton = isOnDashboard || location.pathname === '/daily-collections/milk-purchase';
 
   // ── Global hotkeys ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -155,7 +156,7 @@ const MainLayout = () => {
         { key: '/daily-collections/farmer-wise-summary',    label: 'Farmer-Wise Summary'    },
         { key: '/daily-collections/rate-chart-settings',    label: 'Rate Chart Settings'    },
         { key: '/daily-collections/milk-purchase-settings', label: 'Machine Configuration'  },
-        { key: '/milk-analyzer',                             label: 'Milk Analyzer'           },
+        // { key: '/milk-analyzer',                             label: 'Milk Analyzer'           },
        
         { key: '/daily-collections/milk-sales-rate',        label: 'Milk Sales Rate'         },
         { key: '/daily-collections/shift-incentive',         label: 'Shift Incentive'         },
@@ -801,7 +802,7 @@ const MainLayout = () => {
           minHeight: 'calc(100vh - 120px)',
         }}
       >
-        {!isOnDashboard && (
+        {!hideBackButton && (
           <Box px="md" pt="sm" pb={0}>
             <Button
               variant="gradient"

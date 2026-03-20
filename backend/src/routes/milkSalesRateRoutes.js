@@ -4,7 +4,8 @@ import {
   getLatestRate,
   getRateHistory,
   createMilkSalesRate,
-  updateMilkSalesRate
+  updateMilkSalesRate,
+  deleteMilkSalesRate
 } from '../controllers/milkSalesRateController.js';
 
 const router = express.Router();
@@ -23,5 +24,8 @@ router.post('/', createMilkSalesRate);
 
 // PUT update existing rate
 router.put('/:id', updateMilkSalesRate);
+
+// DELETE rate entry
+router.delete('/:id', deleteMilkSalesRate);
 
 export default router;

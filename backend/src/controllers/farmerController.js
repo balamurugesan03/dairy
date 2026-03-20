@@ -1,6 +1,7 @@
 import Farmer from '../models/Farmer.js';
 import Ledger from '../models/Ledger.js';
 import mongoose from 'mongoose';
+import { createShareCapitalVoucher, createAdmissionFeeVoucher } from '../utils/accountingHelper.js';
 
 // Create new farmer with auto ledger creation
 export const createFarmer = async (req, res) => {
@@ -21,8 +22,41 @@ export const createFarmer = async (req, res) => {
       });
     }
 
+    // Extract share info from form (form sends numberOfShares + total shareValue)
+    const numberOfShares = parseInt(farmerData.financialDetails?.numberOfShares) || 0;
+    const totalShareValue = parseFloat(farmerData.financialDetails?.shareValue) || 0;
+    const perShareValue = numberOfShares > 0 ? totalShareValue / numberOfShares : 0;
+
+    // Map form fields to Farmer model fields
+    if (farmerData.financialDetails) {
+      farmerData.financialDetails.totalShares = numberOfShares;
+      farmerData.financialDetails.oldShares = numberOfShares;
+      farmerData.financialDetails.newShares = 0;
+      farmerData.financialDetails.shareValue = perShareValue;
+      if (numberOfShares > 0) {
+        farmerData.financialDetails.shareTakenDate = new Date();
+      }
+    }
+
     // Create farmer
     const farmer = new Farmer(farmerData);
+
+    // Add initial share history entry if shares are given at creation
+    if (numberOfShares > 0 && totalShareValue > 0) {
+      farmer.shareHistory.push({
+        transactionType: 'Allotment',
+        shares: numberOfShares,
+        shareValue: perShareValue,
+        totalValue: totalShareValue,
+        resolutionNo: farmerData.financialDetails?.resolutionNo || 'Initial',
+        resolutionDate: farmerData.financialDetails?.resolutionDate || new Date(),
+        oldTotal: 0,
+        newTotal: numberOfShares,
+        remarks: 'Initial allotment at registration',
+        transactionDate: new Date()
+      });
+    }
+
     await farmer.save();
 
     // Auto-create ledger for farmer
@@ -47,6 +81,39 @@ export const createFarmer = async (req, res) => {
     // Link ledger to farmer
     farmer.ledgerId = ledger._id;
     await farmer.save();
+
+    // Post admission fee receipt voucher if applicable (cash received)
+    const admissionFee = parseFloat(farmerData.financialDetails?.admissionFee) || 0;
+    if (admissionFee > 0) {
+      try {
+        await createAdmissionFeeVoucher({
+          farmerId: farmer._id,
+          farmerLedgerName: ledger.ledgerName,
+          admissionFee,
+          companyId,
+          voucherDate: new Date()
+        });
+      } catch (vErr) {
+        console.error('Admission fee voucher error (non-fatal):', vErr.message);
+      }
+    }
+
+    // Post share capital receipt voucher to day book (cash received)
+    if (numberOfShares > 0 && totalShareValue > 0) {
+      try {
+        await createShareCapitalVoucher({
+          farmerId: farmer._id,
+          farmerLedgerName: ledger.ledgerName,
+          totalValue: totalShareValue,
+          transactionType: 'Allotment',
+          resolutionNo: farmerData.financialDetails?.resolutionNo || 'Initial',
+          companyId,
+          voucherDate: new Date()
+        });
+      } catch (vErr) {
+        console.error('Share capital voucher error (non-fatal):', vErr.message);
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -440,6 +507,24 @@ export const addShareToFarmer = async (req, res) => {
     farmer.shareHistory.push(shareHistoryEntry);
 
     await farmer.save();
+
+    // Post share capital journal voucher to day book
+    try {
+      const farmerLedger = await Ledger.findById(farmer.ledgerId);
+      if (farmerLedger) {
+        await createShareCapitalVoucher({
+          farmerId: farmer._id,
+          farmerLedgerName: farmerLedger.ledgerName,
+          totalValue: shares * shareValue,
+          transactionType,
+          resolutionNo,
+          companyId: req.companyId,
+          voucherDate: new Date()
+        });
+      }
+    } catch (vErr) {
+      console.error('Share capital voucher error (non-fatal):', vErr.message);
+    }
 
     res.status(200).json({
       success: true,

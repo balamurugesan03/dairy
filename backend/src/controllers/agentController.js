@@ -1,10 +1,25 @@
 import Agent from '../models/Agent.js';
 import CollectionCenter from '../models/CollectionCenter.js';
+import { getNextSequence } from '../models/Counter.js';
+
+// Auto-generate agent code: AGT-0001, AGT-0002, ...
+const generateAgentCode = async (companyId) => {
+  const counterKey = `agent-${companyId}`;
+  // Seed from existing agents on first use
+  let seedValue = 0;
+  const lastAgent = await Agent.findOne({ companyId }).sort({ agentCode: -1 }).lean();
+  if (lastAgent?.agentCode) {
+    const num = parseInt(lastAgent.agentCode.replace(/\D/g, ''));
+    if (!isNaN(num)) seedValue = num;
+  }
+  const seq = await getNextSequence(counterKey, seedValue);
+  return `AGT-${String(seq).padStart(4, '0')}`;
+};
 
 // Create new agent
 export const createAgent = async (req, res) => {
   try {
-    const { agentCode, agentName, collectionCenterId, phone, email, address, status } = req.body;
+    const { agentName, collectionCenterId, phone, email, address, status, dateOfJoining } = req.body;
 
     // Validate collection center exists
     const center = await CollectionCenter.findById(collectionCenterId);
@@ -15,6 +30,9 @@ export const createAgent = async (req, res) => {
       });
     }
 
+    // Auto-generate agent code
+    const agentCode = await generateAgentCode(req.companyId);
+
     const agent = new Agent({
       agentCode,
       agentName,
@@ -23,6 +41,7 @@ export const createAgent = async (req, res) => {
       email,
       address,
       status,
+      dateOfJoining: dateOfJoining || new Date(),
       companyId: req.companyId
     });
 

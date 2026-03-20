@@ -3,7 +3,7 @@ import {
   Container, Group, Title, Button, TextInput, Select,
   Modal, Stack, Text, Badge, NumberInput, ActionIcon,
   Pagination, Paper, Table, Tooltip, Box, Divider,
-  Grid, ThemeIcon, Checkbox,
+  Grid, ThemeIcon, Checkbox, SegmentedControl,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { useForm }         from '@mantine/form';
@@ -25,7 +25,7 @@ const EMPTY_FORM = {
   listText:       '',
   startDate:      null,
   endDate:        null,
-  noEndDate:      false,
+  noEndDate:      true,
   rateBased:       { enabled: false, qty: false, amount: false, rate: 0 },
   percentageBased: { enabled: false, qty: false, amount: false, rate: 0 },
   parameterBased: {
@@ -147,6 +147,13 @@ export default function ShiftIncentiveList() {
       .catch(() => {});
   }, []);
 
+  // Auto-fill center when modal opens and options are available
+  useEffect(() => {
+    if (modalOpen && !editRecord && centerOptions.length > 0 && !form.values.center) {
+      form.setFieldValue('center', centerOptions[0].value);
+    }
+  }, [modalOpen, centerOptions]); // eslint-disable-line
+
   // ── Fetch records ────────────────────────────────────────────
   const fetchRecords = useCallback(async () => {
     setListLoading(true);
@@ -172,7 +179,9 @@ export default function ShiftIncentiveList() {
   // ── Open Add ─────────────────────────────────────────────────
   const openAdd = () => {
     setEditRecord(null);
-    form.setValues(EMPTY_FORM);
+    // Auto-fill center: pick the first (or only) center available
+    const defaultCenter = centerOptions.length > 0 ? centerOptions[0].value : '';
+    form.setValues({ ...EMPTY_FORM, center: defaultCenter });
     setModalOpen(true);
   };
 
@@ -526,14 +535,14 @@ export default function ShiftIncentiveList() {
                     <Checkbox
                       label={<Text size="sm" fw={600} c="yellow.7">AM</Text>}
                       checked={v.shiftAm}
-                      onChange={(e) => form.setFieldValue('shiftAm', e.currentTarget.checked)}
+                      onChange={() => { form.setFieldValue('shiftAm', true); form.setFieldValue('shiftPm', false); }}
                       color="yellow"
                       size="sm"
                     />
                     <Checkbox
                       label={<Text size="sm" fw={600} c="indigo.7">PM</Text>}
                       checked={v.shiftPm}
-                      onChange={(e) => form.setFieldValue('shiftPm', e.currentTarget.checked)}
+                      onChange={() => { form.setFieldValue('shiftPm', true); form.setFieldValue('shiftAm', false); }}
                       color="indigo"
                       size="sm"
                     />
@@ -603,13 +612,13 @@ export default function ShiftIncentiveList() {
                 </Grid.Col>
                 <Grid.Col span={6}>
                   <Group gap={6} align="center" mb={4}>
-                    <Text size="xs" fw={500}>End Date</Text>
                     <Checkbox
-                      label={<Text size="xs" c="dimmed">No End Date</Text>}
-                      checked={v.noEndDate}
+                      label={<Text size="xs" fw={500}>Set End Date</Text>}
+                      checked={!v.noEndDate}
                       onChange={(e) => {
-                        form.setFieldValue('noEndDate', e.currentTarget.checked);
-                        if (e.currentTarget.checked) form.setFieldValue('endDate', null);
+                        const hasEnd = e.currentTarget.checked;
+                        form.setFieldValue('noEndDate', !hasEnd);
+                        if (!hasEnd) form.setFieldValue('endDate', null);
                       }}
                       color="blue"
                       size="xs"
@@ -648,6 +657,7 @@ export default function ShiftIncentiveList() {
                 <Checkbox
                   label="Qty"
                   checked={v.rateBased.qty}
+                  disabled={v.rateBased.amount}
                   onChange={(e) => form.setFieldValue('rateBased.qty', e.currentTarget.checked)}
                   color="blue"
                   size="sm"
@@ -655,6 +665,7 @@ export default function ShiftIncentiveList() {
                 <Checkbox
                   label="Amount"
                   checked={v.rateBased.amount}
+                  disabled={v.rateBased.qty}
                   onChange={(e) => form.setFieldValue('rateBased.amount', e.currentTarget.checked)}
                   color="blue"
                   size="sm"
@@ -686,6 +697,7 @@ export default function ShiftIncentiveList() {
                 <Checkbox
                   label="Qty"
                   checked={v.percentageBased.qty}
+                  disabled={v.percentageBased.amount}
                   onChange={(e) => form.setFieldValue('percentageBased.qty', e.currentTarget.checked)}
                   color="blue"
                   size="sm"
@@ -693,6 +705,7 @@ export default function ShiftIncentiveList() {
                 <Checkbox
                   label="Amount"
                   checked={v.percentageBased.amount}
+                  disabled={v.percentageBased.qty}
                   onChange={(e) => form.setFieldValue('percentageBased.amount', e.currentTarget.checked)}
                   color="blue"
                   size="sm"

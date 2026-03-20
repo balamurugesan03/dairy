@@ -27,6 +27,7 @@ import { notifications } from '@mantine/notifications';
 import {
   IconPlus,
   IconEdit,
+  IconTrash,
   IconSearch,
   IconRefresh,
   IconCurrencyRupee,
@@ -34,6 +35,7 @@ import {
   IconUser,
   IconHistory,
 } from '@tabler/icons-react';
+import { modals } from '@mantine/modals';
 import { milkSalesRateAPI, customerAPI } from '../../services/api';
 
 // ────────────────────────────────────────────────────────────────
@@ -215,6 +217,30 @@ export default function MilkSalesRateList() {
     }
   };
 
+  // ── Delete ────────────────────────────────────────────────────
+  const handleDelete = (rec) => {
+    modals.openConfirmModal({
+      title: 'Delete Rate',
+      children: (
+        <Text size="sm">
+          Delete rate <b>₹{Number(rec.rate).toFixed(2)}</b> for <b>{rec.partyName || rec.salesItem}</b>?
+          This cannot be undone.
+        </Text>
+      ),
+      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          await milkSalesRateAPI.delete(rec._id);
+          notifications.show({ color: 'green', title: 'Deleted', message: 'Rate deleted successfully' });
+          fetchRates();
+        } catch (e) {
+          notifications.show({ color: 'red', title: 'Error', message: e.message || 'Delete failed' });
+        }
+      },
+    });
+  };
+
   // ── Helpers ───────────────────────────────────────────────────
   const isActiveRate = (wefDate) => new Date(wefDate) <= new Date();
 
@@ -282,16 +308,18 @@ export default function MilkSalesRateList() {
       </Table.Td>
 
       <Table.Td>
-        <Tooltip label="Edit Rate">
-          <ActionIcon
-            variant="light"
-            color="blue"
-            size="sm"
-            onClick={() => openEdit(rec)}
-          >
-            <IconEdit size={15} />
-          </ActionIcon>
-        </Tooltip>
+        <Group gap={4}>
+          <Tooltip label="Edit Rate">
+            <ActionIcon variant="light" color="blue" size="sm" onClick={() => openEdit(rec)}>
+              <IconEdit size={15} />
+            </ActionIcon>
+          </Tooltip>
+          <Tooltip label="Delete Rate">
+            <ActionIcon variant="light" color="red" size="sm" onClick={() => handleDelete(rec)}>
+              <IconTrash size={15} />
+            </ActionIcon>
+          </Tooltip>
+        </Group>
       </Table.Td>
     </Table.Tr>
   ));

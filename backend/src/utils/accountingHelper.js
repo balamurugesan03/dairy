@@ -397,6 +397,129 @@ export const createPurchaseVoucher = async (purchaseData, session = null) => {
   return voucher;
 };
 
+// Find or create a ledger by name and type
+const findOrCreateLedger = async (ledgerName, ledgerType, parentGroup, balanceType, companyId, session) => {
+  let ledger = await Ledger.findOne({ ledgerName, companyId });
+  if (!ledger) {
+    ledger = new Ledger({
+      ledgerName,
+      ledgerType,
+      parentGroup,
+      openingBalance: 0,
+      currentBalance: 0,
+      balanceType,
+      status: 'Active',
+      companyId
+    });
+    if (session) await ledger.save({ session }); else await ledger.save();
+  }
+  return ledger;
+};
+
+// Create share capital journal voucher (called from addShareToFarmer)
+export const createShareCapitalVoucher = async (data, session = null) => {
+  const { farmerId, farmerLedgerName, totalValue, transactionType, resolutionNo, companyId, voucherDate } = data;
+
+  const shareCapitalLedger = await findOrCreateLedger(
+    'Share Capital', 'Share Capital', 'Capital', 'Cr', companyId, session
+  );
+
+  // Cash ledger — debit on allotment (cash received), credit on redemption (cash paid out)
+  let cashLedger = await Ledger.findOne({ ledgerType: 'Cash', companyId });
+  if (!cashLedger) {
+    cashLedger = await findOrCreateLedger('Cash in Hand', 'Cash', 'Cash', 'Dr', companyId, session);
+  }
+
+  const isRedemption = transactionType === 'Redemption';
+  // Allotment:  Dr Cash  /  Cr Share Capital
+  // Redemption: Dr Share Capital  /  Cr Cash
+  const entries = [
+    {
+      ledgerId: isRedemption ? shareCapitalLedger._id : cashLedger._id,
+      ledgerName: isRedemption ? shareCapitalLedger.ledgerName : cashLedger.ledgerName,
+      debitAmount: totalValue,
+      creditAmount: 0
+    },
+    {
+      ledgerId: isRedemption ? cashLedger._id : shareCapitalLedger._id,
+      ledgerName: isRedemption ? cashLedger.ledgerName : shareCapitalLedger.ledgerName,
+      debitAmount: 0,
+      creditAmount: totalValue
+    }
+  ];
+
+  const voucherNumber = await generateVoucherNumber('Receipt', companyId);
+  const narration = `Share Capital — ${farmerLedgerName} | ${transactionType} | Resolution: ${resolutionNo} | Amount: ₹${totalValue}`;
+
+  const voucher = new Voucher({
+    voucherType: 'Receipt',
+    voucherNumber,
+    voucherDate: voucherDate || new Date(),
+    entries,
+    totalDebit: totalValue,
+    totalCredit: totalValue,
+    narration,
+    referenceType: 'ShareCapital',
+    referenceId: farmerId,
+    companyId
+  });
+
+  if (session) await voucher.save({ session }); else await voucher.save();
+  await updateLedgerBalances(entries, session, companyId);
+  return voucher;
+};
+
+// Create admission fee journal voucher (called from createFarmer)
+export const createAdmissionFeeVoucher = async (data, session = null) => {
+  const { farmerId, farmerLedgerName, admissionFee, companyId, voucherDate } = data;
+
+  const admissionFeeLedger = await findOrCreateLedger(
+    'Admission Fee', 'Miscellaneous Income', 'Income', 'Cr', companyId, session
+  );
+
+  // Cash received for admission fee
+  let cashLedger = await Ledger.findOne({ ledgerType: 'Cash', companyId });
+  if (!cashLedger) {
+    cashLedger = await findOrCreateLedger('Cash in Hand', 'Cash', 'Cash', 'Dr', companyId, session);
+  }
+
+  // Dr: Cash  /  Cr: Admission Fee
+  const entries = [
+    {
+      ledgerId: cashLedger._id,
+      ledgerName: cashLedger.ledgerName,
+      debitAmount: admissionFee,
+      creditAmount: 0
+    },
+    {
+      ledgerId: admissionFeeLedger._id,
+      ledgerName: admissionFeeLedger.ledgerName,
+      debitAmount: 0,
+      creditAmount: admissionFee
+    }
+  ];
+
+  const voucherNumber = await generateVoucherNumber('Receipt', companyId);
+  const narration = `Admission Fee — ${farmerLedgerName} | Amount: ₹${admissionFee}`;
+
+  const voucher = new Voucher({
+    voucherType: 'Receipt',
+    voucherNumber,
+    voucherDate: voucherDate || new Date(),
+    entries,
+    totalDebit: admissionFee,
+    totalCredit: admissionFee,
+    narration,
+    referenceType: 'AdmissionFee',
+    referenceId: farmerId,
+    companyId
+  });
+
+  if (session) await voucher.save({ session }); else await voucher.save();
+  await updateLedgerBalances(entries, session, companyId);
+  return voucher;
+};
+
 // Reverse ledger balances (used when deleting/cancelling a voucher)
 export const reverseLedgerBalances = async (entries, session = null, companyId = null) => {
   const reversed = entries.map(e => ({
@@ -414,5 +537,7 @@ export default {
   updateLedgerBalances,
   reverseLedgerBalances,
   createPaymentVoucher,
-  createPurchaseVoucher
+  createPurchaseVoucher,
+  createShareCapitalVoucher,
+  createAdmissionFeeVoucher
 };

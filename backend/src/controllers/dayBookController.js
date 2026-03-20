@@ -14,7 +14,9 @@ export const getDayBook = async (req, res) => {
     }
 
     const start = new Date(startDate);
+    start.setUTCHours(0, 0, 0, 0);
     const end = new Date(endDate);
+    end.setUTCHours(23, 59, 59, 999);
 
     const companyId = req.companyId;
 
@@ -63,6 +65,8 @@ export const getDayBook = async (req, res) => {
     const receiptSide = []; // All credit entries (flat list for backward compat)
     const paymentSide = []; // All debit entries (flat list for backward compat)
 
+    const cashBankTypes = new Set(['Cash', 'Bank']);
+
     for (const voucher of vouchers) {
       const dateKey = voucher.voucherDate.toISOString().split('T')[0];
 
@@ -76,31 +80,62 @@ export const getDayBook = async (req, res) => {
         };
       }
 
+      const isReceiptVoucher = voucher.voucherType === 'Receipt';
+      const isPaymentVoucher = voucher.voucherType === 'Payment';
+
       for (const entry of voucher.entries) {
+        const ledgerType = entry.ledgerId?.ledgerType;
+        const isCashBank = cashBankTypes.has(ledgerType);
+
+        // For Receipt vouchers: skip the Cash/Bank debit leg (it's implied cash-in)
+        // For Payment vouchers: skip the Cash/Bank credit leg (it's implied cash-out)
+        if ((isReceiptVoucher && isCashBank && entry.debitAmount > 0) ||
+            (isPaymentVoucher && isCashBank && entry.creditAmount > 0)) {
+          continue;
+        }
+
         const entryData = {
           date: voucher.voucherDate,
           voucherNumber: voucher.voucherNumber,
           voucherType: voucher.voucherType,
           ledgerName: entry.ledgerName,
-          ledgerType: entry.ledgerId?.ledgerType,
+          ledgerType,
           narration: entry.narration || voucher.narration,
           voucherId: voucher._id
         };
 
-        // Debit entries → payment side
-        if (entry.debitAmount > 0) {
-          const paymentEntry = { ...entryData, amount: entry.debitAmount };
-          dateMap[dateKey].paymentSide.push(paymentEntry);
-          dateMap[dateKey].totalPayments += entry.debitAmount;
-          paymentSide.push(paymentEntry);
-        }
-
-        // Credit entries → receipt side
-        if (entry.creditAmount > 0) {
-          const receiptEntry = { ...entryData, amount: entry.creditAmount };
-          dateMap[dateKey].receiptSide.push(receiptEntry);
-          dateMap[dateKey].totalReceipts += entry.creditAmount;
-          receiptSide.push(receiptEntry);
+        if (isReceiptVoucher) {
+          // Receipt voucher: non-cash leg → receipt side (cash received for this)
+          const amount = entry.creditAmount || entry.debitAmount || 0;
+          if (amount > 0) {
+            const receiptEntry = { ...entryData, amount };
+            dateMap[dateKey].receiptSide.push(receiptEntry);
+            dateMap[dateKey].totalReceipts += amount;
+            receiptSide.push(receiptEntry);
+          }
+        } else if (isPaymentVoucher) {
+          // Payment voucher: non-cash leg → payment side (cash paid for this)
+          const amount = entry.debitAmount || entry.creditAmount || 0;
+          if (amount > 0) {
+            const paymentEntry = { ...entryData, amount };
+            dateMap[dateKey].paymentSide.push(paymentEntry);
+            dateMap[dateKey].totalPayments += amount;
+            paymentSide.push(paymentEntry);
+          }
+        } else {
+          // Journal and other vouchers: use debit/credit sides as-is
+          if (entry.debitAmount > 0) {
+            const paymentEntry = { ...entryData, amount: entry.debitAmount };
+            dateMap[dateKey].paymentSide.push(paymentEntry);
+            dateMap[dateKey].totalPayments += entry.debitAmount;
+            paymentSide.push(paymentEntry);
+          }
+          if (entry.creditAmount > 0) {
+            const receiptEntry = { ...entryData, amount: entry.creditAmount };
+            dateMap[dateKey].receiptSide.push(receiptEntry);
+            dateMap[dateKey].totalReceipts += entry.creditAmount;
+            receiptSide.push(receiptEntry);
+          }
         }
       }
     }

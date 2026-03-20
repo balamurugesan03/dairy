@@ -1008,11 +1008,11 @@ const RateChartSettings = () => {
         </SectionCard>
 
         {/* ══════════════════════════════════════════════════════════════════
-            SECTION 5 ─ Gold / Less / Existing Rate Chart
+            SECTION 5 ─ Add / Less / Existing Rate Chart
         ══════════════════════════════════════════════════════════════════ */}
         <SectionCard
           icon={<IconStar size={20} />}
-          title="Gold / Less / Existing Rate Chart"
+          title="Add / Less / Existing Rate Chart"
           color="yellow"
         >
           {editingGl && (

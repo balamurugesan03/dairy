@@ -81,7 +81,7 @@ export const getActiveIncentives = async (req, res) => {
       ]
     };
 
-    if (shift)  filter.shift  = shift;
+    if (shift)  filter.shift  = { $in: [shift, 'BOTH'] };
     if (center) filter.center = { $regex: center, $options: 'i' };
 
     const incentives = await ShiftIncentive.find(filter)

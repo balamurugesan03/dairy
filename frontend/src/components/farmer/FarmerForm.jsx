@@ -41,6 +41,7 @@ const FarmerForm = () => {
       cowType: '',
       collectionCenter: '',
       admissionDate: null,
+      membershipDate: null,
       personalDetails: {
         name: '',
         fatherName: '',
@@ -146,6 +147,7 @@ const FarmerForm = () => {
         cowType: farmer.cowType,
         collectionCenter: farmer.collectionCenter?._id || '',
         admissionDate: farmer.admissionDate ? new Date(farmer.admissionDate) : null,
+        membershipDate: farmer.membershipDate ? new Date(farmer.membershipDate) : null,
         personalDetails: {
           name: farmer.personalDetails?.name || '',
           fatherName: farmer.personalDetails?.fatherName || '',
@@ -267,6 +269,7 @@ const FarmerForm = () => {
         cowType: values.cowType,
         collectionCenter: values.collectionCenter || null,
         admissionDate: values.admissionDate ? values.admissionDate.toISOString() : null,
+        membershipDate: values.membershipDate ? values.membershipDate.toISOString() : null,
         bankDetails: {
           accountNumber: values.bankDetails.accountNumber,
           bankName: values.bankDetails.bankName,
@@ -298,6 +301,16 @@ const FarmerForm = () => {
       message.error(error.message || 'Failed to save farmer');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAgeChange = (value) => {
+    const age = parseInt(value) || 0;
+    form.setFieldValue('personalDetails.age', age);
+    if (age > 0) {
+      const dob = new Date();
+      dob.setFullYear(dob.getFullYear() - age);
+      form.setFieldValue('personalDetails.dob', dob);
     }
   };
 
@@ -390,8 +403,10 @@ const FarmerForm = () => {
                       label="Age"
                       placeholder="Enter age"
                       min={0}
-                      max={100}
-                      {...form.getInputProps('personalDetails.age')}
+                      max={150}
+                      value={form.values.personalDetails.age}
+                      onChange={handleAgeChange}
+                      description="Enter age or select DOB above"
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
@@ -560,6 +575,13 @@ const FarmerForm = () => {
                       label="Admission Date"
                       placeholder="Select date"
                       {...form.getInputProps('admissionDate')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <DatePickerInput
+                      label="Membership Date"
+                      placeholder="Select date"
+                      {...form.getInputProps('membershipDate')}
                     />
                   </Grid.Col>
                 </Grid>

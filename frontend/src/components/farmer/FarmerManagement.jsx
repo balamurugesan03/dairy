@@ -484,9 +484,16 @@ const FarmerManagement = () => {
       width: 100,
       sortable: true,
       render: (farmer) => (
-        <Text fw={600} size="sm" ta="center">
-          {farmer.shares || 0}
-        </Text>
+        <Box ta="center">
+          <Text fw={600} size="sm">
+            {farmer.financialDetails?.totalShares || 0}
+          </Text>
+          {(farmer.financialDetails?.totalShares > 0) && (
+            <Text size="xs" c="dimmed">
+              ₹{((farmer.financialDetails?.totalShares || 0) * 10).toLocaleString('en-IN')}
+            </Text>
+          )}
+        </Box>
       )
     },
     {

@@ -143,3 +143,18 @@ export const updateMilkSalesRate = async (req, res) => {
     res.status(400).json({ success: false, message: err.message });
   }
 };
+
+// ════════════════════════════════════════════════════════════════
+//  DELETE
+// ════════════════════════════════════════════════════════════════
+export const deleteMilkSalesRate = async (req, res) => {
+  try {
+    const rate = await MilkSalesRate.findOneAndDelete({ _id: req.params.id, companyId: req.companyId });
+    if (!rate) {
+      return res.status(404).json({ success: false, message: 'Rate record not found' });
+    }
+    res.json({ success: true, message: 'Rate deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};

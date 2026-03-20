@@ -11,8 +11,12 @@ import {
   Stack,
   Grid,
   Text,
-  Box
+  Box,
+  Checkbox,
+  Paper,
+  Alert
 } from '@mantine/core';
+import { IconInfoCircle } from '@tabler/icons-react';
 import { DatePickerInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { IconUpload, IconTrash } from '@tabler/icons-react';
@@ -31,6 +35,8 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
     initialValues: {
       farmerNumber: '',
       memberId: '',
+      isMembership: false,
+      membershipDate: null,
       farmerType: '',
       cowType: '',
       collectionCenter: '',
@@ -81,7 +87,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
       if (active === 0) {
         return {
           farmerNumber: !values.farmerNumber ? 'Farmer number is required' : null,
-          memberId: !values.memberId ? 'Member ID is required' : null,
+          memberId: values.isMembership && !values.memberId ? 'Member ID is required' : null,
           'personalDetails.name': !values.personalDetails.name ? 'Name is required' : null,
           'personalDetails.phone': values.personalDetails.phone && !/^[0-9]{10}$/.test(values.personalDetails.phone)
             ? 'Please enter valid 10-digit phone number' : null
@@ -146,6 +152,8 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
       form.setValues({
         farmerNumber: farmer.farmerNumber,
         memberId: farmer.memberId,
+        isMembership: farmer.isMembership || false,
+        membershipDate: farmer.membershipDate ? new Date(farmer.membershipDate) : null,
         farmerType: farmer.farmerType,
         cowType: farmer.cowType,
         collectionCenter: farmer.collectionCenter?._id || '',
@@ -279,6 +287,8 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
           idCardNumber: values.identityDetails.idCardNumber,
           issueDate: toISOString(values.identityDetails.issueDate)
         },
+        isMembership: values.isMembership,
+        membershipDate: values.isMembership ? toISOString(values.membershipDate) : null,
         farmerType: values.farmerType,
         cowType: values.cowType,
         collectionCenter: values.collectionCenter || null,
@@ -338,6 +348,16 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
     form.setFieldValue('personalDetails.age', age);
   };
 
+  const handleAgeChange = (value) => {
+    const age = parseInt(value) || 0;
+    form.setFieldValue('personalDetails.age', age);
+    if (age > 0) {
+      const dob = new Date();
+      dob.setFullYear(dob.getFullYear() - age);
+      form.setFieldValue('personalDetails.dob', dob);
+    }
+  };
+
   const handleSharesChange = (value) => {
     const shares = parseFloat(value) || 0;
     const calculatedShareValue = shares * 10;
@@ -389,12 +409,37 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
               </Grid.Col>
               <Grid.Col span={6}>
                 <TextInput
-                  label="Member ID"
-                  placeholder="Enter member ID"
-                  required
+                  label={
+                    <Group gap="xs" mb={2}>
+                      <span>Member ID</span>
+                      <Checkbox
+                        size="xs"
+                        label="Is Member"
+                        checked={form.values.isMembership}
+                        onChange={(e) => {
+                          form.setFieldValue('isMembership', e.currentTarget.checked);
+                          if (!e.currentTarget.checked) {
+                            form.setFieldValue('membershipDate', null);
+                          }
+                        }}
+                        styles={{ label: { fontWeight: 400, fontSize: 12 } }}
+                      />
+                    </Group>
+                  }
+                  placeholder="Tick 'Is Member' to enable"
+                  disabled={!form.values.isMembership}
                   {...form.getInputProps('memberId')}
                 />
               </Grid.Col>
+              {form.values.isMembership && (
+                <Grid.Col span={6}>
+                  <DatePickerInput
+                    label="Membership Date"
+                    placeholder="Select membership date"
+                    {...form.getInputProps('membershipDate')}
+                  />
+                </Grid.Col>
+              )}
               <Grid.Col span={6}>
                 <TextInput
                   label="Name"
@@ -422,12 +467,12 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
               <Grid.Col span={6}>
                 <NumberInput
                   label="Age"
-                  placeholder="Auto-calculated"
+                  placeholder="Enter age"
                   min={0}
                   max={150}
                   value={form.values.personalDetails.age}
-                  disabled
-                  description="Calculated from Date of Birth"
+                  onChange={handleAgeChange}
+                  description="Enter age or select DOB above"
                 />
               </Grid.Col>
               <Grid.Col span={6}>
@@ -634,12 +679,18 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
 
         <Stepper.Step label="Financial Details" description="Shares information">
           <Stack gap="md" mt="md">
+            {!form.values.isMembership && (
+              <Alert icon={<IconInfoCircle size={16} />} color="yellow" variant="light">
+                Enable "Is Member" in Personal Details to enter share and financial information.
+              </Alert>
+            )}
             <Grid>
               <Grid.Col span={6}>
                 <NumberInput
                   label="Number of Shares"
                   placeholder="Enter number of shares"
                   min={0}
+                  disabled={!form.values.isMembership}
                   value={form.values.financialDetails.numberOfShares}
                   onChange={handleSharesChange}
                 />
@@ -657,6 +708,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
                   label="Admission Fee"
                   placeholder="Enter admission fee"
                   min={0}
+                  disabled={!form.values.isMembership}
                   {...form.getInputProps('financialDetails.admissionFee')}
                 />
               </Grid.Col>
@@ -664,6 +716,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
                 <TextInput
                   label="Resolution Number"
                   placeholder="Enter resolution number"
+                  disabled={!form.values.isMembership}
                   {...form.getInputProps('financialDetails.resolutionNo')}
                 />
               </Grid.Col>
@@ -671,6 +724,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
                 <DatePickerInput
                   label="Resolution Date"
                   placeholder="Select date"
+                  disabled={!form.values.isMembership}
                   {...form.getInputProps('financialDetails.resolutionDate')}
                 />
               </Grid.Col>

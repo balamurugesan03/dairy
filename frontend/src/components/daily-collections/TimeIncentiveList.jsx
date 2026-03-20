@@ -158,6 +158,14 @@ export default function TimeIncentiveList() {
       .catch(() => {});
   }, []);
 
+  // Auto-fill center when modal opens and options become available
+  useEffect(() => {
+    if (modalOpen && !editRecord && centerOptions.length > 0 && form.values.centers.length === 0) {
+      form.setFieldValue('centerType', 'LIST');
+      form.setFieldValue('centers', [centerOptions[0].value]);
+    }
+  }, [modalOpen, centerOptions]); // eslint-disable-line
+
   // ── Fetch records ────────────────────────────────────────────
   const fetchRecords = useCallback(async () => {
     setListLoading(true);
@@ -183,7 +191,12 @@ export default function TimeIncentiveList() {
   // ── Open Add ─────────────────────────────────────────────────
   const openAdd = () => {
     setEditRecord(null);
-    form.setValues(EMPTY_FORM);
+    const defaultCenter = centerOptions.length > 0 ? centerOptions[0].value : null;
+    form.setValues({
+      ...EMPTY_FORM,
+      centerType: defaultCenter ? 'LIST' : 'ALL',
+      centers:    defaultCenter ? [defaultCenter] : [],
+    });
     setModalOpen(true);
   };
 
@@ -572,14 +585,14 @@ export default function TimeIncentiveList() {
                   <Checkbox
                     label={<Text size="sm" fw={600} c="yellow.7">AM</Text>}
                     checked={v.shiftAm}
-                    onChange={(e) => form.setFieldValue('shiftAm', e.currentTarget.checked)}
+                    onChange={() => { form.setFieldValue('shiftAm', true); form.setFieldValue('shiftPm', false); }}
                     color="yellow"
                     size="sm"
                   />
                   <Checkbox
                     label={<Text size="sm" fw={600} c="indigo.7">PM</Text>}
                     checked={v.shiftPm}
-                    onChange={(e) => form.setFieldValue('shiftPm', e.currentTarget.checked)}
+                    onChange={() => { form.setFieldValue('shiftPm', true); form.setFieldValue('shiftAm', false); }}
                     color="indigo"
                     size="sm"
                   />
@@ -611,7 +624,6 @@ export default function TimeIncentiveList() {
                   radius="sm"
                   searchable
                   clearable
-                  disabled={v.centerType === 'ALL' && v.centers.length === 0}
                   nothingFoundMessage="No centers found"
                 />
               </Grid.Col>

@@ -224,6 +224,9 @@ const farmerSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  membershipDate: {
+    type: Date
+  },
   ledgerId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Ledger'

@@ -136,36 +136,41 @@ export default function MilkSales() {
     setAmount(parseFloat(((parseFloat(litre) || 0) * (parseFloat(rate) || 0)).toFixed(2)));
   }, [litre, rate]);
 
-  // ── Auto-fetch rate ────────────────────────────────────────────────────────
-  const fetchRate = async (currentMode, currentCreditor, currentDate) => {
+  // ── Auto-fetch rate from MilkSalesRate ────────────────────────────────────
+  const fetchRate = async (overrides = {}) => {
     try {
-      const m   = currentMode    ?? mode;
-      const cr  = currentCreditor !== undefined ? currentCreditor : creditor;
-      const dt  = currentDate    ?? date;
+      const m   = overrides.mode     ?? mode;
+      const cr  = overrides.creditor !== undefined ? overrides.creditor : creditor;
+      const ag  = overrides.agent    !== undefined ? overrides.agent    : agent;
+      const dt  = overrides.date     ?? date;
       const base = dt instanceof Date ? dt : new Date();
-      // Convert to IST (UTC+5:30) for correct date
       const istDate = new Date(base.getTime() + 5.5 * 60 * 60000);
       const dateStr = istDate.toISOString().slice(0, 10);
 
       let salesItemKey = null;
       let partyId = null;
-      if (m === 'CREDIT' && cr) { salesItemKey = 'Credit Sales'; partyId = cr; }
-      else if (m === 'SAMPLE')  { salesItemKey = 'Sample Sales'; }
+
+      if (m === 'CREDIT' && cr) {
+        // Credit sale to a specific customer
+        salesItemKey = 'Customer Sale';
+        partyId = cr;
+      } else if (m === 'LOCAL' || m === 'SAMPLE') {
+        // Local / Sample sale — use agent as party if available
+        salesItemKey = 'Local Sale';
+        partyId = ag || null;
+      }
+
       if (!salesItemKey) return;
 
-      console.log('[fetchRate] calling getLatest:', { partyId, salesItemKey, dateStr });
       const res = await milkSalesRateAPI.getLatest(partyId, salesItemKey, dateStr);
-      console.log('[fetchRate] response:', res);
       if (res?.data?.rate != null) {
         setRate(String(res.data.rate));
         notifications.show({ color: 'blue', message: `Rate auto-filled: ₹${res.data.rate} (W.E.F ${new Date(res.data.wefDate).toLocaleDateString('en-IN')})`, autoClose: 2500 });
       }
-    } catch (err) {
-      console.error('[fetchRate] error:', err);
-    }
+    } catch { /* silent */ }
   };
 
-  useEffect(() => { fetchRate(); }, [creditor, mode, date]);
+  useEffect(() => { fetchRate(); }, [creditor, agent, mode, date]); // eslint-disable-line
 
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -203,9 +208,7 @@ export default function MilkSales() {
     setBillNo(genBillNo());
     setCenter(null); setAgent(null); setCategory(null); setCreditor(null);
     setOpCr(''); setLitre(''); setRate(''); setAmount(0); setPType('Cash');
-    // Re-fetch rate only for CREDIT (creditor was just cleared so pass null explicitly)
-    // LOCAL rate is entered manually — do not auto-fill
-    if (mode === 'CREDIT') fetchRate(mode, null, date);
+    fetchRate({ mode, creditor: null, agent: null, date });
     setTimeout(() => litrRef.current?.focus(), 60);
   };
 

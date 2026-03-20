@@ -199,7 +199,8 @@ export default function MilkPurchaseSettings() {
   const [saving,     setSaving]     = useState(false);
   const [resetting,  setResetting]  = useState(false);
   const [error,      setError]      = useState(null);
-  const [activeMenu, setActiveMenu] = useState('milk-chart');
+  const [activeMenu,   setActiveMenu]   = useState('milk-chart');
+  const [milmaLocked,  setMilmaLocked]  = useState(false);
 
   // ── Analyzer start/stop state ───────────────────────────────────────────────
   const [analyzerRunning,  setAnalyzerRunning]  = useState(false);
@@ -562,23 +563,42 @@ export default function MilkPurchaseSettings() {
               {MENU_ITEMS.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeMenu === item.id;
+                const isMilma  = item.id === 'milk-chart';
+                const isDisabled = milmaLocked && !isMilma;
                 return (
                   <NavLink
                     key={item.id}
-                    onClick={() => setActiveMenu(item.id)}
+                    onClick={() => !isDisabled && setActiveMenu(item.id)}
                     active={isActive}
+                    disabled={isDisabled}
                     label={
-                      <Box>
-                        <Text
-                          size="sm"
-                          fw={isActive ? 700 : 500}
-                          style={{ color: isActive ? TEAL : '#1e293b', lineHeight: 1.3 }}
-                        >
-                          {item.label}
-                        </Text>
-                        <Text size="xs" style={{ color: TEXT_MUTED, lineHeight: 1.2 }}>
-                          {item.desc}
-                        </Text>
+                      <Box style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                        <Box>
+                          <Text
+                            size="sm"
+                            fw={isActive ? 700 : 500}
+                            style={{ color: isDisabled ? '#cbd5e1' : isActive ? TEAL : '#1e293b', lineHeight: 1.3 }}
+                          >
+                            {item.label}
+                          </Text>
+                          <Text size="xs" style={{ color: isDisabled ? '#e2e8f0' : TEXT_MUTED, lineHeight: 1.2 }}>
+                            {item.desc}
+                          </Text>
+                        </Box>
+                        {isMilma && (
+                          <input
+                            type="checkbox"
+                            checked={milmaLocked}
+                            title={milmaLocked ? 'Disable Milma Chart lock' : 'Enable Milma Chart (disables others)'}
+                            onChange={e => {
+                              e.stopPropagation();
+                              setMilmaLocked(e.target.checked);
+                              if (e.target.checked) setActiveMenu('milk-chart');
+                            }}
+                            onClick={e => e.stopPropagation()}
+                            style={{ width: 15, height: 15, accentColor: TEAL, cursor: 'pointer', flexShrink: 0 }}
+                          />
+                        )}
                       </Box>
                     }
                     leftSection={
@@ -587,25 +607,28 @@ export default function MilkPurchaseSettings() {
                           width         : 32,
                           height        : 32,
                           borderRadius  : 7,
-                          background    : isActive ? TEAL_LIGHT : '#f8fafc',
-                          border        : `1px solid ${isActive ? TEAL_BORDER : '#e2e8f0'}`,
+                          background    : isDisabled ? '#f8fafc' : isActive ? TEAL_LIGHT : '#f8fafc',
+                          border        : `1px solid ${isDisabled ? '#f1f5f9' : isActive ? TEAL_BORDER : '#e2e8f0'}`,
                           display       : 'flex',
                           alignItems    : 'center',
                           justifyContent: 'center',
                           flexShrink    : 0,
                           transition    : 'all 0.2s',
+                          opacity       : isDisabled ? 0.4 : 1,
                         }}
                       >
-                        <Icon size={15} color={isActive ? TEAL : '#94a3b8'} />
+                        <Icon size={15} color={isDisabled ? '#cbd5e1' : isActive ? TEAL : '#94a3b8'} />
                       </Box>
                     }
-                    rightSection={isActive ? <IconChevronRight size={13} color={TEAL} /> : null}
+                    rightSection={isActive && !isMilma ? <IconChevronRight size={13} color={TEAL} /> : null}
                     styles={{
                       root: {
                         padding    : '9px 12px',
                         borderLeft : `3px solid ${isActive ? TEAL : 'transparent'}`,
                         background : isActive ? '#f0fdfa' : 'transparent',
                         transition : 'all 0.15s',
+                        cursor     : isDisabled ? 'not-allowed' : 'pointer',
+                        opacity    : isDisabled ? 0.5 : 1,
                       },
                     }}
                   />
@@ -648,7 +671,7 @@ export default function MilkPurchaseSettings() {
                     { value: 'ManualEntry',   label: 'Manual Entry — Table lookup (CLR / FAT / SNF)' },
                     { value: 'ApplyFormula',  label: 'Apply Formula — Fat Rate × FAT + SNF Rate × SNF' },
                     { value: 'LowChart',      label: 'Low Chart — Table lookup for below-standard milk' },
-                    { value: 'GoldLessChart', label: 'Gold / Less Chart — Adjust existing chart by ±value' },
+                    { value: 'GoldLessChart', label: 'Add / Less Chart — Adjust existing chart by ±value' },
                     { value: 'SlabRate',      label: 'Slab Rate — Fixed flat rate per litre' },
                   ]}
                   radius="sm"

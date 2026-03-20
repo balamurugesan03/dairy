@@ -25,7 +25,7 @@ import {
 import {
   agentAPI, collectionCenterAPI, farmerAPI,
   milkCollectionAPI, milkPurchaseSettingsAPI, rateChartAPI, milkSalesAPI,
-  thermalPrintAPI, machineConfigAPI, timeIncentiveAPI,
+  thermalPrintAPI, machineConfigAPI, timeIncentiveAPI, shiftIncentiveAPI,
 } from '../../services/api';
 
 // ── Rate Calculation ─────────────────────────────────────────────────────────
@@ -62,12 +62,36 @@ const calcRateFromChart = (fat, clr, snf, chartType, chartRows) => {
   return null;
 };
 
+// ── Shift Incentive amount calculator ──────────────────────────────────────────
+const calcShiftIncentiveAmt = (incentives, netKg, netLtr, fat, snf, baseAmount) => {
+  if (!incentives || incentives.length === 0) return 0;
+  let total = 0;
+  for (const inc of incentives) {
+    if (inc.rateBased?.enabled) {
+      if (inc.rateBased.qty)    total += inc.rateBased.rate * netKg;
+      else if (inc.rateBased.amount) total += inc.rateBased.rate;
+    }
+    if (inc.percentageBased?.enabled) {
+      if (inc.percentageBased.qty)    total += (inc.percentageBased.rate / 100) * netKg;
+      else if (inc.percentageBased.amount) total += (inc.percentageBased.rate / 100) * baseAmount;
+    }
+    if (inc.parameterBased?.enabled) {
+      const { belowFat, belowSnf, belowAmount, aboveFat, aboveSnf, aboveAmount } = inc.parameterBased;
+      if (fat > 0 && snf > 0) {
+        if (fat < belowFat && snf < belowSnf) total += belowAmount;
+        else if (fat >= aboveFat && snf >= aboveSnf) total += aboveAmount;
+      }
+    }
+  }
+  return parseFloat(total.toFixed(2));
+};
+
 const calcValues = (qty, fat, clr, snf, chartType, chartRows) => {
   if (!qty || !fat) return { snf: snf || 0, incentive: 0, rate: 0, amount: 0 };
   const chartRate = calcRateFromChart(fat, clr || 0, snf || 0, chartType, chartRows);
   const rate = chartRate !== null ? chartRate : fallbackRate(fat, clr || 0);
-  const incentive = qty >= 10 ? 3.0 : qty >= 5 ? 2.0 : 1.0;
-  const amount = parseFloat((qty * rate + incentive).toFixed(2));
+  const incentive = 0;
+  const amount = parseFloat((qty * rate).toFixed(2));
   const autoSnf = snf || parseFloat(((fat / 0.21) * 0.125 + 0.082 * (clr || 26)).toFixed(2));
   return { snf: autoSnf, incentive, rate: parseFloat(rate.toFixed(2)), amount };
 };
@@ -196,6 +220,8 @@ const MilkPurchase = () => {
   const [dupInfo,     setDupInfo]     = useState(null); // { name, billNo, amount, center }
   const [speakEnabled, setSpeakEnabled] = useState(false);
   const [cpMode,      setCpMode]      = useState([]);
+  const [paramCombo,  setParamCombo]  = useState('CLR-FAT'); // 'CLR-FAT' | 'FAT-SNF'
+  const [qtyUnit,     setQtyUnit]     = useState('Litre');   // 'Litre' | 'KG'
   // Keep ref in sync so the socket handler (which captures nothing) can read latest value
   useEffect(() => { analyzerModeRef.current = cpMode.includes('Analyzer'); }, [cpMode]);
   const [entryMode,   setEntryMode]   = useState('chart'); // 'chart' = auto from rate chart | 'rate' = manual rate→auto amount | 'amount' = manual amount→auto rate
@@ -204,7 +230,8 @@ const MilkPurchase = () => {
   const manualRateRef   = useRef(null);
   const manualAmountRef = useRef(null);
 
-  const [activeTimeIncentive, setActiveTimeIncentive] = useState(null);
+  const [activeTimeIncentive,   setActiveTimeIncentive]   = useState(null);
+  const [activeShiftIncentives, setActiveShiftIncentives] = useState([]);
 
   const clrAutoSetRef  = useRef(false);   // prevents SNF recompute when CLR is auto-filled from SNF
   const autoSaveRef    = useRef(false);   // triggers auto-save after SNF/CLR is computed
@@ -235,7 +262,7 @@ const MilkPurchase = () => {
   const serialPortRef   = useRef(null);
   const serialReaderRef = useRef(null);
   const machineBufferRef = useRef('');    // accumulate partial serial data
-  formRef.current = { producer, ltr, water, fat, clr, snf, date, shift, center, agent, calcResult, editingId, speakEnabled, entries, dupBlocked, entryMode, manualRate, manualAmount, activeTimeIncentive };
+  formRef.current = { producer, ltr, water, fat, clr, snf, date, shift, center, agent, calcResult, editingId, speakEnabled, entries, dupBlocked, entryMode, manualRate, manualAmount, activeTimeIncentive, activeShiftIncentives, cpMode };
 
   // ── Machine Serial Data Parser ────────────────────────────────────────────
   // Format 0: 31-char ASCII  (XXXXXXXXXXXXXXXXXXXXXXXXXXXXX)
@@ -528,6 +555,19 @@ const MilkPurchase = () => {
         await loadChartData(chartType);
         await loadTodayEntries(new Date(), 'AM', firstCenter);
 
+        // Sync parameter combo + quantity unit from settings
+        if (settingsRes?.data?.manualEntryCombination) setParamCombo(settingsRes.data.manualEntryCombination);
+        if (settingsRes?.data?.quantityUnit)           setQtyUnit(settingsRes.data.quantityUnit);
+
+        // Sync cpMode checkboxes from machine toggles saved in settings
+        const machines = settingsRes?.data?.machines || {};
+        const enabledModes = [];
+        if (machines.weighingScale)      enabledModes.push('Weight');
+        if (machines.milkAnalyzer)       enabledModes.push('Analyzer');
+        if (machines.digitalDisplay)     enabledModes.push('DISP');
+        if (machines.announcementSystem) enabledModes.push('SMS');
+        if (enabledModes.length) setCpMode(enabledModes);
+
         // Load analyzer device config + scan ports
         try {
           const [cfgRes, portsRes] = await Promise.all([
@@ -598,6 +638,25 @@ const MilkPurchase = () => {
     return () => clearInterval(interval);
   }, [center, shift, date]); // eslint-disable-line
 
+  // ── Auto-detect active shift incentives for current center + shift + date ──
+  useEffect(() => {
+    const fetch = async () => {
+      const centerName = centerNameRef.current;
+      if (!centerName && !center) { setActiveShiftIncentives([]); return; }
+      try {
+        const res = await shiftIncentiveAPI.getActive({
+          shift,
+          center: centerName || '',
+          date: date instanceof Date ? date.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+        });
+        setActiveShiftIncentives(res?.data || []);
+      } catch {
+        setActiveShiftIncentives([]);
+      }
+    };
+    fetch();
+  }, [center, shift, date]); // eslint-disable-line
+
   const filteredAgents = useCallback(() => {
     if (!center) return agentsData;
     const f = agentsData.filter(a => !a.centerId || a.centerId === center);
@@ -605,8 +664,7 @@ const MilkPurchase = () => {
   }, [center, agentsData]);
 
   // SNF = (CLR/4) + (0.20 × FAT) + 0.50
-  // Debounced 600ms — waits until user stops typing CLR before computing SNF + auto-save
-  // Skip when analyzer has already set SNF directly (no CLR from machine)
+  // Debounced 600ms — auto-computes SNF when CLR is typed; does NOT auto-save
   useEffect(() => {
     if (clrAutoSetRef.current) { clrAutoSetRef.current = false; return; }
     if (analyzerDataCapturedRef.current) return; // analyzer set SNF directly — don't overwrite
@@ -616,14 +674,12 @@ const MilkPurchase = () => {
     if (!fatVal) return;
     const timer = setTimeout(() => {
       setSnf(((clrVal / 4) + (0.20 * fatVal) + 0.50).toFixed(2));
-      autoSaveRef.current = true;
     }, 600);
     return () => clearTimeout(timer);
   }, [clr, fat]); // eslint-disable-line
 
   // CLR = (4 × SNF) − (0.8 × FAT) − 2
-  // Debounced 600ms — waits until user stops typing SNF before computing CLR + auto-save
-  // Skip when analyzer has already set SNF (machine doesn't provide CLR in 31-char format)
+  // Debounced 600ms — auto-computes CLR when SNF is typed; does NOT auto-save
   useEffect(() => {
     if (analyzerDataCapturedRef.current) return; // analyzer mode — no CLR auto-calc
     const fatVal = parseFloat(fat);
@@ -631,24 +687,10 @@ const MilkPurchase = () => {
     if (!snfVal || !fatVal || clr) return;
     const timer = setTimeout(() => {
       clrAutoSetRef.current = true;
-      autoSaveRef.current = true;
       setClr(((4 * snfVal) - (0.8 * fatVal) - 2).toFixed(1));
     }, 600);
     return () => clearTimeout(timer);
   }, [snf, fat]); // eslint-disable-line
-
-  // Auto-save after SNF or CLR is computed
-  useEffect(() => {
-    if (!autoSaveRef.current) return;
-    autoSaveRef.current = false;
-    const timer = setTimeout(() => {
-      const f = formRef.current;
-      if (f.producer && f.ltr && f.fat && !f.dupBlocked && !f.editingId) {
-        handleSave();
-      }
-    }, 80);
-    return () => clearTimeout(timer);
-  }, [snf, clr]); // eslint-disable-line
 
   // Auto-save when LTR is manually entered in analyzer mode (machine gave FAT+SNF, user types LTR)
   useEffect(() => {
@@ -755,7 +797,7 @@ const MilkPurchase = () => {
 
   // ── Save / Update ─────────────────────────────────────────────────────────
   const handleSave = async () => {
-    const { producer: p, ltr: q, water: w, fat: f, clr: c, snf: s, date: d, shift: sh, center: ct, agent: ag, calcResult: cr, editingId: eid, entryMode: em, manualRate: mr, manualAmount: ma, activeTimeIncentive: ati } = formRef.current;
+    const { producer: p, ltr: q, water: w, fat: f, clr: c, snf: s, date: d, shift: sh, center: ct, agent: ag, calcResult: cr, editingId: eid, entryMode: em, manualRate: mr, manualAmount: ma, activeTimeIncentive: ati, activeShiftIncentives: asi } = formRef.current;
     if (formRef.current.dupBlocked) return;
     if (!p || !q || !f) { notifications.show({ message: 'Member, Litres and FAT are required', color: 'red', autoClose: 2500 }); return; }
     setSaving(true);
@@ -767,14 +809,16 @@ const MilkPurchase = () => {
     const fresh = calcValues(netKg, parseFloat(f) || 0, parseFloat(c) || 0, parseFloat(s) || 0, activeChart, chartRows);
     let freshRate   = fresh.rate;
     let freshAmount = fresh.amount;
-    if (em === 'rate' && mr !== '') { freshRate = parseFloat(mr) || 0; freshAmount = parseFloat((netKg * freshRate + fresh.incentive).toFixed(2)); }
+    if (em === 'rate' && mr !== '') { freshRate = parseFloat(mr) || 0; freshAmount = parseFloat((netKg * freshRate).toFixed(2)); }
     if (em === 'amount' && ma !== '') { freshAmount = parseFloat(ma) || 0; freshRate = netKg > 0 ? parseFloat((freshAmount / netKg).toFixed(2)) : 0; }
     // Add time incentive if active
     const timeIncRate   = ati?.rate || 0;
     const timeIncAmount = parseFloat((timeIncRate * netLtr).toFixed(2));
-    freshAmount = parseFloat((freshAmount + timeIncAmount).toFixed(2));
+    // Add shift incentive if active
+    const shiftIncAmount = calcShiftIncentiveAmt(asi || [], netKg, netLtr, parseFloat(f) || 0, parseFloat(s) || fresh.snf || 0, freshAmount);
+    freshAmount = parseFloat((freshAmount + timeIncAmount + shiftIncAmount).toFixed(2));
     try {
-      const payload = { date: d.toISOString(), shift: sh, collectionCenter: ct || undefined, agent: ag || undefined, farmer: p._id, farmerNumber: p.no, farmerName: p.name, qty: netKg, ltr: netLtr, clr: parseFloat(c) || 0, fat: parseFloat(f), snf: parseFloat(s) || fresh.snf || 0, addedWater: waterLtr, rate: freshRate, incentive: fresh.incentive, timeIncentiveRate: timeIncRate || undefined, timeIncentiveAmount: timeIncAmount || undefined, amount: freshAmount };
+      const payload = { date: d.toISOString(), shift: sh, collectionCenter: ct || undefined, agent: ag || undefined, farmer: p._id, farmerNumber: p.no, farmerName: p.name, qty: netKg, ltr: netLtr, clr: parseFloat(c) || 0, fat: parseFloat(f), snf: parseFloat(s) || fresh.snf || 0, addedWater: waterLtr, rate: freshRate, incentive: fresh.incentive, timeIncentiveRate: timeIncRate || undefined, timeIncentiveAmount: timeIncAmount || undefined, shiftIncentiveAmount: shiftIncAmount || undefined, amount: freshAmount };
 
       if (eid) {
         // UPDATE existing entry
@@ -791,10 +835,13 @@ const MilkPurchase = () => {
         setEntries(prev => [...prev, { ...newEntry, sl: prev.length + 1 }]);
         tableScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
         lastEntryRef.current = newEntry;
-        // Auto-print immediately after save
+        // Auto-print immediately after save — only if 'Milk Bill' mode is ticked
         const dateStr = formRef.current.date.toLocaleDateString('en-IN');
-        printBill(newEntry, dateStr, formRef.current.shift, centerNameRef.current);
-        notifications.show({ message: `Saved & Printing: ${saved.billNo} \u2014 \u20B9${saved.amount.toFixed(2)}`, color: 'teal', autoClose: 2000 });
+        const milkBillEnabled = formRef.current.cpMode?.includes('Milk Bill');
+        if (milkBillEnabled) {
+          printBill(newEntry, dateStr, formRef.current.shift, centerNameRef.current);
+        }
+        notifications.show({ message: `Saved${milkBillEnabled ? ' & Printing' : ''}: ${saved.billNo} \u2014 \u20B9${saved.amount.toFixed(2)}`, color: 'teal', autoClose: 2000 });
         if (formRef.current.speakEnabled) {
           const utterance = new SpeechSynthesisUtterance(
             `Fat ${saved.fat.toFixed(1)}. Rate ${saved.rate.toFixed(2)}. Amount ${saved.amount.toFixed(2)}.`
@@ -1082,6 +1129,12 @@ const MilkPurchase = () => {
                     ⏱ TIME INC ₹{activeTimeIncentive.rate}/L
                   </Badge>
                 )}
+                {activeShiftIncentives.length > 0 && (
+                  <Badge size="xs" color="orange" variant="filled" radius="sm"
+                    title={`Shift incentive: ${activeShiftIncentives.length} active`}>
+                    🔄 SHIFT INC ({activeShiftIncentives.length})
+                  </Badge>
+                )}
               </Group>
               <Group gap={6}>
                 {machineStatus && <Text size="9px" c="teal.7" fw={600}>{machineStatus}</Text>}
@@ -1107,15 +1160,25 @@ const MilkPurchase = () => {
               </Group>
             </Group>
 
-            {/* Input row */}
+            {/* Input row — fields driven by paramCombo + qtyUnit from settings */}
             <Group gap={8} mb={6} wrap="nowrap" align="flex-end">
-              {[
-                { label: 'LTR',   ref: ltrRef,   value: ltr,   setter: setLtr,   next: fatRef,   color: '#0369a1', bg: '#f0f9ff', border: '#7dd3fc', step: 0.1,  dec: 2 },
-                { label: 'FAT %', ref: fatRef,   value: fat,   setter: setFat,   next: clrRef,   color: '#c2410c', bg: '#fff7ed', border: '#fdba74', step: 0.01, dec: 2 },
-                { label: 'CLR',   ref: clrRef,   value: clr,   setter: setClr,   next: snfRef,   color: '#6d28d9', bg: '#f5f3ff', border: '#c4b5fd', step: 0.1,  dec: 1 },
-                { label: 'SNF %', ref: snfRef,   value: snf,   setter: setSnf,   next: waterRef, color: '#166534', bg: '#f0fdf4', border: '#86efac', step: 0.01, dec: 2 },
-                { label: 'Water', ref: waterRef, value: water, setter: setWater, next: null,     color: '#be123c', bg: '#fff1f2', border: '#fda4af', step: 0.1,  dec: 2 },
-              ].map(({ label, ref: iRef, value, setter, next, color, bg, border, step, dec }) => (
+              {(() => {
+                const ltrLabel = qtyUnit === 'KG' ? 'KG' : 'LTR';
+                const clrFat = paramCombo === 'CLR-FAT';
+                // CLR-FAT: LTR→FAT→CLR→Water (SNF auto)
+                // FAT-SNF: LTR→FAT→SNF→Water (CLR auto)
+                return clrFat ? [
+                  { label: ltrLabel, ref: ltrRef,   value: ltr,   setter: setLtr,   next: fatRef,   color: '#0369a1', bg: '#f0f9ff', border: '#7dd3fc', step: 0.1,  dec: 2 },
+                  { label: 'FAT %',  ref: fatRef,   value: fat,   setter: setFat,   next: clrRef,   color: '#c2410c', bg: '#fff7ed', border: '#fdba74', step: 0.01, dec: 2 },
+                  { label: 'CLR',    ref: clrRef,   value: clr,   setter: setClr,   next: waterRef, color: '#6d28d9', bg: '#f5f3ff', border: '#c4b5fd', step: 0.1,  dec: 1 },
+                  { label: 'Water',  ref: waterRef, value: water, setter: setWater, next: null,     color: '#be123c', bg: '#fff1f2', border: '#fda4af', step: 0.1,  dec: 2 },
+                ] : [
+                  { label: ltrLabel, ref: ltrRef,   value: ltr,   setter: setLtr,   next: fatRef,   color: '#0369a1', bg: '#f0f9ff', border: '#7dd3fc', step: 0.1,  dec: 2 },
+                  { label: 'FAT %',  ref: fatRef,   value: fat,   setter: setFat,   next: snfRef,   color: '#c2410c', bg: '#fff7ed', border: '#fdba74', step: 0.01, dec: 2 },
+                  { label: 'SNF %',  ref: snfRef,   value: snf,   setter: setSnf,   next: waterRef, color: '#166534', bg: '#f0fdf4', border: '#86efac', step: 0.01, dec: 2 },
+                  { label: 'Water',  ref: waterRef, value: water, setter: setWater, next: null,     color: '#be123c', bg: '#fff1f2', border: '#fda4af', step: 0.1,  dec: 2 },
+                ];
+              })().map(({ label, ref: iRef, value, setter, next, color, bg, border, step, dec }) => (
                 <Box key={label} style={{ flex: 1 }}>
                   <Text size="10px" fw={700} mb={4} tt="uppercase" style={{ color, letterSpacing: '0.4px' }}>{label}</Text>
                   <NumberInput
@@ -1190,6 +1253,20 @@ const MilkPurchase = () => {
                       </Box>
                     );
                   })()}
+                  {/* Shift Incentive (shown only when active) */}
+                  {activeShiftIncentives.length > 0 && (() => {
+                    const grossLtr = parseFloat(ltr) || 0;
+                    const waterLtr = parseFloat(water) || 0;
+                    const netLtr   = Math.max(0, grossLtr - waterLtr);
+                    const netKg    = parseFloat((netLtr * 1.03).toFixed(3));
+                    const sAmt     = calcShiftIncentiveAmt(activeShiftIncentives, netKg, netLtr, parseFloat(fat) || 0, parseFloat(snf) || 0, calcResult.amount);
+                    return (
+                      <Box style={{ flex: 1, background: '#fff7ed', border: '2px solid #fb923c', borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
+                        <Text size="9px" fw={700} c="#9a3412" tt="uppercase" style={{ letterSpacing: '0.4px' }}>🔄 Shift Inc</Text>
+                        <Text size="14px" fw={700} style={{ color: '#ea580c', lineHeight: 1.2 }}>₹ {sAmt.toFixed(2)}</Text>
+                      </Box>
+                    );
+                  })()}
                   {/* Amount — editable in 'amount' mode */}
                   <Box style={{ flex: 1.3, background: entryMode === 'amount' ? '#fef3c7' : '#1e40af', border: `2px solid ${entryMode === 'amount' ? '#f59e0b' : '#1e40af'}`, borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
                     <Text size="9px" fw={700} style={{ color: entryMode === 'amount' ? '#92400e' : 'rgba(255,255,255,0.75)' }} tt="uppercase">{entryMode === 'amount' ? '✏ Amount' : 'Amount'}</Text>
@@ -1206,8 +1283,10 @@ const MilkPurchase = () => {
                       const grossLtr  = parseFloat(ltr) || 0;
                       const waterLtr  = parseFloat(water) || 0;
                       const netLtr    = Math.max(0, grossLtr - waterLtr);
-                      const tAmt      = activeTimeIncentive ? parseFloat((activeTimeIncentive.rate * netLtr).toFixed(2)) : 0;
-                      return <Text size="18px" fw={900} style={{ color: 'white', lineHeight: 1.2 }}>₹ {(calcResult.amount + tAmt).toFixed(2)}</Text>;
+                      const tAmt  = activeTimeIncentive ? parseFloat((activeTimeIncentive.rate * netLtr).toFixed(2)) : 0;
+                      const netKgD = parseFloat((netLtr * 1.03).toFixed(3));
+                      const sAmt  = calcShiftIncentiveAmt(activeShiftIncentives, netKgD, netLtr, parseFloat(fat) || 0, parseFloat(snf) || 0, calcResult.amount);
+                      return <Text size="18px" fw={900} style={{ color: 'white', lineHeight: 1.2 }}>₹ {(calcResult.amount + tAmt + sAmt).toFixed(2)}</Text>;
                     })()}
                   </Box>
                 </Group>
@@ -1698,33 +1777,6 @@ const MilkPurchase = () => {
           </Box>
         )}
 
-        {/* PARAMETER Section */}
-        <Box style={{ margin: '6px 8px 0', borderRadius: 4, border: '1px solid #80deea', background: 'rgba(255,255,255,0.45)', overflow: 'hidden' }}>
-          <Box style={{ background: '#006064', padding: '2px 8px', color: '#e0f7fa', fontSize: 10, fontWeight: 700, letterSpacing: '0.5px' }}>PARAMETER</Box>
-          <Box style={{ padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {[
-              { value: 'chart',  label: 'Auto (Chart)',  desc: 'Rate from chart'  },
-              { value: 'rate',   label: 'Rate Entry',    desc: 'LTR × Rate → Amt' },
-              { value: 'amount', label: 'Amount Entry',  desc: 'LTR × Amt → Rate' },
-            ].map(opt => (
-              <label key={opt.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 5, cursor: 'pointer', fontSize: 11 }}
-                onClick={() => { setEntryMode(opt.value); setManualRate(''); setManualAmount(''); }}>
-                <Box style={{
-                  width: 13, height: 13, borderRadius: '50%', flexShrink: 0, marginTop: 1,
-                  border: `2px solid ${entryMode === opt.value ? '#006064' : '#9ca3af'}`,
-                  background: entryMode === opt.value ? '#006064' : 'white',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  {entryMode === opt.value && <Box style={{ width: 5, height: 5, borderRadius: '50%', background: 'white' }} />}
-                </Box>
-                <Box>
-                  <span style={{ color: '#004d40', fontWeight: 700 }}>{opt.label}</span>
-                  <span style={{ display: 'block', color: '#6b7280', fontSize: 9 }}>{opt.desc}</span>
-                </Box>
-              </label>
-            ))}
-          </Box>
-        </Box>
 
         {/* Spacer */}
         <Box style={{ flex: 1 }} />

@@ -19,8 +19,10 @@ import {
   IconBuilding,
   IconId,
   IconCheck,
-  IconX
+  IconX,
+  IconCalendar
 } from '@tabler/icons-react';
+import { DateInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import { agentAPI, collectionCenterAPI } from '../../services/api';
 
@@ -34,6 +36,7 @@ const AgentModal = ({ isOpen, onClose, onSuccess, agentId = null }) => {
     phone: '',
     email: '',
     address: '',
+    dateOfJoining: new Date(),
     status: 'Active'
   });
 
@@ -71,6 +74,7 @@ const AgentModal = ({ isOpen, onClose, onSuccess, agentId = null }) => {
       phone: '',
       email: '',
       address: '',
+      dateOfJoining: new Date(),
       status: 'Active'
     });
     setErrors({});
@@ -87,6 +91,7 @@ const AgentModal = ({ isOpen, onClose, onSuccess, agentId = null }) => {
         phone: a.phone || '',
         email: a.email || '',
         address: a.address || '',
+        dateOfJoining: a.dateOfJoining ? new Date(a.dateOfJoining) : new Date(),
         status: a.status || 'Active'
       });
     } catch (error) {
@@ -106,7 +111,6 @@ const AgentModal = ({ isOpen, onClose, onSuccess, agentId = null }) => {
 
   const validateForm = () => {
     const newErrors = {};
-    if (!formData.agentCode.trim()) newErrors.agentCode = 'Agent code is required';
     if (!formData.agentName.trim()) newErrors.agentName = 'Agent name is required';
     if (!formData.collectionCenterId) newErrors.collectionCenterId = 'Collection center is required';
     if (formData.phone && !/^[0-9]{10}$/.test(formData.phone))
@@ -168,13 +172,10 @@ const AgentModal = ({ isOpen, onClose, onSuccess, agentId = null }) => {
           <Grid.Col span={{ base: 12, sm: 6 }}>
             <TextInput
               label="Agent Code"
-              placeholder="e.g. AG001"
               leftSection={<IconId size={16} />}
-              value={formData.agentCode}
-              onChange={e => handleChange('agentCode', e.target.value.toUpperCase())}
-              error={errors.agentCode}
-              required
-              disabled={isEditMode}
+              value={isEditMode ? formData.agentCode : 'Auto-generated'}
+              disabled
+              description={isEditMode ? undefined : 'Code will be auto-generated on save'}
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, sm: 6 }}>
@@ -199,6 +200,16 @@ const AgentModal = ({ isOpen, onClose, onSuccess, agentId = null }) => {
               error={errors.collectionCenterId}
               required
               searchable
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <DateInput
+              label="Date of Joining"
+              placeholder="Select date"
+              leftSection={<IconCalendar size={16} />}
+              value={formData.dateOfJoining}
+              onChange={v => handleChange('dateOfJoining', v)}
+              maxDate={new Date()}
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, sm: 6 }}>

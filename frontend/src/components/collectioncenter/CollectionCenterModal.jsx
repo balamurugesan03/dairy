@@ -28,6 +28,8 @@ import { collectionCenterAPI } from '../../services/api';
 const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) => {
   const isEditMode = Boolean(centerId);
 
+  const [hasHeadOffice, setHasHeadOffice] = useState(false);
+
   const [formData, setFormData] = useState({
     centerName: '',
     startDate: new Date(),
@@ -52,12 +54,33 @@ const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) 
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (isOpen && centerId) {
-      fetchCenter();
-    } else if (isOpen && !centerId) {
-      resetForm();
+    if (isOpen) {
+      checkHeadOffice();
+      if (centerId) {
+        fetchCenter();
+      } else {
+        resetForm();
+      }
     }
   }, [isOpen, centerId]);
+
+  const checkHeadOffice = async () => {
+    try {
+      const response = await collectionCenterAPI.getAll({ limit: 100 });
+      const centers = response.data || [];
+      const headOfficeExists = centers.some(
+        c => c.centerType === 'Head Office' && c._id !== centerId
+      );
+      setHasHeadOffice(headOfficeExists);
+      if (!centerId && !headOfficeExists) {
+        setFormData(prev => ({ ...prev, centerType: 'Head Office' }));
+      } else if (!centerId && headOfficeExists) {
+        setFormData(prev => ({ ...prev, centerType: 'Sub Centre' }));
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   const resetForm = () => {
     setFormData({
@@ -251,10 +274,16 @@ const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) 
               leftSection={<IconBuilding size={16} />}
               value={formData.centerType}
               onChange={(value) => handleChange('centerType', value)}
-              data={[
-                { value: 'Head Office', label: 'Head Office' },
-                { value: 'Sub Centre', label: 'Sub Centre' }
-              ]}
+              data={
+                hasHeadOffice && formData.centerType !== 'Head Office'
+                  ? [{ value: 'Sub Centre', label: 'Sub Centre' }]
+                  : [
+                      { value: 'Head Office', label: 'Head Office' },
+                      { value: 'Sub Centre', label: 'Sub Centre' }
+                    ]
+              }
+              disabled={hasHeadOffice && formData.centerType !== 'Head Office'}
+              description={hasHeadOffice && formData.centerType !== 'Head Office' ? 'Head Office already exists' : undefined}
               error={errors.centerType}
               required
             />

@@ -22,6 +22,8 @@ const customerSchema = new mongoose.Schema({
   ledgerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ledger' }, // Due By ledger
   dueToSocietyLedgerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ledger' }, // Due to Society ledger
 
+  dateOfJoining: { type: Date },
+
   documents: {
     aadhaar: { type: String },
     passbook: { type: String },
