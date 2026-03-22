@@ -65,7 +65,7 @@ import {
   IconFileInvoice,
   IconReceipt2
 } from '@tabler/icons-react';
-import { businessItemAPI, purchaseReturnAPI, salesReturnAPI, supplierAPI, businessCustomerAPI } from '../../services/api';
+import { businessItemAPI, purchaseReturnAPI, salesReturnAPI, businessSupplierAPI, businessCustomerAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 
 const PurchaseReturnForm = () => {
@@ -165,9 +165,9 @@ const PurchaseReturnForm = () => {
   const fetchParties = async () => {
     try {
       if (isPurchaseReturn) {
-        const response = await supplierAPI.getAll();
+        const response = await businessSupplierAPI.getAll();
         const data = response?.data || response || [];
-        setParties(Array.isArray(data) ? data.filter(s => s.active !== false) : []);
+        setParties(Array.isArray(data) ? data.filter(s => s.status !== 'Inactive') : []);
       } else {
         const response = await businessCustomerAPI.getAll();
         const data = response?.data || response || [];
@@ -318,8 +318,8 @@ const PurchaseReturnForm = () => {
     if (itemId) {
       const item = items.find(i => i._id === itemId);
       if (item) {
-        // Purchase return uses purchasePrice, sales return uses sellingPrice
-        form.setFieldValue('rate', isPurchaseReturn ? (item.purchasePrice || 0) : (item.sellingPrice || 0));
+        // Purchase return uses purchasePrice, sales return uses salesRate (BusinessItem field)
+        form.setFieldValue('rate', isPurchaseReturn ? (item.purchasePrice || 0) : (item.salesRate || item.sellingPrice || 0));
       }
     }
   };
@@ -340,7 +340,7 @@ const PurchaseReturnForm = () => {
     if (!item) return;
 
     const qty = parseFloat(quantity) || 0;
-    const itemRate = parseFloat(rate) || (isPurchaseReturn ? item.purchasePrice : item.sellingPrice) || 0;
+    const itemRate = parseFloat(rate) || (isPurchaseReturn ? item.purchasePrice : (item.salesRate || item.sellingPrice)) || 0;
     const discount = parseFloat(discountPercent) || 0;
     const gstPercent = item.gstPercent || 0;
 

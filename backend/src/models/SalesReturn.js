@@ -215,6 +215,12 @@ const salesReturnSchema = new mongoose.Schema({
   businessType: {
     type: String,
     default: 'Private Firm'
+  },
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true,
+    index: true
   }
 }, {
   timestamps: true

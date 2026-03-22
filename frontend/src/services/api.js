@@ -269,6 +269,7 @@ export const reportAPI = {
   vyaparDayBook: (params) => api.get('/reports/vyapar/day-book', { params }).then(res => res.data).catch(handleError),
   vyaparCashBook: (params) => api.get('/reports/vyapar/cash-book', { params }).then(res => res.data).catch(handleError),
   vyaparTradingAccount: (params) => api.get('/reports/vyapar/trading-account', { params }).then(res => res.data).catch(handleError),
+  vyaparRD: (params) => api.get('/reports/vyapar/rd', { params }).then(res => res.data).catch(handleError),
   salesRegister: (params) => api.get('/reports/sales-register', { params }).then(res => res.data).catch(handleError)
 };
 
@@ -648,7 +649,12 @@ export const businessVoucherAPI = {
   delete: (id) => api.delete(`/business-accounting/vouchers/${id}`).then(res => res.data).catch(handleError),
   createIncome: (data) => api.post('/business-accounting/income-voucher', data).then(res => res.data).catch(handleError),
   createExpense: (data) => api.post('/business-accounting/expense-voucher', data).then(res => res.data).catch(handleError),
-  createJournal: (data) => api.post('/business-accounting/journal-voucher', data).then(res => res.data).catch(handleError)
+  createJournal: (data) => api.post('/business-accounting/journal-voucher', data).then(res => res.data).catch(handleError),
+  createReceipt: (data) => api.post('/business-accounting/receipt-voucher', data).then(res => res.data).catch(handleError),
+  createPayment: (data) => api.post('/business-accounting/payment-voucher', data).then(res => res.data).catch(handleError),
+  createContra: (data) => api.post('/business-accounting/contra-voucher', data).then(res => res.data).catch(handleError),
+  initSystemLedgers: () => api.post('/business-accounting/init-system-ledgers').then(res => res.data).catch(handleError),
+  saveOpeningBalance: (data) => api.post('/business-accounting/opening-balance', data).then(res => res.data).catch(handleError)
 };
 
 // BUSINESS PROMOTION APIs (Vyapar-style for Private Firm)

@@ -95,7 +95,8 @@ const businessVoucherSchema = new mongoose.Schema({
     enum: [
       'BusinessSales', 'BusinessPurchase', 'Manual', 'Opening',
       'MilkPurchase', 'MilkSales', 'FarmerPayment',
-      'LoanDisbursal', 'AdvancePayment', 'GSTPayment', 'TDSPayment'
+      'LoanDisbursal', 'AdvancePayment', 'GSTPayment', 'TDSPayment',
+      'SalesReturn', 'PurchaseReturn'
     ]
   },
   referenceId: {

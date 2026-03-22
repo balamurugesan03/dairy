@@ -589,35 +589,47 @@ const VyaparTrialBalance = () => {
 
             {/* Trial Balance Table */}
             <Paper withBorder style={{ overflow: 'hidden' }} ref={printRef}>
-              {/* Table Header */}
-              <Box p="sm" style={{ backgroundColor: '#f5f5f5', borderBottom: '1px solid #e0e0e0' }}>
-                <Table withColumnBorders>
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th rowSpan={2} style={{ width: 40, textAlign: 'center', verticalAlign: 'middle' }}>#</Table.Th>
-                      <Table.Th rowSpan={2} style={{ verticalAlign: 'middle' }}>Ledger Name</Table.Th>
-                      <Table.Th colSpan={2} style={{ textAlign: 'center', backgroundColor: '#fff3e0' }}>Opening Balance</Table.Th>
-                      <Table.Th colSpan={2} style={{ textAlign: 'center', backgroundColor: '#e3f2fd' }}>Transactions</Table.Th>
-                      <Table.Th colSpan={2} style={{ textAlign: 'center', backgroundColor: '#e8f5e9' }}>Closing Balance</Table.Th>
-                    </Table.Tr>
-                    <Table.Tr>
-                      <Table.Th style={{ textAlign: 'center', backgroundColor: '#fff3e0', width: 100 }}>Debit</Table.Th>
-                      <Table.Th style={{ textAlign: 'center', backgroundColor: '#fff3e0', width: 100 }}>Credit</Table.Th>
-                      <Table.Th style={{ textAlign: 'center', backgroundColor: '#e3f2fd', width: 100 }}>Debit</Table.Th>
-                      <Table.Th style={{ textAlign: 'center', backgroundColor: '#e3f2fd', width: 100 }}>Credit</Table.Th>
-                      <Table.Th style={{ textAlign: 'center', backgroundColor: '#e8f5e9', width: 100 }}>Debit</Table.Th>
-                      <Table.Th style={{ textAlign: 'center', backgroundColor: '#e8f5e9', width: 100 }}>Credit</Table.Th>
-                    </Table.Tr>
-                  </Table.Thead>
-                </Table>
-              </Box>
-
-              {/* Table Body */}
-              <Box style={{ maxHeight: '60vh', overflowY: 'auto' }}>
-                {viewMode === 'grouped' ? (
-                  renderGroupedView()
-                ) : (
-                  <Table striped highlightOnHover withTableBorder withColumnBorders>
+              {viewMode === 'grouped' ? (
+                <Box style={{ maxHeight: '60vh', overflowY: 'auto', padding: '8px' }}>
+                  {renderGroupedView()}
+                </Box>
+              ) : (
+                <Box style={{ maxHeight: '65vh', overflowY: 'auto' }}>
+                  <Table
+                    striped
+                    highlightOnHover
+                    withTableBorder
+                    withColumnBorders
+                    stickyHeader
+                    style={{ tableLayout: 'fixed', width: '100%' }}
+                  >
+                    <colgroup>
+                      <col style={{ width: 44 }} />
+                      <col />
+                      <col style={{ width: 110 }} />
+                      <col style={{ width: 110 }} />
+                      <col style={{ width: 110 }} />
+                      <col style={{ width: 110 }} />
+                      <col style={{ width: 110 }} />
+                      <col style={{ width: 110 }} />
+                    </colgroup>
+                    <Table.Thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
+                      <Table.Tr>
+                        <Table.Th rowSpan={2} style={{ textAlign: 'center', verticalAlign: 'middle', backgroundColor: '#f5f5f5' }}>#</Table.Th>
+                        <Table.Th rowSpan={2} style={{ verticalAlign: 'middle', backgroundColor: '#f5f5f5' }}>Ledger Name</Table.Th>
+                        <Table.Th colSpan={2} style={{ textAlign: 'center', backgroundColor: '#fff3e0' }}>Opening Balance</Table.Th>
+                        <Table.Th colSpan={2} style={{ textAlign: 'center', backgroundColor: '#e3f2fd' }}>Transactions</Table.Th>
+                        <Table.Th colSpan={2} style={{ textAlign: 'center', backgroundColor: '#e8f5e9' }}>Closing Balance</Table.Th>
+                      </Table.Tr>
+                      <Table.Tr>
+                        <Table.Th style={{ textAlign: 'center', backgroundColor: '#fff3e0' }}>Debit</Table.Th>
+                        <Table.Th style={{ textAlign: 'center', backgroundColor: '#fff3e0' }}>Credit</Table.Th>
+                        <Table.Th style={{ textAlign: 'center', backgroundColor: '#e3f2fd' }}>Debit</Table.Th>
+                        <Table.Th style={{ textAlign: 'center', backgroundColor: '#e3f2fd' }}>Credit</Table.Th>
+                        <Table.Th style={{ textAlign: 'center', backgroundColor: '#e8f5e9' }}>Debit</Table.Th>
+                        <Table.Th style={{ textAlign: 'center', backgroundColor: '#e8f5e9' }}>Credit</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
                     <Table.Tbody>
                       {(!reportData.ledgers || reportData.ledgers.length === 0) ? (
                         <Table.Tr>
@@ -633,9 +645,7 @@ const VyaparTrialBalance = () => {
                                     ? `${formatDate(reportData.filters.startDate)} to ${formatDate(reportData.filters.endDate)}`
                                     : 'Try selecting a different date range'}
                                 </Text>
-                                <Text c="dimmed" size="xs">
-                                  No voucher entries exist in this date range
-                                </Text>
+                                <Text c="dimmed" size="xs">No voucher entries exist in this date range</Text>
                               </Stack>
                             </Center>
                           </Table.Td>
@@ -643,7 +653,7 @@ const VyaparTrialBalance = () => {
                       ) : (
                         reportData.ledgers.map((ledger, idx) => (
                           <Table.Tr key={ledger.ledgerId || idx}>
-                            <Table.Td style={{ width: 40, textAlign: 'center' }}>
+                            <Table.Td style={{ textAlign: 'center' }}>
                               <Text size="sm" c="dimmed">{idx + 1}</Text>
                             </Table.Td>
                             <Table.Td>
@@ -688,39 +698,33 @@ const VyaparTrialBalance = () => {
                         ))
                       )}
                     </Table.Tbody>
-                  </Table>
-                )}
-              </Box>
-
-              {/* Table Footer - Totals */}
-              {reportData.ledgers?.length > 0 && (
-                <Box p="sm" style={{ backgroundColor: '#fff3e0', borderTop: '2px solid #1976d2' }}>
-                  <Table withColumnBorders>
-                    <Table.Tfoot>
-                      <Table.Tr style={{ backgroundColor: '#fff3e0' }}>
-                        <Table.Td colSpan={2} style={{ textAlign: 'right' }}>
-                          <Text fw={700} size="sm">GRAND TOTAL</Text>
-                        </Table.Td>
-                        <Table.Td style={{ textAlign: 'right', width: 100 }}>
-                          <Text fw={700} c="red.7">{formatCurrency(reportData.summary.openingDebit)}</Text>
-                        </Table.Td>
-                        <Table.Td style={{ textAlign: 'right', width: 100 }}>
-                          <Text fw={700} c="green.7">{formatCurrency(reportData.summary.openingCredit)}</Text>
-                        </Table.Td>
-                        <Table.Td style={{ textAlign: 'right', width: 100 }}>
-                          <Text fw={700} c="red.7">{formatCurrency(reportData.summary.totalDebit)}</Text>
-                        </Table.Td>
-                        <Table.Td style={{ textAlign: 'right', width: 100 }}>
-                          <Text fw={700} c="green.7">{formatCurrency(reportData.summary.totalCredit)}</Text>
-                        </Table.Td>
-                        <Table.Td style={{ textAlign: 'right', width: 100 }}>
-                          <Text fw={700} c="red.7">{formatCurrency(reportData.summary.closingDebit)}</Text>
-                        </Table.Td>
-                        <Table.Td style={{ textAlign: 'right', width: 100 }}>
-                          <Text fw={700} c="green.7">{formatCurrency(reportData.summary.closingCredit)}</Text>
-                        </Table.Td>
-                      </Table.Tr>
-                    </Table.Tfoot>
+                    {reportData.ledgers?.length > 0 && (
+                      <Table.Tfoot>
+                        <Table.Tr style={{ backgroundColor: '#fff3e0', borderTop: '2px solid #1976d2' }}>
+                          <Table.Td colSpan={2} style={{ textAlign: 'right' }}>
+                            <Text fw={700} size="sm">GRAND TOTAL</Text>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right' }}>
+                            <Text fw={700} c="red.7">{formatCurrency(reportData.summary.openingDebit)}</Text>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right' }}>
+                            <Text fw={700} c="green.7">{formatCurrency(reportData.summary.openingCredit)}</Text>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right' }}>
+                            <Text fw={700} c="red.7">{formatCurrency(reportData.summary.totalDebit)}</Text>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right' }}>
+                            <Text fw={700} c="green.7">{formatCurrency(reportData.summary.totalCredit)}</Text>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right' }}>
+                            <Text fw={700} c="red.7">{formatCurrency(reportData.summary.closingDebit)}</Text>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right' }}>
+                            <Text fw={700} c="green.7">{formatCurrency(reportData.summary.closingCredit)}</Text>
+                          </Table.Td>
+                        </Table.Tr>
+                      </Table.Tfoot>
+                    )}
                   </Table>
                 </Box>
               )}
