@@ -1,5 +1,10 @@
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
+import MilkSales from '../models/MilkSales.js';
+import Sales from '../models/Sales.js';
+import FarmerPayment from '../models/FarmerPayment.js';
+import Advance from '../models/Advance.js';
+import ProducerReceipt from '../models/ProducerReceipt.js';
 import { getDateRange } from '../utils/dateFilters.js';
 import {
   calculateOpeningBalance,
@@ -71,38 +76,151 @@ export const getCashBook = async (req, res) => {
       .sort({ voucherDate: 1, voucherNumber: 1 })
       .populate('entries.ledgerId', 'ledgerName ledgerType');
 
-    // Process transactions
-    const transactions = [];
-    let runningBalance = openingBalance;
+    // Direct cash receipts — Milk Sales (Cash)
+    const milkSalesCash = await MilkSales.find({
+      companyId: req.companyId,
+      date: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
+      paymentType: 'Cash',
+      amount: { $gt: 0 }
+    }).sort({ date: 1 });
 
+    // Direct cash receipts — Item Sales (Cash)
+    const itemSalesCash = await Sales.find({
+      companyId: req.companyId,
+      billDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
+      paymentMode: 'Cash',
+      paidAmount: { $gt: 0 }
+    }).sort({ billDate: 1 });
+
+    // Direct cash payments — Farmer Payments (Cash)
+    const farmerPaymentsCash = await FarmerPayment.find({
+      companyId: req.companyId,
+      paymentDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
+      paymentMode: 'Cash',
+      paidAmount: { $gt: 0 }
+    }).sort({ paymentDate: 1 }).populate('farmerId', 'farmerName farmerNumber');
+
+    // Direct cash payments — Advances to Farmers (Cash)
+    const advancesCash = await Advance.find({
+      companyId: req.companyId,
+      advanceDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
+      paymentMode: 'Cash',
+      advanceAmount: { $gt: 0 }
+    }).sort({ advanceDate: 1 }).populate('farmerId', 'farmerName farmerNumber');
+
+    // Direct cash payments — Producer Receipts/Loans (Cash)
+    const producerReceiptsCash = await ProducerReceipt.find({
+      companyId: req.companyId,
+      receiptDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
+      paymentMode: 'Cash',
+      amount: { $gt: 0 }
+    }).sort({ receiptDate: 1 }).populate('farmerId', 'farmerName farmerNumber');
+
+    // Collect raw transactions before sorting
+    const rawTransactions = [];
+
+    // From vouchers (existing accounting entries)
     vouchers.forEach(voucher => {
       voucher.entries.forEach(entry => {
         if (entry.ledgerId._id.toString() === cashLedger._id.toString()) {
           const isReceipt = entry.debitAmount > 0;
           const amount = isReceipt ? entry.debitAmount : entry.creditAmount;
-
-          // Find contra ledger (the other side)
           const contraEntry = voucher.entries.find(
             e => e.ledgerId._id.toString() !== cashLedger._id.toString()
           );
-
-          runningBalance += isReceipt ? amount : -amount;
-
-          transactions.push({
+          rawTransactions.push({
             date: voucher.voucherDate,
             voucherNumber: voucher.voucherNumber,
             voucherType: voucher.voucherType,
             particulars: isReceipt
-              ? `From ${contraEntry?.ledgerName || 'Various'}`
-              : `To ${contraEntry?.ledgerName || 'Various'}`,
+              ? `From ${contraEntry?.ledgerId?.ledgerName || 'Various'}`
+              : `To ${contraEntry?.ledgerId?.ledgerName || 'Various'}`,
             voucherId: voucher._id,
             debit: isReceipt ? amount : 0,
             credit: isReceipt ? 0 : amount,
-            balance: runningBalance,
             narration: entry.narration || voucher.narration
           });
         }
       });
+    });
+
+    // Milk Sales — Cash Receipts
+    milkSalesCash.forEach(ms => {
+      rawTransactions.push({
+        date: ms.date,
+        voucherNumber: ms.billNumber || ms.invoiceNumber || `MS-${ms._id.toString().slice(-6)}`,
+        voucherType: 'MilkSales',
+        particulars: `Milk Sales — ${ms.agentName || ms.creditorName || 'Cash Customer'}`,
+        debit: ms.amount,
+        credit: 0,
+        narration: 'Milk Sales (Cash)'
+      });
+    });
+
+    // Item Sales — Cash Receipts
+    itemSalesCash.forEach(sale => {
+      rawTransactions.push({
+        date: sale.billDate,
+        voucherNumber: sale.billNumber || sale.invoiceNumber || `SAL-${sale._id.toString().slice(-6)}`,
+        voucherType: 'Sale',
+        particulars: `Sales — ${sale.customerName || 'Cash Customer'}`,
+        debit: sale.paidAmount,
+        credit: 0,
+        narration: sale.narration || 'Item Sales (Cash)'
+      });
+    });
+
+    // Farmer Payments — Cash Payments
+    farmerPaymentsCash.forEach(fp => {
+      const farmerName = fp.farmerId?.farmerName || fp.farmerId?.farmerNumber || 'Farmer';
+      rawTransactions.push({
+        date: fp.paymentDate,
+        voucherNumber: fp.paymentNumber || `FP-${fp._id.toString().slice(-6)}`,
+        voucherType: 'FarmerPayment',
+        particulars: `Farmer Payment — ${farmerName}`,
+        debit: 0,
+        credit: fp.paidAmount,
+        narration: fp.narration || 'Farmer Payment (Cash)'
+      });
+    });
+
+    // Advances — Cash Payments
+    advancesCash.forEach(adv => {
+      const farmerName = adv.farmerId?.farmerName || adv.farmerId?.farmerNumber || 'Farmer';
+      rawTransactions.push({
+        date: adv.advanceDate,
+        voucherNumber: adv.advanceNumber || `ADV-${adv._id.toString().slice(-6)}`,
+        voucherType: 'Advance',
+        particulars: `Advance — ${farmerName}`,
+        debit: 0,
+        credit: adv.advanceAmount,
+        narration: adv.narration || 'Advance to Farmer (Cash)'
+      });
+    });
+
+    // Producer Receipts/Loans — Cash Payments
+    producerReceiptsCash.forEach(pr => {
+      const farmerName = pr.farmerId?.farmerName || pr.farmerId?.farmerNumber || 'Producer';
+      rawTransactions.push({
+        date: pr.receiptDate,
+        voucherNumber: pr.receiptNumber || `PR-${pr._id.toString().slice(-6)}`,
+        voucherType: 'ProducerLoan',
+        particulars: `${pr.receiptType || 'Loan'} — ${farmerName}`,
+        debit: 0,
+        credit: pr.amount,
+        narration: pr.narration || `${pr.receiptType || 'Producer Loan'} (Cash)`
+      });
+    });
+
+    // Sort all by date
+    rawTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Calculate running balance
+    const transactions = [];
+    let runningBalance = openingBalance;
+    rawTransactions.forEach(txn => {
+      runningBalance += (txn.debit || 0) - (txn.credit || 0);
+      transactions.push({ ...txn, balance: runningBalance });
     });
 
     const totalDebits = transactions.reduce((sum, t) => sum + t.debit, 0);

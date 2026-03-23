@@ -4,29 +4,7 @@ import Customer from '../models/Customer.js';
 import mongoose from 'mongoose';
 import { createBulkStockTransactions, reverseStockTransaction } from '../utils/stockHelper.js';
 import { createSalesVoucher } from '../utils/accountingHelper.js';
-
-// Generate bill number — scoped by companyId to prevent cross-company collisions
-const generateBillNumber = async (companyId) => {
-  const today = new Date();
-  const year  = today.getFullYear().toString().slice(-2);
-  const month = (today.getMonth() + 1).toString().padStart(2, '0');
-  const prefix = `BILL${year}${month}`;
-
-  const lastBill = await Sales.findOne({
-    companyId,
-    billNumber: { $regex: `^${prefix}` }
-  })
-    .sort({ billNumber: -1 })
-    .limit(1);
-
-  let sequence = 1;
-  if (lastBill) {
-    const lastSeq = parseInt(lastBill.billNumber.slice(-4), 10);
-    if (!isNaN(lastSeq)) sequence = lastSeq + 1;
-  }
-
-  return `${prefix}${sequence.toString().padStart(4, '0')}`;
-};
+import { generateCode } from '../models/Counter.js';
 
 // Create new sale
 export const createSale = async (req, res) => {
@@ -35,7 +13,7 @@ export const createSale = async (req, res) => {
 
     const companyId = req.companyId;
     // Generate bill number
-    saleData.billNumber = await generateBillNumber(companyId);
+    saleData.billNumber = await generateCode('BILL', companyId);
     saleData.companyId = companyId;
 
     // Set customerModel based on customerType
@@ -108,7 +86,7 @@ export const createSale = async (req, res) => {
         if (saveErr.code === 11000 && saveErr.keyPattern?.billNumber && attempts < 4) {
           // Regenerate bill number and retry
           attempts++;
-          saleData.billNumber = await generateBillNumber(companyId);
+          saleData.billNumber = await generateCode('BILL', companyId);
           continue;
         }
         throw saveErr; // non-duplicate or max retries reached

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { generateCode } from './Counter.js';
 
 const farmerPaymentSchema = new mongoose.Schema({
   // Auto-generated payment number
@@ -252,10 +253,7 @@ farmerPaymentSchema.index({ 'paymentPeriod.fromDate': 1, 'paymentPeriod.toDate':
 farmerPaymentSchema.pre('save', async function(next) {
   // Generate payment number if not exists
   if (!this.paymentNumber) {
-    const count = await this.constructor.countDocuments({ companyId: this.companyId });
-    const year = new Date().getFullYear().toString().slice(-2);
-    const month = (new Date().getMonth() + 1).toString().padStart(2, '0');
-    this.paymentNumber = `PAY${year}${month}${(count + 1).toString().padStart(5, '0')}`;
+    this.paymentNumber = await generateCode('PAY', this.companyId, { pad: 5 });
   }
 
   // Calculate totals

@@ -44,7 +44,7 @@ import dayjs from 'dayjs';
 import quarterOfYear from 'dayjs/plugin/quarterOfYear';
 dayjs.extend(quarterOfYear);
 import { useCompany } from '../../../context/CompanyContext';
-import { reportAPI, businessCustomerAPI, supplierAPI } from '../../../services/api';
+import { reportAPI, businessCustomerAPI, businessSupplierAPI } from '../../../services/api';
 import { message } from '../../../utils/toast';
 import * as XLSX from 'xlsx';
 import { printVyaparReport } from '../../../utils/printReport';
@@ -128,7 +128,7 @@ const VyaparPartyStatement = () => {
     try {
       const [custRes, suppRes] = await Promise.all([
         businessCustomerAPI.getAll({ limit: 1000 }),
-        supplierAPI.getAll({ limit: 1000 })
+        businessSupplierAPI.getAll({ limit: 1000 })
       ]);
 
       const customers = custRes.data || custRes.customers || [];

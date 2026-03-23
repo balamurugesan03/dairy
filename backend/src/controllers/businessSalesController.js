@@ -7,29 +7,15 @@ import {
   generateBusinessVoucherNumber,
   applyLedgerBalanceChange
 } from './businessAccountingController.js';
-import Counter, { getNextSequence } from '../models/Counter.js';
+import { getNextSequence } from '../models/Counter.js';
 
-// Generate Invoice Number
+// Generate Invoice Number — atomic, conflict-free for 100+ concurrent users
 const generateInvoiceNumber = async (prefix = 'INV', companyId = null) => {
-  const today = new Date();
-  const year = today.getFullYear().toString().slice(-2);
-  const month = (today.getMonth() + 1).toString().padStart(2, '0');
-  const pattern = `${prefix}${year}${month}`;
-  const counterKey = `invoice-${pattern}-${companyId || 'global'}`;
-
-  let seedValue = 0;
-  const existingCounter = await Counter.findById(counterKey).lean();
-  if (!existingCounter) {
-    const query = { invoiceNumber: { $regex: `^${pattern}` } };
-    if (companyId) query.companyId = companyId;
-    const lastSale = await BusinessSales.findOne(query).sort({ invoiceNumber: -1 }).lean();
-    if (lastSale) {
-      const lastSeq = parseInt(lastSale.invoiceNumber.slice(-4));
-      if (!isNaN(lastSeq)) seedValue = lastSeq;
-    }
-  }
-
-  const seq = await getNextSequence(counterKey, seedValue);
+  const now = new Date();
+  const yy = now.getFullYear().toString().slice(-2);
+  const mm = (now.getMonth() + 1).toString().padStart(2, '0');
+  const pattern = `${prefix}${yy}${mm}`;
+  const seq = await getNextSequence(`invoice-${pattern}-${companyId || 'global'}`, 0);
   return `${pattern}${seq.toString().padStart(4, '0')}`;
 };
 
@@ -282,37 +268,31 @@ export const createBusinessSale = async (req, res) => {
         const voucherEntries = [];
 
         // ── Debit side: who pays us ──
+        // Use (grandTotal - paid) for debtor — NOT balance, which includes previousBalance (old outstanding)
+        const invoiceUnpaid = grandTotal - paid;
         if (effectivePaymentMode === 'Cash' || effectivePaymentMode === 'UPI' || effectivePaymentMode === 'Card') {
-          // Fully cash/digital — debit cash ledger
-          const cashLedger = await BusinessLedger.findOne({
-            group: 'Cash-in-Hand', status: 'Active', companyId
-          });
-          if (cashLedger && paid > 0) {
+          // Fully cash/digital — auto-create Cash-in-Hand ledger if not exists
+          const cashLedger = await getOrCreateBusinessLedger('Cash in Hand', 'Cash-in-Hand', 'Asset', companyId);
+          if (paid > 0) {
             voucherEntries.push({ ledgerId: cashLedger._id, ledgerName: cashLedger.name, type: 'debit', amount: paid });
           }
-          if (balance > 0) {
-            // Remaining goes to Sundry Debtors (walkthrough or partial credit)
-            const debtorLedger = partyId
-              ? await BusinessLedger.findOne({ 'partyDetails._id': partyId, companyId })
-              : null;
+          if (invoiceUnpaid > 0) {
             const fallbackDebtor = await getOrCreateBusinessLedger(
               partyName || 'Sundry Debtors', 'Sundry Debtors', 'Asset', companyId
             );
-            const dl = debtorLedger || fallbackDebtor;
-            voucherEntries.push({ ledgerId: dl._id, ledgerName: dl.name, type: 'debit', amount: balance });
+            voucherEntries.push({ ledgerId: fallbackDebtor._id, ledgerName: fallbackDebtor.name, type: 'debit', amount: invoiceUnpaid });
           }
         } else if (effectivePaymentMode === 'Bank' || effectivePaymentMode === 'Cheque') {
-          const bankLedger = await BusinessLedger.findOne({
-            group: 'Bank Accounts', status: 'Active', companyId
-          });
-          if (bankLedger && paid > 0) {
+          // Auto-create Bank Accounts ledger if not exists
+          const bankLedger = await getOrCreateBusinessLedger('Bank Account', 'Bank Accounts', 'Asset', companyId);
+          if (paid > 0) {
             voucherEntries.push({ ledgerId: bankLedger._id, ledgerName: bankLedger.name, type: 'debit', amount: paid });
           }
-          if (balance > 0) {
+          if (invoiceUnpaid > 0) {
             const fallbackDebtor = await getOrCreateBusinessLedger(
               partyName || 'Sundry Debtors', 'Sundry Debtors', 'Asset', companyId
             );
-            voucherEntries.push({ ledgerId: fallbackDebtor._id, ledgerName: fallbackDebtor.name, type: 'debit', amount: balance });
+            voucherEntries.push({ ledgerId: fallbackDebtor._id, ledgerName: fallbackDebtor.name, type: 'debit', amount: invoiceUnpaid });
           }
         } else {
           // Credit sale — full amount to debtor
@@ -375,11 +355,15 @@ export const createBusinessSale = async (req, res) => {
         if (Math.abs(checkDebit - checkCredit) <= 0.01 && voucherEntries.length >= 2) {
           const voucherNumber = await generateBusinessVoucherNumber('Sales', companyId);
 
+          const pmMode = ['Cash', 'UPI', 'Card'].includes(effectivePaymentMode) ? effectivePaymentMode
+                       : ['Bank', 'Cheque'].includes(effectivePaymentMode) ? effectivePaymentMode
+                       : 'Bank'; // Credit/unknown → Bank (adjustment, not cash)
           const voucher = new BusinessVoucher({
             voucherNumber,
             voucherType: 'Sales',
             date: invoiceDate ? new Date(invoiceDate) : new Date(),
             entries: voucherEntries,
+            paymentMode: pmMode,
             totalDebit: checkDebit,
             totalCredit: checkCredit,
             narration: `Business Sales Invoice ${invoiceNumber} — ${partyName || 'Walk-in Customer'}`,

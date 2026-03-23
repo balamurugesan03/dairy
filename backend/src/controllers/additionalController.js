@@ -8,27 +8,7 @@ import BusinessSales from '../models/BusinessSales.js';
 import BusinessItem from '../models/BusinessItem.js';
 import BusinessStockTransaction from '../models/BusinessStockTransaction.js';
 import { generateInvoiceNumber } from './businessSalesController.js';
-
-// ─── HELPERS ────────────────────────────────────────────────────────────────
-
-const generateNumber = async (Model, field, prefix, companyId) => {
-  const today = new Date();
-  const yy = today.getFullYear().toString().slice(-2);
-  const mm = (today.getMonth() + 1).toString().padStart(2, '0');
-  const pattern = `${prefix}${yy}${mm}`;
-
-  const last = await Model.findOne(
-    { [field]: { $regex: `^${pattern}` }, companyId },
-    { [field]: 1 }
-  ).sort({ [field]: -1 });
-
-  let seq = 1;
-  if (last) {
-    const lastSeq = parseInt(last[field].slice(-4));
-    if (!isNaN(lastSeq)) seq = lastSeq + 1;
-  }
-  return `${pattern}${seq.toString().padStart(4, '0')}`;
-};
+import { generateCode } from '../models/Counter.js';
 
 // ─── WARRANTY CONTROLLERS ────────────────────────────────────────────────────
 
@@ -43,7 +23,7 @@ export const createWarranty = async (req, res) => {
 
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      const warrantyNumber = await generateNumber(Warranty, 'warrantyNumber', 'WRT', companyId);
+      const warrantyNumber = await generateCode('WRT', companyId);
       const warranty = new Warranty({ ...req.body, warrantyNumber, warrantyEndDate, companyId });
       await warranty.save();
       return res.status(201).json({ success: true, message: 'Warranty created successfully', data: warranty });
@@ -174,7 +154,7 @@ export const createMachine = async (req, res) => {
   const companyId = req.companyId;
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      const machineCode = await generateNumber(Machine, 'machineCode', 'MCH', companyId);
+      const machineCode = await generateCode('MCH', companyId);
       const machine = new Machine({ ...req.body, machineCode, companyId });
       await machine.save();
       return res.status(201).json({ success: true, message: 'Machine created successfully', data: machine });
@@ -299,7 +279,7 @@ export const createQuotation = async (req, res) => {
 
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      const quotationNumber = await generateNumber(Quotation, 'quotationNumber', 'EST', companyId);
+      const quotationNumber = await generateCode('EST', companyId);
       const quotation = new Quotation({
         ...req.body, quotationNumber, validUntil, companyId, createdBy: req.user?._id
       });

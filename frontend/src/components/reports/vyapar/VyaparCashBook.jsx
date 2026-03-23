@@ -145,8 +145,8 @@ const VyaparCashBook = () => {
           <span className={`cb-side__icon cb-side__icon--${side}`}>
             {isReceipt ? <IconArrowDown size={14} /> : <IconArrowUp size={14} />}
           </span>
-          <span className="cb-side__title">{isReceipt ? 'RECEIPTS' : 'PAYMENTS'}</span>
-          <span className="cb-side__subtitle">{isReceipt ? '(Money In)' : '(Money Out)'}</span>
+          <span className="cb-side__title">{isReceipt ? 'CREDIT (Cr)' : 'DEBIT (Dr)'}</span>
+          <span className="cb-side__subtitle">{isReceipt ? '(Income / Receipts)' : '(Expenses / Payments)'}</span>
         </div>
 
         <div className="cb-side__body">
@@ -218,8 +218,8 @@ const VyaparCashBook = () => {
         </div>
       </div>
       <div className="cb-card__body">
-        {renderSideTable('receipt', card.receipts, card.receiptTotal, card.openingBalance, card.closingBalance)}
         {renderSideTable('payment', card.payments, card.paymentTotal, card.openingBalance, card.closingBalance)}
+        {renderSideTable('receipt', card.receipts, card.receiptTotal, card.openingBalance, card.closingBalance)}
       </div>
     </div>
   );

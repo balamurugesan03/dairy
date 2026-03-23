@@ -75,8 +75,27 @@ const BusinessJournalVoucher = () => {
     }
   };
 
+  // Auto-fill credit amounts whenever debit amounts change
+  const recalcCreditAmounts = (entries) => {
+    const debitTotal = entries.reduce((sum, e) => sum + (e.type === 'debit' ? (parseFloat(e.amount) || 0) : 0), 0);
+    const creditEntries = entries.filter(e => e.type === 'credit');
+    const creditCount = creditEntries.length;
+    if (creditCount === 0) return entries;
+    const perCredit = creditCount > 0 ? +(debitTotal / creditCount).toFixed(2) : 0;
+    return entries.map(e => e.type === 'credit' ? { ...e, amount: perCredit } : e);
+  };
+
+  const handleEntryChange = (index, field, value) => {
+    const updated = form.values.entries.map((e, i) =>
+      i === index ? { ...e, [field]: value } : e
+    );
+    const recalculated = ['amount', 'type'].includes(field) ? recalcCreditAmounts(updated) : updated;
+    form.setFieldValue('entries', recalculated);
+  };
+
   const addEntry = () => {
-    form.insertListItem('entries', { ledgerId: '', type: 'debit', amount: '', description: '' });
+    const newEntries = [...form.values.entries, { ledgerId: '', type: 'debit', amount: '', description: '' }];
+    form.setFieldValue('entries', recalcCreditAmounts(newEntries));
   };
 
   const removeEntry = (index) => {
@@ -252,7 +271,8 @@ const BusinessJournalVoucher = () => {
                         placeholder="Select account"
                         data={ledgerOptions}
                         searchable
-                        {...form.getInputProps(`entries.${index}.ledgerId`)}
+                        value={entry.ledgerId}
+                        onChange={(v) => handleEntryChange(index, 'ledgerId', v)}
                       />
                     </Table.Td>
                     <Table.Td>
@@ -261,7 +281,8 @@ const BusinessJournalVoucher = () => {
                           { value: 'debit', label: 'Debit (Dr)' },
                           { value: 'credit', label: 'Credit (Cr)' }
                         ]}
-                        {...form.getInputProps(`entries.${index}.type`)}
+                        value={entry.type}
+                        onChange={(v) => handleEntryChange(index, 'type', v)}
                       />
                     </Table.Td>
                     <Table.Td>
@@ -270,13 +291,17 @@ const BusinessJournalVoucher = () => {
                         min={0}
                         decimalScale={2}
                         leftSection={<IconCurrencyRupee size={14} />}
-                        {...form.getInputProps(`entries.${index}.amount`)}
+                        value={entry.amount}
+                        onChange={(v) => handleEntryChange(index, 'amount', v)}
+                        disabled={entry.type === 'credit'}
+                        readOnly={entry.type === 'credit'}
                       />
                     </Table.Td>
                     <Table.Td>
                       <TextInput
                         placeholder="Description"
-                        {...form.getInputProps(`entries.${index}.description`)}
+                        value={entry.description}
+                        onChange={(e) => handleEntryChange(index, 'description', e.target.value)}
                       />
                     </Table.Td>
                     <Table.Td>

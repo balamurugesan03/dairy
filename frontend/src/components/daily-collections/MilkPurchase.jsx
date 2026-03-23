@@ -664,15 +664,16 @@ const MilkPurchase = () => {
   }, [center, agentsData]);
 
   // SNF = (CLR/4) + (0.20 × FAT) + 0.50
-  // Debounced 600ms — auto-computes SNF when CLR is typed; does NOT auto-save
+  // CLR defaults to 26 if empty (standard cow milk value)
+  // Debounced 600ms — auto-computes SNF when FAT or CLR is typed; does NOT auto-save
   useEffect(() => {
     if (clrAutoSetRef.current) { clrAutoSetRef.current = false; return; }
     if (analyzerDataCapturedRef.current) return; // analyzer set SNF directly — don't overwrite
     const fatVal = parseFloat(fat);
-    const clrVal = parseFloat(clr);
-    if (!clrVal) { setSnf(''); return; }
-    if (!fatVal) return;
+    if (!fatVal) { setSnf(''); return; }
+    const clrVal = parseFloat(clr) || 26; // default CLR = 26 when empty
     const timer = setTimeout(() => {
+      if (!clr) setClr('26');  // auto-fill CLR field with default
       setSnf(((clrVal / 4) + (0.20 * fatVal) + 0.50).toFixed(2));
     }, 600);
     return () => clearTimeout(timer);

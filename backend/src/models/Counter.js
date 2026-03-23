@@ -29,4 +29,29 @@ export const getNextSequence = async (key, seedValue = 0) => {
   return result.seq;
 };
 
+/**
+ * Centralized atomic code generator — safe for 100+ concurrent users.
+ *
+ * monthly=true  → PREFIX + YYMM + zero-padded-seq   e.g. BILL260300001
+ * monthly=false → PREFIX + '-' + zero-padded-seq    e.g. ITEM-0001
+ *
+ * Each (prefix, companyId, yearMonth?) combination has its own independent counter,
+ * so codes from different companies or different months never collide.
+ */
+export const generateCode = async (prefix, companyId, { monthly = true, pad = 4 } = {}) => {
+  let key, datePart = '';
+  if (monthly) {
+    const now = new Date();
+    const yy = now.getFullYear().toString().slice(-2);
+    const mm = (now.getMonth() + 1).toString().padStart(2, '0');
+    datePart = `${yy}${mm}`;
+    key = `code-${prefix}-${datePart}-${companyId}`;
+  } else {
+    key = `code-${prefix}-${companyId}`;
+  }
+  const seq = await getNextSequence(key, 0);
+  const num = seq.toString().padStart(pad, '0');
+  return monthly ? `${prefix}${datePart}${num}` : `${prefix}-${num}`;
+};
+
 export default Counter;

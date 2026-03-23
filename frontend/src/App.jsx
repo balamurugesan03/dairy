@@ -177,6 +177,7 @@ const VyaparGSTR2 = lazy(() => import('./components/reports/vyapar/VyaparGSTR2')
 const VyaparDayBook = lazy(() => import('./components/reports/vyapar/VyaparDayBook'));
 const VyaparCashBook = lazy(() => import('./components/reports/vyapar/VyaparCashBook'));
 const VyaparTradingAccount = lazy(() => import('./components/reports/vyapar/VyaparTradingAccount'));
+const VyaparRDReport = lazy(() => import('./components/reports/vyapar/VyaparRDReport'));
 
 // Additional Module Components
 const WarrantyList = lazy(() => import('./components/additional/WarrantyList'));
@@ -464,6 +465,7 @@ const AppContent = () => {
                 <Route path="vyapar/day-book" element={<VyaparDayBook />} />
                 <Route path="vyapar/cash-book" element={<VyaparCashBook />} />
                 <Route path="vyapar/trading-account" element={<VyaparTradingAccount />} />
+                <Route path="vyapar/rd" element={<VyaparRDReport />} />
 
                 {/* Dairy Society Reports */}
                 <Route path="cash-book" element={<CashBook />} />

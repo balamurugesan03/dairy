@@ -79,22 +79,26 @@ const VyaparDayBook = () => {
   const dayCards = useMemo(() => {
     if (!reportData?.transactions) return [];
 
-    // Group transactions by date — debitAmount>0 → receipt side, creditAmount>0 → payment side
+    // Day Book = Cash Book style
+    // debitAmount > 0  → Cash/Bank debited = RECEIPT (left side)
+    // creditAmount > 0 → Cash/Bank credited = PAYMENT (right side)
+    // description = contra ledger name (what we received from / paid to)
     const dayMap = new Map();
     for (const txn of reportData.transactions) {
       const dateKey = dayjs(txn.date).format('YYYY-MM-DD');
       if (!dayMap.has(dateKey)) dayMap.set(dateKey, { receipts: [], payments: [] });
       const group = dayMap.get(dateKey);
+      const label = txn.description || txn.particulars || txn.ledgerName || 'Entry';
       if ((txn.debitAmount || 0) > 0) {
         group.receipts.push({
-          description: txn.ledgerName || txn.particulars || 'Entry',
+          description: label,
           voucherNumber: txn.voucherNumber || '',
           amount: txn.debitAmount
         });
       }
       if ((txn.creditAmount || 0) > 0) {
         group.payments.push({
-          description: txn.ledgerName || txn.particulars || 'Entry',
+          description: label,
           voucherNumber: txn.voucherNumber || '',
           amount: txn.creditAmount
         });
@@ -147,8 +151,8 @@ const VyaparDayBook = () => {
           <span className={`db-side__icon db-side__icon--${side}`}>
             {isReceipt ? <IconArrowDown size={14} /> : <IconArrowUp size={14} />}
           </span>
-          <span className="db-side__title">{isReceipt ? 'DEBIT (Dr.)' : 'CREDIT (Cr.)'}</span>
-          <span className="db-side__subtitle">{isReceipt ? '(Receipts / Inflow)' : '(Payments / Outflow)'}</span>
+          <span className="db-side__title">{isReceipt ? 'RECEIPT (Dr.)' : 'PAYMENT (Cr.)'}</span>
+          <span className="db-side__subtitle">{isReceipt ? '(Money In)' : '(Money Out)'}</span>
         </div>
 
         <div className="db-side__body">
@@ -191,7 +195,7 @@ const VyaparDayBook = () => {
                     <td className="db-footer-total">{fmtAlways(openingBalance)}</td>
                   </tr>
                   <tr className="db-summary-row db-day-total">
-                    <td className="db-footer-label">Day Total (Dr)</td>
+                    <td className="db-footer-label">Total Receipts</td>
                     <td className="db-footer-vno"></td>
                     <td className="db-footer-total">{fmtAlways(total)}</td>
                   </tr>
@@ -204,7 +208,7 @@ const VyaparDayBook = () => {
               ) : (
                 <>
                   <tr className="db-summary-row db-day-total">
-                    <td className="db-footer-label">Day Total (Cr)</td>
+                    <td className="db-footer-label">Total Payments</td>
                     <td className="db-footer-vno"></td>
                     <td className="db-footer-total">{fmtAlways(total)}</td>
                   </tr>

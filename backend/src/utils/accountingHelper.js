@@ -1,7 +1,7 @@
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
 import Item from '../models/Item.js';
-import Counter, { getNextSequence } from '../models/Counter.js';
+import { getNextSequence } from '../models/Counter.js';
 
 const VOUCHER_PREFIX_MAP = {
   'Receipt':         'RV',
@@ -17,30 +17,14 @@ const VOUCHER_PREFIX_MAP = {
   'OpeningBalance':  'OPB',
 };
 
-// Generate voucher number — always scoped by companyId to prevent cross-company collisions
+// Generate voucher number — atomic, conflict-free for 100+ concurrent users
 export const generateVoucherNumber = async (voucherType, companyId = null) => {
   const prefix = VOUCHER_PREFIX_MAP[voucherType] || 'VCH';
-
-  const today = new Date();
-  const year = today.getFullYear().toString().slice(-2);
-  const month = (today.getMonth() + 1).toString().padStart(2, '0');
-  const pattern = `${prefix}${year}${month}`;
-  const counterKey = `voucher-${pattern}-${companyId || 'global'}`;
-
-  // Seed from existing data on first use (avoids duplicating existing records)
-  let seedValue = 0;
-  const existingCounter = await Counter.findById(counterKey).lean();
-  if (!existingCounter) {
-    const query = { voucherNumber: { $regex: `^${pattern}` }, voucherType };
-    if (companyId) query.companyId = companyId;
-    const lastVoucher = await Voucher.findOne(query).sort({ voucherNumber: -1 }).lean();
-    if (lastVoucher) {
-      const lastSeq = parseInt(lastVoucher.voucherNumber.slice(-4));
-      if (!isNaN(lastSeq)) seedValue = lastSeq;
-    }
-  }
-
-  const seq = await getNextSequence(counterKey, seedValue);
+  const now = new Date();
+  const yy = now.getFullYear().toString().slice(-2);
+  const mm = (now.getMonth() + 1).toString().padStart(2, '0');
+  const pattern = `${prefix}${yy}${mm}`;
+  const seq = await getNextSequence(`voucher-${pattern}-${companyId || 'global'}`, 0);
   return `${pattern}${seq.toString().padStart(4, '0')}`;
 };
 
@@ -398,7 +382,7 @@ export const createPurchaseVoucher = async (purchaseData, session = null) => {
 };
 
 // Find or create a ledger by name and type
-const findOrCreateLedger = async (ledgerName, ledgerType, parentGroup, balanceType, companyId, session) => {
+export const findOrCreateLedger = async (ledgerName, ledgerType, parentGroup, balanceType, companyId, session) => {
   let ledger = await Ledger.findOne({ ledgerName, companyId });
   if (!ledger) {
     ledger = new Ledger({

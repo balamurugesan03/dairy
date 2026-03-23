@@ -56,7 +56,7 @@ const businessStockTransactionSchema = new mongoose.Schema({
   // Supplier and Payment Info
   supplierId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Supplier'
+    ref: 'BusinessSupplier'
   },
   supplierName: {
     type: String,

@@ -46,7 +46,8 @@ import {
   getStockStatement,
   getVyaparDayBook,
   getVyaparCashBook,
-  getVyaparTradingAccount
+  getVyaparTradingAccount,
+  getVyaparRD
 } from '../controllers/vyaparReportsController.js';
 
 const router = express.Router();
@@ -99,5 +100,6 @@ router.get('/vyapar/stock-statement', getStockStatement);
 router.get('/vyapar/day-book', getVyaparDayBook);
 router.get('/vyapar/cash-book', getVyaparCashBook);
 router.get('/vyapar/trading-account', getVyaparTradingAccount);
+router.get('/vyapar/rd', getVyaparRD);
 
 export default router;

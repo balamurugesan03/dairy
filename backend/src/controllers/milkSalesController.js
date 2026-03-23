@@ -2,7 +2,7 @@ import MilkSales from '../models/MilkSales.js';
 import Voucher   from '../models/Voucher.js';
 import Customer  from '../models/Customer.js';
 import Ledger    from '../models/Ledger.js';
-import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances } from '../utils/accountingHelper.js';
+import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances, findOrCreateLedger } from '../utils/accountingHelper.js';
 
 // ── Helper: create accounting voucher for a milk sale ────────────────────────
 async function createMilkSaleVoucher(sale, companyId) {
@@ -11,32 +11,27 @@ async function createMilkSaleVoucher(sale, companyId) {
 
   if (saleMode === 'LOCAL' || saleMode === 'SAMPLE') {
     // Receipt voucher: Dr Cash/Bank, Cr LOCAL SALES / SAMPLE SALES
-    const payLedgerName  = paymentType === 'Bank' ? 'Bank' : 'Cash';
+    const isBank         = paymentType === 'Bank';
     const saleLedgerName = saleMode === 'SAMPLE' ? 'SAMPLE SALES' : 'LOCAL SALES';
 
-    let [payLedger, saleLedger] = await Promise.all([
-      Ledger.findOne({ ledgerName: payLedgerName,  companyId }),
-      Ledger.findOne({ ledgerName: saleLedgerName, companyId })
-    ]);
-
-    // Auto-create Cash/Bank ledger if missing
+    // Use ledgerType lookup for Cash/Bank so the cash book tracks the same ledger
+    let payLedger = await Ledger.findOne({
+      ledgerType: isBank ? 'Bank' : 'Cash',
+      status: 'Active',
+      companyId
+    });
     if (!payLedger) {
-      payLedger = await Ledger.create({
-        ledgerName: payLedgerName,
-        ledgerType: payLedgerName === 'Bank' ? 'Bank' : 'Cash',
-        openingBalance: 0, currentBalance: 0, balanceType: 'Dr', companyId
-      });
-      console.log(`[MilkSales] Auto-created ledger: "${payLedgerName}"`);
+      payLedger = await findOrCreateLedger(
+        isBank ? 'Bank' : 'Cash in Hand',
+        isBank ? 'Bank' : 'Cash',
+        isBank ? 'Bank Accounts' : 'Cash',
+        'Dr', companyId
+      );
     }
-    // Auto-create sales ledger if missing
-    if (!saleLedger) {
-      saleLedger = await Ledger.create({
-        ledgerName: saleLedgerName,
-        ledgerType: 'Income',
-        openingBalance: 0, currentBalance: 0, balanceType: 'Cr', companyId
-      });
-      console.log(`[MilkSales] Auto-created ledger: "${saleLedgerName}"`);
-    }
+
+    const saleLedger = await findOrCreateLedger(
+      saleLedgerName, 'Income', 'Income', 'Cr', companyId
+    );
     const entries = [
       { ledgerId: payLedger._id,  ledgerName: payLedger.ledgerName,  debitAmount: amount, creditAmount: 0,      narration: shiftNote.trim() },
       { ledgerId: saleLedger._id, ledgerName: saleLedger.ledgerName, debitAmount: 0,      creditAmount: amount, narration: shiftNote.trim() }
@@ -59,20 +54,10 @@ async function createMilkSaleVoucher(sale, companyId) {
     if (!customer) return null;
     const isSchool = ['School', 'Anganwadi'].includes(customer.category);
     const saleLedgerName = isSchool ? 'SCHOOL MILK SALES' : 'MILK CREDIT SALES';
-    let [creditorLedger, saleLedger] = await Promise.all([
+    const [creditorLedger, saleLedger] = await Promise.all([
       customer.ledgerId ? Ledger.findById(customer.ledgerId) : null,
-      Ledger.findOne({ ledgerName: saleLedgerName, companyId })
+      findOrCreateLedger(saleLedgerName, 'Income', 'Income', 'Cr', companyId)
     ]);
-    if (!creditorLedger) console.warn(`[MilkSales] Creditor ledger not found for customer ${creditorId} — link a ledger to this customer`);
-    // Auto-create sales ledger if missing
-    if (!saleLedger) {
-      saleLedger = await Ledger.create({
-        ledgerName: saleLedgerName,
-        ledgerType: 'Income',
-        openingBalance: 0, currentBalance: 0, balanceType: 'Cr', companyId
-      });
-      console.log(`[MilkSales] Auto-created ledger: "${saleLedgerName}"`);
-    }
     if (!creditorLedger) return null;
     const entries = [
       { ledgerId: creditorLedger._id, ledgerName: creditorLedger.ledgerName, debitAmount: amount, creditAmount: 0,      narration: shiftNote.trim() },

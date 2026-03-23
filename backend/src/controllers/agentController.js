@@ -1,20 +1,10 @@
 import Agent from '../models/Agent.js';
 import CollectionCenter from '../models/CollectionCenter.js';
-import { getNextSequence } from '../models/Counter.js';
+import { generateCode } from '../models/Counter.js';
 
 // Auto-generate agent code: AGT-0001, AGT-0002, ...
-const generateAgentCode = async (companyId) => {
-  const counterKey = `agent-${companyId}`;
-  // Seed from existing agents on first use
-  let seedValue = 0;
-  const lastAgent = await Agent.findOne({ companyId }).sort({ agentCode: -1 }).lean();
-  if (lastAgent?.agentCode) {
-    const num = parseInt(lastAgent.agentCode.replace(/\D/g, ''));
-    if (!isNaN(num)) seedValue = num;
-  }
-  const seq = await getNextSequence(counterKey, seedValue);
-  return `AGT-${String(seq).padStart(4, '0')}`;
-};
+const generateAgentCode = async (companyId) =>
+  generateCode('AGT', companyId, { monthly: false });
 
 // Create new agent
 export const createAgent = async (req, res) => {

@@ -1,13 +1,10 @@
 import Salesman from '../models/Salesman.js';
 import Ledger from '../models/Ledger.js';
+import { generateCode } from '../models/Counter.js';
 
-// Generate auto salesmanId: SLSM0001, SLSM0002, ...
-const generateSalesmanId = async (companyId) => {
-  const last = await Salesman.findOne({ companyId }).sort({ salesmanId: -1 });
-  if (!last) return 'SLSM0001';
-  const num = parseInt(last.salesmanId.replace('SLSM', ''), 10);
-  return `SLSM${String(num + 1).padStart(4, '0')}`;
-};
+// Generate auto salesmanId: SLSM-0001, SLSM-0002, ... — atomic, conflict-free
+const generateSalesmanId = async (companyId) =>
+  generateCode('SLSM', companyId, { monthly: false });
 
 // Create Salesman
 export const createSalesman = async (req, res) => {

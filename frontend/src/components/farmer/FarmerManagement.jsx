@@ -618,6 +618,15 @@ const FarmerManagement = () => {
                 Manage dairy cooperative farmers and their details
               </Text>
             </Box>
+            <Button
+              leftSection={<IconPlus size={18} />}
+              onClick={handleAddNew}
+              color="blue"
+              disabled={!canWrite('farmers')}
+              style={{ minWidth: 160 }}
+            >
+              Add Farmer
+            </Button>
             <Group>
               <Tooltip label="Refresh List">
                 <ActionIcon
@@ -646,14 +655,6 @@ const FarmerManagement = () => {
                 disabled={!canWrite('farmers')}
               >
                 Import
-              </Button>
-              <Button
-                leftSection={<IconPlus size={18} />}
-                onClick={handleAddNew}
-                color="blue"
-                disabled={!canWrite('farmers')}
-              >
-                Add Farmer
               </Button>
             </Group>
           </Group>

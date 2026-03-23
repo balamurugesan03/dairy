@@ -124,6 +124,7 @@ const BusinessItemList = () => {
       itemName: (value) => !value ? 'Item name is required' : null,
       category: (value) => !value ? 'Category is required' : null,
       measurement: (value) => !value ? 'Measurement is required' : null,
+      supplier: (value) => !value ? 'Supplier is required' : null,
     }
   });
 
@@ -719,6 +720,12 @@ const BusinessItemList = () => {
                   { value: 'Medical', label: 'Medical' },
                   { value: 'Cosmetics', label: 'Cosmetics' },
                   { value: 'Food', label: 'Food & Beverages' },
+                  { value: 'Farm Equipments', label: 'Farm Equipments' },
+                  { value: 'Dairy Products', label: 'Dairy Products' },
+                  { value: 'Cattle Feeds', label: 'Cattle Feeds' },
+                  { value: 'Computer & Accessories', label: 'Computer & Accessories' },
+                  { value: 'Milk Analyser', label: 'Milk Analyser' },
+                  { value: 'Weighing Scale', label: 'Weighing Scale' },
                   { value: 'Other', label: 'Other' }
                 ]}
                 size="sm"
@@ -914,6 +921,12 @@ const BusinessItemList = () => {
                   { value: 'Medical', label: 'Medical' },
                   { value: 'Cosmetics', label: 'Cosmetics' },
                   { value: 'Food', label: 'Food & Beverages' },
+                  { value: 'Farm Equipments', label: 'Farm Equipments' },
+                  { value: 'Dairy Products', label: 'Dairy Products' },
+                  { value: 'Cattle Feeds', label: 'Cattle Feeds' },
+                  { value: 'Computer & Accessories', label: 'Computer & Accessories' },
+                  { value: 'Milk Analyser', label: 'Milk Analyser' },
+                  { value: 'Weighing Scale', label: 'Weighing Scale' },
                   { value: 'Other', label: 'Other' }
                 ]}
                 {...itemForm.getInputProps('category')}
@@ -968,9 +981,9 @@ const BusinessItemList = () => {
 
               <Select
                 label="Supplier"
+                withAsterisk
                 placeholder="Select supplier"
                 data={[
-                  { value: '', label: 'No supplier' },
                   ...suppliers.map(supplier => ({
                     value: supplier._id,
                     label: `${supplier.name} (${supplier.supplierId})`

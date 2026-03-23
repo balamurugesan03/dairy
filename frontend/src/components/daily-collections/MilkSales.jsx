@@ -151,21 +151,27 @@ export default function MilkSales() {
       let partyId = null;
 
       if (m === 'CREDIT' && cr) {
-        // Credit sale to a specific customer
         salesItemKey = 'Customer Sale';
         partyId = cr;
-      } else if (m === 'LOCAL' || m === 'SAMPLE') {
-        // Local / Sample sale — use agent as party if available
-        salesItemKey = 'Local Sale';
+      } else if (m === 'LOCAL') {
+        salesItemKey = 'Local Sales';
+        partyId = ag || null;
+      } else if (m === 'SAMPLE') {
+        salesItemKey = 'Sample Sales';
         partyId = ag || null;
       }
 
-      if (!salesItemKey) return;
+      if (!salesItemKey) {
+        setRate('');  // clear rate when mode has no valid sales item (e.g. CREDIT with no creditor)
+        return;
+      }
 
       const res = await milkSalesRateAPI.getLatest(partyId, salesItemKey, dateStr);
       if (res?.data?.rate != null) {
         setRate(String(res.data.rate));
         notifications.show({ color: 'blue', message: `Rate auto-filled: ₹${res.data.rate} (W.E.F ${new Date(res.data.wefDate).toLocaleDateString('en-IN')})`, autoClose: 2500 });
+      } else {
+        setRate('');  // no rate found — clear stale value
       }
     } catch { /* silent */ }
   };

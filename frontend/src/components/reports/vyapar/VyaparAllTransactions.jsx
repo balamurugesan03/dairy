@@ -38,7 +38,8 @@ import {
   IconDownload,
   IconBuilding,
   IconReceipt,
-  IconX
+  IconX,
+  IconPlayerPlay
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import quarterOfYear from 'dayjs/plugin/quarterOfYear';
@@ -118,10 +119,6 @@ const VyaparAllTransactions = () => {
     }
   }, [selectedBusinessType, navigate]);
 
-  // Fetch report on mount and when filters change
-  useEffect(() => {
-    fetchReport();
-  }, [dateFilter, dateRange, transactionType, firmFilter]);
 
   // Update date range based on filter selection
   useEffect(() => {
@@ -251,6 +248,8 @@ const VyaparAllTransactions = () => {
   const handleRowClick = (txn) => {
     if (txn.referenceType === 'BusinessSales' && txn.referenceId) {
       navigate(`/business-sales/view/${txn.referenceId}`);
+    } else if (txn.referenceType === 'BusinessPurchase') {
+      navigate('/business-inventory/stock');
     }
   };
 
@@ -481,6 +480,17 @@ const VyaparAllTransactions = () => {
               }
             }}
           />
+
+          {/* Generate Button */}
+          <Button
+            leftSection={<IconPlayerPlay size={16} />}
+            onClick={fetchReport}
+            loading={loading}
+            color="blue"
+            style={{ alignSelf: 'flex-end' }}
+          >
+            Generate
+          </Button>
         </Flex>
       </Paper>
 

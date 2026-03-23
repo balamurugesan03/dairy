@@ -205,21 +205,14 @@ const BusinessVoucherList = () => {
       )
     },
     {
-      accessor: 'totalDebit',
-      title: 'Debit',
-      width: 110,
+      accessor: 'amount',
+      title: 'Amount',
+      width: 130,
       textAlign: 'right',
       render: (record) => (
-        <Text size="sm" c="blue">{(record.totalDebit || 0).toFixed(2)}</Text>
-      )
-    },
-    {
-      accessor: 'totalCredit',
-      title: 'Credit',
-      width: 110,
-      textAlign: 'right',
-      render: (record) => (
-        <Text size="sm" c="orange">{(record.totalCredit || 0).toFixed(2)}</Text>
+        <Text size="sm" fw={600} c={getTypeColor(record.voucherType)}>
+          ₹{(record.totalDebit || record.totalCredit || 0).toFixed(2)}
+        </Text>
       )
     },
     {
@@ -410,24 +403,14 @@ const BusinessVoucherList = () => {
               </Paper>
             </Box>
 
-            <Grid>
-              <Grid.Col span={6}>
-                <Paper withBorder p="sm" radius="sm" bg="blue.0">
-                  <Group justify="space-between">
-                    <Text size="sm">Total Debit</Text>
-                    <Text fw={600} c="blue">{selectedVoucher.totalDebit?.toFixed(2)}</Text>
-                  </Group>
-                </Paper>
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <Paper withBorder p="sm" radius="sm" bg="orange.0">
-                  <Group justify="space-between">
-                    <Text size="sm">Total Credit</Text>
-                    <Text fw={600} c="orange">{selectedVoucher.totalCredit?.toFixed(2)}</Text>
-                  </Group>
-                </Paper>
-              </Grid.Col>
-            </Grid>
+            <Paper withBorder p="sm" radius="sm" bg="blue.0">
+              <Group justify="space-between">
+                <Text size="sm">Total Amount</Text>
+                <Text fw={600} c="blue">
+                  ₹{(selectedVoucher.totalDebit || selectedVoucher.totalCredit || 0).toFixed(2)}
+                </Text>
+              </Group>
+            </Paper>
 
             {selectedVoucher.narration && (
               <Box>

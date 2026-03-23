@@ -1,31 +1,10 @@
 import BusinessItem from '../models/BusinessItem.js';
 import BusinessStockTransaction from '../models/BusinessStockTransaction.js';
 import BusinessLedger from '../models/BusinessLedger.js';
-import Supplier from '../models/Supplier.js';
-
-// Helper function to generate next business item code
-const generateBusinessItemCode = async (companyId) => {
-  try {
-    const lastItem = await BusinessItem.findOne({
-      itemCode: { $regex: /^BITEM-\d+$/ },
-      companyId
-    }).sort({ itemCode: -1 });
-
-    let nextNumber = 1;
-    if (lastItem && lastItem.itemCode) {
-      const match = lastItem.itemCode.match(/^BITEM-(\d+)$/);
-      if (match) {
-        nextNumber = parseInt(match[1]) + 1;
-      }
-    }
-
-    const formattedNumber = nextNumber.toString().padStart(4, '0');
-    return `BITEM-${formattedNumber}`;
-  } catch (error) {
-    console.error('Error generating business item code:', error);
-    throw error;
-  }
-};
+import BusinessVoucher from '../models/BusinessVoucher.js';
+import BusinessSupplier from '../models/BusinessSupplier.js';
+import { generateCode } from '../models/Counter.js';
+import { generateBusinessVoucherNumber, applyLedgerBalanceChange } from './businessAccountingController.js';
 
 // Helper — find or create a category-based ledger in BusinessLedger (not Ledger/dairy)
 const findOrCreateCategoryLedger = async (category, ledgerType, companyId) => {
@@ -49,6 +28,16 @@ const findOrCreateCategoryLedger = async (category, ledgerType, companyId) => {
     await ledger.save();
   }
 
+  return ledger;
+};
+
+// Helper — get or create a BusinessLedger by name/group/type
+const getOrCreateLedger = async (name, group, type, companyId) => {
+  let ledger = await BusinessLedger.findOne({ name, companyId, status: 'Active' });
+  if (!ledger) {
+    ledger = new BusinessLedger({ name, group, type, companyId, businessType: 'Private Firm' });
+    await ledger.save();
+  }
   return ledger;
 };
 
@@ -90,7 +79,7 @@ export const createBusinessItem = async (req, res) => {
     const itemData = { ...req.body, companyId };
 
     if (!itemData.itemCode) {
-      itemData.itemCode = await generateBusinessItemCode(companyId);
+      itemData.itemCode = await generateCode('BITEM', companyId, { monthly: false });
     } else {
       const existingItem = await BusinessItem.findOne({ itemCode: itemData.itemCode, companyId });
       if (existingItem) {
@@ -337,7 +326,7 @@ export const businessStockIn = async (req, res) => {
 
     let supplierName = '';
     if (supplierId) {
-      const supplier = await Supplier.findById(supplierId);
+      const supplier = await BusinessSupplier.findById(supplierId);
       if (supplier) {
         supplierName = supplier.name;
       }
@@ -394,131 +383,94 @@ export const businessStockIn = async (req, res) => {
       }
     }
 
-    // Create accounting voucher using BusinessItem model (not dairy Item model)
+    // Create BusinessVoucher for purchase — flows into R&D report
     if (paymentMode && paymentMode !== 'N/A' && calculatedNetTotal > 0) {
       try {
         const voucherEntries = [];
-
-        // Dr. Business Purchase ledger(s) — grouped by category
-        const purchaseLedgerMap = new Map();
-        for (const item of items) {
-          const bItem = await BusinessItem.findById(item.itemId).populate('purchaseLedger');
-          if (!bItem) continue;
-          const itemAmount = (parseFloat(item.quantity) || 0) * (parseFloat(item.rate) || 0);
-          const ledgerId = bItem.purchaseLedger?._id?.toString();
-          const ledgerName = bItem.purchaseLedger?.ledgerName || 'Business Purchase';
-          if (ledgerId) {
-            if (!purchaseLedgerMap.has(ledgerId)) {
-              purchaseLedgerMap.set(ledgerId, { ledgerId: bItem.purchaseLedger._id, ledgerName, amount: 0 });
-            }
-            purchaseLedgerMap.get(ledgerId).amount += itemAmount;
-          } else {
-            // Fallback: use a generic Business Purchase ledger
-            const fallbackKey = 'fallback';
-            if (!purchaseLedgerMap.has(fallbackKey)) {
-              let fallbackLedger = await Ledger.findOne({ ledgerName: 'Business Purchase', status: 'Active' });
-              if (!fallbackLedger) {
-                fallbackLedger = new Ledger({
-                  ledgerName: 'Business Purchase',
-                  ledgerType: 'Purchases A/c',
-                  linkedEntity: { entityType: 'None' },
-                  openingBalance: 0, openingBalanceType: 'Dr',
-                  currentBalance: 0, balanceType: 'Dr',
-                  parentGroup: 'Purchase Accounts', status: 'Active'
-                });
-                await fallbackLedger.save();
-              }
-              purchaseLedgerMap.set(fallbackKey, { ledgerId: fallbackLedger._id, ledgerName: fallbackLedger.ledgerName, amount: 0 });
-            }
-            purchaseLedgerMap.get(fallbackKey).amount += itemAmount;
-          }
-        }
-        for (const entry of purchaseLedgerMap.values()) {
-          if (entry.amount > 0) {
-            voucherEntries.push({ ledgerId: entry.ledgerId, ledgerName: entry.ledgerName, debitAmount: entry.amount, creditAmount: 0 });
-          }
-        }
-
         const paid = parseFloat(paidAmount) || 0;
         const balance = calculatedNetTotal - paid;
 
-        // Cr. Cash ledger if paid by cash
-        if ((paymentMode === 'Cash' || paymentMode === 'UPI') && paid > 0) {
-          const cashLedger = await Ledger.findOne({ ledgerType: 'Cash', status: 'Active' });
-          if (cashLedger) {
-            voucherEntries.push({ ledgerId: cashLedger._id, ledgerName: cashLedger.ledgerName, debitAmount: 0, creditAmount: paid });
+        // Dr. Business Purchase Ledger(s) — grouped by category (BusinessLedger)
+        const purchaseLedgerMap = new Map();
+        for (const item of items) {
+          const bItem = await BusinessItem.findById(item.itemId);
+          if (!bItem) continue;
+          const itemAmount = (parseFloat(item.quantity) || 0) * (parseFloat(item.rate) || 0);
+          const catLedger = await findOrCreateCategoryLedger(bItem.category || 'General', 'purchase', companyId);
+          const key = catLedger._id.toString();
+          if (!purchaseLedgerMap.has(key)) {
+            purchaseLedgerMap.set(key, { ledgerId: catLedger._id, ledgerName: catLedger.name, amount: 0 });
           }
+          purchaseLedgerMap.get(key).amount += itemAmount;
+        }
+        for (const e of purchaseLedgerMap.values()) {
+          if (e.amount > 0) voucherEntries.push({ ledgerId: e.ledgerId, ledgerName: e.ledgerName, type: 'debit', amount: e.amount });
         }
 
-        // Cr. Bank ledger if paid by bank
-        if (paymentMode === 'Bank' && paid > 0) {
-          const bankLedger = await Ledger.findOne({ ledgerType: 'Bank', status: 'Active' });
-          if (bankLedger) {
-            voucherEntries.push({ ledgerId: bankLedger._id, ledgerName: bankLedger.ledgerName, debitAmount: 0, creditAmount: paid });
-          }
+        // Cr. Cash or Bank (BusinessLedger) for amount paid — auto-create if not exists
+        const pmCash = paymentMode === 'Cash' || paymentMode === 'UPI';
+        const pmBank = paymentMode === 'Bank' || paymentMode === 'Cheque';
+        if ((pmCash || pmBank) && paid > 0) {
+          const payLedger = pmCash
+            ? await getOrCreateLedger('Cash in Hand', 'Cash-in-Hand', 'Asset', companyId)
+            : await getOrCreateLedger('Bank Account', 'Bank Accounts', 'Asset', companyId);
+          voucherEntries.push({ ledgerId: payLedger._id, ledgerName: payLedger.name, type: 'credit', amount: paid });
         }
 
-        // Cr. Supplier ledger for credit balance
-        if (balance > 0 && supplierId) {
-          const supplierLedger = await Ledger.findOne({
-            'linkedEntity.entityType': 'Supplier',
-            'linkedEntity.entityId': supplierId
-          });
-          if (supplierLedger) {
-            voucherEntries.push({ ledgerId: supplierLedger._id, ledgerName: supplierLedger.ledgerName, debitAmount: 0, creditAmount: balance });
+        // Cr. Supplier BusinessLedger for credit balance
+        if (balance > 0) {
+          const sName = supplierName || 'Sundry Creditors';
+          let supplierBL = await BusinessLedger.findOne({ name: sName, group: 'Sundry Creditors', companyId });
+          if (!supplierBL) {
+            supplierBL = new BusinessLedger({
+              name: sName, group: 'Sundry Creditors', type: 'Liability',
+              openingBalance: 0, openingBalanceType: 'Credit', currentBalance: 0,
+              status: 'Active', businessType: 'Private Firm', companyId
+            });
+            await supplierBL.save();
           }
-        } else if (balance > 0 && !supplierId) {
-          // No supplier — credit the full amount to a generic payable
-          const cashLedger = await Ledger.findOne({ ledgerType: 'Cash', status: 'Active' });
-          if (cashLedger) {
-            voucherEntries.push({ ledgerId: cashLedger._id, ledgerName: cashLedger.ledgerName, debitAmount: 0, creditAmount: balance });
-          }
+          voucherEntries.push({ ledgerId: supplierBL._id, ledgerName: supplierBL.name, type: 'credit', amount: balance });
         }
 
-        if (voucherEntries.length > 0) {
-          const totalDebit = voucherEntries.reduce((s, e) => s + (e.debitAmount || 0), 0);
-          const totalCredit = voucherEntries.reduce((s, e) => s + (e.creditAmount || 0), 0);
-          const voucherType = (paymentMode === 'Cash' || paymentMode === 'UPI' || paymentMode === 'Bank') ? 'Payment' : 'Journal';
+        const totalDebit  = voucherEntries.filter(e => e.type === 'debit').reduce((s, e) => s + e.amount, 0);
+        const totalCredit = voucherEntries.filter(e => e.type === 'credit').reduce((s, e) => s + e.amount, 0);
 
-          voucher = new Voucher({
-            voucherNumber: `PV-${invoiceNumber || Date.now()}`,
+        if (voucherEntries.length >= 2 && Math.abs(totalDebit - totalCredit) <= 0.01) {
+          const voucherType = pmCash || pmBank ? 'Payment' : 'Journal';
+          const pmMode = pmCash ? 'Cash' : pmBank ? (paymentMode === 'Cheque' ? 'Cheque' : 'Bank') : 'Bank';
+          const voucherNumber = await generateBusinessVoucherNumber('Purchase', companyId);
+
+          const bVoucher = new BusinessVoucher({
+            voucherNumber,
             voucherType,
-            voucherDate: purchaseDate ? new Date(purchaseDate) : new Date(),
+            date: purchaseDate ? new Date(purchaseDate) : new Date(),
             entries: voucherEntries,
             totalDebit,
             totalCredit,
+            paymentMode: pmMode,
             narration: `Business Purchase${invoiceNumber ? ' - Inv ' + invoiceNumber : ''}${supplierName ? ' from ' + supplierName : ''}`,
-            referenceType: 'Purchase',
-            referenceId: transactions[0]._id
+            referenceType: 'BusinessPurchase',
+            referenceId: transactions[0]._id,
+            referenceNumber: invoiceNumber || '',
+            status: 'Posted',
+            businessType: 'Private Firm',
+            companyId
           });
-          await voucher.save();
+          await bVoucher.save();
 
-          // Update ledger balances
+          // Update BusinessLedger balances
           for (const entry of voucherEntries) {
-            const ledger = await Ledger.findById(entry.ledgerId);
+            const ledger = await BusinessLedger.findById(entry.ledgerId);
             if (!ledger) continue;
-            const netChange = (entry.debitAmount || 0) - (entry.creditAmount || 0);
-            if (['Asset', 'Cash', 'Bank', 'Other Receivable', 'Purchases A/c'].includes(ledger.ledgerType)) {
-              ledger.currentBalance += netChange;
-              ledger.balanceType = ledger.currentBalance >= 0 ? 'Dr' : 'Cr';
-            } else {
-              ledger.currentBalance -= netChange;
-              ledger.balanceType = ledger.currentBalance >= 0 ? 'Cr' : 'Dr';
-            }
+            applyLedgerBalanceChange(ledger, entry.type, entry.amount);
             await ledger.save();
           }
-        }
 
-        for (const transaction of transactions) {
-          transaction.voucherId = voucher?._id;
-          if (ledgerEntries && ledgerEntries.length > 0) {
-            transaction.ledgerEntries = ledgerEntries.map(entry => ({
-              ledgerId: entry.ledgerId,
-              amount: parseFloat(entry.amount || 0),
-              narration: entry.narration || ''
-            }));
+          // Link voucher to stock transactions
+          for (const transaction of transactions) {
+            transaction.voucherId = bVoucher._id;
+            await transaction.save();
           }
-          await transaction.save();
         }
       } catch (voucherError) {
         console.error('Error creating business purchase voucher:', voucherError);

@@ -244,6 +244,10 @@ const BusinessStockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
       newErrors.purchaseDate = 'Purchase date is required';
     }
 
+    if (!formData.supplierId) {
+      newErrors.supplierId = 'Supplier is required';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -415,13 +419,13 @@ const BusinessStockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
           <Grid.Col span={12}>
             <Select
               label="Supplier"
+              withAsterisk
               placeholder="Select supplier"
               leftSection={<IconUser size={16} />}
               data={suppliers}
               value={formData.supplierId}
               onChange={(value) => setFormData(prev => ({ ...prev, supplierId: value }))}
               searchable
-              clearable
               error={errors.supplierId}
             />
           </Grid.Col>

@@ -3,31 +3,15 @@ import Item from '../models/Item.js';
 import StockTransaction from '../models/StockTransaction.js';
 import Farmer from '../models/Farmer.js';
 import Customer from '../models/Customer.js';
-import Counter, { getNextSequence } from '../models/Counter.js';
+import { getNextSequence } from '../models/Counter.js';
 
-// Generate Dairy Credit Note Number (DCN2602-0001)
+// Generate Dairy Credit Note Number (DCN2603-0001) — atomic, conflict-free
 const generateReturnNumber = async (companyId) => {
-  const today = new Date();
-  const year = today.getFullYear().toString().slice(-2);
-  const month = (today.getMonth() + 1).toString().padStart(2, '0');
-  const prefix = `DCN${year}${month}`;
-  const counterKey = `dcn-${year}${month}-${companyId || 'global'}`;
-
-  let seedValue = 0;
-  const existingCounter = await Counter.findById(counterKey).lean();
-  if (!existingCounter) {
-    const lastReturn = await DairySalesReturn.findOne({
-      companyId,
-      returnNumber: { $regex: `^${prefix}` }
-    }).sort({ returnNumber: -1 }).lean();
-    if (lastReturn) {
-      const lastSeq = parseInt(lastReturn.returnNumber.slice(-4));
-      if (!isNaN(lastSeq)) seedValue = lastSeq;
-    }
-  }
-
-  const seq = await getNextSequence(counterKey, seedValue);
-  return `${prefix}-${seq.toString().padStart(4, '0')}`;
+  const now = new Date();
+  const yy = now.getFullYear().toString().slice(-2);
+  const mm = (now.getMonth() + 1).toString().padStart(2, '0');
+  const seq = await getNextSequence(`dcn-${yy}${mm}-${companyId || 'global'}`, 0);
+  return `DCN${yy}${mm}-${seq.toString().padStart(4, '0')}`;
 };
 
 // Create Dairy Sales Return (Credit Note)

@@ -157,12 +157,11 @@ const VyaparBalanceSheet = () => {
   useEffect(() => { fetchReport(); }, []);
 
   const fetchReport = async (from, to) => {
-    const f = from || fromDate;
-    const t = to   || toDate;
+    const t = to || toDate;
     setLoading(true);
     try {
+      // Balance Sheet is cumulative — only asOnDate matters, not fromDate
       const res = await reportAPI.vyaparBalanceSheet({
-        fromDate: dayjs(f).format('YYYY-MM-DD'),
         asOnDate: dayjs(t).format('YYYY-MM-DD')
       });
       setReportData(res.data);

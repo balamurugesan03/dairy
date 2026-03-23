@@ -8,33 +8,7 @@ import {
   getStockReport
 } from '../utils/stockHelper.js';
 import { createPurchaseVoucher } from '../utils/accountingHelper.js';
-
-// Helper function to generate next item code
-const generateItemCode = async (companyId) => {
-  try {
-    // Find the last item by sorting itemCode in descending order within this company
-    const lastItem = await Item.findOne({
-      itemCode: { $regex: /^ITEM-\d+$/ },
-      companyId
-    }).sort({ itemCode: -1 });
-
-    let nextNumber = 1;
-    if (lastItem && lastItem.itemCode) {
-      // Extract the number from the last item code (e.g., "ITEM-0005" -> 5)
-      const match = lastItem.itemCode.match(/^ITEM-(\d+)$/);
-      if (match) {
-        nextNumber = parseInt(match[1]) + 1;
-      }
-    }
-
-    // Format the number with leading zeros (e.g., 1 -> "0001")
-    const formattedNumber = nextNumber.toString().padStart(4, '0');
-    return `ITEM-${formattedNumber}`;
-  } catch (error) {
-    console.error('Error generating item code:', error);
-    throw error;
-  }
-};
+import { generateCode } from '../models/Counter.js';
 
 // Helper function to find or create category-based ledger
 const findOrCreateCategoryLedger = async (category, ledgerType, companyId) => {
@@ -74,7 +48,7 @@ export const createItem = async (req, res) => {
 
     // Auto-generate item code if not provided
     if (!itemData.itemCode) {
-      itemData.itemCode = await generateItemCode(companyId);
+      itemData.itemCode = await generateCode('ITEM', companyId, { monthly: false });
     } else {
       // Check for duplicate itemCode within this company if manually provided
       const existingItem = await Item.findOne({ itemCode: itemData.itemCode, companyId });

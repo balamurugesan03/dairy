@@ -163,7 +163,7 @@ businessLedgerSchema.index({ name: 1 });
 businessLedgerSchema.index({ group: 1 });
 businessLedgerSchema.index({ nature: 1 });
 businessLedgerSchema.index({ type: 1 });
-businessLedgerSchema.index({ code: 1, companyId: 1 }, { unique: true, sparse: true });
+businessLedgerSchema.index({ code: 1, companyId: 1 }, { unique: true, partialFilterExpression: { code: { $type: 'string' } } });
 businessLedgerSchema.index({ companyId: 1 });
 businessLedgerSchema.index({ companyId: 1, group: 1, status: 1 });
 

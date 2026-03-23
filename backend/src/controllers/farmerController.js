@@ -22,8 +22,12 @@ export const createFarmer = async (req, res) => {
       });
     }
 
-    // Extract share info from form (form sends numberOfShares + total shareValue)
-    const numberOfShares = parseInt(farmerData.financialDetails?.numberOfShares) || 0;
+    // Extract share info from form (FarmerModal maps numberOfShares → oldShares/totalShares before API call)
+    const numberOfShares = parseInt(
+      farmerData.financialDetails?.numberOfShares ??
+      farmerData.financialDetails?.totalShares ??
+      farmerData.financialDetails?.oldShares
+    ) || 0;
     const totalShareValue = parseFloat(farmerData.financialDetails?.shareValue) || 0;
     const perShareValue = numberOfShares > 0 ? totalShareValue / numberOfShares : 0;
 

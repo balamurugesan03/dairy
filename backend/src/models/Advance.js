@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { generateCode } from './Counter.js';
 
 const advanceSchema = new mongoose.Schema({
   // Auto-generated advance number
@@ -203,10 +204,7 @@ advanceSchema.index({ approvalStatus: 1 });
 advanceSchema.pre('save', async function(next) {
   // Generate advance number if not exists
   if (!this.advanceNumber) {
-    const count = await this.constructor.countDocuments({ companyId: this.companyId });
-    const year = new Date().getFullYear().toString().slice(-2);
-    const month = (new Date().getMonth() + 1).toString().padStart(2, '0');
-    this.advanceNumber = `ADV${year}${month}${(count + 1).toString().padStart(5, '0')}`;
+    this.advanceNumber = await generateCode('ADV', this.companyId, { pad: 5 });
   }
 
   // Calculate interest amount if interest rate is set

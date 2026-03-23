@@ -1,7 +1,6 @@
 import MilkCollection from '../models/MilkCollection.js';
 import Voucher from '../models/Voucher.js';
-import Ledger from '../models/Ledger.js';
-import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances } from '../utils/accountingHelper.js';
+import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances, findOrCreateLedger } from '../utils/accountingHelper.js';
 
 // ── Auto-generate bill number: MC-YYMM-XXXXX ─────────────────────────────────
 // Reads actual DB max each call — always returns next available number
@@ -48,11 +47,9 @@ export const createCollection = async (req, res) => {
     // ── Auto-create Journal voucher: Dr PRODUCERS DUES / Cr MILK PURCHASE ──
     try {
       const [debitLedger, creditLedger] = await Promise.all([
-        Ledger.findOne({ ledgerName: 'PRODUCERS DUES', companyId: req.companyId }),
-        Ledger.findOne({ ledgerName: 'MILK PURCHASE',  companyId: req.companyId })
+        findOrCreateLedger('PRODUCERS DUES', 'Liability', 'Current Liabilities', 'Cr', req.companyId),
+        findOrCreateLedger('MILK PURCHASE',  'Expense',   'Purchase Accounts',   'Dr', req.companyId)
       ]);
-      if (!debitLedger) console.warn('[MilkCollection] Ledger not found: "PRODUCERS DUES" — create it in Accounts');
-      if (!creditLedger) console.warn('[MilkCollection] Ledger not found: "MILK PURCHASE" — create it in Accounts');
       if (debitLedger && creditLedger) {
         const vEntries = [
           { ledgerId: debitLedger._id, ledgerName: debitLedger.ledgerName, debitAmount: entry.amount, creditAmount: 0,

@@ -298,6 +298,7 @@ const MainLayout = () => {
         { key: '/business-accounting/vouchers', label: 'Vouchers Management' },
          { key: '/reports/vyapar/day-book', label: 'Day Book' },
         { key: '/reports/vyapar/cash-book', label: 'Cash Book' },
+        // { key: '/reports/vyapar/rd', label: 'Receipt & Disbursement' },
         
         { key: '/reports/vyapar/trading-account', label: 'Trading Account' },
         

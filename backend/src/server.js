@@ -50,6 +50,7 @@ mongoose.connect(process.env.MONGODB_URI)
       { collection: 'suppliers',         index: 'supplierId_1' },
       { collection: 'customers',         index: 'customerId_1' },
       { collection: 'businessledgers',   index: 'code_1' },
+      { collection: 'businessledgers',   index: 'code_1_companyId_1' }, // old sparse→partialFilter fix
       { collection: 'businessledgers',   index: 'name_1' },
       { collection: 'businessvouchers',  index: 'voucherNumber_1' },
       { collection: 'sales',                    index: 'billNumber_1' },    // replaced by {billNumber,companyId} compound

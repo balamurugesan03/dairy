@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { generateCode } from './Counter.js';
 
 const emiScheduleSchema = new mongoose.Schema({
   emiNumber: {
@@ -194,10 +195,7 @@ producerLoanSchema.index({ loanType: 1 });
 producerLoanSchema.pre('save', async function(next) {
   // Generate loan number if not exists
   if (!this.loanNumber) {
-    const count = await this.constructor.countDocuments({ companyId: this.companyId });
-    const year = new Date().getFullYear().toString().slice(-2);
-    const month = (new Date().getMonth() + 1).toString().padStart(2, '0');
-    this.loanNumber = `LOAN${year}${month}${(count + 1).toString().padStart(5, '0')}`;
+    this.loanNumber = await generateCode('LOAN', this.companyId, { pad: 5 });
   }
 
   // Calculate interest amount

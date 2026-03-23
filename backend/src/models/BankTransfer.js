@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { generateCode } from './Counter.js';
 
 // Individual transfer detail schema
 const transferDetailSchema = new mongoose.Schema({
@@ -130,10 +131,7 @@ bankTransferSchema.index({ collectionCenter: 1 });
 // Pre-save hook for auto-generation
 bankTransferSchema.pre('save', async function(next) {
   if (!this.transferNumber) {
-    const count = await this.constructor.countDocuments({ companyId: this.companyId });
-    const year = new Date().getFullYear().toString().slice(-2);
-    const month = (new Date().getMonth() + 1).toString().padStart(2, '0');
-    this.transferNumber = `BT${year}${month}${(count + 1).toString().padStart(5, '0')}`;
+    this.transferNumber = await generateCode('BT', this.companyId, { pad: 5 });
   }
 
   // Calculate totals

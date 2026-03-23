@@ -15,11 +15,12 @@ import {
   Grid,
   Paper,
   Box,
+  Loader,
   rem
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
-import { IconArrowLeft, IconDeviceFloppy, IconUpload, IconTrash } from '@tabler/icons-react';
+import { IconX, IconDeviceFloppy, IconUpload, IconTrash } from '@tabler/icons-react';
 import { farmerAPI, collectionCenterAPI } from '../../services/api';
 import { message } from '../../utils/toast';
 
@@ -30,6 +31,8 @@ const FarmerForm = () => {
   const [active, setActive] = useState(0);
   const [collectionCenters, setCollectionCenters] = useState([]);
   const [additionalDocs, setAdditionalDocs] = useState([]);
+  const [pincodeLoading, setPincodeLoading] = useState(false);
+  const [pincodeOptions, setPincodeOptions] = useState([]);
 
   const isEditMode = Boolean(id);
 
@@ -321,6 +324,42 @@ const FarmerForm = () => {
     form.setFieldValue('financialDetails.shareValue', calculatedShareValue);
   };
 
+  const handlePincodeChange = async (value) => {
+    form.setFieldValue('address.pin', value);
+    setPincodeOptions([]);
+    if (value.length === 6) {
+      setPincodeLoading(true);
+      try {
+        const res = await fetch(`https://api.postalpincode.in/pincode/${value}`);
+        const data = await res.json();
+        if (data[0].Status === 'Success' && data[0].PostOffice?.length > 0) {
+          const offices = data[0].PostOffice;
+          form.setFieldValue('address.panchayat', offices[0].Block || offices[0].Taluk || '');
+          if (offices.length === 1) {
+            form.setFieldValue('address.village', offices[0].Name);
+          } else {
+            setPincodeOptions(offices);
+            form.setFieldValue('address.village', offices[0].Name);
+          }
+        } else {
+          message.error('Invalid PIN code or no data found');
+        }
+      } catch {
+        message.error('Failed to fetch pincode data');
+      } finally {
+        setPincodeLoading(false);
+      }
+    }
+  };
+
+  const handleVillageSelect = (officeName) => {
+    form.setFieldValue('address.village', officeName);
+    const office = pincodeOptions.find(o => o.Name === officeName);
+    if (office) {
+      form.setFieldValue('address.panchayat', office.Block || office.Taluk || '');
+    }
+  };
+
   const addAdditionalDocument = () => {
     if (additionalDocs.length < 5) {
       setAdditionalDocs([...additionalDocs, '']);
@@ -354,10 +393,10 @@ const FarmerForm = () => {
           </Box>
           <Button
             variant="default"
-            leftSection={<IconArrowLeft size={16} />}
-            onClick={() => navigate('/farmers')}
+            leftSection={<IconX size={16} />}
+            onClick={() => navigate('/')}
           >
-            Back
+            Close
           </Button>
         </Group>
 
@@ -451,25 +490,39 @@ const FarmerForm = () => {
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
-                    <TextInput
-                      label="Village"
-                      placeholder="Enter village"
-                      {...form.getInputProps('address.village')}
-                    />
+                    {pincodeOptions.length > 1 ? (
+                      <Select
+                        label="Village / Post Office"
+                        placeholder="Select post office"
+                        data={pincodeOptions.map(o => ({ value: o.Name, label: o.Name }))}
+                        value={form.values.address.village}
+                        onChange={handleVillageSelect}
+                        searchable
+                      />
+                    ) : (
+                      <TextInput
+                        label="Village"
+                        placeholder="Enter village"
+                        {...form.getInputProps('address.village')}
+                      />
+                    )}
                   </Grid.Col>
                   <Grid.Col span={6}>
                     <TextInput
                       label="Panchayat"
-                      placeholder="Enter panchayat"
+                      placeholder="Auto-filled from PIN code"
                       {...form.getInputProps('address.panchayat')}
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
                     <TextInput
                       label="PIN Code"
-                      placeholder="Enter PIN code"
+                      placeholder="Enter 6-digit PIN code"
                       maxLength={6}
-                      {...form.getInputProps('address.pin')}
+                      value={form.values.address.pin}
+                      onChange={(e) => handlePincodeChange(e.target.value)}
+                      error={form.errors['address.pin']}
+                      rightSection={pincodeLoading ? <Loader size="xs" /> : null}
                     />
                   </Grid.Col>
                 </Grid>
@@ -753,7 +806,7 @@ const FarmerForm = () => {
               Previous
             </Button>
             <Group>
-              <Button variant="default" onClick={() => navigate('/farmers')}>
+              <Button variant="default" onClick={() => navigate('/')}>
                 Cancel
               </Button>
               {active < 6 ? (

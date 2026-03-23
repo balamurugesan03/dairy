@@ -1,31 +1,15 @@
 import DairyPurchaseReturn from '../models/DairyPurchaseReturn.js';
 import Item from '../models/Item.js';
 import StockTransaction from '../models/StockTransaction.js';
-import Counter, { getNextSequence } from '../models/Counter.js';
+import { getNextSequence } from '../models/Counter.js';
 
-// Generate Dairy Debit Note Number (DDN2602-0001)
+// Generate Dairy Debit Note Number (DDN2603-0001) — atomic, conflict-free
 const generateReturnNumber = async (companyId) => {
-  const today = new Date();
-  const year = today.getFullYear().toString().slice(-2);
-  const month = (today.getMonth() + 1).toString().padStart(2, '0');
-  const prefix = `DDN${year}${month}`;
-  const counterKey = `ddn-${year}${month}-${companyId || 'global'}`;
-
-  let seedValue = 0;
-  const existingCounter = await Counter.findById(counterKey).lean();
-  if (!existingCounter) {
-    const lastReturn = await DairyPurchaseReturn.findOne({
-      companyId,
-      returnNumber: { $regex: `^${prefix}` }
-    }).sort({ returnNumber: -1 }).lean();
-    if (lastReturn) {
-      const lastSeq = parseInt(lastReturn.returnNumber.slice(-4));
-      if (!isNaN(lastSeq)) seedValue = lastSeq;
-    }
-  }
-
-  const seq = await getNextSequence(counterKey, seedValue);
-  return `${prefix}-${seq.toString().padStart(4, '0')}`;
+  const now = new Date();
+  const yy = now.getFullYear().toString().slice(-2);
+  const mm = (now.getMonth() + 1).toString().padStart(2, '0');
+  const seq = await getNextSequence(`ddn-${yy}${mm}-${companyId || 'global'}`, 0);
+  return `DDN${yy}${mm}-${seq.toString().padStart(4, '0')}`;
 };
 
 // Create Dairy Purchase Return (Debit Note)

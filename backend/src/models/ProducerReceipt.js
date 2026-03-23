@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { generateCode } from './Counter.js';
 
 const producerReceiptSchema = new mongoose.Schema({
   // Auto-generated receipt number
@@ -124,10 +125,7 @@ producerReceiptSchema.index({ referenceType: 1, referenceId: 1 });
 producerReceiptSchema.pre('save', async function(next) {
   // Generate receipt number if not exists
   if (!this.receiptNumber) {
-    const count = await this.constructor.countDocuments({ companyId: this.companyId });
-    const year = new Date().getFullYear().toString().slice(-2);
-    const month = (new Date().getMonth() + 1).toString().padStart(2, '0');
-    this.receiptNumber = `PREC${year}${month}${(count + 1).toString().padStart(5, '0')}`;
+    this.receiptNumber = await generateCode('PREC', this.companyId, { pad: 5 });
   }
 
   // Set reference model based on reference type
