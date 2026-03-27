@@ -137,7 +137,7 @@ const PeriodicalDeductionEarning = () => {
   const loadItems = async () => {
     try {
       const res = await earningDeductionAPI.getActive();
-      setItemsList((res.data || []).map(i => ({ value: i._id, label: i.name })));
+      setItemsList((res.data || []).filter(i => i && i._id).map(i => ({ value: String(i._id), label: i.name || '(Unnamed)' })));
     } catch { /* silent */ }
   };
 

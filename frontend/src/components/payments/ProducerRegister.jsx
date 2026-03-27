@@ -8,6 +8,7 @@ import './ProducerRegister.css';
 const ProducerRegister = () => {
   // State
   const [farmers, setFarmers] = useState([]);
+  const [farmerSearch, setFarmerSearch] = useState('');
   const [selectedFarmer, setSelectedFarmer] = useState(null);
   const [registerData, setRegisterData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -51,10 +52,11 @@ const ProducerRegister = () => {
         toDate: dateRange.toDate
       });
 
-      setRegisterData(response.data);
+      // producerRegisterAPI already unwraps res.data so response IS the body
+      setRegisterData(response);
 
       // Convert API data to editable rows
-      const apiRows = response.data.entries || [];
+      const apiRows = response.entries || [];
       const editableRows = apiRows.map((entry, index) => ({
         id: entry._id || `row-${index}`,
         date: entry.date ? dayjs(entry.date).format('DD/MM/YYYY') : '',
@@ -235,6 +237,18 @@ const ProducerRegister = () => {
   const totals = calculateTotals();
   const netPayable = totals.totalAmount - totals.totalDeduction;
 
+  // Filtered farmer list for search
+  const filteredFarmers = farmerSearch.trim().length === 0
+    ? farmers
+    : farmers.filter(f => {
+        const q = farmerSearch.toLowerCase();
+        return (
+          (f.farmerNumber || '').toLowerCase().includes(q) ||
+          (f.memberId || '').toLowerCase().includes(q) ||
+          (f.personalDetails?.name || f.name || '').toLowerCase().includes(q)
+        );
+      });
+
   // Print handler
   const handlePrint = useReactToPrint({
     content: () => printRef.current,
@@ -294,19 +308,28 @@ const ProducerRegister = () => {
       <div className="ledger-controls no-print">
         <div className="control-row">
           <div className="control-group">
-            <label>Select Farmer:</label>
+            <label>Search Farmer (Name / No. / Member ID):</label>
+            <input
+              type="text"
+              value={farmerSearch}
+              onChange={(e) => setFarmerSearch(e.target.value)}
+              className="ledger-input"
+              placeholder="Type name, farmer no. or member ID..."
+              style={{ marginBottom: 4 }}
+            />
             <select
               value={selectedFarmer?._id || ''}
               onChange={(e) => {
                 const farmer = farmers.find(f => f._id === e.target.value);
-                setSelectedFarmer(farmer);
+                setSelectedFarmer(farmer || null);
               }}
               className="ledger-select"
+              size={filteredFarmers.length > 0 && farmerSearch ? Math.min(filteredFarmers.length + 1, 6) : 1}
             >
               <option value="">-- Select Farmer --</option>
-              {farmers.map(farmer => (
+              {filteredFarmers.map(farmer => (
                 <option key={farmer._id} value={farmer._id}>
-                  {farmer.farmerNumber} - {farmer.personalDetails?.name}
+                  {farmer.farmerNumber} | {farmer.memberId || 'N/A'} — {farmer.personalDetails?.name || farmer.name}
                 </option>
               ))}
             </select>

@@ -113,118 +113,108 @@ const DocHeader = ({ companyName, dateRange, subtitle = 'End of the Month' }) =>
 // ─────────────────────────────────────────────────────────────────────────
 // VIEW 1 — Single 7-column table
 // ─────────────────────────────────────────────────────────────────────────
-const SingleTable = ({ data }) => (
-  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-    <thead>
-      {/* Group header row */}
-      <tr>
-        <th rowSpan={2} style={th({ textAlign: 'left', width: '28%' })}>Ledger</th>
-        <th colSpan={3} style={th()}>Receipt</th>
-        <th colSpan={3} style={th()}>Payment</th>
-      </tr>
-      <tr>
-        <th style={th({ width: '10%' })}>Adjustment</th>
-        <th style={th({ width: '10%' })}>Cash</th>
-        <th style={th({ width: '10%' })}>Total</th>
-        <th style={th({ width: '10%' })}>Adjustment</th>
-        <th style={th({ width: '10%' })}>Cash</th>
-        <th style={th({ width: '10%' })}>Total</th>
-      </tr>
-    </thead>
-    <tbody>
-      {data.sections.map((sec, si) => (
-        <>
-          {/* Section heading */}
-          <tr key={`sh-${si}`}>
-            <td colSpan={7} style={secHdr({ borderTop: si > 0 ? BORDER2 : BORDER })}>
-              {sec.name} {sec.subtitle}
-            </td>
-          </tr>
+const SingleTable = ({ data }) => {
+  const ob = data.openingBalance || 0;
+  const cb = data.closingBalance || 0;
+  const rT = data.grandTotalReceiptTotal || 0;
+  const pT = data.grandTotalPaymentTotal || 0;
+  // Grand total with opening/closing balance included
+  const grandR = ob + rT;
+  const grandP = pT + (cb >= 0 ? cb : 0);
+  const grand  = Math.max(grandR, grandP);
 
-          {/* Ledger rows */}
-          {sec.items.map((item, ii) => (
-            <tr key={`r-${si}-${ii}`} style={{ background: ii % 2 === 0 ? '#fff' : '#fafafa' }}>
-              <td style={td({ paddingLeft: 14 })}>{item.ledgerName}</td>
-              <td style={td({ textAlign: 'right' })}>{f(item.receiptAdj)}</td>
-              <td style={td({ textAlign: 'right' })}>{f(item.receiptCash)}</td>
-              <td style={td({ textAlign: 'right', fontWeight: item.receiptTotal ? 600 : 400 })}>{f(item.receiptTotal)}</td>
-              <td style={td({ textAlign: 'right' })}>{f(item.paymentAdj)}</td>
-              <td style={td({ textAlign: 'right' })}>{f(item.paymentCash)}</td>
-              <td style={td({ textAlign: 'right', fontWeight: item.paymentTotal ? 600 : 400 })}>{f(item.paymentTotal)}</td>
-            </tr>
-          ))}
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <thead>
+        <tr>
+          <th rowSpan={2} style={th({ textAlign: 'left', width: '34%' })}>Ledger</th>
+          <th colSpan={2} style={th({ background: '#2c5f8a', color: '#fff' })}>Receipt (Dr)</th>
+          <th colSpan={2} style={th({ background: '#7a2a2a', color: '#fff' })}>Payment (Cr)</th>
+        </tr>
+        <tr>
+          <th style={th({ width: '13%' })}>Cash</th>
+          <th style={th({ width: '13%' })}>Total</th>
+          <th style={th({ width: '13%' })}>Cash</th>
+          <th style={th({ width: '13%' })}>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {/* ── Opening Balance row ── */}
+        <tr style={{ background: '#e8f5e9' }}>
+          <td style={td({ fontWeight: 700, color: '#2e7d32' })}>Opening Balance (Cash in Hand)</td>
+          <td style={td({ textAlign: 'right', fontWeight: 700, color: '#2e7d32' })}>{fz(ob)}</td>
+          <td style={td({ textAlign: 'right', fontWeight: 700, color: '#2e7d32' })}>{fz(ob)}</td>
+          <td style={td({})}></td>
+          <td style={td({})}></td>
+        </tr>
 
-          {/* Section total */}
-          <tr key={`st-${si}`}>
-            <td style={secTot({ paddingLeft: 14 })}>Account Group Total</td>
-            <td style={secTot({ textAlign: 'right' })}>{fz(sec.totalReceiptAdj)}</td>
-            <td style={secTot({ textAlign: 'right' })}>{fz(sec.totalReceiptCash)}</td>
-            <td style={secTot({ textAlign: 'right' })}>{fz(sec.totalReceiptTotal)}</td>
-            <td style={secTot({ textAlign: 'right' })}>{fz(sec.totalPaymentAdj)}</td>
-            <td style={secTot({ textAlign: 'right' })}>{fz(sec.totalPaymentCash)}</td>
-            <td style={secTot({ textAlign: 'right' })}>{fz(sec.totalPaymentTotal)}</td>
-          </tr>
-        </>
-      ))}
-
-      {/* ── Footer rows: First Total / Cash Balance / Grand Total ── */}
-      {(() => {
-        const rT = data.grandTotalReceiptTotal || 0;
-        const pT = data.grandTotalPaymentTotal || 0;
-        const cb = Math.abs(rT - pT);
-        const grand = Math.max(rT, pT);
-        const cbOnReceipt = pT > rT; // cash balance shown on receipt side
-        return (
+        {/* ── Sections ── */}
+        {data.sections.map((sec, si) => (
           <>
-            {/* 1. First Total */}
-            <tr style={{ background: '#e0e0e0', borderTop: BORDER2 }}>
-              <td style={th({ textAlign: 'left', borderTop: BORDER2 })}>TOTAL</td>
-              <td style={th({ borderTop: BORDER2 })}>{fz(data.grandTotalReceiptAdj)}</td>
-              <td style={th({ borderTop: BORDER2 })}>{fz(data.grandTotalReceiptCash)}</td>
-              <td style={th({ borderTop: BORDER2 })}>{fz(rT)}</td>
-              <td style={th({ borderTop: BORDER2 })}>{fz(data.grandTotalPaymentAdj)}</td>
-              <td style={th({ borderTop: BORDER2 })}>{fz(data.grandTotalPaymentCash)}</td>
-              <td style={th({ borderTop: BORDER2 })}>{fz(pT)}</td>
-            </tr>
-            {/* 2. Cash Balance */}
-            <tr style={{ background: '#eaf4fb' }}>
-              <td style={td({ fontWeight: 700, fontStyle: 'italic', color: '#1a5c8a' })}>Cash Balance</td>
-              <td style={td({})}></td>
-              <td style={td({})}></td>
-              <td style={td({ textAlign: 'right', fontWeight: 700, color: '#1a5c8a' })}>
-                {cbOnReceipt ? fz(cb) : ''}
-              </td>
-              <td style={td({})}></td>
-              <td style={td({})}></td>
-              <td style={td({ textAlign: 'right', fontWeight: 700, color: '#1a5c8a' })}>
-                {!cbOnReceipt ? fz(cb) : ''}
+            <tr key={`sh-${si}`}>
+              <td colSpan={5} style={secHdr({ borderTop: BORDER2 })}>
+                {sec.name} {sec.subtitle}
               </td>
             </tr>
-            {/* 3. Grand Total (balanced) */}
-            <tr style={{ background: '#b0b0b0' }}>
-              <td style={th({ textAlign: 'left', fontSize: 12 })}>GRAND TOTAL</td>
-              <td style={th({ fontSize: 12 })}></td>
-              <td style={th({ fontSize: 12 })}></td>
-              <td style={th({ fontSize: 12 })}>{fz(grand)}</td>
-              <td style={th({ fontSize: 12 })}></td>
-              <td style={th({ fontSize: 12 })}></td>
-              <td style={th({ fontSize: 12 })}>{fz(grand)}</td>
+            {sec.items.map((item, ii) => (
+              <tr key={`r-${si}-${ii}`} style={{ background: ii % 2 === 0 ? '#fff' : '#fafafa' }}>
+                <td style={td({ paddingLeft: 14 })}>{item.ledgerName}</td>
+                <td style={td({ textAlign: 'right' })}>{f(item.receiptCash)}</td>
+                <td style={td({ textAlign: 'right', fontWeight: item.receiptTotal ? 600 : 400 })}>{f(item.receiptTotal)}</td>
+                <td style={td({ textAlign: 'right' })}>{f(item.paymentCash)}</td>
+                <td style={td({ textAlign: 'right', fontWeight: item.paymentTotal ? 600 : 400 })}>{f(item.paymentTotal)}</td>
+              </tr>
+            ))}
+            <tr key={`st-${si}`}>
+              <td style={secTot({ paddingLeft: 14 })}>Account Group Total</td>
+              <td style={secTot({ textAlign: 'right' })}>{fz(sec.totalReceiptCash)}</td>
+              <td style={secTot({ textAlign: 'right' })}>{fz(sec.totalReceiptTotal)}</td>
+              <td style={secTot({ textAlign: 'right' })}>{fz(sec.totalPaymentCash)}</td>
+              <td style={secTot({ textAlign: 'right' })}>{fz(sec.totalPaymentTotal)}</td>
             </tr>
           </>
-        );
-      })()}
-    </tbody>
-  </table>
-);
+        ))}
+
+        {/* ── Sub-total row ── */}
+        <tr style={{ background: '#e0e0e0', borderTop: BORDER2 }}>
+          <td style={th({ textAlign: 'left', borderTop: BORDER2 })}>SUB-TOTAL (Transactions)</td>
+          <td style={th({ borderTop: BORDER2 })}>{fz(data.grandTotalReceiptCash)}</td>
+          <td style={th({ borderTop: BORDER2 })}>{fz(rT)}</td>
+          <td style={th({ borderTop: BORDER2 })}>{fz(data.grandTotalPaymentCash)}</td>
+          <td style={th({ borderTop: BORDER2 })}>{fz(pT)}</td>
+        </tr>
+
+        {/* ── Closing Balance row ── */}
+        <tr style={{ background: '#fff3e0' }}>
+          <td style={td({ fontWeight: 700, color: '#e65100' })}>Closing Balance (Cash in Hand)</td>
+          <td style={td({})}></td>
+          <td style={td({})}></td>
+          <td style={td({ textAlign: 'right', fontWeight: 700, color: '#e65100' })}>{fz(Math.max(0, cb))}</td>
+          <td style={td({ textAlign: 'right', fontWeight: 700, color: '#e65100' })}>{fz(Math.max(0, cb))}</td>
+        </tr>
+
+        {/* ── Grand Total ── */}
+        <tr style={{ background: '#b0b0b0' }}>
+          <td style={th({ textAlign: 'left', fontSize: 12 })}>GRAND TOTAL</td>
+          <td style={th({ fontSize: 12 })}></td>
+          <td style={th({ fontSize: 12 })}>{fz(grand)}</td>
+          <td style={th({ fontSize: 12 })}></td>
+          <td style={th({ fontSize: 12 })}>{fz(grand)}</td>
+        </tr>
+      </tbody>
+    </table>
+  );
+};
 
 // ─────────────────────────────────────────────────────────────────────────
 // VIEW 2 — 2-column side-by-side (Receipt | Payment)
 // ─────────────────────────────────────────────────────────────────────────
 const TwoColumnTable = ({ data }) => {
-  const colTh = (extra = {}) => th({ ...extra });
-  const colTd = (extra = {}) => td({ ...extra });
-  const colSecHdr = (extra = {}) => secHdr({ ...extra });
-  const colSecTot = (extra = {}) => secTot({ ...extra });
+  const ob  = data.openingBalance || 0;
+  const cb  = data.closingBalance || 0;
+  const rT  = data.grandTotalReceiptTotal || 0;
+  const pT  = data.grandTotalPaymentTotal || 0;
+  const grand = ob + rT; // = pT + max(0,cb)
 
   const halfW = '49.5%';
   const GAP = '1%';
@@ -233,13 +223,23 @@ const TwoColumnTable = ({ data }) => {
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <thead>
         <tr>
-          <th style={colTh({ textAlign: 'left', width: '46%' })}>Ledger</th>
-          <th style={colTh({ width: '18%' })}>Adjustment</th>
-          <th style={colTh({ width: '18%' })}>Cash</th>
-          <th style={colTh({ width: '18%' })}>Total</th>
+          <th style={th({ textAlign: 'left', width: '40%' })}>Ledger</th>
+          <th style={th({ width: '20%' })}>Adjustment</th>
+          <th style={th({ width: '20%' })}>Cash</th>
+          <th style={th({ width: '20%' })}>Total</th>
         </tr>
       </thead>
       <tbody>
+        {/* Opening Balance — receipt side only */}
+        {side === 'receipt' && (
+          <tr style={{ background: '#e8f5e9' }}>
+            <td style={td({ fontWeight: 700, color: '#2e7d32' })}>Opening Balance</td>
+            <td style={td({})}></td>
+            <td style={td({ textAlign: 'right', fontWeight: 700, color: '#2e7d32' })}>{fz(ob)}</td>
+            <td style={td({ textAlign: 'right', fontWeight: 700, color: '#2e7d32' })}>{fz(ob)}</td>
+          </tr>
+        )}
+
         {data.sections.map((sec, si) => {
           const hasData = sec.items.some(item =>
             side === 'receipt' ? item.receiptTotal > 0 : item.paymentTotal > 0
@@ -249,7 +249,7 @@ const TwoColumnTable = ({ data }) => {
           return (
             <>
               <tr key={`sh-${si}`}>
-                <td colSpan={4} style={colSecHdr({ borderTop: si > 0 ? '1.5px solid #888' : BORDER })}>
+                <td colSpan={4} style={secHdr({ borderTop: '1.5px solid #888' })}>
                   {sec.name} {sec.subtitle}
                 </td>
               </tr>
@@ -257,92 +257,88 @@ const TwoColumnTable = ({ data }) => {
                 .filter(item => side === 'receipt' ? item.receiptTotal > 0 : item.paymentTotal > 0)
                 .map((item, ii) => (
                   <tr key={`r-${si}-${ii}`} style={{ background: ii % 2 === 0 ? '#fff' : '#fafafa' }}>
-                    <td style={colTd({ paddingLeft: 12 })}>{item.ledgerName}</td>
-                    <td style={colTd({ textAlign: 'right' })}>
+                    <td style={td({ paddingLeft: 12 })}>{item.ledgerName}</td>
+                    <td style={td({ textAlign: 'right' })}>
                       {side === 'receipt' ? f(item.receiptAdj) : f(item.paymentAdj)}
                     </td>
-                    <td style={colTd({ textAlign: 'right' })}>
+                    <td style={td({ textAlign: 'right' })}>
                       {side === 'receipt' ? f(item.receiptCash) : f(item.paymentCash)}
                     </td>
-                    <td style={colTd({ textAlign: 'right', fontWeight: 600 })}>
+                    <td style={td({ textAlign: 'right', fontWeight: 600 })}>
                       {side === 'receipt' ? f(item.receiptTotal) : f(item.paymentTotal)}
                     </td>
                   </tr>
                 ))}
               <tr key={`st-${si}`}>
-                <td style={colSecTot({ paddingLeft: 12 })}>Account Group Total</td>
-                <td style={colSecTot({ textAlign: 'right' })}>
+                <td style={secTot({ paddingLeft: 12 })}>Account Group Total</td>
+                <td style={secTot({ textAlign: 'right' })}>
                   {side === 'receipt' ? fz(sec.totalReceiptAdj) : fz(sec.totalPaymentAdj)}
                 </td>
-                <td style={colSecTot({ textAlign: 'right' })}>
+                <td style={secTot({ textAlign: 'right' })}>
                   {side === 'receipt' ? fz(sec.totalReceiptCash) : fz(sec.totalPaymentCash)}
                 </td>
-                <td style={colSecTot({ textAlign: 'right' })}>
+                <td style={secTot({ textAlign: 'right' })}>
                   {side === 'receipt' ? fz(sec.totalReceiptTotal) : fz(sec.totalPaymentTotal)}
                 </td>
               </tr>
             </>
           );
         })}
-        {/* Footer: Total / Cash Balance / Grand Total */}
-        {(() => {
-          const rT   = data.grandTotalReceiptTotal || 0;
-          const pT   = data.grandTotalPaymentTotal || 0;
-          const cb   = Math.abs(rT - pT);
-          const grand= Math.max(rT, pT);
-          const cbOnReceipt = pT > rT;
-          const sideT = side === 'receipt' ? rT : pT;
-          const sideAdj = side === 'receipt' ? data.grandTotalReceiptAdj : data.grandTotalPaymentAdj;
-          const sideCash= side === 'receipt' ? data.grandTotalReceiptCash: data.grandTotalPaymentCash;
-          const showCB  = (side === 'receipt' && cbOnReceipt) || (side === 'payment' && !cbOnReceipt);
-          return (
-            <>
-              <tr style={{ background: '#e0e0e0', borderTop: BORDER2 }}>
-                <td style={colTh({ textAlign: 'left', borderTop: BORDER2 })}>TOTAL</td>
-                <td style={colTh({ borderTop: BORDER2 })}>{fz(sideAdj)}</td>
-                <td style={colTh({ borderTop: BORDER2 })}>{fz(sideCash)}</td>
-                <td style={colTh({ borderTop: BORDER2 })}>{fz(sideT)}</td>
-              </tr>
-              <tr style={{ background: '#eaf4fb' }}>
-                <td style={colTd({ fontWeight: 700, fontStyle: 'italic', color: '#1a5c8a' })}>Cash Balance</td>
-                <td style={colTd({})}></td>
-                <td style={colTd({})}></td>
-                <td style={colTd({ textAlign: 'right', fontWeight: 700, color: '#1a5c8a' })}>
-                  {showCB ? fz(cb) : ''}
-                </td>
-              </tr>
-              <tr style={{ background: '#b0b0b0' }}>
-                <td style={colTh({ textAlign: 'left', fontSize: 12 })}>GRAND TOTAL</td>
-                <td style={colTh({ fontSize: 12 })}></td>
-                <td style={colTh({ fontSize: 12 })}></td>
-                <td style={colTh({ fontSize: 12 })}>{fz(grand)}</td>
-              </tr>
-            </>
-          );
-        })()}
+
+        {/* Sub-total */}
+        <tr style={{ background: '#e0e0e0', borderTop: BORDER2 }}>
+          <td style={th({ textAlign: 'left', borderTop: BORDER2 })}>
+            {side === 'receipt' ? 'SUB-TOTAL (Receipts)' : 'SUB-TOTAL (Payments)'}
+          </td>
+          <td style={th({ borderTop: BORDER2 })}>
+            {fz(side === 'receipt' ? data.grandTotalReceiptAdj : data.grandTotalPaymentAdj)}
+          </td>
+          <td style={th({ borderTop: BORDER2 })}>
+            {fz(side === 'receipt' ? data.grandTotalReceiptCash : data.grandTotalPaymentCash)}
+          </td>
+          <td style={th({ borderTop: BORDER2 })}>
+            {fz(side === 'receipt' ? rT : pT)}
+          </td>
+        </tr>
+
+        {/* Closing Balance — payment side only */}
+        {side === 'payment' && (
+          <tr style={{ background: '#fff3e0' }}>
+            <td style={td({ fontWeight: 700, color: '#e65100' })}>Closing Balance</td>
+            <td style={td({})}></td>
+            <td style={td({ textAlign: 'right', fontWeight: 700, color: '#e65100' })}>{fz(Math.max(0, cb))}</td>
+            <td style={td({ textAlign: 'right', fontWeight: 700, color: '#e65100' })}>{fz(Math.max(0, cb))}</td>
+          </tr>
+        )}
+
+        {/* Grand Total */}
+        <tr style={{ background: '#b0b0b0' }}>
+          <td style={th({ textAlign: 'left', fontSize: 12 })}>GRAND TOTAL</td>
+          <td style={th({ fontSize: 12 })}></td>
+          <td style={th({ fontSize: 12 })}></td>
+          <td style={th({ fontSize: 12 })}>{fz(grand)}</td>
+        </tr>
       </tbody>
     </table>
   );
 
   return (
     <div style={{ display: 'flex', gap: GAP, alignItems: 'flex-start' }}>
-      {/* Receipt side */}
       <div style={{ width: halfW }}>
         <div style={{
           textAlign: 'center', fontWeight: 700, fontSize: 11, background: '#2c5f8a',
           color: '#fff', padding: '4px 0', marginBottom: 4, fontFamily: FF
         }}>
-          RECEIPT
+          RECEIPT (Dr)
         </div>
         <SideTable side="receipt" />
       </div>
-      {/* Payment side */}
       <div style={{ width: halfW }}>
         <div style={{
           textAlign: 'center', fontWeight: 700, fontSize: 11, background: '#7a2a2a',
           color: '#fff', padding: '4px 0', marginBottom: 4, fontFamily: FF
         }}>
-          PAYMENT / DISBURSEMENT
+          PAYMENT / DISBURSEMENT (Cr)
         </div>
         <SideTable side="payment" />
       </div>
@@ -423,24 +419,34 @@ const ThreeColumnTable = ({ data, dateRange }) => {
           </>
         ))}
 
-        {/* ── Footer: First Total / Cash Balance / Grand Total (per column pair) ── */}
+        {/* ── Footer ── */}
         {(() => {
-          // Compute cash balance for each column pair
-          const cbUpto   = Math.abs((data.grandUptoR   || 0) - (data.grandUptoP   || 0));
-          const cbDuring = Math.abs((data.grandDuringR || 0) - (data.grandDuringP || 0));
-          const cbEom    = Math.abs((data.grandEomR    || 0) - (data.grandEomP    || 0));
-          const grandUpto   = Math.max(data.grandUptoR   || 0, data.grandUptoP   || 0);
-          const grandDuring = Math.max(data.grandDuringR || 0, data.grandDuringP || 0);
-          const grandEom    = Math.max(data.grandEomR    || 0, data.grandEomP    || 0);
-          // Cash balance side: appears on receipt side if payment > receipt
-          const cbUptoR   = (data.grandUptoP   || 0) > (data.grandUptoR   || 0);
-          const cbDuringR = (data.grandDuringP || 0) > (data.grandDuringR || 0);
-          const cbEomR    = (data.grandEomP    || 0) > (data.grandEomR    || 0);
+          const ob = data.openingBalance || 0;
+          const cb = Math.max(0, data.closingBalance || 0);
+          const uR = (data.grandUptoR || 0) + ob;
+          const dR = data.grandDuringR || 0;
+          const eR = (data.grandEomR  || 0) + ob;
+          const uP = data.grandUptoP  || 0;
+          const dP = data.grandDuringP || 0;
+          const eP = (data.grandEomP  || 0) + cb;
+          const grandUpto   = Math.max(uR, uP);
+          const grandDuring = Math.max(dR, dP);
+          const grandEom    = Math.max(eR, eP);
           return (
             <>
-              {/* 1. First Total */}
+              {/* Opening Balance */}
+              <tr style={{ background: '#e8f5e9' }}>
+                <td style={tdc({ fontWeight: 700, color: '#2e7d32' })}>Opening Balance (Cash)</td>
+                <td style={tdc({ textAlign: 'right', fontWeight: 700, color: '#2e7d32' })}>{fz(ob)}</td>
+                <td style={tdc({})}></td>
+                <td style={tdc({ textAlign: 'right', fontWeight: 700, color: '#2e7d32', background: '#f9f9e8' })}>{fz(ob)}</td>
+                <td style={tdc({})}></td>
+                <td style={tdc({})}></td>
+                <td style={tdc({})}></td>
+              </tr>
+              {/* Sub-total (transactions) */}
               <tr style={{ background: '#e0e0e0', borderTop: BORDER2 }}>
-                <td style={th({ textAlign: 'left', borderTop: BORDER2 })}>TOTAL</td>
+                <td style={th({ textAlign: 'left', borderTop: BORDER2 })}>SUB-TOTAL</td>
                 <td style={th({ borderTop: BORDER2 })}>{fz(data.grandUptoR)}</td>
                 <td style={th({ borderTop: BORDER2 })}>{fz(data.grandDuringR)}</td>
                 <td style={th({ borderTop: BORDER2, background: '#e8e8b0' })}>{fz(data.grandEomR)}</td>
@@ -448,17 +454,17 @@ const ThreeColumnTable = ({ data, dateRange }) => {
                 <td style={th({ borderTop: BORDER2 })}>{fz(data.grandDuringP)}</td>
                 <td style={th({ borderTop: BORDER2, background: '#e8b0b0' })}>{fz(data.grandEomP)}</td>
               </tr>
-              {/* 2. Cash Balance */}
-              <tr style={{ background: '#eaf4fb' }}>
-                <td style={tdc({ fontWeight: 700, fontStyle: 'italic', color: '#1a5c8a' })}>Cash Balance</td>
-                <td style={tdc({ textAlign: 'right', fontWeight: 700, color: '#1a5c8a' })}>{cbUptoR   ? fz(cbUpto)   : ''}</td>
-                <td style={tdc({ textAlign: 'right', fontWeight: 700, color: '#1a5c8a' })}>{cbDuringR ? fz(cbDuring) : ''}</td>
-                <td style={tdc({ textAlign: 'right', fontWeight: 700, color: '#1a5c8a', background: '#e8f8e8' })}>{cbEomR ? fz(cbEom) : ''}</td>
-                <td style={tdc({ textAlign: 'right', fontWeight: 700, color: '#1a5c8a' })}>{!cbUptoR   ? fz(cbUpto)   : ''}</td>
-                <td style={tdc({ textAlign: 'right', fontWeight: 700, color: '#1a5c8a' })}>{!cbDuringR ? fz(cbDuring) : ''}</td>
-                <td style={tdc({ textAlign: 'right', fontWeight: 700, color: '#1a5c8a', background: '#e8f8e8' })}>{!cbEomR ? fz(cbEom) : ''}</td>
+              {/* Closing Balance */}
+              <tr style={{ background: '#fff3e0' }}>
+                <td style={tdc({ fontWeight: 700, color: '#e65100' })}>Closing Balance (Cash)</td>
+                <td style={tdc({})}></td>
+                <td style={tdc({})}></td>
+                <td style={tdc({})}></td>
+                <td style={tdc({ textAlign: 'right', fontWeight: 700, color: '#e65100' })}>{fz(cb)}</td>
+                <td style={tdc({ textAlign: 'right', fontWeight: 700, color: '#e65100' })}>{fz(cb)}</td>
+                <td style={tdc({ textAlign: 'right', fontWeight: 700, color: '#e65100', background: '#f9f0f0' })}>{fz(cb)}</td>
               </tr>
-              {/* 3. Grand Total (balanced) */}
+              {/* Grand Total */}
               <tr style={{ background: '#b0b0b0' }}>
                 <td style={th({ textAlign: 'left', fontSize: 12 })}>GRAND TOTAL</td>
                 <td style={th({ fontSize: 12 })}>{fz(grandUpto)}</td>

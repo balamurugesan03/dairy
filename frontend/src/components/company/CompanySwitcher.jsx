@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useCompany } from '../../context/CompanyContext';
 import './CompanySwitcher.css';
 
 const CompanySwitcher = () => {
   const { selectedCompany, selectedBusinessType, switchCompany } = useCompany();
+  const navigate = useNavigate();
   const [showDropdown, setShowDropdown] = useState(false);
   const [tempBusinessType, setTempBusinessType] = useState('');
   const dropdownRef = useRef(null);
@@ -28,6 +30,7 @@ const CompanySwitcher = () => {
 
     switchCompany(selectedCompany, tempBusinessType);
     setShowDropdown(false);
+    navigate('/');
   };
 
   const availableBusinessTypes = selectedCompany?.businessTypes || [];

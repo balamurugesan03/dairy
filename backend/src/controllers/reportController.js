@@ -1514,11 +1514,18 @@ export const getDairyRegisterReport = async (req, res) => {
   }
 };
 
-// ── Private Firm Receipt & Disbursement Report ────────────────────────────
+// ── Cooperative Society Receipt & Disbursement Report (Business/Private Firm) ─
 export const getCooperativeRDReport = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
+    // ── Date boundaries ──────────────────────────────────────────────────
+    const start = startDate ? new Date(startDate) : new Date();
+    start.setUTCHours(0, 0, 0, 0);
+    const end = endDate ? new Date(endDate) : new Date();
+    end.setUTCHours(23, 59, 59, 999);
+
+    // ── Section mapping by BusinessLedger.group ──────────────────────────
     const SECTION_MAP = [
       { name: 'Advance due by Society', subtitle: '(LIABILITY)',
         groups: ['Sundry Creditors', 'Current Liabilities', 'Provisions', 'Duties & Taxes'] },
@@ -1537,17 +1544,60 @@ export const getCooperativeRDReport = async (req, res) => {
     const groupToSection = {};
     SECTION_MAP.forEach((sec, idx) => sec.groups.forEach(g => { groupToSection[g] = idx; }));
 
-    // Helper: accumulate vouchers into a ledger map
+    // ── Cash ledger (BusinessLedger) & Opening Balance ───────────────────
+    let cashLedger = await BusinessLedger.findOne({ group: 'Cash-in-Hand', status: 'Active', companyId: req.companyId });
+    if (!cashLedger) {
+      cashLedger = await BusinessLedger.findOne({ group: 'Cash-in-Hand', companyId: req.companyId });
+    }
+    if (!cashLedger) {
+      cashLedger = new BusinessLedger({
+        name: 'Cash in Hand',
+        group: 'Cash-in-Hand',
+        type: 'Asset',
+        nature: 'Asset',
+        openingBalance: 0,
+        openingBalanceType: 'Debit',
+        currentBalance: 0,
+        status: 'Active',
+        companyId: req.companyId
+      });
+      await cashLedger.save();
+    }
+
+    // Compute opening balance from BusinessLedger openingBalance + BusinessVoucher entries before start
+    // BusinessLedger.openingBalanceType is 'Debit'/'Credit'
+    let openingBalance = cashLedger.openingBalance || 0;
+    if ((cashLedger.openingBalanceType || 'Debit') === 'Credit') openingBalance = -openingBalance;
+
+    // Sum all BusinessVoucher entries for the cash ledger before startDate
+    const cashVouchersBefore = await BusinessVoucher.find({
+      companyId: req.companyId,
+      status: { $ne: 'Cancelled' },
+      date: { $lt: start },
+      'entries.ledgerId': cashLedger._id
+    }).select('entries');
+    cashVouchersBefore.forEach(v => {
+      v.entries.forEach(e => {
+        if (e.ledgerId && e.ledgerId.toString() === cashLedger._id.toString()) {
+          if (e.type === 'debit')  openingBalance += (e.amount || 0);
+          else                     openingBalance -= (e.amount || 0);
+        }
+      });
+    });
+
+    // ── Helper: accumulate BusinessVouchers into ledger map ─────────────
+    // BusinessVoucher entries use type ('debit'/'credit') + amount
     const accumulate = (vouchers, target) => {
       vouchers.forEach(voucher => {
         const isCash = voucher.paymentMode === 'Cash';
         voucher.entries.forEach(entry => {
           if (!entry.ledgerId) return;
-          const id = entry.ledgerId._id.toString();
+          const ledger = entry.ledgerId;
+          const id = ledger._id.toString();
           if (!target[id]) {
             target[id] = {
-              ledgerName: entry.ledgerId.name || entry.ledgerName,
-              group:      entry.ledgerId.group || 'Other',
+              ledgerName: ledger.name || entry.ledgerName || '',
+              group:      ledger.group || 'Other',
               receiptCash: 0, receiptAdj: 0,
               paymentCash: 0, paymentAdj: 0
             };
@@ -1562,34 +1612,25 @@ export const getCooperativeRDReport = async (req, res) => {
       });
     };
 
-    // ── Query 1: Upto Month (all before startDate) ──────────────────────
+    // ── Query 1: Upto (before startDate) — BusinessVoucher ───────────────
     const uptoMap = {};
-    if (startDate) {
-      const uptoVouchers = await BusinessVoucher.find({
-        companyId: req.companyId,
-        status: { $ne: 'Cancelled' },
-        date:   { $lt: new Date(startDate) }
-      }).populate('entries.ledgerId', 'name group type');
-      accumulate(uptoVouchers, uptoMap);
-    }
+    const uptoVouchers = await BusinessVoucher.find({
+      companyId: req.companyId,
+      status: { $ne: 'Cancelled' },
+      date: { $lt: start }
+    }).populate('entries.ledgerId', 'name group type');
+    accumulate(uptoVouchers, uptoMap);
 
-    // ── Query 2: During the Month (startDate to endDate) ────────────────
+    // ── Query 2: During period — BusinessVoucher ─────────────────────────
     const duringMap = {};
-    const duringQuery = { companyId: req.companyId, status: { $ne: 'Cancelled' } };
-    if (startDate || endDate) {
-      duringQuery.date = {};
-      if (startDate) duringQuery.date.$gte = new Date(startDate);
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        duringQuery.date.$lte = end;
-      }
-    }
-    const duringVouchers = await BusinessVoucher.find(duringQuery)
-      .populate('entries.ledgerId', 'name group type');
+    const duringVouchers = await BusinessVoucher.find({
+      companyId: req.companyId,
+      status: { $ne: 'Cancelled' },
+      date: { $gte: start, $lte: end }
+    }).populate('entries.ledgerId', 'name group type');
     accumulate(duringVouchers, duringMap);
 
-    // ── Merge all known ledger IDs ──────────────────────────────────────
+    // ── Build sections ───────────────────────────────────────────────────
     const allIds = new Set([...Object.keys(uptoMap), ...Object.keys(duringMap)]);
 
     const buildSections = () => {
@@ -1597,27 +1638,23 @@ export const getCooperativeRDReport = async (req, res) => {
         name: sec.name, subtitle: sec.subtitle, items: [],
         totUptoR: 0, totDuringR: 0, totEomR: 0,
         totUptoP: 0, totDuringP: 0, totEomP: 0,
-        totUptoReceiptAdj: 0, totUptoReceiptCash: 0,
-        totDuringReceiptAdj: 0, totDuringReceiptCash: 0,
-        totUptoPayAdj: 0, totUptoPayCash: 0,
-        totDuringPayAdj: 0, totDuringPayCash: 0
+        totalReceiptAdj: 0, totalReceiptCash: 0, totalReceiptTotal: 0,
+        totalPaymentAdj: 0, totalPaymentCash: 0, totalPaymentTotal: 0,
       }));
       const others = {
         name: 'Other Accounts', subtitle: '', items: [],
         totUptoR: 0, totDuringR: 0, totEomR: 0,
         totUptoP: 0, totDuringP: 0, totEomP: 0,
-        totUptoReceiptAdj: 0, totUptoReceiptCash: 0,
-        totDuringReceiptAdj: 0, totDuringReceiptCash: 0,
-        totUptoPayAdj: 0, totUptoPayCash: 0,
-        totDuringPayAdj: 0, totDuringPayCash: 0
+        totalReceiptAdj: 0, totalReceiptCash: 0, totalReceiptTotal: 0,
+        totalPaymentAdj: 0, totalPaymentCash: 0, totalPaymentTotal: 0,
       };
 
       allIds.forEach(id => {
         const u = uptoMap[id]   || { ledgerName: duringMap[id]?.ledgerName || '', group: duringMap[id]?.group || 'Other', receiptCash: 0, receiptAdj: 0, paymentCash: 0, paymentAdj: 0 };
         const d = duringMap[id] || { ledgerName: uptoMap[id]?.ledgerName   || '', group: uptoMap[id]?.group   || 'Other', receiptCash: 0, receiptAdj: 0, paymentCash: 0, paymentAdj: 0 };
 
-        const ledgerName = u.ledgerName || d.ledgerName;
-        const group      = u.group || d.group;
+        const ledgerName = d.ledgerName || u.ledgerName;
+        const group      = d.group || u.group;
 
         const uptoR   = u.receiptCash + u.receiptAdj;
         const uptoP   = u.paymentCash + u.paymentAdj;
@@ -1633,34 +1670,20 @@ export const getCooperativeRDReport = async (req, res) => {
 
         target.items.push({
           ledgerName,
-          // 2-col (adj/cash split) — during period only
-          receiptAdj:  d.receiptAdj,  receiptCash: d.receiptCash,
-          receiptTotal: duringR,
-          paymentAdj:  d.paymentAdj,  paymentCash: d.paymentCash,
-          paymentTotal: duringP,
-          // 3-col (upto/during/eom)
+          receiptAdj: d.receiptAdj, receiptCash: d.receiptCash, receiptTotal: duringR,
+          paymentAdj: d.paymentAdj, paymentCash: d.paymentCash, paymentTotal: duringP,
           uptoR, duringR, eomR,
           uptoP, duringP, eomP
         });
 
         target.totUptoR   += uptoR;   target.totDuringR += duringR; target.totEomR += eomR;
         target.totUptoP   += uptoP;   target.totDuringP += duringP; target.totEomP += eomP;
-        target.totUptoReceiptAdj    += u.receiptAdj;
-        target.totUptoReceiptCash   += u.receiptCash;
-        target.totDuringReceiptAdj  += d.receiptAdj;
-        target.totDuringReceiptCash += d.receiptCash;
-        target.totUptoPayAdj    += u.paymentAdj;
-        target.totUptoPayCash   += u.paymentCash;
-        target.totDuringPayAdj  += d.paymentAdj;
-        target.totDuringPayCash += d.paymentCash;
-
-        // compute totals for 2-col view
-        target.totalReceiptAdj  = (target.totalReceiptAdj  || 0) + d.receiptAdj;
-        target.totalReceiptCash = (target.totalReceiptCash || 0) + d.receiptCash;
-        target.totalReceiptTotal= (target.totalReceiptTotal|| 0) + duringR;
-        target.totalPaymentAdj  = (target.totalPaymentAdj  || 0) + d.paymentAdj;
-        target.totalPaymentCash = (target.totalPaymentCash || 0) + d.paymentCash;
-        target.totalPaymentTotal= (target.totalPaymentTotal|| 0) + duringP;
+        target.totalReceiptAdj   += d.receiptAdj;
+        target.totalReceiptCash  += d.receiptCash;
+        target.totalReceiptTotal += duringR;
+        target.totalPaymentAdj   += d.paymentAdj;
+        target.totalPaymentCash  += d.paymentCash;
+        target.totalPaymentTotal += duringP;
       });
 
       if (others.items.length > 0) sectionData.push(others);
@@ -1669,15 +1692,14 @@ export const getCooperativeRDReport = async (req, res) => {
 
     const activeSections = buildSections();
 
-    // Grand totals — 2-col view (during period)
-    const grandTotalReceiptAdj   = activeSections.reduce((a, s) => a + (s.totalReceiptAdj  || 0), 0);
-    const grandTotalReceiptCash  = activeSections.reduce((a, s) => a + (s.totalReceiptCash || 0), 0);
-    const grandTotalReceiptTotal = activeSections.reduce((a, s) => a + (s.totalReceiptTotal|| 0), 0);
-    const grandTotalPaymentAdj   = activeSections.reduce((a, s) => a + (s.totalPaymentAdj  || 0), 0);
-    const grandTotalPaymentCash  = activeSections.reduce((a, s) => a + (s.totalPaymentCash || 0), 0);
-    const grandTotalPaymentTotal = activeSections.reduce((a, s) => a + (s.totalPaymentTotal|| 0), 0);
+    // ── Grand totals ─────────────────────────────────────────────────────
+    const grandTotalReceiptAdj   = activeSections.reduce((a, s) => a + s.totalReceiptAdj,   0);
+    const grandTotalReceiptCash  = activeSections.reduce((a, s) => a + s.totalReceiptCash,  0);
+    const grandTotalReceiptTotal = activeSections.reduce((a, s) => a + s.totalReceiptTotal, 0);
+    const grandTotalPaymentAdj   = activeSections.reduce((a, s) => a + s.totalPaymentAdj,   0);
+    const grandTotalPaymentCash  = activeSections.reduce((a, s) => a + s.totalPaymentCash,  0);
+    const grandTotalPaymentTotal = activeSections.reduce((a, s) => a + s.totalPaymentTotal, 0);
 
-    // Grand totals — 3-col view
     const grandUptoR   = activeSections.reduce((a, s) => a + s.totUptoR,   0);
     const grandDuringR = activeSections.reduce((a, s) => a + s.totDuringR, 0);
     const grandEomR    = activeSections.reduce((a, s) => a + s.totEomR,    0);
@@ -1685,21 +1707,24 @@ export const getCooperativeRDReport = async (req, res) => {
     const grandDuringP = activeSections.reduce((a, s) => a + s.totDuringP, 0);
     const grandEomP    = activeSections.reduce((a, s) => a + s.totEomP,    0);
 
+    // ── Closing Balance = Opening + Receipts − Payments ──────────────────
+    const closingBalance = openingBalance + grandTotalReceiptTotal - grandTotalPaymentTotal;
+
     res.json({
       success: true,
       data: {
+        openingBalance,
+        closingBalance,
         sections: activeSections,
-        // 2-col totals
         grandTotalReceiptAdj, grandTotalReceiptCash, grandTotalReceiptTotal,
         grandTotalPaymentAdj, grandTotalPaymentCash, grandTotalPaymentTotal,
-        // 3-col totals
         grandUptoR, grandDuringR, grandEomR,
         grandUptoP, grandDuringP, grandEomP,
         period: { startDate: startDate || null, endDate: endDate || null }
       }
     });
   } catch (error) {
-    console.error('Error in R&D report:', error);
+    console.error('Error in Cooperative R&D report:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };

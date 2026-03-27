@@ -129,7 +129,7 @@ bankTransferSchema.index({ transferNumber: 1 });
 bankTransferSchema.index({ collectionCenter: 1 });
 
 // Pre-save hook for auto-generation
-bankTransferSchema.pre('save', async function(next) {
+bankTransferSchema.pre('save', async function() {
   if (!this.transferNumber) {
     this.transferNumber = await generateCode('BT', this.companyId, { pad: 5 });
   }
@@ -144,7 +144,6 @@ bankTransferSchema.pre('save', async function(next) {
     this.totalProducers = this.transferDetails.length;
   }
 
-  next();
 });
 
 // Instance method to apply round down

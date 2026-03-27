@@ -122,7 +122,7 @@ producerReceiptSchema.index({ receiptType: 1 });
 producerReceiptSchema.index({ referenceType: 1, referenceId: 1 });
 
 // Pre-save hook to generate receipt number
-producerReceiptSchema.pre('save', async function(next) {
+producerReceiptSchema.pre('save', async function() {
   // Generate receipt number if not exists
   if (!this.receiptNumber) {
     this.receiptNumber = await generateCode('PREC', this.companyId, { pad: 5 });
@@ -135,7 +135,6 @@ producerReceiptSchema.pre('save', async function(next) {
     this.referenceModel = 'ProducerLoan';
   }
 
-  next();
 });
 
 // Virtual for farmer details

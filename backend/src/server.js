@@ -205,6 +205,18 @@ import machineConfigRoutes from './routes/machineConfigRoutes.js';
 // Society Info & Document Management routes
 import societyInfoRoutes from './routes/societyInfoRoutes.js';
 
+// Payment Register (Creditor Bill) routes
+import paymentRegisterRoutes from './routes/paymentRegisterRoutes.js';
+
+// Milk Bill Report routes
+import milkBillRoutes from './routes/milkBillRoutes.js';
+
+// Financial Year routes
+import financialYearRoutes from './routes/financialYearRoutes.js';
+
+// Dairy Settings routes (payment days, account start date, opening balances)
+import dairySettingsRoutes from './routes/dairySettingsRoutes.js';
+
 // Auth routes (public login, protected user management)
 app.use('/api/auth', authRoutes);
 
@@ -344,6 +356,18 @@ app.use('/api/machine-config', protect, addCompanyFilter, machineConfigRoutes);
 
 // Society Info & Document Management routes
 app.use('/api/society-info', protect, addCompanyFilter, societyInfoRoutes);
+
+// Payment Register (Creditor Bill) routes
+app.use('/api/payment-register', protect, addCompanyFilter, paymentRegisterRoutes);
+
+// Milk Bill Report routes
+app.use('/api/milk-bill', protect, addCompanyFilter, milkBillRoutes);
+
+// Financial Year routes
+app.use('/api/financial-years', protect, addCompanyFilter, financialYearRoutes);
+
+// Dairy Settings routes
+app.use('/api/dairy-settings', protect, addCompanyFilter, dairySettingsRoutes);
 
 // Protected company routes (for superadmin management)
 app.use('/api/companies', protect, companyRoutes);

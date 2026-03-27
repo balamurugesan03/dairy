@@ -138,14 +138,14 @@ const BankTransferManagement = () => {
       if (centersRes.success) {
         setCollectionCenters([
           { value: 'all', label: 'All' },
-          ...centersRes.data.map(c => ({ value: c._id, label: c.name }))
+          ...centersRes.data.map(c => ({ value: c._id, label: c.name || c.centerName || 'Unknown' }))
         ]);
       }
 
       if (banksRes.success) {
         setBanks([
           { value: 'all', label: 'All' },
-          ...banksRes.data.map(b => ({ value: b.name, label: `${b.name} (${b.count})` }))
+          ...banksRes.data.map(b => ({ value: b.name || b._id, label: `${b.name || 'Unknown'} (${b.count || 0})` }))
         ]);
       }
     } catch (error) {

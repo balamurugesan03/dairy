@@ -23,28 +23,45 @@ import {
   IconStar, IconLayersIntersect, IconCurrencyRupee, IconCalendar,
   IconRefresh, IconChevronDown, IconFilter, IconSettings
 } from '@tabler/icons-react';
-import { rateChartAPI } from '../../services/api';
+import { rateChartAPI, milkPurchaseSettingsAPI } from '../../services/api';
 import dayjs from 'dayjs';
 
 // ─── Shared card wrapper ──────────────────────────────────────────────────────
-const SectionCard = ({ icon, title, color = 'blue', children }) => (
+const SectionCard = ({ icon, title, color = 'blue', children, isActive, onEnable }) => (
   <Paper
     radius="md"
     p="lg"
     shadow="sm"
     style={{
-      border: '1px solid var(--mantine-color-gray-2)',
+      border: isActive
+        ? '2px solid var(--mantine-color-teal-4)'
+        : '1px solid var(--mantine-color-gray-2)',
       background: 'var(--mantine-color-white)',
       overflow: 'visible'
     }}
   >
-    <Group mb="md" gap="sm">
-      <ThemeIcon variant="light" color={color} size={36} radius="md">
-        {icon}
-      </ThemeIcon>
-      <Title order={5} c="dark.7" fw={700}>
-        {title}
-      </Title>
+    <Group mb="md" gap="sm" justify="space-between">
+      <Group gap="sm">
+        <ThemeIcon variant="light" color={color} size={36} radius="md">
+          {icon}
+        </ThemeIcon>
+        <Title order={5} c="dark.7" fw={700}>
+          {title}
+        </Title>
+      </Group>
+      {onEnable !== undefined && (
+        isActive
+          ? (
+            <Badge color="teal" variant="filled" size="sm" leftSection={<IconCheck size={11} />}>
+              Active in Milk Purchase
+            </Badge>
+          )
+          : (
+            <Button size="xs" color="teal" variant="light" onClick={onEnable}>
+              Set as Active
+            </Button>
+          )
+      )}
     </Group>
     <Divider mb="md" color="gray.1" />
     {children}
@@ -125,6 +142,9 @@ const DataGrid = ({ columns, rows, onEdit, onDelete, loading }) => {
 //  MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
 const RateChartSettings = () => {
+  // ── Active chart type (synced with MilkPurchaseSettings) ────────────────────
+  const [activeRateChartType, setActiveRateChartType] = useState(null);
+
   // ── Upload state ────────────────────────────────────────────────────────────
   const [uploadFile,    setUploadFile]    = useState(null);
   const [uploadDate,    setUploadDate]    = useState(null);
@@ -261,6 +281,9 @@ const RateChartSettings = () => {
     loadLow();
     loadGl();
     loadSlab();
+    milkPurchaseSettingsAPI.getSettings()
+      .then(res => { if (res?.data?.activeRateChartType) setActiveRateChartType(res.data.activeRateChartType); })
+      .catch(() => {});
   }, [loadManual, loadFormulas, loadLow, loadGl, loadSlab]);
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -270,6 +293,17 @@ const RateChartSettings = () => {
       color,
       icon: color === 'green' ? <IconCheck size={16} /> : <IconX size={16} />
     });
+
+  // ── Enable a chart type in Milk Purchase Settings ─────────────────────────────
+  const handleEnableChart = async (type) => {
+    try {
+      await milkPurchaseSettingsAPI.saveSettings({ activeRateChartType: type });
+      setActiveRateChartType(type);
+      notify(`${type.replace(/([A-Z])/g, ' $1').trim()} set as active rate chart`);
+    } catch (e) {
+      notify(e?.message || 'Failed to update active chart', 'red');
+    }
+  };
 
   // ── Upload handler ────────────────────────────────────────────────────────────
   const handleUpload = async () => {
@@ -599,6 +633,8 @@ const RateChartSettings = () => {
           icon={<IconTable size={20} />}
           title="Manual Entry"
           color="teal"
+          isActive={activeRateChartType === 'ManualEntry'}
+          onEnable={() => handleEnableChart('ManualEntry')}
         >
           {editingManual && (
             <Alert color="blue" radius="md" mb="sm" icon={<IconEdit size={16} />}>
@@ -718,6 +754,8 @@ const RateChartSettings = () => {
           icon={<IconCalculator size={20} />}
           title="Apply Formula"
           color="violet"
+          isActive={activeRateChartType === 'ApplyFormula'}
+          onEnable={() => handleEnableChart('ApplyFormula')}
         >
           {editingFormula && (
             <Alert color="violet" radius="md" mb="sm" icon={<IconEdit size={16} />}>
@@ -925,6 +963,8 @@ const RateChartSettings = () => {
           icon={<IconChartBar size={20} />}
           title="Low Chart"
           color="orange"
+          isActive={activeRateChartType === 'LowChart'}
+          onEnable={() => handleEnableChart('LowChart')}
         >
           {editingLow && (
             <Alert color="orange" radius="md" mb="sm" icon={<IconEdit size={16} />}>
@@ -1014,6 +1054,8 @@ const RateChartSettings = () => {
           icon={<IconStar size={20} />}
           title="Add / Less / Existing Rate Chart"
           color="yellow"
+          isActive={activeRateChartType === 'GoldLessChart'}
+          onEnable={() => handleEnableChart('GoldLessChart')}
         >
           {editingGl && (
             <Alert color="yellow" radius="md" mb="sm" icon={<IconEdit size={16} />}>
@@ -1114,6 +1156,8 @@ const RateChartSettings = () => {
           icon={<IconLayersIntersect size={20} />}
           title="Slab Rate"
           color="green"
+          isActive={activeRateChartType === 'SlabRate'}
+          onEnable={() => handleEnableChart('SlabRate')}
         >
           {editingSlab && (
             <Alert color="green" radius="md" mb="sm" icon={<IconEdit size={16} />}>

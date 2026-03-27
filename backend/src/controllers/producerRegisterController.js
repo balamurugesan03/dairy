@@ -36,17 +36,16 @@ export const getProducerRegister = async (req, res) => {
     // Calculate opening balance (balance before startDate)
     const openingBalance = await calculateOpeningBalance(farmerId, companyId, startDate);
 
-    // Get milk collections for the period (try to import MilkCollection)
+    // Get milk collections for the period
     let milkCollections = [];
     try {
       const MilkCollection = (await import('../models/MilkCollection.js')).default;
       milkCollections = await MilkCollection.find({
-        farmerId,
+        farmer: farmerId,
         companyId,
-        collectionDate: { $gte: startDate, $lte: endDate }
-      }).sort({ collectionDate: 1 }).lean();
+        date: { $gte: startDate, $lte: endDate }
+      }).sort({ date: 1 }).lean();
     } catch (err) {
-      // MilkCollection model might not exist, continue without it
       console.log('MilkCollection not available:', err.message);
     }
 
@@ -87,7 +86,7 @@ export const getProducerRegister = async (req, res) => {
 
     // Process milk collections
     milkCollections.forEach(collection => {
-      const dateKey = new Date(collection.collectionDate).toISOString().split('T')[0];
+      const dateKey = new Date(collection.date).toISOString().split('T')[0];
 
       if (!entriesMap.has(dateKey)) {
         entriesMap.set(dateKey, createEmptyEntry(dateKey));
@@ -95,15 +94,15 @@ export const getProducerRegister = async (req, res) => {
 
       const entry = entriesMap.get(dateKey);
 
-      if (collection.shift === 'Morning' || collection.shift === 'AM') {
-        entry.morningQty += collection.quantity || 0;
+      if (collection.shift === 'AM') {
+        entry.morningQty += collection.qty || 0;
       } else {
-        entry.eveningQty += collection.quantity || 0;
+        entry.eveningQty += collection.qty || 0;
       }
 
       entry.totalMilk = entry.morningQty + entry.eveningQty;
       entry.rate = collection.rate || entry.rate;
-      entry.totalAmount += (collection.quantity || 0) * (collection.rate || 0);
+      entry.totalAmount += collection.amount || ((collection.qty || 0) * (collection.rate || 0));
     });
 
     // Process payments
@@ -251,9 +250,6 @@ export const getProducerRegister = async (req, res) => {
  * @route POST /api/producer-register/:farmerId
  */
 export const saveProducerRegister = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const { farmerId } = req.params;
     const { fromDate, toDate, entries } = req.body;
@@ -267,7 +263,6 @@ export const saveProducerRegister = async (req, res) => {
     });
 
     if (!farmer) {
-      await session.abortTransaction();
       return res.status(404).json({
         success: false,
         message: 'Farmer not found'
@@ -300,7 +295,7 @@ export const saveProducerRegister = async (req, res) => {
               $lte: new Date(new Date(entryDate).setHours(23, 59, 59, 999))
             },
             status: { $ne: 'Cancelled' }
-          }).session(session);
+          });
 
           if (!existingPayment) {
             // Build deductions array
@@ -337,7 +332,7 @@ export const saveProducerRegister = async (req, res) => {
               createdBy: userId
             });
 
-            await newPayment.save({ session });
+            await newPayment.save();
             processedEntries.push({
               date: entryDate,
               type: 'Payment',
@@ -371,7 +366,7 @@ export const saveProducerRegister = async (req, res) => {
             createdBy: userId
           });
 
-          await newReceipt.save({ session });
+          await newReceipt.save();
           processedEntries.push({
             date: receiptDate,
             type: 'Receipt',
@@ -387,9 +382,6 @@ export const saveProducerRegister = async (req, res) => {
         });
       }
     }
-
-    await session.commitTransaction();
-
     res.status(200).json({
       success: true,
       message: 'Register saved successfully',
@@ -398,15 +390,12 @@ export const saveProducerRegister = async (req, res) => {
     });
 
   } catch (error) {
-    await session.abortTransaction();
     console.error('Error saving producer register:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to save producer register',
       error: error.message
     });
-  } finally {
-    session.endSession();
   }
 };
 

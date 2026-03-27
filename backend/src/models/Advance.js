@@ -201,7 +201,7 @@ advanceSchema.index({ advanceCategory: 1 });
 advanceSchema.index({ approvalStatus: 1 });
 
 // Pre-save hook to generate advance number and calculate totals
-advanceSchema.pre('save', async function(next) {
+advanceSchema.pre('save', async function() {
   // Generate advance number if not exists
   if (!this.advanceNumber) {
     this.advanceNumber = await generateCode('ADV', this.companyId, { pad: 5 });
@@ -222,7 +222,6 @@ advanceSchema.pre('save', async function(next) {
     this.status = 'Partially Adjusted';
   }
 
-  next();
 });
 
 // Virtual for farmer details

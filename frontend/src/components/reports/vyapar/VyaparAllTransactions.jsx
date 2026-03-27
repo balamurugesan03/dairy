@@ -120,61 +120,54 @@ const VyaparAllTransactions = () => {
   }, [selectedBusinessType, navigate]);
 
 
-  // Update date range based on filter selection
+  // Update date range when preset filter changes; then auto-fetch
   useEffect(() => {
     const now = dayjs();
     let start, end;
 
     switch (dateFilter) {
       case 'today':
-        start = now.startOf('day');
-        end = now.endOf('day');
-        break;
+        start = now.startOf('day');       end = now.endOf('day');       break;
       case 'yesterday':
-        start = now.subtract(1, 'day').startOf('day');
-        end = now.subtract(1, 'day').endOf('day');
-        break;
+        start = now.subtract(1,'day').startOf('day'); end = now.subtract(1,'day').endOf('day'); break;
       case 'thisWeek':
-        start = now.startOf('week');
-        end = now.endOf('week');
-        break;
+        start = now.startOf('week');      end = now.endOf('week');      break;
       case 'lastWeek':
-        start = now.subtract(1, 'week').startOf('week');
-        end = now.subtract(1, 'week').endOf('week');
-        break;
+        start = now.subtract(1,'week').startOf('week'); end = now.subtract(1,'week').endOf('week'); break;
       case 'thisMonth':
-        start = now.startOf('month');
-        end = now.endOf('month');
-        break;
+        start = now.startOf('month');     end = now.endOf('month');     break;
       case 'lastMonth':
-        start = now.subtract(1, 'month').startOf('month');
-        end = now.subtract(1, 'month').endOf('month');
-        break;
+        start = now.subtract(1,'month').startOf('month'); end = now.subtract(1,'month').endOf('month'); break;
       case 'thisQuarter':
-        start = now.startOf('quarter');
-        end = now.endOf('quarter');
-        break;
+        start = now.startOf('quarter');   end = now.endOf('quarter');   break;
       case 'lastQuarter':
-        start = now.subtract(1, 'quarter').startOf('quarter');
-        end = now.subtract(1, 'quarter').endOf('quarter');
-        break;
+        start = now.subtract(1,'quarter').startOf('quarter'); end = now.subtract(1,'quarter').endOf('quarter'); break;
       case 'thisYear':
-        start = now.startOf('year');
-        end = now.endOf('year');
-        break;
+        start = now.startOf('year');      end = now.endOf('year');      break;
       case 'lastYear':
-        start = now.subtract(1, 'year').startOf('year');
-        end = now.subtract(1, 'year').endOf('year');
-        break;
+        start = now.subtract(1,'year').startOf('year'); end = now.subtract(1,'year').endOf('year'); break;
       case 'custom':
-        return; // Don't auto-update for custom
+        return; // custom range — user clicks Generate manually
       default:
-        start = now.startOf('month');
-        end = now.endOf('month');
+        start = now.startOf('month');     end = now.endOf('month');
     }
 
-    setDateRange([start.toDate(), end.toDate()]);
-  }, [dateFilter]);
+    const newRange = [start.toDate(), end.toDate()];
+    setDateRange(newRange);
+
+    // Auto-fetch when preset changes
+    setLoading(true);
+    const params = {
+      filterType: dateFilter,
+      customStart: start.format('YYYY-MM-DD'),
+      customEnd:   end.format('YYYY-MM-DD'),
+      voucherType: transactionType,
+    };
+    reportAPI.vyaparAllTransactions(params)
+      .then(res => setReportData(res.data))
+      .catch(err => notifications.show({ color: 'red', title: 'Error', message: err.message || 'Failed to fetch' }))
+      .finally(() => setLoading(false));
+  }, [dateFilter, transactionType]);
 
   const fetchReport = async () => {
     setLoading(true);
@@ -362,6 +355,22 @@ const VyaparAllTransactions = () => {
               <Text size="sm" c="dimmed">Complete transaction history across all voucher types</Text>
             </Box>
           </Group>
+          {reportData && (
+            <Group gap="xs">
+              <Badge variant="light" color="blue" size="lg" radius="md">
+                {filteredTransactions.length} records
+              </Badge>
+              <Badge variant="light" color="green" size="lg" radius="md">
+                Total: ₹{totals.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </Badge>
+              <Badge variant="light" color="teal" size="lg" radius="md">
+                Received: ₹{totals.received.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </Badge>
+              <Badge variant="light" color="red" size="lg" radius="md">
+                Balance: ₹{totals.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </Badge>
+            </Group>
+          )}
           <Group gap="xs">
             <Tooltip label="Refresh">
               <ActionIcon variant="light" size="lg" radius="md" onClick={handleRefresh}>

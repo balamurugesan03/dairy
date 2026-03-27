@@ -6,9 +6,6 @@ import { generateVoucherNumber, updateLedgerBalances } from '../utils/accounting
 
 // Create a new producer loan
 export const createLoan = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const loanData = req.body;
     loanData.companyId = req.userCompany;
@@ -32,22 +29,19 @@ export const createLoan = async (req, res) => {
     }
 
     const loan = new ProducerLoan(loanData);
-    await loan.save({ session });
+    await loan.save();
 
     // Create disbursement voucher
     try {
-      const voucher = await createLoanDisbursementVoucher(loan, session, req.userCompany);
+      const voucher = await createLoanDisbursementVoucher(loan, req.userCompany);
       if (voucher) {
         loan.voucherId = voucher._id;
-        await loan.save({ session });
+        await loan.save();
       }
     } catch (voucherError) {
       console.error('Voucher creation failed:', voucherError);
       // Continue without voucher - don't fail the loan creation
     }
-
-    await session.commitTransaction();
-
     // Populate farmer details for response
     await loan.populate('farmerId', 'farmerNumber personalDetails');
 
@@ -57,19 +51,17 @@ export const createLoan = async (req, res) => {
       data: loan
     });
   } catch (error) {
-    await session.abortTransaction();
     console.error('Error creating loan:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Error creating loan'
     });
   } finally {
-    session.endSession();
   }
 };
 
 // Create loan disbursement voucher
-const createLoanDisbursementVoucher = async (loan, session, companyId) => {
+const createLoanDisbursementVoucher = async (loan, companyId) => {
   const entries = [];
 
   // Get loan type ledger name
@@ -93,7 +85,7 @@ const createLoanDisbursementVoucher = async (loan, session, companyId) => {
       currentBalance: 0,
       balanceType: 'Dr'
     });
-    await loanLedger.save({ session });
+    await loanLedger.save();
   }
 
   entries.push({
@@ -138,8 +130,8 @@ const createLoanDisbursementVoucher = async (loan, session, companyId) => {
     referenceId: loan._id
   });
 
-  await voucher.save({ session });
-  await updateLedgerBalances(entries, session);
+  await voucher.save();
+  await updateLedgerBalances(entries);
 
   return voucher;
 };
@@ -348,9 +340,6 @@ export const updateLoan = async (req, res) => {
 
 // Cancel loan
 export const cancelLoan = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const { reason } = req.body;
     const loan = await ProducerLoan.findOne({ _id: req.params.id, companyId: req.companyId });
@@ -384,7 +373,7 @@ export const cancelLoan = async (req, res) => {
     loan.cancelledBy = req.user?._id;
     loan.cancellationReason = reason;
 
-    await loan.save({ session });
+    await loan.save();
 
     // Reverse voucher if exists
     if (loan.voucherId) {
@@ -397,38 +386,30 @@ export const cancelLoan = async (req, res) => {
           debitAmount: e.creditAmount,
           creditAmount: e.debitAmount
         }));
-        await updateLedgerBalances(reversedEntries, session);
+        await updateLedgerBalances(reversedEntries);
 
         // Mark voucher as cancelled
         voucher.status = 'Cancelled';
-        await voucher.save({ session });
+        await voucher.save();
       }
     }
-
-    await session.commitTransaction();
-
     res.status(200).json({
       success: true,
       message: 'Loan cancelled successfully',
       data: loan
     });
   } catch (error) {
-    await session.abortTransaction();
     console.error('Error cancelling loan:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Error cancelling loan'
     });
   } finally {
-    session.endSession();
   }
 };
 
 // Record EMI payment
 export const recordEMIPayment = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const { emiNumber, amount, paymentId, remarks } = req.body;
     const loan = await ProducerLoan.findOne({ _id: req.params.id, companyId: req.companyId });
@@ -487,23 +468,19 @@ export const recordEMIPayment = async (req, res) => {
       loan.closedBy = req.user?._id;
     }
 
-    await loan.save({ session });
-    await session.commitTransaction();
-
+    await loan.save();
     res.status(200).json({
       success: true,
       message: 'EMI payment recorded successfully',
       data: loan
     });
   } catch (error) {
-    await session.abortTransaction();
     console.error('Error recording EMI payment:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Error recording EMI payment'
     });
   } finally {
-    session.endSession();
   }
 };
 

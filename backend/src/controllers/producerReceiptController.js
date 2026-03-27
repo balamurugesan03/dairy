@@ -9,9 +9,6 @@ import { generateVoucherNumber, updateLedgerBalances } from '../utils/accounting
 
 // Create a new producer receipt
 export const createReceipt = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const receiptData = req.body;
     receiptData.companyId = req.userCompany;
@@ -24,7 +21,6 @@ export const createReceipt = async (req, res) => {
     if (receiptData.referenceType === 'Loan') {
       reference = await ProducerLoan.findById(receiptData.referenceId);
       if (!reference) {
-        await session.abortTransaction();
         return res.status(404).json({
           success: false,
           message: 'Loan not found'
@@ -35,7 +31,6 @@ export const createReceipt = async (req, res) => {
     } else {
       reference = await Advance.findById(receiptData.referenceId);
       if (!reference) {
-        await session.abortTransaction();
         return res.status(404).json({
           success: false,
           message: 'Advance not found'
@@ -47,7 +42,6 @@ export const createReceipt = async (req, res) => {
 
     // Validate amount doesn't exceed balance
     if (receiptData.amount > previousBalance) {
-      await session.abortTransaction();
       return res.status(400).json({
         success: false,
         message: `Receipt amount (${receiptData.amount}) exceeds outstanding balance (${previousBalance})`
@@ -59,7 +53,7 @@ export const createReceipt = async (req, res) => {
     receiptData.newBalance = previousBalance - receiptData.amount;
 
     const receipt = new ProducerReceipt(receiptData);
-    await receipt.save({ session });
+    await receipt.save();
 
     // Update the reference balance
     if (receiptData.referenceType === 'Loan') {
@@ -89,7 +83,7 @@ export const createReceipt = async (req, res) => {
         reference.closedAt = new Date();
       }
 
-      await reference.save({ session });
+      await reference.save();
     } else {
       // Advance
       reference.adjustedAmount += receiptData.amount;
@@ -111,22 +105,19 @@ export const createReceipt = async (req, res) => {
         reference.status = 'Partially Adjusted';
       }
 
-      await reference.save({ session });
+      await reference.save();
     }
 
     // Create receipt voucher
     try {
-      const voucher = await createReceiptVoucher(receipt, receiptData.receiptType, session, req.userCompany);
+      const voucher = await createReceiptVoucher(receipt, receiptData.receiptType, req.userCompany);
       if (voucher) {
         receipt.voucherId = voucher._id;
-        await receipt.save({ session });
+        await receipt.save();
       }
     } catch (voucherError) {
       console.error('Voucher creation failed:', voucherError);
     }
-
-    await session.commitTransaction();
-
     // Populate farmer details
     await receipt.populate('farmerId', 'farmerNumber personalDetails');
 
@@ -136,19 +127,17 @@ export const createReceipt = async (req, res) => {
       data: receipt
     });
   } catch (error) {
-    await session.abortTransaction();
     console.error('Error creating receipt:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Error creating receipt'
     });
   } finally {
-    session.endSession();
   }
 };
 
 // Create receipt voucher
-const createReceiptVoucher = async (receipt, receiptType, session, companyId) => {
+const createReceiptVoucher = async (receipt, receiptType, companyId) => {
   const entries = [];
 
   // Get ledger name based on receipt type
@@ -186,7 +175,7 @@ const createReceiptVoucher = async (receipt, receiptType, session, companyId) =>
       currentBalance: 0,
       balanceType: 'Dr'
     });
-    await advanceLedger.save({ session });
+    await advanceLedger.save();
   }
 
   entries.push({
@@ -214,8 +203,8 @@ const createReceiptVoucher = async (receipt, receiptType, session, companyId) =>
     referenceId: receipt._id
   });
 
-  await voucher.save({ session });
-  await updateLedgerBalances(entries, session);
+  await voucher.save();
+  await updateLedgerBalances(entries);
 
   return voucher;
 };
@@ -363,9 +352,6 @@ export const getFarmerReceipts = async (req, res) => {
 
 // Cancel receipt
 export const cancelReceipt = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const { reason } = req.body;
     const receipt = await ProducerReceipt.findOne({ _id: req.params.id, companyId: req.companyId });
@@ -409,7 +395,7 @@ export const cancelReceipt = async (req, res) => {
           loan.status = 'Active';
           loan.closedAt = null;
         }
-        await loan.save({ session });
+        await loan.save();
       }
     } else {
       const advance = await Advance.findById(receipt.referenceId);
@@ -423,7 +409,7 @@ export const cancelReceipt = async (req, res) => {
         advance.adjustments = advance.adjustments.filter(
           adj => adj.referenceId?.toString() !== receipt._id.toString()
         );
-        await advance.save({ session });
+        await advance.save();
       }
     }
 
@@ -431,7 +417,7 @@ export const cancelReceipt = async (req, res) => {
     receipt.cancelledAt = new Date();
     receipt.cancelledBy = req.user?._id;
     receipt.cancellationReason = reason;
-    await receipt.save({ session });
+    await receipt.save();
 
     // Reverse voucher if exists
     if (receipt.voucherId) {
@@ -443,28 +429,23 @@ export const cancelReceipt = async (req, res) => {
           debitAmount: e.creditAmount,
           creditAmount: e.debitAmount
         }));
-        await updateLedgerBalances(reversedEntries, session);
+        await updateLedgerBalances(reversedEntries);
         voucher.status = 'Cancelled';
-        await voucher.save({ session });
+        await voucher.save();
       }
     }
-
-    await session.commitTransaction();
-
     res.status(200).json({
       success: true,
       message: 'Receipt cancelled successfully',
       data: receipt
     });
   } catch (error) {
-    await session.abortTransaction();
     console.error('Error cancelling receipt:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Error cancelling receipt'
     });
   } finally {
-    session.endSession();
   }
 };
 

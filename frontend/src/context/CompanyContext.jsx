@@ -12,6 +12,8 @@ export const useCompany = () => {
   return context;
 };
 
+
+
 export const CompanyProvider = ({ children }) => {
   const { user, isAuthenticated, isSuperAdmin } = useAuth();
   const [selectedCompany, setSelectedCompany] = useState(null);
@@ -175,8 +177,6 @@ export const CompanyProvider = ({ children }) => {
 
   const switchCompany = (company, businessType) => {
     setCompany(company, businessType);
-    // Reload the page to refresh all data
-    window.location.href = '/';
   };
 
   const value = {

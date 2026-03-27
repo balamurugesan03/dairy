@@ -889,4 +889,40 @@ export const societyInfoAPI = {
   deleteDocument: (key)        => api.delete(`/society-info/documents/${key}`).then(r => r.data).catch(handleError),
 };
 
+// ── Milk Bill Report API ──────────────────────────────────────────────────────
+export const milkBillAPI = {
+  get: (farmerId, params) =>
+    api.get(`/milk-bill/${farmerId}`, { params }).then(r => r.data).catch(handleError),
+};
+
+// ── Payment Register API ───────────────────────────────────────────────────────
+export const paymentRegisterAPI = {
+  getAll:            (params = {}) => api.get('/payment-register', { params }).then(r => r.data).catch(handleError),
+  getById:           (id)          => api.get(`/payment-register/${id}`).then(r => r.data).catch(handleError),
+  generate:          (data)        => api.post('/payment-register/generate', data).then(r => r.data).catch(handleError),
+  generateProducers: (data)        => api.post('/payment-register/generate-producers', data).then(r => r.data).catch(handleError),
+  create:            (data)        => api.post('/payment-register', data).then(r => r.data).catch(handleError),
+  update:            (id, data)    => api.put(`/payment-register/${id}`, data).then(r => r.data).catch(handleError),
+  delete:            (id)          => api.delete(`/payment-register/${id}`).then(r => r.data).catch(handleError),
+};
+
+// ── Dairy Settings API (payment days, account start date, opening balances) ────
+export const dairySettingsAPI = {
+  get:    ()     => api.get('/dairy-settings').then(r => r.data).catch(handleError),
+  update: (data) => api.put('/dairy-settings', data).then(r => r.data).catch(handleError),
+};
+
+// ── Financial Year API ─────────────────────────────────────────────────────────
+export const financialYearAPI = {
+  getAll:        ()       => api.get('/financial-years').then(r => r.data).catch(handleError),
+  getActive:     ()       => api.get('/financial-years/active').then(r => r.data).catch(handleError),
+  checkFrozen:   (date)   => api.get('/financial-years/check-frozen', { params: { date } }).then(r => r.data).catch(handleError),
+  create:        (data)   => api.post('/financial-years', data).then(r => r.data).catch(handleError),
+  update:        (id, data) => api.put(`/financial-years/${id}`, data).then(r => r.data).catch(handleError),
+  close:         (id)     => api.post(`/financial-years/${id}/close`).then(r => r.data).catch(handleError),
+  activate:      (id)     => api.post(`/financial-years/${id}/activate`).then(r => r.data).catch(handleError),
+  toggleFreeze:  (id)     => api.post(`/financial-years/${id}/toggle-freeze`).then(r => r.data).catch(handleError),
+  delete:        (id)     => api.delete(`/financial-years/${id}`).then(r => r.data).catch(handleError),
+};
+
 export default api;

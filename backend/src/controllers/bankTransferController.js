@@ -106,7 +106,7 @@ export const retrieveBalances = async (req, res) => {
         bankDetails: {
           accountNumber: bankDetails.accountNumber || '-',
           bankName: bankDetails.bankName || '-',
-          ifscCode: bankDetails.ifscCode || '-',
+          ifscCode: bankDetails.ifsc || bankDetails.ifscCode || '-',
           bankCode: bankDetails.branchCode || '-'
         }
       });
@@ -141,9 +141,6 @@ export const retrieveBalances = async (req, res) => {
 
 // Apply bank transfer
 export const applyBankTransfer = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const {
       transferBasis,
@@ -197,40 +194,35 @@ export const applyBankTransfer = async (req, res) => {
       remarks
     });
 
-    await bankTransfer.save({ session });
+    await bankTransfer.save();
 
     // Create payment voucher for bank transfer
     try {
-      const voucher = await createBankTransferVoucher(bankTransfer, session, companyId);
+      const voucher = await createBankTransferVoucher(bankTransfer, companyId);
       if (voucher) {
         bankTransfer.voucherId = voucher._id;
-        await bankTransfer.save({ session });
+        await bankTransfer.save();
       }
     } catch (voucherError) {
       console.error('Voucher creation failed:', voucherError);
     }
-
-    await session.commitTransaction();
-
     res.status(201).json({
       success: true,
       message: `Bank transfer applied successfully for ${approvedTransfers.length} producers`,
       data: bankTransfer
     });
   } catch (error) {
-    await session.abortTransaction();
     console.error('Error applying bank transfer:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Error applying bank transfer'
     });
   } finally {
-    session.endSession();
   }
 };
 
 // Helper function to create voucher
-const createBankTransferVoucher = async (bankTransfer, session, companyId) => {
+const createBankTransferVoucher = async (bankTransfer, companyId) => {
   const entries = [];
 
   // Get or create Bank Transfer ledger
@@ -248,7 +240,7 @@ const createBankTransferVoucher = async (bankTransfer, session, companyId) => {
       currentBalance: 0,
       balanceType: 'Cr'
     });
-    await bankLedger.save({ session });
+    await bankLedger.save();
   }
 
   // Get or create Producer Payable ledger
@@ -266,7 +258,7 @@ const createBankTransferVoucher = async (bankTransfer, session, companyId) => {
       currentBalance: 0,
       balanceType: 'Cr'
     });
-    await producerLedger.save({ session });
+    await producerLedger.save();
   }
 
   // Debit Producer Payable
@@ -299,8 +291,8 @@ const createBankTransferVoucher = async (bankTransfer, session, companyId) => {
     createdBy: bankTransfer.appliedBy
   });
 
-  await voucher.save({ session });
-  await updateLedgerBalances(entries, session);
+  await voucher.save();
+  await updateLedgerBalances(entries);
 
   return voucher;
 };
@@ -406,9 +398,6 @@ export const getBankTransferById = async (req, res) => {
 
 // Cancel bank transfer
 export const cancelBankTransfer = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const bankTransfer = await BankTransfer.findOne({
       _id: req.params.id,
@@ -433,7 +422,7 @@ export const cancelBankTransfer = async (req, res) => {
       detail.transferStatus = 'Cancelled';
     });
 
-    await bankTransfer.save({ session });
+    await bankTransfer.save();
 
     // Reverse voucher if exists
     if (bankTransfer.voucherId) {
@@ -461,27 +450,22 @@ export const cancelBankTransfer = async (req, res) => {
           createdBy: req.user?._id
         });
 
-        await reversalVoucher.save({ session });
-        await updateLedgerBalances(reversalEntries, session);
+        await reversalVoucher.save();
+        await updateLedgerBalances(reversalEntries);
       }
     }
-
-    await session.commitTransaction();
-
     res.json({
       success: true,
       message: 'Bank transfer cancelled successfully',
       data: bankTransfer
     });
   } catch (error) {
-    await session.abortTransaction();
     console.error('Error cancelling bank transfer:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Error cancelling bank transfer'
     });
   } finally {
-    session.endSession();
   }
 };
 

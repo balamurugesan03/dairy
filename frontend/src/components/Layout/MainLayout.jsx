@@ -24,7 +24,8 @@ import {
   IconHome, IconUsers, IconBox, IconShoppingCart, IconBook,
   IconCash, IconFileReport, IconShield, IconTool, IconSearch,
   IconSpeakerphone, IconBriefcase, IconChevronDown, IconMenu2, IconLogout, IconUser,
-  IconUserCog, IconBuildingStore, IconSettings, IconMilk, IconArrowLeft, IconBuildingCommunity
+  IconUserCog, IconBuildingStore, IconSettings, IconMilk, IconArrowLeft, IconBuildingCommunity,
+  IconCalendarEvent, IconAdjustments
 } from '@tabler/icons-react';
 import { useCompany } from '../../context/CompanyContext';
 import { useAuth } from '../../context/AuthContext';
@@ -232,7 +233,7 @@ const MainLayout = () => {
               { key: '/reports/vyapar/bank-statement', label: 'Bank Statement' },
         { key: '/reports/vyapar/gstr1', label: 'GSTR-1' },
         { key: '/reports/vyapar/gstr2', label: 'GSTR-2' },
-        { key: '/reports/cooperative-rd', label: 'R&D – Ledger Statement' }
+       
       ]
     }] : []),
     // DAIRY COOPERATIVE - Producers dues (Only for Dairy)
@@ -243,6 +244,7 @@ const MainLayout = () => {
       color: 'cyan',
       children: [
         { key: '/payments/register', label: 'Milk Payment Register' },
+        { key: '/payments/register-ledger', label: 'Payment Register Ledger' },
         { key: '/payments/individual', label: 'Individual Payment' },
         { key: '/payments/producer-register', label: 'Producer Register' },
         { key: '/payments/producer-register-summary', label: 'Producer Summary' },
@@ -255,6 +257,8 @@ const MainLayout = () => {
         { key: '/payments/individual-deduction-earning',  label: 'Individual Deductions/Earnings' },
         { key: '/payments/historical-deduction-earning',  label: 'Historical Deductions/Earnings' },
         { key: '/payments/periodical-deduction-earning', label: 'Periodical Deductions/Earnings' },
+        { key: '/payments/creditor-bill',    label: 'Payment Register (Creditor Bill)' },
+        { key: '/payments/producer-payment', label: 'Payment Register (Producers)' },
       ]
     }] : []),
   
@@ -279,6 +283,7 @@ const MainLayout = () => {
         { key: '/reports/final-accounts', label: 'Final Accounts' },
         { key: '/reports/balance-sheet', label: 'Balance Sheet' },
         { key: '/reports/milk-bill-abstract', label: 'Milk Bill Abstract' },
+        { key: '/reports/milk-bill-report',   label: 'Milk Bill (Producer)' },
         { key: '/reports/dairy-abstract', label: 'Dairy Abstract' },
         { key: '/reports/dairy-register', label: 'Dairy Register' },
 
@@ -298,6 +303,7 @@ const MainLayout = () => {
         { key: '/business-accounting/vouchers', label: 'Vouchers Management' },
          { key: '/reports/vyapar/day-book', label: 'Day Book' },
         { key: '/reports/vyapar/cash-book', label: 'Cash Book' },
+         { key: '/reports/cooperative-rd', label: 'R&D Report (Receipt & Disbursement' },
         // { key: '/reports/vyapar/rd', label: 'Receipt & Disbursement' },
         
         { key: '/reports/vyapar/trading-account', label: 'Trading Account' },
@@ -406,20 +412,19 @@ const MainLayout = () => {
         { key: '/hrm/loans', label: 'Loans / Advance' }
       ]
     },
-    // Society Info — Dairy Cooperative only
-    {
-      key: '/society-info',
-      icon: <IconBuildingCommunity size={18} />,
-      label: 'Society Info',
-      color: 'indigo',
-    },
-    // User Management - Only show for admins
+    // Settings — admin only, both business types
     ...(isAdmin ? [{
-      key: '/user-management',
-      icon: <IconUserCog size={18} />,
-      label: 'User Management',
-      color: 'gray',
-      adminOnly: true
+      key: 'settings-menu',
+      icon: <IconAdjustments size={18} />,
+      label: 'Settings',
+      color: 'violet',
+      adminOnly: true,
+      children: [
+        { key: '/financial-year',   label: 'Financial Year' },
+        { key: '/payment-settings', label: 'Payment Settings' },
+        { key: '/society-info',     label: 'Society Info' },
+        { key: '/user-management',  label: 'User Management' },
+      ]
     }] : [])
     ];
 
@@ -430,17 +435,13 @@ const MainLayout = () => {
         const allowedKeys = [
           '/',
           'party-menu',
-          'daily-collections-menu',  // Daily Collections (Milk Purchase)
-          'inventory-menu',          // Dairy inventory
           'sales-menu',
+          'inventory-menu',
           'accounting-menu',
-          'cashbook-menu',
           'payments-menu',
           'dairy-reports-menu',
-          'subsidies-menu',
-          'promotions-menu',
           'hrm-menu',
-          '/society-info',
+          'settings-menu',
         ];
         return allowedKeys.includes(item.key);
       });
@@ -449,16 +450,16 @@ const MainLayout = () => {
         if (item.adminOnly && isAdmin) return true;
         const allowedKeys = [
           '/',
-          'customer-menu',  // Only Customer module (NOT Farmers Management)
-          'business-inventory-menu',  // Business inventory (NOT dairy inventory)
+          'customer-menu',
+          'business-inventory-menu',
           'accounting-menu',
-          'cashbook-menu',
           'vyapar-reports-menu',
           'warranty-menu',
           'machines-menu',
           'quotations-menu',
           'business-promotions-menu',
-          'hrm-menu'
+          'hrm-menu',
+          'settings-menu',
         ];
         return allowedKeys.includes(item.key);
       });
@@ -469,7 +470,7 @@ const MainLayout = () => {
 
   const allMenuItems = getFilteredMenuItems();
   // Separate right-floated items (HRM, User Management)
-  const rightKeys = ['hrm-menu', '/society-info', '/user-management'];
+  const rightKeys = ['hrm-menu', 'settings-menu'];
   const menuItems = allMenuItems.filter(item => !rightKeys.includes(item.key));
   const rightMenuItems = allMenuItems.filter(item => rightKeys.includes(item.key));
 
@@ -671,6 +672,7 @@ const MainLayout = () => {
                   <Menu.Divider />
                   <Menu.Item
                     leftSection={<IconSettings size={16} />}
+                    onClick={() => navigate('/financial-year')}
                     style={{ borderRadius: '8px', margin: '4px' }}
                   >
                     Settings

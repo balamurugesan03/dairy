@@ -250,7 +250,7 @@ farmerPaymentSchema.index({ paymentMode: 1 });
 farmerPaymentSchema.index({ 'paymentPeriod.fromDate': 1, 'paymentPeriod.toDate': 1 });
 
 // Pre-save hook to generate payment number and calculate totals
-farmerPaymentSchema.pre('save', async function(next) {
+farmerPaymentSchema.pre('save', async function() {
   // Generate payment number if not exists
   if (!this.paymentNumber) {
     this.paymentNumber = await generateCode('PAY', this.companyId, { pad: 5 });
@@ -279,7 +279,6 @@ farmerPaymentSchema.pre('save', async function(next) {
     }
   }
 
-  next();
 });
 
 // Virtual for farmer details

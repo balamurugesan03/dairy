@@ -64,12 +64,12 @@ const IndividualDeductionEarning = () => {
       setEarningItems(
         all
           .filter(i => ['INDIVIDUAL_EARNINGS', 'PERIODICAL_EARNINGS', 'BONUS_INCENTIVE_HISTORICAL'].includes(i.category))
-          .map(i => ({ value: i._id, label: i.name }))
+          .map(i => ({ value: String(i._id), label: i.name || '(Unnamed)' }))
       );
       setDeductionItems(
         all
           .filter(i => ['INDIVIDUAL_DEDUCTIONS', 'PERIODICAL_DEDUCTIONS', 'HISTORICAL_DEDUCTIONS', 'LOAN_RECOVERY', 'DEPOSIT_SCHEME'].includes(i.category))
-          .map(i => ({ value: i._id, label: i.name }))
+          .map(i => ({ value: String(i._id), label: i.name || '(Unnamed)' }))
       );
     } catch {/* silent */}
   };

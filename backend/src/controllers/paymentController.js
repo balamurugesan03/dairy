@@ -7,9 +7,6 @@ import mongoose from 'mongoose';
 
 // Create farmer payment
 export const createFarmerPayment = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const paymentData = req.body;
     paymentData.companyId = req.userCompany;
@@ -42,7 +39,7 @@ export const createFarmerPayment = async (req, res) => {
     }
 
     const payment = new FarmerPayment(paymentData);
-    await payment.save({ session });
+    await payment.save();
 
     // Adjust advances if advance amount is deducted
     if (paymentData.advanceAmount > 0 && paymentData.advancesAdjusted?.length > 0) {
@@ -64,18 +61,16 @@ export const createFarmerPayment = async (req, res) => {
               adjustedAmount: adj.amount,
               balanceAmount: -adj.amount
             }
-          },
-          { session }
-        );
+          });
 
         // Update advance status
-        const advance = await Advance.findById(adj.advanceId).session(session);
+        const advance = await Advance.findById(adj.advanceId);
         if (advance && advance.balanceAmount <= 0) {
           advance.status = 'Adjusted';
-          await advance.save({ session });
+          await advance.save();
         } else if (advance && advance.balanceAmount > 0) {
           advance.status = 'Partially Adjusted';
-          await advance.save({ session });
+          await advance.save();
         }
       }
     }
@@ -83,18 +78,15 @@ export const createFarmerPayment = async (req, res) => {
     // Create accounting voucher
     if (paymentData.paidAmount > 0) {
       try {
-        const voucher = await createPaymentVoucher(payment, session);
+        const voucher = await createPaymentVoucher(payment);
         if (voucher) {
           payment.voucherId = voucher._id;
-          await payment.save({ session });
+          await payment.save();
         }
       } catch (voucherError) {
         console.error('Voucher creation failed:', voucherError);
       }
     }
-
-    await session.commitTransaction();
-
     // Populate farmer details for response
     await payment.populate('farmerId', 'farmerNumber personalDetails');
 
@@ -104,14 +96,12 @@ export const createFarmerPayment = async (req, res) => {
       data: payment
     });
   } catch (error) {
-    await session.abortTransaction();
     console.error('Error creating payment:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Error creating payment'
     });
   } finally {
-    session.endSession();
   }
 };
 
@@ -313,9 +303,6 @@ export const updatePayment = async (req, res) => {
 
 // Cancel payment
 export const cancelPayment = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const { cancellationReason } = req.body;
     const payment = await FarmerPayment.findOne({ _id: req.params.id, companyId: req.companyId });
@@ -345,9 +332,7 @@ export const cancelPayment = async (req, res) => {
               balanceAmount: adj.amount
             },
             $set: { status: 'Active' }
-          },
-          { session }
-        );
+          });
       }
     }
 
@@ -355,24 +340,19 @@ export const cancelPayment = async (req, res) => {
     payment.cancelledAt = new Date();
     payment.cancelledBy = req.user?._id;
     payment.cancellationReason = cancellationReason;
-    await payment.save({ session });
-
-    await session.commitTransaction();
-
+    await payment.save();
     res.status(200).json({
       success: true,
       message: 'Payment cancelled successfully',
       data: payment
     });
   } catch (error) {
-    await session.abortTransaction();
     console.error('Error cancelling payment:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Error cancelling payment'
     });
   } finally {
-    session.endSession();
   }
 };
 
@@ -824,9 +804,6 @@ export const getAdvanceStats = async (req, res) => {
 
 // Bulk create payments (for batch processing)
 export const bulkCreatePayments = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const { payments } = req.body;
     const results = [];
@@ -838,7 +815,7 @@ export const bulkCreatePayments = async (req, res) => {
         paymentData.createdBy = req.user?._id;
 
         const payment = new FarmerPayment(paymentData);
-        await payment.save({ session });
+        await payment.save();
         results.push({ success: true, data: payment });
       } catch (err) {
         errors.push({ farmerId: paymentData.farmerId, error: err.message });
@@ -846,14 +823,12 @@ export const bulkCreatePayments = async (req, res) => {
     }
 
     if (errors.length === 0) {
-      await session.commitTransaction();
       res.status(201).json({
         success: true,
         message: `${results.length} payments created successfully`,
         data: results
       });
     } else if (results.length > 0) {
-      await session.commitTransaction();
       res.status(207).json({
         success: true,
         message: `${results.length} payments created, ${errors.length} failed`,
@@ -861,7 +836,6 @@ export const bulkCreatePayments = async (req, res) => {
         errors
       });
     } else {
-      await session.abortTransaction();
       res.status(400).json({
         success: false,
         message: 'All payments failed',
@@ -869,14 +843,12 @@ export const bulkCreatePayments = async (req, res) => {
       });
     }
   } catch (error) {
-    await session.abortTransaction();
     console.error('Error in bulk payment creation:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Error creating payments'
     });
   } finally {
-    session.endSession();
   }
 };
 

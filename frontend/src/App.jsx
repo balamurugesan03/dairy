@@ -117,6 +117,7 @@ const ProducerOpenings       = lazy(() => import('./components/daily-collections
 // Payment Components
 const IndividualMilkPayment = lazy(() => import('./components/payments/IndividualMilkPayment'));
 const MilkPaymentRegister = lazy(() => import('./components/payments/MilkPaymentRegister'));
+const PaymentRegisterLedger = lazy(() => import('./components/payments/PaymentRegisterLedger'));
 
 const ProducerLoanManagement = lazy(() => import('./components/payments/ProducerLoanManagement'));
 const ProducerLoanView = lazy(() => import('./components/payments/ProducerLoanView'));
@@ -130,6 +131,8 @@ const FarmerLedgerView = lazy(() => import('./components/payments/FarmerLedgerVi
 const ProducerRegister = lazy(() => import('./components/payments/ProducerRegister'));
 const ProducerRegisterSummary = lazy(() => import('./components/payments/ProducerRegisterSummary'));
 const BankTransferManagement = lazy(() => import('./components/payments/BankTransferManagement'));
+const PaymentRegisterCreditor  = lazy(() => import('./components/payments/PaymentRegisterCreditor'));
+const PaymentRegisterProducers = lazy(() => import('./components/payments/PaymentRegisterProducers'));
 
 // Report Components
 const ReportsDashboard = lazy(() => import('./components/reports/ReportsDashboard'));
@@ -151,6 +154,7 @@ const DairyAbstractReport = lazy(() => import('./components/reports/DairyAbstrac
 const DairyRegisterReport = lazy(() => import('./components/reports/DairyRegisterReport'));
 const SalesmanBalanceReport = lazy(() => import('./components/reports/SalesmanBalanceReport'));
 const CooperativeRDReport = lazy(() => import('./components/reports/CooperativeRDReport'));
+const MilkBillReport      = lazy(() => import('./components/reports/MilkBillReport'));
 
 // Vyapar Report Components - Private Firm
 const VyaparReportsHub = lazy(() => import('./components/reports/vyapar/VyaparReportsHub'));
@@ -229,6 +233,12 @@ const MessageTemplates = lazy(() => import('./components/business-promotions/Mes
 
 // User Management
 const UserManagement = lazy(() => import('./pages/UserManagement'));
+
+// Financial Year Management
+const FinancialYearManagement = lazy(() => import('./components/settings/FinancialYearManagement'));
+
+// Payment & Account Settings
+const PaymentSettings = lazy(() => import('./components/settings/PaymentSettings'));
 
 // App content component that uses auth and company context
 const AppContent = () => {
@@ -422,6 +432,7 @@ const AppContent = () => {
               <Route path="payments">
                 <Route index element={<Navigate to="/payments/register" replace />} />
                 <Route path="register" element={<MilkPaymentRegister />} />
+                <Route path="register-ledger" element={<PaymentRegisterLedger />} />
                 <Route path="individual" element={<IndividualMilkPayment />} />
                 <Route path="loans" element={<ProducerLoanManagement />} />
                 <Route path="loans/:id" element={<ProducerLoanView />} />
@@ -435,6 +446,8 @@ const AppContent = () => {
                 <Route path="individual-deduction-earning"  element={<IndividualDeductionEarning />} />
                 <Route path="historical-deduction-earning"  element={<HistoricalDeductionEarning />} />
                 <Route path="periodical-deduction-earning" element={<PeriodicalDeductionEarning />} />
+                <Route path="creditor-bill"       element={<PaymentRegisterCreditor />} />
+                <Route path="producer-payment"    element={<PaymentRegisterProducers />} />
               </Route>
 
               {/* Reports Routes */}
@@ -488,6 +501,7 @@ const AppContent = () => {
                 <Route path="dairy-register"        element={<DairyRegisterReport />} />
                 <Route path="salesman-balance"      element={<SalesmanBalanceReport />} />
                 <Route path="cooperative-rd"        element={<CooperativeRDReport />} />
+                <Route path="milk-bill-report"      element={<MilkBillReport />} />
               </Route>
 
               {/* Warranty Routes */}
@@ -592,6 +606,12 @@ const AppContent = () => {
 
               {/* User Management - Admin Only */}
               <Route path="user-management" element={<UserManagement />} />
+
+              {/* Financial Year Management */}
+              <Route path="financial-year" element={<FinancialYearManagement />} />
+
+              {/* Payment & Account Settings */}
+              <Route path="payment-settings" element={<PaymentSettings />} />
             </Route>
 
           {/* Block superadmin route for regular users */}

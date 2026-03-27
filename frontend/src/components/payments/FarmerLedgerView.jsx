@@ -235,9 +235,9 @@ const FarmerLedgerView = () => {
     }
   };
 
-  const farmerOptions = farmers.map(farmer => ({
-    value: farmer._id,
-    label: `${farmer.farmerNumber} - ${farmer.personalDetails?.name}`
+  const farmerOptions = farmers.filter(f => f && f._id).map(farmer => ({
+    value: String(farmer._id),
+    label: `${farmer.farmerNumber || ''} - ${farmer.personalDetails?.name || 'Unknown'}`
   }));
 
   const transactionTypeOptions = [

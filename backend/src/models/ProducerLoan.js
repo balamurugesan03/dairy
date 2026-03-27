@@ -192,7 +192,7 @@ producerLoanSchema.index({ loanNumber: 1 });
 producerLoanSchema.index({ loanType: 1 });
 
 // Pre-save hook to generate loan number and calculate amounts
-producerLoanSchema.pre('save', async function(next) {
+producerLoanSchema.pre('save', async function() {
   // Generate loan number if not exists
   if (!this.loanNumber) {
     this.loanNumber = await generateCode('LOAN', this.companyId, { pad: 5 });
@@ -263,7 +263,6 @@ producerLoanSchema.pre('save', async function(next) {
     }
   }
 
-  next();
 });
 
 // Virtual for farmer details

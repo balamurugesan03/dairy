@@ -80,22 +80,31 @@ const VyaparCashBook = () => {
 
     // Group by date
     const dayMap = new Map();
+    const makeDesc = (entry, fallback) => {
+      const type = entry.voucherType ? `${entry.voucherType}` : '';
+      const party = entry.particulars || '';
+      if (type && party && party !== type) return `${type} — ${party}`;
+      return type || party || fallback;
+    };
+
     for (const entry of (reportData.receiptSide || [])) {
       const dateKey = dayjs(entry.date).format('YYYY-MM-DD');
       if (!dayMap.has(dateKey)) dayMap.set(dateKey, { receipts: [], payments: [] });
       dayMap.get(dateKey).receipts.push({
-        description: entry.particulars || 'Cash Receipt',
+        description: makeDesc(entry, 'Cash Receipt'),
         voucherNumber: entry.voucherNumber || '',
-        amount: entry.amount
+        amount: entry.amount,
+        account: entry.account || 'Cash'
       });
     }
     for (const entry of (reportData.paymentSide || [])) {
       const dateKey = dayjs(entry.date).format('YYYY-MM-DD');
       if (!dayMap.has(dateKey)) dayMap.set(dateKey, { receipts: [], payments: [] });
       dayMap.get(dateKey).payments.push({
-        description: entry.particulars || 'Cash Payment',
+        description: makeDesc(entry, 'Cash Payment'),
         voucherNumber: entry.voucherNumber || '',
-        amount: entry.amount
+        amount: entry.amount,
+        account: entry.account || 'Cash'
       });
     }
 
@@ -103,7 +112,7 @@ const VyaparCashBook = () => {
     const start = dayjs(fromDate).startOf('day');
     const end = dayjs(toDate).startOf('day');
     let cursor = start;
-    let prevClosing = reportData.summary?.openingBalance || 0;
+    let prevClosing = reportData.summary?.openingBalance ?? 0;
 
     while (cursor.isBefore(end) || cursor.isSame(end, 'day')) {
       const dateKey = cursor.format('YYYY-MM-DD');
@@ -145,31 +154,33 @@ const VyaparCashBook = () => {
           <span className={`cb-side__icon cb-side__icon--${side}`}>
             {isReceipt ? <IconArrowDown size={14} /> : <IconArrowUp size={14} />}
           </span>
-          <span className="cb-side__title">{isReceipt ? 'CREDIT (Cr)' : 'DEBIT (Dr)'}</span>
-          <span className="cb-side__subtitle">{isReceipt ? '(Income / Receipts)' : '(Expenses / Payments)'}</span>
+          <span className="cb-side__title">{isReceipt ? 'RECEIPTS (Dr)' : 'PAYMENTS (Cr)'}</span>
+          <span className="cb-side__subtitle">{isReceipt ? '(Money In)' : '(Money Out)'}</span>
         </div>
 
         <div className="cb-side__body">
           <table className="cb-ledger">
             <thead>
               <tr>
-                <th className="cb-col-desc">Description</th>
-                <th className="cb-col-vno">{isReceipt ? 'Receipt No' : 'Voucher No'}</th>
-                <th className="cb-col-amt">Cash (₹)</th>
+                <th className="cb-col-vno">Voucher No</th>
+                <th className="cb-col-vno">Account</th>
+                <th className="cb-col-desc">Description / Party</th>
+                <th className="cb-col-amt">Amount (₹)</th>
               </tr>
             </thead>
             <tbody>
               {entries.length === 0 ? (
                 <tr className="cb-empty-row">
-                  <td colSpan={3}>
+                  <td colSpan={4}>
                     <div className="cb-no-data">No transactions</div>
                   </td>
                 </tr>
               ) : (
                 entries.map((entry, idx) => (
                   <tr key={idx} className={`cb-data-row ${idx % 2 === 0 ? 'cb-row-even' : 'cb-row-odd'}`}>
-                    <td className="cb-cell-desc" title={entry.description}>{entry.description}</td>
                     <td className="cb-cell-vno">{entry.voucherNumber}</td>
+                    <td className="cb-cell-vno" style={{ color: 'var(--mantine-color-violet-6)', fontSize: 11 }}>{entry.account || 'Cash'}</td>
+                    <td className="cb-cell-desc" title={entry.description}>{entry.description}</td>
                     <td className="cb-cell-amt">{fmt(entry.amount)}</td>
                   </tr>
                 ))
@@ -184,15 +195,18 @@ const VyaparCashBook = () => {
               <tr className="cb-summary-row cb-day-total">
                 <td className="cb-footer-label">Day Total</td>
                 <td className="cb-footer-vno"></td>
+                <td className="cb-footer-vno"></td>
                 <td className="cb-footer-amt">{fmtAlways(total)}</td>
               </tr>
               <tr className="cb-summary-row cb-balance-row">
                 <td className="cb-footer-label">{balanceLabel}</td>
                 <td className="cb-footer-vno"></td>
+                <td className="cb-footer-vno"></td>
                 <td className="cb-footer-amt">{fmtAlways(balanceAmount)}</td>
               </tr>
               <tr className="cb-summary-row cb-closing-row">
                 <td className="cb-footer-label">Closing Balance</td>
+                <td className="cb-footer-vno"></td>
                 <td className="cb-footer-vno"></td>
                 <td className="cb-footer-amt">{fmtAlways(closeBal)}</td>
               </tr>
@@ -218,8 +232,8 @@ const VyaparCashBook = () => {
         </div>
       </div>
       <div className="cb-card__body">
-        {renderSideTable('payment', card.payments, card.paymentTotal, card.openingBalance, card.closingBalance)}
         {renderSideTable('receipt', card.receipts, card.receiptTotal, card.openingBalance, card.closingBalance)}
+        {renderSideTable('payment', card.payments, card.paymentTotal, card.openingBalance, card.closingBalance)}
       </div>
     </div>
   );
@@ -454,9 +468,17 @@ const VyaparCashBook = () => {
 
           <Group gap="xs">
             {reportData && (
-              <Badge variant="light" size="lg" radius="md">
-                {daysWithData} / {totalDays} days
-              </Badge>
+              <>
+                <Badge variant="light" color="teal" size="sm" radius="md">
+                  Opening: ₹{fmtAlways(reportData.summary?.openingBalance)}
+                </Badge>
+                <Badge variant="light" color="blue" size="sm" radius="md">
+                  {daysWithData} / {totalDays} days
+                </Badge>
+                <Badge variant="filled" color="blue" size="sm" radius="md">
+                  Closing: ₹{fmtAlways(reportData.summary?.closingBalance)}
+                </Badge>
+              </>
             )}
             <Button
               variant="light"
@@ -504,9 +526,9 @@ const VyaparCashBook = () => {
       <div className="cb-cards-area" style={{ position: 'relative' }}>
         <LoadingOverlay visible={loading} overlayProps={{ blur: 2 }} />
 
-        {reportData && !loading && dayCards.length > 0 && (
+        {reportData && !loading && dayCards.filter(c => c.hasData).length > 0 && (
           <div ref={printRef}>
-            {dayCards.map((card) => renderDayCard(card))}
+            {dayCards.filter(c => c.hasData).map((card) => renderDayCard(card))}
           </div>
         )}
 
@@ -522,7 +544,7 @@ const VyaparCashBook = () => {
           </Paper>
         )}
 
-        {reportData && !loading && dayCards.length === 0 && (
+        {reportData && !loading && dayCards.filter(c => c.hasData).length === 0 && (
           <Paper radius="md" withBorder shadow="sm" className="cb-empty-state">
             <IconCash size={56} stroke={1.2} opacity={0.25} />
             <Text c="dimmed" size="md" mt="sm" fw={500}>

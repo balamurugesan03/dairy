@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { message } from '../../../utils/toast';
 import dayjs from 'dayjs';
@@ -12,7 +12,7 @@ import { DatePickerInput } from '@mantine/dates';
 import {
   IconBook, IconPrinter, IconFileSpreadsheet, IconCalendar,
   IconDownload, IconArrowDown, IconArrowUp,
-  IconSearch, IconRectangle, IconRectangleVertical
+  IconSearch, IconRectangle, IconRectangleVertical, IconArrowsTransferDown
 } from '@tabler/icons-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -26,6 +26,8 @@ const VyaparDayBook = () => {
   const [fromDate, setFromDate] = useState(dayjs().startOf('month').toDate());
   const [toDate, setToDate] = useState(new Date());
   const [reportData, setReportData] = useState(null);
+  // manualAdjusts: Map<dateKey, { receipts: Set<idx>, payments: Set<idx> }>
+  const [manualAdjusts, setManualAdjusts] = useState(new Map());
   const printRef = useRef();
 
   const companyName = selectedCompany?.companyName || 'Private Firm';
@@ -58,7 +60,25 @@ const VyaparDayBook = () => {
     fetchReport(fromDate, toDate);
   }, []);
 
+  // Reset manual adjustments whenever new report data is loaded
+  useEffect(() => {
+    setManualAdjusts(new Map());
+  }, [reportData]);
+
   const handleGenerate = () => fetchReport(fromDate, toDate);
+
+  // Move an entry from receipts/payments into the Adjustment section
+  const handleAdjust = useCallback((dateKey, side, idx) => {
+    setManualAdjusts(prev => {
+      const next = new Map(prev);
+      const day = next.get(dateKey) || { receipts: new Set(), payments: new Set() };
+      const newDay = { receipts: new Set(day.receipts), payments: new Set(day.payments) };
+      if (side === 'receipt') newDay.receipts.add(idx);
+      else newDay.payments.add(idx);
+      next.set(dateKey, newDay);
+      return next;
+    });
+  }, []);
 
   // --- Format helpers ---
   const fmt = (amount) => {
@@ -75,33 +95,43 @@ const VyaparDayBook = () => {
   const formatDateLong = (date) => dayjs(date).format('dddd, DD MMMM YYYY');
   const formatDateShort = (date) => dayjs(date).format('DD MMM YYYY');
 
-  // --- Build day-wise cards ---
+  // --- Build base day-wise cards from API data ---
   const dayCards = useMemo(() => {
     if (!reportData?.transactions) return [];
 
-    // Day Book = Cash Book style
-    // debitAmount > 0  → Cash/Bank debited = RECEIPT (left side)
-    // creditAmount > 0 → Cash/Bank credited = PAYMENT (right side)
-    // description = contra ledger name (what we received from / paid to)
     const dayMap = new Map();
     for (const txn of reportData.transactions) {
       const dateKey = dayjs(txn.date).format('YYYY-MM-DD');
-      if (!dayMap.has(dateKey)) dayMap.set(dateKey, { receipts: [], payments: [] });
+      if (!dayMap.has(dateKey)) dayMap.set(dateKey, { receipts: [], payments: [], adjustments: [] });
       const group = dayMap.get(dateKey);
       const label = txn.description || txn.particulars || txn.ledgerName || 'Entry';
-      if ((txn.debitAmount || 0) > 0) {
-        group.receipts.push({
+
+      if (txn.isAdjustment) {
+        group.adjustments.push({
           description: label,
           voucherNumber: txn.voucherNumber || '',
-          amount: txn.debitAmount
+          voucherType: txn.voucherType || '',
+          account: txn.account || txn.ledgerName || '',
+          drAmount: txn.adjustmentDr || 0,
+          crAmount: txn.adjustmentCr || 0
         });
-      }
-      if ((txn.creditAmount || 0) > 0) {
-        group.payments.push({
-          description: label,
-          voucherNumber: txn.voucherNumber || '',
-          amount: txn.creditAmount
-        });
+      } else {
+        if ((txn.debitAmount || 0) > 0) {
+          group.receipts.push({
+            description: label,
+            voucherNumber: txn.voucherNumber || '',
+            account: txn.account || txn.ledgerName || '',
+            amount: txn.debitAmount
+          });
+        }
+        if ((txn.creditAmount || 0) > 0) {
+          group.payments.push({
+            description: label,
+            voucherNumber: txn.voucherNumber || '',
+            account: txn.account || txn.ledgerName || '',
+            amount: txn.creditAmount
+          });
+        }
       }
     }
 
@@ -109,40 +139,68 @@ const VyaparDayBook = () => {
     const start = dayjs(fromDate).startOf('day');
     const end = dayjs(toDate).startOf('day');
     let cursor = start;
-
     while (cursor.isBefore(end) || cursor.isSame(end, 'day')) {
       const dateKey = cursor.format('YYYY-MM-DD');
       const dayData = dayMap.get(dateKey);
-      const receipts = dayData?.receipts || [];
-      const payments = dayData?.payments || [];
-
       cards.push({
         date: dateKey,
-        hasData: !!dayData,
-        receipts,
-        payments,
-        debitTotal: receipts.reduce((s, e) => s + (e.amount || 0), 0),
-        creditTotal: payments.reduce((s, e) => s + (e.amount || 0), 0)
+        receipts: dayData?.receipts || [],
+        payments: dayData?.payments || [],
+        adjustments: dayData?.adjustments || []
       });
-
       cursor = cursor.add(1, 'day');
     }
-
-    // Compute per-day opening / closing balance (running balance carried forward)
-    let runningBalance = reportData?.openingBalance || 0;
-    for (const card of cards) {
-      card.openingBalance = runningBalance;
-      card.closingBalance = runningBalance + card.debitTotal - card.creditTotal;
-      runningBalance = card.closingBalance;
-    }
-
     return cards;
   }, [reportData, fromDate, toDate]);
 
+  // --- Apply manual adjustments + recompute running balances ---
+  const effectiveCards = useMemo(() => {
+    let runningBalance = reportData?.openingBalance || 0;
+    return dayCards.map(card => {
+      const dayAdj = manualAdjusts.get(card.date);
+      const adjRIdxs = dayAdj?.receipts || new Set();
+      const adjPIdxs = dayAdj?.payments || new Set();
+
+      const receipts   = card.receipts.filter((_, i) => !adjRIdxs.has(i));
+      const payments   = card.payments.filter((_, i) => !adjPIdxs.has(i));
+
+      // Entries moved manually to adjustment section
+      const manualEntries = [
+        ...card.receipts
+          .filter((_, i) => adjRIdxs.has(i))
+          .map(e => ({ description: e.description, voucherNumber: e.voucherNumber,
+                       voucherType: 'Adjusted', account: e.account,
+                       drAmount: e.amount, crAmount: 0 })),
+        ...card.payments
+          .filter((_, i) => adjPIdxs.has(i))
+          .map(e => ({ description: e.description, voucherNumber: e.voucherNumber,
+                       voucherType: 'Adjusted', account: e.account,
+                       drAmount: 0, crAmount: e.amount }))
+      ];
+      const adjustments = [...card.adjustments, ...manualEntries];
+
+      const debitTotal          = receipts.reduce((s, e) => s + (e.amount || 0), 0);
+      const creditTotal         = payments.reduce((s, e) => s + (e.amount || 0), 0);
+      const adjustmentDrTotal   = adjustments.reduce((s, e) => s + (e.drAmount || 0), 0);
+      const adjustmentCrTotal   = adjustments.reduce((s, e) => s + (e.crAmount || 0), 0);
+      const openingBalance      = runningBalance;
+      const closingBalance      = openingBalance + debitTotal - creditTotal;
+      runningBalance = closingBalance;
+
+      return {
+        date: card.date,
+        hasData: receipts.length > 0 || payments.length > 0 || adjustments.length > 0,
+        receipts, payments, adjustments,
+        debitTotal, creditTotal,
+        adjustmentDrTotal, adjustmentCrTotal,
+        openingBalance, closingBalance
+      };
+    });
+  }, [dayCards, manualAdjusts, reportData]);
+
   // --- Render a side table (Dr or Cr) ---
-  const renderSideTable = (side, entries, total, openingBalance = 0, closingBalance = 0) => {
+  const renderSideTable = (side, entries, total, openingBalance = 0, closingBalance = 0, dateKey = '', onAdjust = null) => {
     const isReceipt = side === 'receipt';
-    // Both sides balance: Opening + DrTotal = CrTotal + Closing
     const sideGrandTotal = isReceipt ? openingBalance + total : total + closingBalance;
 
     return (
@@ -159,24 +217,42 @@ const VyaparDayBook = () => {
           <table className="db-ledger">
             <thead>
               <tr>
-                <th className="db-col-desc">Description</th>
                 <th className="db-col-vno">Voucher No</th>
+                <th className="db-col-vno">Account</th>
+                <th className="db-col-desc">Description</th>
                 <th className="db-col-total">Amount (₹)</th>
+                {onAdjust && <th className="db-col-vno" style={{ width: 36 }}>Adj</th>}
               </tr>
             </thead>
             <tbody>
               {entries.length === 0 ? (
                 <tr className="db-empty-row">
-                  <td colSpan={3}>
+                  <td colSpan={onAdjust ? 5 : 4}>
                     <div className="db-no-data">No entries</div>
                   </td>
                 </tr>
               ) : (
                 entries.map((entry, idx) => (
                   <tr key={idx} className={`db-data-row ${idx % 2 === 0 ? 'db-row-even' : 'db-row-odd'}`}>
-                    <td className="db-cell-desc" title={entry.description}>{entry.description}</td>
                     <td className="db-cell-vno">{entry.voucherNumber}</td>
+                    <td className="db-cell-vno" style={{ color: 'var(--mantine-color-violet-6)', fontSize: 11 }}>{entry.account}</td>
+                    <td className="db-cell-desc" title={entry.description}>{entry.description}</td>
                     <td className="db-cell-total">{fmt(entry.amount)}</td>
+                    {onAdjust && (
+                      <td className="db-cell-vno" style={{ padding: '1px 2px', textAlign: 'center' }}>
+                        <button
+                          title="Move to Adjustment Entries"
+                          onClick={() => onAdjust(dateKey, side, idx)}
+                          style={{
+                            background: 'none', border: '1px solid #9c6fe4', borderRadius: 4,
+                            cursor: 'pointer', padding: '1px 3px', display: 'inline-flex',
+                            alignItems: 'center', color: '#7c3aed'
+                          }}
+                        >
+                          <IconArrowsTransferDown size={11} />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
@@ -192,17 +268,23 @@ const VyaparDayBook = () => {
                   <tr className="db-summary-row db-balance-row">
                     <td className="db-footer-label">Opening Balance (b/d)</td>
                     <td className="db-footer-vno"></td>
+                    <td className="db-footer-vno"></td>
                     <td className="db-footer-total">{fmtAlways(openingBalance)}</td>
+                    {onAdjust && <td></td>}
                   </tr>
                   <tr className="db-summary-row db-day-total">
                     <td className="db-footer-label">Total Receipts</td>
                     <td className="db-footer-vno"></td>
+                    <td className="db-footer-vno"></td>
                     <td className="db-footer-total">{fmtAlways(total)}</td>
+                    {onAdjust && <td></td>}
                   </tr>
                   <tr className="db-summary-row db-closing-row">
                     <td className="db-footer-label">Total</td>
                     <td className="db-footer-vno"></td>
+                    <td className="db-footer-vno"></td>
                     <td className="db-footer-total">{fmtAlways(sideGrandTotal)}</td>
+                    {onAdjust && <td></td>}
                   </tr>
                 </>
               ) : (
@@ -210,20 +292,77 @@ const VyaparDayBook = () => {
                   <tr className="db-summary-row db-day-total">
                     <td className="db-footer-label">Total Payments</td>
                     <td className="db-footer-vno"></td>
+                    <td className="db-footer-vno"></td>
                     <td className="db-footer-total">{fmtAlways(total)}</td>
+                    {onAdjust && <td></td>}
                   </tr>
                   <tr className="db-summary-row db-balance-row">
                     <td className="db-footer-label">Closing Balance (c/d)</td>
                     <td className="db-footer-vno"></td>
+                    <td className="db-footer-vno"></td>
                     <td className="db-footer-total">{fmtAlways(closingBalance)}</td>
+                    {onAdjust && <td></td>}
                   </tr>
                   <tr className="db-summary-row db-closing-row">
                     <td className="db-footer-label">Total</td>
                     <td className="db-footer-vno"></td>
+                    <td className="db-footer-vno"></td>
                     <td className="db-footer-total">{fmtAlways(sideGrandTotal)}</td>
+                    {onAdjust && <td></td>}
                   </tr>
                 </>
               )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  // --- Render adjustment (Journal) entries table ---
+  const renderAdjustmentTable = (adjustments, drTotal, crTotal) => {
+    if (adjustments.length === 0) return null;
+    return (
+      <div className="db-side db-side--adjustment" style={{ marginTop: 8, borderTop: '2px dashed #9c6fe4' }}>
+        <div className="db-side__header" style={{ background: '#f3e8ff', color: '#7c3aed' }}>
+          <span className="db-side__title">ADJUSTMENT ENTRIES (Journal)</span>
+          <span className="db-side__subtitle" style={{ marginLeft: 8 }}>(Non-cash)</span>
+        </div>
+        <div className="db-side__body">
+          <table className="db-ledger">
+            <thead>
+              <tr>
+                <th className="db-col-vno">Voucher No</th>
+                <th className="db-col-vno">Account</th>
+                <th className="db-col-desc">Description</th>
+                <th className="db-col-total">Dr (₹)</th>
+                <th className="db-col-total">Cr (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {adjustments.map((entry, idx) => (
+                <tr key={idx} className={`db-data-row ${idx % 2 === 0 ? 'db-row-even' : 'db-row-odd'}`}>
+                  <td className="db-cell-vno">
+                    <div>{entry.voucherNumber}</div>
+                    <div style={{ fontSize: 9, color: '#7c3aed', fontWeight: 600 }}>{entry.voucherType}</div>
+                  </td>
+                  <td className="db-cell-vno" style={{ color: 'var(--mantine-color-violet-6)', fontSize: 11 }}>{entry.account}</td>
+                  <td className="db-cell-desc" title={entry.description}>{entry.description}</td>
+                  <td className="db-cell-total" style={{ color: '#1565c0' }}>{fmt(entry.drAmount)}</td>
+                  <td className="db-cell-total" style={{ color: '#c62828' }}>{fmt(entry.crAmount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="db-side__footer">
+          <table className="db-ledger db-ledger--footer">
+            <tbody>
+              <tr className="db-summary-row db-day-total">
+                <td className="db-footer-label" colSpan={3}>Adjustment Total</td>
+                <td className="db-footer-total">{fmtAlways(drTotal)}</td>
+                <td className="db-footer-total">{fmtAlways(crTotal)}</td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -245,12 +384,16 @@ const VyaparDayBook = () => {
           <span>Dr Total: {fmtAlways(card.debitTotal)}</span>
           <span>Cr Total: {fmtAlways(card.creditTotal)}</span>
           <span>Closing: {fmtAlways(card.closingBalance)}</span>
+          {card.adjustments.length > 0 && (
+            <span style={{ color: '#7c3aed' }}>Adj: {card.adjustments.length} entries</span>
+          )}
         </div>
       </div>
       <div className="db-card__body">
-        {renderSideTable('receipt', card.receipts, card.debitTotal, card.openingBalance, card.closingBalance)}
-        {renderSideTable('payment', card.payments, card.creditTotal, card.openingBalance, card.closingBalance)}
+        {renderSideTable('receipt', card.receipts, card.debitTotal, card.openingBalance, card.closingBalance, card.date, handleAdjust)}
+        {renderSideTable('payment', card.payments, card.creditTotal, card.openingBalance, card.closingBalance, card.date, handleAdjust)}
       </div>
+      {renderAdjustmentTable(card.adjustments, card.adjustmentDrTotal, card.adjustmentCrTotal)}
     </div>
   );
 
@@ -281,6 +424,8 @@ const VyaparDayBook = () => {
     .db-side__header { display: flex; align-items: center; gap: 6px; padding: ${isPortrait ? '4px 6px' : '5px 8px'}; font-weight: 700; font-size: ${isPortrait ? '9px' : '11px'}; letter-spacing: 2px; text-transform: uppercase; border-bottom: 2px solid #333; }
     .db-side--receipt .db-side__header { background: #e8f5e9; color: #2e7d32; }
     .db-side--payment .db-side__header { background: #fce4ec; color: #c62828; }
+    .db-side--adjustment .db-side__header { background: #f3e8ff; color: #7c3aed; }
+    .db-side--adjustment { border-top: 2px dashed #9c6fe4; margin-top: 8px; }
     .db-side__icon { display: none; }
     .db-side__subtitle { font-size: ${isPortrait ? '7px' : '8px'}; font-weight: 400; letter-spacing: 0; }
     .db-side__body { min-height: ${isPortrait ? '60px' : '100px'}; }
@@ -363,7 +508,7 @@ const VyaparDayBook = () => {
       return body;
     };
 
-    dayCards.forEach((card, idx) => {
+    effectiveCards.filter(c => c.hasData).forEach((card, idx) => {
       if (idx > 0) doc.addPage();
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(isPortrait ? 12 : 14);
@@ -422,7 +567,7 @@ const VyaparDayBook = () => {
     rows.push([`DAY BOOK: ${formatDateShort(fromDate)} to ${formatDateShort(toDate)}`]);
     rows.push([]);
 
-    for (const card of dayCards) {
+    for (const card of effectiveCards.filter(c => c.hasData)) {
       rows.push([`Date: ${formatDateLong(card.date)}`]);
       rows.push([`Opening Balance: ${fmtAlways(card.openingBalance)}`, '', '', '', `Closing Balance: ${fmtAlways(card.closingBalance)}`, '', '']);
       rows.push(['DEBIT ENTRIES', '', '', '', 'CREDIT ENTRIES', '', '']);
@@ -455,8 +600,8 @@ const VyaparDayBook = () => {
     XLSX.writeFile(wb, `day_book_${dayjs(fromDate).format('YYYY-MM-DD')}_to_${dayjs(toDate).format('YYYY-MM-DD')}.xlsx`);
   };
 
-  const totalDays = dayCards.length;
-  const daysWithData = dayCards.filter(c => c.hasData).length;
+  const totalDays = effectiveCards.length;
+  const daysWithData = effectiveCards.filter(c => c.hasData).length;
 
   return (
     <Container size="xl" py="md" className="db-container">
@@ -582,9 +727,9 @@ const VyaparDayBook = () => {
       <div className="db-cards-area" style={{ position: 'relative' }}>
         <LoadingOverlay visible={loading} overlayProps={{ blur: 2 }} />
 
-        {reportData && !loading && dayCards.length > 0 && (
+        {reportData && !loading && effectiveCards.filter(c => c.hasData).length > 0 && (
           <div ref={printRef}>
-            {dayCards.map((card) => renderDayCard(card))}
+            {effectiveCards.filter(c => c.hasData).map((card) => renderDayCard(card))}
           </div>
         )}
 
@@ -600,7 +745,7 @@ const VyaparDayBook = () => {
           </Paper>
         )}
 
-        {reportData && !loading && dayCards.length === 0 && (
+        {reportData && !loading && effectiveCards.filter(c => c.hasData).length === 0 && (
           <Paper radius="md" withBorder shadow="sm" className="db-empty-state">
             <IconBook size={56} stroke={1.2} opacity={0.25} />
             <Text c="dimmed" size="md" mt="sm" fw={500}>
