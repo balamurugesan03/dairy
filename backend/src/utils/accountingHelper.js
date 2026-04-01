@@ -202,11 +202,13 @@ export const createPaymentVoucher = async (paymentData, session = null) => {
     ...(companyId && { companyId })
   });
 
+  const paidAmt = paymentData.paidAmount || 0;
+
   if (farmerLedger) {
     entries.push({
       ledgerId: farmerLedger._id,
       ledgerName: farmerLedger.ledgerName,
-      debitAmount: paymentData.netPayable,
+      debitAmount: paidAmt,
       creditAmount: 0
     });
   }
@@ -223,7 +225,7 @@ export const createPaymentVoucher = async (paymentData, session = null) => {
       ledgerId: paymentLedger._id,
       ledgerName: paymentLedger.ledgerName,
       debitAmount: 0,
-      creditAmount: paymentData.paidAmount
+      creditAmount: paidAmt
     });
   }
 

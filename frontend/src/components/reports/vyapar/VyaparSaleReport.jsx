@@ -105,7 +105,7 @@ const VyaparSaleReport = () => {
     'Party Name': record.partyName,
     'Items': record.itemCount,
     'Subtotal': record.subtotal.toFixed(2),
-    'Tax': record.tax.toFixed(2),
+    'GST': record.tax.toFixed(2),
     'Total': record.total.toFixed(2),
     'Paid': record.paid.toFixed(2),
     'Balance': record.balance.toFixed(2),
@@ -193,7 +193,7 @@ const VyaparSaleReport = () => {
           <th style="border: 1px solid #000; padding: 8px; background-color: #f5f5f5;">Party Name</th>
           <th style="border: 1px solid #000; padding: 8px; background-color: #f5f5f5; text-align: center;">Items</th>
           <th style="border: 1px solid #000; padding: 8px; background-color: #f5f5f5; text-align: right;">Subtotal</th>
-          <th style="border: 1px solid #000; padding: 8px; background-color: #f5f5f5; text-align: right;">Tax</th>
+          <th style="border: 1px solid #000; padding: 8px; background-color: #f5f5f5; text-align: right;">GST</th>
           <th style="border: 1px solid #000; padding: 8px; background-color: #f5f5f5; text-align: right;">Total</th>
           <th style="border: 1px solid #000; padding: 8px; background-color: #f5f5f5; text-align: right;">Paid</th>
           <th style="border: 1px solid #000; padding: 8px; background-color: #f5f5f5; text-align: right;">Balance</th>
@@ -446,7 +446,7 @@ const VyaparSaleReport = () => {
               <Grid.Col span={3}>
                 <Card withBorder padding="lg" radius="md" style={{ borderColor: '#e0e0e0' }}>
                   <Text size="sm" color="dimmed" weight={500}>
-                    Total Tax
+                    Total GST
                   </Text>
                   <Title order={3} mt="xs" style={{ color: '#1976d2' }}>
                     {formatCurrency(reportData.summary.totalTax)}
@@ -581,7 +581,7 @@ const VyaparSaleReport = () => {
                         fontWeight: 600,
                         fontSize: '12px',
                         textAlign: 'right'
-                      }}>Tax</th>
+                      }}>GST</th>
                       <th style={{ 
                         border: '1px solid #e0e0e0',
                         padding: '10px 12px',

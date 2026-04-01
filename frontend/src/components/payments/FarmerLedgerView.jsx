@@ -86,8 +86,8 @@ const FarmerLedgerView = () => {
     setLoading(true);
     try {
       const params = {};
-      if (filters.fromDate) params.fromDate = filters.fromDate.toISOString();
-      if (filters.toDate) params.toDate = filters.toDate.toISOString();
+      if (filters.fromDate) params.fromDate = new Date(filters.fromDate).toISOString();
+      if (filters.toDate) params.toDate = new Date(filters.toDate).toISOString();
       if (filters.transactionType !== 'all') params.transactionType = filters.transactionType;
 
       const response = await farmerLedgerAPI.getLedger(farmerId, params);

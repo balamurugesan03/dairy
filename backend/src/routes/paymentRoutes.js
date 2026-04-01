@@ -7,6 +7,7 @@ import {
   getFarmerPaymentHistory,
   updatePayment,
   cancelPayment,
+  deletePayment,
   getPaymentStats,
   bulkCreatePayments,
   // Advance functions
@@ -70,6 +71,9 @@ router.put('/farmer-payments/:id', updatePayment);
 
 // Cancel payment
 router.post('/farmer-payments/:id/cancel', cancelPayment);
+
+// Delete payment permanently
+router.delete('/farmer-payments/:id', deletePayment);
 
 // ==================== ADVANCE ROUTES ====================
 

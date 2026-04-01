@@ -14,7 +14,7 @@ import {
 import { dairySettingsAPI } from '../../services/api';
 
 // ── Payment Day option card ───────────────────────────────────────────────────
-const DayCard = ({ days, label, sublabel, selected, onClick }) => (
+const DayCard = ({ days, label, sublabel, periods, selected, onClick }) => (
   <Card
     withBorder
     radius="md"
@@ -28,33 +28,40 @@ const DayCard = ({ days, label, sublabel, selected, onClick }) => (
     }}
     onClick={onClick}
   >
-    <Group gap="sm" align="flex-start">
+    <Group gap="sm" align="flex-start" wrap="nowrap">
       <ThemeIcon
-        size={46}
+        size={40}
         radius="md"
         color={selected ? 'indigo' : 'gray'}
         variant={selected ? 'filled' : 'light'}
+        style={{ flexShrink: 0 }}
       >
-        <IconClock size={22} />
+        <IconClock size={20} />
       </ThemeIcon>
-      <div>
-        <Text fw={700} size="lg" c={selected ? 'indigo' : undefined}>{label}</Text>
-        <Text size="xs" c="dimmed">{sublabel}</Text>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <Group justify="space-between" wrap="nowrap">
+          <Text fw={700} size="md" c={selected ? 'indigo' : undefined}>{label}</Text>
+          {selected && (
+            <ThemeIcon size="sm" color="indigo" radius="xl" variant="filled" style={{ flexShrink: 0 }}>
+              <IconCheck size={12} />
+            </ThemeIcon>
+          )}
+        </Group>
+        <Text size="xs" c="dimmed" mb={4}>{sublabel}</Text>
+        <Text size="xs" fw={600} c={selected ? 'indigo.7' : 'gray.6'}
+          style={{ fontFamily: 'monospace', letterSpacing: 0.2 }}>
+          {periods}
+        </Text>
       </div>
-      {selected && (
-        <ThemeIcon ml="auto" size="sm" color="indigo" radius="xl" variant="filled">
-          <IconCheck size={12} />
-        </ThemeIcon>
-      )}
     </Group>
   </Card>
 );
 
 const PAYMENT_OPTIONS = [
-  { days: 7,  label: '7 Days',  sublabel: 'Weekly payment cycle' },
-  { days: 10, label: '10 Days', sublabel: '10-day payment cycle' },
-  { days: 15, label: '15 Days', sublabel: 'Fortnightly payment cycle' },
-  { days: 30, label: '1 Month', sublabel: 'Monthly payment cycle' },
+  { days: 7,  label: '7 Days',  sublabel: 'Weekly payment cycle',       periods: '1–7,  8–14,  15–21,  22 – Month End' },
+  { days: 10, label: '10 Days', sublabel: '10-day payment cycle',       periods: '1–10,  11–20,  21 – Month End' },
+  { days: 15, label: '15 Days', sublabel: 'Fortnightly payment cycle',  periods: '1–15,  16 – Month End' },
+  { days: 30, label: '1 Month', sublabel: 'Monthly payment cycle',      periods: '1 – Month End' },
 ];
 
 export default function PaymentSettings() {
@@ -64,6 +71,7 @@ export default function PaymentSettings() {
 
   // local form state
   const [paymentDays, setPaymentDays]     = useState(15);
+  const [paymentFromDate, setPaymentFromDate]           = useState(null);
   const [accountStartDate, setAccountStartDate]         = useState(null);
   const [acStartBalance, setAcStartBalance]             = useState(0);
   const [acStartBalanceType, setAcStartBalanceType]     = useState('Dr');
@@ -77,6 +85,7 @@ export default function PaymentSettings() {
       const d = res.data;
       setSettings(d);
       setPaymentDays(d.paymentDays ?? 15);
+      setPaymentFromDate(d.paymentFromDate ? new Date(d.paymentFromDate) : null);
       setAccountStartDate(d.accountStartDate ? new Date(d.accountStartDate) : null);
       setAcStartBalance(d.accountStartDateOpeningBalance ?? 0);
       setAcStartBalanceType(d.accountStartDateOpeningBalanceType ?? 'Dr');
@@ -92,7 +101,8 @@ export default function PaymentSettings() {
     setSaving(true);
     const res = await dairySettingsAPI.update({
       paymentDays,
-      accountStartDate:                    accountStartDate ? accountStartDate.toISOString() : null,
+      paymentFromDate: paymentFromDate ? new Date(paymentFromDate).toISOString() : null,
+      accountStartDate:                    accountStartDate ? new Date(accountStartDate).toISOString() : null,
       accountStartDateOpeningBalance:      acStartBalance,
       accountStartDateOpeningBalanceType:  acStartBalanceType,
       financialYearOpeningBalance:         fyOpeningBalance,
@@ -179,6 +189,51 @@ export default function PaymentSettings() {
                 />
               </Grid.Col>
             ))}
+          </Grid>
+
+          <Divider my="sm" label="Payment From Date" labelPosition="left" />
+          <Grid gutter="sm" mb="sm">
+            <Grid.Col span={{ base: 12, sm: 5 }}>
+              <Stack gap={4}>
+                <Group gap={4}>
+                  <Text size="xs" fw={500}>Payment From Date</Text>
+                  <Tooltip label="The start date of the payment cycle. Payment Register will auto-fill From Date from this." withArrow>
+                    <IconInfoCircle size={13} color="var(--mantine-color-dimmed)" style={{ cursor: 'help' }} />
+                  </Tooltip>
+                </Group>
+                <DateInput
+                  placeholder="Select payment from date"
+                  value={paymentFromDate}
+                  onChange={setPaymentFromDate}
+                  valueFormat="DD MMM YYYY"
+                  clearable
+                  leftSection={<IconCalendarEvent size={16} />}
+                />
+                <Text size="xs" c="dimmed">
+                  Payment Register will use this as From Date and add {paymentDays === 30 ? '1 month' : `${paymentDays} days`} for the To Date.
+                </Text>
+              </Stack>
+            </Grid.Col>
+            {paymentFromDate && (
+              <Grid.Col span={{ base: 12, sm: 7 }}>
+                {(() => {
+                  const fd  = new Date(paymentFromDate);
+                  const eom = new Date(fd.getFullYear(), fd.getMonth() + 1, 0);
+                  const nextStart = new Date(fd);
+                  nextStart.setDate(nextStart.getDate() + paymentDays);
+                  const td  = nextStart >= eom ? eom : new Date(fd.getFullYear(), fd.getMonth(), fd.getDate() + paymentDays - 1);
+                  const fmt = (d) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                  return (
+                    <Card withBorder radius="sm" p="sm" bg="cyan.0" mt={20}>
+                      <Text size="xs" c="dimmed" fw={500}>Period Preview</Text>
+                      <Text size="sm" fw={600} mt={4} c="cyan.8">
+                        {fmt(fd)} → {fmt(td)}
+                      </Text>
+                    </Card>
+                  );
+                })()}
+              </Grid.Col>
+            )}
           </Grid>
 
           <Alert color="cyan" radius="md" icon={<IconInfoCircle size={16} />} mt="xs">
@@ -367,7 +422,7 @@ export default function PaymentSettings() {
                     <Card withBorder radius="sm" p="sm" style={{ borderLeft: '3px solid var(--mantine-color-teal-6)' }}>
                       <Text size="xs" c="dimmed" fw={500}>
                         Account Start Balance
-                        {accountStartDate && <span> ({accountStartDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })})</span>}
+                        {accountStartDate && <span> ({new Date(accountStartDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })})</span>}
                       </Text>
                       <Group gap={4} mt={2}>
                         <Text size="lg" fw={700}>

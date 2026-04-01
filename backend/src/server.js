@@ -217,6 +217,12 @@ import financialYearRoutes from './routes/financialYearRoutes.js';
 // Dairy Settings routes (payment days, account start date, opening balances)
 import dairySettingsRoutes from './routes/dairySettingsRoutes.js';
 
+// Producer Payment routes
+import producerPaymentRoutes from './routes/producerPaymentRoutes.js';
+
+// Producer Opening routes
+import producerOpeningRoutes from './routes/producerOpeningRoutes.js';
+
 // Auth routes (public login, protected user management)
 app.use('/api/auth', authRoutes);
 
@@ -368,6 +374,12 @@ app.use('/api/financial-years', protect, addCompanyFilter, financialYearRoutes);
 
 // Dairy Settings routes
 app.use('/api/dairy-settings', protect, addCompanyFilter, dairySettingsRoutes);
+
+// Producer Payment routes
+app.use('/api', protect, addCompanyFilter, producerPaymentRoutes);
+
+// Producer Opening routes
+app.use('/api', protect, addCompanyFilter, producerOpeningRoutes);
 
 // Protected company routes (for superadmin management)
 app.use('/api/companies', protect, companyRoutes);

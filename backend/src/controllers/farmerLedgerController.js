@@ -3,6 +3,7 @@ import Advance from '../models/Advance.js';
 import ProducerLoan from '../models/ProducerLoan.js';
 import ProducerReceipt from '../models/ProducerReceipt.js';
 import Farmer from '../models/Farmer.js';
+import PeriodicalRule from '../models/PeriodicalRule.js';
 import mongoose from 'mongoose';
 
 // Get complete farmer ledger with running balance
@@ -14,7 +15,11 @@ export const getFarmerLedger = async (req, res) => {
     // Build date filter
     const dateFilter = {};
     if (fromDate) dateFilter.$gte = new Date(fromDate);
-    if (toDate) dateFilter.$lte = new Date(toDate);
+    if (toDate) {
+      const endDate = new Date(toDate);
+      endDate.setHours(23, 59, 59, 999);
+      dateFilter.$lte = endDate;
+    }
 
     // Collect all transactions
     const transactions = [];
@@ -359,22 +364,45 @@ export const getLedgerSummary = async (req, res) => {
   }
 };
 
-// Check welfare recovery eligibility for current month
+// Check welfare recovery eligibility — amount from PeriodicalRule, respects applyPeriod
 export const checkWelfareRecovery = async (req, res) => {
   try {
     const farmerId = req.params.farmerId;
+    const companyId = req.companyId;
     const checkDate = req.query.date ? new Date(req.query.date) : new Date();
+    const fromDate  = req.query.fromDate ? new Date(req.query.fromDate) : null;
+    const toDate    = req.query.toDate   ? new Date(req.query.toDate)   : null;
 
-    // Get start and end of the month
-    const startOfMonth = new Date(checkDate.getFullYear(), checkDate.getMonth(), 1);
-    const endOfMonth = new Date(checkDate.getFullYear(), checkDate.getMonth() + 1, 0, 23, 59, 59);
+    // 1. Find active PeriodicalRule for DEDUCTIONS with FIXED_AMOUNT
+    const rule = await PeriodicalRule.findOne({
+      companyId,
+      component: 'DEDUCTIONS',
+      basedOn:   'FIXED_AMOUNT',
+      active:    true,
+    }).lean();
 
-    // Check if welfare recovery has already been deducted this month
+    const welfareAmount = rule?.fixedRate || 0;
+    const applyPeriod   = rule?.applyPeriod || 'ONCE_IN_MONTH';
+
+    // 2. Determine the check window based on applyPeriod
+    let checkStart, checkEnd;
+    if (applyPeriod === 'EACH_PERIOD' && fromDate && toDate) {
+      checkStart = fromDate;
+      checkEnd   = new Date(toDate);
+      checkEnd.setHours(23, 59, 59, 999);
+    } else {
+      // ONCE_IN_MONTH — check the whole month of the payment date / fromDate
+      const ref = fromDate || checkDate;
+      checkStart = new Date(ref.getFullYear(), ref.getMonth(), 1);
+      checkEnd   = new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 23, 59, 59);
+    }
+
+    // 3. Check if welfare already deducted in this window
     const existingWelfareDeduction = await FarmerPayment.findOne({
       farmerId,
-      paymentDate: { $gte: startOfMonth, $lte: endOfMonth },
+      paymentDate: { $gte: checkStart, $lte: checkEnd },
       status: { $ne: 'Cancelled' },
-      'deductions.type': 'Welfare Recovery'
+      'deductions.type': 'Welfare Recovery',
     });
 
     const alreadyDeducted = !!existingWelfareDeduction;
@@ -385,11 +413,12 @@ export const checkWelfareRecovery = async (req, res) => {
         month: checkDate.toLocaleString('default', { month: 'long', year: 'numeric' }),
         alreadyDeducted,
         eligibleForDeduction: !alreadyDeducted,
-        amount: 20,
+        amount: alreadyDeducted ? 0 : welfareAmount,
+        applyPeriod,
         lastDeduction: existingWelfareDeduction ? {
           date: existingWelfareDeduction.paymentDate,
-          paymentNumber: existingWelfareDeduction.paymentNumber
-        } : null
+          paymentNumber: existingWelfareDeduction.paymentNumber,
+        } : null,
       }
     });
   } catch (error) {

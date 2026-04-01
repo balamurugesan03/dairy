@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Outlet, useLocation } from 'react-router-dom';
 import {
@@ -23,7 +22,7 @@ import { useDisclosure } from '@mantine/hooks';
 import {
   IconHome, IconUsers, IconBox, IconShoppingCart, IconBook,
   IconCash, IconFileReport, IconShield, IconTool, IconSearch,
-  IconSpeakerphone, IconBriefcase, IconChevronDown, IconMenu2, IconLogout, IconUser,
+  IconSpeakerphone, IconBriefcase, IconChevronDown, IconChevronRight, IconMenu2, IconLogout, IconUser,
   IconUserCog, IconBuildingStore, IconSettings, IconMilk, IconArrowLeft, IconBuildingCommunity,
   IconCalendarEvent, IconAdjustments
 } from '@tabler/icons-react';
@@ -35,6 +34,34 @@ import CompanySwitcher from '../company/CompanySwitcher';
 
 const MainLayout = () => {
   const [mobileOpened, { toggle: toggleMobile }] = useDisclosure();
+
+  const ITEMS_VISIBLE = 10;
+
+  const [menuOrders, setMenuOrders] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('dairy_menu_orders') || '{}'); }
+    catch { return {}; }
+  });
+
+  const getOrderedChildren = (item) => {
+    if (!item.children) return [];
+    const saved = menuOrders[item.key];
+    if (!saved || saved.length === 0) return item.children;
+    const map = Object.fromEntries(item.children.map(c => [c.key, c]));
+    const ordered = saved.map(k => map[k]).filter(Boolean);
+    const inSaved = new Set(saved);
+    item.children.forEach(c => { if (!inSaved.has(c.key)) ordered.push(c); });
+    return ordered;
+  };
+
+  const promoteToFront = (menuKey, childKey, allChildren) => {
+    const keys = allChildren.map(c => c.key);
+    const newOrder = [childKey, ...keys.filter(k => k !== childKey)];
+    setMenuOrders(prev => {
+      const updated = { ...prev, [menuKey]: newOrder };
+      localStorage.setItem('dairy_menu_orders', JSON.stringify(updated));
+      return updated;
+    });
+  };
   const navigate = useNavigate();
   const location = useLocation();
   const { selectedCompany, selectedBusinessType } = useCompany();
@@ -150,20 +177,24 @@ const MainLayout = () => {
       label: 'Milk purchase & Sales',
       color: 'teal',
       children: [
-           { key: '/daily-collections/milk-purchase',          label: 'Milk Purchase'          },
-               { key: '/daily-collections/list',                   label: ' Daily Collection List'         },
-        { key: '/daily-collections/milk-sales',             label: 'Milk Sales'             },
-     { key: '/daily-collections/union-sales-slip',       label: 'Union Sales '       },
-        { key: '/daily-collections/farmer-wise-summary',    label: 'Farmer-Wise Summary'    },
-        { key: '/daily-collections/rate-chart-settings',    label: 'Rate Chart Settings'    },
-        { key: '/daily-collections/milk-purchase-settings', label: 'Machine Configuration'  },
-        // { key: '/milk-analyzer',                             label: 'Milk Analyzer'           },
-       
-        { key: '/daily-collections/milk-sales-rate',        label: 'Milk Sales Rate'         },
-        { key: '/daily-collections/shift-incentive',         label: 'Shift Incentive'         },
-        { key: '/daily-collections/time-incentive',          label: 'Time Incentive'          },
-        { key: '/daily-collections/producer-openings',       label: 'Producer Openings'       },
-         { key: '/reports/salesman-balance',   label: 'Salesman Balance Report' }
+        { key: '/daily-collections/milk-purchase', label: 'Milk Purchase' },
+        { key: '/daily-collections/list',           label: 'Daily Collection List' },
+        { key: '/daily-collections/milk-sales',     label: 'Milk Sales' },
+        { key: '/daily-collections/union-sales-slip', label: 'Union Sales' },
+        { key: '/daily-collections/farmer-wise-summary', label: 'Farmer-Wise Summary' },
+        { key: '/reports/salesman-balance', label: 'Salesman Balance Report' },
+        {
+          key: 'milk-settings-sub',
+          label: 'Settings & Configuration',
+          children: [
+            { key: '/daily-collections/rate-chart-settings',    label: 'Rate Chart Settings'   },
+            { key: '/daily-collections/milk-purchase-settings', label: 'Machine Configuration' },
+            { key: '/daily-collections/milk-sales-rate',        label: 'Milk Sales Rate'        },
+            { key: '/daily-collections/shift-incentive',        label: 'Shift Incentive'        },
+            { key: '/daily-collections/time-incentive',         label: 'Time Incentive'         },
+            { key: '/daily-collections/producer-openings',      label: 'Producer Openings'      },
+          ]
+        },
       ]
     }] : []),
     // DAIRY INVENTORY - Only show for Dairy Cooperative Society
@@ -243,22 +274,47 @@ const MainLayout = () => {
       label: 'Producers dues',
       color: 'cyan',
       children: [
-        { key: '/payments/register', label: 'Milk Payment Register' },
-        { key: '/payments/register-ledger', label: 'Payment Register Ledger' },
-        { key: '/payments/individual', label: 'Individual Payment' },
-        { key: '/payments/producer-register', label: 'Producer Register' },
-        { key: '/payments/producer-register-summary', label: 'Producer Summary' },
         { key: '/payments/bank-transfer', label: 'Bank Transfer' },
-        { key: '/payments/loans', label: 'Loans' },
-        { key: '/payments/cash-advance', label: 'Cash Advance' },
         { key: '/payments/receipts', label: 'Receipts' },
         { key: '/payments/farmer-ledger', label: 'Farmer Ledger' },
-        { key: '/payments/earning-deduction-master',      label: 'Earnings / Deductions Master' },
-        { key: '/payments/individual-deduction-earning',  label: 'Individual Deductions/Earnings' },
-        { key: '/payments/historical-deduction-earning',  label: 'Historical Deductions/Earnings' },
-        { key: '/payments/periodical-deduction-earning', label: 'Periodical Deductions/Earnings' },
-        { key: '/payments/creditor-bill',    label: 'Payment Register (Creditor Bill)' },
-        { key: '/payments/producer-payment', label: 'Payment Register (Producers)' },
+        {
+          key: 'payments-sub',
+          label: 'Payments',
+          children: [
+            { key: '/payments/register', label: 'Individual Payment' },
+            { key: '/payments/register-ledger', label: 'Payment Register Detailed' },
+            // { key: '/payments/individual', label: 'Individual Payment' },
+            { key: '/payments/creditor-bill', label: 'Payment Register (Creditor Bill)' },
+            { key: '/payments/producer-payment', label: 'Payment Register (Producers)' },
+            { key: '/payments/payment-to-producer', label: 'Payment to Producer' },
+          ]
+        },
+        {
+          key: 'deductions-sub',
+          label: 'Deductions / Earnings',
+          children: [
+            { key: '/payments/earning-deduction-master', label: 'Earnings / Deductions Master' },
+            { key: '/payments/individual-deduction-earning', label: 'Individual' },
+            { key: '/payments/historical-deduction-earning', label: 'Historical' },
+            { key: '/payments/periodical-deduction-earning', label: 'Periodical Settings' },
+          ]
+        },
+        {
+          key: 'recoveries-sub',
+          label: 'Recoveries',
+          children: [
+            { key: '/payments/loans', label: 'Loans' },
+            { key: '/payments/cash-advance', label: 'Cash Advance' },
+          ]
+        },
+        {
+          key: 'registers-sub',
+          label: 'Registers / Reports',
+          children: [
+            { key: '/payments/producer-register', label: 'Producer Register' },
+            { key: '/payments/producer-register-summary', label: 'Producer Summary' },
+          ]
+        },
       ]
     }] : []),
   
@@ -481,9 +537,129 @@ const MainLayout = () => {
     }
   };
 
+  // Renders menu children with "More" flyout for items beyond 10
+  const renderMenuChildren = (item) => {
+    const ordered = getOrderedChildren(item);
+    const visible = ordered.slice(0, ITEMS_VISIBLE);
+    const hidden = ordered.slice(ITEMS_VISIBLE);
+
+    return (
+      <>
+        {visible.map(child => renderDropdownItem(child, item.color, item.key, ordered))}
+        {hidden.length > 0 && (
+          <Menu trigger="hover" position="right-start" offset={0} shadow="lg" width={230}>
+            <Menu.Target>
+              <Menu.Item
+                rightSection={<IconChevronRight size={14} />}
+                style={{
+                  borderRadius: '8px',
+                  margin: '4px',
+                  fontWeight: 600,
+                  color: `var(--mantine-color-${item.color}-6)`,
+                  borderTop: '1px dashed var(--mantine-color-default-border)',
+                  marginTop: '6px',
+                }}
+              >
+                More ({hidden.length})
+              </Menu.Item>
+            </Menu.Target>
+            <Menu.Dropdown style={{ border: 'none', boxShadow: '0 10px 40px rgba(0,0,0,0.15)', borderRadius: '12px' }}>
+              {hidden.map(child =>
+                child.children
+                  ? renderDropdownItem(child, item.color, item.key, ordered)
+                  : (
+                    <Menu.Item
+                      key={child.key}
+                      onMouseDown={() => {
+                        promoteToFront(item.key, child.key, ordered);
+                        handleMenuClick(child.key);
+                      }}
+                      style={{
+                        borderRadius: '8px',
+                        margin: '4px',
+                        fontWeight: location.pathname === child.key ? 600 : 400,
+                        backgroundColor: location.pathname === child.key ? `var(--mantine-color-${item.color}-1)` : undefined,
+                        color: location.pathname === child.key ? `var(--mantine-color-${item.color}-7)` : undefined,
+                      }}
+                    >
+                      {child.label}
+                    </Menu.Item>
+                  )
+              )}
+            </Menu.Dropdown>
+          </Menu>
+        )}
+      </>
+    );
+  };
+
+  // Renders a single dropdown item — supports one level of nested sub-menus
+  const renderDropdownItem = (child, parentColor, parentMenuKey, allSiblings) => {
+    const isChildActive = location.pathname === child.key;
+
+    if (child.children) {
+      const isSubActive = child.children.some(s => location.pathname === s.key);
+      return (
+        <Menu key={child.key} trigger="hover" position="right-start" offset={0} shadow="lg" width={220}>
+          <Menu.Target>
+            <Menu.Item
+              rightSection={<IconChevronRight size={14} />}
+              onClick={() => handleMenuClick(child.children[0].key)}
+              style={{
+                borderRadius: '8px',
+                margin: '4px',
+                fontWeight: isSubActive ? 600 : 400,
+                backgroundColor: isSubActive ? `var(--mantine-color-${parentColor}-1)` : undefined,
+                color: isSubActive ? `var(--mantine-color-${parentColor}-7)` : undefined,
+              }}
+            >
+              {child.label}
+            </Menu.Item>
+          </Menu.Target>
+          <Menu.Dropdown style={{ border: 'none', boxShadow: '0 10px 40px rgba(0,0,0,0.15)', borderRadius: '12px' }}>
+            {child.children.map((sub) => (
+              <Menu.Item
+                key={sub.key}
+                onMouseDown={() => handleMenuClick(sub.key)}
+                style={{
+                  borderRadius: '8px',
+                  margin: '4px',
+                  fontWeight: location.pathname === sub.key ? 600 : 400,
+                  backgroundColor: location.pathname === sub.key ? `var(--mantine-color-${parentColor}-1)` : undefined,
+                  color: location.pathname === sub.key ? `var(--mantine-color-${parentColor}-7)` : undefined,
+                }}
+              >
+                {sub.label}
+              </Menu.Item>
+            ))}
+          </Menu.Dropdown>
+        </Menu>
+      );
+    }
+
+    return (
+      <Menu.Item
+        key={child.key}
+        onClick={() => handleMenuClick(child.key)}
+        style={{
+          borderRadius: '8px',
+          margin: '4px',
+          fontWeight: isChildActive ? 600 : 400,
+          backgroundColor: isChildActive ? `var(--mantine-color-${parentColor}-1)` : undefined,
+          color: isChildActive ? `var(--mantine-color-${parentColor}-7)` : undefined,
+        }}
+      >
+        {child.label}
+      </Menu.Item>
+    );
+  };
+
   const renderHorizontalMenuItem = (item) => {
     const isActive = location.pathname === item.key ||
-      (item.children && item.children.some(child => location.pathname === child.key));
+      (item.children && item.children.some(child =>
+        location.pathname === child.key ||
+        (child.children && child.children.some(sub => location.pathname === sub.key))
+      ));
 
     if (item.children) {
       return (
@@ -518,25 +694,7 @@ const MainLayout = () => {
               borderRadius: '12px',
             }}
           >
-            {item.children.map((child) => (
-              <Menu.Item
-                key={child.key}
-                onClick={() => handleMenuClick(child.key)}
-                style={{
-                  borderRadius: '8px',
-                  margin: '4px',
-                  fontWeight: location.pathname === child.key ? 600 : 400,
-                  backgroundColor: location.pathname === child.key
-                    ? `var(--mantine-color-${item.color}-1)`
-                    : undefined,
-                  color: location.pathname === child.key
-                    ? `var(--mantine-color-${item.color}-7)`
-                    : undefined,
-                }}
-              >
-                {child.label}
-              </Menu.Item>
-            ))}
+            {renderMenuChildren(item)}
           </Menu.Dropdown>
         </Menu>
       );
@@ -752,23 +910,49 @@ const MainLayout = () => {
                       </Text>
                     </Group>
                     <Stack gap={4} pl="md">
-                      {item.children.map((child) => (
-                        <Button
-                          key={child.key}
-                          variant={location.pathname === child.key ? 'light' : 'subtle'}
-                          color={location.pathname === child.key ? item.color : 'gray'}
-                          onClick={() => handleMenuClick(child.key)}
-                          fullWidth
-                          justify="flex-start"
-                          size="sm"
-                          radius="md"
-                          styles={{
-                            root: { fontWeight: location.pathname === child.key ? 600 : 400 },
-                          }}
-                        >
-                          {child.label}
-                        </Button>
-                      ))}
+                      {item.children.map((child) => {
+                        if (child.children) {
+                          return (
+                            <Box key={child.key}>
+                              <Text size="xs" fw={600} c="dimmed" tt="uppercase" pl={4} mb={2}>
+                                {child.label}
+                              </Text>
+                              <Stack gap={2} pl="sm">
+                                {child.children.map((sub) => (
+                                  <Button
+                                    key={sub.key}
+                                    variant={location.pathname === sub.key ? 'light' : 'subtle'}
+                                    color={location.pathname === sub.key ? item.color : 'gray'}
+                                    onClick={() => handleMenuClick(sub.key)}
+                                    fullWidth
+                                    justify="flex-start"
+                                    size="xs"
+                                    radius="md"
+                                    styles={{ root: { fontWeight: location.pathname === sub.key ? 600 : 400 } }}
+                                  >
+                                    {sub.label}
+                                  </Button>
+                                ))}
+                              </Stack>
+                            </Box>
+                          );
+                        }
+                        return (
+                          <Button
+                            key={child.key}
+                            variant={location.pathname === child.key ? 'light' : 'subtle'}
+                            color={location.pathname === child.key ? item.color : 'gray'}
+                            onClick={() => handleMenuClick(child.key)}
+                            fullWidth
+                            justify="flex-start"
+                            size="sm"
+                            radius="md"
+                            styles={{ root: { fontWeight: location.pathname === child.key ? 600 : 400 } }}
+                          >
+                            {child.label}
+                          </Button>
+                        );
+                      })}
                     </Stack>
                     <Divider my="sm" />
                   </Box>

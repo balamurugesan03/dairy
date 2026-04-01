@@ -53,10 +53,6 @@ const VyaparCashBook = () => {
     }
   };
 
-  useEffect(() => {
-    fetchReport(fromDate, toDate);
-  }, []);
-
   const handleGenerate = () => fetchReport(fromDate, toDate);
 
   // --- Format helpers ---
@@ -433,7 +429,7 @@ const VyaparCashBook = () => {
             <DatePickerInput
               label="From Date"
               value={fromDate}
-              onChange={setFromDate}
+              onChange={(v) => { setFromDate(v); setReportData(null); }}
               valueFormat="DD/MM/YYYY"
               size="xs"
               leftSection={<IconCalendar size={14} />}
@@ -445,7 +441,7 @@ const VyaparCashBook = () => {
             <DatePickerInput
               label="To Date"
               value={toDate}
-              onChange={setToDate}
+              onChange={(v) => { setToDate(v); setReportData(null); }}
               valueFormat="DD/MM/YYYY"
               size="xs"
               leftSection={<IconCalendar size={14} />}

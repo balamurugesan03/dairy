@@ -11,6 +11,8 @@ export const getAll = async (req, res) => {
       type,
       date,
       producerId,
+      fromDate,
+      toDate,
     } = req.query;
 
     const filter = { companyId: req.companyId };
@@ -21,6 +23,14 @@ export const getAll = async (req, res) => {
       const start = new Date(d.getFullYear(), d.getMonth(), d.getDate());
       const end   = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
       filter.date = { $gte: start, $lt: end };
+    } else if (fromDate || toDate) {
+      filter.date = {};
+      if (fromDate) filter.date.$gte = new Date(fromDate);
+      if (toDate) {
+        const end = new Date(toDate);
+        end.setHours(23, 59, 59, 999);
+        filter.date.$lte = end;
+      }
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);

@@ -25,6 +25,11 @@ const dairySettingsSchema = new mongoose.Schema(
       default: 15,
     },
 
+    // The starting date of the payment cycle (from date for the register)
+    paymentFromDate: {
+      type: Date,
+    },
+
     // ── Account Settings ──────────────────────────────────────────────────
     // The calendar date from which this society's accounts start in the software.
     accountStartDate: {

@@ -1,381 +1,320 @@
 import { useState, useEffect } from 'react';
 import {
-  Container,
-  Card,
-  Paper,
-  Title,
-  Text,
-  Group,
-  Stack,
-  Grid,
-  Box,
-  Button,
-  Select,
-  Radio,
-  Checkbox,
-  Slider,
-  Table,
-  ScrollArea,
-  Badge,
-  NumberInput,
-  Loader,
-  Center,
-  Tabs,
-  ActionIcon,
-  Menu,
-  Pagination,
-  Tooltip,
-  Alert,
-  Modal
+  Container, Card, Paper, Title, Text, Group, Stack, Grid, Box,
+  Button, Select, Checkbox, Table, ScrollArea, Badge, NumberInput,
+  Loader, Center, Tabs, ActionIcon, Menu, Pagination, Modal
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
-import {
-  IconBuildingBank,
-  IconCash,
-  IconUsers,
-  IconCheck,
-  IconX,
-  IconDotsVertical,
-  IconEye,
-  IconTrash,
-  IconDownload,
-  IconRefresh,
-  IconFilter,
-  IconAlertCircle,
-  IconCheckbox,
-  IconSquare
-} from '@tabler/icons-react';
+import { notifications } from '@mantine/notifications';
+import dayjs from 'dayjs';
 import { bankTransferAPI } from '../../services/api';
-import { message } from '../../utils/toast';
+import {
+  IconBuildingBank, IconCash, IconCheck, IconX, IconEye,
+  IconRefresh, IconPrinter, IconDotsVertical,
+  IconChevronLeft, IconChevronRight, IconCoins
+} from '@tabler/icons-react';
 
+// ─── helpers ────────────────────────────────────────────────────────────────
+const getCyclePeriod = (cycle, refDate) => {
+  const d   = dayjs(refDate);
+  const yr  = d.year();
+  const mo  = d.month();
+  const day = d.date();
+  const eom = dayjs(new Date(yr, mo + 1, 0));
+  if (cycle === '7d') {
+    if (day <= 7)  return [new Date(yr, mo, 1),  new Date(yr, mo, 7)];
+    if (day <= 14) return [new Date(yr, mo, 8),  new Date(yr, mo, 14)];
+    if (day <= 21) return [new Date(yr, mo, 15), new Date(yr, mo, 21)];
+    return            [new Date(yr, mo, 22), eom.toDate()];
+  }
+  if (cycle === '10d') {
+    if (day <= 10) return [new Date(yr, mo, 1),  new Date(yr, mo, 10)];
+    if (day <= 20) return [new Date(yr, mo, 11), new Date(yr, mo, 20)];
+    return            [new Date(yr, mo, 21), eom.toDate()];
+  }
+  if (cycle === '15d') {
+    if (day <= 15) return [new Date(yr, mo, 1),  new Date(yr, mo, 15)];
+    return            [new Date(yr, mo, 16), eom.toDate()];
+  }
+  return [new Date(yr, mo, 1), eom.toDate()];
+};
+
+const fmt = (v) =>
+  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(v || 0);
+const fmtDate = (d) =>
+  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
+
+const STATUS_COLOR = { Draft: 'gray', Retrieved: 'blue', Applied: 'yellow', Completed: 'green', Cancelled: 'red' };
+
+const MODES = [
+  { value: 'Bank Transfer', label: 'Bank' },
+  { value: 'Cash',          label: 'Cash' },
+  { value: 'Cheque',        label: 'Cheque' },
+];
+
+const CYCLES = [
+  { value: '7d',  label: '7 Days'  },
+  { value: '10d', label: '10 Days' },
+  { value: '15d', label: '15 Days' },
+  { value: '1m',  label: '1 Month' },
+];
+
+// ─── component ──────────────────────────────────────────────────────────────
 const BankTransferManagement = () => {
-  // Tab state
   const [activeTab, setActiveTab] = useState('transfer');
 
-  // Form state
-  const [transferBasis, setTransferBasis] = useState('As on Date Balance');
-  const [asOnDate, setAsOnDate] = useState(new Date());
+  /* date / cycle */
+  const [cycle,     setCycle]     = useState('15d');
+  const [fromDate,  setFromDate]  = useState(null);
+  const [toDate,    setToDate]    = useState(null);
   const [applyDate, setApplyDate] = useState(new Date());
+
+  /* filters */
   const [collectionCenter, setCollectionCenter] = useState('all');
-  const [bank, setBank] = useState('all');
-  const [roundDownAmount, setRoundDownAmount] = useState(10);
-  const [dueByList, setDueByList] = useState(false);
+  const [bankFilter,       setBankFilter]       = useState('all');
+  const [roundDown,        setRoundDown]        = useState(0);
+  const [dueByList,        setDueByList]        = useState(true);
 
-  // Data state
-  const [transferDetails, setTransferDetails] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [retrieving, setRetrieving] = useState(false);
-  const [applying, setApplying] = useState(false);
-  const [summary, setSummary] = useState({
-    totalProducers: 0,
-    totalNetPayable: 0,
-    totalTransferAmount: 0,
-    totalApproved: 0,
-    negativeBalances: 0
-  });
+  /* data */
+  const [rows,       setRows]       = useState([]);
+  const [loading,    setLoading]    = useState(false);
+  const [applying,   setApplying]   = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
-  // Dropdown data
-  const [collectionCenters, setCollectionCenters] = useState([]);
-  const [banks, setBanks] = useState([]);
+  /* dropdown options */
+  const [centers, setCenters] = useState([]);
+  const [banks,   setBanks]   = useState([]);
 
-  // Transfer log state
-  const [transferLogs, setTransferLogs] = useState([]);
+  /* log tab */
+  const [logs,       setLogs]       = useState([]);
   const [logLoading, setLogLoading] = useState(false);
-  const [logPagination, setLogPagination] = useState({
-    page: 1,
-    pages: 1,
-    total: 0,
-    limit: 10
-  });
-  const [logFilters, setLogFilters] = useState({
-    status: '',
-    fromDate: null,
-    toDate: null
-  });
+  const [logPage,    setLogPage]    = useState(1);
+  const [logPages,   setLogPages]   = useState(1);
+  const [logFilters, setLogFilters] = useState({ status: '', fromDate: null, toDate: null });
 
-  // View modal
-  const [viewModalOpen, setViewModalOpen] = useState(false);
-  const [selectedTransfer, setSelectedTransfer] = useState(null);
+  /* modals */
+  const [viewModal,  setViewModal]  = useState(false);
+  const [selectedLog, setSelectedLog] = useState(null);
+  const [printModal, setPrintModal] = useState(false);
+  const [printMode,  setPrintMode]  = useState('all');
 
-  // Format currency
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 2
-    }).format(amount || 0);
-  };
-
-  // Format date
-  const formatDate = (date) => {
-    if (!date) return '-';
-    return new Date(date).toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
-  };
-
-  // Load dropdown data
+  // ── init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    loadDropdownData();
+    const [f, t] = getCyclePeriod('15d', new Date());
+    setFromDate(f);
+    setToDate(t);
+    loadDropdowns();
   }, []);
 
-  // Load transfer logs when tab changes
   useEffect(() => {
-    if (activeTab === 'log') {
-      loadTransferLogs();
-    }
-  }, [activeTab, logPagination.page, logFilters]);
+    if (activeTab === 'log') loadLogs();
+  }, [activeTab, logPage, logFilters]);
 
-  const loadDropdownData = async () => {
+  // ── cycle helpers ─────────────────────────────────────────────────────────
+  const applyCycle = (c) => {
+    setCycle(c);
+    const ref = fromDate || new Date();
+    const [f, t] = getCyclePeriod(c, ref);
+    setFromDate(f);
+    setToDate(t);
+    clearData();
+  };
+
+  const navigatePeriod = (dir) => {
+    const ref = dir === 'next'
+      ? dayjs(toDate).add(1, 'day').toDate()
+      : dayjs(fromDate).subtract(1, 'day').toDate();
+    const [f, t] = getCyclePeriod(cycle, ref);
+    setFromDate(f);
+    setToDate(t);
+    clearData();
+  };
+
+  const clearData = () => { setRows([]); setDataLoaded(false); };
+
+  const periodLabel = fromDate && toDate
+    ? `${dayjs(fromDate).format('DD/MM/YY')} – ${dayjs(toDate).format('DD/MM/YY')}`
+    : '';
+
+  // ── load dropdowns ────────────────────────────────────────────────────────
+  const loadDropdowns = async () => {
     try {
-      const [centersRes, banksRes] = await Promise.all([
+      const [cRes, bRes] = await Promise.all([
         bankTransferAPI.getCollectionCenters(),
-        bankTransferAPI.getBanks()
+        bankTransferAPI.getBanks(),
       ]);
-
-      if (centersRes.success) {
-        setCollectionCenters([
-          { value: 'all', label: 'All' },
-          ...centersRes.data.map(c => ({ value: c._id, label: c.name || c.centerName || 'Unknown' }))
+      if (cRes?.success) {
+        setCenters([
+          { value: 'all', label: 'All Centers' },
+          ...cRes.data.map(c => ({ value: c._id, label: c.name || c.centerName || 'Center' })),
         ]);
       }
-
-      if (banksRes.success) {
+      if (bRes?.success) {
         setBanks([
-          { value: 'all', label: 'All' },
-          ...banksRes.data.map(b => ({ value: b.name || b._id, label: `${b.name || 'Unknown'} (${b.count || 0})` }))
+          { value: 'all', label: 'All Banks' },
+          ...bRes.data.map(b => ({ value: b.name, label: `${b.name} (${b.count || 0})` })),
         ]);
       }
-    } catch (error) {
-      console.error('Error loading dropdown data:', error);
-    }
+    } catch { /* silent */ }
   };
 
-  const loadTransferLogs = async () => {
-    setLogLoading(true);
-    try {
-      const params = {
-        page: logPagination.page,
-        limit: logPagination.limit,
-        ...logFilters,
-        fromDate: logFilters.fromDate ? logFilters.fromDate.toISOString() : undefined,
-        toDate: logFilters.toDate ? logFilters.toDate.toISOString() : undefined
-      };
-
-      const response = await bankTransferAPI.getAll(params);
-      if (response.success) {
-        setTransferLogs(response.data);
-        setLogPagination(prev => ({
-          ...prev,
-          ...response.pagination
-        }));
-      }
-    } catch (error) {
-      message.error(error.message || 'Error loading transfer logs');
-    } finally {
-      setLogLoading(false);
-    }
-  };
-
-  // Retrieve balances
-  const handleRetrieve = async () => {
-    setRetrieving(true);
-    try {
-      const response = await bankTransferAPI.retrieve({
-        transferBasis,
-        asOnDate: asOnDate.toISOString(),
-        applyDate: applyDate.toISOString(),
-        collectionCenter,
-        bank,
-        roundDownAmount,
-        dueByList
-      });
-
-      if (response.success) {
-        setTransferDetails(response.data);
-        setSummary(response.summary);
-        message.success(response.message);
-      }
-    } catch (error) {
-      message.error(error.message || 'Error retrieving balances');
-    } finally {
-      setRetrieving(false);
-    }
-  };
-
-  // Apply bank transfer
-  const handleApplyTransfer = async () => {
-    const approvedCount = transferDetails.filter(d => d.approved && d.transferAmount > 0).length;
-
-    if (approvedCount === 0) {
-      message.warning('No approved transfers to process');
+  // ── load data ─────────────────────────────────────────────────────────────
+  const loadData = async () => {
+    if (!fromDate || !toDate) {
+      notifications.show({ title: 'Select dates', message: 'Choose From and To dates first', color: 'orange' });
       return;
     }
+    setLoading(true);
+    try {
+      const res = await bankTransferAPI.retrieve({
+        transferBasis:    'As on Date Balance',
+        asOnDate:         toDate.toISOString(),
+        applyDate:        applyDate.toISOString(),
+        collectionCenter,
+        bank:             bankFilter,
+        roundDownAmount:  roundDown,
+        dueByList,
+      });
+      if (res?.success) {
+        const newRows = res.data.map(d => {
+          const hasBank = d.bankDetails?.accountNumber && d.bankDetails.accountNumber !== '-';
+          return {
+            ...d,
+            paymentAmount: (roundDown > 0 && d.netPayable > 0)
+              ? Math.floor(d.netPayable / roundDown) * roundDown
+              : (d.netPayable > 0 ? d.netPayable : 0),
+            mode:     hasBank ? 'Bank Transfer' : 'Cash',
+            approved: false,
+          };
+        });
+        setRows(newRows);
+        setDataLoaded(true);
+        notifications.show({ message: `Loaded ${newRows.length} producers`, color: 'green' });
+      }
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message || 'Failed to load', color: 'red' });
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  // ── row edits ─────────────────────────────────────────────────────────────
+  const setRowField = (idx, field, val) =>
+    setRows(prev => { const u = [...prev]; u[idx] = { ...u[idx], [field]: val }; return u; });
+
+  const toggleApprove = (idx) => setRowField(idx, 'approved', !rows[idx].approved);
+
+  const selectAll = () => {
+    const allOn = rows.every(r => r.approved || r.paymentAmount <= 0);
+    setRows(prev => prev.map(r => ({ ...r, approved: r.paymentAmount > 0 ? !allOn : false })));
+  };
+
+  // ── auto pay ──────────────────────────────────────────────────────────────
+  const autoPay = () => {
+    setRows(prev => prev.map(r => {
+      const amt = r.netPayable > 0
+        ? (roundDown > 0 ? Math.floor(r.netPayable / roundDown) * roundDown : r.netPayable)
+        : 0;
+      return { ...r, paymentAmount: amt, approved: amt > 0 };
+    }));
+    notifications.show({ message: 'Auto-pay applied to all positive balance producers', color: 'blue' });
+  };
+
+  // ── apply payment ─────────────────────────────────────────────────────────
+  const applyPayment = async () => {
+    const approved = rows.filter(r => r.approved && r.paymentAmount > 0);
+    if (!approved.length) {
+      notifications.show({ message: 'No approved rows to apply', color: 'orange' });
+      return;
+    }
     setApplying(true);
     try {
-      const response = await bankTransferAPI.apply({
-        transferBasis,
-        asOnDate: asOnDate.toISOString(),
-        applyDate: applyDate.toISOString(),
+      const res = await bankTransferAPI.apply({
+        transferBasis:         'As on Date Balance',
+        asOnDate:              toDate.toISOString(),
+        applyDate:             applyDate.toISOString(),
         collectionCenter,
-        collectionCenterName: collectionCenters.find(c => c.value === collectionCenter)?.label || 'All',
-        bank,
-        bankName: banks.find(b => b.value === bank)?.label || 'All',
-        roundDownAmount,
+        collectionCenterName:  centers.find(c => c.value === collectionCenter)?.label || 'All',
+        bank:                  bankFilter,
+        bankName:              banks.find(b => b.value === bankFilter)?.label || 'All',
+        roundDownAmount:       roundDown,
         dueByList,
-        transferDetails
+        transferDetails:       approved.map(r => ({
+          ...r,
+          transferAmount: r.paymentAmount,
+          paymentMode:    r.mode,
+        })),
       });
-
-      if (response.success) {
-        message.success(response.message);
-        setTransferDetails([]);
-        setSummary({
-          totalProducers: 0,
-          totalNetPayable: 0,
-          totalTransferAmount: 0,
-          totalApproved: 0,
-          negativeBalances: 0
-        });
-        // Switch to log tab
+      if (res?.success) {
+        notifications.show({ title: 'Success', message: res.message, color: 'green' });
+        clearData();
         setActiveTab('log');
       }
-    } catch (error) {
-      message.error(error.message || 'Error applying bank transfer');
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message || 'Failed to apply', color: 'red' });
     } finally {
       setApplying(false);
     }
   };
 
-  // Handle cancel
-  const handleCancel = () => {
-    setTransferDetails([]);
-    setSummary({
-      totalProducers: 0,
-      totalNetPayable: 0,
-      totalTransferAmount: 0,
-      totalApproved: 0,
-      negativeBalances: 0
-    });
-    setTransferBasis('As on Date Balance');
-    setAsOnDate(new Date());
-    setApplyDate(new Date());
-    setCollectionCenter('all');
-    setBank('all');
-    setRoundDownAmount(10);
-    setDueByList(false);
-  };
-
-  // Toggle individual approval
-  const handleToggleApproval = (index) => {
-    setTransferDetails(prev => {
-      const updated = [...prev];
-      updated[index].approved = !updated[index].approved;
-      return updated;
-    });
-    updateSummary();
-  };
-
-  // Toggle all approvals
-  const handleSelectAll = () => {
-    const allApproved = transferDetails.every(d => d.approved || d.transferAmount <= 0);
-    setTransferDetails(prev =>
-      prev.map(d => ({
-        ...d,
-        approved: d.transferAmount > 0 ? !allApproved : false
-      }))
-    );
-    updateSummary();
-  };
-
-  // Handle amount change
-  const handleAmountChange = (index, value) => {
-    setTransferDetails(prev => {
-      const updated = [...prev];
-      updated[index].transferAmount = value || 0;
-      return updated;
-    });
-  };
-
-  // Update summary
-  const updateSummary = () => {
-    setSummary({
-      totalProducers: transferDetails.length,
-      totalNetPayable: transferDetails.reduce((sum, d) => sum + d.netPayable, 0),
-      totalTransferAmount: transferDetails.filter(d => d.approved).reduce((sum, d) => sum + d.transferAmount, 0),
-      totalApproved: transferDetails.filter(d => d.approved).length,
-      negativeBalances: transferDetails.filter(d => d.netPayable < 0).length
-    });
-  };
-
-  // View transfer details
-  const handleViewTransfer = async (transfer) => {
+  // ── log tab ───────────────────────────────────────────────────────────────
+  const loadLogs = async () => {
+    setLogLoading(true);
     try {
-      const response = await bankTransferAPI.getById(transfer._id);
-      if (response.success) {
-        setSelectedTransfer(response.data);
-        setViewModalOpen(true);
+      const res = await bankTransferAPI.getAll({
+        page:     logPage,
+        limit:    10,
+        status:   logFilters.status || undefined,
+        fromDate: logFilters.fromDate?.toISOString(),
+        toDate:   logFilters.toDate?.toISOString(),
+      });
+      if (res?.success) {
+        setLogs(res.data);
+        setLogPages(res.pagination?.pages || 1);
       }
-    } catch (error) {
-      message.error('Error loading transfer details');
-    }
+    } catch { /* silent */ }
+    setLogLoading(false);
   };
 
-  // Cancel transfer from log
-  const handleCancelTransfer = async (transfer) => {
-    if (!confirm('Are you sure you want to cancel this transfer?')) return;
+  // ── print ─────────────────────────────────────────────────────────────────
+  const openPrint = (mode) => { setPrintMode(mode); setPrintModal(true); };
 
-    try {
-      const response = await bankTransferAPI.cancel(transfer._id);
-      if (response.success) {
-        message.success('Transfer cancelled successfully');
-        loadTransferLogs();
-      }
-    } catch (error) {
-      message.error(error.message || 'Error cancelling transfer');
-    }
+  const printRows = (() => {
+    const approved = rows.filter(r => r.approved && r.paymentAmount > 0);
+    if (printMode === 'bank')   return approved.filter(r => r.mode === 'Bank Transfer');
+    if (printMode === 'cash')   return approved.filter(r => r.mode === 'Cash');
+    if (printMode === 'cheque') return approved.filter(r => r.mode === 'Cheque');
+    return approved;
+  })();
+
+  const showBankCols = printMode === 'bank' || printMode === 'all';
+
+  // ── summary ───────────────────────────────────────────────────────────────
+  const summ = {
+    total:         rows.length,
+    approved:      rows.filter(r => r.approved).length,
+    netPayable:    rows.reduce((s, r) => s + (r.netPayable || 0), 0),
+    bankAmt:       rows.filter(r => r.approved && r.mode === 'Bank Transfer').reduce((s, r) => s + r.paymentAmount, 0),
+    cashAmt:       rows.filter(r => r.approved && r.mode === 'Cash').reduce((s, r) => s + r.paymentAmount, 0),
+    chequeAmt:     rows.filter(r => r.approved && r.mode === 'Cheque').reduce((s, r) => s + r.paymentAmount, 0),
+    bankCount:     rows.filter(r => r.mode === 'Bank Transfer').length,
+    cashCount:     rows.filter(r => r.mode === 'Cash').length,
+    chequeCount:   rows.filter(r => r.mode === 'Cheque').length,
   };
+  summ.grandTotal = summ.bankAmt + summ.cashAmt + summ.chequeAmt;
 
-  // Get status color
-  const getStatusColor = (status) => {
-    const colors = {
-      'Draft': 'gray',
-      'Retrieved': 'blue',
-      'Applied': 'yellow',
-      'Completed': 'green',
-      'Cancelled': 'red'
-    };
-    return colors[status] || 'gray';
-  };
-
-  // Recalculate based on round down change
-  useEffect(() => {
-    if (transferDetails.length > 0) {
-      setTransferDetails(prev =>
-        prev.map(d => ({
-          ...d,
-          transferAmount: d.netPayable > 0
-            ? Math.floor(d.netPayable / roundDownAmount) * roundDownAmount
-            : 0
-        }))
-      );
-    }
-  }, [roundDownAmount]);
-
+  // ── render ────────────────────────────────────────────────────────────────
   return (
-    <Container size="xl" py="xl">
+    <Container size="xl" py="md">
       <Stack gap="lg">
         {/* Header */}
         <Group justify="space-between">
           <Box>
-            <Title order={2}>Bank Transfer</Title>
-            <Text c="dimmed" size="sm">Transfer funds to producer bank accounts</Text>
+            <Title order={2}>Bank Transfer & Payment</Title>
+            <Text c="dimmed" size="sm">Manage producer payments — Bank, Cash, or Cheque</Text>
           </Box>
         </Group>
 
-        {/* Tabs */}
         <Tabs value={activeTab} onChange={setActiveTab}>
           <Tabs.List>
             <Tabs.Tab value="transfer" leftSection={<IconBuildingBank size={16} />}>
@@ -386,38 +325,57 @@ const BankTransferManagement = () => {
             </Tabs.Tab>
           </Tabs.List>
 
-          {/* Bank Transfer Tab */}
+          {/* ═══════════════════ TRANSFER TAB ════════════════════════════ */}
           <Tabs.Panel value="transfer" pt="md">
             <Stack gap="md">
-              {/* Form Section */}
-              <Card withBorder p="md">
-                <Stack gap="md">
-                  {/* Transfer Basis */}
-                  <Box>
-                    <Text fw={500} mb="xs">Bank Transfer Based On:</Text>
-                    <Radio.Group value={transferBasis} onChange={setTransferBasis}>
-                      <Group>
-                        <Radio value="As on Date Balance" label="As on Date Balance" />
-                        <Radio value="Last Processed Period" label="Last Processed Period" />
-                      </Group>
-                    </Radio.Group>
-                  </Box>
 
-                  {/* Date Fields */}
+              {/* Filter Card */}
+              <Card withBorder p="md">
+                <Stack gap="sm">
+                  {/* Cycle buttons + period nav */}
+                  <Group gap="xs" wrap="wrap" align="center">
+                    <Text size="sm" fw={500} c="dimmed">Cycle:</Text>
+                    {CYCLES.map(c => (
+                      <Button
+                        key={c.value}
+                        size="xs"
+                        variant={cycle === c.value ? 'filled' : 'outline'}
+                        color="blue"
+                        onClick={() => applyCycle(c.value)}
+                      >
+                        {c.label}
+                      </Button>
+                    ))}
+                    <ActionIcon variant="subtle" onClick={() => navigatePeriod('prev')} title="Previous period">
+                      <IconChevronLeft size={16} />
+                    </ActionIcon>
+                    {periodLabel && (
+                      <Badge variant="light" color="blue" size="md">{periodLabel}</Badge>
+                    )}
+                    <ActionIcon variant="subtle" onClick={() => navigatePeriod('next')} title="Next period">
+                      <IconChevronRight size={16} />
+                    </ActionIcon>
+                  </Group>
+
+                  {/* Filters row */}
                   <Grid>
                     <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
                       <DatePickerInput
-                        label="As on Date Balance"
-                        placeholder="Select date"
-                        value={asOnDate}
-                        onChange={setAsOnDate}
-                        maxDate={new Date()}
+                        label="From Date"
+                        value={fromDate}
+                        onChange={v => { setFromDate(v); clearData(); }}
+                      />
+                    </Grid.Col>
+                    <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+                      <DatePickerInput
+                        label="To Date"
+                        value={toDate}
+                        onChange={v => { setToDate(v); clearData(); }}
                       />
                     </Grid.Col>
                     <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
                       <DatePickerInput
                         label="Apply Date"
-                        placeholder="Select date"
                         value={applyDate}
                         onChange={setApplyDate}
                       />
@@ -425,234 +383,253 @@ const BankTransferManagement = () => {
                     <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
                       <Select
                         label="Collection Center"
-                        placeholder="Select center"
-                        data={collectionCenters}
+                        data={centers}
                         value={collectionCenter}
-                        onChange={setCollectionCenter}
+                        onChange={v => { setCollectionCenter(v || 'all'); clearData(); }}
                         searchable
-                        clearable
                       />
                     </Grid.Col>
                     <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
                       <Select
-                        label="Bank"
-                        placeholder="Select bank"
+                        label="Bank Filter"
                         data={banks}
-                        value={bank}
-                        onChange={setBank}
+                        value={bankFilter}
+                        onChange={v => { setBankFilter(v || 'all'); clearData(); }}
                         searchable
-                        clearable
                       />
                     </Grid.Col>
-                  </Grid>
-
-                  {/* Slider and Checkbox */}
-                  <Grid align="flex-end">
-                    <Grid.Col span={{ base: 12, md: 8 }}>
-                      <Box>
-                        <Group justify="space-between" mb="xs">
-                          <Text fw={500} size="sm">Nearest Round Down Transfer Amount (INR)</Text>
-                          <Badge size="lg" variant="filled">{roundDownAmount}</Badge>
-                        </Group>
-                        <Slider
-                          value={roundDownAmount}
-                          onChange={setRoundDownAmount}
-                          min={1}
-                          max={100}
-                          step={1}
-                          marks={[
-                            { value: 1, label: '1' },
-                            { value: 10, label: '10' },
-                            { value: 50, label: '50' },
-                            { value: 100, label: '100' }
-                          ]}
-                        />
-                      </Box>
+                    <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+                      <NumberInput
+                        label="Round Down (₹)"
+                        value={roundDown}
+                        onChange={v => setRoundDown(v ?? 0)}
+                        min={0}
+                        max={1000}
+                      />
                     </Grid.Col>
-                    <Grid.Col span={{ base: 12, md: 4 }}>
+                    <Grid.Col span={{ base: 12, sm: 6, md: 3 }} style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 4 }}>
                       <Checkbox
-                        label="Due By List"
-                        description="Show only producers with positive balance"
+                        label="Due By List Only"
                         checked={dueByList}
-                        onChange={(e) => setDueByList(e.currentTarget.checked)}
+                        onChange={e => setDueByList(e.currentTarget.checked)}
                       />
                     </Grid.Col>
                   </Grid>
 
-                  {/* Action Buttons */}
-                  <Group justify="center" mt="md">
+                  {/* Action buttons */}
+                  <Group gap="xs" wrap="wrap">
                     <Button
-                      color="green"
                       leftSection={<IconRefresh size={16} />}
-                      onClick={handleRetrieve}
-                      loading={retrieving}
+                      onClick={loadData}
+                      loading={loading}
+                      color="green"
                     >
-                      Retrieve
+                      Load Data
                     </Button>
-                    <Button
-                      color="blue"
-                      leftSection={<IconBuildingBank size={16} />}
-                      onClick={handleApplyTransfer}
-                      loading={applying}
-                      disabled={transferDetails.length === 0}
-                    >
-                      Apply Bank Transfer
-                    </Button>
-                    <Button
-                      color="gray"
-                      variant="outline"
-                      leftSection={<IconX size={16} />}
-                      onClick={handleCancel}
-                    >
-                      Cancel
-                    </Button>
+
+                    {dataLoaded && (
+                      <>
+                        <Button
+                          leftSection={<IconCoins size={16} />}
+                          onClick={autoPay}
+                          variant="light"
+                          color="blue"
+                        >
+                          Auto Pay
+                        </Button>
+                        <Button
+                          leftSection={<IconBuildingBank size={16} />}
+                          onClick={applyPayment}
+                          loading={applying}
+                          color="indigo"
+                        >
+                          Apply Payment
+                        </Button>
+                        <Button
+                          leftSection={<IconPrinter size={16} />}
+                          onClick={() => openPrint('bank')}
+                          variant="outline"
+                          color="blue"
+                        >
+                          Print Bank List
+                        </Button>
+                        <Button
+                          leftSection={<IconPrinter size={16} />}
+                          onClick={() => openPrint('cash')}
+                          variant="outline"
+                          color="orange"
+                        >
+                          Print Cash List
+                        </Button>
+                        <Button
+                          leftSection={<IconPrinter size={16} />}
+                          onClick={() => openPrint('all')}
+                          variant="outline"
+                        >
+                          Print All
+                        </Button>
+                        <Button
+                          leftSection={<IconX size={16} />}
+                          onClick={clearData}
+                          variant="outline"
+                          color="red"
+                        >
+                          Clear
+                        </Button>
+                      </>
+                    )}
                   </Group>
                 </Stack>
               </Card>
 
-              {/* Transfer Details Table */}
-              {transferDetails.length > 0 && (
+              {/* Summary Cards */}
+              {dataLoaded && (
+                <Grid>
+                  {[
+                    { label: 'Total Producers', value: summ.total,                         color: 'gray'   },
+                    { label: 'Net Payable',      value: fmt(summ.netPayable),               color: 'blue'   },
+                    { label: `Bank (${summ.bankCount})`,   value: fmt(summ.bankAmt),   color: 'indigo'  },
+                    { label: `Cash (${summ.cashCount})`,   value: fmt(summ.cashAmt),   color: 'orange'  },
+                    { label: `Cheque (${summ.chequeCount})`, value: fmt(summ.chequeAmt), color: 'violet' },
+                    { label: 'Grand Total',      value: fmt(summ.grandTotal),               color: 'green', bold: true },
+                  ].map((s, i) => (
+                    <Grid.Col key={i} span={{ base: 6, sm: 4, md: 2 }}>
+                      <Paper withBorder p="sm" ta="center">
+                        <Text size="xs" c="dimmed">{s.label}</Text>
+                        <Text size={s.bold ? 'lg' : 'md'} fw={s.bold ? 700 : 600} c={s.color}>
+                          {s.value}
+                        </Text>
+                      </Paper>
+                    </Grid.Col>
+                  ))}
+                </Grid>
+              )}
+
+              {/* Loading */}
+              {loading && <Center p="xl"><Loader /></Center>}
+
+              {/* Empty after load */}
+              {!loading && dataLoaded && rows.length === 0 && (
+                <Card withBorder p="xl">
+                  <Center><Text c="dimmed">No producers found for the selected criteria</Text></Center>
+                </Card>
+              )}
+
+              {/* Table */}
+              {!loading && rows.length > 0 && (
                 <Card withBorder p={0}>
-                  {/* Header with light red background */}
+                  {/* Table header bar */}
                   <Box
-                    p="md"
+                    p="sm"
                     style={{
-                      background: 'var(--mantine-color-red-1)',
-                      borderBottom: '1px solid var(--mantine-color-red-3)'
+                      background: 'var(--mantine-color-indigo-0)',
+                      borderBottom: '1px solid var(--mantine-color-indigo-2)',
                     }}
                   >
-                    <Group justify="space-between">
-                      <Box>
-                        <Text fw={600} c="red.8">Bank Transfer - Details</Text>
-                        <Text size="sm" c="red.7">
-                          Bank Transfer Apply on {formatDate(applyDate)} [ Based on {transferBasis} ]
-                        </Text>
-                      </Box>
+                    <Group justify="space-between" wrap="wrap">
                       <Group gap="xs">
-                        <Badge color="blue" size="lg">
-                          Total: {summary.totalProducers}
-                        </Badge>
-                        <Badge color="green" size="lg">
-                          Approved: {summary.totalApproved}
-                        </Badge>
-                        <Badge color="yellow" size="lg">
-                          Amount: {formatCurrency(summary.totalTransferAmount)}
-                        </Badge>
+                        <Text fw={600} c="indigo.8">Payment Details</Text>
+                        <Badge color="blue">{rows.length} Producers</Badge>
+                        <Badge color="green">{summ.approved} Approved</Badge>
+                      </Group>
+                      <Group gap="xs">
+                        <Button size="xs" variant="light" onClick={selectAll}>
+                          {rows.every(r => r.approved || r.paymentAmount <= 0) ? 'Deselect All' : 'Select All'}
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="light"
+                          color="green"
+                          onClick={() => setRows(p => p.map(r => ({ ...r, approved: r.netPayable > 0 })))}
+                        >
+                          Select Positive
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="light"
+                          color="red"
+                          onClick={() => setRows(p => p.map(r => ({ ...r, approved: false })))}
+                        >
+                          Clear All
+                        </Button>
                       </Group>
                     </Group>
                   </Box>
 
-                  {/* Checkbox buttons on top */}
-                  <Box p="sm" style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}>
-                    <Group gap="xs">
-                      <Tooltip label="Select All / Deselect All">
-                        <Button
-                          variant="light"
-                          size="xs"
-                          leftSection={
-                            transferDetails.every(d => d.approved || d.transferAmount <= 0)
-                              ? <IconCheckbox size={14} />
-                              : <IconSquare size={14} />
-                          }
-                          onClick={handleSelectAll}
-                        >
-                          {transferDetails.every(d => d.approved || d.transferAmount <= 0)
-                            ? 'Deselect All'
-                            : 'Select All'}
-                        </Button>
-                      </Tooltip>
-                      <Tooltip label="Select only positive balances">
-                        <Button
-                          variant="light"
-                          size="xs"
-                          color="green"
-                          onClick={() => {
-                            setTransferDetails(prev =>
-                              prev.map(d => ({
-                                ...d,
-                                approved: d.netPayable > 0 && d.transferAmount > 0
-                              }))
-                            );
-                          }}
-                        >
-                          Select Positive
-                        </Button>
-                      </Tooltip>
-                      <Tooltip label="Clear all selections">
-                        <Button
-                          variant="light"
-                          size="xs"
-                          color="red"
-                          onClick={() => {
-                            setTransferDetails(prev =>
-                              prev.map(d => ({ ...d, approved: false }))
-                            );
-                          }}
-                        >
-                          Clear Selection
-                        </Button>
-                      </Tooltip>
-                    </Group>
-                  </Box>
-
                   <ScrollArea>
-                    <Table striped highlightOnHover>
+                    <Table striped highlightOnHover withColumnBorders size="sm" style={{ minWidth: 900 }}>
                       <Table.Thead>
                         <Table.Tr>
-                          <Table.Th style={{ width: 60 }}>Sl No</Table.Th>
-                          <Table.Th>Producer ID</Table.Th>
+                          <Table.Th ta="center" style={{ width: 42 }}>SN</Table.Th>
+                          <Table.Th style={{ width: 90 }}>Prod ID</Table.Th>
                           <Table.Th>Producer Name</Table.Th>
-                          <Table.Th style={{ textAlign: 'right' }}>Net Payable</Table.Th>
-                          <Table.Th style={{ width: 150 }}>Amount</Table.Th>
-                          <Table.Th style={{ width: 80, textAlign: 'center' }}>Approve</Table.Th>
-                          <Table.Th>Bank Details</Table.Th>
+                          <Table.Th style={{ width: 140 }}>Account No</Table.Th>
+                          <Table.Th style={{ width: 100 }}>IFSC</Table.Th>
+                          <Table.Th style={{ width: 110 }}>Branch / Bank</Table.Th>
+                          <Table.Th ta="right" style={{ width: 105 }}>Net Payable</Table.Th>
+                          <Table.Th style={{ width: 110 }}>Pay Amount</Table.Th>
+                          <Table.Th style={{ width: 115 }}>Mode</Table.Th>
+                          <Table.Th ta="center" style={{ width: 50 }}>✓</Table.Th>
                         </Table.Tr>
                       </Table.Thead>
                       <Table.Tbody>
-                        {transferDetails.map((detail, index) => (
-                          <Table.Tr key={detail.farmerId || index}>
-                            <Table.Td>{index + 1}</Table.Td>
-                            <Table.Td>
-                              <Text size="sm" fw={500}>{detail.producerId}</Text>
+                        {rows.map((row, idx) => (
+                          <Table.Tr
+                            key={row.farmerId || idx}
+                            style={row.approved ? { background: 'var(--mantine-color-green-0)' } : {}}
+                          >
+                            <Table.Td ta="center">
+                              <Text size="xs">{idx + 1}</Text>
                             </Table.Td>
-                            <Table.Td>{detail.producerName}</Table.Td>
-                            <Table.Td style={{ textAlign: 'right' }}>
-                              <Text
-                                size="sm"
-                                fw={500}
-                                c={detail.netPayable < 0 ? 'red' : 'inherit'}
-                              >
-                                {formatCurrency(detail.netPayable)}
+                            <Table.Td>
+                              <Text size="xs" fw={500}>{row.producerId}</Text>
+                            </Table.Td>
+                            <Table.Td>
+                              <Text size="xs">{row.producerName}</Text>
+                            </Table.Td>
+                            <Table.Td>
+                              <Text size="xs" c={row.bankDetails?.accountNumber && row.bankDetails.accountNumber !== '-' ? 'inherit' : 'dimmed'}>
+                                {row.bankDetails?.accountNumber || '—'}
+                              </Text>
+                            </Table.Td>
+                            <Table.Td>
+                              <Text size="xs" c="dimmed">{row.bankDetails?.ifscCode || '—'}</Text>
+                            </Table.Td>
+                            <Table.Td>
+                              <Text size="xs" c="dimmed">{row.bankDetails?.bankName || '—'}</Text>
+                            </Table.Td>
+                            <Table.Td ta="right">
+                              <Text size="xs" fw={500} c={row.netPayable < 0 ? 'red' : 'inherit'}>
+                                {fmt(row.netPayable)}
                               </Text>
                             </Table.Td>
                             <Table.Td>
                               <NumberInput
                                 size="xs"
-                                value={detail.transferAmount}
-                                onChange={(value) => handleAmountChange(index, value)}
+                                value={row.paymentAmount}
+                                onChange={v => setRowField(idx, 'paymentAmount', v || 0)}
                                 min={0}
-                                max={detail.netPayable > 0 ? detail.netPayable : 0}
-                                step={roundDownAmount}
                                 hideControls
-                                disabled={detail.netPayable <= 0}
-                                styles={{
-                                  input: {
-                                    textAlign: 'right'
-                                  }
-                                }}
-                              />
-                            </Table.Td>
-                            <Table.Td style={{ textAlign: 'center' }}>
-                              <Checkbox
-                                checked={detail.approved}
-                                onChange={() => handleToggleApproval(index)}
-                                disabled={detail.transferAmount <= 0}
+                                disabled={row.netPayable <= 0}
+                                styles={{ input: { textAlign: 'right' } }}
                               />
                             </Table.Td>
                             <Table.Td>
-                              <Text size="xs" c="dimmed">
-                                {detail.bankDetails?.accountNumber || '-'} / {detail.bankDetails?.bankCode || detail.bankDetails?.ifscCode || '-'}
-                              </Text>
+                              <Select
+                                size="xs"
+                                data={MODES}
+                                value={row.mode}
+                                onChange={v => setRowField(idx, 'mode', v)}
+                                allowDeselect={false}
+                                styles={{ input: { fontSize: '11px', paddingLeft: 6 } }}
+                              />
+                            </Table.Td>
+                            <Table.Td ta="center">
+                              <Checkbox
+                                checked={row.approved}
+                                onChange={() => toggleApprove(idx)}
+                                disabled={row.paymentAmount <= 0}
+                              />
                             </Table.Td>
                           </Table.Tr>
                         ))}
@@ -660,39 +637,37 @@ const BankTransferManagement = () => {
                     </Table>
                   </ScrollArea>
 
-                  {/* Summary Footer */}
+                  {/* Footer summary bar */}
                   <Box p="md" style={{ borderTop: '2px solid var(--mantine-color-gray-3)' }}>
                     <Grid>
-                      <Grid.Col span={3}>
-                        <Text size="sm" c="dimmed">Total Producers</Text>
-                        <Text size="lg" fw={600}>{summary.totalProducers}</Text>
+                      <Grid.Col span={{ base: 6, sm: 3 }}>
+                        <Text size="xs" c="dimmed">Total Net Payable</Text>
+                        <Text fw={600}>{fmt(summ.netPayable)}</Text>
                       </Grid.Col>
-                      <Grid.Col span={3}>
-                        <Text size="sm" c="dimmed">Total Net Payable</Text>
-                        <Text size="lg" fw={600}>{formatCurrency(summary.totalNetPayable)}</Text>
+                      <Grid.Col span={{ base: 6, sm: 3 }}>
+                        <Text size="xs" c="dimmed">Bank Transfer (approved)</Text>
+                        <Text fw={600} c="indigo">{fmt(summ.bankAmt)}</Text>
                       </Grid.Col>
-                      <Grid.Col span={3}>
-                        <Text size="sm" c="dimmed">Total Approved</Text>
-                        <Text size="lg" fw={600} c="green">{summary.totalApproved}</Text>
+                      <Grid.Col span={{ base: 6, sm: 3 }}>
+                        <Text size="xs" c="dimmed">Cash + Cheque (approved)</Text>
+                        <Text fw={600} c="orange">{fmt(summ.cashAmt + summ.chequeAmt)}</Text>
                       </Grid.Col>
-                      <Grid.Col span={3}>
-                        <Text size="sm" c="dimmed">Total Transfer Amount</Text>
-                        <Text size="lg" fw={700} c="blue">{formatCurrency(summary.totalTransferAmount)}</Text>
+                      <Grid.Col span={{ base: 6, sm: 3 }}>
+                        <Text size="xs" c="dimmed">Grand Total (approved)</Text>
+                        <Text fw={700} c="green" size="lg">{fmt(summ.grandTotal)}</Text>
                       </Grid.Col>
                     </Grid>
                   </Box>
                 </Card>
               )}
 
-              {/* Empty State */}
-              {transferDetails.length === 0 && !retrieving && (
+              {/* Prompt when no data loaded */}
+              {!loading && !dataLoaded && (
                 <Card withBorder p="xl">
                   <Center>
-                    <Stack align="center" gap="md">
-                      <IconBuildingBank size={48} color="gray" />
-                      <Text c="dimmed" ta="center">
-                        Click "Retrieve" to load producer balances for bank transfer
-                      </Text>
+                    <Stack align="center" gap="xs">
+                      <IconBuildingBank size={48} color="var(--mantine-color-gray-4)" />
+                      <Text c="dimmed">Select date range and click "Load Data" to begin</Text>
                     </Stack>
                   </Center>
                 </Card>
@@ -700,36 +675,17 @@ const BankTransferManagement = () => {
             </Stack>
           </Tabs.Panel>
 
-          {/* Transfer Log Tab */}
+          {/* ═══════════════════ LOG TAB ══════════════════════════════════ */}
           <Tabs.Panel value="log" pt="md">
             <Stack gap="md">
-              {/* Filters */}
               <Card withBorder p="md">
-                <Group justify="space-between" mb="md">
-                  <Group gap="xs">
-                    <IconFilter size={18} />
-                    <Text fw={600}>Filters</Text>
-                  </Group>
-                  <Button
-                    variant="subtle"
-                    size="xs"
-                    onClick={() => setLogFilters({ status: '', fromDate: null, toDate: null })}
-                  >
-                    Clear
-                  </Button>
-                </Group>
                 <Grid>
                   <Grid.Col span={{ base: 12, sm: 4 }}>
                     <Select
                       placeholder="Status"
-                      data={[
-                        { value: 'Draft', label: 'Draft' },
-                        { value: 'Applied', label: 'Applied' },
-                        { value: 'Completed', label: 'Completed' },
-                        { value: 'Cancelled', label: 'Cancelled' }
-                      ]}
+                      data={['Draft', 'Applied', 'Completed', 'Cancelled'].map(s => ({ value: s, label: s }))}
                       value={logFilters.status}
-                      onChange={(value) => setLogFilters(prev => ({ ...prev, status: value }))}
+                      onChange={v => setLogFilters(p => ({ ...p, status: v || '' }))}
                       clearable
                     />
                   </Grid.Col>
@@ -737,7 +693,7 @@ const BankTransferManagement = () => {
                     <DatePickerInput
                       placeholder="From Date"
                       value={logFilters.fromDate}
-                      onChange={(value) => setLogFilters(prev => ({ ...prev, fromDate: value }))}
+                      onChange={v => setLogFilters(p => ({ ...p, fromDate: v }))}
                       clearable
                     />
                   </Grid.Col>
@@ -745,26 +701,18 @@ const BankTransferManagement = () => {
                     <DatePickerInput
                       placeholder="To Date"
                       value={logFilters.toDate}
-                      onChange={(value) => setLogFilters(prev => ({ ...prev, toDate: value }))}
+                      onChange={v => setLogFilters(p => ({ ...p, toDate: v }))}
                       clearable
                     />
                   </Grid.Col>
                 </Grid>
               </Card>
 
-              {/* Transfer Log Table */}
               <Card withBorder>
                 {logLoading ? (
-                  <Center p="xl">
-                    <Loader />
-                  </Center>
-                ) : transferLogs.length === 0 ? (
-                  <Center p="xl">
-                    <Stack align="center" gap="md">
-                      <IconCash size={48} color="gray" />
-                      <Text c="dimmed">No transfer logs found</Text>
-                    </Stack>
-                  </Center>
+                  <Center p="xl"><Loader /></Center>
+                ) : logs.length === 0 ? (
+                  <Center p="xl"><Text c="dimmed">No transfer logs found</Text></Center>
                 ) : (
                   <>
                     <ScrollArea>
@@ -773,39 +721,33 @@ const BankTransferManagement = () => {
                           <Table.Tr>
                             <Table.Th>Transfer No</Table.Th>
                             <Table.Th>Apply Date</Table.Th>
-                            <Table.Th>As On Date</Table.Th>
                             <Table.Th>Transfer Basis</Table.Th>
-                            <Table.Th>Collection Center</Table.Th>
-                            <Table.Th style={{ textAlign: 'right' }}>Producers</Table.Th>
-                            <Table.Th style={{ textAlign: 'right' }}>Amount</Table.Th>
+                            <Table.Th>Center</Table.Th>
+                            <Table.Th ta="right">Producers</Table.Th>
+                            <Table.Th ta="right">Amount</Table.Th>
                             <Table.Th>Status</Table.Th>
-                            <Table.Th></Table.Th>
+                            <Table.Th style={{ width: 40 }}></Table.Th>
                           </Table.Tr>
                         </Table.Thead>
                         <Table.Tbody>
-                          {transferLogs.map((log) => (
+                          {logs.map(log => (
                             <Table.Tr key={log._id}>
                               <Table.Td>
                                 <Text size="sm" fw={500}>{log.transferNumber}</Text>
                               </Table.Td>
-                              <Table.Td>{formatDate(log.applyDate)}</Table.Td>
-                              <Table.Td>{formatDate(log.asOnDate)}</Table.Td>
+                              <Table.Td>{fmtDate(log.applyDate)}</Table.Td>
                               <Table.Td>
-                                <Text size="xs">{log.transferBasis}</Text>
+                                <Text size="xs" c="dimmed">{log.transferBasis}</Text>
                               </Table.Td>
                               <Table.Td>{log.collectionCenterName || 'All'}</Table.Td>
-                              <Table.Td style={{ textAlign: 'right' }}>
+                              <Table.Td ta="right">
                                 <Badge variant="light">{log.totalApproved}</Badge>
                               </Table.Td>
-                              <Table.Td style={{ textAlign: 'right' }}>
-                                <Text size="sm" fw={500}>
-                                  {formatCurrency(log.totalTransferAmount)}
-                                </Text>
+                              <Table.Td ta="right">
+                                <Text size="sm" fw={500}>{fmt(log.totalTransferAmount)}</Text>
                               </Table.Td>
                               <Table.Td>
-                                <Badge color={getStatusColor(log.status)}>
-                                  {log.status}
-                                </Badge>
+                                <Badge color={STATUS_COLOR[log.status] || 'gray'}>{log.status}</Badge>
                               </Table.Td>
                               <Table.Td>
                                 <Menu position="bottom-end">
@@ -817,7 +759,10 @@ const BankTransferManagement = () => {
                                   <Menu.Dropdown>
                                     <Menu.Item
                                       leftSection={<IconEye size={14} />}
-                                      onClick={() => handleViewTransfer(log)}
+                                      onClick={async () => {
+                                        const res = await bankTransferAPI.getById(log._id);
+                                        if (res?.success) { setSelectedLog(res.data); setViewModal(true); }
+                                      }}
                                     >
                                       View Details
                                     </Menu.Item>
@@ -827,13 +772,9 @@ const BankTransferManagement = () => {
                                           leftSection={<IconCheck size={14} />}
                                           color="green"
                                           onClick={async () => {
-                                            try {
-                                              await bankTransferAPI.complete(log._id);
-                                              message.success('Transfer marked as completed');
-                                              loadTransferLogs();
-                                            } catch (error) {
-                                              message.error(error.message);
-                                            }
+                                            await bankTransferAPI.complete(log._id);
+                                            notifications.show({ message: 'Marked as completed', color: 'green' });
+                                            loadLogs();
                                           }}
                                         >
                                           Mark Completed
@@ -841,17 +782,17 @@ const BankTransferManagement = () => {
                                         <Menu.Item
                                           leftSection={<IconX size={14} />}
                                           color="red"
-                                          onClick={() => handleCancelTransfer(log)}
+                                          onClick={async () => {
+                                            if (!confirm('Cancel this transfer?')) return;
+                                            await bankTransferAPI.cancel(log._id);
+                                            notifications.show({ message: 'Transfer cancelled', color: 'orange' });
+                                            loadLogs();
+                                          }}
                                         >
                                           Cancel Transfer
                                         </Menu.Item>
                                       </>
                                     )}
-                                    <Menu.Item
-                                      leftSection={<IconDownload size={14} />}
-                                    >
-                                      Export
-                                    </Menu.Item>
                                   </Menu.Dropdown>
                                 </Menu>
                               </Table.Td>
@@ -860,14 +801,9 @@ const BankTransferManagement = () => {
                         </Table.Tbody>
                       </Table>
                     </ScrollArea>
-
-                    {logPagination.pages > 1 && (
+                    {logPages > 1 && (
                       <Group justify="center" p="md">
-                        <Pagination
-                          total={logPagination.pages}
-                          value={logPagination.page}
-                          onChange={(page) => setLogPagination(prev => ({ ...prev, page }))}
-                        />
+                        <Pagination total={logPages} value={logPage} onChange={setLogPage} />
                       </Group>
                     )}
                   </>
@@ -877,105 +813,88 @@ const BankTransferManagement = () => {
           </Tabs.Panel>
         </Tabs>
 
-        {/* View Modal */}
+        {/* ═══════════════════ VIEW MODAL ══════════════════════════════════ */}
         <Modal
-          opened={viewModalOpen}
-          onClose={() => setViewModalOpen(false)}
+          opened={viewModal}
+          onClose={() => setViewModal(false)}
           title={
-            <Group>
-              <IconBuildingBank size={20} />
-              <Text fw={600}>Transfer Details - {selectedTransfer?.transferNumber}</Text>
+            <Group gap="xs">
+              <IconBuildingBank size={18} />
+              <Text fw={600}>Transfer Details — {selectedLog?.transferNumber}</Text>
             </Group>
           }
           size="xl"
         >
-          {selectedTransfer && (
+          {selectedLog && (
             <Stack gap="md">
-              {/* Transfer Info */}
               <Grid>
                 <Grid.Col span={6}>
                   <Text size="sm" c="dimmed">Apply Date</Text>
-                  <Text fw={500}>{formatDate(selectedTransfer.applyDate)}</Text>
-                </Grid.Col>
-                <Grid.Col span={6}>
-                  <Text size="sm" c="dimmed">As On Date</Text>
-                  <Text fw={500}>{formatDate(selectedTransfer.asOnDate)}</Text>
-                </Grid.Col>
-                <Grid.Col span={6}>
-                  <Text size="sm" c="dimmed">Transfer Basis</Text>
-                  <Text fw={500}>{selectedTransfer.transferBasis}</Text>
+                  <Text fw={500}>{fmtDate(selectedLog.applyDate)}</Text>
                 </Grid.Col>
                 <Grid.Col span={6}>
                   <Text size="sm" c="dimmed">Status</Text>
-                  <Badge color={getStatusColor(selectedTransfer.status)}>
-                    {selectedTransfer.status}
-                  </Badge>
+                  <Badge color={STATUS_COLOR[selectedLog.status] || 'gray'}>{selectedLog.status}</Badge>
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <Text size="sm" c="dimmed">Transfer Basis</Text>
+                  <Text fw={500}>{selectedLog.transferBasis}</Text>
                 </Grid.Col>
                 <Grid.Col span={6}>
                   <Text size="sm" c="dimmed">Collection Center</Text>
-                  <Text fw={500}>{selectedTransfer.collectionCenterName || 'All'}</Text>
-                </Grid.Col>
-                <Grid.Col span={6}>
-                  <Text size="sm" c="dimmed">Bank</Text>
-                  <Text fw={500}>{selectedTransfer.bankName || 'All'}</Text>
+                  <Text fw={500}>{selectedLog.collectionCenterName || 'All'}</Text>
                 </Grid.Col>
               </Grid>
 
-              {/* Summary */}
               <Paper withBorder p="md" bg="blue.0">
                 <Grid>
                   <Grid.Col span={4}>
                     <Text size="xs" c="dimmed">Total Producers</Text>
-                    <Text size="lg" fw={600}>{selectedTransfer.totalApproved}</Text>
+                    <Text size="lg" fw={600}>{selectedLog.totalApproved}</Text>
                   </Grid.Col>
                   <Grid.Col span={4}>
-                    <Text size="xs" c="dimmed">Total Net Payable</Text>
-                    <Text size="lg" fw={600}>{formatCurrency(selectedTransfer.totalNetPayable)}</Text>
+                    <Text size="xs" c="dimmed">Net Payable</Text>
+                    <Text size="lg" fw={600}>{fmt(selectedLog.totalNetPayable)}</Text>
                   </Grid.Col>
                   <Grid.Col span={4}>
-                    <Text size="xs" c="dimmed">Total Transfer Amount</Text>
-                    <Text size="lg" fw={700} c="blue">{formatCurrency(selectedTransfer.totalTransferAmount)}</Text>
+                    <Text size="xs" c="dimmed">Transfer Amount</Text>
+                    <Text size="lg" fw={700} c="blue">{fmt(selectedLog.totalTransferAmount)}</Text>
                   </Grid.Col>
                 </Grid>
               </Paper>
 
-              {/* Transfer Details Table */}
               <ScrollArea h={300}>
-                <Table striped highlightOnHover size="sm">
+                <Table striped size="sm">
                   <Table.Thead>
                     <Table.Tr>
-                      <Table.Th>Sl No</Table.Th>
+                      <Table.Th>SN</Table.Th>
                       <Table.Th>Producer ID</Table.Th>
                       <Table.Th>Producer Name</Table.Th>
-                      <Table.Th style={{ textAlign: 'right' }}>Net Payable</Table.Th>
-                      <Table.Th style={{ textAlign: 'right' }}>Transfer Amount</Table.Th>
+                      <Table.Th ta="right">Net Payable</Table.Th>
+                      <Table.Th ta="right">Transfer Amount</Table.Th>
                       <Table.Th>Status</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
-                    {selectedTransfer.transferDetails?.map((detail, index) => (
-                      <Table.Tr key={detail._id || index}>
-                        <Table.Td>{index + 1}</Table.Td>
-                        <Table.Td>{detail.producerId}</Table.Td>
-                        <Table.Td>{detail.producerName}</Table.Td>
-                        <Table.Td style={{ textAlign: 'right' }}>
-                          <Text c={detail.netPayable < 0 ? 'red' : 'inherit'}>
-                            {formatCurrency(detail.netPayable)}
-                          </Text>
+                    {selectedLog.transferDetails?.map((d, i) => (
+                      <Table.Tr key={d._id || i}>
+                        <Table.Td>{i + 1}</Table.Td>
+                        <Table.Td>{d.producerId}</Table.Td>
+                        <Table.Td>{d.producerName}</Table.Td>
+                        <Table.Td ta="right" c={d.netPayable < 0 ? 'red' : 'inherit'}>
+                          {fmt(d.netPayable)}
                         </Table.Td>
-                        <Table.Td style={{ textAlign: 'right' }}>
-                          {formatCurrency(detail.transferAmount)}
-                        </Table.Td>
+                        <Table.Td ta="right">{fmt(d.transferAmount)}</Table.Td>
                         <Table.Td>
                           <Badge
                             size="sm"
                             color={
-                              detail.transferStatus === 'Transferred' ? 'green' :
-                              detail.transferStatus === 'Failed' ? 'red' :
-                              detail.transferStatus === 'Cancelled' ? 'gray' : 'yellow'
+                              d.transferStatus === 'Transferred' ? 'green' :
+                              d.transferStatus === 'Failed'      ? 'red'   :
+                              d.transferStatus === 'Cancelled'   ? 'gray'  : 'yellow'
                             }
                           >
-                            {detail.transferStatus}
+                            {d.transferStatus}
                           </Badge>
                         </Table.Td>
                       </Table.Tr>
@@ -985,6 +904,99 @@ const BankTransferManagement = () => {
               </ScrollArea>
             </Stack>
           )}
+        </Modal>
+
+        {/* ═══════════════════ PRINT MODAL ═════════════════════════════════ */}
+        <Modal
+          opened={printModal}
+          onClose={() => setPrintModal(false)}
+          title={
+            printMode === 'bank'   ? 'Print — Bank Transfer List' :
+            printMode === 'cash'   ? 'Print — Cash Payment List'  :
+            printMode === 'cheque' ? 'Print — Cheque Payment List' :
+                                     'Print — All Payments'
+          }
+          size="xl"
+        >
+          <Stack gap="md">
+            {/* Print header info */}
+            <Group gap="md">
+              <Text size="sm" c="dimmed">Period: <strong>{periodLabel}</strong></Text>
+              <Text size="sm" c="dimmed">Producers: <strong>{printRows.length}</strong></Text>
+              <Text size="sm" c="dimmed">
+                Total: <strong>{fmt(printRows.reduce((s, r) => s + r.paymentAmount, 0))}</strong>
+              </Text>
+            </Group>
+
+            <ScrollArea h={420}>
+              <Table striped withColumnBorders size="sm" style={{ minWidth: 600 }}>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th style={{ width: 40 }}>SN</Table.Th>
+                    <Table.Th style={{ width: 90 }}>Prod ID</Table.Th>
+                    <Table.Th>Producer Name</Table.Th>
+                    {showBankCols && (
+                      <>
+                        <Table.Th>Account No</Table.Th>
+                        <Table.Th>IFSC</Table.Th>
+                        <Table.Th>Branch</Table.Th>
+                      </>
+                    )}
+                    <Table.Th ta="right" style={{ width: 110 }}>Amount</Table.Th>
+                    {printMode === 'all' && <Table.Th style={{ width: 100 }}>Mode</Table.Th>}
+                    <Table.Th style={{ width: 80 }}>Sign</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {printRows.map((r, i) => (
+                    <Table.Tr key={r.farmerId || i}>
+                      <Table.Td>{i + 1}</Table.Td>
+                      <Table.Td><Text size="xs">{r.producerId}</Text></Table.Td>
+                      <Table.Td><Text size="xs">{r.producerName}</Text></Table.Td>
+                      {showBankCols && (
+                        <>
+                          <Table.Td><Text size="xs">{r.bankDetails?.accountNumber || '—'}</Text></Table.Td>
+                          <Table.Td><Text size="xs">{r.bankDetails?.ifscCode || '—'}</Text></Table.Td>
+                          <Table.Td><Text size="xs">{r.bankDetails?.bankName || '—'}</Text></Table.Td>
+                        </>
+                      )}
+                      <Table.Td ta="right">
+                        <Text size="xs" fw={600}>{fmt(r.paymentAmount)}</Text>
+                      </Table.Td>
+                      {printMode === 'all' && (
+                        <Table.Td><Text size="xs">{r.mode}</Text></Table.Td>
+                      )}
+                      <Table.Td></Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+                <Table.Tfoot>
+                  <Table.Tr style={{ background: 'var(--mantine-color-gray-1)' }}>
+                    <Table.Th
+                      colSpan={
+                        3 +
+                        (showBankCols ? 3 : 0) +
+                        (printMode === 'all' ? 1 : 0)
+                      }
+                    >
+                      Total ({printRows.length} Producers)
+                    </Table.Th>
+                    <Table.Th ta="right">
+                      {fmt(printRows.reduce((s, r) => s + r.paymentAmount, 0))}
+                    </Table.Th>
+                    <Table.Th></Table.Th>
+                  </Table.Tr>
+                </Table.Tfoot>
+              </Table>
+            </ScrollArea>
+
+            <Group justify="flex-end">
+              <Button leftSection={<IconPrinter size={16} />} onClick={() => window.print()} color="blue">
+                Print
+              </Button>
+              <Button variant="outline" onClick={() => setPrintModal(false)}>Close</Button>
+            </Group>
+          </Stack>
         </Modal>
       </Stack>
     </Container>

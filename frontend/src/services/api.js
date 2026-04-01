@@ -208,6 +208,7 @@ export const paymentAPI = {
   bulkCreate: (payments) => api.post('/farmer-payments/bulk', { payments }).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/farmer-payments/${id}`, data).then(res => res.data).catch(handleError),
   cancel: (id, cancellationReason) => api.post(`/farmer-payments/${id}/cancel`, { cancellationReason }).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/farmer-payments/${id}`).then(res => res.data).catch(handleError),
   getFarmerHistory: (farmerId, params) => api.get(`/farmer-payments/farmer/${farmerId}`, { params }).then(res => res.data).catch(handleError),
   getStats: (params) => api.get('/farmer-payments/stats', { params }).then(res => res.data).catch(handleError)
 };
@@ -510,7 +511,7 @@ export const userManagementAPI = {
   getUserTypes: () => api.get('/user-management/user-types').then(res => res.data).catch(handleError)
 };
 
-// PRODUCER LOAN APIs
+// \DUCER LOAN APIs
 export const producerLoanAPI = {
   getAll: (params) => api.get('/producer-loans', { params }).then(res => res.data).catch(handleError),
   getById: (id) => api.get(`/producer-loans/${id}`).then(res => res.data).catch(handleError),
@@ -532,11 +533,16 @@ export const producerReceiptAPI = {
   getPrintData: (id) => api.get(`/producer-receipts/${id}/print`).then(res => res.data).catch(handleError)
 };
 
+// INDIVIDUAL DEDUCTION / EARNING APIs
+export const individualDeductionEarningAPI = {
+  getAll: (params) => api.get('/individual-transactions', { params }).then(res => res.data).catch(handleError),
+};
+
 // FARMER LEDGER APIs
 export const farmerLedgerAPI = {
   getLedger: (farmerId, params) => api.get(`/farmer-payments/farmer/${farmerId}/ledger`, { params }).then(res => res.data).catch(handleError),
   getSummary: (farmerId) => api.get(`/farmer-payments/farmer/${farmerId}/summary`).then(res => res.data).catch(handleError),
-  checkWelfare: (farmerId, date) => api.get(`/farmer-payments/farmer/${farmerId}/welfare-check`, { params: { date } }).then(res => res.data).catch(handleError),
+  checkWelfare: (farmerId, date, fromDate, toDate) => api.get(`/farmer-payments/farmer/${farmerId}/welfare-check`, { params: { date, fromDate, toDate } }).then(res => res.data).catch(handleError),
   getOutstandingByType: (farmerId) => api.get(`/farmer-payments/farmer/${farmerId}/outstanding-by-type`).then(res => res.data).catch(handleError)
 };
 
@@ -923,6 +929,24 @@ export const financialYearAPI = {
   activate:      (id)     => api.post(`/financial-years/${id}/activate`).then(r => r.data).catch(handleError),
   toggleFreeze:  (id)     => api.post(`/financial-years/${id}/toggle-freeze`).then(r => r.data).catch(handleError),
   delete:        (id)     => api.delete(`/financial-years/${id}`).then(r => r.data).catch(handleError),
+};
+
+// ── Producer Payment API ───────────────────────────────────────────────────────
+export const producerPaymentAPI = {
+  getAll:             (params)   => api.get('/producer-payments', { params }).then(res => res.data).catch(handleError),
+  create:             (data)     => api.post('/producer-payments', data).then(res => res.data).catch(handleError),
+  getProducerBalance: (farmerId) => api.get(`/producer-payments/balance/${farmerId}`).then(res => res.data).catch(handleError),
+  update:             (id, data) => api.put(`/producer-payments/${id}`, data).then(res => res.data).catch(handleError),
+  cancel:             (id)       => api.post(`/producer-payments/${id}/cancel`).then(res => res.data).catch(handleError),
+};
+
+// ── Producer Opening API ───────────────────────────────────────────────────────
+export const producerOpeningAPI = {
+  getAll:          (params)   => api.get('/producer-openings', { params }).then(res => res.data).catch(handleError),
+  create:          (data)     => api.post('/producer-openings', data).then(res => res.data).catch(handleError),
+  update:          (id, data) => api.put(`/producer-openings/${id}`, data).then(res => res.data).catch(handleError),
+  delete:          (id)       => api.delete(`/producer-openings/${id}`).then(res => res.data).catch(handleError),
+  getByFarmer:     (farmerId) => api.get(`/producer-openings/farmer/${farmerId}`).then(res => res.data).catch(handleError),
 };
 
 export default api;

@@ -2,6 +2,8 @@ import BankTransfer from '../models/BankTransfer.js';
 import Farmer from '../models/Farmer.js';
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
+import CollectionCenter from '../models/CollectionCenter.js';
+import FarmerPayment from '../models/FarmerPayment.js';
 import mongoose from 'mongoose';
 import { generateVoucherNumber, updateLedgerBalances } from '../utils/accountingHelper.js';
 
@@ -30,9 +32,6 @@ export const retrieveBalances = async (req, res) => {
       farmerFilter.collectionCenter = new mongoose.Types.ObjectId(collectionCenter);
     }
 
-    // Get farmers with their balances
-    const FarmerPayment = mongoose.model('FarmerPayment');
-
     // Get all active farmers
     const farmers = await Farmer.find(farmerFilter)
       .select('farmerNumber personalDetails bankDetails collectionCenter')
@@ -50,38 +49,38 @@ export const retrieveBalances = async (req, res) => {
         const paymentAgg = await FarmerPayment.aggregate([
           {
             $match: {
+              companyId: new mongoose.Types.ObjectId(companyId),
               farmerId: farmer._id,
               paymentDate: { $lte: new Date(asOnDate) },
-              status: { $in: ['Pending', 'Approved'] }
+              status: { $in: ['Pending', 'Partial'] }
             }
           },
           {
             $group: {
               _id: null,
-              totalMilkAmount: { $sum: '$milkAmount' },
-              totalDeductions: { $sum: '$totalDeduction' },
-              totalPaid: { $sum: '$paidAmount' }
+              totalBalance: { $sum: '$balanceAmount' }
             }
           }
         ]);
 
-        const payment = paymentAgg[0] || { totalMilkAmount: 0, totalDeductions: 0, totalPaid: 0 };
-        netPayable = (payment.totalMilkAmount || 0) - (payment.totalDeductions || 0) - (payment.totalPaid || 0);
+        const payment = paymentAgg[0] || { totalBalance: 0 };
+        netPayable = payment.totalBalance || 0;
       } else {
-        // Last processed period - get from last completed period
+        // Last processed period - get from last period with a balance
         const lastPeriod = await FarmerPayment.findOne({
+          companyId: new mongoose.Types.ObjectId(companyId),
           farmerId: farmer._id,
-          status: 'Approved'
+          status: { $in: ['Pending', 'Partial'] }
         }).sort({ paymentDate: -1 });
 
         if (lastPeriod) {
-          netPayable = lastPeriod.netPayable - (lastPeriod.paidAmount || 0);
+          netPayable = lastPeriod.balanceAmount || 0;
         }
       }
 
       // Filter by bank if specified
       const bankDetails = farmer.bankDetails || {};
-      if (bank && bank !== 'all' && bankDetails.bankId?.toString() !== bank) {
+      if (bank && bank !== 'all' && bankDetails.bankName !== bank) {
         continue;
       }
 
@@ -518,21 +517,20 @@ export const completeTransfer = async (req, res) => {
 // Get collection centers for dropdown
 export const getCollectionCenters = async (req, res) => {
   try {
-    const CollectionCenter = mongoose.model('CollectionCenter');
     const centers = await CollectionCenter.find({
       companyId: req.userCompany,
       status: 'Active'
-    }).select('name code');
+    }).select('centerName centerType');
 
     res.json({
       success: true,
       data: centers
     });
   } catch (error) {
-    // If model doesn't exist, return empty array
-    res.json({
-      success: true,
-      data: []
+    console.error('Error fetching collection centers:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching collection centers'
     });
   }
 };

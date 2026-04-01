@@ -198,31 +198,30 @@ bankTransferSchema.statics.getProducerBalances = async function(companyId, asOnD
   const balances = [];
 
   for (const farmer of farmers) {
-    // Get sum of all payments up to asOnDate
+    // Get sum of all unpaid balances up to asOnDate
     const paymentAgg = await FarmerPayment.aggregate([
       {
         $match: {
+          companyId: new mongoose.Types.ObjectId(companyId),
           farmerId: farmer._id,
           paymentDate: { $lte: new Date(asOnDate) },
-          status: { $in: ['Pending', 'Approved'] }
+          status: { $in: ['Pending', 'Partial'] }
         }
       },
       {
         $group: {
           _id: null,
-          totalMilkAmount: { $sum: '$milkAmount' },
-          totalDeductions: { $sum: '$totalDeduction' },
-          totalPaid: { $sum: '$paidAmount' }
+          totalBalance: { $sum: '$balanceAmount' }
         }
       }
     ]);
 
-    const payment = paymentAgg[0] || { totalMilkAmount: 0, totalDeductions: 0, totalPaid: 0 };
-    const netPayable = (payment.totalMilkAmount || 0) - (payment.totalDeductions || 0) - (payment.totalPaid || 0);
+    const payment = paymentAgg[0] || { totalBalance: 0 };
+    const netPayable = payment.totalBalance || 0;
 
-    // Filter by bank if specified
+    // Filter by bank if specified (bank filter values are bank names)
     const bankDetails = farmer.bankDetails || {};
-    if (bank && bankDetails.bankId?.toString() !== bank.toString()) {
+    if (bank && bankDetails.bankName !== bank) {
       continue;
     }
 

@@ -35,6 +35,7 @@ export const getSaleReport = async (req, res) => {
 
     // Build query - use BusinessSales model with invoiceDate field
     const query = {
+      companyId: req.companyId,
       invoiceDate: { $gte: startDate, $lte: endDate },
       invoiceType: 'Sale'
     };
@@ -4025,25 +4026,54 @@ export const getVyaparCashBook = async (req, res) => {
     const cbIdSet = new Set(cbLedgers.map(l => l._id.toString()));
 
     // ── 2. Opening Balance ──
-    // = sum of ledger opening balances + net effect of all pre-period vouchers on cash/bank accounts
-    let ledgerOpening = 0;
-    for (const l of cbLedgers) {
-      const bal = l.openingBalance || 0;
-      ledgerOpening += l.openingBalanceType === 'Debit' ? bal : -bal;
+    // Computed from actual source data (same pattern as getCashInHandReport)
+    // to handle cases where BusinessVoucher was not created for a transaction.
+    const CASH_BANK_MODES = ['Cash', 'UPI', 'Card', 'Bank', 'Cheque'];
+
+    // 2a. Pre-period cash/bank sales → cash IN
+    const salesBefore = await BusinessSales.find({
+      companyId,
+      invoiceDate: { $lt: startDate },
+      invoiceType: 'Sale',
+      paymentMode: { $in: CASH_BANK_MODES },
+      paidAmount: { $gt: 0 }
+    }).lean();
+    let openingBalance = salesBefore.reduce((s, r) => s + (r.paidAmount || 0), 0);
+
+    // 2b. Pre-period cash/bank purchases → cash OUT (deduplicated by invoiceNumber)
+    const purchTxnBefore = await BusinessStockTransaction.find({
+      companyId,
+      date: { $lt: startDate },
+      transactionType: 'Stock In',
+      paymentMode: { $in: CASH_BANK_MODES },
+      paidAmount: { $gt: 0 }
+    }).lean();
+    const seenPurchInv = new Set();
+    for (const t of purchTxnBefore) {
+      const key = t.invoiceNumber || t._id.toString();
+      if (!seenPurchInv.has(key)) {
+        seenPurchInv.add(key);
+        openingBalance -= (t.paidAmount || 0);
+      }
     }
 
-    const preAgg = await BusinessVoucher.aggregate([
-      { $match: { companyId, date: { $lt: startDate }, status: 'Posted' } },
-      { $unwind: '$entries' },
-      { $match: { 'entries.ledgerId': { $in: cbLedgers.map(l => l._id) } } },
-      { $group: {
-        _id: null,
-        totalDebit:  { $sum: { $cond: [{ $eq: ['$entries.type', 'debit']  }, '$entries.amount', 0] } },
-        totalCredit: { $sum: { $cond: [{ $eq: ['$entries.type', 'credit'] }, '$entries.amount', 0] } }
-      }}
-    ]);
-    const openingBalance = ledgerOpening +
-      (preAgg.length > 0 ? preAgg[0].totalDebit - preAgg[0].totalCredit : 0);
+    // 2c. Pre-period manual BusinessVouchers (Receipt/Payment/Contra/Journal etc.)
+    //     that are NOT auto-created from sales/purchases (to avoid double-counting)
+    if (cbLedgers.length > 0) {
+      const manualVouchersBefore = await BusinessVoucher.find({
+        companyId,
+        date: { $lt: startDate },
+        status: 'Posted',
+        referenceType: { $nin: ['BusinessSales', 'BusinessPurchase'] }
+      }).lean();
+      for (const v of manualVouchersBefore) {
+        for (const e of v.entries) {
+          if (cbIdSet.has(e.ledgerId?.toString())) {
+            openingBalance += e.type === 'debit' ? (e.amount || 0) : -(e.amount || 0);
+          }
+        }
+      }
+    }
 
     // ── 3. Fetch ALL posted BusinessVouchers in the period ──
     const vouchers = await BusinessVoucher.find({

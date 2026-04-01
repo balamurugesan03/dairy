@@ -1,5 +1,6 @@
 import FarmerPayment from '../models/FarmerPayment.js';
 import Advance from '../models/Advance.js';
+import ProducerLoan from '../models/ProducerLoan.js';
 import { createPaymentVoucher } from '../utils/accountingHelper.js';
 import mongoose from 'mongoose';
 
@@ -41,36 +42,60 @@ export const createFarmerPayment = async (req, res) => {
     const payment = new FarmerPayment(paymentData);
     await payment.save();
 
-    // Adjust advances if advance amount is deducted
-    if (paymentData.advanceAmount > 0 && paymentData.advancesAdjusted?.length > 0) {
-      for (const adj of paymentData.advancesAdjusted) {
-        await Advance.findByIdAndUpdate(
-          adj.advanceId,
-          {
-            $push: {
-              adjustments: {
-                date: new Date(),
-                amount: adj.amount,
-                referenceType: 'Payment',
-                referenceId: payment._id,
-                paymentNumber: payment.paymentNumber,
-                adjustedBy: req.user?._id
-              }
-            },
-            $inc: {
-              adjustedAmount: adj.amount,
-              balanceAmount: -adj.amount
-            }
-          });
+    // Auto-reduce advance/loan balances FIFO based on deduction types
+    const advanceDeductionTypes = {
+      'CF Advance':   'CF Advance',
+      'Cash Advance': 'Cash Advance',
+    };
 
-        // Update advance status
-        const advance = await Advance.findById(adj.advanceId);
-        if (advance && advance.balanceAmount <= 0) {
-          advance.status = 'Adjusted';
-          await advance.save();
-        } else if (advance && advance.balanceAmount > 0) {
-          advance.status = 'Partially Adjusted';
-          await advance.save();
+    for (const deduction of (paymentData.deductions || [])) {
+      let remaining = deduction.amount || 0;
+      if (remaining <= 0) continue;
+
+      if (advanceDeductionTypes[deduction.type]) {
+        // Reduce Advance records FIFO (oldest first)
+        const advances = await Advance.find({
+          farmerId: paymentData.farmerId,
+          advanceCategory: advanceDeductionTypes[deduction.type],
+          status: { $in: ['Active', 'Partially Adjusted', 'Overdue'] },
+        }).sort({ advanceDate: 1 });
+
+        for (const adv of advances) {
+          if (remaining <= 0) break;
+          const apply = Math.min(remaining, adv.balanceAmount);
+          adv.adjustedAmount = (adv.adjustedAmount || 0) + apply;
+          adv.balanceAmount  = adv.balanceAmount - apply;
+          adv.status = adv.balanceAmount <= 0 ? 'Adjusted' : 'Partially Adjusted';
+          adv.adjustments = adv.adjustments || [];
+          adv.adjustments.push({
+            date: new Date(),
+            amount: apply,
+            referenceType: 'Payment',
+            referenceId: payment._id,
+            paymentNumber: payment.paymentNumber,
+            adjustedBy: req.user?._id,
+          });
+          await adv.save();
+          remaining -= apply;
+        }
+      } else if (deduction.type === 'Loan Advance') {
+        // Reduce ProducerLoan records FIFO (oldest first)
+        const loans = await ProducerLoan.find({
+          farmerId: paymentData.farmerId,
+          status: { $in: ['Active', 'Defaulted'] },
+        }).sort({ loanDate: 1 });
+
+        for (const loan of loans) {
+          if (remaining <= 0) break;
+          const apply = Math.min(remaining, loan.outstandingAmount);
+          loan.recoveredAmount  += apply;
+          loan.outstandingAmount = loan.totalLoanAmount - loan.recoveredAmount;
+          if (loan.outstandingAmount <= 0) {
+            loan.status    = 'Closed';
+            loan.closedAt  = new Date();
+          }
+          await loan.save();
+          remaining -= apply;
         }
       }
     }
@@ -302,6 +327,58 @@ export const updatePayment = async (req, res) => {
 };
 
 // Cancel payment
+export const deletePayment = async (req, res) => {
+  try {
+    const payment = await FarmerPayment.findOne({ _id: req.params.id, companyId: req.companyId });
+    if (!payment) {
+      return res.status(404).json({ success: false, message: 'Payment not found' });
+    }
+
+    // Reverse advance adjustments — find advances that recorded this payment in their adjustments array
+    const affectedAdvances = await Advance.find({
+      'adjustments.referenceId': payment._id,
+    });
+    for (const adv of affectedAdvances) {
+      const totalReversed = adv.adjustments
+        .filter(a => String(a.referenceId) === String(payment._id))
+        .reduce((s, a) => s + (a.amount || 0), 0);
+      adv.adjustedAmount = Math.max(0, (adv.adjustedAmount || 0) - totalReversed);
+      adv.balanceAmount  = (adv.balanceAmount || 0) + totalReversed;
+      adv.adjustments    = adv.adjustments.filter(a => String(a.referenceId) !== String(payment._id));
+      adv.status = adv.balanceAmount > 0 ? (adv.adjustedAmount > 0 ? 'Partially Adjusted' : 'Active') : 'Adjusted';
+      await adv.save();
+    }
+
+    // Reverse loan reductions for deductions of type 'Loan Advance'
+    for (const deduction of (payment.deductions || [])) {
+      if (deduction.type !== 'Loan Advance' || !deduction.amount) continue;
+      let remaining = deduction.amount;
+      const loans = await ProducerLoan.find({
+        farmerId: payment.farmerId,
+        status: { $in: ['Active', 'Defaulted', 'Closed'] },
+      }).sort({ loanDate: -1 }); // reverse: most recently closed first
+      for (const loan of loans) {
+        if (remaining <= 0) break;
+        const reverseAmt = Math.min(remaining, (loan.recoveredAmount || 0));
+        loan.recoveredAmount  -= reverseAmt;
+        loan.outstandingAmount = loan.totalLoanAmount - loan.recoveredAmount;
+        if (loan.status === 'Closed' && loan.outstandingAmount > 0) {
+          loan.status   = 'Active';
+          loan.closedAt = undefined;
+        }
+        await loan.save();
+        remaining -= reverseAmt;
+      }
+    }
+
+    await FarmerPayment.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: 'Payment deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting payment:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error deleting payment' });
+  }
+};
+
 export const cancelPayment = async (req, res) => {
   try {
     const { cancellationReason } = req.body;

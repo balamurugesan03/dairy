@@ -15,6 +15,7 @@ export const upsertSettings = async (req, res) => {
   try {
     const {
       paymentDays,
+      paymentFromDate,
       accountStartDate,
       accountStartDateOpeningBalance,
       accountStartDateOpeningBalanceType,
@@ -25,6 +26,7 @@ export const upsertSettings = async (req, res) => {
     const update = { lastUpdatedBy: req.user?.displayName || req.company?.companyName || 'System' };
 
     if (paymentDays !== undefined)                         update.paymentDays = paymentDays;
+    if (paymentFromDate !== undefined)                     update.paymentFromDate = paymentFromDate || null;
     if (accountStartDate !== undefined)                    update.accountStartDate = accountStartDate || null;
     if (accountStartDateOpeningBalance !== undefined)      update.accountStartDateOpeningBalance = accountStartDateOpeningBalance;
     if (accountStartDateOpeningBalanceType !== undefined)  update.accountStartDateOpeningBalanceType = accountStartDateOpeningBalanceType;

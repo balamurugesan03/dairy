@@ -1,8 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
-  Container, Group, Title, Button, TextInput, NumberInput,
+  Container, Group, Title, Button, NumberInput,
   Paper, Table, Box, Divider, Grid, Text, Stack, ThemeIcon,
-  ActionIcon, Tooltip, Pagination, Badge,
+  ActionIcon, Tooltip, Pagination, Badge, Select, Loader,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
@@ -11,6 +11,7 @@ import {
   IconDeviceFloppy, IconX, IconDoorExit,
   IconUsers, IconCalendarEvent, IconRefresh, IconTrash, IconEdit,
 } from '@tabler/icons-react';
+import { farmerAPI, producerOpeningAPI } from '../../services/api';
 
 // ─────────────────────────────────────────────────────────────────
 //  Constants
@@ -18,34 +19,24 @@ import {
 const PAGE_SIZE = 15;
 
 const EMPTY_FORM = {
-  date:            null,
-  producerId:      '',
-  producerName:    '',
-  dueAmount:       '',
-  cfAdvance:       '',
-  loanAdvance:     '',
-  cashAdvance:     '',
-  revolvingFund:   '',
+  date:          null,
+  farmerId:      null,
+  dueAmount:     '',
+  cfAdvance:     '',
+  loanAdvance:   '',
+  cashAdvance:   '',
+  revolvingFund: '',
 };
 
 const fmtDate = (d) =>
-  d
-    ? new Date(d).toLocaleDateString('en-IN', {
-        day: '2-digit', month: '2-digit', year: 'numeric',
-      })
-    : '—';
+  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
 
 const fmtAmt = (v) =>
   v != null && v !== '' ? `₹ ${Number(v).toFixed(2)}` : '—';
 
-// ─────────────────────────────────────────────────────────────────
-//  Compact label helper
-// ─────────────────────────────────────────────────────────────────
 function FieldLabel({ children }) {
   return (
-    <Text size="xs" fw={600} c="dimmed" mb={3}>
-      {children}
-    </Text>
+    <Text size="xs" fw={600} c="dimmed" mb={3}>{children}</Text>
   );
 }
 
@@ -53,11 +44,19 @@ function FieldLabel({ children }) {
 //  Main Component
 // ─────────────────────────────────────────────────────────────────
 export default function ProducerOpenings() {
-  const [form, setForm]         = useState(EMPTY_FORM);
-  const [records, setRecords]   = useState([]);
-  const [editId, setEditId]     = useState(null);
-  const [saving, setSaving]     = useState(false);
-  const [page, setPage]         = useState(1);
+  const [form, setForm]           = useState(EMPTY_FORM);
+  const [records, setRecords]     = useState([]);
+  const [editId, setEditId]       = useState(null);
+  const [saving, setSaving]       = useState(false);
+  const [loading, setLoading]     = useState(false);
+  const [page, setPage]           = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalRecords, setTotalRecords] = useState(0);
+
+  // farmer search
+  const [farmers, setFarmers]         = useState([]);
+  const [farmerLoading, setFarmerLoading] = useState(false);
+  const [selectedFarmer, setSelectedFarmer] = useState(null);
 
   const setField = (key, val) => setForm((prev) => ({ ...prev, [key]: val }));
 
@@ -68,18 +67,62 @@ export default function ProducerOpenings() {
     (Number(form.cashAdvance)   || 0) +
     (Number(form.revolvingFund) || 0);
 
+  // ── Load records ────────────────────────────────────────────────
+  const fetchRecords = useCallback(async (pg = 1) => {
+    setLoading(true);
+    try {
+      const res = await producerOpeningAPI.getAll({ page: pg, limit: PAGE_SIZE });
+      setRecords(res.data || []);
+      setTotalPages(res.pagination?.pages || 1);
+      setTotalRecords(res.pagination?.total || 0);
+    } catch (err) {
+      notifications.show({ color: 'red', title: 'Error', message: err.message || 'Failed to load records' });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchRecords(page); }, [page, fetchRecords]);
+
+  // ── Farmer search ────────────────────────────────────────────────
+  const searchFarmers = async (query) => {
+    try {
+      setFarmerLoading(true);
+      let response;
+      if (query && query.trim().length > 0) {
+        response = await farmerAPI.search(query.trim());
+      } else {
+        response = await farmerAPI.getAll({ status: 'Active', limit: 50 });
+      }
+      setFarmers(response.data || []);
+    } catch {
+      setFarmers([]);
+    } finally {
+      setFarmerLoading(false);
+    }
+  };
+
+  useEffect(() => { searchFarmers(''); }, []);
+
+  const farmerOptions = farmers.map((f) => ({
+    value: f._id,
+    label: `${f.farmerNumber} - ${f.personalDetails?.name || ''}`,
+  }));
+
+  const handleFarmerSelect = (val) => {
+    const farmer = farmers.find((f) => f._id === val);
+    setSelectedFarmer(farmer || null);
+    setField('farmerId', val);
+  };
+
   // ── Validation ─────────────────────────────────────────────────
   const validate = () => {
     if (!form.date) {
       notifications.show({ color: 'red', title: 'Validation', message: 'Date is required' });
       return false;
     }
-    if (!form.producerId.trim()) {
-      notifications.show({ color: 'red', title: 'Validation', message: 'Producer ID is required' });
-      return false;
-    }
-    if (!form.producerName.trim()) {
-      notifications.show({ color: 'red', title: 'Validation', message: 'Producer Name is required' });
+    if (!form.farmerId) {
+      notifications.show({ color: 'red', title: 'Validation', message: 'Producer is required' });
       return false;
     }
     return true;
@@ -90,92 +133,109 @@ export default function ProducerOpenings() {
     if (!validate()) return;
     setSaving(true);
     try {
-      const record = {
-        ...form,
-        totalRecovery,
-        _id: editId || Date.now().toString(),
+      const payload = {
+        farmerId:      form.farmerId,
+        date:          form.date,
+        dueAmount:     form.dueAmount || 0,
+        cfAdvance:     form.cfAdvance || 0,
+        loanAdvance:   form.loanAdvance || 0,
+        cashAdvance:   form.cashAdvance || 0,
+        revolvingFund: form.revolvingFund || 0,
       };
 
       if (editId) {
-        setRecords((prev) => prev.map((r) => (r._id === editId ? record : r)));
-        notifications.show({ color: 'green', title: 'Updated', message: 'Producer opening updated successfully' });
+        await producerOpeningAPI.update(editId, payload);
+        notifications.show({ color: 'green', title: 'Updated', message: 'Producer opening updated' });
       } else {
-        setRecords((prev) => [record, ...prev]);
-        notifications.show({ color: 'green', title: 'Saved', message: 'Producer opening saved successfully' });
+        await producerOpeningAPI.create(payload);
+        notifications.show({ color: 'green', title: 'Saved', message: 'Producer opening saved' });
       }
 
       setForm(EMPTY_FORM);
+      setSelectedFarmer(null);
       setEditId(null);
+      fetchRecords(page);
+    } catch (err) {
+      notifications.show({ color: 'red', title: 'Error', message: err.message || 'Failed to save' });
     } finally {
       setSaving(false);
     }
-  }, [form, editId, totalRecovery]);
+  }, [form, editId, page, fetchRecords]);
 
   // ── Cancel ─────────────────────────────────────────────────────
   const handleCancel = () => {
     setForm(EMPTY_FORM);
+    setSelectedFarmer(null);
     setEditId(null);
   };
 
-  // ── Close (navigate back / clear) ──────────────────────────────
+  // ── Close ──────────────────────────────────────────────────────
   const handleClose = () => {
     modals.openConfirmModal({
-      title:    'Close Form',
+      title: 'Close Form',
       centered: true,
-      children: (
-        <Text size="sm">Any unsaved changes will be lost. Continue?</Text>
-      ),
-      labels:       { confirm: 'Close', cancel: 'Stay' },
+      children: <Text size="sm">Any unsaved changes will be lost. Continue?</Text>,
+      labels: { confirm: 'Close', cancel: 'Stay' },
       confirmProps: { color: 'red' },
-      onConfirm:    () => { setForm(EMPTY_FORM); setEditId(null); },
+      onConfirm: () => { setForm(EMPTY_FORM); setSelectedFarmer(null); setEditId(null); },
     });
   };
 
   // ── Edit row ───────────────────────────────────────────────────
-  const openEdit = (rec) => {
+  const openEdit = async (rec) => {
     setEditId(rec._id);
     setForm({
-      date:          rec.date,
-      producerId:    rec.producerId,
-      producerName:  rec.producerName,
+      date:          rec.date ? new Date(rec.date) : null,
+      farmerId:      rec.farmerId?._id || rec.farmerId,
       dueAmount:     rec.dueAmount,
       cfAdvance:     rec.cfAdvance,
       loanAdvance:   rec.loanAdvance,
       cashAdvance:   rec.cashAdvance,
       revolvingFund: rec.revolvingFund,
     });
+    // Ensure this farmer is in the dropdown
+    const farmer = rec.farmerId;
+    if (farmer?._id) {
+      setFarmers((prev) => {
+        const exists = prev.find((f) => f._id === farmer._id);
+        if (!exists) return [farmer, ...prev];
+        return prev;
+      });
+      setSelectedFarmer(farmer);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // ── Delete row ─────────────────────────────────────────────────
   const handleDelete = (rec) => {
     modals.openConfirmModal({
-      title:    'Delete Record',
+      title: 'Delete Record',
       centered: true,
       children: (
         <Text size="sm">
           Delete opening for <strong>{rec.producerName}</strong>? This cannot be undone.
         </Text>
       ),
-      labels:       { confirm: 'Delete', cancel: 'Cancel' },
+      labels: { confirm: 'Delete', cancel: 'Cancel' },
       confirmProps: { color: 'red' },
-      onConfirm: () => {
-        setRecords((prev) => prev.filter((r) => r._id !== rec._id));
-        notifications.show({ color: 'orange', title: 'Deleted', message: 'Record removed' });
+      onConfirm: async () => {
+        try {
+          await producerOpeningAPI.delete(rec._id);
+          notifications.show({ color: 'orange', title: 'Deleted', message: 'Record removed' });
+          fetchRecords(page);
+        } catch (err) {
+          notifications.show({ color: 'red', title: 'Error', message: err.message || 'Delete failed' });
+        }
       },
     });
   };
 
-  // ── Pagination slice ───────────────────────────────────────────
-  const totalPages = Math.max(1, Math.ceil(records.length / PAGE_SIZE));
-  const pageSlice  = records.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
   // ── Table rows ─────────────────────────────────────────────────
-  const rows = pageSlice.map((rec, i) => (
+  const rows = records.map((rec, i) => (
     <Table.Tr key={rec._id} bg={editId === rec._id ? '#edf2ff' : undefined}>
       <Table.Td c="dimmed" fz="xs">{(page - 1) * PAGE_SIZE + i + 1}</Table.Td>
       <Table.Td fz="sm">{fmtDate(rec.date)}</Table.Td>
-      <Table.Td fz="sm" fw={600} c="blue.8">{rec.producerId}</Table.Td>
+      <Table.Td fz="sm" fw={600} c="blue.8">{rec.producerNumber}</Table.Td>
       <Table.Td fz="sm">{rec.producerName}</Table.Td>
       <Table.Td fz="sm" ta="right" c="red.7" fw={500}>{fmtAmt(rec.dueAmount)}</Table.Td>
       <Table.Td fz="sm" ta="right">{fmtAmt(rec.cfAdvance)}</Table.Td>
@@ -209,40 +269,30 @@ export default function ProducerOpenings() {
         ══════════════════════════════════════════════════════════ */}
       <Paper shadow="sm" radius="md" withBorder style={{ overflow: 'hidden' }}>
 
-        {/* ── Form Header ── */}
+        {/* Form Header */}
         <Box
-          px="lg"
-          py="sm"
-          style={{
-            background:   'linear-gradient(90deg, #1971c2 0%, #1864ab 100%)',
-            borderBottom: '1px solid #1864ab',
-          }}
+          px="lg" py="sm"
+          style={{ background: 'linear-gradient(90deg, #1971c2 0%, #1864ab 100%)', borderBottom: '1px solid #1864ab' }}
         >
           <Group gap="sm" align="center">
             <ThemeIcon size={36} radius="md" color="white" variant="white" style={{ color: '#1971c2' }}>
               <IconUsers size={20} />
             </ThemeIcon>
             <Box>
-              <Title order={4} c="white" lh={1.2}>
-                PRODUCER OPENINGS
-              </Title>
-              <Text size="xs" c="blue.1" mt={1}>
-                Backup Details
-              </Text>
+              <Title order={4} c="white" lh={1.2}>PRODUCER OPENINGS</Title>
+              <Text size="xs" c="blue.1" mt={1}>Backup Details</Text>
             </Box>
             {editId && (
-              <Badge color="yellow" variant="filled" size="sm" ml="auto">
-                Editing Record
-              </Badge>
+              <Badge color="yellow" variant="filled" size="sm" ml="auto">Editing Record</Badge>
             )}
           </Group>
         </Box>
 
-        {/* ── Form Body ── */}
+        {/* Form Body */}
         <Box p="md" bg="#f5f7fa">
           <Stack gap={10}>
 
-            {/* ── ROW 1 : Date ── */}
+            {/* ROW 1 : Date */}
             <Paper withBorder radius="xs" bg="white" px="md" py="sm">
               <Grid gutter="md" align="flex-end">
                 <Grid.Col span={{ base: 12, sm: 3 }}>
@@ -253,43 +303,69 @@ export default function ProducerOpenings() {
                     onChange={(val) => setField('date', val)}
                     valueFormat="DD/MM/YYYY"
                     leftSection={<IconCalendarEvent size={14} />}
-                    size="sm"
-                    radius="sm"
-                    clearable
+                    size="sm" radius="sm" clearable
                     styles={{ input: { fontWeight: 500 } }}
                   />
                 </Grid.Col>
               </Grid>
             </Paper>
 
-            {/* ── ROW 2 : Producer ID + Producer Name ── */}
+            {/* ROW 2 : Producer Select */}
             <Paper withBorder radius="xs" bg="white" px="md" py="sm">
               <Grid gutter="md" align="flex-end">
-                <Grid.Col span={{ base: 12, sm: 3 }}>
-                  <FieldLabel>Producer ID</FieldLabel>
-                  <TextInput
-                    placeholder="e.g. PRD-0001"
-                    value={form.producerId}
-                    onChange={(e) => setField('producerId', e.currentTarget.value)}
-                    size="sm"
-                    radius="sm"
-                    styles={{ input: { fontFamily: 'monospace', fontWeight: 600, letterSpacing: 1 } }}
+                <Grid.Col span={{ base: 12, sm: 6 }}>
+                  <FieldLabel>Producer (Farmer)</FieldLabel>
+                  <Select
+                    placeholder="Search by farmer number or name"
+                    value={form.farmerId}
+                    onChange={handleFarmerSelect}
+                    data={farmerOptions}
+                    searchable
+                    clearable
+                    onSearchChange={searchFarmers}
+                    rightSection={farmerLoading ? <Loader size={14} /> : undefined}
+                    nothingFoundMessage={farmerLoading ? 'Searching...' : 'No farmers found'}
+                    size="sm" radius="sm"
                   />
                 </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 9 }}>
-                  <FieldLabel>Producer Name</FieldLabel>
-                  <TextInput
-                    placeholder="Enter full producer name"
-                    value={form.producerName}
-                    onChange={(e) => setField('producerName', e.currentTarget.value)}
-                    size="sm"
-                    radius="sm"
-                  />
-                </Grid.Col>
+
+                {/* Show selected farmer info */}
+                {selectedFarmer && (
+                  <Grid.Col span={{ base: 12, sm: 6 }}>
+                    <Paper withBorder radius="xs" p="xs" bg="#f0f4ff">
+                      <Group gap="xs">
+                        <Box>
+                          <Text size="xs" c="dimmed">Farmer No.</Text>
+                          <Text size="sm" fw={700} c="blue.8">{selectedFarmer.farmerNumber}</Text>
+                        </Box>
+                        <Divider orientation="vertical" />
+                        <Box>
+                          <Text size="xs" c="dimmed">Name</Text>
+                          <Text size="sm" fw={600}>{selectedFarmer.personalDetails?.name}</Text>
+                        </Box>
+                        {selectedFarmer.personalDetails?.phone && (
+                          <>
+                            <Divider orientation="vertical" />
+                            <Box>
+                              <Text size="xs" c="dimmed">Phone</Text>
+                              <Text size="sm">{selectedFarmer.personalDetails.phone}</Text>
+                            </Box>
+                          </>
+                        )}
+                        <Badge
+                          color={selectedFarmer.status === 'Active' ? 'green' : 'red'}
+                          variant="light" size="xs" ml="auto"
+                        >
+                          {selectedFarmer.status}
+                        </Badge>
+                      </Group>
+                    </Paper>
+                  </Grid.Col>
+                )}
               </Grid>
             </Paper>
 
-            {/* ── ROW 3 : Due Amount ── */}
+            {/* ROW 3 : Due Amount */}
             <Paper withBorder radius="xs" bg="white" px="md" py="sm">
               <Grid gutter="md" align="flex-end">
                 <Grid.Col span={{ base: 12, sm: 4 }}>
@@ -298,119 +374,70 @@ export default function ProducerOpenings() {
                     placeholder="0.00"
                     value={form.dueAmount}
                     onChange={(val) => setField('dueAmount', val)}
-                    decimalScale={2}
-                    min={0}
-                    hideControls
-                    prefix="₹ "
-                    size="sm"
-                    radius="sm"
-                    styles={{
-                      input: {
-                        fontWeight:  600,
-                        color:       '#c92a2a',
-                        textAlign:   'right',
-                      },
-                    }}
+                    decimalScale={2} min={0} hideControls prefix="₹ "
+                    size="sm" radius="sm"
+                    styles={{ input: { fontWeight: 600, color: '#c92a2a', textAlign: 'right' } }}
                   />
                 </Grid.Col>
               </Grid>
             </Paper>
 
-            {/* ── RECOVERY SECTION ── */}
-            <Paper
-              withBorder
-              radius="xs"
-              style={{ borderColor: '#228be6', overflow: 'hidden' }}
-            >
-              {/* Recovery header */}
-              <Box
-                px="md"
-                py={8}
-                style={{
-                  background:   '#e8f0fe',
-                  borderBottom: '1px solid #c5d8fd',
-                }}
-              >
-                <Text fw={700} size="sm" c="blue.8">
-                  Recovery
-                </Text>
+            {/* RECOVERY SECTION */}
+            <Paper withBorder radius="xs" style={{ borderColor: '#228be6', overflow: 'hidden' }}>
+              <Box px="md" py={8} style={{ background: '#e8f0fe', borderBottom: '1px solid #c5d8fd' }}>
+                <Text fw={700} size="sm" c="blue.8">Recovery</Text>
               </Box>
 
-              {/* Recovery fields */}
               <Box bg="white" px="md" py="sm">
                 <Grid gutter="xl">
-
-                  {/* LEFT column */}
                   <Grid.Col span={{ base: 12, sm: 6 }}>
                     <Stack gap={10}>
                       <Box>
                         <FieldLabel>CF Advance</FieldLabel>
                         <NumberInput
-                          placeholder="0.00"
-                          value={form.cfAdvance}
+                          placeholder="0.00" value={form.cfAdvance}
                           onChange={(val) => setField('cfAdvance', val)}
-                          decimalScale={2}
-                          min={0}
-                          hideControls
-                          prefix="₹ "
-                          size="sm"
-                          radius="sm"
+                          decimalScale={2} min={0} hideControls prefix="₹ "
+                          size="sm" radius="sm"
                           styles={{ input: { textAlign: 'right' } }}
                         />
                       </Box>
                       <Box>
                         <FieldLabel>Loan Advance</FieldLabel>
                         <NumberInput
-                          placeholder="0.00"
-                          value={form.loanAdvance}
+                          placeholder="0.00" value={form.loanAdvance}
                           onChange={(val) => setField('loanAdvance', val)}
-                          decimalScale={2}
-                          min={0}
-                          hideControls
-                          prefix="₹ "
-                          size="sm"
-                          radius="sm"
+                          decimalScale={2} min={0} hideControls prefix="₹ "
+                          size="sm" radius="sm"
                           styles={{ input: { textAlign: 'right' } }}
                         />
                       </Box>
                     </Stack>
                   </Grid.Col>
 
-                  {/* Vertical divider */}
                   <Grid.Col span="content" style={{ display: 'flex', alignItems: 'stretch' }}>
                     <Divider orientation="vertical" />
                   </Grid.Col>
 
-                  {/* RIGHT column */}
                   <Grid.Col span={{ base: 12, sm: 5 }}>
                     <Stack gap={10}>
                       <Box>
                         <FieldLabel>Cash Advance</FieldLabel>
                         <NumberInput
-                          placeholder="0.00"
-                          value={form.cashAdvance}
+                          placeholder="0.00" value={form.cashAdvance}
                           onChange={(val) => setField('cashAdvance', val)}
-                          decimalScale={2}
-                          min={0}
-                          hideControls
-                          prefix="₹ "
-                          size="sm"
-                          radius="sm"
+                          decimalScale={2} min={0} hideControls prefix="₹ "
+                          size="sm" radius="sm"
                           styles={{ input: { textAlign: 'right' } }}
                         />
                       </Box>
                       <Box>
                         <FieldLabel>Revolving Fund</FieldLabel>
                         <NumberInput
-                          placeholder="0.00"
-                          value={form.revolvingFund}
+                          placeholder="0.00" value={form.revolvingFund}
                           onChange={(val) => setField('revolvingFund', val)}
-                          decimalScale={2}
-                          min={0}
-                          hideControls
-                          prefix="₹ "
-                          size="sm"
-                          radius="sm"
+                          decimalScale={2} min={0} hideControls prefix="₹ "
+                          size="sm" radius="sm"
                           styles={{ input: { textAlign: 'right' } }}
                         />
                       </Box>
@@ -418,51 +445,36 @@ export default function ProducerOpenings() {
                   </Grid.Col>
                 </Grid>
 
-                {/* Recovery total footer */}
                 {totalRecovery > 0 && (
-                  <Box
-                    mt="sm"
-                    pt="xs"
-                    style={{ borderTop: '1px dashed #dee2e6' }}
-                  >
+                  <Box mt="sm" pt="xs" style={{ borderTop: '1px dashed #dee2e6' }}>
                     <Group justify="flex-end" gap="xs">
                       <Text size="xs" c="dimmed" fw={500}>Total Recovery:</Text>
-                      <Text size="sm" fw={700} c="blue.7">
-                        ₹ {totalRecovery.toFixed(2)}
-                      </Text>
+                      <Text size="sm" fw={700} c="blue.7">₹ {totalRecovery.toFixed(2)}</Text>
                     </Group>
                   </Box>
                 )}
               </Box>
             </Paper>
 
-            {/* ── ACTION BUTTONS ── */}
+            {/* ACTION BUTTONS */}
             <Paper withBorder radius="xs" bg="white" px="md" py="sm">
               <Group gap="sm">
                 <Button
-                  color="blue"
-                  radius="sm"
-                  size="sm"
-                  loading={saving}
+                  color="blue" radius="sm" size="sm" loading={saving}
                   leftSection={<IconDeviceFloppy size={16} />}
                   onClick={handleSave}
                 >
                   {editId ? 'Update' : 'Save'}
                 </Button>
                 <Button
-                  variant="default"
-                  radius="sm"
-                  size="sm"
+                  variant="default" radius="sm" size="sm"
                   leftSection={<IconX size={16} />}
                   onClick={handleCancel}
                 >
                   Cancel
                 </Button>
                 <Button
-                  variant="subtle"
-                  color="gray"
-                  radius="sm"
-                  size="sm"
+                  variant="subtle" color="gray" radius="sm" size="sm"
                   leftSection={<IconDoorExit size={16} />}
                   onClick={handleClose}
                 >
@@ -471,11 +483,9 @@ export default function ProducerOpenings() {
                 <Box ml="auto">
                   <Tooltip label="Refresh Grid">
                     <ActionIcon
-                      variant="light"
-                      color="blue"
-                      radius="sm"
-                      size="lg"
-                      onClick={() => setPage(1)}
+                      variant="light" color="blue" radius="sm" size="lg"
+                      loading={loading}
+                      onClick={() => fetchRecords(page)}
                     >
                       <IconRefresh size={16} />
                     </ActionIcon>
@@ -493,33 +503,20 @@ export default function ProducerOpenings() {
         ══════════════════════════════════════════════════════════ */}
       <Paper shadow="sm" radius="md" withBorder mt="md" style={{ overflow: 'hidden' }}>
 
-        {/* Grid header */}
-        <Box
-          px="md"
-          py="sm"
-          style={{
-            background:   '#f1f3f5',
-            borderBottom: '2px solid #dee2e6',
-          }}
-        >
+        <Box px="md" py="sm" style={{ background: '#f1f3f5', borderBottom: '2px solid #dee2e6' }}>
           <Group justify="space-between" align="center">
             <Group gap="xs">
-              <Text fw={700} size="sm" c="dark.6">
-                Grid
-              </Text>
+              <Text fw={700} size="sm" c="dark.6">Grid</Text>
               <Badge color="blue" variant="light" size="sm" radius="sm">
-                {records.length} {records.length === 1 ? 'record' : 'records'}
+                {totalRecords} {totalRecords === 1 ? 'record' : 'records'}
               </Badge>
             </Group>
-            {records.length > 0 && (
-              <Text size="xs" c="dimmed">
-                Page {page} of {totalPages}
-              </Text>
+            {totalPages > 1 && (
+              <Text size="xs" c="dimmed">Page {page} of {totalPages}</Text>
             )}
           </Group>
         </Box>
 
-        {/* Table */}
         <Box style={{ overflowX: 'auto' }}>
           <Table striped highlightOnHover withTableBorder withColumnBorders fz="sm">
             <Table.Thead>
@@ -538,7 +535,13 @@ export default function ProducerOpenings() {
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {records.length === 0 ? (
+              {loading ? (
+                <Table.Tr>
+                  <Table.Td colSpan={11} ta="center" py="xl">
+                    <Loader size="sm" />
+                  </Table.Td>
+                </Table.Tr>
+              ) : records.length === 0 ? (
                 <Table.Tr>
                   <Table.Td colSpan={11} ta="center" py="xl" c="dimmed">
                     <Stack align="center" gap={4}>
@@ -553,30 +556,27 @@ export default function ProducerOpenings() {
               )}
             </Table.Tbody>
 
-            {/* Totals footer */}
             {records.length > 0 && (
               <Table.Tfoot>
                 <Table.Tr style={{ background: '#e8f0fe' }}>
-                  <Table.Th colSpan={4} fz="xs" fw={700} c="blue.8">
-                    Page Total
-                  </Table.Th>
+                  <Table.Th colSpan={4} fz="xs" fw={700} c="blue.8">Page Total</Table.Th>
                   <Table.Th fz="xs" ta="right" fw={700} c="red.7">
-                    {fmtAmt(pageSlice.reduce((s, r) => s + (Number(r.dueAmount) || 0), 0))}
+                    {fmtAmt(records.reduce((s, r) => s + (Number(r.dueAmount) || 0), 0))}
                   </Table.Th>
                   <Table.Th fz="xs" ta="right" fw={600} c="dark">
-                    {fmtAmt(pageSlice.reduce((s, r) => s + (Number(r.cfAdvance) || 0), 0))}
+                    {fmtAmt(records.reduce((s, r) => s + (Number(r.cfAdvance) || 0), 0))}
                   </Table.Th>
                   <Table.Th fz="xs" ta="right" fw={600} c="dark">
-                    {fmtAmt(pageSlice.reduce((s, r) => s + (Number(r.loanAdvance) || 0), 0))}
+                    {fmtAmt(records.reduce((s, r) => s + (Number(r.loanAdvance) || 0), 0))}
                   </Table.Th>
                   <Table.Th fz="xs" ta="right" fw={600} c="dark">
-                    {fmtAmt(pageSlice.reduce((s, r) => s + (Number(r.cashAdvance) || 0), 0))}
+                    {fmtAmt(records.reduce((s, r) => s + (Number(r.cashAdvance) || 0), 0))}
                   </Table.Th>
                   <Table.Th fz="xs" ta="right" fw={600} c="dark">
-                    {fmtAmt(pageSlice.reduce((s, r) => s + (Number(r.revolvingFund) || 0), 0))}
+                    {fmtAmt(records.reduce((s, r) => s + (Number(r.revolvingFund) || 0), 0))}
                   </Table.Th>
                   <Table.Th fz="xs" ta="right" fw={700} c="blue.7">
-                    {fmtAmt(pageSlice.reduce((s, r) => s + (Number(r.totalRecovery) || 0), 0))}
+                    {fmtAmt(records.reduce((s, r) => s + (Number(r.totalRecovery) || 0), 0))}
                   </Table.Th>
                   <Table.Th />
                 </Table.Tr>
@@ -588,12 +588,8 @@ export default function ProducerOpenings() {
         {totalPages > 1 && (
           <Group justify="center" py="sm" style={{ borderTop: '1px solid #dee2e6' }}>
             <Pagination
-              total={totalPages}
-              value={page}
-              onChange={setPage}
-              color="blue"
-              radius="md"
-              size="sm"
+              total={totalPages} value={page} onChange={setPage}
+              color="blue" radius="md" size="sm"
             />
           </Group>
         )}
