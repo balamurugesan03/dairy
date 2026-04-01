@@ -1,6 +1,7 @@
 import FarmerPayment from '../models/FarmerPayment.js';
 import Advance from '../models/Advance.js';
 import ProducerLoan from '../models/ProducerLoan.js';
+import ProducerOpening from '../models/ProducerOpening.js';
 import { createPaymentVoucher } from '../utils/accountingHelper.js';
 import mongoose from 'mongoose';
 
@@ -97,6 +98,25 @@ export const createFarmerPayment = async (req, res) => {
           await loan.save();
           remaining -= apply;
         }
+      }
+    }
+
+    // Also reduce ProducerOpening balances (primary source when no Advance records exist)
+    const openingDeductionMap = { 'CF Advance': 'cfAdvance', 'Cash Advance': 'cashAdvance', 'Loan Advance': 'loanAdvance' };
+    const openingUpdate = {};
+    for (const deduction of (paymentData.deductions || [])) {
+      const field = openingDeductionMap[deduction.type];
+      if (field && deduction.amount > 0) {
+        openingUpdate[field] = (openingUpdate[field] || 0) + deduction.amount;
+      }
+    }
+    if (Object.keys(openingUpdate).length > 0) {
+      const opening = await ProducerOpening.findOne({ farmerId: paymentData.farmerId });
+      if (opening) {
+        for (const [field, amount] of Object.entries(openingUpdate)) {
+          opening[field] = Math.max(0, (opening[field] || 0) - amount);
+        }
+        await opening.save();
       }
     }
 
@@ -368,6 +388,25 @@ export const deletePayment = async (req, res) => {
         }
         await loan.save();
         remaining -= reverseAmt;
+      }
+    }
+
+    // Restore ProducerOpening balances
+    const openingRestoreMap = { 'CF Advance': 'cfAdvance', 'Cash Advance': 'cashAdvance', 'Loan Advance': 'loanAdvance' };
+    const restoreUpdate = {};
+    for (const deduction of (payment.deductions || [])) {
+      const field = openingRestoreMap[deduction.type];
+      if (field && deduction.amount > 0) {
+        restoreUpdate[field] = (restoreUpdate[field] || 0) + deduction.amount;
+      }
+    }
+    if (Object.keys(restoreUpdate).length > 0) {
+      const opening = await ProducerOpening.findOne({ farmerId: payment.farmerId });
+      if (opening) {
+        for (const [field, amount] of Object.entries(restoreUpdate)) {
+          opening[field] = (opening[field] || 0) + amount;
+        }
+        await opening.save();
       }
     }
 
