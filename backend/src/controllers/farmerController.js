@@ -156,11 +156,12 @@ export const getAllFarmers = async (req, res) => {
 
     const query = { companyId: req.companyId };
 
-    // Search by farmer number, name, or phone
+    // Search by farmer number, member ID, name, or phone
     if (search) {
       query.$or = [
         { farmerNumber: { $regex: search, $options: 'i' } },
-        { 'personalDetails.name': { $regex: search, $options: 'i' } },
+        { memberId:     { $regex: search, $options: 'i' } },
+        { 'personalDetails.name':  { $regex: search, $options: 'i' } },
         { 'personalDetails.phone': { $regex: search, $options: 'i' } }
       ];
     }

@@ -2,6 +2,8 @@ import FarmerPayment from '../models/FarmerPayment.js';
 import Advance from '../models/Advance.js';
 import ProducerLoan from '../models/ProducerLoan.js';
 import ProducerOpening from '../models/ProducerOpening.js';
+import ProducerPayment from '../models/ProducerPayment.js';
+import Farmer from '../models/Farmer.js';
 import { createPaymentVoucher } from '../utils/accountingHelper.js';
 import mongoose from 'mongoose';
 
@@ -27,8 +29,8 @@ export const createFarmerPayment = async (req, res) => {
     // Calculate total deduction (deductions array already contains advance items, no need to add advanceAmount separately)
     paymentData.totalDeduction = deductionTotal + (paymentData.tdsAmount || 0);
 
-    // Calculate net payable = gross amount - total deductions - previous balance
-    paymentData.netPayable = paymentData.grossAmount - paymentData.totalDeduction - (paymentData.previousBalance || 0);
+    // Calculate net payable = gross amount - total deductions + previous balance (society owes farmer from prior cycles)
+    paymentData.netPayable = paymentData.grossAmount - paymentData.totalDeduction + (paymentData.previousBalance || 0);
     paymentData.balanceAmount = paymentData.netPayable - (paymentData.paidAmount || 0);
 
     // Determine status
@@ -40,8 +42,19 @@ export const createFarmerPayment = async (req, res) => {
       paymentData.status = 'Partial';
     }
 
-    const payment = new FarmerPayment(paymentData);
-    await payment.save();
+    // Save with retry on duplicate paymentNumber (counter desync)
+    let payment;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        delete paymentData.paymentNumber; // force pre-save hook to regenerate each attempt
+        payment = new FarmerPayment(paymentData);
+        await payment.save();
+        break;
+      } catch (saveErr) {
+        if (saveErr.code === 11000 && saveErr.keyPattern?.paymentNumber && attempt < 3) continue;
+        throw saveErr;
+      }
+    }
 
     // Auto-reduce advance/loan balances FIFO based on deduction types
     const advanceDeductionTypes = {
@@ -135,6 +148,30 @@ export const createFarmerPayment = async (req, res) => {
     // Populate farmer details for response
     await payment.populate('farmerId', 'farmerNumber personalDetails');
 
+    // Auto-create ProducerPayment so net pay appears in /payments/payment-to-producer
+    try {
+      const farmer = payment.farmerId; // already populated
+      await ProducerPayment.create({
+        companyId:         payment.companyId,
+        farmerId:          farmer._id || payment.farmerId,
+        amountPaid:        payment.netPayable,
+        processingPeriod:  {
+          fromDate: payment.paymentPeriod?.fromDate || payment.paymentDate,
+          toDate:   payment.paymentPeriod?.toDate   || payment.paymentDate,
+        },
+        paymentDate:          payment.paymentDate,
+        isPartialPayment:     payment.status === 'Partial',
+        producerNumber:       farmer.farmerNumber || '',
+        producerName:         farmer.personalDetails?.name || '',
+        paymentMode:          payment.paymentMode || 'Cash',
+        lastAbstractBalance:  payment.netPayable,
+        remarks:              `Auto — ${payment.paymentNumber || ''}`,
+        createdBy:            payment.createdBy,
+      });
+    } catch (ppErr) {
+      console.warn('ProducerPayment auto-create skipped:', ppErr.message);
+    }
+
     res.status(201).json({
       success: true,
       message: 'Payment created successfully',
@@ -161,6 +198,8 @@ export const getAllPayments = async (req, res) => {
       paymentMode = '',
       fromDate = '',
       toDate = '',
+      periodFrom = '',
+      periodTo = '',
       search = '',
       sortBy = 'paymentDate',
       sortOrder = 'desc'
@@ -172,11 +211,34 @@ export const getAllPayments = async (req, res) => {
     if (status) query.status = status;
     if (paymentMode) query.paymentMode = paymentMode;
 
-    // Date range filter
+    // Filter by payment entry date (used by daily table in /payments/register)
+    // setHours on both ends to cover full IST day stored as UTC
     if (fromDate || toDate) {
       query.paymentDate = {};
-      if (fromDate) query.paymentDate.$gte = new Date(fromDate);
-      if (toDate) query.paymentDate.$lte = new Date(toDate);
+      if (fromDate) {
+        const fromStart = new Date(fromDate);
+        fromStart.setHours(0, 0, 0, 0);
+        query.paymentDate.$gte = fromStart;
+      }
+      if (toDate) {
+        const toEnd = new Date(toDate);
+        toEnd.setHours(23, 59, 59, 999);
+        query.paymentDate.$lte = toEnd;
+      }
+    }
+
+    // Filter by milk collection period (used by ledger)
+    // Shift ±1 day to handle IST timezone offset (IST midnight stored as UTC 18:30 prev day)
+    if (periodFrom) {
+      const fromStart = new Date(periodFrom);
+      fromStart.setDate(fromStart.getDate() - 1); // cover IST dates stored as UTC prev-day
+      query['paymentPeriod.fromDate'] = { $gte: fromStart };
+    }
+    if (periodTo) {
+      const toEnd = new Date(periodTo);
+      toEnd.setDate(toEnd.getDate() + 1);
+      toEnd.setHours(23, 59, 59, 999);
+      query['paymentPeriod.toDate'] = { $lte: toEnd };
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);

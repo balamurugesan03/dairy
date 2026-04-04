@@ -23,9 +23,9 @@ const fmt = (v) =>
 
 const n = (v) => parseFloat(v) || 0;
 
-// Net Payable = Milk Value − Welfare − C/F Rec − Cash Pocket + Previous Balance
+// Net Payable = Milk Value − Welfare − C/F Rec − Loan Adv − Cash Pocket + Previous Balance
 const calcNet = (r) =>
-  n(r.milkValue) - n(r.welfare) - n(r.cfRec) - n(r.cashPocket) + n(r.previousBalance);
+  n(r.milkValue) - n(r.welfare) - n(r.cfRec) - n(r.loanAdv) - n(r.cashPocket) + n(r.previousBalance);
 
 const emptyRow = (slNo = 1) => ({
   _localId:        Date.now() + slNo + Math.random(),
@@ -37,6 +37,7 @@ const emptyRow = (slNo = 1) => ({
   milkValue:       '',
   welfare:         '',
   cfRec:           '',
+  loanAdv:         '',
   cashPocket:      '',
   netPayable:      0,
   payStatus:       '',
@@ -98,6 +99,7 @@ const PaymentRegisterProducers = () => {
           acc.previousBalance += n(r.previousBalance);
           acc.welfare         += n(r.welfare);
           acc.cfRec           += n(r.cfRec);
+          acc.loanAdv         += n(r.loanAdv);
           acc.cashPocket      += n(r.cashPocket);
           acc.netPayable      += n(r.netPayable);
           if (n(r.netPayable) >= 0) acc.payableCount++;
@@ -106,7 +108,7 @@ const PaymentRegisterProducers = () => {
         },
         {
           qty: 0, milkValue: 0, previousBalance: 0,
-          welfare: 0, cfRec: 0, cashPocket: 0,
+          welfare: 0, cfRec: 0, loanAdv: 0, cashPocket: 0,
           netPayable: 0, payableCount: 0, receivableCount: 0,
         }
       ),
@@ -159,10 +161,14 @@ const PaymentRegisterProducers = () => {
         milkValue:       e.milkValue       ?? 0,
         welfare:         e.welfare         ?? 0,
         cfRec:           e.cfRec           ?? 0,
+        loanAdv:         e.loanAdv         ?? 0,
         cashPocket:      e.cashPocket      ?? 0,
         netPayable:      calcNet(e),
         payStatus:       e.payStatus       || '',
         farmerId:        e.farmerId,
+        _cfZero:         !e.cfRec,
+        _loanZero:       !e.loanAdv,
+        _cashZero:       !e.cashPocket,
       }));
 
       setRows(generated.length > 0 ? generated : [emptyRow(1)]);
@@ -229,6 +235,7 @@ const PaymentRegisterProducers = () => {
         'Milk Value (₹)':   n(r.milkValue),
         'Welfare (₹)':      n(r.welfare),
         'C/F Rec (₹)':      n(r.cfRec),
+        'Loan Adv (₹)':     n(r.loanAdv),
         'Cash Pocket (₹)':  n(r.cashPocket),
         'Net Payable (₹)':  n(r.netPayable),
         'Status':           r.payStatus,
@@ -243,6 +250,7 @@ const PaymentRegisterProducers = () => {
       'Milk Value (₹)':   totals.milkValue,
       'Welfare (₹)':      totals.welfare,
       'C/F Rec (₹)':      totals.cfRec,
+      'Loan Adv (₹)':     totals.loanAdv,
       'Cash Pocket (₹)':  totals.cashPocket,
       'Net Payable (₹)':  totals.netPayable,
       'Status':           '',
@@ -254,7 +262,7 @@ const PaymentRegisterProducers = () => {
     ws['!cols'] = [
       { wch: 6 }, { wch: 14 }, { wch: 28 }, { wch: 16 },
       { wch: 10 }, { wch: 14 }, { wch: 12 }, { wch: 12 },
-      { wch: 14 }, { wch: 16 }, { wch: 12 },
+      { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 12 },
     ];
 
     const wb = XLSX.utils.book_new();
@@ -444,6 +452,7 @@ const PaymentRegisterProducers = () => {
                 <col style={{ width: 100 }} />  {/* Milk Value */}
                 <col style={{ width: 84 }} />   {/* Welfare */}
                 <col style={{ width: 84 }} />   {/* C/F Rec */}
+                <col style={{ width: 84 }} />   {/* Loan Adv */}
                 <col style={{ width: 90 }} />   {/* Cash Pocket */}
                 <col style={{ width: 112 }} />  {/* Net Payable */}
                 <col style={{ width: 80 }} />   {/* Status */}
@@ -464,7 +473,7 @@ const PaymentRegisterProducers = () => {
                     MILK DETAILS
                   </th>
                   {/* Deductions */}
-                  <th style={{ ...TH_BASE, background: '#6e2c00', textAlign: 'center' }} colSpan={3}>
+                  <th style={{ ...TH_BASE, background: '#6e2c00', textAlign: 'center' }} colSpan={4}>
                     DEDUCTIONS
                   </th>
                   {/* Net */}
@@ -482,6 +491,7 @@ const PaymentRegisterProducers = () => {
                   {/* Deduction sub-headers */}
                   <th style={{ ...TH_SUB, background: '#7e3200' }}>Welfare</th>
                   <th style={{ ...TH_SUB, background: '#7e3200' }}>C/F Rec</th>
+                  <th style={{ ...TH_SUB, background: '#7e3200' }}>Loan Adv</th>
                   <th style={{ ...TH_SUB, background: '#7e3200' }}>Cash Pocket</th>
                   {/* Net sub-headers */}
                   <th style={{ ...TH_SUB, background: '#117a56' }}>Amount</th>
@@ -577,9 +587,23 @@ const PaymentRegisterProducers = () => {
                           type="number"
                           value={row.cfRec}
                           onChange={(e) => updateRow(row._localId, 'cfRec', e.target.value)}
-                          style={{ ...INPUT_RIGHT, color: '#7b341e' }}
+                          style={{ ...INPUT_RIGHT, color: '#7b341e', ...(row._cfZero ? { background: '#f0f0f0', cursor: 'not-allowed', opacity: 0.6 } : {}) }}
                           placeholder="0.00"
                           min={0}
+                          disabled={!!row._cfZero}
+                        />
+                      </td>
+
+                      {/* Loan Adv */}
+                      <td style={{ ...TD_RIGHT, padding: 0, background: isEven ? '#fff9f0' : '#fef3e2' }}>
+                        <input
+                          type="number"
+                          value={row.loanAdv}
+                          onChange={(e) => updateRow(row._localId, 'loanAdv', e.target.value)}
+                          style={{ ...INPUT_RIGHT, color: '#7b341e', ...(row._loanZero ? { background: '#f0f0f0', cursor: 'not-allowed', opacity: 0.6 } : {}) }}
+                          placeholder="0.00"
+                          min={0}
+                          disabled={!!row._loanZero}
                         />
                       </td>
 
@@ -589,9 +613,10 @@ const PaymentRegisterProducers = () => {
                           type="number"
                           value={row.cashPocket}
                           onChange={(e) => updateRow(row._localId, 'cashPocket', e.target.value)}
-                          style={{ ...INPUT_RIGHT, color: '#7b341e' }}
+                          style={{ ...INPUT_RIGHT, color: '#7b341e', ...(row._cashZero ? { background: '#f0f0f0', cursor: 'not-allowed', opacity: 0.6 } : {}) }}
                           placeholder="0.00"
                           min={0}
+                          disabled={!!row._cashZero}
                         />
                       </td>
 
@@ -648,7 +673,7 @@ const PaymentRegisterProducers = () => {
                 {/* Empty state */}
                 {paginatedRows.length === 0 && (
                   <tr>
-                    <td colSpan={13} style={{ textAlign: 'center', padding: '24px', color: '#adb5bd', fontStyle: 'italic', fontSize: 13 }}>
+                    <td colSpan={14} style={{ textAlign: 'center', padding: '24px', color: '#adb5bd', fontStyle: 'italic', fontSize: 13 }}>
                       No records found. Click <strong>Generate</strong> to load producer data.
                     </td>
                   </tr>
@@ -666,6 +691,7 @@ const PaymentRegisterProducers = () => {
                   <td style={{ ...TF, textAlign: 'right' }}>{fmt(totals.milkValue)}</td>
                   <td style={{ ...TF, textAlign: 'right', color: '#ffcba4' }}>{fmt(totals.welfare)}</td>
                   <td style={{ ...TF, textAlign: 'right', color: '#ffcba4' }}>{fmt(totals.cfRec)}</td>
+                  <td style={{ ...TF, textAlign: 'right', color: '#ffcba4' }}>{fmt(totals.loanAdv)}</td>
                   <td style={{ ...TF, textAlign: 'right', color: '#ffcba4' }}>{fmt(totals.cashPocket)}</td>
                   <td style={{ ...TF, textAlign: 'right', color: '#7fffb5', fontSize: 13 }}>
                     ₹ {fmt(totals.netPayable)}
@@ -683,7 +709,7 @@ const PaymentRegisterProducers = () => {
             {/* Formula note */}
             <Group mt="sm" gap="md" wrap="wrap">
               <Text size="xs" c="dimmed">
-                <strong>Formula:</strong> Net Payable = Milk Value − Welfare − C/F Rec − Cash Pocket + Previous Balance
+                <strong>Formula:</strong> Net Payable = Milk Value − Welfare − C/F Rec − Loan Adv − Cash Pocket + Previous Balance
               </Text>
               <Text size="xs" c="dimmed">
                 ▲ Payable (society pays producer) &nbsp; ▼ Receivable (producer owes society)
@@ -725,10 +751,11 @@ const PaymentRegisterProducers = () => {
           { label: 'Prev. Balance',      value: totals.previousBalance, color: 'orange', prefix: '₹' },
           { label: 'Total Welfare',      value: totals.welfare,         color: 'red',    prefix: '₹' },
           { label: 'Total C/F Rec',      value: totals.cfRec,           color: 'grape',  prefix: '₹' },
+          { label: 'Total Loan Adv',     value: totals.loanAdv,         color: 'violet', prefix: '₹' },
           { label: 'Total Cash Pocket',  value: totals.cashPocket,      color: 'indigo', prefix: '₹' },
           { label: 'Total Net Payable',  value: totals.netPayable,      color: 'teal',   prefix: '₹' },
         ].map((s) => (
-          <Grid.Col key={s.label} span={{ base: 6, sm: 4, md: 12 / 7 }}>
+          <Grid.Col key={s.label} span={{ base: 6, sm: 4, md: 3 }}>
             <Paper withBorder p="sm" radius="md" ta="center">
               <Text size="xs" c="dimmed" mb={4}>{s.label}</Text>
               <Text fw={700} c={s.color} size="sm">

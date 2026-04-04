@@ -303,8 +303,9 @@ const MainLayout = () => {
           key: 'recoveries-sub',
           label: 'Recoveries',
           children: [
-            { key: '/payments/loans', label: 'Loans' },
-            { key: '/payments/cash-advance', label: 'Cash Advance' },
+            { key: '/payments/loans',                label: 'Loans' },
+            { key: '/payments/cash-advance',         label: 'Cash Advance' },
+            { key: '/payments/cattle-feed-advance',  label: 'Cattle Feed Advance' },
           ]
         },
         {

@@ -84,7 +84,7 @@ const CashAdvanceVoucher = () => {
   const fetchAdvances = useCallback(async (pg = 1) => {
     setGridLoading(true);
     try {
-      const res = await advanceAPI.getAll({ page: pg, limit: PAGE_SIZE, advanceCategory: 'CF Advance' });
+      const res = await advanceAPI.getAll({ page: pg, limit: PAGE_SIZE, advanceCategory: 'Cash Advance' });
       setAdvances(res.data || res.advances || []);
       setTotalPages(res.pagination?.pages || 1);
       setTotalRecords(res.pagination?.total || 0);
@@ -138,7 +138,7 @@ const CashAdvanceVoucher = () => {
         advanceAPI.getFarmerAdvances(farmerId, { limit: 1000 }).catch(() => null),
       ]);
 
-      const cfAdvance = Number(openingRes?.data?.cfAdvance || openingRes?.cfAdvance) || 0;
+      const cfAdvance = Number(openingRes?.data?.cashAdvance || openingRes?.cashAdvance) || 0;
 
       const advancesList = advancesRes?.data || advancesRes?.advances || advancesRes || [];
       const previousAdvancesTotal = Array.isArray(advancesList)
@@ -511,7 +511,7 @@ const CashAdvanceVoucher = () => {
               <Title order={4} mb="md">Balance Summary</Title>
               <Stack gap="md">
                 <Paper withBorder p="md" radius="md">
-                  <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Opening Balance (CF Advance)</Text>
+                  <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Opening Balance (Cash Advance)</Text>
                   <Text size="xl" fw={600} c={balances.openingBalance > 0 ? 'red' : 'green'}>
                     {formatCurrency(balances.openingBalance)}
                   </Text>

@@ -172,6 +172,14 @@ const AvgCard = ({ label, value, unit, icon, color, bg }) => (
 );
 
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
+// Convert any date-like value (Date, dayjs, string) to a native JS Date
+const toDate = (d) => {
+  if (!d) return new Date();
+  if (d instanceof Date) return d;
+  if (typeof d?.toDate === 'function') return d.toDate(); // dayjs / moment
+  return new Date(d);
+};
+
 const MilkPurchase = () => {
   const [centersData, setCentersData] = useState([]);
   const [agentsData,  setAgentsData]  = useState([]);
@@ -511,7 +519,7 @@ const MilkPurchase = () => {
   const loadTodayEntries = async (d, sh, ct) => {
     setLoadingEntries(true);
     try {
-      const res = await milkCollectionAPI.getAll({ date: d.toISOString().slice(0, 10), shift: sh, collectionCenter: ct || undefined, limit: 500 });
+      const res = await milkCollectionAPI.getAll({ date: toDate(d).toISOString().slice(0, 10), shift: sh, collectionCenter: ct || undefined, limit: 500 });
       const records = res?.data || [];
       setEntries(records.map((r, i) => {
         return {
@@ -819,7 +827,7 @@ const MilkPurchase = () => {
     const shiftIncAmount = calcShiftIncentiveAmt(asi || [], netKg, netLtr, parseFloat(f) || 0, parseFloat(s) || fresh.snf || 0, freshAmount);
     freshAmount = parseFloat((freshAmount + timeIncAmount + shiftIncAmount).toFixed(2));
     try {
-      const payload = { date: d.toISOString(), shift: sh, collectionCenter: ct || undefined, agent: ag || undefined, farmer: p._id, farmerNumber: p.no, farmerName: p.name, qty: netKg, ltr: netLtr, clr: parseFloat(c) || 0, fat: parseFloat(f), snf: parseFloat(s) || fresh.snf || 0, addedWater: waterLtr, rate: freshRate, incentive: fresh.incentive, timeIncentiveRate: timeIncRate || undefined, timeIncentiveAmount: timeIncAmount || undefined, shiftIncentiveAmount: shiftIncAmount || undefined, amount: freshAmount };
+      const payload = { date: toDate(d).toISOString(), shift: sh, collectionCenter: ct || undefined, agent: ag || undefined, farmer: p._id, farmerNumber: p.no, farmerName: p.name, qty: netKg, ltr: netLtr, clr: parseFloat(c) || 0, fat: parseFloat(f), snf: parseFloat(s) || fresh.snf || 0, addedWater: waterLtr, rate: freshRate, incentive: fresh.incentive, timeIncentiveRate: timeIncRate || undefined, timeIncentiveAmount: timeIncAmount || undefined, shiftIncentiveAmount: shiftIncAmount || undefined, amount: freshAmount };
 
       if (eid) {
         // UPDATE existing entry
@@ -837,7 +845,7 @@ const MilkPurchase = () => {
         tableScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
         lastEntryRef.current = newEntry;
         // Auto-print immediately after save — only if 'Milk Bill' mode is ticked
-        const dateStr = formRef.current.date.toLocaleDateString('en-IN');
+        const dateStr = toDate(formRef.current.date).toLocaleDateString('en-IN');
         const milkBillEnabled = formRef.current.cpMode?.includes('Milk Bill');
         if (milkBillEnabled) {
           printBill(newEntry, dateStr, formRef.current.shift, centerNameRef.current);
@@ -942,7 +950,7 @@ const MilkPurchase = () => {
           </Box>
 
           <DatePickerInput
-            value={date} onChange={v => v && setDate(v)} valueFormat="DD MMM YYYY"
+            value={date} onChange={v => v && setDate(toDate(v))} valueFormat="DD MMM YYYY"
             size="sm" radius="md" style={{ width: 130 }}
             styles={{ input: { fontWeight: 700, fontSize: 13, border: '1.5px solid #bfdbfe' } }}
           />

@@ -949,4 +949,11 @@ export const producerOpeningAPI = {
   getByFarmer:     (farmerId) => api.get(`/producer-openings/farmer/${farmerId}`).then(res => res.data).catch(handleError),
 };
 
+// ── Cattle Feed Advance API ────────────────────────────────────────────────────
+export const cattleFeedAdvanceAPI = {
+  getFarmers: ()       => api.get('/cattle-feed-advance/farmers').then(r => r.data).catch(handleError),
+  getLedger:  (params) => api.get('/cattle-feed-advance/ledger',  { params }).then(r => r.data).catch(handleError),
+  getSummary: (params) => api.get('/cattle-feed-advance/summary', { params }).then(r => r.data).catch(handleError),
+};
+
 export default api;

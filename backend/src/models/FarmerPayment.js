@@ -5,7 +5,6 @@ const farmerPaymentSchema = new mongoose.Schema({
   // Auto-generated payment number
   paymentNumber: {
     type: String,
-    unique: true
   },
   companyId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -242,10 +241,10 @@ const farmerPaymentSchema = new mongoose.Schema({
 });
 
 // Indexes for faster queries
+farmerPaymentSchema.index({ companyId: 1, paymentNumber: 1 }, { unique: true, sparse: true });
 farmerPaymentSchema.index({ companyId: 1, paymentDate: -1 });
 farmerPaymentSchema.index({ farmerId: 1, paymentDate: -1 });
 farmerPaymentSchema.index({ status: 1 });
-farmerPaymentSchema.index({ paymentNumber: 1 });
 farmerPaymentSchema.index({ paymentMode: 1 });
 farmerPaymentSchema.index({ 'paymentPeriod.fromDate': 1, 'paymentPeriod.toDate': 1 });
 
@@ -264,8 +263,8 @@ farmerPaymentSchema.pre('save', async function() {
   const deductionsTotal = this.deductions?.reduce((sum, d) => sum + (d.amount || 0), 0) || 0;
   this.totalDeduction = deductionsTotal + (this.tdsAmount || 0);
 
-  // Net payable = gross amount - total deductions - previous balance (if farmer owes)
-  this.netPayable = this.grossAmount - this.totalDeduction - (this.previousBalance || 0);
+  // Net payable = gross amount - total deductions + previous balance (society owes farmer from prior cycles)
+  this.netPayable = this.grossAmount - this.totalDeduction + (this.previousBalance || 0);
   this.balanceAmount = this.netPayable - (this.paidAmount || 0);
 
   // Update status based on payment

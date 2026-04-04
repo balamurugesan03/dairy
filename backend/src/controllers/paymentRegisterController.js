@@ -3,6 +3,8 @@ import MilkCollection from '../models/MilkCollection.js';
 import FarmerPayment from '../models/FarmerPayment.js';
 import Advance from '../models/Advance.js';
 import Farmer from '../models/Farmer.js';
+import ProducerOpening from '../models/ProducerOpening.js';
+import IndividualDeductionEarning from '../models/IndividualDeductionEarning.js';
 
 // ─── GET all registers (paginated, date filter) ───────────────────────────────
 export const getPaymentRegisters = async (req, res) => {
@@ -154,10 +156,63 @@ export const generateProducerPaymentRegister = async (req, res) => {
       .select('farmerNumber personalDetails')
       .lean();
 
+    // 2. Bulk-aggregate all active advances for this company (grouped by farmer + category)
+    const allAdvances = await Advance.aggregate([
+      {
+        $match: {
+          companyId,
+          status: { $in: ['Active', 'Partially Adjusted', 'Overdue'] },
+        },
+      },
+      {
+        $group: {
+          _id: { farmerId: '$farmerId', category: '$advanceCategory' },
+          total: { $sum: '$balanceAmount' },
+        },
+      },
+    ]);
+    // Build map: farmerId -> { 'CF Advance': X, 'Loan Advance': Y, 'Cash Advance': Z }
+    const advanceMap = {};
+    allAdvances.forEach(a => {
+      const fid = a._id.farmerId?.toString();
+      if (!fid) return;
+      if (!advanceMap[fid]) advanceMap[fid] = {};
+      advanceMap[fid][a._id.category] = a.total;
+    });
+
+    // 3. Bulk-aggregate ProducerOpening as fallback
+    const openings = await ProducerOpening.find({ companyId }).lean();
+    const openingMap = {};
+    openings.forEach(o => {
+      const fid = o.farmerId?.toString();
+      if (fid) openingMap[fid] = o;
+    });
+
+    // 4. Bulk-aggregate IndividualDeductionEarning (DEDUCTION type) in this period
+    const indivDeds = await IndividualDeductionEarning.aggregate([
+      {
+        $match: {
+          companyId,
+          type: 'DEDUCTION',
+          date: { $gte: start, $lte: end },
+        },
+      },
+      {
+        $group: {
+          _id: '$producerId',
+          total: { $sum: '$amount' },
+        },
+      },
+    ]);
+    const indivDedMap = {};
+    indivDeds.forEach(d => {
+      if (d._id) indivDedMap[d._id.toString()] = d.total;
+    });
+
     const entries = [];
 
     for (const farmer of farmers) {
-      // 2. Milk collections for period
+      // 5. Milk collections for period
       const milkAgg = await MilkCollection.aggregate([
         { $match: { farmer: farmer._id, companyId, date: { $gte: start, $lte: end } } },
         { $group: { _id: null, totalQty: { $sum: '$qty' }, totalAmount: { $sum: '$amount' } } },
@@ -165,75 +220,23 @@ export const generateProducerPaymentRegister = async (req, res) => {
       const milkData = milkAgg[0] || { totalQty: 0, totalAmount: 0 };
       if (milkData.totalQty === 0 && milkData.totalAmount === 0) continue;
 
-      // 3. Previous balance — unpaid/partial payments BEFORE this period
-      const prevAgg = await FarmerPayment.aggregate([
-        {
-          $match: {
-            farmerId: farmer._id,
-            companyId,
-            status: { $in: ['Pending', 'Partial'] },
-            paymentDate: { $lt: start },
-          },
-        },
-        { $group: { _id: null, total: { $sum: '$balanceAmount' } } },
-      ]);
-      const previousBalance = prevAgg[0]?.total || 0;
+      const fid     = farmer._id.toString();
+      const adv     = advanceMap[fid]  || {};
+      const opening = openingMap[fid]  || {};
 
-      // 4. Welfare deductions for this period
-      const welfareAgg = await FarmerPayment.aggregate([
-        {
-          $match: {
-            farmerId: farmer._id,
-            companyId,
-            paymentDate: { $gte: start, $lte: end },
-            status: { $ne: 'Cancelled' },
-          },
-        },
-        { $unwind: '$deductions' },
-        {
-          $match: {
-            'deductions.type': {
-              $in: ['Welfare Recovery', 'Society Fee', 'Insurance', 'Flood Relief Fund'],
-            },
-          },
-        },
-        { $group: { _id: null, total: { $sum: '$deductions.amount' } } },
-      ]);
-      const welfare = welfareAgg[0]?.total || 0;
+      // 6. Previous balance — from ProducerOpening dueAmount
+      const previousBalance = opening.dueAmount || 0;
 
-      // 5. C/F Recovery (CF Advance deductions) for this period
-      const cfRecAgg = await FarmerPayment.aggregate([
-        {
-          $match: {
-            farmerId: farmer._id,
-            companyId,
-            paymentDate: { $gte: start, $lte: end },
-            status: { $ne: 'Cancelled' },
-          },
-        },
-        { $unwind: '$deductions' },
-        { $match: { 'deductions.type': 'CF Advance' } },
-        { $group: { _id: null, total: { $sum: '$deductions.amount' } } },
-      ]);
-      const cfRec = cfRecAgg[0]?.total || 0;
+      // 7. CF / Loan / Cash advances — from Advance model (all outstanding), fallback ProducerOpening
+      const cfAdv   = adv['CF Advance']   ?? opening.cfAdvance   ?? 0;
+      const loanAdv = adv['Loan Advance'] ?? opening.loanAdvance ?? 0;
+      const cashAdv = adv['Cash Advance'] ?? opening.cashAdvance ?? 0;
 
-      // 6. Cash Pocket — active Cash Advances issued in this period
-      const cashPocketAgg = await Advance.aggregate([
-        {
-          $match: {
-            farmerId: farmer._id,
-            companyId,
-            advanceCategory: 'Cash Advance',
-            advanceDate: { $gte: start, $lte: end },
-            status: { $in: ['Active', 'Partially Adjusted'] },
-          },
-        },
-        { $group: { _id: null, total: { $sum: '$balanceAmount' } } },
-      ]);
-      const cashPocket = cashPocketAgg[0]?.total || 0;
+      // 8. Welfare — from IndividualDeductionEarning in period
+      const welfare = indivDedMap[fid] || 0;
 
       const milkValue  = Math.round((milkData.totalAmount || 0) * 100) / 100;
-      const netPayable = milkValue - welfare - cfRec - cashPocket + previousBalance;
+      const netPayable = milkValue - welfare - cfAdv - loanAdv - cashAdv + previousBalance;
 
       entries.push({
         farmerId:        farmer._id,
@@ -242,9 +245,10 @@ export const generateProducerPaymentRegister = async (req, res) => {
         qty:             Math.round((milkData.totalQty || 0) * 100) / 100,
         milkValue,
         previousBalance: Math.round(previousBalance * 100) / 100,
-        welfare:         Math.round(welfare * 100) / 100,
-        cfRec:           Math.round(cfRec * 100) / 100,
-        cashPocket:      Math.round(cashPocket * 100) / 100,
+        welfare:         Math.round(welfare   * 100) / 100,
+        cfRec:           Math.round(cfAdv     * 100) / 100,
+        loanAdv:         Math.round(loanAdv   * 100) / 100,
+        cashPocket:      Math.round(cashAdv   * 100) / 100,
         netPay:          Math.round(netPayable * 100) / 100,
         payStatus:       netPayable > 0 ? 'Payable' : netPayable < 0 ? 'Receivable' : '',
       });

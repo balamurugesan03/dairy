@@ -15,6 +15,7 @@ const entrySchema = new mongoose.Schema({
   deductions:      { type: Number, default: 0 },    // Creditor Bill: Deductions
   // Producer Register fields
   cfRec:           { type: Number, default: 0 },
+  loanAdv:         { type: Number, default: 0 },
   cashPocket:      { type: Number, default: 0 },
   payStatus:       { type: String, enum: ['Payable', 'Receivable', ''], default: '' },
   netPay:          { type: Number, default: 0 },
@@ -39,6 +40,7 @@ const paymentRegisterSchema = new mongoose.Schema({
   totalDeductions:      { type: Number, default: 0 },
   // Producer totals
   totalCfRec:           { type: Number, default: 0 },
+  totalLoanAdv:         { type: Number, default: 0 },
   totalCashPocket:      { type: Number, default: 0 },
 
   status:    { type: String, enum: ['Draft', 'Saved', 'Printed'], default: 'Draft' },
@@ -49,14 +51,14 @@ const paymentRegisterSchema = new mongoose.Schema({
 // Pre-save: auto SL numbers, recalculate netPay & totals
 paymentRegisterSchema.pre('save', function () {
   let tQty = 0, tMilk = 0, tPrev = 0, tNet = 0;
-  let tOtherEarnings = 0, tWelfare = 0, tDeductions = 0, tCfRec = 0, tCashPocket = 0;
+  let tOtherEarnings = 0, tWelfare = 0, tDeductions = 0, tCfRec = 0, tLoanAdv = 0, tCashPocket = 0;
 
   this.entries.forEach((e, i) => {
     e.slNo = i + 1;
 
     if (this.registerType === 'Producers') {
-      // Net Payable = Milk Value − Welfare − C/F Rec − Cash Pocket + Previous Balance
-      e.netPay = (e.milkValue || 0) - (e.welfare || 0) - (e.cfRec || 0) - (e.cashPocket || 0) + (e.previousBalance || 0);
+      // Net Payable = Milk Value − Welfare − C/F Rec − Loan Adv − Cash Pocket + Previous Balance
+      e.netPay = (e.milkValue || 0) - (e.welfare || 0) - (e.cfRec || 0) - (e.loanAdv || 0) - (e.cashPocket || 0) + (e.previousBalance || 0);
       e.payStatus = e.netPay > 0 ? 'Payable' : e.netPay < 0 ? 'Receivable' : '';
     } else {
       // Creditor Bill: Net Pay = Milk Value + Previous Balance + Other Earnings − Welfare − Deductions
@@ -70,6 +72,7 @@ paymentRegisterSchema.pre('save', function () {
     tWelfare       += e.welfare         || 0;
     tDeductions    += e.deductions      || 0;
     tCfRec       += e.cfRec           || 0;
+    tLoanAdv     += e.loanAdv         || 0;
     tCashPocket  += e.cashPocket      || 0;
     tNet         += e.netPay;
   });
@@ -81,6 +84,7 @@ paymentRegisterSchema.pre('save', function () {
   this.totalWelfare         = tWelfare;
   this.totalDeductions      = tDeductions;
   this.totalCfRec           = tCfRec;
+  this.totalLoanAdv         = tLoanAdv;
   this.totalCashPocket      = tCashPocket;
   this.totalNetPay          = tNet;
 });

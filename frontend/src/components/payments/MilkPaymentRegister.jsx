@@ -242,10 +242,12 @@ const MilkPaymentRegister = () => {
 
       // 2. Pending / partial milk payment balances (society still owes farmer from prior cycles)
       let pendingBalance = 0;
+      let hasAnyPayments = false;
       try {
         const payRes   = await paymentAPI.getAll({ farmerId, limit: 500 });
         const payments = payRes.data || payRes?.payments || payRes || [];
         if (Array.isArray(payments)) {
+          hasAnyPayments = payments.length > 0;
           pendingBalance = payments
             .filter(p => p.status === 'Pending' || p.status === 'Partial')
             .reduce((sum, p) => sum + (p.balanceAmount || 0), 0);
@@ -254,13 +256,14 @@ const MilkPaymentRegister = () => {
         console.warn('Could not fetch pending payments:', payErr.message);
       }
 
-      // 2b. Producer opening due amount + cf advance + loan advance (opening balance entered in Producer Openings)
+      // 2b. Producer opening due amount — only for first-time farmers (no payment history yet)
+      // Once any payment exists, use actual pending balances instead
       let openingCfAdvance = 0;
       let openingLoanAdvance = 0;
       try {
         const openingRes = await producerOpeningAPI.getByFarmer(farmerId);
         const openingData = openingRes?.data || openingRes;
-        if (openingData?.dueAmount) {
+        if (openingData?.dueAmount && !hasAnyPayments) {
           pendingBalance += Number(openingData.dueAmount) || 0;
         }
         if (openingData?.cfAdvance) {
@@ -427,12 +430,21 @@ const MilkPaymentRegister = () => {
             ? existing.filter(p => p.status !== 'Cancelled')
             : [];
           if (active.length > 0) {
+            // Auto-advance from/to dates to the next cycle
+            const nextRef = dayjs(formData.toDate).add(1, 'day').toDate();
+            const [fd, td] = getCyclePeriod(paymentDays, nextRef);
+            setFormData(prev => ({ ...prev, fromDate: fd, toDate: td }));
+            setDateConfirmed(true);
+            fetchGridPayments(1, formData.paymentDate);
+            fetchMilkAmount(farmer.farmerNumber || farmer.producerCode, fd, td);
+            fetchFarmerOutstanding(farmer._id, fd, td);
+            fetchIndividualEarnings(farmer._id, fd, td);
             notifications.show({
-              title: 'Payment Already Done',
-              message: `${farmer.personalDetails?.name || 'This farmer'} already has a payment entry (${active[0].paymentNumber || ''}) for this period.`,
+              title: 'Dates Advanced to Next Cycle',
+              message: `${farmer.personalDetails?.name || 'This farmer'} already has payment (${active[0].paymentNumber || ''}) for this period. Moved to ${dayjs(fd).format('DD/MM')}–${dayjs(td).format('DD/MM/YYYY')}.`,
               color: 'orange',
-              icon: <IconAlertCircle size={16} />,
-              autoClose: 5000,
+              icon: <IconArrowRight size={16} />,
+              autoClose: 6000,
             });
           }
         }).catch(() => {});
@@ -476,8 +488,9 @@ const MilkPaymentRegister = () => {
     const isAdjusted = requestedTotal > totalAvailable && totalAvailable >= 0;
     const netPayable = Math.max(0, totalAvailable - adjTotal);
 
-    const paidAmount     = parseFloat(formData.paidAmount) || netPayable;
-    const closingBalance = netPayable - paidAmount; // 0 when paying full
+    // Default paidAmount = 0 so payment saves as Pending and appears in Bank Transfer
+    const paidAmount     = parseFloat(formData.paidAmount) || 0;
+    const closingBalance = netPayable - paidAmount;
 
     setSummary({
       openingBalance,
@@ -573,15 +586,8 @@ const MilkPaymentRegister = () => {
       notifications.show({ title: 'Select Payment Date', message: 'Please enter a payment date first', color: 'orange' });
       return;
     }
-    // fromDate = exact payment date entered; toDate = fromDate + paymentDays - 1 (capped at end of month)
-    const fd  = dayjs(formData.paymentDate).startOf('day').toDate();
-    const eom = dayjs(fd).endOf('month').toDate();
-    const raw = dayjs(fd).add(paymentDays - 1, 'day').toDate();
-    const td  = raw > eom ? eom : raw;
-    setFormData((prev) => ({ ...prev, fromDate: fd, toDate: td }));
     setDateConfirmed(true);
-    // Load grid for this period
-    fetchGridPayments(1, fd, td);
+    fetchGridPayments(1, formData.paymentDate);
     setGridPage(1);
   };
 
@@ -762,16 +768,13 @@ const MilkPaymentRegister = () => {
         cfAdvanceItems: [],
       });
 
-      // Refresh grid and advance to next period
-      fetchGridPayments(1, formData.fromDate, formData.toDate);
+      // Refresh grid by payment date
+      fetchGridPayments(1, formData.paymentDate);
       setGridPage(1);
       setEditId(null);
 
-      // Auto-advance to next cycle period
-      const nextRef = dayjs(formData.toDate).add(1, 'day');
-      const [nfd, ntd] = getCyclePeriod(paymentDays, nextRef.toDate());
-      setFormData((prev) => ({ ...prev, fromDate: nfd, toDate: ntd, paymentDate: new Date() }));
-      setDateConfirmed(false);
+      // Keep the same period — do not auto-advance dates after payment
+      setDateConfirmed(true);
 
       // Open print modal
       setPrintModalOpen(true);
@@ -844,13 +847,14 @@ const MilkPaymentRegister = () => {
   };
 
   // Fetch payments grid for current period
-  const fetchGridPayments = useCallback(async (pg = 1, from = formData.fromDate, to = formData.toDate) => {
-    if (!from || !to) return;
+  const fetchGridPayments = useCallback(async (pg = 1, date = formData.paymentDate) => {
+    if (!date) return;
     setGridLoading(true);
     try {
+      const d = dayjs(date).format('YYYY-MM-DD');
       const res = await paymentAPI.getAll({
-        fromDate: dayjs(from).format('YYYY-MM-DD'),
-        toDate:   dayjs(to).format('YYYY-MM-DD'),
+        fromDate: d,
+        toDate:   d,
         page: pg,
         limit: GRID_PAGE_SIZE,
       });
@@ -862,11 +866,18 @@ const MilkPaymentRegister = () => {
     } finally {
       setGridLoading(false);
     }
-  }, [formData.fromDate, formData.toDate]);
+  }, [formData.paymentDate]);
 
   useEffect(() => {
-    if (formData.fromDate && formData.toDate) fetchGridPayments(gridPage);
-  }, [gridPage, formData.fromDate, formData.toDate]); // eslint-disable-line
+    if (formData.paymentDate) fetchGridPayments(gridPage, formData.paymentDate);
+  }, [gridPage, formData.paymentDate]); // eslint-disable-line
+
+  // Reload grid when date is confirmed (OK button clicked)
+  useEffect(() => {
+    if (dateConfirmed && formData.paymentDate) {
+      fetchGridPayments(1, formData.paymentDate);
+    }
+  }, [dateConfirmed]); // eslint-disable-line
 
   // Load a saved payment into the form for editing
   const handleEditPayment = (pmt) => {
@@ -1856,11 +1867,6 @@ const MilkPaymentRegister = () => {
               <Badge color="teal" variant="light" size="sm" radius="sm">
                 {gridTotal} {gridTotal === 1 ? 'record' : 'records'}
               </Badge>
-              {formData.fromDate && formData.toDate && (
-                <Badge color="gray" variant="outline" size="sm">
-                  {dayjs(formData.fromDate).format('DD/MM/YY')} – {dayjs(formData.toDate).format('DD/MM/YY')}
-                </Badge>
-              )}
             </Group>
             <Tooltip label="Refresh">
               <ActionIcon variant="light" color="teal" size="lg" loading={gridLoading}

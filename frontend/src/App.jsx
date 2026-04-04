@@ -118,6 +118,7 @@ const ProducerOpenings       = lazy(() => import('./components/daily-collections
 const IndividualMilkPayment = lazy(() => import('./components/payments/IndividualMilkPayment'));
 const MilkPaymentRegister = lazy(() => import('./components/payments/MilkPaymentRegister'));
 const PaymentRegisterLedger = lazy(() => import('./components/payments/PaymentRegisterLedger'));
+const CattleFeedAdvance = lazy(() => import('./components/payments/CattleFeedAdvance'));
 
 const ProducerLoanManagement = lazy(() => import('./components/payments/ProducerLoanManagement'));
 const ProducerLoanView = lazy(() => import('./components/payments/ProducerLoanView'));
@@ -450,6 +451,7 @@ const AppContent = () => {
                 <Route path="creditor-bill"       element={<PaymentRegisterCreditor />} />
                 <Route path="producer-payment"    element={<PaymentRegisterProducers />} />
                 <Route path="payment-to-producer" element={<PaymentToProducer />} />
+                <Route path="cattle-feed-advance" element={<CattleFeedAdvance />} />
               </Route>
 
               {/* Reports Routes */}
