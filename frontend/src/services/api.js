@@ -956,4 +956,13 @@ export const cattleFeedAdvanceAPI = {
   getSummary: (params) => api.get('/cattle-feed-advance/summary', { params }).then(r => r.data).catch(handleError),
 };
 
+// ── Crop Statement API ─────────────────────────────────────────────────────────
+export const cropStatementAPI = {
+  getAll:   (params)   => api.get('/crop-statements', { params }).then(r => r.data).catch(handleError),
+  getById:  (id)       => api.get(`/crop-statements/${id}`).then(r => r.data).catch(handleError),
+  create:   (data)     => api.post('/crop-statements', data).then(r => r.data).catch(handleError),
+  update:   (id, data) => api.put(`/crop-statements/${id}`, data).then(r => r.data).catch(handleError),
+  delete:   (id)       => api.delete(`/crop-statements/${id}`).then(r => r.data).catch(handleError),
+};
+
 export default api;
