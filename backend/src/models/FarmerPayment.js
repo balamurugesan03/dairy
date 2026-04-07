@@ -15,6 +15,11 @@ const farmerPaymentSchema = new mongoose.Schema({
     ref: 'Farmer',
     required: [true, 'Farmer is required']
   },
+  farmerName: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   paymentDate: {
     type: Date,
     required: true,

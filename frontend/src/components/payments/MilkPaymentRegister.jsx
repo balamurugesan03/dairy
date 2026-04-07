@@ -690,6 +690,7 @@ const MilkPaymentRegister = () => {
 
       const paymentData = {
         farmerId: formData.farmerId,
+        farmerName: formData.producerName || '',
         paymentDate: formData.paymentDate,
         paymentPeriod: {
           fromDate: formData.fromDate || formData.paymentDate,

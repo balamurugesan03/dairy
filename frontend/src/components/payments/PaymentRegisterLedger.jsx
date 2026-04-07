@@ -187,7 +187,7 @@ const PaymentRegisterLedger = () => {
     return recalc({
       sn:            i + 1,
       farmerId:      pmt.farmerId?._id?.toString() || pmt.farmerId?.toString() || '',
-      producerId:    pmt.farmerId?.farmerNumber    || pmt.farmerNumber          || '',
+      producerId:    pmt.farmerId?.farmerNumber    || '',
       producerName:  pmt.farmerName || pmt.farmerId?.personalDetails?.name      || '',
       qty:           nz(pmt.milkDetails?.totalQuantity),
       milkValue:     nz(pmt.milkAmount),
@@ -285,6 +285,13 @@ const PaymentRegisterLedger = () => {
     });
   };
 
+  /* Select ALL rows' pay mode at once */
+  const selectAllPayMode = (mode) => {
+    setRows(prev => prev.map(r =>
+      r.producerName?.trim() ? { ...r, payMode: r.payMode === mode ? '' : mode } : r
+    ));
+  };
+
   /* ─── Advance period to next cycle ─── */
   const advanceCycle = useCallback(() => {
     const nextFrom = dayjs(toDate).add(1, 'day').toDate();
@@ -316,6 +323,7 @@ const PaymentRegisterLedger = () => {
       : [];
     return {
       farmerId:        row.farmerId,
+      farmerName:      row.producerName || '',
       paymentDate:     new Date(),
       paymentPeriod:   { fromDate, toDate, periodType: 'Custom' },
       milkAmount:      n(row.milkValue),
@@ -567,10 +575,46 @@ const PaymentRegisterLedger = () => {
                   <th style={thCol('#975a16')}>Loan Rec</th>
                   <th style={thCol('#744210')}>Other Ded</th>
                   <th style={thCol('#7b341e')}>Total Ded</th>
-                  {/* Payment sub */}
-                  <th style={thCol('#276749')}>Bank</th>
-                  <th style={thCol('#276749')}>Cash</th>
-                  <th style={thCol('#276749')}>Cheque</th>
+                  {/* Payment sub — header checkboxes select all rows */}
+                  <th style={thCol('#276749')}>
+                    <Group justify="center" gap={2} align="center">
+                      <Checkbox
+                        size="xs"
+                        color="blue"
+                        checked={filledRows.length > 0 && filledRows.every(r => r.payMode === 'Bank')}
+                        onChange={() => selectAllPayMode('Bank')}
+                        title="Select Bank for all"
+                        styles={{ input: { cursor: 'pointer' } }}
+                      />
+                      <Text size={9} fw={700} c="white">Bank</Text>
+                    </Group>
+                  </th>
+                  <th style={thCol('#276749')}>
+                    <Group justify="center" gap={2} align="center">
+                      <Checkbox
+                        size="xs"
+                        color="green"
+                        checked={filledRows.length > 0 && filledRows.every(r => r.payMode === 'Cash')}
+                        onChange={() => selectAllPayMode('Cash')}
+                        title="Select Cash for all"
+                        styles={{ input: { cursor: 'pointer' } }}
+                      />
+                      <Text size={9} fw={700} c="white">Cash</Text>
+                    </Group>
+                  </th>
+                  <th style={thCol('#276749')}>
+                    <Group justify="center" gap={2} align="center">
+                      <Checkbox
+                        size="xs"
+                        color="violet"
+                        checked={filledRows.length > 0 && filledRows.every(r => r.payMode === 'Cheque')}
+                        onChange={() => selectAllPayMode('Cheque')}
+                        title="Select Cheque for all"
+                        styles={{ input: { cursor: 'pointer' } }}
+                      />
+                      <Text size={9} fw={700} c="white">Cheque</Text>
+                    </Group>
+                  </th>
                   <th style={thCol('#1a4731')}>Paid Amt</th>
                 </tr>
               </thead>
