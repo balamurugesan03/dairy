@@ -148,6 +148,7 @@ const MainLayout = () => {
         { key: '/agents', label: 'Agent Management' },
         { key: '/customers', label: 'Customer' },
         { key: '/farmers/crop-statements', label: 'Crop Damage Statements' },
+        { key: '/farmers/agri-stats',      label: 'Monthly Agri Statistics' },
       ]
     }] : []),
     // PRIVATE FIRM - Customer Module Only

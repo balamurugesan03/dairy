@@ -956,6 +956,15 @@ export const cattleFeedAdvanceAPI = {
   getSummary: (params) => api.get('/cattle-feed-advance/summary', { params }).then(r => r.data).catch(handleError),
 };
 
+// ── Agricultural Statistics Report API ────────────────────────────────────────
+export const agriStatsAPI = {
+  getAll:  (params)   => api.get('/agri-stats', { params }).then(r => r.data).catch(handleError),
+  getById: (id)       => api.get(`/agri-stats/${id}`).then(r => r.data).catch(handleError),
+  create:  (data)     => api.post('/agri-stats', data).then(r => r.data).catch(handleError),
+  update:  (id, data) => api.put(`/agri-stats/${id}`, data).then(r => r.data).catch(handleError),
+  delete:  (id)       => api.delete(`/agri-stats/${id}`).then(r => r.data).catch(handleError),
+};
+
 // ── Crop Statement API ─────────────────────────────────────────────────────────
 export const cropStatementAPI = {
   getAll:   (params)   => api.get('/crop-statements', { params }).then(r => r.data).catch(handleError),

@@ -46,6 +46,7 @@ const FarmerManagement = lazy(() => import('./components/farmer/FarmerManagement
 const FarmerView = lazy(() => import('./components/farmer/FarmerView'));
 const MemberList = lazy(() => import('./components/farmer/MemberList'));
 const CropStatementList = lazy(() => import('./components/farmer/CropStatementList'));
+const AgriStatsReportList = lazy(() => import('./components/farmer/AgriStatsReportList'));
 
 // Customer Components
 const CustomerManagement = lazy(() => import('./components/customer/CustomerManagement'));
@@ -319,6 +320,7 @@ const AppContent = () => {
                 <Route path="view/:id" element={<FarmerView />} />
                 <Route path="members" element={<MemberList />} />
                 <Route path="crop-statements" element={<CropStatementList />} />
+                <Route path="agri-stats" element={<AgriStatsReportList />} />
               </Route>
 
               {/* Customer Management Routes */}
