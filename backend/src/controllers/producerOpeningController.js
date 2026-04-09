@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import ProducerOpening from '../models/ProducerOpening.js';
 import Farmer from '../models/Farmer.js';
+import { applyProducerOpeningLedgers } from '../utils/accountingHelper.js';
 
 // ─── Get All Openings ──────────────────────────────────────────────────────────
 export const getOpenings = async (req, res) => {
@@ -60,10 +61,9 @@ export const createOpening = async (req, res) => {
     }
 
     const totalRecovery =
-      (Number(cfAdvance) || 0) +
+      (Number(cfAdvance)   || 0) +
       (Number(loanAdvance) || 0) +
-      (Number(cashAdvance) || 0) +
-      (Number(revolvingFund) || 0);
+      (Number(cashAdvance) || 0);
 
     const opening = new ProducerOpening({
       companyId,
@@ -81,6 +81,15 @@ export const createOpening = async (req, res) => {
     });
 
     await opening.save();
+
+    // Sync ledger opening balances (create = delta from 0 to new amounts)
+    try {
+      await applyProducerOpeningLedgers(
+        { farmerId, dueAmount: opening.dueAmount, cfAdvance: opening.cfAdvance, loanAdvance: opening.loanAdvance, cashAdvance: opening.cashAdvance, revolvingFund: opening.revolvingFund },
+        null,
+        companyId
+      );
+    } catch (e) { console.warn('ProducerOpening ledger sync failed:', e.message); }
 
     return res.status(201).json({ success: true, data: opening });
   } catch (error) {
@@ -108,16 +117,34 @@ export const updateOpening = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Opening record not found' });
     }
 
+    // Snapshot old values before update (for ledger delta calculation)
+    const oldSnapshot = {
+      farmerId:      opening.farmerId,
+      dueAmount:     opening.dueAmount,
+      cfAdvance:     opening.cfAdvance,
+      loanAdvance:   opening.loanAdvance,
+      cashAdvance:   opening.cashAdvance,
+      revolvingFund: opening.revolvingFund,
+    };
+
     if (date) opening.date = new Date(date);
-    opening.dueAmount = Number(dueAmount) ?? opening.dueAmount;
-    opening.cfAdvance = Number(cfAdvance) ?? opening.cfAdvance;
-    opening.loanAdvance = Number(loanAdvance) ?? opening.loanAdvance;
-    opening.cashAdvance = Number(cashAdvance) ?? opening.cashAdvance;
+    opening.dueAmount     = Number(dueAmount)     ?? opening.dueAmount;
+    opening.cfAdvance     = Number(cfAdvance)     ?? opening.cfAdvance;
+    opening.loanAdvance   = Number(loanAdvance)   ?? opening.loanAdvance;
+    opening.cashAdvance   = Number(cashAdvance)   ?? opening.cashAdvance;
     opening.revolvingFund = Number(revolvingFund) ?? opening.revolvingFund;
-    opening.totalRecovery =
-      opening.cfAdvance + opening.loanAdvance + opening.cashAdvance + opening.revolvingFund;
+    opening.totalRecovery = opening.cfAdvance + opening.loanAdvance + opening.cashAdvance;
 
     await opening.save();
+
+    // Sync ledger opening balances (delta = new - old)
+    try {
+      await applyProducerOpeningLedgers(
+        { farmerId: opening.farmerId, dueAmount: opening.dueAmount, cfAdvance: opening.cfAdvance, loanAdvance: opening.loanAdvance, cashAdvance: opening.cashAdvance, revolvingFund: opening.revolvingFund },
+        oldSnapshot,
+        companyId
+      );
+    } catch (e) { console.warn('ProducerOpening ledger sync (update) failed:', e.message); }
 
     return res.json({ success: true, data: opening });
   } catch (error) {
@@ -140,6 +167,15 @@ export const deleteOpening = async (req, res) => {
     if (!opening) {
       return res.status(404).json({ success: false, message: 'Opening record not found' });
     }
+
+    // Reverse ledger opening balances (delete = delta from old to 0)
+    try {
+      await applyProducerOpeningLedgers(
+        null,
+        { farmerId: opening.farmerId, dueAmount: opening.dueAmount, cfAdvance: opening.cfAdvance, loanAdvance: opening.loanAdvance, cashAdvance: opening.cashAdvance, revolvingFund: opening.revolvingFund },
+        companyId
+      );
+    } catch (e) { console.warn('ProducerOpening ledger sync (delete) failed:', e.message); }
 
     return res.json({ success: true, message: 'Deleted successfully' });
   } catch (error) {

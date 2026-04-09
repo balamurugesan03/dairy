@@ -13,7 +13,7 @@ import {
 import dayjs from 'dayjs';
 import { useReactToPrint } from 'react-to-print';
 import {
-  paymentAPI, dairySettingsAPI,
+  paymentAPI, dairySettingsAPI, paymentRegisterAPI, producerOpeningAPI, periodicalRuleAPI, milkPurchaseSettingsAPI,
 } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 
@@ -98,15 +98,14 @@ const recalc = (row) => {
   const other     = n(row.otherEarnings);
   const totalEarn = milkVal + prev + other;
 
+  // cfAdv / cashAdv / loanAdv are reference-only opening balances — NOT deducted
+  // Only the Rec (recovery) amounts + welfare + otherDed go into totalDed
   const welfare   = n(row.welfare);
-  const cfAdv     = n(row.cfAdv);
   const cfRec     = n(row.cfRec);
-  const cashAdv   = n(row.cashAdv);
   const cashRec   = n(row.cashRec);
-  const loanAdv   = n(row.loanAdv);
   const loanRec   = n(row.loanRec);
   const otherDed  = n(row.otherDed);
-  const totalDed  = welfare + cfAdv + cfRec + cashAdv + cashRec + loanAdv + loanRec + otherDed;
+  const totalDed  = welfare + cfRec + cashRec + loanRec + otherDed;
   const netPay    = totalEarn - totalDed;
 
   return {
@@ -144,88 +143,196 @@ const PaymentRegisterLedger = () => {
   const [settingsDays,  setSettingsDays]  = useState(15);
 
   /* ─── data state ─── */
-  const [rows,    setRows]    = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [applying, setApplying] = useState({});
+  const [rows,         setRows]         = useState([]);
+  const [loading,      setLoading]      = useState(false);
+  const [applying,     setApplying]     = useState({});
+  const [quantityUnit, setQuantityUnit] = useState('Litre');
 
-  /* ─── Load settings + centers once, then auto-fetch ─── */
+  /* ─── Load settings on mount → set dates only, no auto-load ─── */
   useEffect(() => {
-    dairySettingsAPI.get().then(res => {
-      const s = res?.data || res || {};
-      const days = s.paymentDays || 15;
-      setSettingsDays(days);
-      let from, to;
-      if (s.paymentFromDate) {
-        from = dayjs(s.paymentFromDate).toDate();
-        to   = dayjs(s.paymentFromDate).add(days - 1, 'day').toDate();
-      } else {
-        from = dayjs().startOf('month').toDate();
-        to   = dayjs().startOf('month').add(days - 1, 'day').toDate();
-      }
-      setFromDate(from);
-      setToDate(to);
-      // Auto-fetch milk purchase data for this period
-      autoFetch(from, to);
-    }).catch(() => {
-      const from = dayjs().startOf('month').toDate();
-      const to   = dayjs().endOf('month').toDate();
-      setFromDate(from);
-      setToDate(to);
-      autoFetch(from, to);
-    });
+    Promise.all([dairySettingsAPI.get(), milkPurchaseSettingsAPI.getSummary()])
+      .then(([dsRes, msRes]) => {
+        const s    = dsRes?.data || dsRes || {};
+        const days = s.paymentDays || 15;
+        setSettingsDays(days);
+        setQuantityUnit(msRes?.data?.quantityUnit || 'Litre');
+        let from, to;
+        if (s.paymentFromDate) {
+          from = dayjs(s.paymentFromDate).toDate();
+          to   = dayjs(s.paymentFromDate).add(days - 1, 'day').toDate();
+        } else {
+          from = dayjs().startOf('month').toDate();
+          to   = dayjs().startOf('month').add(days - 1, 'day').toDate();
+        }
+        setFromDate(from);
+        setToDate(to);
+        // No auto-load — user must click Generate
+      }).catch(() => {
+        setFromDate(dayjs().startOf('month').toDate());
+        setToDate(dayjs().startOf('month').add(14, 'day').toDate());
+      });
   }, []); // eslint-disable-line
 
-  /* ─── map a FarmerPayment record → ledger row ─── */
-  const pmtToRow = (pmt, i) => {
-    const nz   = (v) => (v != null && v !== 0 ? v : '');
-    const deds  = pmt.deductions || [];
-    const bonus = (pmt.bonuses || []).reduce((s, b) => s + (b.amount || 0), 0);
-    const getDed = (types) => {
-      const t = Array.isArray(types) ? types : [types];
-      return deds.filter(d => t.includes(d.type)).reduce((s, d) => s + (d.amount || 0), 0);
-    };
+  /* ─── Map a generated entry → ledger row ─── */
+  const toRow = (e, i) => {
+    const nz = (v) => (v != null && v !== 0 ? v : '');
     return recalc({
       sn:            i + 1,
-      farmerId:      pmt.farmerId?._id?.toString() || pmt.farmerId?.toString() || '',
-      producerId:    pmt.farmerId?.farmerNumber    || '',
-      producerName:  pmt.farmerName || pmt.farmerId?.personalDetails?.name      || '',
-      qty:           nz(pmt.milkDetails?.totalQuantity),
-      milkValue:     nz(pmt.milkAmount),
-      prevBalance:   nz(pmt.previousBalance),
-      otherEarnings: nz(bonus),
+      _entryId:      '',
+      farmerId:      e.farmerId?.toString() || '',
+      producerId:    e.productId   || '',
+      producerName:  e.productName || '',
+      qty:           nz(e.qty),
+      milkValue:     nz(e.milkValue),
+      prevBalance:   nz(e.previousBalance),
+      otherEarnings: '',
       totalEarnings: '',
-      welfare:       nz(getDed('Welfare Recovery')),
-      cfAdv:         nz(getDed('CF Advance')),
+      welfare:       nz(e.welfare),
+      cfAdv:         nz(e.cfRec),      // generateProducers returns cfRec = CF advance balance
       cfRec:         '',
-      cashAdv:       nz(getDed('Cash Advance')),
+      cashAdv:       nz(e.cashPocket),
       cashRec:       '',
-      loanAdv:       nz(getDed(['Loan Advance', 'Loan EMI'])),
+      loanAdv:       nz(e.loanAdv),
       loanRec:       '',
-      otherDed:      nz(getDed('Other')),
+      otherDed:      '',
       totalDed:      '',
       netPay:        '',
-      payMode:       pmt.paymentMode || '',
-      paidAmount:    nz(pmt.paidAmount),
+      payMode:       '',    // no checkbox pre-ticked — user selects
+      paidAmount:    '',    // user types amount manually
       signature:     '',
-      paid:          pmt.status === 'Paid',
+      paid:          false,
     });
   };
 
-  /* ─── Auto-fetch helper (called after dates are set from settings) ─── */
-  const autoFetch = async (from, to) => {
-    if (!from || !to) return;
+  /* ─── Map a ProducerOpening → ledger row (fallback when no milk data) ─── */
+  const openingToRow = (o, i) => {
+    const nz  = (v) => (v != null && v !== 0 ? v : '');
+    const fid = o.farmerId?._id?.toString() || o.farmerId?.toString() || '';
+    return recalc({
+      sn:            i + 1,
+      _entryId:      '',
+      farmerId:      fid,
+      producerId:    o.producerNumber || o.farmerId?.farmerNumber || '',
+      producerName:  o.producerName  || o.farmerId?.personalDetails?.name || '',
+      qty:           '',
+      milkValue:     '',
+      prevBalance:   nz(o.dueAmount),
+      otherEarnings: '',
+      totalEarnings: '',
+      welfare:       '',
+      cfAdv:         nz(o.cfAdvance),
+      cfRec:         '',
+      cashAdv:       nz(o.cashAdvance),
+      cashRec:       '',
+      loanAdv:       nz(o.loanAdvance),
+      loanRec:       '',
+      otherDed:      '',
+      totalDed:      '',
+      netPay:        '',
+      payMode:       '',    // no checkbox pre-ticked — user selects
+      paidAmount:    '',    // user types amount manually
+      signature:     '',
+      paid:          false,
+    });
+  };
+
+  /* ─── Get welfare fixed amount from PeriodicalRule (called once per load) ─── */
+  const getWelfareAmount = async () => {
+    try {
+      const res   = await periodicalRuleAPI.getAll({ component: 'DEDUCTIONS' });
+      const rules = res?.data || [];
+      const rule  = rules.find(r => r.basedOn === 'FIXED_AMOUNT' && r.active);
+      return rule?.fixedRate || 0;
+    } catch { return 0; }
+  };
+
+  /* ─── Core load: generateProducers for milk data (qty + value + advances) ───
+     Falls back to ProducerOpening rows if no milk collections exist for period.
+     Welfare auto-filled from PeriodicalRule if backend returns 0.           ─── */
+  const loadData = async (from, to, silent = false) => {
     setLoading(true);
     try {
-      const fd = dayjs(from).format('YYYY-MM-DD');
-      const td = dayjs(to).format('YYYY-MM-DD');
-      const res = await paymentAPI.getAll({ periodFrom: fd, periodTo: td, limit: 500 });
-      const payments = res.data || [];
-      if (payments.length > 0) {
-        setRows(payments.map(pmtToRow));
+      const fd  = dayjs(from).format('YYYY-MM-DD');
+      const td  = dayjs(to).format('YYYY-MM-DD');
+
+      // Fetch milk data, welfare rule, and existing payments all in parallel
+      const [res, welfareAmt, pmtRes] = await Promise.all([
+        paymentRegisterAPI.generateProducers({ fromDate: fd, toDate: td }),
+        getWelfareAmount(),
+        paymentAPI.getAll({ periodFrom: fd, periodTo: td, limit: 500 }),
+      ]);
+      const entries  = res?.data?.entries || [];
+      const payments = pmtRes?.data || [];
+
+      // Build farmerId → FarmerPayment map (most recent payment per farmer)
+      const pmtMap = {};
+      payments.forEach(pmt => {
+        const fid = pmt.farmerId?._id?.toString() || pmt.farmerId?.toString() || '';
+        if (fid && !pmtMap[fid]) pmtMap[fid] = pmt; // take first (most recent)
+      });
+
+      // Helper: extract deduction amount by type from a FarmerPayment
+      const getDed = (pmt, ...types) =>
+        (pmt?.deductions || [])
+          .filter(d => types.includes(d.type))
+          .reduce((s, d) => s + (d.amount || 0), 0);
+
+      // Merge a row with its existing FarmerPayment (if any)
+      const mergePayment = (row) => {
+        const pmt = pmtMap[row.farmerId];
+        if (!pmt) return row;
+        return recalc({
+          ...row,
+          cfRec:      getDed(pmt, 'CF Recovery', 'CF Advance')   || row.cfRec,
+          cashRec:    getDed(pmt, 'Cash Recovery', 'Cash Advance') || row.cashRec,
+          loanRec:    getDed(pmt, 'Loan Recovery', 'Loan Advance', 'Loan EMI') || row.loanRec,
+          welfare:    getDed(pmt, 'Welfare Recovery') || row.welfare,
+          paidAmount: pmt.paidAmount || row.paidAmount,
+          paid:       pmt.status === 'Paid' || pmt.status === 'Partial',
+        });
+      };
+
+      if (entries.length > 0) {
+        const mapped = entries.map((e, i) => {
+          let row = toRow(e, i);
+          // Apply welfare from PeriodicalRule if backend returned 0
+          if (!n(row.welfare) && welfareAmt > 0) row = recalc({ ...row, welfare: welfareAmt });
+          // Merge existing individual payment data
+          return mergePayment(row);
+        });
+        setRows(mapped);
         setDateConfirmed(true);
+        const paidCount = mapped.filter(r => r.paid).length;
+        if (!silent) notifications.show({
+          title: 'Generated',
+          message: `${entries.length} producer(s) · ${paidCount > 0 ? `${paidCount} already paid · ` : ''}${dayjs(from).format('DD/MM/YYYY')} – ${dayjs(to).format('DD/MM/YYYY')}`,
+          color: 'teal', icon: <IconCheck size={14} />,
+        });
+      } else {
+        // No milk data — show from ProducerOpening, still merge any existing payments
+        const oRes     = await producerOpeningAPI.getAll({ limit: 500 });
+        const openings = oRes?.data || [];
+        if (openings.length > 0) {
+          const mapped = openings.map((o, i) => {
+            let row = openingToRow(o, i);
+            if (!n(row.welfare) && welfareAmt > 0) row = recalc({ ...row, welfare: welfareAmt });
+            return mergePayment(row);
+          });
+          setRows(mapped);
+          setDateConfirmed(true);
+          if (!silent) notifications.show({
+            title: 'No Milk Data',
+            message: 'No milk collections for this period. Showing producers with opening balances.',
+            color: 'orange',
+          });
+        }
       }
-    } catch { /* silent */ }
-    finally { setLoading(false); }
+    } catch (err) {
+      console.error('PaymentRegisterLedger loadData error:', err);
+      if (!silent) notifications.show({ title: 'Load Failed', message: err.message, color: 'red' });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleFromDateChange = (v) => {
@@ -235,36 +342,13 @@ const PaymentRegisterLedger = () => {
   };
   const handleToDateChange = (v) => { setToDate(v); setDateConfirmed(false); };
 
-  /* ─── Fetch / Generate ─── */
+  /* ─── Load button: reload for selected dates ─── */
   const fetchData = useCallback(async () => {
     if (!fromDate || !toDate) {
       notifications.show({ title: 'Select Dates', message: 'Please select From and To dates', color: 'orange' });
       return;
     }
-    setDateConfirmed(true);
-    setLoading(true);
-    try {
-      const fd = dayjs(fromDate).format('YYYY-MM-DD');
-      const td = dayjs(toDate).format('YYYY-MM-DD');
-
-      // Fetch actual saved FarmerPayment records for this period
-      const res = await paymentAPI.getAll({ periodFrom: fd, periodTo: td, limit: 500 });
-      const payments = res.data || [];
-
-      setRows(payments.map(pmtToRow));
-
-      notifications.show({
-        title: 'Loaded',
-        message: `${payments.length} payment(s) · ${dayjs(fromDate).format('DD/MM/YYYY')} – ${dayjs(toDate).format('DD/MM/YYYY')}`,
-        color: 'teal',
-        icon: <IconCheck size={14} />,
-      });
-    } catch (err) {
-      console.error('PaymentRegisterLedger fetchData error:', err);
-      notifications.show({ title: 'Load Failed', message: err.message, color: 'red' });
-    } finally {
-      setLoading(false);
-    }
+    await loadData(fromDate, toDate, false);
   }, [fromDate, toDate]);
 
   /* ─── Row update ─── */
@@ -298,24 +382,53 @@ const PaymentRegisterLedger = () => {
     const nextTo   = dayjs(nextFrom).add(settingsDays - 1, 'day').toDate();
     setFromDate(nextFrom);
     setToDate(nextTo);
-    setRows([]);
+    setRegisterId(null);
     setDateConfirmed(false);
+    // Keep farmer rows — reset amounts only, preserve farmerId/producerId/producerName
+    setRows(prev => prev
+      .filter(r => r.producerName?.trim())
+      .map((r, i) => ({
+        sn:            i + 1,
+        _entryId:      '',
+        farmerId:      r.farmerId,
+        producerId:    r.producerId,
+        producerName:  r.producerName,
+        qty:           '',
+        milkValue:     '',
+        prevBalance:   '',
+        otherEarnings: '',
+        totalEarnings: '',
+        welfare:       '',
+        cfAdv:         '',
+        cfRec:         '',
+        cashAdv:       '',
+        cashRec:       '',
+        loanAdv:       '',
+        loanRec:       '',
+        otherDed:      '',
+        totalDed:      '',
+        netPay:        '',
+        payMode:       'Cash',
+        paidAmount:    '',
+        signature:     '',
+        paid:          false,
+      }))
+    );
     notifications.show({
-      title: 'Cycle Advanced',
+      title:   'Cycle Advanced',
       message: `Next period: ${dayjs(nextFrom).format('DD/MM/YYYY')} – ${dayjs(nextTo).format('DD/MM/YYYY')}`,
-      color: 'blue',
+      color:   'blue',
     });
   }, [toDate, settingsDays]);
 
   /* ─── Build payment payload for a row ─── */
   const buildPayload = (row) => {
     const deductions = [];
+    // cfAdv/cashAdv/loanAdv are reference-only — NOT included as deductions
+    // Only Rec (recovery) amounts + welfare + otherDed are actual deductions
     if (n(row.welfare)  > 0) deductions.push({ type: 'Welfare Recovery', amount: n(row.welfare),  description: 'Welfare' });
-    if (n(row.cfAdv)    > 0) deductions.push({ type: 'CF Advance',       amount: n(row.cfAdv),    description: 'CF Advance' });
     if (n(row.cfRec)    > 0) deductions.push({ type: 'CF Recovery',      amount: n(row.cfRec),    description: 'CF Recovery' });
-    if (n(row.cashAdv)  > 0) deductions.push({ type: 'Cash Advance',     amount: n(row.cashAdv),  description: 'Cash Advance' });
     if (n(row.cashRec)  > 0) deductions.push({ type: 'Cash Recovery',    amount: n(row.cashRec),  description: 'Cash Recovery' });
-    if (n(row.loanAdv)  > 0) deductions.push({ type: 'Loan Advance',     amount: n(row.loanAdv),  description: 'Loan Advance' });
     if (n(row.loanRec)  > 0) deductions.push({ type: 'Loan Recovery',    amount: n(row.loanRec),  description: 'Loan Recovery' });
     if (n(row.otherDed) > 0) deductions.push({ type: 'Other',            amount: n(row.otherDed), description: 'Other' });
     const bonuses = n(row.otherEarnings) > 0
@@ -348,20 +461,15 @@ const PaymentRegisterLedger = () => {
     setApplying(prev => ({ ...prev, [idx]: true }));
     try {
       await paymentAPI.create(buildPayload(row));
-      // Mark row paid
-      setRows(prev => {
-        const next = prev.map((r, i) => i === idx ? { ...r, paid: true } : r);
-        // Auto-advance cycle when ALL filled rows are paid
-        const filled = next.filter(r => r.producerName?.trim());
-        if (filled.length > 0 && filled.every(r => r.paid)) {
-          setTimeout(advanceCycle, 800);
-        }
-        return next;
-      });
+      setRows(prev => prev.map((r, i) =>
+        i === idx ? { ...r, paid: true, payMode: r.payMode || 'Cash' } : r
+      ));
       notifications.show({
-        title: 'Payment Applied',
-        message: `${row.producerName} — ₹${(n(row.paidAmount) || n(row.netPay)).toFixed(2)}`,
-        color: 'green',
+        title:   'Payment Applied',
+        message: `${row.producerName} — ₹${(n(row.paidAmount) || n(row.netPay)).toFixed(2)} (${row.payMode || 'Cash'})`,
+        color:   'green',
+        icon:    <IconCheck size={14} />,
+        autoClose: 3000,
       });
     } catch (err) {
       notifications.show({ title: 'Failed', message: err.message, color: 'red' });
@@ -370,7 +478,7 @@ const PaymentRegisterLedger = () => {
     }
   };
 
-  /* ─── Apply ALL unpaid rows then advance cycle ─── */
+  /* ─── Apply ALL unpaid rows ─── */
   const [applyingAll, setApplyingAll] = useState(false);
   const applyAllPayments = async () => {
     const unpaid = rows.map((r, i) => ({ r, i })).filter(({ r }) => !r.paid && r.farmerId && n(r.netPay) > 0);
@@ -383,18 +491,19 @@ const PaymentRegisterLedger = () => {
     for (const { r, i } of unpaid) {
       try {
         await paymentAPI.create(buildPayload(r));
-        setRows(prev => prev.map((row, idx) => idx === i ? { ...row, paid: true } : row));
+        setRows(prev => prev.map((row, idx) =>
+          idx === i ? { ...row, paid: true, payMode: row.payMode || 'Cash' } : row
+        ));
         done++;
       } catch { /* continue */ }
     }
     setApplyingAll(false);
     notifications.show({
-      title: 'All Payments Applied',
+      title:   'All Payments Applied',
       message: `${done} of ${unpaid.length} applied`,
-      color: done === unpaid.length ? 'green' : 'orange',
+      color:   done === unpaid.length ? 'green' : 'orange',
+      icon:    <IconCheck size={14} />,
     });
-    // Advance to next cycle
-    setTimeout(advanceCycle, 800);
   };
 
   /* ─── Reset ─── */
@@ -443,15 +552,13 @@ const PaymentRegisterLedger = () => {
           <Group gap="xs">
             <Button
               size="xs"
-              color={dateConfirmed ? 'teal' : 'blue'}
-              variant={dateConfirmed ? 'filled' : 'outline'}
+              color="blue"
+              variant="filled"
               leftSection={loading ? <Loader size={12} color="white" /> : <IconDownload size={13} />}
               onClick={fetchData}
               disabled={loading || !fromDate || !toDate}
             >
-              {loading ? 'Loading…' : dateConfirmed
-                ? `Loaded · ${filledRows.length} Payments`
-                : 'Load'}
+              {loading ? 'Generating…' : 'Generate'}
             </Button>
             <Button
               size="xs"
@@ -562,7 +669,7 @@ const PaymentRegisterLedger = () => {
                 </tr>
                 <tr>
                   {/* Earnings sub */}
-                  {['QTY (L)', 'Milk Value', 'Prev. Bal', 'Other Earn', 'Total Earn'].map(h => (
+                  {[`QTY (${quantityUnit === 'KG' ? 'Kg' : 'L'})`, 'Milk Value', 'Prev. Bal', 'Other Earn', 'Total Earn'].map(h => (
                     <th key={h} style={thCol('#2c5282')}>{h}</th>
                   ))}
                   {/* Deductions sub */}
@@ -648,7 +755,7 @@ const PaymentRegisterLedger = () => {
 
                       {/* QTY */}
                       <td style={td()}>
-                        <NumberInput {...numPropsRO({ decimalScale: 1 })} value={row.qty} placeholder="—"
+                        <NumberInput {...numPropsRO({ decimalScale: quantityUnit === 'KG' ? 3 : 1 })} value={row.qty} placeholder="—"
                           styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, width: '100%', cursor: 'default' } }} />
                       </td>
 
@@ -676,10 +783,11 @@ const PaymentRegisterLedger = () => {
                           styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 700, color: '#276749', width: '100%', cursor: 'default' } }} />
                       </td>
 
-                      {/* Welfare — read-only */}
+                      {/* Welfare — always editable */}
                       <td style={td({ background: '#fff3cd' })}>
-                        <NumberInput {...numPropsRO()} value={row.welfare} placeholder="—"
-                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#92400e', width: '100%', cursor: 'default' } }} />
+                        <NumberInput {...numProps()} value={row.welfare} placeholder="0"
+                          onChange={(v) => updateRow(idx, 'welfare', v)}
+                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#92400e', width: '100%' } }} />
                       </td>
 
                       {/* CF Advance — read-only */}
@@ -688,11 +796,15 @@ const PaymentRegisterLedger = () => {
                           styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#7b341e', width: '100%', cursor: 'default' } }} />
                       </td>
 
-                      {/* CF Recovery — EDITABLE */}
+                      {/* CF Recovery — EDITABLE (locked when paid) */}
                       <td style={td({ background: '#fff9f0' })}>
-                        <NumberInput {...numProps()} value={row.cfRec}
-                          onChange={(v) => updateRow(idx, 'cfRec', v)} placeholder="0.00"
-                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', ...EDIT_STYLE } }} />
+                        {isPaid
+                          ? <NumberInput {...numPropsRO()} value={row.cfRec} placeholder="—"
+                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', cursor: 'default' } }} />
+                          : <NumberInput {...numProps()} value={row.cfRec}
+                              onChange={(v) => updateRow(idx, 'cfRec', v)} placeholder="0.00"
+                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', ...EDIT_STYLE } }} />
+                        }
                       </td>
 
                       {/* Cash Advance — read-only */}
@@ -701,11 +813,15 @@ const PaymentRegisterLedger = () => {
                           styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#7b341e', width: '100%', cursor: 'default' } }} />
                       </td>
 
-                      {/* Cash Recovery — EDITABLE */}
+                      {/* Cash Recovery — EDITABLE (locked when paid) */}
                       <td style={td({ background: '#fff9f0' })}>
-                        <NumberInput {...numProps()} value={row.cashRec}
-                          onChange={(v) => updateRow(idx, 'cashRec', v)} placeholder="0.00"
-                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', ...EDIT_STYLE } }} />
+                        {isPaid
+                          ? <NumberInput {...numPropsRO()} value={row.cashRec} placeholder="—"
+                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', cursor: 'default' } }} />
+                          : <NumberInput {...numProps()} value={row.cashRec}
+                              onChange={(v) => updateRow(idx, 'cashRec', v)} placeholder="0.00"
+                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', ...EDIT_STYLE } }} />
+                        }
                       </td>
 
                       {/* Loan Advance — read-only */}
@@ -714,11 +830,15 @@ const PaymentRegisterLedger = () => {
                           styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#7b341e', width: '100%', cursor: 'default' } }} />
                       </td>
 
-                      {/* Loan Recovery — EDITABLE */}
+                      {/* Loan Recovery — EDITABLE (locked when paid) */}
                       <td style={td({ background: '#fff9f0' })}>
-                        <NumberInput {...numProps()} value={row.loanRec}
-                          onChange={(v) => updateRow(idx, 'loanRec', v)} placeholder="0.00"
-                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', ...EDIT_STYLE } }} />
+                        {isPaid
+                          ? <NumberInput {...numPropsRO()} value={row.loanRec} placeholder="—"
+                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', cursor: 'default' } }} />
+                          : <NumberInput {...numProps()} value={row.loanRec}
+                              onChange={(v) => updateRow(idx, 'loanRec', v)} placeholder="0.00"
+                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', ...EDIT_STYLE } }} />
+                        }
                       </td>
 
                       {/* Other Deductions — read-only */}
@@ -746,8 +866,9 @@ const PaymentRegisterLedger = () => {
                             size="xs"
                             label={<Text size={9} fw={600}>Bk</Text>}
                             checked={row.payMode === 'Bank'}
-                            onChange={() => togglePayMode(idx, 'Bank')}
+                            onChange={() => !isPaid && togglePayMode(idx, 'Bank')}
                             color="blue"
+                            disabled={isPaid}
                           />
                         </Group>
                       </td>
@@ -756,7 +877,9 @@ const PaymentRegisterLedger = () => {
                       <td style={td({ background: '#f0fff4', padding: '0 2px' })}>
                         <Group justify="center" align="center" style={{ height: 28 }} gap={2}>
                           <Checkbox size="xs" label={<Text size={9} fw={600}>Ca</Text>}
-                            checked={row.payMode === 'Cash'} onChange={() => togglePayMode(idx, 'Cash')} color="green" />
+                            checked={row.payMode === 'Cash'}
+                            onChange={() => !isPaid && togglePayMode(idx, 'Cash')}
+                            color="green" disabled={isPaid} />
                         </Group>
                       </td>
 
@@ -764,14 +887,21 @@ const PaymentRegisterLedger = () => {
                       <td style={td({ background: '#f0fff4', padding: '0 2px' })}>
                         <Group justify="center" align="center" style={{ height: 28 }} gap={2}>
                           <Checkbox size="xs" label={<Text size={9} fw={600}>Chq</Text>}
-                            checked={row.payMode === 'Cheque'} onChange={() => togglePayMode(idx, 'Cheque')} color="violet" />
+                            checked={row.payMode === 'Cheque'}
+                            onChange={() => !isPaid && togglePayMode(idx, 'Cheque')}
+                            color="violet" disabled={isPaid} />
                         </Group>
                       </td>
 
-                      {/* Paid Amount — read-only (auto = net pay) */}
+                      {/* Paid Amount — user types manually */}
                       <td style={td({ background: '#f0f4ff' })}>
-                        <NumberInput {...numPropsRO()} value={row.paidAmount || row.netPay} placeholder="—"
-                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 600, color: '#1a365d', width: '100%', cursor: 'default' } }} />
+                        {isPaid
+                          ? <NumberInput {...numPropsRO()} value={row.paidAmount} placeholder="—"
+                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 600, color: '#1a365d', width: '100%', cursor: 'default' } }} />
+                          : <NumberInput {...numProps()} value={row.paidAmount} placeholder="0.00"
+                              onChange={(v) => updateRow(idx, 'paidAmount', v)}
+                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 600, color: '#1a365d', width: '100%' } }} />
+                        }
                       </td>
 
                       {/* Signature — print-only */}
@@ -779,7 +909,8 @@ const PaymentRegisterLedger = () => {
                         <TextInput
                           variant="unstyled" size="xs"
                           value={row.signature}
-                          onChange={(e) => updateRow(idx, 'signature', e.target.value)}
+                          onChange={(e) => !isPaid && updateRow(idx, 'signature', e.target.value)}
+                          readOnly={isPaid}
                           placeholder="Sign."
                           styles={{ input: { fontSize: 10, height: 26, padding: '0 4px', borderBottom: '1px dashed #cbd5e0', fontStyle: 'italic', width: '100%' } }}
                         />
@@ -787,7 +918,12 @@ const PaymentRegisterLedger = () => {
 
                       {/* Apply Payment — screen only */}
                       <td style={td({ padding: '0 2px' })} className="no-print">
-                        {row.producerName.trim() && !isPaid ? (
+                        {isPaid ? (
+                          <Group justify="center" gap={2} wrap="nowrap">
+                            <IconCheck size={12} color="#38a169" />
+                            <Text size={9} c="green" fw={600}>Paid</Text>
+                          </Group>
+                        ) : row.producerName.trim() ? (
                           <ActionIcon
                             size="sm" color="blue" variant="light"
                             loading={!!applying[idx]}
@@ -796,8 +932,6 @@ const PaymentRegisterLedger = () => {
                           >
                             <IconDeviceFloppy size={13} />
                           </ActionIcon>
-                        ) : isPaid ? (
-                          <IconCheck size={14} color="#38a169" style={{ display: 'block', margin: 'auto' }} />
                         ) : null}
                       </td>
 

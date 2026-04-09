@@ -5,6 +5,7 @@ import Advance from '../models/Advance.js';
 import Farmer from '../models/Farmer.js';
 import ProducerOpening from '../models/ProducerOpening.js';
 import IndividualDeductionEarning from '../models/IndividualDeductionEarning.js';
+import PeriodicalRule from '../models/PeriodicalRule.js';
 
 // ─── GET all registers (paginated, date filter) ───────────────────────────────
 export const getPaymentRegisters = async (req, res) => {
@@ -188,26 +189,29 @@ export const generateProducerPaymentRegister = async (req, res) => {
       if (fid) openingMap[fid] = o;
     });
 
-    // 4. Bulk-aggregate IndividualDeductionEarning (DEDUCTION type) in this period
-    const indivDeds = await IndividualDeductionEarning.aggregate([
-      {
-        $match: {
-          companyId,
-          type: 'DEDUCTION',
-          date: { $gte: start, $lte: end },
-        },
-      },
-      {
-        $group: {
-          _id: '$producerId',
-          total: { $sum: '$amount' },
-        },
-      },
-    ]);
-    const indivDedMap = {};
-    indivDeds.forEach(d => {
-      if (d._id) indivDedMap[d._id.toString()] = d.total;
-    });
+    // 4. Welfare amount — from active PeriodicalRule (DEDUCTIONS + FIXED_AMOUNT)
+    const welfareRule = await PeriodicalRule.findOne({
+      companyId,
+      component: 'DEDUCTIONS',
+      basedOn:   'FIXED_AMOUNT',
+      active:    true,
+    }).lean();
+    const welfareFixed = welfareRule?.fixedRate || 0;
+    const welfareApplyPeriod = welfareRule?.applyPeriod || 'EACH_PERIOD';
+
+    // If ONCE_IN_MONTH: find farmers who already had welfare deducted this month
+    let alreadyDeductedSet = new Set();
+    if (welfareFixed > 0 && welfareApplyPeriod === 'ONCE_IN_MONTH') {
+      const monthStart = new Date(start.getFullYear(), start.getMonth(), 1);
+      const monthEnd   = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
+      const existing   = await FarmerPayment.find({
+        companyId,
+        paymentDate: { $gte: monthStart, $lte: monthEnd },
+        status: { $ne: 'Cancelled' },
+        'deductions.type': 'Welfare Recovery',
+      }).select('farmerId').lean();
+      existing.forEach(p => alreadyDeductedSet.add(p.farmerId?.toString()));
+    }
 
     const entries = [];
 
@@ -232,8 +236,8 @@ export const generateProducerPaymentRegister = async (req, res) => {
       const loanAdv = adv['Loan Advance'] ?? opening.loanAdvance ?? 0;
       const cashAdv = adv['Cash Advance'] ?? opening.cashAdvance ?? 0;
 
-      // 8. Welfare — from IndividualDeductionEarning in period
-      const welfare = indivDedMap[fid] || 0;
+      // 8. Welfare — from PeriodicalRule fixedRate (0 if ONCE_IN_MONTH and already deducted)
+      const welfare = (welfareFixed > 0 && !alreadyDeductedSet.has(fid)) ? welfareFixed : 0;
 
       const milkValue  = Math.round((milkData.totalAmount || 0) * 100) / 100;
       const netPayable = milkValue - welfare - cfAdv - loanAdv - cashAdv + previousBalance;
@@ -322,6 +326,109 @@ export const deletePaymentRegister = async (req, res) => {
     if (!reg) return res.status(404).json({ success: false, message: 'Register not found' });
     res.json({ success: true, message: 'Deleted successfully' });
   } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── GET Producers register for a period (latest saved) ───────────────────────
+export const getProducersForPeriod = async (req, res) => {
+  try {
+    const { fromDate, toDate } = req.query;
+    const companyId = req.companyId;
+
+    if (!fromDate || !toDate) {
+      return res.status(400).json({ success: false, message: 'fromDate and toDate required' });
+    }
+
+    const start = new Date(fromDate);
+    const end   = new Date(toDate); end.setHours(23, 59, 59, 999);
+
+    // Find the most recently saved Producers register whose period overlaps the requested range
+    const reg = await PaymentRegister.findOne({
+      companyId,
+      registerType: 'Producers',
+      fromDate: { $lte: end },
+      toDate:   { $gte: start },
+    }).sort({ createdAt: -1 });
+
+    if (!reg) return res.json({ success: true, data: null });
+    res.json({ success: true, data: reg });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── GET latest Producers register (no date filter) ───────────────────────────
+export const getLatestProducers = async (req, res) => {
+  try {
+    const companyId = req.companyId;
+    const reg = await PaymentRegister.findOne({
+      companyId,
+      registerType: 'Producers',
+    }).sort({ createdAt: -1 });
+
+    if (!reg) return res.json({ success: true, data: null });
+    res.json({ success: true, data: reg });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── APPLY payment for a single entry in a register ───────────────────────────
+export const applyEntryPayment = async (req, res) => {
+  try {
+    const { registerId, entryId } = req.params;
+    const { paymentMode, paidAmount, cfRec, cashRec, loanRec, otherDed } = req.body;
+    const companyId = req.companyId;
+
+    const reg = await PaymentRegister.findOne({ _id: registerId, companyId });
+    if (!reg) return res.status(404).json({ success: false, message: 'Register not found' });
+
+    const entry = reg.entries.id(entryId);
+    if (!entry) return res.status(404).json({ success: false, message: 'Entry not found' });
+    if (entry.paid) return res.status(400).json({ success: false, message: 'Already paid' });
+
+    const mode      = paymentMode || 'Cash';
+    const netAmount = paidAmount  || entry.netPay;
+
+    // Build deductions array for FarmerPayment
+    const deductions = [];
+    if ((entry.welfare || 0)    > 0) deductions.push({ type: 'Welfare Recovery', amount: entry.welfare,    description: 'Welfare' });
+    if ((entry.cfRec   || 0)    > 0) deductions.push({ type: 'CF Advance',       amount: entry.cfRec,      description: 'CF Advance' });
+    if ((cfRec         || 0)    > 0) deductions.push({ type: 'CF Recovery',       amount: cfRec,            description: 'CF Recovery' });
+    if ((entry.loanAdv || 0)    > 0) deductions.push({ type: 'Loan Advance',     amount: entry.loanAdv,    description: 'Loan Advance' });
+    if ((loanRec       || 0)    > 0) deductions.push({ type: 'Loan Recovery',     amount: loanRec,          description: 'Loan Recovery' });
+    if ((entry.cashPocket || 0) > 0) deductions.push({ type: 'Cash Advance',     amount: entry.cashPocket, description: 'Cash Advance' });
+    if ((cashRec       || 0)    > 0) deductions.push({ type: 'Cash Recovery',     amount: cashRec,          description: 'Cash Recovery' });
+    if ((otherDed      || 0)    > 0) deductions.push({ type: 'Other',             amount: otherDed,         description: 'Other' });
+
+    // Create FarmerPayment
+    const fp = new FarmerPayment({
+      companyId,
+      farmerId:        entry.farmerId,
+      farmerName:      entry.productName,
+      paymentDate:     new Date(),
+      paymentPeriod:   { fromDate: reg.fromDate, toDate: reg.toDate, periodType: 'Custom' },
+      milkAmount:      entry.milkValue,
+      previousBalance: entry.previousBalance,
+      deductions,
+      paidAmount:      netAmount,
+      paymentMode:     mode,
+      status:          'Paid',
+      remarks:         `Ledger — ${reg.fromDate.toLocaleDateString('en-IN')}–${reg.toDate.toLocaleDateString('en-IN')}`,
+    });
+    await fp.save();
+
+    // Mark entry paid
+    entry.paid            = true;
+    entry.paymentMode     = mode;
+    entry.paidAmount      = netAmount;
+    entry.farmerPaymentId = fp._id;
+    await reg.save();
+
+    res.json({ success: true, data: { farmerPaymentId: fp._id, entry } });
+  } catch (err) {
+    console.error('applyEntryPayment error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 };

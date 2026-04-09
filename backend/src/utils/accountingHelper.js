@@ -204,30 +204,41 @@ export const createPaymentVoucher = async (paymentData, session = null) => {
 
   const paidAmt = paymentData.paidAmount || 0;
 
-  if (farmerLedger) {
-    entries.push({
-      ledgerId: farmerLedger._id,
-      ledgerName: farmerLedger.ledgerName,
-      debitAmount: paidAmt,
-      creditAmount: 0
-    });
+  // Credit: Cash/Bank — try company-scoped first, then global fallback
+  const paymentLedgerType = paymentData.paymentMode === 'Cash' ? 'Cash' : 'Bank';
+  const paymentLedger =
+    (companyId
+      ? await Ledger.findOne({ ledgerType: paymentLedgerType, companyId })
+      : null) ||
+    await Ledger.findOne({ ledgerType: paymentLedgerType }) ||
+    // Last-resort: search by name containing 'Cash' or 'Bank'
+    (companyId
+      ? await Ledger.findOne({ ledgerName: new RegExp(paymentLedgerType, 'i'), companyId })
+      : null) ||
+    await Ledger.findOne({ ledgerName: new RegExp(paymentLedgerType, 'i') });
+
+  if (!farmerLedger || !paymentLedger) {
+    console.warn(
+      `createPaymentVoucher: skipping — farmerLedger=${!!farmerLedger}, paymentLedger(${paymentLedgerType})=${!!paymentLedger}`
+    );
+    return null;
   }
 
-  // Credit: Cash/Bank
-  const paymentLedgerType = paymentData.paymentMode === 'Cash' ? 'Cash' : 'Bank';
-  const paymentLedger = await Ledger.findOne({
-    ledgerType: paymentLedgerType,
-    ...(companyId && { companyId })
+  // Debit: farmer payable ledger
+  entries.push({
+    ledgerId: farmerLedger._id,
+    ledgerName: farmerLedger.ledgerName,
+    debitAmount: paidAmt,
+    creditAmount: 0,
   });
 
-  if (paymentLedger) {
-    entries.push({
-      ledgerId: paymentLedger._id,
-      ledgerName: paymentLedger.ledgerName,
-      debitAmount: 0,
-      creditAmount: paidAmt
-    });
-  }
+  // Credit: Cash/Bank ledger
+  entries.push({
+    ledgerId: paymentLedger._id,
+    ledgerName: paymentLedger.ledgerName,
+    debitAmount: 0,
+    creditAmount: paidAmt,
+  });
 
   const totalDebit = entries.reduce((sum, e) => sum + e.debitAmount, 0);
   const totalCredit = entries.reduce((sum, e) => sum + e.creditAmount, 0);
@@ -516,6 +527,67 @@ export const reverseLedgerBalances = async (entries, session = null, companyId =
   return updateLedgerBalances(reversed, session, companyId);
 };
 
+// ─── Producer Opening → Ledger opening balances ──────────────────────────────
+// Call on create:  applyProducerOpeningLedgers(newData, null, companyId)
+// Call on update:  applyProducerOpeningLedgers(newData, oldData, companyId)
+// Call on delete:  applyProducerOpeningLedgers(null,    oldData, companyId)
+export const applyProducerOpeningLedgers = async (newData, oldData, companyId, session = null) => {
+  // Category ledger map: field → { ledgerName, balanceType }
+  const CATEGORY_LEDGERS = [
+    { field: 'cfAdvance',     name: 'Cattle Feed Advance',  type: 'Other Receivable', group: 'Assets',      bal: 'Dr' },
+    { field: 'cashAdvance',   name: 'Farmers Cash Advance', type: 'Other Receivable', group: 'Assets',      bal: 'Dr' },
+    { field: 'loanAdvance',   name: 'Farmers Loan A/c',     type: 'Other Receivable', group: 'Assets',      bal: 'Dr' },
+    { field: 'revolvingFund', name: 'Revolving Fund',       type: 'Other Receivable', group: 'Assets',      bal: 'Dr' },
+  ];
+
+  const save = (doc) => session ? doc.save({ session }) : doc.save();
+
+  // Helper to apply a signed delta to a ledger's opening + current balance
+  const applyDelta = async (ledger, delta, isDebitNormal) => {
+    if (!ledger || delta === 0) return;
+    // debitNormal: + delta increases Dr balance; creditNormal: + delta increases Cr balance
+    const sign = isDebitNormal ? 1 : -1;
+    ledger.openingBalance  = (ledger.openingBalance  || 0) + sign * delta;
+    ledger.currentBalance  = (ledger.currentBalance  || 0) + sign * delta;
+    // Recalculate balanceType
+    if (isDebitNormal) {
+      ledger.openingBalanceType = ledger.openingBalance >= 0 ? 'Dr' : 'Cr';
+      ledger.balanceType        = ledger.currentBalance  >= 0 ? 'Dr' : 'Cr';
+    } else {
+      ledger.openingBalanceType = ledger.openingBalance >= 0 ? 'Cr' : 'Dr';
+      ledger.balanceType        = ledger.currentBalance  >= 0 ? 'Cr' : 'Dr';
+    }
+    await save(ledger);
+  };
+
+  // 1. Farmer's linked ledger → dueAmount (Credit normal — we owe the farmer)
+  const farmerId = newData?.farmerId || oldData?.farmerId;
+  if (farmerId) {
+    const farmerLedger = await Ledger.findOne({
+      'linkedEntity.entityType': 'Farmer',
+      'linkedEntity.entityId': farmerId,
+      companyId,
+    });
+    if (farmerLedger) {
+      const newAmt = newData?.dueAmount || 0;
+      const oldAmt = oldData?.dueAmount || 0;
+      const delta  = newAmt - oldAmt;
+      await applyDelta(farmerLedger, delta, false); // creditNormal
+    }
+  }
+
+  // 2. Category ledgers (all Debit normal — farmer owes us)
+  for (const cat of CATEGORY_LEDGERS) {
+    const newAmt = newData?.[cat.field] || 0;
+    const oldAmt = oldData?.[cat.field] || 0;
+    const delta  = newAmt - oldAmt;
+    if (delta === 0) continue;
+
+    const ledger = await findOrCreateLedger(cat.name, cat.type, cat.group, cat.bal, companyId, session);
+    await applyDelta(ledger, delta, true); // debitNormal
+  }
+};
+
 export default {
   generateVoucherNumber,
   getFinancialYear,
@@ -525,5 +597,6 @@ export default {
   createPaymentVoucher,
   createPurchaseVoucher,
   createShareCapitalVoucher,
-  createAdmissionFeeVoucher
+  createAdmissionFeeVoucher,
+  applyProducerOpeningLedgers,
 };

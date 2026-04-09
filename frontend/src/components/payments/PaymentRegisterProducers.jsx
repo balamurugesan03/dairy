@@ -14,7 +14,7 @@ import {
 import { useReactToPrint } from 'react-to-print';
 import * as XLSX from 'xlsx';
 import dayjs from 'dayjs';
-import { paymentRegisterAPI } from '../../services/api';
+import { paymentRegisterAPI, farmerAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
@@ -74,6 +74,10 @@ const PaymentRegisterProducers = () => {
   const [generating,  setGenerating]  = useState(false);
   const [savedId,     setSavedId]     = useState(null);
   const [page,        setPage]        = useState(1);
+  // Dates for the CURRENT entries (may differ from picker if dates were advanced after Generate)
+  const [entriesPeriod, setEntriesPeriod] = useState(null); // { from, to }
+  // Per-row farmer search: { [localId]: { query, results, open } }
+  const [rowSearch,   setRowSearch]   = useState({});
 
   /* ── filtered / paginated rows ─────────────────────────────────────────── */
   const filtered = useMemo(() => {
@@ -130,6 +134,81 @@ const PaymentRegisterProducers = () => {
     );
   }, []);
 
+  /* ── Duplicate-farmer guard (called on productId blur) ─────────────────── */
+  const checkDuplicateProductId = useCallback((localId, value) => {
+    if (!value?.trim()) return;
+    setRows((prev) => {
+      const duplicate = prev.find(
+        (r) => r._localId !== localId && r.productId?.trim().toLowerCase() === value.trim().toLowerCase()
+      );
+      if (duplicate) {
+        notifications.show({
+          title:   'Duplicate Entry',
+          message: `Producer ID "${value}" is already added in this cycle. Cannot add the same farmer twice.`,
+          color:   'red',
+          autoClose: 4000,
+        });
+        // Clear the duplicate row's productId and productName
+        return prev.map((r) =>
+          r._localId === localId ? { ...r, productId: '', productName: '' } : r
+        );
+      }
+      return prev;
+    });
+  }, []);
+
+  /* ── Farmer inline search ───────────────────────────────────────────────── */
+  const searchTimers = useRef({});
+
+  const handleFarmerQuery = (localId, query) => {
+    setRowSearch(prev => ({ ...prev, [localId]: { ...prev[localId], query, open: true, results: prev[localId]?.results || [] } }));
+    clearTimeout(searchTimers.current[localId]);
+    if (!query.trim()) {
+      setRowSearch(prev => ({ ...prev, [localId]: { query, open: false, results: [] } }));
+      return;
+    }
+    searchTimers.current[localId] = setTimeout(async () => {
+      try {
+        const res = await farmerAPI.search(query);
+        const results = res?.data || [];
+        setRowSearch(prev => ({ ...prev, [localId]: { ...prev[localId], results, open: true } }));
+      } catch { /* ignore */ }
+    }, 300);
+  };
+
+  const selectFarmer = (localId, farmer) => {
+    // Check duplicate
+    const isDup = rows.some(
+      r => r._localId !== localId && r.productId?.trim() === (farmer.farmerNumber || '').trim()
+    );
+    if (isDup) {
+      notifications.show({
+        title: 'Duplicate Entry',
+        message: `"${farmer.personalDetails?.name}" is already in this cycle.`,
+        color: 'red', autoClose: 4000,
+      });
+      setRowSearch(prev => ({ ...prev, [localId]: { query: '', results: [], open: false } }));
+      return;
+    }
+    setRows(prev => prev.map(r => {
+      if (r._localId !== localId) return r;
+      const updated = {
+        ...r,
+        productId:   farmer.farmerNumber || '',
+        productName: farmer.personalDetails?.name || '',
+        farmerId:    farmer._id,
+      };
+      updated.netPayable = calcNet(updated);
+      updated.payStatus  = updated.netPayable > 0 ? 'Payable' : updated.netPayable < 0 ? 'Receivable' : '';
+      return updated;
+    }));
+    setRowSearch(prev => ({ ...prev, [localId]: { query: '', results: [], open: false } }));
+  };
+
+  const closeSearch = (localId) => {
+    setRowSearch(prev => ({ ...prev, [localId]: { ...prev[localId], open: false } }));
+  };
+
   const addRow = () => {
     setRows((prev) => [...prev, emptyRow(prev.length + 1)]);
   };
@@ -143,6 +222,20 @@ const PaymentRegisterProducers = () => {
 
   /* ── Generate from backend ──────────────────────────────────────────────── */
   const handleGenerate = async () => {
+    // Block if a register already exists for this period
+    const fd = dayjs(fromDate).format('YYYY-MM-DD');
+    const td = dayjs(toDate).format('YYYY-MM-DD');
+    const existing = await paymentRegisterAPI.getProducersForPeriod({ fromDate: fd, toDate: td });
+    if (existing?.data) {
+      notifications.show({
+        title:   'Already Exists',
+        message: `A Payment Register already exists for ${dayjs(fromDate).format('DD/MM/YYYY')} – ${dayjs(toDate).format('DD/MM/YYYY')}. Cannot generate again for the same cycle.`,
+        color:   'red',
+        autoClose: 5000,
+      });
+      return;
+    }
+
     setGenerating(true);
     try {
       const res = await paymentRegisterAPI.generateProducers({
@@ -171,15 +264,32 @@ const PaymentRegisterProducers = () => {
         _cashZero:       !e.cashPocket,
       }));
 
+      // Capture the period these entries belong to BEFORE advancing dates
+      const currentFrom = fromDate;
+      const currentTo   = toDate;
+      setEntriesPeriod({ from: currentFrom, to: currentTo });
+
       setRows(generated.length > 0 ? generated : [emptyRow(1)]);
       setSavedId(null);
       setPage(1);
 
       notifications.show({
         title:   'Generated',
-        message: `${generated.length} producer(s) loaded for ${dayjs(fromDate).format('DD/MM/YYYY')} – ${dayjs(toDate).format('DD/MM/YYYY')}`,
+        message: `${generated.length} producer(s) loaded for ${dayjs(currentFrom).format('DD/MM/YYYY')} – ${dayjs(currentTo).format('DD/MM/YYYY')}`,
         color:   'teal',
         icon:    <IconCheck size={16} />,
+      });
+
+      // Advance date picker to next cycle (entries period is preserved separately)
+      const cycleDays = dayjs(currentTo).diff(dayjs(currentFrom), 'day') + 1;
+      const nextFrom  = dayjs(currentTo).add(1, 'day').toDate();
+      const nextTo    = dayjs(nextFrom).add(cycleDays - 1, 'day').toDate();
+      setFromDate(nextFrom);
+      setToDate(nextTo);
+      notifications.show({
+        title:   'Cycle Advanced',
+        message: `Next period: ${dayjs(nextFrom).format('DD/MM/YYYY')} – ${dayjs(nextTo).format('DD/MM/YYYY')}`,
+        color:   'blue',
       });
     } catch (err) {
       notifications.show({ title: 'Error', message: err.message, color: 'red' });
@@ -195,11 +305,27 @@ const PaymentRegisterProducers = () => {
       notifications.show({ title: 'Validation', message: 'Add at least one entry', color: 'orange' });
       return;
     }
+    // Duplicate farmer check before save
+    const ids = valid.map(r => r.productId?.trim().toLowerCase()).filter(Boolean);
+    const dupId = ids.find((id, i) => ids.indexOf(id) !== i);
+    if (dupId) {
+      notifications.show({
+        title:   'Duplicate Entry',
+        message: `Producer ID "${dupId}" appears more than once. Remove the duplicate before saving.`,
+        color:   'red',
+        autoClose: 5000,
+      });
+      return;
+    }
     setSaving(true);
     try {
+      // Use entriesPeriod if dates were advanced after Generate; else use current picker dates
+      const saveFrom = entriesPeriod ? dayjs(entriesPeriod.from).format('YYYY-MM-DD') : dayjs(fromDate).format('YYYY-MM-DD');
+      const saveTo   = entriesPeriod ? dayjs(entriesPeriod.to).format('YYYY-MM-DD')   : dayjs(toDate).format('YYYY-MM-DD');
+
       const payload = {
-        fromDate:     dayjs(fromDate).format('YYYY-MM-DD'),
-        toDate:       dayjs(toDate).format('YYYY-MM-DD'),
+        fromDate:     saveFrom,
+        toDate:       saveTo,
         registerType: 'Producers',
         status:       'Saved',
         entries:      rows.map(({ _localId, payStatus, ...r }) => r),
@@ -214,6 +340,7 @@ const PaymentRegisterProducers = () => {
 
       if (!res.success) throw new Error(res.message || 'Save failed');
       setSavedId(res.data._id);
+      setEntriesPeriod(null); // clear after successful save
       notifications.show({ title: 'Saved', message: 'Payment register saved successfully', color: 'green', icon: <IconCheck size={16} /> });
     } catch (err) {
       notifications.show({ title: 'Error', message: err.message, color: 'red' });
@@ -445,8 +572,7 @@ const PaymentRegisterProducers = () => {
               {/* ── colgroup ── */}
               <colgroup>
                 <col style={{ width: 46 }} />   {/* Sl No */}
-                <col style={{ width: 88 }} />   {/* Producer ID */}
-                <col style={{ width: 180 }} />  {/* Producer Name */}
+                <col style={{ width: 280 }} />  {/* Producer ID + Name (merged search) */}
                 <col style={{ width: 100 }} />  {/* Prev Balance */}
                 <col style={{ width: 80 }} />   {/* QTY */}
                 <col style={{ width: 100 }} />  {/* Milk Value */}
@@ -465,8 +591,7 @@ const PaymentRegisterProducers = () => {
                 {/* Section row */}
                 <tr style={{ background: '#0d3b6e', color: '#fff' }}>
                   <th style={TH_BASE} rowSpan={2}>Sl No</th>
-                  <th style={{ ...TH_BASE, textAlign: 'left' }} rowSpan={2}>Producer ID</th>
-                  <th style={{ ...TH_BASE, textAlign: 'left' }} rowSpan={2}>Producer Name</th>
+                  <th style={{ ...TH_BASE, textAlign: 'left' }} rowSpan={2} colSpan={2}>Producer ID / Name</th>
                   <th style={{ ...TH_BASE, background: '#174a7c' }} rowSpan={2}>Prev. Balance</th>
                   {/* Milk section */}
                   <th style={{ ...TH_BASE, background: '#1a5276', textAlign: 'center' }} colSpan={2}>
@@ -514,24 +639,57 @@ const PaymentRegisterProducers = () => {
                       {/* Sl No */}
                       <td style={TD_CENTER}>{row.slNo}</td>
 
-                      {/* Producer ID */}
-                      <td style={{ ...TD_LEFT, padding: 0 }}>
-                        <input
-                          value={row.productId}
-                          onChange={(e) => updateRow(row._localId, 'productId', e.target.value)}
-                          style={INPUT_LEFT}
-                          placeholder="Producer ID"
-                        />
-                      </td>
-
-                      {/* Producer Name */}
-                      <td style={{ ...TD_LEFT, padding: 0 }}>
-                        <input
-                          value={row.productName}
-                          onChange={(e) => updateRow(row._localId, 'productName', e.target.value)}
-                          style={{ ...INPUT_LEFT, minWidth: 160 }}
-                          placeholder="Producer Name"
-                        />
+                      {/* Producer ID + Name — unified search cell */}
+                      <td style={{ ...TD_LEFT, padding: 0, position: 'relative' }} colSpan={2}>
+                        {row.productId ? (
+                          /* Farmer already selected — show locked display */
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 6px', height: 30 }}>
+                            <span style={{ fontSize: 11, color: '#1a365d', fontWeight: 700, minWidth: 70 }}>{row.productId}</span>
+                            <span style={{ fontSize: 11, color: '#2d3748', flex: 1 }}>{row.productName}</span>
+                            <button
+                              onClick={() => { updateRow(row._localId, 'productId', ''); updateRow(row._localId, 'productName', ''); updateRow(row._localId, 'farmerId', ''); }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e53e3e', fontSize: 13, lineHeight: 1, padding: '0 2px' }}
+                              title="Clear farmer"
+                            >✕</button>
+                          </div>
+                        ) : (
+                          /* Search mode */
+                          <div style={{ position: 'relative' }}>
+                            <input
+                              value={rowSearch[row._localId]?.query || ''}
+                              onChange={(e) => handleFarmerQuery(row._localId, e.target.value)}
+                              onBlur={() => setTimeout(() => closeSearch(row._localId), 200)}
+                              style={{ ...INPUT_LEFT, minWidth: 240, paddingLeft: 22 }}
+                              placeholder="Search by name or member ID…"
+                            />
+                            <span style={{ position: 'absolute', left: 5, top: '50%', transform: 'translateY(-50%)', color: '#a0aec0', fontSize: 11, pointerEvents: 'none' }}>🔍</span>
+                            {rowSearch[row._localId]?.open && (rowSearch[row._localId]?.results || []).length > 0 && (
+                              <div style={{
+                                position: 'absolute', top: '100%', left: 0, zIndex: 999,
+                                background: '#fff', border: '1px solid #cbd5e0', borderRadius: 4,
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.12)', minWidth: 280, maxHeight: 180, overflowY: 'auto',
+                              }}>
+                                {rowSearch[row._localId].results.map(f => (
+                                  <div
+                                    key={f._id}
+                                    onMouseDown={() => selectFarmer(row._localId, f)}
+                                    style={{ padding: '5px 10px', cursor: 'pointer', fontSize: 12, borderBottom: '1px solid #f0f0f0', display: 'flex', gap: 8, alignItems: 'center' }}
+                                    onMouseEnter={e => e.currentTarget.style.background = '#ebf8ff'}
+                                    onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+                                  >
+                                    <span style={{ fontWeight: 700, color: '#2b6cb0', minWidth: 60 }}>{f.farmerNumber}</span>
+                                    <span style={{ color: '#2d3748' }}>{f.personalDetails?.name}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {rowSearch[row._localId]?.open && (rowSearch[row._localId]?.query || '').length > 0 && (rowSearch[row._localId]?.results || []).length === 0 && (
+                              <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 999, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 4, padding: '6px 12px', fontSize: 11, color: '#718096', minWidth: 200 }}>
+                                No farmer found
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </td>
 
                       {/* Previous Balance */}

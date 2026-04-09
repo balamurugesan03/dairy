@@ -19,6 +19,11 @@ const entrySchema = new mongoose.Schema({
   cashPocket:      { type: Number, default: 0 },
   payStatus:       { type: String, enum: ['Payable', 'Receivable', ''], default: '' },
   netPay:          { type: Number, default: 0 },
+  // Payment applied fields
+  paid:            { type: Boolean, default: false },
+  paymentMode:     { type: String, enum: ['Cash', 'Bank', 'Cheque', ''], default: '' },
+  paidAmount:      { type: Number, default: 0 },
+  farmerPaymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'FarmerPayment' },
 }, { _id: true });
 
 const paymentRegisterSchema = new mongoose.Schema({

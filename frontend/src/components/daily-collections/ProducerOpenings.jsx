@@ -62,10 +62,9 @@ export default function ProducerOpenings() {
 
   // ── Derived totals ──────────────────────────────────────────────
   const totalRecovery =
-    (Number(form.cfAdvance)     || 0) +
-    (Number(form.loanAdvance)   || 0) +
-    (Number(form.cashAdvance)   || 0) +
-    (Number(form.revolvingFund) || 0);
+    (Number(form.cfAdvance)   || 0) +
+    (Number(form.loanAdvance) || 0) +
+    (Number(form.cashAdvance) || 0);
 
   // ── Load records ────────────────────────────────────────────────
   const fetchRecords = useCallback(async (pg = 1) => {

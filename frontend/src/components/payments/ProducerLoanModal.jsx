@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { message } from '../../utils/toast';
-import { farmerAPI, producerLoanAPI } from '../../services/api';
+import { farmerAPI, producerLoanAPI, producerOpeningAPI } from '../../services/api';
 import {
   Modal,
   Stack,
@@ -32,6 +32,7 @@ const ProducerLoanModal = ({ opened, onClose, onSuccess }) => {
   const [farmers, setFarmers] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [selectedFarmer, setSelectedFarmer] = useState(null);
+  const [openingBalance, setOpeningBalance] = useState(null); // { loanAdvance, cfAdvance, cashAdvance }
 
   const [formData, setFormData] = useState({
     farmerId: '',
@@ -100,14 +101,46 @@ const ProducerLoanModal = ({ opened, onClose, onSuccess }) => {
     }
   };
 
-  const handleFarmerSelect = (farmerId) => {
+  const handleFarmerSelect = async (farmerId) => {
     const farmer = farmers.find(f => f._id === farmerId);
     setSelectedFarmer(farmer);
-    setFormData(prev => ({ ...prev, farmerId }));
+    setFormData(prev => ({ ...prev, farmerId, principalAmount: '' }));
+    setOpeningBalance(null);
+
+    if (!farmerId) return;
+    try {
+      const res = await producerOpeningAPI.getByFarmer(farmerId);
+      const opening = res?.data;
+      if (opening) {
+        setOpeningBalance({
+          loanAdvance: opening.loanAdvance || 0,
+          cfAdvance:   opening.cfAdvance   || 0,
+          cashAdvance: opening.cashAdvance || 0,
+        });
+        // Pre-fill principalAmount based on current loanType
+        const loanType = formData.loanType;
+        const amt =
+          loanType === 'Loan Advance' ? (opening.loanAdvance || 0) :
+          loanType === 'CF Advance'   ? (opening.cfAdvance   || 0) :
+          loanType === 'Cash Advance' ? (opening.cashAdvance || 0) : 0;
+        if (amt > 0) setFormData(prev => ({ ...prev, farmerId, principalAmount: amt }));
+      }
+    } catch { /* ignore */ }
   };
 
   const handleInputChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData(prev => {
+      const updated = { ...prev, [field]: value };
+      // When loanType changes and we have an opening, auto-fill the amount
+      if (field === 'loanType' && openingBalance) {
+        const amt =
+          value === 'Loan Advance' ? openingBalance.loanAdvance :
+          value === 'CF Advance'   ? openingBalance.cfAdvance   :
+          value === 'Cash Advance' ? openingBalance.cashAdvance : 0;
+        if (amt > 0) updated.principalAmount = amt;
+      }
+      return updated;
+    });
   };
 
   const resetForm = () => {
@@ -129,6 +162,7 @@ const ProducerLoanModal = ({ opened, onClose, onSuccess }) => {
       guarantorPhone: ''
     });
     setSelectedFarmer(null);
+    setOpeningBalance(null);
     setCalculations({ totalLoanAmount: 0, emiAmount: 0 });
   };
 
@@ -301,7 +335,20 @@ const ProducerLoanModal = ({ opened, onClose, onSuccess }) => {
           <Grid>
             <Grid.Col span={4}>
               <NumberInput
-                label="Principal Amount"
+                label={
+                  <Group gap={6} align="center">
+                    <span>Principal Amount</span>
+                    {openingBalance && (() => {
+                      const openingAmt =
+                        formData.loanType === 'Loan Advance' ? openingBalance.loanAdvance :
+                        formData.loanType === 'CF Advance'   ? openingBalance.cfAdvance   :
+                        formData.loanType === 'Cash Advance' ? openingBalance.cashAdvance : 0;
+                      return openingAmt > 0
+                        ? <Text size="xs" c="teal" fw={600}>(Opening: ₹{openingAmt.toFixed(2)})</Text>
+                        : null;
+                    })()}
+                  </Group>
+                }
                 value={formData.principalAmount}
                 onChange={(value) => handleInputChange('principalAmount', value)}
                 placeholder="Enter amount"

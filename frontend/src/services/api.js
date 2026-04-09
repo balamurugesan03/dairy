@@ -903,13 +903,17 @@ export const milkBillAPI = {
 
 // ── Payment Register API ───────────────────────────────────────────────────────
 export const paymentRegisterAPI = {
-  getAll:            (params = {}) => api.get('/payment-register', { params }).then(r => r.data).catch(handleError),
-  getById:           (id)          => api.get(`/payment-register/${id}`).then(r => r.data).catch(handleError),
-  generate:          (data)        => api.post('/payment-register/generate', data).then(r => r.data).catch(handleError),
-  generateProducers: (data)        => api.post('/payment-register/generate-producers', data).then(r => r.data).catch(handleError),
-  create:            (data)        => api.post('/payment-register', data).then(r => r.data).catch(handleError),
-  update:            (id, data)    => api.put(`/payment-register/${id}`, data).then(r => r.data).catch(handleError),
-  delete:            (id)          => api.delete(`/payment-register/${id}`).then(r => r.data).catch(handleError),
+  getAll:               (params = {}) => api.get('/payment-register', { params }).then(r => r.data).catch(handleError),
+  getById:              (id)          => api.get(`/payment-register/${id}`).then(r => r.data).catch(handleError),
+  getProducersForPeriod:(params)      => api.get('/payment-register/producers-for-period', { params }).then(r => r.data).catch(handleError),
+  getLatestProducers:   ()            => api.get('/payment-register/producers-latest').then(r => r.data).catch(handleError),
+  generate:             (data)        => api.post('/payment-register/generate', data).then(r => r.data).catch(handleError),
+  generateProducers:    (data)        => api.post('/payment-register/generate-producers', data).then(r => r.data).catch(handleError),
+  create:               (data)        => api.post('/payment-register', data).then(r => r.data).catch(handleError),
+  update:               (id, data)    => api.put(`/payment-register/${id}`, data).then(r => r.data).catch(handleError),
+  delete:               (id)          => api.delete(`/payment-register/${id}`).then(r => r.data).catch(handleError),
+  applyEntry:           (registerId, entryId, data) =>
+    api.post(`/payment-register/${registerId}/entries/${entryId}/apply`, data).then(r => r.data).catch(handleError),
 };
 
 // ── Dairy Settings API (payment days, account start date, opening balances) ────
