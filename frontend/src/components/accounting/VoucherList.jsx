@@ -129,6 +129,7 @@ const VoucherList = () => {
     if (type === 'Receipt') return 'green';
     else if (type === 'Payment') return 'red';
     else if (type === 'Journal') return 'blue';
+    else if (type === 'ProducerDue') return 'violet';
     return 'gray';
   };
 
@@ -136,7 +137,13 @@ const VoucherList = () => {
     if (type === 'Receipt') return <IconReceipt2 size={14} />;
     else if (type === 'Payment') return <IconCash size={14} />;
     else if (type === 'Journal') return <IconExchange size={14} />;
+    else if (type === 'ProducerDue') return <IconCurrencyRupee size={14} />;
     return null;
+  };
+
+  const getTypeLabel = (type) => {
+    if (type === 'ProducerDue') return 'Producer Due';
+    return type;
   };
 
   const filteredVouchers = vouchers.filter(voucher => {
@@ -216,7 +223,7 @@ const VoucherList = () => {
             radius="sm"
             size="sm"
           >
-            {voucher.voucherType}
+            {getTypeLabel(voucher.voucherType)}
           </Badge>
         </td>
         <td style={{ textAlign: 'right' }}>
@@ -526,7 +533,8 @@ const VoucherList = () => {
                 { value: '', label: '📁 All Types' },
                 { value: 'Receipt', label: '📥 Receipt' },
                 { value: 'Payment', label: '📤 Payment' },
-                { value: 'Journal', label: '📝 Journal' }
+                { value: 'Journal', label: '📝 Journal' },
+                { value: 'ProducerDue', label: '💸 Producer Due' }
               ]}
               value={voucherTypeFilter}
               onChange={setVoucherTypeFilter}
@@ -624,7 +632,7 @@ const VoucherList = () => {
           <Stack gap="md">
             <Group justify="space-between">
               <Badge color={getTypeColor(selectedVoucher.voucherType)} size="lg">
-                {selectedVoucher.voucherType}
+                {getTypeLabel(selectedVoucher.voucherType)}
               </Badge>
               <Text fw={500}>{selectedVoucher.voucherNumber}</Text>
             </Group>

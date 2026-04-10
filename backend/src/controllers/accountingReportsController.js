@@ -5,6 +5,8 @@ import Sales from '../models/Sales.js';
 import FarmerPayment from '../models/FarmerPayment.js';
 import Advance from '../models/Advance.js';
 import ProducerReceipt from '../models/ProducerReceipt.js';
+import BankTransfer from '../models/BankTransfer.js';
+import MilkCollection from '../models/MilkCollection.js';
 import { getDateRange } from '../utils/dateFilters.js';
 import {
   calculateOpeningBalance,
@@ -116,6 +118,33 @@ export const getCashBook = async (req, res) => {
       amount: { $gt: 0 }
     }).sort({ receiptDate: 1 }).populate('farmerId', 'farmerName farmerNumber');
 
+    // Completed Bank Transfers — Payment side
+    const completedBankTransfers = await BankTransfer.find({
+      companyId: req.companyId,
+      status: 'Completed',
+      applyDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
+      totalTransferAmount: { $gt: 0 }
+    }).sort({ applyDate: 1 });
+
+    // Milk Purchase day totals — Payment side (one entry per day)
+    const milkPurchaseDayTotals = await MilkCollection.aggregate([
+      {
+        $match: {
+          companyId: req.companyId,
+          date: { $gte: dateFilter.startDate, $lte: dateFilter.endDate }
+        }
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+          totalAmount: { $sum: '$amount' },
+          totalQty: { $sum: '$qty' },
+          farmerCount: { $addToSet: '$farmer' }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
     // Collect raw transactions before sorting
     const rawTransactions = [];
 
@@ -209,6 +238,32 @@ export const getCashBook = async (req, res) => {
         debit: 0,
         credit: pr.amount,
         narration: pr.narration || `${pr.receiptType || 'Producer Loan'} (Cash)`
+      });
+    });
+
+    // Completed Bank Transfers — Payment side
+    completedBankTransfers.forEach(bt => {
+      rawTransactions.push({
+        date: bt.applyDate,
+        voucherNumber: bt.transferNumber || `BT-${bt._id.toString().slice(-6)}`,
+        voucherType: 'BankTransfer',
+        particulars: `Producer Due — ${bt.transferNumber} (${bt.totalApproved} producers)`,
+        debit: 0,
+        credit: bt.totalTransferAmount,
+        narration: bt.remarks || `Bank Transfer Payment — ${bt.totalApproved} producers`
+      });
+    });
+
+    // Milk Purchase day totals — Payment side
+    milkPurchaseDayTotals.forEach(day => {
+      rawTransactions.push({
+        date: new Date(day._id),
+        voucherNumber: `MKP-${day._id.replace(/-/g, '')}`,
+        voucherType: 'MilkPurchase',
+        particulars: `Milk Purchase — ${day.farmerCount.length} farmers (${day.totalQty.toFixed(2)} L)`,
+        debit: 0,
+        credit: day.totalAmount,
+        narration: `Milk Purchase Day Total — ${day._id}`
       });
     });
 

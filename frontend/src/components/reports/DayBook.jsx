@@ -92,25 +92,20 @@ const DayBook = () => {
 
       if (dayData) {
         // Build receipt/payment entries
-        const receipts = dayData.receiptSide.map(entry => {
+        const mapEntry = (entry) => {
+          const isAdjustment = entry.voucherType === 'MilkPurchase' || entry.voucherType === 'ProducersDue';
           return {
             description: entry.ledgerName || entry.narration || 'Miscellaneous',
+            narration: entry.narration || '',
             voucherNumber: entry.voucherNumber || '',
-            cash: entry.amount,
-            adjustment: 0,
+            cash: isAdjustment ? 0 : entry.amount,
+            adjustment: isAdjustment ? entry.amount : 0,
             total: entry.amount
           };
-        });
+        };
 
-        const payments = dayData.paymentSide.map(entry => {
-          return {
-            description: entry.ledgerName || entry.narration || 'Miscellaneous',
-            voucherNumber: entry.voucherNumber || '',
-            cash: entry.amount,
-            adjustment: 0,
-            total: entry.amount
-          };
-        });
+        const receipts = dayData.receiptSide.map(mapEntry);
+        const payments = dayData.paymentSide.map(mapEntry);
 
         const rCash = receipts.reduce((s, e) => s + (e.cash || 0), 0);
         const rAdj = receipts.reduce((s, e) => s + (e.adjustment || 0), 0);
@@ -162,8 +157,8 @@ const DayBook = () => {
           <span className={`db-side__icon db-side__icon--${side}`}>
             {isReceipt ? <IconArrowDown size={14} /> : <IconArrowUp size={14} />}
           </span>
-          <span className="db-side__title">{isReceipt ? 'RECEIPTS' : 'PAYMENTS'}</span>
-          <span className="db-side__subtitle">{isReceipt ? '(Money In)' : '(Money Out)'}</span>
+          <span className="db-side__title">{isReceipt ? 'DEBIT (Dr)' : 'CREDIT (Cr)'}</span>
+          <span className="db-side__subtitle">{isReceipt ? '(Receipts / Money In)' : '(Payments / Money Out)'}</span>
         </div>
 
         <div className="db-side__body">
@@ -187,7 +182,10 @@ const DayBook = () => {
               ) : (
                 entries.map((entry, idx) => (
                   <tr key={idx} className={`db-data-row ${idx % 2 === 0 ? 'db-row-even' : 'db-row-odd'}`}>
-                    <td className="db-cell-desc" title={entry.description}>{entry.description}</td>
+                    <td className="db-cell-desc" title={entry.description}>
+                      {entry.description}
+                      {entry.narration && <span className="db-cell-narration">{entry.narration}</span>}
+                    </td>
                     <td className="db-cell-vno">{entry.voucherNumber}</td>
                     <td className="db-cell-amt">{fmt(entry.cash)}</td>
                     <td className="db-cell-amt">{fmt(entry.adjustment)}</td>

@@ -244,12 +244,21 @@
 
 .db-cell-desc {
   text-align: left;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 0;
   color: var(--mantine-color-dark-7);
   font-weight: 500;
+}
+
+.db-cell-narration {
+  display: block;
+  font-size: 0.75em;
+  color: var(--mantine-color-dimmed);
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .db-cell-vno {

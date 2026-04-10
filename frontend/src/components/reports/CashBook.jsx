@@ -148,7 +148,7 @@ const CashBook = () => {
           <span className={`cb-side__icon cb-side__icon--${side}`}>
             {isReceipt ? <IconArrowDown size={14} /> : <IconArrowUp size={14} />}
           </span>
-          <span className="cb-side__title">{isReceipt ? 'CREDIT (Cr)' : 'DEBIT (Dr)'}</span>
+          <span className="cb-side__title">{isReceipt ? 'DEBIT (Dr)' : 'CREDIT (Cr)'}</span>
           <span className="cb-side__subtitle">{isReceipt ? '(Income / Receipts)' : '(Expenses / Payments)'}</span>
         </div>
 
@@ -242,8 +242,8 @@ const CashBook = () => {
       </div>
 
       <div className="cb-card__body">
-        {renderSideTable('payment', card.payments, card.paymentTotal, card.openingBalance, card.closingBalance)}
         {renderSideTable('receipt', card.receipts, card.receiptTotal, card.openingBalance, card.closingBalance)}
+        {renderSideTable('payment', card.payments, card.paymentTotal, card.openingBalance, card.closingBalance)}
       </div>
     </div>
   );

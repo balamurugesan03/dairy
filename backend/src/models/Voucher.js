@@ -10,7 +10,8 @@ const voucherSchema = new mongoose.Schema({
       'Purchase',
       // Dairy-specific
       'MilkPurchase', 'MilkSales', 'FarmerPayment',
-      'LoanDisbursal', 'AdvancePayment', 'OpeningBalance'
+      'LoanDisbursal', 'AdvancePayment', 'OpeningBalance',
+      'ProducerDue'
     ],
     required: true
   },
@@ -80,7 +81,7 @@ const voucherSchema = new mongoose.Schema({
       'Sales', 'Purchase', 'Payment', 'Manual',
       'MilkPurchase', 'MilkSales', 'FarmerPayment',
       'LoanDisbursal', 'AdvancePayment', 'Opening',
-      'ShareCapital', 'AdmissionFee'
+      'ShareCapital', 'AdmissionFee', 'BankTransfer'
     ],
     default: 'Manual'
   },

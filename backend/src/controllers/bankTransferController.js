@@ -260,7 +260,7 @@ const createBankTransferVoucher = async (bankTransfer, companyId) => {
   if (!bankLedger) {
     bankLedger = new Ledger({
       ledgerName: 'Bank Transfer Payable',
-      ledgerType: 'Current Liability',
+      ledgerType: 'Other Payable',
       companyId,
       openingBalance: 0,
       currentBalance: 0,
@@ -278,7 +278,7 @@ const createBankTransferVoucher = async (bankTransfer, companyId) => {
   if (!producerLedger) {
     producerLedger = new Ledger({
       ledgerName: 'Producer Payable',
-      ledgerType: 'Current Liability',
+      ledgerType: 'Other Payable',
       companyId,
       openingBalance: 0,
       currentBalance: 0,
@@ -315,6 +315,81 @@ const createBankTransferVoucher = async (bankTransfer, companyId) => {
     referenceType: 'BankTransfer',
     referenceId: bankTransfer._id,
     createdBy: bankTransfer.appliedBy
+  });
+
+  await voucher.save();
+  await updateLedgerBalances(entries);
+
+  return voucher;
+};
+
+// Helper function to create ProducerDue voucher on completion
+const createCompletionVoucher = async (bankTransfer, companyId, userId) => {
+  // Get Bank Transfer Payable ledger (created during apply)
+  let bankTransferPayableLedger = await Ledger.findOne({
+    ledgerName: 'Bank Transfer Payable',
+    companyId
+  });
+
+  if (!bankTransferPayableLedger) {
+    bankTransferPayableLedger = new Ledger({
+      ledgerName: 'Bank Transfer Payable',
+      ledgerType: 'Other Payable',
+      companyId,
+      openingBalance: 0,
+      currentBalance: 0,
+      balanceType: 'Cr'
+    });
+    await bankTransferPayableLedger.save();
+  }
+
+  // Get or create Producer Bank Payment ledger (Bank side)
+  let producerBankLedger = await Ledger.findOne({
+    ledgerName: 'Producer Bank Payment',
+    companyId
+  });
+
+  if (!producerBankLedger) {
+    producerBankLedger = new Ledger({
+      ledgerName: 'Producer Bank Payment',
+      ledgerType: 'Bank',
+      companyId,
+      openingBalance: 0,
+      currentBalance: 0,
+      balanceType: 'Cr'
+    });
+    await producerBankLedger.save();
+  }
+
+  const entries = [
+    // Debit: Bank Transfer Payable (clear the liability)
+    {
+      ledgerId: bankTransferPayableLedger._id,
+      ledgerName: bankTransferPayableLedger.ledgerName,
+      debitAmount: bankTransfer.totalTransferAmount,
+      creditAmount: 0
+    },
+    // Credit: Producer Bank Payment (actual bank outflow)
+    {
+      ledgerId: producerBankLedger._id,
+      ledgerName: producerBankLedger.ledgerName,
+      debitAmount: 0,
+      creditAmount: bankTransfer.totalTransferAmount
+    }
+  ];
+
+  const voucher = new Voucher({
+    voucherType: 'ProducerDue',
+    voucherNumber: await generateVoucherNumber('ProducerDue', companyId),
+    voucherDate: new Date(),
+    companyId,
+    entries,
+    totalDebit: bankTransfer.totalTransferAmount,
+    totalCredit: bankTransfer.totalTransferAmount,
+    narration: `Producer Due - Bank Transfer Completed: ${bankTransfer.transferNumber} - ${bankTransfer.totalApproved} producers`,
+    referenceType: 'BankTransfer',
+    referenceId: bankTransfer._id,
+    createdBy: userId
   });
 
   await voucher.save();
@@ -526,6 +601,17 @@ export const completeTransfer = async (req, res) => {
     });
 
     await bankTransfer.save();
+
+    // Create ProducerDue voucher on completion
+    try {
+      const completionVoucher = await createCompletionVoucher(bankTransfer, req.userCompany, req.user?._id);
+      if (completionVoucher) {
+        bankTransfer.completionVoucherId = completionVoucher._id;
+        await bankTransfer.save();
+      }
+    } catch (voucherError) {
+      console.error('Completion voucher creation failed:', voucherError);
+    }
 
     res.json({
       success: true,

@@ -1,5 +1,6 @@
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
+import MilkCollection from '../models/MilkCollection.js';
 
 // Get Day Book report with date-wise grouping
 export const getDayBook = async (req, res) => {
@@ -138,6 +139,64 @@ export const getDayBook = async (req, res) => {
           }
         }
       }
+    }
+
+    // --- Milk Purchase day totals — Payment side ---
+    const milkPurchaseDayTotals = await MilkCollection.aggregate([
+      {
+        $match: {
+          companyId,
+          date: { $gte: start, $lte: end }
+        }
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+          totalAmount: { $sum: '$amount' },
+          totalQty: { $sum: '$qty' },
+          farmerCount: { $addToSet: '$farmer' }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    for (const day of milkPurchaseDayTotals) {
+      const dateKey = day._id;
+      if (!dateMap[dateKey]) {
+        dateMap[dateKey] = {
+          date: dateKey,
+          receiptSide: [],
+          paymentSide: [],
+          totalReceipts: 0,
+          totalPayments: 0
+        };
+      }
+
+      // Receipt (Dr): Milk Purchase
+      const drEntry = {
+        date: new Date(dateKey),
+        voucherNumber: `MKP-${dateKey.replace(/-/g, '')}`,
+        voucherType: 'MilkPurchase',
+        ledgerName: `Milk Purchase — ${day.farmerCount.length} farmers (${day.totalQty.toFixed(2)} L)`,
+        narration: `Shift Total — ${dateKey}`,
+        amount: day.totalAmount
+      };
+      dateMap[dateKey].receiptSide.push(drEntry);
+      dateMap[dateKey].totalReceipts += day.totalAmount;
+      receiptSide.push(drEntry);
+
+      // Payment (Cr): Producers Dues
+      const crEntry = {
+        date: new Date(dateKey),
+        voucherNumber: `MKP-${dateKey.replace(/-/g, '')}`,
+        voucherType: 'ProducersDue',
+        ledgerName: `Producers Dues — ${day.farmerCount.length} farmers`,
+        narration: `Milk Purchase Day Total — ${dateKey}`,
+        amount: day.totalAmount
+      };
+      dateMap[dateKey].paymentSide.push(crEntry);
+      dateMap[dateKey].totalPayments += day.totalAmount;
+      paymentSide.push(crEntry);
     }
 
     // --- Build dayWiseData with chained opening/closing balances ---

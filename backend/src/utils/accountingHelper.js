@@ -15,6 +15,7 @@ const VOUCHER_PREFIX_MAP = {
   'LoanDisbursal':   'LDN',
   'AdvancePayment':  'ADV',
   'OpeningBalance':  'OPB',
+  'ProducerDue':     'PDU',
 };
 
 // Generate voucher number — atomic, conflict-free for 100+ concurrent users
