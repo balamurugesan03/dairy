@@ -705,6 +705,7 @@ const MilkPaymentRegister = () => {
         paymentMode: formData.paymentMode === 'cash' ? 'Cash' : formData.paymentMode === 'bank' ? 'Bank' : 'Cheque',
         referenceNumber: formData.referenceNumber,
         paidAmount: summary.paidAmount > 0 ? summary.paidAmount : 0,
+        paymentSource: 'PaymentRegister',
         remarks: summary.isAdjusted
           ? `Deductions adjusted: requested ₹${summary.requestedDeductions.toFixed(2)}, applied ₹${summary.adjustedDeductions.total.toFixed(2)} — ${formData.paymentMode}`
           : summary.closingBalance <= 0

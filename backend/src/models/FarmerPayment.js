@@ -238,6 +238,12 @@ const farmerPaymentSchema = new mongoose.Schema({
     ref: 'User'
   },
   cancellationReason: String,
+  // Source: 'Ledger' = paid directly via register-ledger page; 'PaymentRegister' = created via payment register form (pending for bank transfer)
+  paymentSource: {
+    type: String,
+    enum: ['Ledger', 'PaymentRegister'],
+    default: 'Ledger'
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'

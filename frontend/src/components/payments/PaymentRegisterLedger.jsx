@@ -307,17 +307,20 @@ const PaymentRegisterLedger = () => {
           .reduce((s, d) => s + (d.amount || 0), 0);
 
       // Merge a row with its existing FarmerPayment (if any)
+      // Only show paidAmount / paid=true for Ledger-source payments.
+      // PaymentRegister-source payments are pending bank-transfer; don't mark row as paid in ledger.
       const mergePayment = (row) => {
         const pmt = pmtMap[row.farmerId];
         if (!pmt) return row;
+        const isLedgerPmt = !pmt.paymentSource || pmt.paymentSource === 'Ledger';
         return recalc({
           ...row,
-          cfRec:      getDed(pmt, 'CF Recovery', 'CF Advance')   || row.cfRec,
+          cfRec:      getDed(pmt, 'CF Recovery', 'CF Advance')    || row.cfRec,
           cashRec:    getDed(pmt, 'Cash Recovery', 'Cash Advance') || row.cashRec,
           loanRec:    getDed(pmt, 'Loan Recovery', 'Loan Advance', 'Loan EMI') || row.loanRec,
           welfare:    getDed(pmt, 'Welfare Recovery') || row.welfare,
-          paidAmount: pmt.paidAmount || row.paidAmount,
-          paid:       pmt.status === 'Paid' || pmt.status === 'Partial',
+          paidAmount: isLedgerPmt ? (pmt.paidAmount || row.paidAmount) : row.paidAmount,
+          paid:       isLedgerPmt && (pmt.status === 'Paid' || pmt.status === 'Partial'),
         });
       };
 
@@ -448,6 +451,7 @@ const PaymentRegisterLedger = () => {
       deductions,
       paidAmount:      n(row.paidAmount) || n(row.netPay),
       paymentMode:     row.payMode || 'Cash',
+      paymentSource:   'Ledger',
       remarks:         `Ledger — ${dayjs(fromDate).format('DD/MM')}–${dayjs(toDate).format('DD/MM/YYYY')}`,
     };
   };
@@ -485,8 +489,7 @@ const PaymentRegisterLedger = () => {
     setApplying(prev => ({ ...prev, [idx]: true }));
     try {
       await paymentAPI.create(buildPayload(row));
-      // If Bank mode, create a BankTransfer log entry
-      if (row.payMode === 'Bank') await createBankTransferLog([row]);
+      // Individual row pay: do NOT create bank transfer log (only Apply All bulk does)
       setRows(prev => prev.map((r, i) =>
         i === idx ? { ...r, paid: true, payMode: r.payMode || 'Cash' } : r
       ));

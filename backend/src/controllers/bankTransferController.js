@@ -45,14 +45,15 @@ export const retrieveBalances = async (req, res) => {
       let netPayable = 0;
 
       if (transferBasis === 'As on Date Balance') {
-        // Get all unpaid amounts up to asOnDate
+        // Get all unpaid amounts up to asOnDate — only PaymentRegister source (not Ledger-direct)
         const paymentAgg = await FarmerPayment.aggregate([
           {
             $match: {
               companyId: new mongoose.Types.ObjectId(companyId),
               farmerId: farmer._id,
               paymentDate: { $lte: new Date(asOnDate) },
-              status: { $in: ['Pending', 'Partial'] }
+              status: { $in: ['Pending', 'Partial'] },
+              $or: [{ paymentSource: 'PaymentRegister' }, { paymentSource: { $exists: false } }, { paymentSource: null }]
             }
           },
           {
@@ -66,11 +67,12 @@ export const retrieveBalances = async (req, res) => {
         const payment = paymentAgg[0] || { totalNetPayable: 0 };
         netPayable = payment.totalNetPayable || 0;
       } else {
-        // Last processed period - get from last period with a balance
+        // Last processed period - get from last period with a balance (PaymentRegister source only)
         const lastPeriod = await FarmerPayment.findOne({
           companyId: new mongoose.Types.ObjectId(companyId),
           farmerId: farmer._id,
-          status: { $in: ['Pending', 'Partial'] }
+          status: { $in: ['Pending', 'Partial'] },
+          $or: [{ paymentSource: 'PaymentRegister' }, { paymentSource: { $exists: false } }, { paymentSource: null }]
         }).sort({ paymentDate: -1 });
 
         if (lastPeriod) {
