@@ -134,7 +134,7 @@ const BankTransferManagement = () => {
     const [f, t] = getCyclePeriod(c, ref);
     setFromDate(f);
     setToDate(t);
-    clearData();
+    clearData(t);
   };
 
   const navigatePeriod = (dir) => {
@@ -144,10 +144,19 @@ const BankTransferManagement = () => {
     const [f, t] = getCyclePeriod(cycle, ref);
     setFromDate(f);
     setToDate(t);
-    clearData();
+    clearData(t);
   };
 
-  const clearData = () => { setRows([]); setDataLoaded(false); };
+  const clearData = (newTo) => {
+    setRows([]);
+    setDataLoaded(false);
+    // auto-advance applyDate to day after new toDate if needed
+    const refTo = newTo || toDate;
+    if (refTo) {
+      const minApply = dayjs(refTo).add(1, 'day').toDate();
+      setApplyDate(prev => (prev && prev >= minApply ? prev : minApply));
+    }
+  };
 
   // ── select a pending period from dropdown → auto-set dates ───────────────
   const selectPeriod = (val) => {
@@ -161,8 +170,7 @@ const BankTransferManagement = () => {
     const t = new Date(p.toDate);
     setFromDate(f);
     setToDate(t);
-    setApplyDate(new Date());
-    clearData();
+    clearData(t);
   };
 
   const periodLabel = fromDate && toDate
@@ -509,6 +517,7 @@ const BankTransferManagement = () => {
                         label="Apply Date"
                         value={applyDate}
                         onChange={setApplyDate}
+                        minDate={toDate ? dayjs(toDate).add(1, 'day').toDate() : undefined}
                       />
                     </Grid.Col>
                     <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
@@ -1072,6 +1081,7 @@ const BankTransferManagement = () => {
                     label="Apply Date"
                     value={editDate}
                     onChange={setEditDate}
+                    minDate={editLog?.asOnDate ? dayjs(editLog.asOnDate).add(1, 'day').toDate() : undefined}
                   />
                 </Grid.Col>
                 <Grid.Col span={{ base: 12, sm: 4 }}>
