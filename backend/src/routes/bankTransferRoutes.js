@@ -11,6 +11,7 @@ import {
   getBanks,
   getPendingPeriods,
   deleteBankTransfer,
+  updateBankTransfer,
 } from '../controllers/bankTransferController.js';
 
 const router = express.Router();
@@ -37,6 +38,9 @@ router.get('/bank-transfers/:id', getBankTransferById);
 
 // Cancel bank transfer
 router.post('/bank-transfers/:id/cancel', cancelBankTransfer);
+
+// Update bank transfer (applyDate + per-farmer amounts)
+router.put('/bank-transfers/:id', updateBankTransfer);
 
 // Delete bank transfer + reverse FarmerPayments
 router.delete('/bank-transfers/:id', deleteBankTransfer);

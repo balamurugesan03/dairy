@@ -11,7 +11,7 @@ import { bankTransferAPI } from '../../services/api';
 import {
   IconBuildingBank, IconCash, IconCheck, IconX, IconEye,
   IconRefresh, IconPrinter, IconDotsVertical,
-  IconChevronLeft, IconChevronRight, IconCoins, IconTrash
+  IconChevronLeft, IconChevronRight, IconCoins, IconTrash, IconEdit, IconDeviceFloppy
 } from '@tabler/icons-react';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -98,10 +98,17 @@ const BankTransferManagement = () => {
   const [logFilters, setLogFilters] = useState({ status: '', fromDate: null, toDate: null });
 
   /* modals */
-  const [viewModal,  setViewModal]  = useState(false);
+  const [viewModal,   setViewModal]   = useState(false);
   const [selectedLog, setSelectedLog] = useState(null);
-  const [printModal, setPrintModal] = useState(false);
-  const [printMode,  setPrintMode]  = useState('all');
+  const [printModal,  setPrintModal]  = useState(false);
+  const [printMode,   setPrintMode]   = useState('all');
+
+  /* edit modal */
+  const [editModal,    setEditModal]    = useState(false);
+  const [editLog,      setEditLog]      = useState(null);   // full BankTransfer doc
+  const [editDate,     setEditDate]     = useState(null);
+  const [editDetails,  setEditDetails]  = useState([]);     // [{...detail, transferAmount, paymentMode}]
+  const [editSaving,   setEditSaving]   = useState(false);
 
   // ── init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -329,6 +336,50 @@ const BankTransferManagement = () => {
     }
   };
 
+  // ── open edit modal ───────────────────────────────────────────────────────
+  const openEdit = async (log) => {
+    const res = await bankTransferAPI.getById(log._id);
+    if (!res?.success) return;
+    const doc = res.data;
+    setEditLog(doc);
+    setEditDate(doc.applyDate ? new Date(doc.applyDate) : new Date());
+    setEditDetails(doc.transferDetails.map(d => ({
+      _id:            d._id,
+      farmerId:       d.farmerId?._id || d.farmerId,
+      producerId:     d.producerId,
+      producerName:   d.producerName,
+      netPayable:     d.netPayable,
+      transferAmount: d.transferAmount,
+      paymentMode:    d.paymentMode || 'Bank Transfer',
+      transferStatus: d.transferStatus,
+    })));
+    setEditModal(true);
+  };
+
+  const saveEdit = async () => {
+    setEditSaving(true);
+    try {
+      const res = await bankTransferAPI.update(editLog._id, {
+        applyDate:       editDate?.toISOString(),
+        transferDetails: editDetails.map(d => ({
+          _id:            d._id,
+          farmerId:       d.farmerId,
+          transferAmount: d.transferAmount,
+          paymentMode:    d.paymentMode,
+        })),
+      });
+      if (res?.success) {
+        notifications.show({ title: 'Saved', message: 'Bank transfer updated', color: 'green' });
+        setEditModal(false);
+        loadLogs();
+      }
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message || 'Save failed', color: 'red' });
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   // ── print ─────────────────────────────────────────────────────────────────
   const openPrint = (mode) => { setPrintMode(mode); setPrintModal(true); };
 
@@ -409,7 +460,7 @@ const BankTransferManagement = () => {
                   )}
 
                   {/* Cycle buttons + period nav */}
-                  <Group gap="xs" wrap="wrap" align="center">
+                  {/* <Group gap="xs" wrap="wrap" align="center">
                     <Text size="sm" fw={500} c="dimmed">Cycle:</Text>
                     {CYCLES.map(c => (
                       <Button
@@ -431,24 +482,24 @@ const BankTransferManagement = () => {
                     <ActionIcon variant="subtle" onClick={() => navigatePeriod('next')} title="Next period">
                       <IconChevronRight size={16} />
                     </ActionIcon>
-                  </Group>
+                  </Group> */}
 
                   {/* Filters row */}
                   <Grid>
-                    <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+                    {/* <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
                       <DatePickerInput
                         label="From Date"
                         value={fromDate}
                         onChange={v => { setFromDate(v); clearData(); }}
                       />
-                    </Grid.Col>
-                    <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+                    </Grid.Col> */}
+                    {/* <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
                       <DatePickerInput
                         label="To Date"
                         value={toDate}
                         onChange={v => { setToDate(v); clearData(); }}
                       />
-                    </Grid.Col>
+                    </Grid.Col> */}
                     <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
                       <DatePickerInput
                         label="Apply Date"
@@ -842,6 +893,13 @@ const BankTransferManagement = () => {
                                     >
                                       View Details
                                     </Menu.Item>
+                                    <Menu.Item
+                                      leftSection={<IconEdit size={14} />}
+                                      color="blue"
+                                      onClick={() => openEdit(log)}
+                                    >
+                                      Edit
+                                    </Menu.Item>
                                     {log.status === 'Applied' && (
                                       <>
                                         <Menu.Item
@@ -986,6 +1044,96 @@ const BankTransferManagement = () => {
                   </Table.Tbody>
                 </Table>
               </ScrollArea>
+            </Stack>
+          )}
+        </Modal>
+
+        {/* ═══════════════════ EDIT MODAL ══════════════════════════════════ */}
+        <Modal
+          opened={editModal}
+          onClose={() => setEditModal(false)}
+          title={
+            <Group gap="xs">
+              <IconEdit size={18} />
+              <Text fw={600}>Edit Transfer — {editLog?.transferNumber}</Text>
+            </Group>
+          }
+          size="xl"
+        >
+          {editLog && (
+            <Stack gap="md">
+              <Grid>
+                <Grid.Col span={{ base: 12, sm: 4 }}>
+                  <DatePickerInput
+                    label="Apply Date"
+                    value={editDate}
+                    onChange={setEditDate}
+                  />
+                </Grid.Col>
+                <Grid.Col span={{ base: 12, sm: 4 }}>
+                  <Text size="sm" c="dimmed" mt={4}>Status</Text>
+                  <Badge color={STATUS_COLOR[editLog.status] || 'gray'} size="lg">{editLog.status}</Badge>
+                </Grid.Col>
+              </Grid>
+
+              <ScrollArea h={360}>
+                <Table striped withColumnBorders size="sm" style={{ minWidth: 620 }}>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th style={{ width: 36 }}>SN</Table.Th>
+                      <Table.Th style={{ width: 80 }}>Prod ID</Table.Th>
+                      <Table.Th>Producer Name</Table.Th>
+                      <Table.Th ta="right" style={{ width: 110 }}>Net Payable</Table.Th>
+                      <Table.Th ta="right" style={{ width: 130 }}>Transfer Amount</Table.Th>
+                      <Table.Th style={{ width: 130 }}>Mode</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {editDetails.map((d, i) => (
+                      <Table.Tr key={d._id || i}>
+                        <Table.Td ta="center"><Text size="xs">{i + 1}</Text></Table.Td>
+                        <Table.Td><Text size="xs">{d.producerId}</Text></Table.Td>
+                        <Table.Td><Text size="xs">{d.producerName}</Text></Table.Td>
+                        <Table.Td ta="right"><Text size="xs">{fmt(d.netPayable)}</Text></Table.Td>
+                        <Table.Td>
+                          <NumberInput
+                            size="xs"
+                            hideControls
+                            decimalScale={2}
+                            value={d.transferAmount}
+                            onChange={v => setEditDetails(prev => prev.map((r, ri) =>
+                              ri === i ? { ...r, transferAmount: v ?? 0 } : r
+                            ))}
+                            styles={{ input: { textAlign: 'right' } }}
+                          />
+                        </Table.Td>
+                        <Table.Td>
+                          <Select
+                            size="xs"
+                            value={d.paymentMode}
+                            onChange={v => setEditDetails(prev => prev.map((r, ri) =>
+                              ri === i ? { ...r, paymentMode: v } : r
+                            ))}
+                            data={MODES}
+                          />
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </ScrollArea>
+
+              <Group justify="flex-end" gap="xs">
+                <Button variant="outline" onClick={() => setEditModal(false)}>Cancel</Button>
+                <Button
+                  leftSection={<IconDeviceFloppy size={15} />}
+                  loading={editSaving}
+                  onClick={saveEdit}
+                  color="blue"
+                >
+                  Save Changes
+                </Button>
+              </Group>
             </Stack>
           )}
         </Modal>

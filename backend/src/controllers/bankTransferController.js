@@ -624,6 +624,44 @@ export const createFromLedger = async (req, res) => {
   }
 };
 
+// Update a bank transfer (applyDate + per-farmer transferAmount/paymentMode)
+export const updateBankTransfer = async (req, res) => {
+  try {
+    const { applyDate, remarks, transferDetails } = req.body;
+
+    const bankTransfer = await BankTransfer.findOne({
+      _id: req.params.id,
+      companyId: req.userCompany,
+    });
+
+    if (!bankTransfer) {
+      return res.status(404).json({ success: false, message: 'Bank transfer not found' });
+    }
+
+    if (applyDate) bankTransfer.applyDate = new Date(applyDate);
+    if (remarks !== undefined) bankTransfer.remarks = remarks;
+
+    // Update each detail's transferAmount by farmerId
+    if (Array.isArray(transferDetails)) {
+      transferDetails.forEach(upd => {
+        const detail = bankTransfer.transferDetails.find(
+          d => d._id.toString() === upd._id || d.farmerId?.toString() === upd.farmerId?.toString()
+        );
+        if (detail) {
+          if (upd.transferAmount !== undefined) detail.transferAmount = upd.transferAmount;
+          if (upd.paymentMode    !== undefined) detail.paymentMode    = upd.paymentMode;
+        }
+      });
+    }
+
+    await bankTransfer.save();
+    res.json({ success: true, message: 'Bank transfer updated successfully', data: bankTransfer });
+  } catch (error) {
+    console.error('Error updating bank transfer:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error updating bank transfer' });
+  }
+};
+
 // Delete a bank transfer and reverse FarmerPayment records back to Pending
 export const deleteBankTransfer = async (req, res) => {
   try {
