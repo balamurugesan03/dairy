@@ -128,7 +128,8 @@ const farmerPaymentSchema = new mongoose.Schema({
     type: {
       type: String,
       enum: ['Feed', 'Medicine', 'Loan EMI', 'Insurance', 'Society Fee', 'Cattle Feed', 'Mineral Mixture', 'Veterinary', 'Transport', 'Welfare Recovery', 'CF Advance', 'Loan Advance', 'Cash Advance', 'Share', 'Other',
-             'Flood Relief Fund', 'LIC GI Premium', 'Milk Value Addl. Price Advance', 'Milma Feeds', 'MDI', 'Rounding Difference', 'Share in Milma', 'Silage Factory', 'Union Bank A/c'],
+             'Flood Relief Fund', 'LIC GI Premium', 'Milk Value Addl. Price Advance', 'Milma Feeds', 'MDI', 'Rounding Difference', 'Share in Milma', 'Silage Factory', 'Union Bank A/c',
+             'CF Recovery', 'Cash Recovery', 'Loan Recovery'],
       required: true
     },
     amount: {

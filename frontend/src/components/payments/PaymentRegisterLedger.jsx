@@ -14,6 +14,7 @@ import dayjs from 'dayjs';
 import { useReactToPrint } from 'react-to-print';
 import {
   paymentAPI, dairySettingsAPI, paymentRegisterAPI, producerOpeningAPI, periodicalRuleAPI, milkPurchaseSettingsAPI,
+  bankTransferAPI,
 } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 
@@ -127,12 +128,14 @@ const PaymentRegisterLedger = () => {
     content: () => printRef.current,
     documentTitle: 'Payment Register Ledger',
     pageStyle: `
-      @media print {
-        body { font-size: 10px; }
-        @page { size: A3 landscape; margin: 8mm; }
-        .no-print { display: none !important; }
-        .print-show { display: table-cell !important; }
-      }
+      @page { size: A3 landscape; margin: 8mm; }
+      body { font-size: 10px; }
+      * { overflow: visible !important; max-height: none !important; }
+      .no-print { display: none !important; }
+      .print-show { display: table-cell !important; }
+      .print-header { display: block !important; }
+      table { border-collapse: collapse; width: 100%; }
+      th, td { border: 1px solid #999; padding: 3px 4px; font-size: 9px; }
     `,
   });
 
@@ -147,6 +150,32 @@ const PaymentRegisterLedger = () => {
   const [loading,      setLoading]      = useState(false);
   const [applying,     setApplying]     = useState({});
   const [quantityUnit, setQuantityUnit] = useState('Litre');
+
+  /* ─── Previous cycle carry-forward (farmerId → carry data) ─── */
+  const prevCycleRef = useRef({});
+
+  const storeCycleData = (currentRows) => {
+    const data = {};
+    currentRows.forEach(r => {
+      if (!r.farmerId) return;
+      const paid    = n(r.paidAmount) || n(r.netPay);
+      const netPay  = n(r.netPay);
+      data[r.farmerId] = {
+        // prevBalance = unpaid remainder (0 if fully paid, positive if partial)
+        prevBalance: Math.max(0, netPay - paid),
+        cfAdv:       Math.max(0, n(r.cfAdv)   - n(r.cfRec)),
+        cashAdv:     Math.max(0, n(r.cashAdv) - n(r.cashRec)),
+        loanAdv:     Math.max(0, n(r.loanAdv) - n(r.loanRec)),
+      };
+    });
+    prevCycleRef.current = data;
+  };
+
+  const applyPrevCycle = (row) => {
+    const prev = prevCycleRef.current[row.farmerId];
+    if (!prev) return row;
+    return recalc({ ...row, ...prev });
+  };
 
   /* ─── Load settings on mount → set dates only, no auto-load ─── */
   useEffect(() => {
@@ -297,6 +326,8 @@ const PaymentRegisterLedger = () => {
           let row = toRow(e, i);
           // Apply welfare from PeriodicalRule if backend returned 0
           if (!n(row.welfare) && welfareAmt > 0) row = recalc({ ...row, welfare: welfareAmt });
+          // Apply previous cycle carry-forward (prevBalance, cfAdv, cashAdv, loanAdv)
+          row = applyPrevCycle(row);
           // Merge existing individual payment data
           return mergePayment(row);
         });
@@ -316,6 +347,7 @@ const PaymentRegisterLedger = () => {
           const mapped = openings.map((o, i) => {
             let row = openingToRow(o, i);
             if (!n(row.welfare) && welfareAmt > 0) row = recalc({ ...row, welfare: welfareAmt });
+            row = applyPrevCycle(row);
             return mergePayment(row);
           });
           setRows(mapped);
@@ -377,49 +409,20 @@ const PaymentRegisterLedger = () => {
   };
 
   /* ─── Advance period to next cycle ─── */
-  const advanceCycle = useCallback(() => {
+  const advanceCycle = () => {
+    if (!toDate) return;
     const nextFrom = dayjs(toDate).add(1, 'day').toDate();
     const nextTo   = dayjs(nextFrom).add(settingsDays - 1, 'day').toDate();
     setFromDate(nextFrom);
     setToDate(nextTo);
-    setRegisterId(null);
+    setRows([]);
     setDateConfirmed(false);
-    // Keep farmer rows — reset amounts only, preserve farmerId/producerId/producerName
-    setRows(prev => prev
-      .filter(r => r.producerName?.trim())
-      .map((r, i) => ({
-        sn:            i + 1,
-        _entryId:      '',
-        farmerId:      r.farmerId,
-        producerId:    r.producerId,
-        producerName:  r.producerName,
-        qty:           '',
-        milkValue:     '',
-        prevBalance:   '',
-        otherEarnings: '',
-        totalEarnings: '',
-        welfare:       '',
-        cfAdv:         '',
-        cfRec:         '',
-        cashAdv:       '',
-        cashRec:       '',
-        loanAdv:       '',
-        loanRec:       '',
-        otherDed:      '',
-        totalDed:      '',
-        netPay:        '',
-        payMode:       'Cash',
-        paidAmount:    '',
-        signature:     '',
-        paid:          false,
-      }))
-    );
     notifications.show({
       title:   'Cycle Advanced',
       message: `Next period: ${dayjs(nextFrom).format('DD/MM/YYYY')} – ${dayjs(nextTo).format('DD/MM/YYYY')}`,
       color:   'blue',
     });
-  }, [toDate, settingsDays]);
+  };
 
   /* ─── Build payment payload for a row ─── */
   const buildPayload = (row) => {
@@ -449,6 +452,27 @@ const PaymentRegisterLedger = () => {
     };
   };
 
+  /* ─── Helper: create BankTransfer log for Bank-mode rows ─── */
+  const createBankTransferLog = async (bankRows) => {
+    if (!bankRows.length) return;
+    try {
+      await bankTransferAPI.createFromLedger({
+        farmers:   bankRows.map(r => ({
+          farmerId:    r.farmerId,
+          farmerName:  r.producerName,
+          farmerNumber: r.farmerNumber || '',
+          netPayable:  n(r.netPay),
+          paidAmount:  n(r.paidAmount) || n(r.netPay),
+        })),
+        applyDate: new Date().toISOString(),
+        fromDate,
+        toDate,
+      });
+    } catch (err) {
+      console.warn('Bank transfer log creation failed:', err.message);
+    }
+  };
+
   /* ─── Apply Payment per row ─── */
   const applyPayment = async (idx) => {
     const row = rows[idx];
@@ -461,6 +485,8 @@ const PaymentRegisterLedger = () => {
     setApplying(prev => ({ ...prev, [idx]: true }));
     try {
       await paymentAPI.create(buildPayload(row));
+      // If Bank mode, create a BankTransfer log entry
+      if (row.payMode === 'Bank') await createBankTransferLog([row]);
       setRows(prev => prev.map((r, i) =>
         i === idx ? { ...r, paid: true, payMode: r.payMode || 'Cash' } : r
       ));
@@ -481,29 +507,154 @@ const PaymentRegisterLedger = () => {
   /* ─── Apply ALL unpaid rows ─── */
   const [applyingAll, setApplyingAll] = useState(false);
   const applyAllPayments = async () => {
-    const unpaid = rows.map((r, i) => ({ r, i })).filter(({ r }) => !r.paid && r.farmerId && n(r.netPay) > 0);
-    if (unpaid.length === 0) {
-      notifications.show({ title: 'Nothing to Apply', message: 'All rows are already applied', color: 'orange' });
+    if (filledRows.length === 0) {
+      notifications.show({ title: 'Nothing to Apply', message: 'No rows in ledger', color: 'orange' });
       return;
     }
+
+    const unpaid = rows.map((r, i) => ({ r, i })).filter(({ r }) => !r.paid && r.farmerId && n(r.netPay) > 0);
+
+    // All already paid (from individual payments) — save history log, then advance cycle
+    if (unpaid.length === 0) {
+      storeCycleData(filledRows);
+      // Save history log for this cycle
+      try {
+        await paymentRegisterAPI.create({
+          fromDate:     dayjs(fromDate).format('YYYY-MM-DD'),
+          toDate:       dayjs(toDate).format('YYYY-MM-DD'),
+          registerType: 'Ledger',
+          status:       'Saved',
+          entries: filledRows.map(r => ({
+            farmerId:        r.farmerId,
+            productId:       r.producerId   || '',
+            productName:     r.producerName || '',
+            producerId:      r.producerId   || '',
+            producerName:    r.producerName || '',
+            qty:             n(r.qty),
+            milkValue:       n(r.milkValue),
+            previousBalance: n(r.prevBalance),
+            otherEarnings:   n(r.otherEarnings),
+            totalEarnings:   n(r.totalEarnings),
+            welfare:         n(r.welfare),
+            cfAdv:           n(r.cfAdv),
+            cfRec:           n(r.cfRec),
+            cashAdv:         n(r.cashAdv),
+            cashRec:         n(r.cashRec),
+            loanAdv:         n(r.loanAdv),
+            loanRec:         n(r.loanRec),
+            otherDed:        n(r.otherDed),
+            totalDed:        n(r.totalDed),
+            netPay:          n(r.netPay),
+            paidAmount:      n(r.paidAmount) || n(r.netPay),
+            payMode:         r.payMode || 'Cash',
+            paymentMode:     r.payMode || 'Cash',
+            paid:            true,
+          })),
+        });
+      } catch { /* continue */ }
+      const nextFrom = dayjs(toDate).add(1, 'day').toDate();
+      const nextTo   = dayjs(nextFrom).add(settingsDays - 1, 'day').toDate();
+      setFromDate(nextFrom);
+      setToDate(nextTo);
+      notifications.show({
+        title: 'Cycle Advanced',
+        message: `All already paid — Next cycle: ${dayjs(nextFrom).format('DD/MM/YYYY')} – ${dayjs(nextTo).format('DD/MM/YYYY')}`,
+        color: 'blue', icon: <IconCheck size={14} />, autoClose: 5000,
+      });
+      await loadData(nextFrom, nextTo, false);
+      return;
+    }
+
     setApplyingAll(true);
+
+    // Capture current period before any date advance
+    const periodFrom = fromDate;
+    const periodTo   = toDate;
+
     let done = 0;
+    const bankPaid   = [];
+    const savedRows  = [];
     for (const { r, i } of unpaid) {
       try {
         await paymentAPI.create(buildPayload(r));
+        if (r.payMode === 'Bank') bankPaid.push(r);
+        savedRows.push(r);
         setRows(prev => prev.map((row, idx) =>
           idx === i ? { ...row, paid: true, payMode: row.payMode || 'Cash' } : row
         ));
         done++;
       } catch { /* continue */ }
     }
+
+    // 1. Create one BankTransfer log for all Bank-mode rows
+    if (bankPaid.length > 0) await createBankTransferLog(bankPaid);
+
+    // 2. Save PaymentRegister log (type: Ledger) for history
+    if (savedRows.length > 0) {
+      try {
+        const logRes = await paymentRegisterAPI.create({
+          fromDate:     dayjs(periodFrom).format('YYYY-MM-DD'),
+          toDate:       dayjs(periodTo).format('YYYY-MM-DD'),
+          registerType: 'Ledger',
+          status:       'Saved',
+          entries:      savedRows.map((r) => ({
+            farmerId:        r.farmerId,
+            productId:       r.producerId   || '',
+            productName:     r.producerName || '',
+            producerId:      r.producerId   || '',
+            producerName:    r.producerName || '',
+            qty:             n(r.qty),
+            milkValue:       n(r.milkValue),
+            previousBalance: n(r.prevBalance),
+            otherEarnings:   n(r.otherEarnings),
+            totalEarnings:   n(r.totalEarnings),
+            welfare:         n(r.welfare),
+            cfAdv:           n(r.cfAdv),
+            cfRec:           n(r.cfRec),
+            cashAdv:         n(r.cashAdv),
+            cashRec:         n(r.cashRec),
+            loanAdv:         n(r.loanAdv),
+            loanRec:         n(r.loanRec),
+            otherDed:        n(r.otherDed),
+            totalDed:        n(r.totalDed),
+            netPay:          n(r.netPay),
+            paidAmount:      n(r.paidAmount) || n(r.netPay),
+            payMode:         r.payMode || 'Cash',
+            paymentMode:     r.payMode || 'Cash',
+            paid:            true,
+          })),
+        });
+        if (!logRes?.success) {
+          notifications.show({ title: 'History Save Failed', message: logRes?.message || 'Could not save ledger history log', color: 'orange' });
+        }
+      } catch (err) {
+        notifications.show({ title: 'History Save Failed', message: err.message || 'Could not save ledger history log', color: 'orange' });
+      }
+    }
+
     setApplyingAll(false);
+
+    if (done === 0) {
+      notifications.show({ title: 'No Payments Applied', message: 'All payments failed — dates not advanced', color: 'red' });
+      return;
+    }
+
+    // 3. Store cycle data for carry-forward, then advance + auto-load next cycle
+    storeCycleData(filledRows);
+    const nextFrom = dayjs(periodTo).add(1, 'day').toDate();
+    const nextTo   = dayjs(nextFrom).add(settingsDays - 1, 'day').toDate();
+    setFromDate(nextFrom);
+    setToDate(nextTo);
+
     notifications.show({
       title:   'All Payments Applied',
-      message: `${done} of ${unpaid.length} applied`,
+      message: `${done} of ${unpaid.length} applied — Loading next cycle: ${dayjs(nextFrom).format('DD/MM/YYYY')} – ${dayjs(nextTo).format('DD/MM/YYYY')}`,
       color:   done === unpaid.length ? 'green' : 'orange',
       icon:    <IconCheck size={14} />,
+      autoClose: 6000,
     });
+
+    await loadData(nextFrom, nextTo, false);
   };
 
   /* ─── Reset ─── */
@@ -566,9 +717,9 @@ const PaymentRegisterLedger = () => {
               variant="filled"
               leftSection={applyingAll ? <Loader size={12} color="white" /> : <IconCheck size={13} />}
               onClick={applyAllPayments}
-              disabled={applyingAll || !dateConfirmed || pendingRows.length === 0}
+              disabled={applyingAll || !dateConfirmed || filledRows.length === 0}
             >
-              {applyingAll ? 'Applying…' : `Apply All (${pendingRows.length})`}
+              {applyingAll ? 'Applying…' : pendingRows.length > 0 ? `Apply All (${pendingRows.length})` : 'Next Cycle →'}
             </Button>
             <Button size="xs" variant="light" color="gray" leftSection={<IconRefresh size={13} />} onClick={handleReset}>
               Reset
@@ -606,7 +757,7 @@ const PaymentRegisterLedger = () => {
       </Paper>
 
       {/* ── LEDGER TABLE ── */}
-      <Paper ref={printRef} withBorder shadow="sm" style={{ background: '#fff', overflow: 'hidden' }}>
+      <Paper ref={printRef} withBorder shadow="sm" style={{ background: '#fff' }}>
 
         {/* Print-only header */}
         <Box style={{ display: 'none' }} className="print-header">

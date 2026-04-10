@@ -43,7 +43,7 @@ const bankTransferSchema = new mongoose.Schema({
   // Transfer basis
   transferBasis: {
     type: String,
-    enum: ['As on Date Balance', 'Last Processed Period'],
+    enum: ['As on Date Balance', 'Last Processed Period', 'Register Ledger'],
     default: 'As on Date Balance'
   },
 

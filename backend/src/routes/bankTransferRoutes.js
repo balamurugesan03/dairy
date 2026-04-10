@@ -2,6 +2,7 @@ import express from 'express';
 import {
   retrieveBalances,
   applyBankTransfer,
+  createFromLedger,
   getAllBankTransfers,
   getBankTransferById,
   cancelBankTransfer,
@@ -17,6 +18,9 @@ router.post('/bank-transfers/retrieve', retrieveBalances);
 
 // Apply bank transfer
 router.post('/bank-transfers/apply', applyBankTransfer);
+
+// Create bank transfer log from Register-Ledger
+router.post('/bank-transfers/from-ledger', createFromLedger);
 
 // Get all bank transfers (transfer log)
 router.get('/bank-transfers', getAllBankTransfers);

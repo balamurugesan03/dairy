@@ -10,7 +10,7 @@ import PeriodicalRule from '../models/PeriodicalRule.js';
 // ─── GET all registers (paginated, date filter) ───────────────────────────────
 export const getPaymentRegisters = async (req, res) => {
   try {
-    const { fromDate, toDate, status, page = 1, limit = 20 } = req.query;
+    const { fromDate, toDate, status, registerType, page = 1, limit = 20 } = req.query;
     const companyId = req.companyId;
 
     const filter = { companyId };
@@ -19,11 +19,14 @@ export const getPaymentRegisters = async (req, res) => {
       if (fromDate) filter.fromDate.$gte = new Date(fromDate);
       if (toDate)   filter.fromDate.$lte = new Date(toDate);
     }
-    if (status) filter.status = status;
+    if (status)       filter.status       = status;
+    if (registerType) filter.registerType = registerType;
 
     const total = await PaymentRegister.countDocuments(filter);
+    // For Ledger type, include entries so history page can render them
+    const selectFields = registerType === 'Ledger' ? '' : '-entries';
     const registers = await PaymentRegister.find(filter)
-      .select('-entries')
+      .select(selectFields)
       .sort({ fromDate: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit));

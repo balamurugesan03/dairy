@@ -18,7 +18,8 @@ import {
   updateAdvance,
   adjustAdvance,
   cancelAdvance,
-  getAdvanceStats
+  getAdvanceStats,
+  getCashAdvanceSummary
 } from '../controllers/paymentController.js';
 
 import {
@@ -85,6 +86,9 @@ router.get('/advances', getAllAdvances);
 
 // Get advance statistics
 router.get('/advances/stats', getAdvanceStats);
+
+// Cash advance summary report (producer-wise)
+router.get('/advances/cash-summary', getCashAdvanceSummary);
 
 // Get farmer advances (must be before :id route)
 router.get('/advances/farmer/:farmerId', getFarmerAdvances);

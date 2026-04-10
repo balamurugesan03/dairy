@@ -5,23 +5,34 @@ const entrySchema = new mongoose.Schema({
   farmerId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Farmer' },
   productId:       { type: String, default: '' },
   productName:     { type: String, default: '' },
+  // Ledger aliases (stored alongside productId/productName for Ledger type)
+  producerId:      { type: String, default: '' },
+  producerName:    { type: String, default: '' },
   center:          { type: String, default: '' },
   qty:             { type: Number, default: 0 },
   milkValue:       { type: Number, default: 0 },
   previousBalance: { type: Number, default: 0 },
-  // Creditor Bill earning/deduction fields
-  otherEarnings:   { type: Number, default: 0 },    // Creditor Bill: Other Earnings
-  welfare:         { type: Number, default: 0 },    // Creditor Bill: Welfare | Producers: Welfare
-  deductions:      { type: Number, default: 0 },    // Creditor Bill: Deductions
+  otherEarnings:   { type: Number, default: 0 },
+  welfare:         { type: Number, default: 0 },
+  deductions:      { type: Number, default: 0 },
   // Producer Register fields
   cfRec:           { type: Number, default: 0 },
   loanAdv:         { type: Number, default: 0 },
   cashPocket:      { type: Number, default: 0 },
+  // Ledger-specific fields
+  cfAdv:           { type: Number, default: 0 },
+  cashAdv:         { type: Number, default: 0 },
+  cashRec:         { type: Number, default: 0 },
+  loanRec:         { type: Number, default: 0 },
+  otherDed:        { type: Number, default: 0 },
+  totalEarnings:   { type: Number, default: 0 },
+  totalDed:        { type: Number, default: 0 },
   payStatus:       { type: String, enum: ['Payable', 'Receivable', ''], default: '' },
   netPay:          { type: Number, default: 0 },
   // Payment applied fields
   paid:            { type: Boolean, default: false },
   paymentMode:     { type: String, enum: ['Cash', 'Bank', 'Cheque', ''], default: '' },
+  payMode:         { type: String, enum: ['Cash', 'Bank', 'Cheque', ''], default: '' },
   paidAmount:      { type: Number, default: 0 },
   farmerPaymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'FarmerPayment' },
 }, { _id: true });
@@ -30,7 +41,7 @@ const paymentRegisterSchema = new mongoose.Schema({
   companyId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
   fromDate:     { type: Date, required: true },
   toDate:       { type: Date, required: true },
-  registerType: { type: String, enum: ['Creditor', 'Producers'], default: 'Creditor' },
+  registerType: { type: String, enum: ['Creditor', 'Producers', 'Ledger'], default: 'Creditor' },
 
   entries: [entrySchema],
 
@@ -61,7 +72,9 @@ paymentRegisterSchema.pre('save', function () {
   this.entries.forEach((e, i) => {
     e.slNo = i + 1;
 
-    if (this.registerType === 'Producers') {
+    if (this.registerType === 'Ledger') {
+      // Ledger: netPay already computed by frontend — preserve as-is
+    } else if (this.registerType === 'Producers') {
       // Net Payable = Milk Value − Welfare − C/F Rec − Loan Adv − Cash Pocket + Previous Balance
       e.netPay = (e.milkValue || 0) - (e.welfare || 0) - (e.cfRec || 0) - (e.loanAdv || 0) - (e.cashPocket || 0) + (e.previousBalance || 0);
       e.payStatus = e.netPay > 0 ? 'Payable' : e.netPay < 0 ? 'Receivable' : '';

@@ -108,10 +108,34 @@ export default function ProducerOpenings() {
     label: `${f.farmerNumber} - ${f.personalDetails?.name || ''}`,
   }));
 
-  const handleFarmerSelect = (val) => {
+  const handleFarmerSelect = async (val) => {
     const farmer = farmers.find((f) => f._id === val);
     setSelectedFarmer(farmer || null);
     setField('farmerId', val);
+    if (!val) { setEditId(null); return; }
+
+    // Auto-fetch existing opening for this farmer and pre-fill the form
+    try {
+      const res = await producerOpeningAPI.getByFarmer(val);
+      const existing = res?.data;
+      if (existing) {
+        setEditId(existing._id);
+        setForm({
+          date:          existing.date ? new Date(existing.date) : null,
+          farmerId:      val,
+          dueAmount:     existing.dueAmount     ?? '',
+          cfAdvance:     existing.cfAdvance     ?? '',
+          loanAdvance:   existing.loanAdvance   ?? '',
+          cashAdvance:   existing.cashAdvance   ?? '',
+          revolvingFund: existing.revolvingFund ?? '',
+        });
+        notifications.show({ color: 'blue', title: 'Opening Loaded', message: 'Existing opening loaded — make changes and click Update', autoClose: 3000 });
+      } else {
+        // No existing opening — keep form fresh (only farmerId set)
+        setEditId(null);
+        setForm((prev) => ({ ...EMPTY_FORM, farmerId: val, date: prev.date }));
+      }
+    } catch { /* ignore — let user fill manually */ }
   };
 
   // ── Validation ─────────────────────────────────────────────────
@@ -153,7 +177,9 @@ export default function ProducerOpenings() {
       setForm(EMPTY_FORM);
       setSelectedFarmer(null);
       setEditId(null);
-      fetchRecords(page);
+      const goPage = editId ? page : 1;
+      setPage(goPage);
+      fetchRecords(goPage);
     } catch (err) {
       notifications.show({ color: 'red', title: 'Error', message: err.message || 'Failed to save' });
     } finally {
@@ -281,9 +307,9 @@ export default function ProducerOpenings() {
               <Title order={4} c="white" lh={1.2}>PRODUCER OPENINGS</Title>
               <Text size="xs" c="blue.1" mt={1}>Backup Details</Text>
             </Box>
-            {editId && (
-              <Badge color="yellow" variant="filled" size="sm" ml="auto">Editing Record</Badge>
-            )}
+            <Badge color={editId ? 'yellow' : 'teal'} variant="filled" size="sm" ml="auto">
+            {editId ? 'Editing — Click Update to Save' : 'New Record'}
+          </Badge>
           </Group>
         </Box>
 

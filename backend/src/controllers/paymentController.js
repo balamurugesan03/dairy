@@ -58,8 +58,10 @@ export const createFarmerPayment = async (req, res) => {
 
     // Auto-reduce advance/loan balances FIFO based on deduction types
     const advanceDeductionTypes = {
-      'CF Advance':   'CF Advance',
-      'Cash Advance': 'Cash Advance',
+      'CF Advance':    'CF Advance',
+      'Cash Advance':  'Cash Advance',
+      'CF Recovery':   'CF Advance',
+      'Cash Recovery': 'Cash Advance',
     };
 
     for (const deduction of (paymentData.deductions || [])) {
@@ -92,7 +94,7 @@ export const createFarmerPayment = async (req, res) => {
           await adv.save();
           remaining -= apply;
         }
-      } else if (deduction.type === 'Loan Advance') {
+      } else if (deduction.type === 'Loan Advance' || deduction.type === 'Loan Recovery') {
         // Reduce ProducerLoan records FIFO (oldest first)
         const loans = await ProducerLoan.find({
           farmerId: paymentData.farmerId,
@@ -114,25 +116,6 @@ export const createFarmerPayment = async (req, res) => {
       }
     }
 
-    // Also reduce ProducerOpening balances (primary source when no Advance records exist)
-    const openingDeductionMap = { 'CF Advance': 'cfAdvance', 'Cash Advance': 'cashAdvance', 'Loan Advance': 'loanAdvance' };
-    const openingUpdate = {};
-    for (const deduction of (paymentData.deductions || [])) {
-      const field = openingDeductionMap[deduction.type];
-      if (field && deduction.amount > 0) {
-        openingUpdate[field] = (openingUpdate[field] || 0) + deduction.amount;
-      }
-    }
-    if (Object.keys(openingUpdate).length > 0) {
-      const opening = await ProducerOpening.findOne({ farmerId: paymentData.farmerId });
-      if (opening) {
-        for (const [field, amount] of Object.entries(openingUpdate)) {
-          opening[field] = Math.max(0, (opening[field] || 0) - amount);
-        }
-        await opening.save();
-      }
-    }
-
     // Create accounting voucher
     if (paymentData.paidAmount > 0) {
       try {
@@ -151,7 +134,7 @@ export const createFarmerPayment = async (req, res) => {
     // Auto-create ProducerPayment so net pay appears in /payments/payment-to-producer
     try {
       const farmer = payment.farmerId; // already populated
-      await ProducerPayment.create({
+      const ppData = {
         companyId:         payment.companyId,
         farmerId:          farmer._id || payment.farmerId,
         amountPaid:        payment.netPayable,
@@ -167,7 +150,18 @@ export const createFarmerPayment = async (req, res) => {
         lastAbstractBalance:  payment.netPayable,
         remarks:              `Auto — ${payment.paymentNumber || ''}`,
         createdBy:            payment.createdBy,
-      });
+      };
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const pp = new ProducerPayment(ppData);
+          await pp.save();
+          break;
+        } catch (ppSaveErr) {
+          if (ppSaveErr.code === 11000 && ppSaveErr.keyPattern?.paymentNumber && attempt < 3) continue;
+          console.warn('ProducerPayment auto-create skipped:', ppSaveErr.message);
+          break;
+        }
+      }
     } catch (ppErr) {
       console.warn('ProducerPayment auto-create skipped:', ppErr.message);
     }
@@ -453,25 +447,6 @@ export const deletePayment = async (req, res) => {
       }
     }
 
-    // Restore ProducerOpening balances
-    const openingRestoreMap = { 'CF Advance': 'cfAdvance', 'Cash Advance': 'cashAdvance', 'Loan Advance': 'loanAdvance' };
-    const restoreUpdate = {};
-    for (const deduction of (payment.deductions || [])) {
-      const field = openingRestoreMap[deduction.type];
-      if (field && deduction.amount > 0) {
-        restoreUpdate[field] = (restoreUpdate[field] || 0) + deduction.amount;
-      }
-    }
-    if (Object.keys(restoreUpdate).length > 0) {
-      const opening = await ProducerOpening.findOne({ farmerId: payment.farmerId });
-      if (opening) {
-        for (const [field, amount] of Object.entries(restoreUpdate)) {
-          opening[field] = (opening[field] || 0) + amount;
-        }
-        await opening.save();
-      }
-    }
-
     await FarmerPayment.findByIdAndDelete(req.params.id);
     res.json({ success: true, message: 'Payment deleted successfully' });
   } catch (error) {
@@ -637,6 +612,8 @@ export const getAllAdvances = async (req, res) => {
       farmerId = '',
       status = '',
       advanceType = '',
+      advanceCategory = '',
+      search = '',
       fromDate = '',
       toDate = '',
       sortBy = 'advanceDate',
@@ -648,11 +625,24 @@ export const getAllAdvances = async (req, res) => {
     if (farmerId) query.farmerId = farmerId;
     if (status) query.status = status;
     if (advanceType) query.advanceType = advanceType;
+    if (advanceCategory) query.advanceCategory = advanceCategory;
 
     if (fromDate || toDate) {
       query.advanceDate = {};
       if (fromDate) query.advanceDate.$gte = new Date(fromDate);
       if (toDate) query.advanceDate.$lte = new Date(toDate);
+    }
+
+    // Search by farmer name or number — lookup Farmer collection first
+    if (search) {
+      const matchedFarmers = await Farmer.find({
+        companyId: req.userCompany,
+        $or: [
+          { farmerNumber:            { $regex: search, $options: 'i' } },
+          { 'personalDetails.name':  { $regex: search, $options: 'i' } },
+        ],
+      }).select('_id').lean();
+      query.farmerId = { $in: matchedFarmers.map(f => f._id) };
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -662,7 +652,7 @@ export const getAllAdvances = async (req, res) => {
       .sort(sortOptions)
       .skip(skip)
       .limit(parseInt(limit))
-      .populate('farmerId', 'farmerNumber personalDetails')
+      .populate('farmerId', 'farmerNumber personalDetails address')
       .populate('createdBy', 'name')
       .populate('approvedBy', 'name');
 
@@ -1030,6 +1020,119 @@ export const bulkCreatePayments = async (req, res) => {
   }
 };
 
+// ─── Cash Advance Summary (producer-wise report) ─────────────────────────────
+export const getCashAdvanceSummary = async (req, res) => {
+  try {
+    const { fromDate, toDate, farmerId } = req.query;
+    const companyId = req.userCompany;
+    const cObjId    = new mongoose.Types.ObjectId(companyId);
+    const r2 = (v) => Math.round((v || 0) * 100) / 100;
+
+    const start = fromDate ? new Date(fromDate) : new Date('2000-01-01');
+    const end   = toDate   ? new Date(toDate)   : new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const farmerObjId = farmerId ? new mongoose.Types.ObjectId(farmerId) : null;
+
+    // 1. Opening balances from ProducerOpening (cashAdvance field)
+    const openingFilter = { companyId: cObjId };
+    if (farmerObjId) openingFilter.farmerId = farmerObjId;
+    const openings = await ProducerOpening.find(openingFilter)
+      .populate('farmerId', 'farmerNumber personalDetails')
+      .lean();
+
+    // 2. Advances given in period (Cash Advance category)
+    const advMatchStage = {
+      companyId:       cObjId,
+      advanceCategory: 'Cash Advance',
+      advanceDate:     { $gte: start, $lte: end },
+      status:          { $ne: 'Cancelled' },
+    };
+    if (farmerObjId) advMatchStage.farmerId = farmerObjId;
+
+    const advancesAgg = await Advance.aggregate([
+      { $match: advMatchStage },
+      { $group: { _id: '$farmerId', totalAdvanced: { $sum: '$advanceAmount' } } },
+    ]);
+    const advancedMap = {};
+    advancesAgg.forEach(a => { advancedMap[a._id?.toString()] = r2(a.totalAdvanced); });
+
+    // 3. Recovery in period from FarmerPayment deductions (type = 'Cash Advance')
+    const pmtMatchStage = {
+      companyId:         cObjId,
+      paymentDate:       { $gte: start, $lte: end },
+      status:            { $ne: 'Cancelled' },
+      'deductions.type': 'Cash Advance',
+    };
+    if (farmerObjId) pmtMatchStage.farmerId = farmerObjId;
+
+    const recoveryAgg = await FarmerPayment.aggregate([
+      { $match: pmtMatchStage },
+      { $unwind: '$deductions' },
+      { $match: { 'deductions.type': 'Cash Advance' } },
+      { $group: { _id: '$farmerId', totalRecovery: { $sum: '$deductions.amount' } } },
+    ]);
+    const recoveryMap = {};
+    recoveryAgg.forEach(r => { recoveryMap[r._id?.toString()] = r2(r.totalRecovery); });
+
+    // 4. Build rows from openings
+    const rows = openings
+      .filter(o => o.farmerId)
+      .map((o, i) => {
+        const fid      = o.farmerId._id?.toString() || o.farmerId?.toString();
+        const opening  = r2(o.cashAdvance || 0);
+        const advanced = r2(advancedMap[fid] || 0);
+        const recovery = r2(recoveryMap[fid] || 0);
+        const balance  = r2(opening + advanced - recovery);
+        const farmer   = typeof o.farmerId === 'object' ? o.farmerId : {};
+        return {
+          slNo:         i + 1,
+          farmerId:     fid,
+          farmerNumber: farmer.farmerNumber || o.producerNumber || '',
+          farmerName:   farmer.personalDetails?.name || o.producerName || '',
+          opening,
+          advanced,
+          recovery,
+          balance,
+        };
+      })
+      .filter(r => r.opening !== 0 || r.advanced !== 0 || r.recovery !== 0);
+
+    // 5. Include farmers with advances but no opening record
+    const openingFarmerIds = new Set(rows.map(r => r.farmerId));
+    for (const [fid, advAmt] of Object.entries(advancedMap)) {
+      if (openingFarmerIds.has(fid)) continue;
+      const farmer = await Farmer.findById(fid).select('farmerNumber personalDetails').lean();
+      if (!farmer) continue;
+      const recovery = r2(recoveryMap[fid] || 0);
+      rows.push({
+        slNo:         rows.length + 1,
+        farmerId:     fid,
+        farmerNumber: farmer.farmerNumber || '',
+        farmerName:   farmer.personalDetails?.name || '',
+        opening:      0,
+        advanced:     advAmt,
+        recovery,
+        balance:      r2(advAmt - recovery),
+      });
+    }
+
+    rows.forEach((r, i) => { r.slNo = i + 1; });
+
+    const grandTotals = {
+      opening:  r2(rows.reduce((s, r) => s + r.opening,  0)),
+      advanced: r2(rows.reduce((s, r) => s + r.advanced, 0)),
+      recovery: r2(rows.reduce((s, r) => s + r.recovery, 0)),
+      balance:  r2(rows.reduce((s, r) => s + r.balance,  0)),
+    };
+
+    res.json({ success: true, data: { rows, grandTotals } });
+  } catch (err) {
+    console.error('getCashAdvanceSummary error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 export default {
   // Payment functions
   createFarmerPayment,
@@ -1048,5 +1151,6 @@ export default {
   updateAdvance,
   adjustAdvance,
   cancelAdvance,
-  getAdvanceStats
+  getAdvanceStats,
+  getCashAdvanceSummary
 };

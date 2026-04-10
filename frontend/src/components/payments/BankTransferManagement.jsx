@@ -69,6 +69,9 @@ const BankTransferManagement = () => {
   const [toDate,    setToDate]    = useState(null);
   const [applyDate, setApplyDate] = useState(new Date());
 
+  // safely convert dayjs or Date → ISO string
+  const toISO = (d) => { if (!d) return undefined; return (typeof d.toISOString === 'function') ? d.toISOString() : d.toDate ? d.toDate().toISOString() : new Date(d).toISOString(); };
+
   /* filters */
   const [collectionCenter, setCollectionCenter] = useState('all');
   const [bankFilter,       setBankFilter]       = useState('all');
@@ -168,8 +171,8 @@ const BankTransferManagement = () => {
     try {
       const res = await bankTransferAPI.retrieve({
         transferBasis:    'As on Date Balance',
-        asOnDate:         toDate.toISOString(),
-        applyDate:        applyDate.toISOString(),
+        asOnDate:         toISO(toDate),
+        applyDate:        toISO(applyDate),
         collectionCenter,
         bank:             bankFilter,
         roundDownAmount:  roundDown,
@@ -231,8 +234,8 @@ const BankTransferManagement = () => {
     try {
       const res = await bankTransferAPI.apply({
         transferBasis:         'As on Date Balance',
-        asOnDate:              toDate.toISOString(),
-        applyDate:             applyDate.toISOString(),
+        asOnDate:              toISO(toDate),
+        applyDate:             toISO(applyDate),
         collectionCenter,
         collectionCenterName:  centers.find(c => c.value === collectionCenter)?.label || 'All',
         bank:                  bankFilter,
@@ -265,8 +268,8 @@ const BankTransferManagement = () => {
         page:     logPage,
         limit:    10,
         status:   logFilters.status || undefined,
-        fromDate: logFilters.fromDate?.toISOString(),
-        toDate:   logFilters.toDate?.toISOString(),
+        fromDate: toISO(logFilters.fromDate),
+        toDate:   toISO(logFilters.toDate),
       });
       if (res?.success) {
         setLogs(res.data);

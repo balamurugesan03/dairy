@@ -1,606 +1,270 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { message } from '../../utils/toast';
-import { farmerAPI, advanceAPI, producerOpeningAPI } from '../../services/api';
-import { useAuth } from '../../context/AuthContext';
+import { useState, useEffect, useRef } from 'react';
+import { farmerAPI, advanceAPI } from '../../services/api';
 import {
-  Container,
-  Card,
-  Paper,
-  Title,
-  Text,
-  Group,
-  Stack,
-  Select,
-  NumberInput,
-  TextInput,
-  Textarea,
-  Button,
-  Grid,
-  Loader,
-  Box,
-  Divider,
-  Alert,
-  Table,
-  Badge,
-  ActionIcon,
-  Tooltip,
-  Pagination,
-  ThemeIcon,
+  Container, Paper, Group, Text, Title, Box, Badge,
+  Button, Select, ScrollArea, LoadingOverlay,
+  ActionIcon, Tooltip, Stack,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
+import { notifications } from '@mantine/notifications';
 import {
-  IconSearch,
-  IconCalendar,
-  IconCurrencyRupee,
-  IconPrinter,
-  IconDeviceFloppy,
-  IconAlertCircle,
-  IconRefresh,
-  IconCash,
-  IconX,
+  IconCalendar, IconSearch, IconRefresh,
+  IconPrinter, IconFileSpreadsheet, IconCheck,
 } from '@tabler/icons-react';
+import dayjs from 'dayjs';
+import { useReactToPrint } from 'react-to-print';
+import * as XLSX from 'xlsx';
 
-const PAGE_SIZE = 15;
+/* ─── Style constants (matches Cattle Feed Advance) ─── */
+const TH = (bg = '#0d3b6e') => ({
+  background: bg, color: '#fff', padding: '7px 8px',
+  textAlign: 'center', fontSize: 11, fontWeight: 700,
+  border: '1px solid #1a4a7c', whiteSpace: 'nowrap',
+  userSelect: 'none',
+});
+const TD = (extra = {}) => ({
+  border: '1px solid #dde', padding: '5px 8px',
+  fontSize: 11, verticalAlign: 'middle', ...extra,
+});
+const TD_NUM = (extra = {}) => ({
+  ...TD({ textAlign: 'right', fontVariantNumeric: 'tabular-nums', ...extra }),
+});
 
-const fmtAmt = (v) =>
-  v != null ? `₹ ${Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
+const fmt = (v) =>
+  (parseFloat(v) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const fmtDate = (d) =>
-  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
-
+/* ════════════════════════════════════════════════════════
+   COMPONENT
+════════════════════════════════════════════════════════ */
 const CashAdvanceVoucher = () => {
-  const { canWrite } = useAuth();
-  const printRef = useRef(null);
-  const [loading, setLoading] = useState(false);
-  const [farmers, setFarmers] = useState([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [selectedFarmer, setSelectedFarmer] = useState(null);
-  const [showPrintPreview, setShowPrintPreview] = useState(false);
-  const [savedVoucher, setSavedVoucher] = useState(null);
+  const printRef = useRef();
 
-  const [formData, setFormData] = useState({
-    farmerId: '',
-    advanceDate: new Date(),
-    advanceCategory: 'Cash Advance',
-    advanceAmount: '',
-    paymentMode: 'Cash',
-    purpose: '',
-    remarks: '',
+  const handlePrint = useReactToPrint({
+    content: () => printRef.current,
+    documentTitle: `Cash_Advance_${dayjs().format('DDMMYYYY')}`,
   });
 
-  const [balances, setBalances] = useState({
-    openingBalance: 0,
-    closingBalance: 0,
-  });
+  /* ── state ── */
+  const [fromDate,  setFromDate]  = useState(dayjs().startOf('month').toDate());
+  const [toDate,    setToDate]    = useState(dayjs().endOf('month').toDate());
+  const [farmers,   setFarmers]   = useState([]);
+  const [farmerId,  setFarmerId]  = useState(null);
+  const [loading,   setLoading]   = useState(false);
+  const [rows,      setRows]      = useState([]);
+  const [totals,    setTotals]    = useState(null);
 
-  // Grid state
-  const [advances, setAdvances]     = useState([]);
-  const [gridLoading, setGridLoading] = useState(false);
-  const [page, setPage]             = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalRecords, setTotalRecords] = useState(0);
-
-  // ── Fetch all advances for grid ──────────────────────────────────
-  const fetchAdvances = useCallback(async (pg = 1) => {
-    setGridLoading(true);
-    try {
-      const res = await advanceAPI.getAll({ page: pg, limit: PAGE_SIZE, advanceCategory: 'Cash Advance' });
-      setAdvances(res.data || res.advances || []);
-      setTotalPages(res.pagination?.pages || 1);
-      setTotalRecords(res.pagination?.total || 0);
-    } catch (err) {
-      console.error('Failed to load advances:', err);
-    } finally {
-      setGridLoading(false);
-    }
+  /* ── Load farmer list ── */
+  useEffect(() => {
+    farmerAPI.getAll({ status: 'Active', limit: 500 })
+      .then(res => {
+        const list = res?.data || [];
+        setFarmers(list.map(f => ({
+          value: f._id,
+          label: `${f.farmerNumber} — ${f.personalDetails?.name || ''}`,
+        })));
+      }).catch(() => {});
   }, []);
 
-  useEffect(() => { searchFarmers(''); }, []);
-  useEffect(() => { fetchAdvances(page); }, [page, fetchAdvances]);
-
-  // Recalculate closing balance whenever amount or opening balance changes
-  useEffect(() => {
-    const amt = parseFloat(formData.advanceAmount) || 0;
-    setBalances((prev) => ({ ...prev, closingBalance: prev.openingBalance + amt }));
-  }, [formData.advanceAmount, balances.openingBalance]);
-
-  const searchFarmers = async (query) => {
-    try {
-      setSearchLoading(true);
-      let response;
-      if (query && query.trim().length > 0) {
-        response = await farmerAPI.search(query.trim());
-      } else {
-        response = await farmerAPI.getAll({ status: 'Active', limit: 50 });
-      }
-      setFarmers(response.data || []);
-    } catch (error) {
-      console.error('Failed to search farmers:', error);
-    } finally {
-      setSearchLoading(false);
-    }
-  };
-
-  const handleFarmerSelect = async (farmerId) => {
-    const farmer = farmers.find((f) => f._id === farmerId);
-    setSelectedFarmer(farmer || null);
-    setFormData((prev) => ({ ...prev, farmerId: farmerId || '' }));
-
-    if (!farmerId) {
-      setBalances({ openingBalance: 0, closingBalance: 0 });
-      return;
-    }
-
-    // Opening balance = Producer Opening cfAdvance + sum of all previous advances for this farmer
-    try {
-      const [openingRes, advancesRes] = await Promise.all([
-        producerOpeningAPI.getByFarmer(farmerId).catch(() => null),
-        advanceAPI.getFarmerAdvances(farmerId, { limit: 1000 }).catch(() => null),
-      ]);
-
-      const cfAdvance = Number(openingRes?.data?.cashAdvance || openingRes?.cashAdvance) || 0;
-
-      const advancesList = advancesRes?.data || advancesRes?.advances || advancesRes || [];
-      const previousAdvancesTotal = Array.isArray(advancesList)
-        ? advancesList
-            .filter((a) => a.status !== 'Cancelled')
-            .reduce((sum, a) => sum + (Number(a.advanceAmount) || 0), 0)
-        : 0;
-
-      const opening = cfAdvance + previousAdvancesTotal;
-      const amt = parseFloat(formData.advanceAmount) || 0;
-      setBalances({ openingBalance: opening, closingBalance: opening + amt });
-    } catch (err) {
-      console.warn('Could not fetch opening balance:', err.message);
-      setBalances({ openingBalance: 0, closingBalance: parseFloat(formData.advanceAmount) || 0 });
-    }
-  };
-
-  const handleInputChange = (field, value) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const resetForm = () => {
-    setFormData({
-      farmerId: '',
-      advanceDate: new Date(),
-      advanceCategory: 'Cash Advance',
-      advanceAmount: '',
-      paymentMode: 'Cash',
-      purpose: '',
-      remarks: '',
-    });
-    setSelectedFarmer(null);
-    setBalances({ openingBalance: 0, closingBalance: 0 });
-    setSavedVoucher(null);
-    setShowPrintPreview(false);
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!formData.farmerId) {
-      message.error('Please select a farmer');
-      return;
-    }
-    if (!formData.advanceAmount || formData.advanceAmount <= 0) {
-      message.error('Please enter a valid amount');
-      return;
-    }
-
+  /* ── Generate Report ── */
+  const fetchReport = async () => {
     setLoading(true);
     try {
-      const payload = {
-        farmerId: formData.farmerId,
-        advanceDate: formData.advanceDate,
-        advanceType: 'Regular',
-        advanceCategory: formData.advanceCategory,
-        advanceAmount: parseFloat(formData.advanceAmount),
-        balanceAmount: parseFloat(formData.advanceAmount),
-        paymentMode: formData.paymentMode,
-        purpose: formData.purpose,
-        remarks: formData.remarks,
-      };
-
-      const response = await advanceAPI.create(payload);
-      message.success('Cash advance created successfully');
-
-      setSavedVoucher({
-        ...response.data,
-        farmer: selectedFarmer,
-        openingBalance: balances.openingBalance,
-        closingBalance: balances.closingBalance,
+      const res = await advanceAPI.getCashSummary({
+        fromDate: dayjs(fromDate).format('YYYY-MM-DD'),
+        toDate:   dayjs(toDate).format('YYYY-MM-DD'),
+        ...(farmerId ? { farmerId } : {}),
       });
-      setShowPrintPreview(true);
-      fetchAdvances(1);
-      setPage(1);
-    } catch (error) {
-      message.error(error.message || 'Failed to create advance');
+      if (!res.success) throw new Error(res.message || 'Failed');
+      setRows(res.data.rows || []);
+      setTotals(res.data.grandTotals || null);
+      notifications.show({
+        title: 'Loaded', color: 'teal', icon: <IconCheck size={14} />,
+        message: `${res.data.rows?.length || 0} producer(s) loaded`,
+      });
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message || 'Failed to load', color: 'red' });
     } finally {
       setLoading(false);
     }
   };
 
-  const handlePrint = () => {
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Cash Advance Voucher - ${savedVoucher?.advanceNumber}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; max-width: 400px; margin: 0 auto; }
-            .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 15px; }
-            .title { font-size: 18px; font-weight: bold; margin: 0; }
-            .subtitle { font-size: 14px; color: #666; margin: 5px 0 0 0; }
-            .voucher-no { font-size: 12px; margin-top: 5px; }
-            .row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px dotted #ccc; }
-            .label { color: #666; font-size: 12px; }
-            .value { font-weight: 500; }
-            .amount-section { background: #f5f5f5; padding: 10px; border-radius: 5px; margin: 15px 0; }
-            .amount-row { display: flex; justify-content: space-between; padding: 5px 0; }
-            .amount-row.total { font-size: 16px; font-weight: bold; border-top: 1px solid #333; margin-top: 5px; padding-top: 10px; }
-            .signatures { display: flex; justify-content: space-between; margin-top: 40px; }
-            .signature-box { text-align: center; width: 45%; }
-            .signature-line { border-top: 1px solid #333; margin-top: 30px; padding-top: 5px; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <p class="title">Dairy Society</p>
-            <p class="subtitle">Cash Advance Voucher</p>
-            <p class="voucher-no">No: ${savedVoucher?.advanceNumber}</p>
-          </div>
-          <div>
-            <div class="row"><span class="label">Date:</span><span class="value">${new Date(savedVoucher?.advanceDate).toLocaleDateString('en-IN')}</span></div>
-            <div class="row"><span class="label">Farmer ID:</span><span class="value">${savedVoucher?.farmer?.farmerNumber}</span></div>
-            <div class="row"><span class="label">Farmer Name:</span><span class="value">${savedVoucher?.farmer?.personalDetails?.name}</span></div>
-            <div class="row"><span class="label">Village:</span><span class="value">${savedVoucher?.farmer?.address?.village || '-'}</span></div>
-            <div class="row"><span class="label">Payment Mode:</span><span class="value">${savedVoucher?.paymentMode}</span></div>
-          </div>
-          <div class="amount-section">
-            <div class="amount-row"><span>Opening Balance:</span><span>₹${savedVoucher?.openingBalance?.toFixed(2)}</span></div>
-            <div class="amount-row"><span>Amount Paid:</span><span>₹${savedVoucher?.advanceAmount?.toFixed(2)}</span></div>
-            <div class="amount-row total"><span>Closing Balance:</span><span>₹${savedVoucher?.closingBalance?.toFixed(2)}</span></div>
-          </div>
-          ${savedVoucher?.purpose ? `<p><strong>Purpose:</strong> ${savedVoucher.purpose}</p>` : ''}
-          <div class="signatures">
-            <div class="signature-box"><div class="signature-line">Farmer Signature</div></div>
-            <div class="signature-box"><div class="signature-line">Authorized Signature</div></div>
-          </div>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+  /* ── Export ── */
+  const exportExcel = () => {
+    const data = rows.map(r => ({
+      'SN':                   r.slNo,
+      'Farmer ID':            r.farmerNumber,
+      'Farmer Name':          r.farmerName,
+      'Opening Balance (₹)':  r.opening,
+      'Advances Given (₹)':   r.advanced,
+      'Recovery (₹)':         r.recovery,
+      'Balance (₹)':          r.balance,
+    }));
+    if (totals) {
+      data.push({
+        'SN': '', 'Farmer ID': '', 'Farmer Name': 'TOTAL',
+        'Opening Balance (₹)':  totals.opening,
+        'Advances Given (₹)':   totals.advanced,
+        'Recovery (₹)':         totals.recovery,
+        'Balance (₹)':          totals.balance,
+      });
+    }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Cash Advance');
+    XLSX.writeFile(wb, `Cash_Advance_${dayjs(fromDate).format('MMYYYY')}.xlsx`);
   };
 
-  const farmerOptions = farmers.map((f) => ({
-    value: f._id,
-    label: `${f.farmerNumber} - ${f.personalDetails?.name} (${f.personalDetails?.phone || 'No phone'})`,
-  }));
-
-  const advanceCategoryOptions = [
-    { value: 'Cash Advance', label: 'Cash Advance' },
-    { value: 'CF Advance', label: 'CF Advance (Cattle Feed)' },
-    { value: 'Loan Advance', label: 'Loan Advance' },
-  ];
-
-  const paymentModeOptions = [
-    { value: 'Cash', label: 'Cash' },
-    { value: 'Bank', label: 'Bank Transfer' },
-    { value: 'UPI', label: 'UPI' },
-  ];
-
-  const formatCurrency = (amount) =>
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(amount || 0);
-
-  // ── Grid rows ────────────────────────────────────────────────────
-  const gridRows = advances.map((adv, i) => (
-    <Table.Tr key={adv._id}>
-      <Table.Td c="dimmed" fz="xs">{(page - 1) * PAGE_SIZE + i + 1}</Table.Td>
-      <Table.Td fz="sm">{fmtDate(adv.advanceDate)}</Table.Td>
-      <Table.Td fz="sm" fw={600} c="blue.8">{adv.farmerNumber || adv.farmerId?.farmerNumber || '—'}</Table.Td>
-      <Table.Td fz="sm">{adv.farmerName || adv.farmerId?.personalDetails?.name || '—'}</Table.Td>
-      <Table.Td fz="sm">
-        <Badge size="xs" variant="light" color={adv.advanceCategory === 'CF Advance' ? 'teal' : adv.advanceCategory === 'Loan Advance' ? 'orange' : 'blue'}>
-          {adv.advanceCategory}
-        </Badge>
-      </Table.Td>
-      <Table.Td fz="sm" ta="right" fw={600} c="blue.7">{fmtAmt(adv.advanceAmount)}</Table.Td>
-      <Table.Td fz="sm" ta="right" c="orange.7">{fmtAmt(adv.balanceAmount)}</Table.Td>
-      <Table.Td fz="sm">{adv.paymentMode || '—'}</Table.Td>
-      <Table.Td fz="sm">
-        <Badge size="xs" color={adv.status === 'Active' ? 'green' : adv.status === 'Cancelled' ? 'red' : 'gray'} variant="light">
-          {adv.status || 'Active'}
-        </Badge>
-      </Table.Td>
-    </Table.Tr>
-  ));
-
+  /* ─────────────────────────── RENDER ─────────────────────────── */
   return (
-    <Container size="xl" py="md">
-      <Stack gap="lg">
+    <Container fluid px="md" py="sm">
 
-        {/* ── Entry Form + Balance Summary ── */}
-        <Grid>
-          <Grid.Col span={{ base: 12, md: 8 }}>
-            <Card withBorder shadow="sm" radius="md" p="lg">
-              {showPrintPreview && savedVoucher ? (
-                <Stack>
-                  <Alert color="green" title="Voucher Created Successfully" icon={<IconAlertCircle />}>
-                    Advance voucher <strong>{savedVoucher.advanceNumber}</strong> has been created.
-                  </Alert>
+      <Box mb="sm">
+        <Title order={3} fw={700} c="#0d3b6e">Cash Advance</Title>
+        <Text c="dimmed" size="sm">
+          Producer-wise Cash Advance report — Opening, Advances Given, Recovery &amp; Balance
+        </Text>
+      </Box>
 
-                  <Paper ref={printRef} withBorder p="lg" radius="md">
-                    <Stack gap="md">
-                      <Box ta="center">
-                        <Title order={3}>Dairy Society</Title>
-                        <Text c="dimmed">Cash Advance Voucher</Text>
-                        <Text fw={500}>No: {savedVoucher.advanceNumber}</Text>
-                      </Box>
-                      <Divider />
-                      <Grid>
-                        <Grid.Col span={6}>
-                          <Text size="sm" c="dimmed">Date</Text>
-                          <Text fw={500}>{new Date(savedVoucher.advanceDate).toLocaleDateString('en-IN')}</Text>
-                        </Grid.Col>
-                        <Grid.Col span={6}>
-                          <Text size="sm" c="dimmed">Farmer ID</Text>
-                          <Text fw={500}>{savedVoucher.farmer?.farmerNumber}</Text>
-                        </Grid.Col>
-                        <Grid.Col span={6}>
-                          <Text size="sm" c="dimmed">Farmer Name</Text>
-                          <Text fw={500}>{savedVoucher.farmer?.personalDetails?.name}</Text>
-                        </Grid.Col>
-                        <Grid.Col span={6}>
-                          <Text size="sm" c="dimmed">Village</Text>
-                          <Text fw={500}>{savedVoucher.farmer?.address?.village || '-'}</Text>
-                        </Grid.Col>
-                      </Grid>
-                      <Paper withBorder p="md" radius="md" bg="gray.0">
-                        <Stack gap="xs">
-                          <Group justify="space-between">
-                            <Text>Opening Balance:</Text>
-                            <Text fw={500}>{formatCurrency(savedVoucher.openingBalance)}</Text>
-                          </Group>
-                          <Group justify="space-between">
-                            <Text>Amount Paid:</Text>
-                            <Text fw={600} c="blue">{formatCurrency(savedVoucher.advanceAmount)}</Text>
-                          </Group>
-                          <Divider />
-                          <Group justify="space-between">
-                            <Text fw={600}>Closing Balance:</Text>
-                            <Text fw={700} c="orange" size="lg">{formatCurrency(savedVoucher.closingBalance)}</Text>
-                          </Group>
-                        </Stack>
-                      </Paper>
-                      {savedVoucher.purpose && (
-                        <Box>
-                          <Text size="sm" c="dimmed">Purpose</Text>
-                          <Text>{savedVoucher.purpose}</Text>
-                        </Box>
-                      )}
-                    </Stack>
-                  </Paper>
+      {/* ── Toolbar ── */}
+      <Paper withBorder shadow="xs" p="sm" radius="md" mb="md">
+        <Group wrap="wrap" gap="sm" align="flex-end">
+          <DatePickerInput
+            label="From Date" value={fromDate} onChange={setFromDate}
+            leftSection={<IconCalendar size={15} />} valueFormat="DD/MM/YYYY"
+            style={{ minWidth: 140 }} size="sm"
+          />
+          <DatePickerInput
+            label="To Date" value={toDate} onChange={setToDate}
+            leftSection={<IconCalendar size={15} />} valueFormat="DD/MM/YYYY"
+            minDate={fromDate} style={{ minWidth: 140 }} size="sm"
+          />
+          <Select
+            label="Producer (optional)"
+            placeholder="All producers"
+            data={farmers}
+            value={farmerId}
+            onChange={setFarmerId}
+            searchable clearable
+            style={{ minWidth: 260 }} size="sm"
+          />
 
-                  <Group justify="center" mt="md">
-                    <Button variant="light" onClick={resetForm}>New Voucher</Button>
-                    <Button leftSection={<IconPrinter size={16} />} onClick={handlePrint}>Print Voucher</Button>
-                  </Group>
-                </Stack>
-              ) : (
-                <form onSubmit={handleSubmit}>
-                  <Stack gap="md">
-                    <Grid>
-                      <Grid.Col span={6}>
-                        <DatePickerInput
-                          label="Date"
-                          placeholder="Select date"
-                          value={formData.advanceDate}
-                          onChange={(value) => handleInputChange('advanceDate', value)}
-                          leftSection={<IconCalendar size={16} />}
-                          required
-                          clearable={false}
-                        />
-                      </Grid.Col>
-                      <Grid.Col span={6}>
-                        <Select
-                          label="Advance Type"
-                          value={formData.advanceCategory}
-                          onChange={(value) => handleInputChange('advanceCategory', value)}
-                          data={advanceCategoryOptions}
-                          required
-                        />
-                      </Grid.Col>
-                    </Grid>
+          <Box style={{ flex: 1 }} />
 
-                    <Select
-                      label="Select Farmer"
-                      placeholder="Search by farmer number, name, or phone"
-                      value={formData.farmerId}
-                      onChange={handleFarmerSelect}
-                      data={farmerOptions}
-                      searchable
-                      clearable
-                      onSearchChange={searchFarmers}
-                      nothingFoundMessage={searchLoading ? 'Searching...' : 'No farmers found'}
-                      required
-                      leftSection={<IconSearch size={16} />}
-                      rightSection={searchLoading ? <Loader size="xs" /> : null}
-                    />
+          <Button
+            leftSection={<IconSearch size={15} />} size="sm"
+            onClick={fetchReport} loading={loading} color="blue"
+          >
+            Generate
+          </Button>
+          <Button
+            leftSection={<IconFileSpreadsheet size={15} />} size="sm"
+            variant="light" color="teal"
+            onClick={exportExcel} disabled={rows.length === 0}
+          >
+            Export Excel
+          </Button>
+          <Button
+            leftSection={<IconPrinter size={15} />} size="sm"
+            variant="outline"
+            onClick={handlePrint} disabled={rows.length === 0}
+          >
+            Print
+          </Button>
+          <Tooltip label="Clear">
+            <ActionIcon variant="subtle" color="gray" size="lg"
+              onClick={() => { setRows([]); setTotals(null); }}>
+              <IconRefresh size={16} />
+            </ActionIcon>
+          </Tooltip>
+        </Group>
+      </Paper>
 
-                    {selectedFarmer && (
-                      <Paper withBorder p="sm" radius="md" bg="gray.0">
-                        <Grid>
-                          <Grid.Col span={4}>
-                            <Text size="xs" fw={500} c="dimmed">Farmer Name</Text>
-                            <Text size="sm" fw={600}>{selectedFarmer.personalDetails?.name}</Text>
-                          </Grid.Col>
-                          <Grid.Col span={4}>
-                            <Text size="xs" fw={500} c="dimmed">Farmer Code</Text>
-                            <Text size="sm" fw={600}>{selectedFarmer.farmerNumber}</Text>
-                          </Grid.Col>
-                          <Grid.Col span={4}>
-                            <Text size="xs" fw={500} c="dimmed">Village</Text>
-                            <Text size="sm">{selectedFarmer.address?.village || '-'}</Text>
-                          </Grid.Col>
-                        </Grid>
-                      </Paper>
-                    )}
+      {/* ── Report Table ── */}
+      <Paper withBorder shadow="sm" radius="md" style={{ position: 'relative', overflow: 'hidden' }}>
+        <LoadingOverlay visible={loading} />
 
-                    <Grid>
-                      <Grid.Col span={6}>
-                        <NumberInput
-                          label="Amount"
-                          value={formData.advanceAmount}
-                          onChange={(value) => handleInputChange('advanceAmount', value)}
-                          placeholder="Enter amount"
-                          min={1}
-                          required
-                          leftSection={<IconCurrencyRupee size={16} />}
-                          thousandSeparator=","
-                        />
-                      </Grid.Col>
-                      <Grid.Col span={6}>
-                        <Select
-                          label="Payment Mode"
-                          value={formData.paymentMode}
-                          onChange={(value) => handleInputChange('paymentMode', value)}
-                          data={paymentModeOptions}
-                          required
-                        />
-                      </Grid.Col>
-                    </Grid>
-
-                    <TextInput
-                      label="Purpose"
-                      value={formData.purpose}
-                      onChange={(e) => handleInputChange('purpose', e.target.value)}
-                      placeholder="Purpose of advance"
-                    />
-
-                    <Textarea
-                      label="Remarks"
-                      value={formData.remarks}
-                      onChange={(e) => handleInputChange('remarks', e.target.value)}
-                      placeholder="Additional notes"
-                      rows={2}
-                    />
-
-                    <Group justify="flex-end" mt="md">
-                      <Button variant="light" onClick={resetForm}>Clear</Button>
-                      <Button
-                        type="submit"
-                        leftSection={<IconDeviceFloppy size={16} />}
-                        loading={loading}
-                        disabled={!formData.farmerId || !formData.advanceAmount || !canWrite('payments')}
-                      >
-                        Save & Print
-                      </Button>
-                    </Group>
-                  </Stack>
-                </form>
-              )}
-            </Card>
-          </Grid.Col>
-
-          {/* Balance Summary */}
-          <Grid.Col span={{ base: 12, md: 4 }}>
-            <Card withBorder shadow="sm" radius="md" p="lg">
-              <Title order={4} mb="md">Balance Summary</Title>
-              <Stack gap="md">
-                <Paper withBorder p="md" radius="md">
-                  <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Opening Balance (Cash Advance)</Text>
-                  <Text size="xl" fw={600} c={balances.openingBalance > 0 ? 'red' : 'green'}>
-                    {formatCurrency(balances.openingBalance)}
-                  </Text>
-                </Paper>
-                <Paper withBorder p="md" radius="md" bg="blue.0">
-                  <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Amount Paid</Text>
-                  <Text size="xl" fw={700} c="blue">{formatCurrency(formData.advanceAmount || 0)}</Text>
-                </Paper>
-                <Paper withBorder p="md" radius="md" bg="orange.0">
-                  <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Closing Balance (Due)</Text>
-                  <Text size="xl" fw={700} c="orange">{formatCurrency(balances.closingBalance)}</Text>
-                </Paper>
-              </Stack>
-              {balances.closingBalance > 0 && (
-                <Alert color="yellow" mt="md" icon={<IconAlertCircle />}>
-                  <Text size="sm">Farmer will owe {formatCurrency(balances.closingBalance)} after this advance.</Text>
-                </Alert>
-              )}
-            </Card>
-          </Grid.Col>
-        </Grid>
-
-        {/* ── Grid ── */}
-        <Paper shadow="sm" radius="md" withBorder style={{ overflow: 'hidden' }}>
-          <Box px="md" py="sm" style={{ background: '#f1f3f5', borderBottom: '2px solid #dee2e6' }}>
-            <Group justify="space-between" align="center">
-              <Group gap="xs">
-                <ThemeIcon size={28} radius="sm" color="blue" variant="light">
-                  <IconCash size={16} />
-                </ThemeIcon>
-                <Text fw={700} size="sm" c="dark.6">Advance Entries</Text>
-                <Badge color="blue" variant="light" size="sm" radius="sm">
-                  {totalRecords} {totalRecords === 1 ? 'record' : 'records'}
-                </Badge>
-              </Group>
-              <Tooltip label="Refresh">
-                <ActionIcon variant="light" color="blue" size="lg" loading={gridLoading} onClick={() => fetchAdvances(page)}>
-                  <IconRefresh size={16} />
-                </ActionIcon>
-              </Tooltip>
+        {/* Header bar */}
+        <Box px="sm" py="xs" style={{ background: '#0d3b6e', borderRadius: '8px 8px 0 0' }}>
+          <Group justify="space-between" align="center">
+            <Group gap="xs">
+              <Text fw={700} size="sm" c="white">Cash Advance Report</Text>
+              <Badge color="white" c="#0d3b6e" variant="filled" size="sm" radius="sm">
+                {rows.length} Producers
+              </Badge>
             </Group>
-          </Box>
+            <Text size="xs" c="white" opacity={0.8}>
+              {dayjs(fromDate).format('DD MMM YYYY')} – {dayjs(toDate).format('DD MMM YYYY')}
+            </Text>
+          </Group>
+        </Box>
 
-          <Box style={{ overflowX: 'auto' }}>
-            <Table striped highlightOnHover withTableBorder withColumnBorders fz="sm">
-              <Table.Thead>
-                <Table.Tr style={{ background: '#f8f9fa' }}>
-                  <Table.Th w={50} fz="xs">Sl.</Table.Th>
-                  <Table.Th w={110} fz="xs">Date</Table.Th>
-                  <Table.Th w={110} fz="xs">Farmer ID</Table.Th>
-                  <Table.Th fz="xs">Farmer Name</Table.Th>
-                  <Table.Th w={130} fz="xs">Type</Table.Th>
-                  <Table.Th w={120} fz="xs" ta="right">Amount</Table.Th>
-                  <Table.Th w={120} fz="xs" ta="right">Balance</Table.Th>
-                  <Table.Th w={100} fz="xs">Mode</Table.Th>
-                  <Table.Th w={90} fz="xs">Status</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {gridLoading ? (
-                  <Table.Tr>
-                    <Table.Td colSpan={9} ta="center" py="xl">
-                      <Loader size="sm" />
-                    </Table.Td>
-                  </Table.Tr>
-                ) : advances.length === 0 ? (
-                  <Table.Tr>
-                    <Table.Td colSpan={9} ta="center" py="xl" c="dimmed">
+        <div id="cash-advance-print" ref={printRef}>
+          <ScrollArea type="hover" scrollbarSize={6}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 780 }}>
+              <colgroup>
+                <col style={{ width: 46 }} />
+                <col style={{ width: 100 }} />
+                <col />
+                <col style={{ width: 140 }} />
+                <col style={{ width: 140 }} />
+                <col style={{ width: 140 }} />
+                <col style={{ width: 140 }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th style={TH()}>SN</th>
+                  <th style={{ ...TH(), textAlign: 'left' }}>Farmer ID</th>
+                  <th style={{ ...TH(), textAlign: 'left' }}>Farmer Name</th>
+                  <th style={TH('#174a7c')}>Opening Balance</th>
+                  <th style={TH('#155724')}>Advances Given</th>
+                  <th style={TH('#6e2c00')}>Recovery</th>
+                  <th style={TH('#0e5e3f')}>Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={TD({ textAlign: 'center', padding: '32px', color: '#999' })}>
                       <Stack align="center" gap={4}>
-                        <IconCash size={28} opacity={0.3} />
-                        <Text size="sm">No advance entries yet.</Text>
+                        <Text size="sm">Select date range and click Generate to load report</Text>
                       </Stack>
-                    </Table.Td>
-                  </Table.Tr>
+                    </td>
+                  </tr>
                 ) : (
-                  gridRows
+                  rows.map((row, idx) => {
+                    const rowBg  = idx % 2 === 0 ? '#fff' : '#f5f9ff';
+                    const balClr = row.balance > 0 ? '#721c24' : row.balance < 0 ? '#276749' : '#555';
+                    return (
+                      <tr key={row.farmerId} style={{ background: rowBg }}>
+                        <td style={TD({ textAlign: 'center', color: '#666' })}>{row.slNo}</td>
+                        <td style={TD({ fontWeight: 600, color: '#0d3b6e' })}>{row.farmerNumber}</td>
+                        <td style={TD({ fontWeight: 600 })}>{row.farmerName}</td>
+                        <td style={TD_NUM({ color: '#2b6cb0' })}>₹ {fmt(row.opening)}</td>
+                        <td style={TD_NUM({ color: '#276749' })}>₹ {fmt(row.advanced)}</td>
+                        <td style={TD_NUM({ color: '#7b341e' })}>₹ {fmt(row.recovery)}</td>
+                        <td style={TD_NUM({ fontWeight: 700, color: balClr })}>₹ {fmt(row.balance)}</td>
+                      </tr>
+                    );
+                  })
                 )}
-              </Table.Tbody>
-            </Table>
-          </Box>
 
-          {totalPages > 1 && (
-            <Group justify="center" py="sm" style={{ borderTop: '1px solid #dee2e6' }}>
-              <Pagination total={totalPages} value={page} onChange={setPage} color="blue" radius="md" size="sm" />
-            </Group>
-          )}
-        </Paper>
+                {/* Total row */}
+                {totals && (
+                  <tr style={{ borderTop: '2px solid #0d3b6e', background: '#edf2f7' }}>
+                    <td colSpan={3} style={TD({ fontWeight: 700, textAlign: 'center', background: '#2d3748', color: '#fff', letterSpacing: 1 })}>
+                      TOTAL
+                    </td>
+                    <td style={TD_NUM({ fontWeight: 700, color: '#2b6cb0', background: '#ebf8ff' })}>₹ {fmt(totals.opening)}</td>
+                    <td style={TD_NUM({ fontWeight: 700, color: '#276749', background: '#f0fff4' })}>₹ {fmt(totals.advanced)}</td>
+                    <td style={TD_NUM({ fontWeight: 700, color: '#7b341e', background: '#fff5eb' })}>₹ {fmt(totals.recovery)}</td>
+                    <td style={TD_NUM({ fontWeight: 700, background: '#b2f5ea' })}>₹ {fmt(totals.balance)}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </ScrollArea>
+        </div>
+      </Paper>
 
-      </Stack>
     </Container>
   );
 };

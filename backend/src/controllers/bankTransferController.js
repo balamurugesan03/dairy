@@ -58,13 +58,13 @@ export const retrieveBalances = async (req, res) => {
           {
             $group: {
               _id: null,
-              totalBalance: { $sum: '$balanceAmount' }
+              totalNetPayable: { $sum: '$netPayable' }
             }
           }
         ]);
 
-        const payment = paymentAgg[0] || { totalBalance: 0 };
-        netPayable = payment.totalBalance || 0;
+        const payment = paymentAgg[0] || { totalNetPayable: 0 };
+        netPayable = payment.totalNetPayable || 0;
       } else {
         // Last processed period - get from last period with a balance
         const lastPeriod = await FarmerPayment.findOne({
@@ -74,7 +74,7 @@ export const retrieveBalances = async (req, res) => {
         }).sort({ paymentDate: -1 });
 
         if (lastPeriod) {
-          netPayable = lastPeriod.balanceAmount || 0;
+          netPayable = lastPeriod.netPayable || 0;
         }
       }
 
@@ -532,6 +532,69 @@ export const getCollectionCenters = async (req, res) => {
       success: false,
       message: error.message || 'Error fetching collection centers'
     });
+  }
+};
+
+// Create BankTransfer record from Register-Ledger payments (Bank payMode rows)
+export const createFromLedger = async (req, res) => {
+  try {
+    const { farmers, applyDate, fromDate, toDate, remarks } = req.body;
+    const companyId = req.userCompany;
+
+    if (!farmers || farmers.length === 0) {
+      return res.status(400).json({ success: false, message: 'No farmers provided' });
+    }
+
+    // Fetch bank details for each farmer from DB
+    const farmerIds = farmers.map(f => f.farmerId);
+    const farmerDocs = await Farmer.find({ _id: { $in: farmerIds } })
+      .select('farmerNumber personalDetails bankDetails')
+      .lean();
+    const farmerMap = {};
+    farmerDocs.forEach(f => { farmerMap[f._id.toString()] = f; });
+
+    const transferDetails = farmers.map(f => {
+      const doc = farmerMap[f.farmerId?.toString()] || {};
+      const bd  = doc.bankDetails || {};
+      return {
+        farmerId:       f.farmerId,
+        producerId:     f.farmerNumber || doc.farmerNumber || '',
+        producerName:   f.farmerName   || doc.personalDetails?.name || '',
+        netPayable:     f.netPayable   || f.paidAmount || 0,
+        transferAmount: f.paidAmount   || 0,
+        approved:       true,
+        bankDetails: {
+          accountNumber: bd.accountNumber || '-',
+          bankName:      bd.bankName      || '-',
+          ifscCode:      bd.ifsc || bd.ifscCode || '-',
+          bankCode:      bd.branchCode    || '-',
+        },
+        transferStatus: 'Pending',
+      };
+    });
+
+    const bankTransfer = new BankTransfer({
+      companyId,
+      transferBasis:        'Register Ledger',
+      asOnDate:             toDate   ? new Date(toDate)   : new Date(),
+      applyDate:            applyDate ? new Date(applyDate) : new Date(),
+      collectionCenterName: 'All',
+      bankName:             'All',
+      roundDownAmount:      1,
+      dueByList:            false,
+      transferDetails,
+      status:               'Applied',
+      appliedAt:            new Date(),
+      createdBy:            req.user?._id,
+      appliedBy:            req.user?._id,
+      remarks:              remarks || `Register Ledger — ${fromDate ? new Date(fromDate).toLocaleDateString('en-IN') : ''} to ${toDate ? new Date(toDate).toLocaleDateString('en-IN') : ''}`,
+    });
+
+    await bankTransfer.save();
+    res.json({ success: true, data: bankTransfer });
+  } catch (error) {
+    console.error('Error creating bank transfer from ledger:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error creating bank transfer' });
   }
 };
 

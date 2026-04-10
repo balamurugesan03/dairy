@@ -222,7 +222,8 @@ export const advanceAPI = {
   cancel: (id, cancellationReason) => api.post(`/advances/${id}/cancel`, { cancellationReason }).then(res => res.data).catch(handleError),
   getFarmerAdvances: (farmerId, params) => api.get(`/advances/farmer/${farmerId}`, { params }).then(res => res.data).catch(handleError),
   adjust: (id, data) => api.post(`/advances/${id}/adjust`, data).then(res => res.data).catch(handleError),
-  getStats: (params) => api.get('/advances/stats', { params }).then(res => res.data).catch(handleError)
+  getStats: (params) => api.get('/advances/stats', { params }).then(res => res.data).catch(handleError),
+  getCashSummary: (params) => api.get('/advances/cash-summary', { params }).then(res => res.data).catch(handleError)
 };
 
 // REPORTS APIs
@@ -562,7 +563,8 @@ export const bankTransferAPI = {
   cancel: (id) => api.post(`/bank-transfers/${id}/cancel`).then(res => res.data).catch(handleError),
   complete: (id) => api.post(`/bank-transfers/${id}/complete`).then(res => res.data).catch(handleError),
   getCollectionCenters: () => api.get('/bank-transfers/collection-centers').then(res => res.data).catch(handleError),
-  getBanks: () => api.get('/bank-transfers/banks').then(res => res.data).catch(handleError)
+  getBanks: () => api.get('/bank-transfers/banks').then(res => res.data).catch(handleError),
+  createFromLedger: (data) => api.post('/bank-transfers/from-ledger', data).then(res => res.data).catch(handleError),
 };
 
 // BUSINESS ITEM APIs
