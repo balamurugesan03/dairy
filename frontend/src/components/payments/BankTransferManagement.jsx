@@ -85,8 +85,10 @@ const BankTransferManagement = () => {
   const [dataLoaded, setDataLoaded] = useState(false);
 
   /* dropdown options */
-  const [centers, setCenters] = useState([]);
-  const [banks,   setBanks]   = useState([]);
+  const [centers,        setCenters]        = useState([]);
+  const [banks,          setBanks]          = useState([]);
+  const [pendingPeriods, setPendingPeriods] = useState([]);
+  const [selectedPeriod, setSelectedPeriod] = useState(null);
 
   /* log tab */
   const [logs,       setLogs]       = useState([]);
@@ -108,6 +110,11 @@ const BankTransferManagement = () => {
     setToDate(t);
     loadDropdowns();
   }, []);
+
+  // reload pending periods whenever transfer tab is opened
+  useEffect(() => {
+    if (activeTab === 'transfer') loadPendingPeriods();
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab === 'log') loadLogs();
@@ -135,9 +142,37 @@ const BankTransferManagement = () => {
 
   const clearData = () => { setRows([]); setDataLoaded(false); };
 
+  // ── select a pending period from dropdown → auto-set dates ───────────────
+  const selectPeriod = (val) => {
+    setSelectedPeriod(val);
+    if (!val) return;
+    const p = pendingPeriods.find(
+      (x) => `${x.fromDate}|${x.toDate}` === val
+    );
+    if (!p) return;
+    const f = new Date(p.fromDate);
+    const t = new Date(p.toDate);
+    setFromDate(f);
+    setToDate(t);
+    setApplyDate(new Date());
+    clearData();
+  };
+
   const periodLabel = fromDate && toDate
     ? `${dayjs(fromDate).format('DD/MM/YY')} – ${dayjs(toDate).format('DD/MM/YY')}`
     : '';
+
+  // ── load pending periods from register-ledger ─────────────────────────────
+  const loadPendingPeriods = async () => {
+    try {
+      const res = await bankTransferAPI.getPendingPeriods();
+      if (res?.success && res.data?.length > 0) {
+        setPendingPeriods(res.data);
+      } else {
+        setPendingPeriods([]);
+      }
+    } catch { /* silent */ }
+  };
 
   // ── load dropdowns ────────────────────────────────────────────────────────
   const loadDropdowns = async () => {
@@ -335,6 +370,29 @@ const BankTransferManagement = () => {
               {/* Filter Card */}
               <Card withBorder p="md">
                 <Stack gap="sm">
+
+                  {/* Pending period dropdown from register-ledger */}
+                  {pendingPeriods.length > 0 && (
+                    <Group gap="xs" align="flex-end" wrap="wrap">
+                      <Select
+                        label="Pending Period (from Register-Ledger)"
+                        placeholder="Select cycle period…"
+                        value={selectedPeriod}
+                        onChange={selectPeriod}
+                        data={pendingPeriods.map(p => ({
+                          value: `${p.fromDate}|${p.toDate}`,
+                          label: `${dayjs(p.fromDate).format('DD/MM/YYYY')} – ${dayjs(p.toDate).format('DD/MM/YYYY')}  (${p.count} producers · ₹${(p.totalAmt || 0).toFixed(0)})`,
+                        }))}
+                        clearable
+                        style={{ minWidth: 380 }}
+                        size="sm"
+                      />
+                      <Badge color="orange" variant="light" size="lg" style={{ marginBottom: 4 }}>
+                        {pendingPeriods.length} pending cycle{pendingPeriods.length > 1 ? 's' : ''}
+                      </Badge>
+                    </Group>
+                  )}
+
                   {/* Cycle buttons + period nav */}
                   <Group gap="xs" wrap="wrap" align="center">
                     <Text size="sm" fw={500} c="dimmed">Cycle:</Text>

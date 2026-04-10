@@ -10,6 +10,7 @@ import {
   deletePayment,
   getPaymentStats,
   bulkCreatePayments,
+  getLatestPaymentPeriod,
   // Advance functions
   createAdvance,
   getAllAdvances,
@@ -44,6 +45,9 @@ router.get('/farmer-payments', getAllPayments);
 
 // Get payment statistics
 router.get('/farmer-payments/stats', getPaymentStats);
+
+// Get latest applied payment period toDate (for register-ledger next-cycle auto-advance)
+router.get('/farmer-payments/latest-period', getLatestPaymentPeriod);
 
 // ==================== FARMER LEDGER ROUTES (must be before :farmerId and :id routes) ====================
 

@@ -8,7 +8,8 @@ import {
   cancelBankTransfer,
   completeTransfer,
   getCollectionCenters,
-  getBanks
+  getBanks,
+  getPendingPeriods,
 } from '../controllers/bankTransferController.js';
 
 const router = express.Router();
@@ -28,6 +29,7 @@ router.get('/bank-transfers', getAllBankTransfers);
 // Get dropdown data
 router.get('/bank-transfers/collection-centers', getCollectionCenters);
 router.get('/bank-transfers/banks', getBanks);
+router.get('/bank-transfers/pending-periods', getPendingPeriods);
 
 // Get single bank transfer by ID
 router.get('/bank-transfers/:id', getBankTransferById);

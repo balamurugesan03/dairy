@@ -8,7 +8,7 @@ import { DateInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import {
   IconCalendar, IconPrinter, IconRefresh, IconFileSpreadsheet,
-  IconDownload, IconCheck, IconDeviceFloppy,
+  IconDownload, IconCheck, IconDeviceFloppy, IconBuildingBank,
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { useReactToPrint } from 'react-to-print';
@@ -44,6 +44,7 @@ const initRow = (sn) => ({
   paidAmount:    '',
   signature:     '',
   paid:          false,
+  bankPending:   false, // true = queued for bank transfer (no paidAmount entered)
 });
 
 /* ─── helpers ─── */
@@ -177,29 +178,40 @@ const PaymentRegisterLedger = () => {
     return recalc({ ...row, ...prev });
   };
 
-  /* ─── Load settings on mount → set dates only, no auto-load ─── */
+  /* ─── Load settings on mount → auto-advance to next unpaid cycle ─── */
   useEffect(() => {
-    Promise.all([dairySettingsAPI.get(), milkPurchaseSettingsAPI.getSummary()])
-      .then(([dsRes, msRes]) => {
-        const s    = dsRes?.data || dsRes || {};
-        const days = s.paymentDays || 15;
-        setSettingsDays(days);
-        setQuantityUnit(msRes?.data?.quantityUnit || 'Litre');
-        let from, to;
-        if (s.paymentFromDate) {
-          from = dayjs(s.paymentFromDate).toDate();
-          to   = dayjs(s.paymentFromDate).add(days - 1, 'day').toDate();
-        } else {
-          from = dayjs().startOf('month').toDate();
-          to   = dayjs().startOf('month').add(days - 1, 'day').toDate();
-        }
-        setFromDate(from);
-        setToDate(to);
-        // No auto-load — user must click Generate
-      }).catch(() => {
-        setFromDate(dayjs().startOf('month').toDate());
-        setToDate(dayjs().startOf('month').add(14, 'day').toDate());
-      });
+    Promise.all([
+      dairySettingsAPI.get(),
+      milkPurchaseSettingsAPI.getSummary(),
+      paymentAPI.getLatestPeriod(),
+    ]).then(([dsRes, msRes, lpRes]) => {
+      const s    = dsRes?.data || dsRes || {};
+      const days = s.paymentDays || 15;
+      setSettingsDays(days);
+      setQuantityUnit(msRes?.data?.quantityUnit || 'Litre');
+
+      const latestToDate = lpRes?.data?.latestToDate;
+
+      let from, to;
+      if (latestToDate) {
+        // Next cycle starts the day after the last applied period ended
+        from = dayjs(latestToDate).add(1, 'day').toDate();
+        to   = dayjs(from).add(days - 1, 'day').toDate();
+      } else if (s.paymentFromDate) {
+        // No payments yet — use settings start date
+        from = dayjs(s.paymentFromDate).toDate();
+        to   = dayjs(s.paymentFromDate).add(days - 1, 'day').toDate();
+      } else {
+        from = dayjs().startOf('month').toDate();
+        to   = dayjs().startOf('month').add(days - 1, 'day').toDate();
+      }
+      setFromDate(from);
+      setToDate(to);
+      // No auto-load — user must click Generate
+    }).catch(() => {
+      setFromDate(dayjs().startOf('month').toDate());
+      setToDate(dayjs().startOf('month').add(14, 'day').toDate());
+    });
   }, []); // eslint-disable-line
 
   /* ─── Map a generated entry → ledger row ─── */
@@ -230,6 +242,7 @@ const PaymentRegisterLedger = () => {
       paidAmount:    '',    // user types amount manually
       signature:     '',
       paid:          false,
+      bankPending:   false,
     });
   };
 
@@ -262,6 +275,7 @@ const PaymentRegisterLedger = () => {
       paidAmount:    '',    // user types amount manually
       signature:     '',
       paid:          false,
+      bankPending:   false,
     });
   };
 
@@ -284,20 +298,43 @@ const PaymentRegisterLedger = () => {
       const fd  = dayjs(from).format('YYYY-MM-DD');
       const td  = dayjs(to).format('YYYY-MM-DD');
 
-      // Fetch milk data, welfare rule, and existing payments all in parallel
+      // Fetch milk data, welfare rule, and existing payments all in parallel.
+      // Payments: query without period filter (avoid UTC/IST mismatch) — period overlap checked below.
       const [res, welfareAmt, pmtRes] = await Promise.all([
         paymentRegisterAPI.generateProducers({ fromDate: fd, toDate: td }),
         getWelfareAmount(),
-        paymentAPI.getAll({ periodFrom: fd, periodTo: td, limit: 500 }),
+        paymentAPI.getAll({ limit: 1000 }),
       ]);
       const entries  = res?.data?.entries || [];
       const payments = pmtRes?.data || [];
 
-      // Build farmerId → FarmerPayment map (most recent payment per farmer)
+      // Period boundaries for overlap check (±2 days tolerance for IST/UTC offset)
+      const periodFrom_d = dayjs(from).subtract(2, 'day');
+      const periodTo_d   = dayjs(to).add(2, 'day');
+
+      // Build farmerId → FarmerPayment map filtered to the current displayed period.
+      // Prefer Ledger-paid over BankTransfer-pending when a farmer has both.
       const pmtMap = {};
       payments.forEach(pmt => {
         const fid = pmt.farmerId?._id?.toString() || pmt.farmerId?.toString() || '';
-        if (fid && !pmtMap[fid]) pmtMap[fid] = pmt; // take first (most recent)
+        if (!fid) return;
+
+        // Skip payments whose period does not overlap with the displayed cycle
+        const pmtFrom = pmt.paymentPeriod?.fromDate ? dayjs(pmt.paymentPeriod.fromDate) : null;
+        const pmtTo   = pmt.paymentPeriod?.toDate   ? dayjs(pmt.paymentPeriod.toDate)   : null;
+        if (pmtFrom && pmtTo) {
+          // no overlap: payment ended before our window starts OR payment started after our window ends
+          if (pmtTo.isBefore(periodFrom_d) || pmtFrom.isAfter(periodTo_d)) return;
+        }
+
+        const existing = pmtMap[fid];
+        if (!existing) {
+          pmtMap[fid] = pmt;
+        } else {
+          // Prefer individually-paid (Ledger/PaymentRegister) over BankTransfer-pending
+          const isPaid = (src) => !src || src === 'Ledger' || src === 'PaymentRegister';
+          if (!isPaid(existing.paymentSource) && isPaid(pmt.paymentSource)) pmtMap[fid] = pmt;
+        }
       });
 
       // Helper: extract deduction amount by type from a FarmerPayment
@@ -307,20 +344,24 @@ const PaymentRegisterLedger = () => {
           .reduce((s, d) => s + (d.amount || 0), 0);
 
       // Merge a row with its existing FarmerPayment (if any)
-      // Only show paidAmount / paid=true for Ledger-source payments.
-      // PaymentRegister-source payments are pending bank-transfer; don't mark row as paid in ledger.
+      // 'Ledger' or 'PaymentRegister' source = individually paid → show paidAmount, mark paid.
+      // 'BankTransfer' source = queued for bank transfer → lock row, show "Bank" badge, paidAmount stays empty.
       const mergePayment = (row) => {
         const pmt = pmtMap[row.farmerId];
         if (!pmt) return row;
-        const isLedgerPmt = !pmt.paymentSource || pmt.paymentSource === 'Ledger';
+        const isLedgerPmt   = !pmt.paymentSource
+                              || pmt.paymentSource === 'Ledger'
+                              || pmt.paymentSource === 'PaymentRegister';
+        const isBankPending = pmt.paymentSource === 'BankTransfer';
         return recalc({
           ...row,
-          cfRec:      getDed(pmt, 'CF Recovery', 'CF Advance')    || row.cfRec,
-          cashRec:    getDed(pmt, 'Cash Recovery', 'Cash Advance') || row.cashRec,
-          loanRec:    getDed(pmt, 'Loan Recovery', 'Loan Advance', 'Loan EMI') || row.loanRec,
-          welfare:    getDed(pmt, 'Welfare Recovery') || row.welfare,
-          paidAmount: isLedgerPmt ? (pmt.paidAmount || row.paidAmount) : row.paidAmount,
-          paid:       isLedgerPmt && (pmt.status === 'Paid' || pmt.status === 'Partial'),
+          cfRec:       getDed(pmt, 'CF Recovery', 'CF Advance')                 || row.cfRec,
+          cashRec:     getDed(pmt, 'Cash Recovery', 'Cash Advance')              || row.cashRec,
+          loanRec:     getDed(pmt, 'Loan Recovery', 'Loan Advance', 'Loan EMI')  || row.loanRec,
+          welfare:     getDed(pmt, 'Welfare Recovery')                           || row.welfare,
+          paidAmount:  isLedgerPmt ? (pmt.paidAmount || row.paidAmount) : row.paidAmount,
+          paid:        isLedgerPmt ? (pmt.status === 'Paid' || pmt.status === 'Partial') : isBankPending,
+          bankPending: isBankPending,
         });
       };
 
@@ -427,8 +468,16 @@ const PaymentRegisterLedger = () => {
     });
   };
 
-  /* ─── Build payment payload for a row ─── */
-  const buildPayload = (row) => {
+  /* ─── Build payment payload for a row ───
+     individual=true  → user explicitly clicked Apply on this row; pay full netPay if paidAmount blank.
+                        Source: 'Ledger' (excludes from Bank Transfer).
+     individual=false → Apply All bulk; respect what user typed — blank means queued for bank transfer.
+                        Source: 'BankTransfer' when paidAmount=0 (included in Bank Transfer module).
+  ─── */
+  const buildPayload = (row, individual = false) => {
+    const paidAmt = individual
+      ? (n(row.paidAmount) || n(row.netPay))   // individual apply: default to full netPay
+      : n(row.paidAmount);                      // bulk apply: only what was explicitly entered
     const deductions = [];
     // cfAdv/cashAdv/loanAdv are reference-only — NOT included as deductions
     // Only Rec (recovery) amounts + welfare + otherDed are actual deductions
@@ -449,9 +498,11 @@ const PaymentRegisterLedger = () => {
       previousBalance: n(row.prevBalance),
       bonuses,
       deductions,
-      paidAmount:      n(row.paidAmount) || n(row.netPay),
+      paidAmount:      paidAmt,
       paymentMode:     row.payMode || 'Cash',
-      paymentSource:   'Ledger',
+      // paidAmt>0 = individually paid (Ledger) → excluded from Bank Transfer
+      // paidAmt=0 = pending bank transfer (BankTransfer) → included in Bank Transfer module
+      paymentSource:   paidAmt > 0 ? 'Ledger' : 'BankTransfer',
       remarks:         `Ledger — ${dayjs(fromDate).format('DD/MM')}–${dayjs(toDate).format('DD/MM/YYYY')}`,
     };
   };
@@ -488,10 +539,10 @@ const PaymentRegisterLedger = () => {
     }
     setApplying(prev => ({ ...prev, [idx]: true }));
     try {
-      await paymentAPI.create(buildPayload(row));
+      await paymentAPI.create(buildPayload(row, true));  // individual=true → always pays (uses netPay if paidAmount blank)
       // Individual row pay: do NOT create bank transfer log (only Apply All bulk does)
       setRows(prev => prev.map((r, i) =>
-        i === idx ? { ...r, paid: true, payMode: r.payMode || 'Cash' } : r
+        i === idx ? { ...r, paid: true, bankPending: false, payMode: r.payMode || 'Cash' } : r
       ));
       notifications.show({
         title:   'Payment Applied',
@@ -882,15 +933,16 @@ const PaymentRegisterLedger = () => {
 
               <tbody>
                 {rows.map((row, idx) => {
-                  const rowBg  = idx % 2 === 0 ? '#ffffff' : '#f9fafb';
-                  const isPaid = row.paid;
+                  const rowBg      = idx % 2 === 0 ? '#ffffff' : '#f9fafb';
+                  const isPaid     = row.paid;
+                  const isBankPend = row.bankPending;
                   const netClr = n(row.netPay) >= 0 ? '#00695c' : '#c53030';
                   const netBg  = n(row.netPay) >= 0
                     ? (idx % 2 === 0 ? '#e6fffa' : '#d4f5ee')
                     : (idx % 2 === 0 ? '#fff5f5' : '#fde8e8');
 
                   return (
-                    <tr key={idx} style={{ background: isPaid ? '#f0fff4' : rowBg }}>
+                    <tr key={idx} style={{ background: isBankPend ? '#ebf8ff' : isPaid ? '#f0fff4' : rowBg }}>
 
                       {/* SN */}
                       <td style={td({ background: '#f7fafc', fontSize: 11, fontWeight: 600, color: '#718096' })}>
@@ -1073,10 +1125,17 @@ const PaymentRegisterLedger = () => {
                       {/* Apply Payment — screen only */}
                       <td style={td({ padding: '0 2px' })} className="no-print">
                         {isPaid ? (
-                          <Group justify="center" gap={2} wrap="nowrap">
-                            <IconCheck size={12} color="#38a169" />
-                            <Text size={9} c="green" fw={600}>Paid</Text>
-                          </Group>
+                          isBankPend ? (
+                            <Group justify="center" gap={2} wrap="nowrap">
+                              <IconBuildingBank size={12} color="#2b6cb0" />
+                              <Text size={9} c="blue" fw={600}>Bank</Text>
+                            </Group>
+                          ) : (
+                            <Group justify="center" gap={2} wrap="nowrap">
+                              <IconCheck size={12} color="#38a169" />
+                              <Text size={9} c="green" fw={600}>Paid</Text>
+                            </Group>
+                          )
                         ) : row.producerName.trim() ? (
                           <ActionIcon
                             size="sm" color="blue" variant="light"

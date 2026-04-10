@@ -45,7 +45,8 @@ export const retrieveBalances = async (req, res) => {
       let netPayable = 0;
 
       if (transferBasis === 'As on Date Balance') {
-        // Get all unpaid amounts up to asOnDate — only PaymentRegister source (not Ledger-direct)
+        // Only 'BankTransfer' source = queued via Apply All with no paidAmount.
+        // 'Ledger', 'PaymentRegister', null = individually paid → excluded from bank transfer.
         const paymentAgg = await FarmerPayment.aggregate([
           {
             $match: {
@@ -53,7 +54,7 @@ export const retrieveBalances = async (req, res) => {
               farmerId: farmer._id,
               paymentDate: { $lte: new Date(asOnDate) },
               status: { $in: ['Pending', 'Partial'] },
-              $or: [{ paymentSource: 'PaymentRegister' }, { paymentSource: { $exists: false } }, { paymentSource: null }]
+              paymentSource: 'BankTransfer'
             }
           },
           {
@@ -67,12 +68,12 @@ export const retrieveBalances = async (req, res) => {
         const payment = paymentAgg[0] || { totalNetPayable: 0 };
         netPayable = payment.totalNetPayable || 0;
       } else {
-        // Last processed period - get from last period with a balance (PaymentRegister source only)
+        // Only 'BankTransfer' source = queued via Apply All with no paidAmount
         const lastPeriod = await FarmerPayment.findOne({
           companyId: new mongoose.Types.ObjectId(companyId),
           farmerId: farmer._id,
           status: { $in: ['Pending', 'Partial'] },
-          $or: [{ paymentSource: 'PaymentRegister' }, { paymentSource: { $exists: false } }, { paymentSource: null }]
+          paymentSource: 'BankTransfer'
         }).sort({ paymentDate: -1 });
 
         if (lastPeriod) {
@@ -597,6 +598,49 @@ export const createFromLedger = async (req, res) => {
   } catch (error) {
     console.error('Error creating bank transfer from ledger:', error);
     res.status(500).json({ success: false, message: error.message || 'Error creating bank transfer' });
+  }
+};
+
+// Get distinct pending periods from register-ledger BankTransfer-queued payments
+export const getPendingPeriods = async (req, res) => {
+  try {
+    const companyId = req.userCompany;
+
+    const periods = await FarmerPayment.aggregate([
+      {
+        $match: {
+          companyId: new mongoose.Types.ObjectId(companyId),
+          paymentSource: 'BankTransfer',
+          status: { $in: ['Pending', 'Partial'] },
+          'paymentPeriod.fromDate': { $exists: true },
+          'paymentPeriod.toDate':   { $exists: true },
+        }
+      },
+      {
+        $group: {
+          _id: {
+            fromDate: '$paymentPeriod.fromDate',
+            toDate:   '$paymentPeriod.toDate',
+          },
+          count:    { $sum: 1 },
+          totalAmt: { $sum: '$netPayable' },
+        }
+      },
+      { $sort: { '_id.fromDate': -1 } },
+      { $limit: 24 },
+    ]);
+
+    const data = periods.map(p => ({
+      fromDate: p._id.fromDate,
+      toDate:   p._id.toDate,
+      count:    p.count,
+      totalAmt: p.totalAmt,
+    }));
+
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error fetching pending periods:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error fetching pending periods' });
   }
 };
 

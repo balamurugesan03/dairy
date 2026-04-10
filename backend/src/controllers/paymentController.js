@@ -509,6 +509,32 @@ export const cancelPayment = async (req, res) => {
   }
 };
 
+// Get the latest applied payment period's toDate (used by register-ledger to auto-advance to next cycle)
+export const getLatestPaymentPeriod = async (req, res) => {
+  try {
+    const companyId = req.userCompany;
+    const result = await FarmerPayment.aggregate([
+      {
+        $match: {
+          companyId: new mongoose.Types.ObjectId(companyId),
+          paymentSource: { $in: ['Ledger', 'BankTransfer'] },
+          'paymentPeriod.toDate': { $exists: true, $ne: null },
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          latestToDate: { $max: '$paymentPeriod.toDate' },
+        }
+      }
+    ]);
+    const latestToDate = result[0]?.latestToDate || null;
+    res.json({ success: true, data: { latestToDate } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // Get payment statistics
 export const getPaymentStats = async (req, res) => {
   try {

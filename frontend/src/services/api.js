@@ -210,7 +210,8 @@ export const paymentAPI = {
   cancel: (id, cancellationReason) => api.post(`/farmer-payments/${id}/cancel`, { cancellationReason }).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/farmer-payments/${id}`).then(res => res.data).catch(handleError),
   getFarmerHistory: (farmerId, params) => api.get(`/farmer-payments/farmer/${farmerId}`, { params }).then(res => res.data).catch(handleError),
-  getStats: (params) => api.get('/farmer-payments/stats', { params }).then(res => res.data).catch(handleError)
+  getStats: (params) => api.get('/farmer-payments/stats', { params }).then(res => res.data).catch(handleError),
+  getLatestPeriod: () => api.get('/farmer-payments/latest-period').then(res => res.data).catch(handleError),
 };
 
 // ADVANCE APIs
@@ -565,6 +566,7 @@ export const bankTransferAPI = {
   getCollectionCenters: () => api.get('/bank-transfers/collection-centers').then(res => res.data).catch(handleError),
   getBanks: () => api.get('/bank-transfers/banks').then(res => res.data).catch(handleError),
   createFromLedger: (data) => api.post('/bank-transfers/from-ledger', data).then(res => res.data).catch(handleError),
+  getPendingPeriods: () => api.get('/bank-transfers/pending-periods').then(res => res.data).catch(handleError),
 };
 
 // BUSINESS ITEM APIs
