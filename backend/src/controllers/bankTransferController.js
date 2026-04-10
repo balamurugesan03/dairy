@@ -185,6 +185,7 @@ export const applyBankTransfer = async (req, res) => {
         producerName: d.producerName,
         netPayable: d.netPayable,
         transferAmount: d.transferAmount,
+        paymentMode: d.paymentMode || d.mode || 'Bank Transfer',
         approved: true,
         bankDetails: d.bankDetails,
         transferStatus: 'Pending'
@@ -588,6 +589,7 @@ export const createFromLedger = async (req, res) => {
         producerName:   f.farmerName   || doc.personalDetails?.name || '',
         netPayable:     f.netPayable   || f.paidAmount || 0,
         transferAmount: f.paidAmount   || 0,
+        paymentMode:    bd.accountNumber ? 'Bank Transfer' : 'Cash',
         approved:       true,
         bankDetails: {
           accountNumber: bd.accountNumber || '-',

@@ -19,6 +19,11 @@ const transferDetailSchema = new mongoose.Schema({
     ifscCode: String,
     bankCode: String
   },
+  paymentMode: {
+    type: String,
+    enum: ['Bank Transfer', 'Cash', 'Cheque'],
+    default: 'Bank Transfer'
+  },
   transferStatus: {
     type: String,
     enum: ['Pending', 'Transferred', 'Failed', 'Cancelled'],

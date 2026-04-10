@@ -343,16 +343,20 @@ const BankTransferManagement = () => {
     const doc = res.data;
     setEditLog(doc);
     setEditDate(doc.applyDate ? new Date(doc.applyDate) : new Date());
-    setEditDetails(doc.transferDetails.map(d => ({
-      _id:            d._id,
-      farmerId:       d.farmerId?._id || d.farmerId,
-      producerId:     d.producerId,
-      producerName:   d.producerName,
-      netPayable:     d.netPayable,
-      transferAmount: d.transferAmount,
-      paymentMode:    d.paymentMode || 'Bank Transfer',
-      transferStatus: d.transferStatus,
-    })));
+    setEditDetails(doc.transferDetails.map(d => {
+      const hasBank = d.bankDetails?.accountNumber && d.bankDetails.accountNumber !== '-';
+      const mode    = d.paymentMode || (hasBank ? 'Bank Transfer' : 'Cash');
+      return {
+        _id:            d._id,
+        farmerId:       d.farmerId?._id || d.farmerId,
+        producerId:     d.producerId,
+        producerName:   d.producerName,
+        netPayable:     d.netPayable,
+        transferAmount: d.transferAmount,
+        paymentMode:    mode,
+        transferStatus: d.transferStatus,
+      };
+    }));
     setEditModal(true);
   };
 
