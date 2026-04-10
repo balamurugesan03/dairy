@@ -11,7 +11,7 @@ import { bankTransferAPI } from '../../services/api';
 import {
   IconBuildingBank, IconCash, IconCheck, IconX, IconEye,
   IconRefresh, IconPrinter, IconDotsVertical,
-  IconChevronLeft, IconChevronRight, IconCoins
+  IconChevronLeft, IconChevronRight, IconCoins, IconTrash
 } from '@tabler/icons-react';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -312,6 +312,21 @@ const BankTransferManagement = () => {
       }
     } catch { /* silent */ }
     setLogLoading(false);
+  };
+
+  // ── delete transfer (reverses FarmerPayments back to pending) ────────────
+  const deleteTransfer = async (log) => {
+    if (!confirm(`Delete transfer ${log.transferNumber}? This will reverse all payments back to pending.`)) return;
+    try {
+      const res = await bankTransferAPI.delete(log._id);
+      if (res?.success) {
+        notifications.show({ title: 'Deleted', message: res.message, color: 'red' });
+        loadLogs();
+        loadPendingPeriods();
+      }
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message || 'Delete failed', color: 'red' });
+    }
   };
 
   // ── print ─────────────────────────────────────────────────────────────────
@@ -842,7 +857,7 @@ const BankTransferManagement = () => {
                                         </Menu.Item>
                                         <Menu.Item
                                           leftSection={<IconX size={14} />}
-                                          color="red"
+                                          color="orange"
                                           onClick={async () => {
                                             if (!confirm('Cancel this transfer?')) return;
                                             await bankTransferAPI.cancel(log._id);
@@ -854,6 +869,14 @@ const BankTransferManagement = () => {
                                         </Menu.Item>
                                       </>
                                     )}
+                                    <Menu.Divider />
+                                    <Menu.Item
+                                      leftSection={<IconTrash size={14} />}
+                                      color="red"
+                                      onClick={() => deleteTransfer(log)}
+                                    >
+                                      Delete & Reverse
+                                    </Menu.Item>
                                   </Menu.Dropdown>
                                 </Menu>
                               </Table.Td>

@@ -198,6 +198,29 @@ export const applyBankTransfer = async (req, res) => {
 
     await bankTransfer.save();
 
+    // Mark each farmer's pending BankTransfer-source FarmerPayment as Paid
+    for (const d of approvedTransfers) {
+      try {
+        await FarmerPayment.updateMany(
+          {
+            companyId,
+            farmerId:      d.farmerId,
+            paymentSource: 'BankTransfer',
+            status:        { $in: ['Pending', 'Partial'] },
+          },
+          {
+            $set: {
+              paidAmount:    d.transferAmount,
+              balanceAmount: 0,
+              status:        'Paid',
+            },
+          }
+        );
+      } catch (updateErr) {
+        console.error('FarmerPayment status update failed for farmer', d.farmerId, updateErr.message);
+      }
+    }
+
     // Create payment voucher for bank transfer
     try {
       const voucher = await createBankTransferVoucher(bankTransfer, companyId);
@@ -598,6 +621,82 @@ export const createFromLedger = async (req, res) => {
   } catch (error) {
     console.error('Error creating bank transfer from ledger:', error);
     res.status(500).json({ success: false, message: error.message || 'Error creating bank transfer' });
+  }
+};
+
+// Delete a bank transfer and reverse FarmerPayment records back to Pending
+export const deleteBankTransfer = async (req, res) => {
+  try {
+    const bankTransfer = await BankTransfer.findOne({
+      _id: req.params.id,
+      companyId: req.userCompany,
+    });
+
+    if (!bankTransfer) {
+      return res.status(404).json({ success: false, message: 'Bank transfer not found' });
+    }
+
+    // Reverse each farmer's FarmerPayment back to BankTransfer-pending (Pending, paidAmount=0)
+    for (const d of bankTransfer.transferDetails) {
+      try {
+        await FarmerPayment.updateMany(
+          {
+            companyId:     req.userCompany,
+            farmerId:      d.farmerId,
+            paymentSource: 'BankTransfer',
+            status:        'Paid',
+          },
+          {
+            $set: {
+              paidAmount:    0,
+              balanceAmount: 0,
+              status:        'Pending',
+            },
+          }
+        );
+      } catch (reverseErr) {
+        console.error('Reverse FarmerPayment failed for farmer', d.farmerId, reverseErr.message);
+      }
+    }
+
+    // Reverse voucher if exists
+    if (bankTransfer.voucherId) {
+      try {
+        const voucher = await Voucher.findById(bankTransfer.voucherId);
+        if (voucher) {
+          const reversalEntries = voucher.entries.map(e => ({
+            ledgerId:     e.ledgerId,
+            ledgerName:   e.ledgerName,
+            debitAmount:  e.creditAmount,
+            creditAmount: e.debitAmount,
+          }));
+          const reversalVoucher = new Voucher({
+            voucherType:   'Journal',
+            voucherNumber: await generateVoucherNumber('Journal', req.userCompany),
+            voucherDate:   new Date(),
+            companyId:     req.userCompany,
+            entries:       reversalEntries,
+            totalDebit:    voucher.totalCredit,
+            totalCredit:   voucher.totalDebit,
+            narration:     `Reversal (Delete) of ${bankTransfer.transferNumber}`,
+            referenceType: 'BankTransfer',
+            referenceId:   bankTransfer._id,
+            createdBy:     req.user?._id,
+          });
+          await reversalVoucher.save();
+          await updateLedgerBalances(reversalEntries);
+        }
+      } catch (vErr) {
+        console.error('Voucher reversal failed:', vErr.message);
+      }
+    }
+
+    await BankTransfer.deleteOne({ _id: bankTransfer._id });
+
+    res.json({ success: true, message: 'Bank transfer deleted and payments reversed successfully' });
+  } catch (error) {
+    console.error('Error deleting bank transfer:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error deleting bank transfer' });
   }
 };
 
