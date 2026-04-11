@@ -27,7 +27,7 @@ const DEFAULTS = {
     announcementSystem : false,
   },
   weighingScaleConfig: {
-    comPort    : 'ttyS0',
+    comPort    : 'COM2',
     baudRate   : 9600,
     tareString : 'T',
     ctrlChar   : '#',
@@ -35,12 +35,12 @@ const DEFAULTS = {
   },
   ledDisplayConfig: {
     device   : 'COMIENZ',
-    comPort  : 'ttyUSB0',
+    comPort  : 'COM3',
     baudRate : 9600,
   },
   milkAnalyzerConfig: {
     device                 : 'LACTO SURE ECO',
-    comPort                : 'ttyS1',
+    comPort                : 'COM11',
     baudRate               : 9600,
     manualEntryCombination : 'FAT-SNF',
   },
@@ -175,6 +175,50 @@ export const toggleMachine = async (req, res) => {
       success : true,
       message : `${key} ${req.body.enabled ? 'enabled' : 'disabled'}`,
       data    : settings,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  FIX COM PORTS  — one-time migration: replace Linux tty* defaults with Windows COM ports
+//  POST /api/milk-purchase-settings/fix-com-ports
+// ══════════════════════════════════════════════════════════════════════════════
+export const fixComPorts = async (req, res) => {
+  try {
+    const settings = await MilkPurchaseSettings.findOne({ companyId: req.companyId });
+    if (!settings) {
+      return res.json({ success: true, message: 'No settings record found — nothing to fix.' });
+    }
+
+    const update = {};
+    const linuxPorts = ['ttyS0', 'ttyS1', 'ttyS2', 'ttyUSB0', 'ttyUSB1'];
+
+    if (linuxPorts.includes(settings.weighingScaleConfig?.comPort)) {
+      update['weighingScaleConfig.comPort'] = 'COM2';
+    }
+    if (linuxPorts.includes(settings.ledDisplayConfig?.comPort)) {
+      update['ledDisplayConfig.comPort'] = 'COM3';
+    }
+    if (linuxPorts.includes(settings.milkAnalyzerConfig?.comPort)) {
+      update['milkAnalyzerConfig.comPort'] = 'COM11';
+    }
+
+    if (Object.keys(update).length === 0) {
+      return res.json({ success: true, message: 'COM ports already set correctly — no changes needed.', data: { weighingScale: settings.weighingScaleConfig?.comPort, ledDisplay: settings.ledDisplayConfig?.comPort, milkAnalyzer: settings.milkAnalyzerConfig?.comPort } });
+    }
+
+    const updated = await MilkPurchaseSettings.findOneAndUpdate(
+      { companyId: req.companyId },
+      { $set: update },
+      { new: true }
+    );
+
+    res.json({
+      success : true,
+      message : `COM ports updated: ${Object.entries(update).map(([k, v]) => `${k.split('.')[0]} → ${v}`).join(', ')}`,
+      data    : { weighingScale: updated.weighingScaleConfig?.comPort, ledDisplay: updated.ledDisplayConfig?.comPort, milkAnalyzer: updated.milkAnalyzerConfig?.comPort },
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

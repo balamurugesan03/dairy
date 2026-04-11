@@ -23,7 +23,7 @@ const machinesSchema = new mongoose.Schema(
 // ─── Sub-schema: Weighing Scale Configuration ─────────────────────────────────
 const weighingScaleConfigSchema = new mongoose.Schema(
   {
-    comPort    : { type: String, default: 'ttyS0' },
+    comPort    : { type: String, default: 'COM2' },
     baudRate   : { type: Number, enum: [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200], default: 9600 },
     tareString : { type: String, default: 'T' },
     ctrlChar   : { type: String, default: '#' },
@@ -36,7 +36,7 @@ const weighingScaleConfigSchema = new mongoose.Schema(
 const ledDisplayConfigSchema = new mongoose.Schema(
   {
     device   : { type: String, enum: ['COMIENZ', 'ARIES', 'GENERIC', 'NONE'], default: 'COMIENZ' },
-    comPort  : { type: String, default: 'ttyUSB0' },
+    comPort  : { type: String, default: 'COM3' },
     baudRate : { type: Number, enum: [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200], default: 9600 },
   },
   { _id: false }
@@ -47,7 +47,7 @@ const milkAnalyzerConfigSchema = new mongoose.Schema(
   {
     deviceName             : { type: String, default: '' },
     device                 : { type: String, enum: ['LACTO SURE ECO', 'LACTO STAR', 'MILKO TESTER', 'EKOMILK', 'NONE'], default: 'LACTO SURE ECO' },
-    comPort                : { type: String, default: 'ttyS1' },
+    comPort                : { type: String, default: 'COM11' },
     baudRate               : { type: Number, enum: [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200], default: 9600 },
     manualEntryCombination : { type: String, enum: ['CLR-FAT', 'FAT-SNF'], default: 'FAT-SNF' },
   },

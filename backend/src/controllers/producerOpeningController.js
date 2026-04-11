@@ -60,10 +60,13 @@ export const createOpening = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Farmer not found' });
     }
 
-    const totalRecovery =
-      (Number(cfAdvance)   || 0) +
-      (Number(loanAdvance) || 0) +
-      (Number(cashAdvance) || 0);
+    const cfAdv   = Math.max(0, Number(cfAdvance)   || 0);
+    const loanAdv = Math.max(0, Number(loanAdvance) || 0);
+    const cashAdv = Math.max(0, Number(cashAdvance) || 0);
+    const rfund   = Math.max(0, Number(revolvingFund) || 0);
+    const dueAmt  = Math.max(0, Number(dueAmount)   || 0);
+
+    const totalRecovery = cfAdv + loanAdv + cashAdv;
 
     const opening = new ProducerOpening({
       companyId,
@@ -71,11 +74,11 @@ export const createOpening = async (req, res) => {
       producerNumber: farmer.farmerNumber,
       producerName: farmer.personalDetails?.name || '',
       date: new Date(date),
-      dueAmount: Number(dueAmount) || 0,
-      cfAdvance: Number(cfAdvance) || 0,
-      loanAdvance: Number(loanAdvance) || 0,
-      cashAdvance: Number(cashAdvance) || 0,
-      revolvingFund: Number(revolvingFund) || 0,
+      dueAmount: dueAmt,
+      cfAdvance: cfAdv,
+      loanAdvance: loanAdv,
+      cashAdvance: cashAdv,
+      revolvingFund: rfund,
       totalRecovery,
       createdBy: req.user?._id
     });
@@ -85,7 +88,7 @@ export const createOpening = async (req, res) => {
     // Sync ledger opening balances (create = delta from 0 to new amounts)
     try {
       await applyProducerOpeningLedgers(
-        { farmerId, dueAmount: opening.dueAmount, cfAdvance: opening.cfAdvance, loanAdvance: opening.loanAdvance, cashAdvance: opening.cashAdvance, revolvingFund: opening.revolvingFund },
+        { farmerId, dueAmount: dueAmt, cfAdvance: cfAdv, loanAdvance: loanAdv, cashAdvance: cashAdv, revolvingFund: rfund },
         null,
         companyId
       );
@@ -128,11 +131,11 @@ export const updateOpening = async (req, res) => {
     };
 
     if (date) opening.date = new Date(date);
-    opening.dueAmount     = Number(dueAmount)     ?? opening.dueAmount;
-    opening.cfAdvance     = Number(cfAdvance)     ?? opening.cfAdvance;
-    opening.loanAdvance   = Number(loanAdvance)   ?? opening.loanAdvance;
-    opening.cashAdvance   = Number(cashAdvance)   ?? opening.cashAdvance;
-    opening.revolvingFund = Number(revolvingFund) ?? opening.revolvingFund;
+    opening.dueAmount     = Math.max(0, Number(dueAmount)     || 0);
+    opening.cfAdvance     = Math.max(0, Number(cfAdvance)     || 0);
+    opening.loanAdvance   = Math.max(0, Number(loanAdvance)   || 0);
+    opening.cashAdvance   = Math.max(0, Number(cashAdvance)   || 0);
+    opening.revolvingFund = Math.max(0, Number(revolvingFund) || 0);
     opening.totalRecovery = opening.cfAdvance + opening.loanAdvance + opening.cashAdvance;
 
     await opening.save();

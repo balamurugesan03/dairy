@@ -160,14 +160,16 @@ const PaymentRegisterLedger = () => {
     const data = {};
     currentRows.forEach(r => {
       if (!r.farmerId) return;
-      const paid    = n(r.paidAmount) || n(r.netPay);
-      const netPay  = n(r.netPay);
+      const netPay = n(r.netPay);
+      // bankPending rows have paidAmount=0 — their full netPay is the prevBalance
+      // individually-paid rows: prevBalance = 0 (or partial remainder)
+      const paid       = r.bankPending ? 0 : (n(r.paidAmount) || netPay);
+      const prevBalance = Math.max(0, netPay - paid);
       data[r.farmerId] = {
-        // prevBalance = unpaid remainder (0 if fully paid, positive if partial)
-        prevBalance: Math.max(0, netPay - paid),
-        cfAdv:       Math.max(0, n(r.cfAdv)   - n(r.cfRec)),
-        cashAdv:     Math.max(0, n(r.cashAdv) - n(r.cashRec)),
-        loanAdv:     Math.max(0, n(r.loanAdv) - n(r.loanRec)),
+        prevBalance,
+        cfAdv:   Math.max(0, n(r.cfAdv)   - n(r.cfRec)),
+        cashAdv: Math.max(0, n(r.cashAdv) - n(r.cashRec)),
+        loanAdv: Math.max(0, n(r.loanAdv) - n(r.loanRec)),
       };
     });
     prevCycleRef.current = data;
@@ -333,9 +335,10 @@ const PaymentRegisterLedger = () => {
       const entries  = res?.data?.entries || [];
       const payments = pmtRes?.data || [];
 
-      // Period boundaries for overlap check (±2 days tolerance for IST/UTC offset)
-      const periodFrom_d = dayjs(from).subtract(2, 'day');
-      const periodTo_d   = dayjs(to).add(2, 'day');
+      // Use YYYY-MM-DD string comparison — avoids IST/UTC midnight shift ambiguity.
+      // Exact overlap: payment must share at least one day with the displayed cycle.
+      const cycleFromStr = dayjs(from).format('YYYY-MM-DD');
+      const cycleToStr   = dayjs(to).format('YYYY-MM-DD');
 
       // Build farmerId → FarmerPayment map filtered to the current displayed period.
       // Prefer Ledger-paid over BankTransfer-pending when a farmer has both.
@@ -348,8 +351,10 @@ const PaymentRegisterLedger = () => {
         const pmtFrom = pmt.paymentPeriod?.fromDate ? dayjs(pmt.paymentPeriod.fromDate) : null;
         const pmtTo   = pmt.paymentPeriod?.toDate   ? dayjs(pmt.paymentPeriod.toDate)   : null;
         if (pmtFrom && pmtTo) {
-          // no overlap: payment ended before our window starts OR payment started after our window ends
-          if (pmtTo.isBefore(periodFrom_d) || pmtFrom.isAfter(periodTo_d)) return;
+          const pmtFromStr = pmtFrom.format('YYYY-MM-DD');
+          const pmtToStr   = pmtTo.format('YYYY-MM-DD');
+          // no overlap: payment ended before cycle starts OR payment started after cycle ends
+          if (pmtToStr < cycleFromStr || pmtFromStr > cycleToStr) return;
         }
 
         const existing = pmtMap[fid];

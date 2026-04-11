@@ -161,6 +161,7 @@ export const generateProducerPaymentRegister = async (req, res) => {
       .lean();
 
     // 2. Bulk-aggregate all active advances for this company (grouped by farmer + category)
+    //    Used as first-cycle fallback only — after cycle 1 we use PaymentRegister carry-forward
     const allAdvances = await Advance.aggregate([
       {
         $match: {
@@ -175,7 +176,6 @@ export const generateProducerPaymentRegister = async (req, res) => {
         },
       },
     ]);
-    // Build map: farmerId -> { 'CF Advance': X, 'Loan Advance': Y, 'Cash Advance': Z }
     const advanceMap = {};
     allAdvances.forEach(a => {
       const fid = a._id.farmerId?.toString();
@@ -184,13 +184,72 @@ export const generateProducerPaymentRegister = async (req, res) => {
       advanceMap[fid][a._id.category] = a.total;
     });
 
-    // 3. Bulk-aggregate ProducerOpening as fallback
+    // 3. ProducerOpening — fallback for very first cycle (no prior PaymentRegister log)
     const openings = await ProducerOpening.find({ companyId }).lean();
     const openingMap = {};
     openings.forEach(o => {
       const fid = o.farmerId?.toString();
       if (fid) openingMap[fid] = o;
     });
+
+    // 4b. Carry-forward from the most recent saved Ledger PaymentRegister before this cycle.
+    //     This register's entries store cfAdv, cfRec, cashAdv, cashRec, loanAdv, loanRec, netPay
+    //     for every farmer — the exact values needed for cycle 2+ carry-forward.
+    const lastRegister = await PaymentRegister.findOne({
+      companyId,
+      registerType: 'Ledger',
+      toDate:       { $lt: start },
+      status:       'Saved',
+    }).sort({ toDate: -1 }).lean();
+
+    // Build carry map: farmerId → { cfAdv_rem, cashAdv_rem, loanAdv_rem }
+    const carryMap = {};
+    if (lastRegister?.entries?.length > 0) {
+      lastRegister.entries.forEach(e => {
+        const fid = e.farmerId?.toString();
+        if (!fid) return;
+        carryMap[fid] = {
+          cfAdv:   Math.max(0, (e.cfAdv   || 0) - (e.cfRec   || 0)),
+          cashAdv: Math.max(0, (e.cashAdv || 0) - (e.cashRec || 0)),
+          loanAdv: Math.max(0, (e.loanAdv || 0) - (e.loanRec || 0)),
+        };
+      });
+    }
+
+    // 4c. Two aggregates for previous balance:
+    //   (i)  Pending/Partial payments → balanceAmount still owed (0 after bank transfer applies)
+    //   (ii) ANY prior-cycle payment (any status) → tells us it's NOT the first cycle
+    //        so we use 0 (fully paid) instead of dueAmount when cycle 1 is already Paid.
+    const [pendingPayAgg, anyPriorAgg] = await Promise.all([
+      FarmerPayment.aggregate([
+        {
+          $match: {
+            companyId,
+            status:                 { $in: ['Pending', 'Partial'] },
+            'paymentPeriod.toDate': { $lt: start },
+          },
+        },
+        { $group: { _id: '$farmerId', total: { $sum: '$balanceAmount' } } },
+      ]),
+      FarmerPayment.aggregate([
+        {
+          $match: {
+            companyId,
+            status:                 { $ne: 'Cancelled' },
+            'paymentPeriod.toDate': { $lt: start },
+          },
+        },
+        { $group: { _id: '$farmerId', count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const pendingBalMap = {};
+    pendingPayAgg.forEach(p => {
+      pendingBalMap[p._id?.toString()] = p.total || 0;
+    });
+
+    // Set of farmerIds who have ANY prior-cycle payment (not just pending)
+    const hasPriorPaymentSet = new Set(anyPriorAgg.map(p => p._id?.toString()));
 
     // 4. Welfare amount — from active PeriodicalRule (DEDUCTIONS + FIXED_AMOUNT)
     const welfareRule = await PeriodicalRule.findOne({
@@ -230,33 +289,49 @@ export const generateProducerPaymentRegister = async (req, res) => {
       const fid     = farmer._id.toString();
       const adv     = advanceMap[fid]  || {};
       const opening = openingMap[fid]  || {};
+      const carry   = carryMap[fid];         // undefined = first cycle (no prior register)
 
-      // 6. Previous balance — from ProducerOpening dueAmount
-      const previousBalance = opening.dueAmount || 0;
+      // 6. Previous balance:
+      //    — True first cycle (no prior payments at all): ProducerOpening.dueAmount
+      //    — Cycle 2+, payment still pending:  sum of balanceAmount (= netPay since paidAmount=0)
+      //    — Cycle 2+, payment fully paid (bank transfer applied): 0
+      const hasPriorPayment   = hasPriorPaymentSet.has(fid);
+      const hasPendingHistory = pendingBalMap[fid] !== undefined;
+      const previousBalance   = (!hasPriorPayment && !hasPendingHistory)
+        ? (opening.dueAmount  || 0)          // true first cycle → use opening due
+        : (pendingBalMap[fid] || 0);         // cycle 2+: pending balance or 0 if fully paid
 
-      // 7. CF / Loan / Cash advances — from Advance model (all outstanding), fallback ProducerOpening
-      const cfAdv   = adv['CF Advance']   ?? opening.cfAdvance   ?? 0;
-      const loanAdv = adv['Loan Advance'] ?? opening.loanAdvance ?? 0;
-      const cashAdv = adv['Cash Advance'] ?? opening.cashAdvance ?? 0;
+      // 7. CF / Loan / Cash advance opening balances:
+      //    — If prior register exists (cycle 2+): carry = last cycle's (cfAdv - cfRec), etc.
+      //    — First cycle: fall back to Advance model totals, then ProducerOpening
+      const cfAdv   = carry ? carry.cfAdv   : (adv['CF Advance']   ?? opening.cfAdvance   ?? 0);
+      const loanAdv = carry ? carry.loanAdv : (adv['Loan Advance'] ?? opening.loanAdvance ?? 0);
+      const cashAdv = carry ? carry.cashAdv : (adv['Cash Advance'] ?? opening.cashAdvance ?? 0);
 
       // 8. Welfare — from PeriodicalRule fixedRate (0 if ONCE_IN_MONTH and already deducted)
       const welfare = (welfareFixed > 0 && !alreadyDeductedSet.has(fid)) ? welfareFixed : 0;
 
       const milkValue  = Math.round((milkData.totalAmount || 0) * 100) / 100;
-      const netPayable = milkValue - welfare - cfAdv - loanAdv - cashAdv + previousBalance;
+      // netPayable preview: cfAdv/loanAdv/cashAdv are opening balance columns (not deducted here —
+      // user enters cfRec/cashRec/loanRec recovery amounts in the UI which become the actual deductions)
+      const netPayable = milkValue - welfare + previousBalance;
 
       entries.push({
         farmerId:        farmer._id,
         productId:       farmer.farmerNumber || '',
         productName:     farmer.personalDetails?.name || '',
-        qty:             Math.round((milkData.totalQty || 0) * 100) / 100,
+        qty:             Math.round((milkData.totalQty  || 0) * 100) / 100,
         milkValue,
-        previousBalance: Math.round(previousBalance * 100) / 100,
-        welfare:         Math.round(welfare   * 100) / 100,
-        cfRec:           Math.round(cfAdv     * 100) / 100,
-        loanAdv:         Math.round(loanAdv   * 100) / 100,
-        cashPocket:      Math.round(cashAdv   * 100) / 100,
-        netPay:          Math.round(netPayable * 100) / 100,
+        previousBalance: Math.round(previousBalance     * 100) / 100,
+        welfare:         Math.round(welfare             * 100) / 100,
+        // Field names match what toRow() in frontend expects:
+        // cfRec → maps to cfAdv column (opening CF advance balance)
+        // cashPocket → maps to cashAdv column
+        // loanAdv → maps to loanAdv column
+        cfRec:           Math.round(cfAdv               * 100) / 100,
+        cashPocket:      Math.round(cashAdv             * 100) / 100,
+        loanAdv:         Math.round(loanAdv             * 100) / 100,
+        netPay:          Math.round(netPayable          * 100) / 100,
         payStatus:       netPayable > 0 ? 'Payable' : netPayable < 0 ? 'Receivable' : '',
       });
     }

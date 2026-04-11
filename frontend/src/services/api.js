@@ -754,6 +754,9 @@ export const milkPurchaseSettingsAPI = {
   // PATCH /machines/:key – toggle a single device  { enabled: true|false }
   toggleMachine  : (key, enabled) =>
     api.patch(`/milk-purchase-settings/machines/${key}`, { enabled }).then(r => r.data).catch(handleError),
+
+  // POST /fix-com-ports – one-time migration: replace Linux tty* with Windows COM ports
+  fixComPorts    : ()      => api.post('/milk-purchase-settings/fix-com-ports').then(r => r.data).catch(handleError),
 };
 
 // MILK SALES RATE APIs
@@ -889,8 +892,18 @@ export const machineConfigAPI = {
   save:       (data) => api.post('/machine-config', data).then(r => r.data).catch(handleError),
   listPorts:  ()     => api.get('/machine-config/ports').then(r => r.data).catch(handleError),
   getStatus:  ()     => api.get('/machine-config/status').then(r => r.data).catch(handleError),
-  start:      (data) => api.post('/machine-config/start', data || {}).then(r => r.data).catch(handleError),
-  stop:       ()     => api.post('/machine-config/stop').then(r => r.data).catch(handleError),
+  start:          (data) => api.post('/machine-config/start', data || {}).then(r => r.data).catch(handleError),
+  stop:           ()     => api.post('/machine-config/stop').then(r => r.data).catch(handleError),
+  startScale:     (data) => api.post('/machine-config/scale/start', data || {}).then(r => r.data).catch(handleError),
+  stopScale:      ()     => api.post('/machine-config/scale/stop').then(r => r.data).catch(handleError),
+  getScaleStatus: ()     => api.get('/machine-config/scale/status').then(r => r.data).catch(handleError),
+  scaleTare:      ()     => api.post('/machine-config/scale/tare').then(r => r.data).catch(handleError),
+  // LED Display
+  startDisplay:      (data) => api.post('/machine-config/display/start', data || {}).then(r => r.data).catch(handleError),
+  stopDisplay:       ()     => api.post('/machine-config/display/stop').then(r => r.data).catch(handleError),
+  getDisplayStatus:  ()     => api.get('/machine-config/display/status').then(r => r.data).catch(handleError),
+  sendDisplay:       (data) => api.post('/machine-config/display/send', data).then(r => r.data).catch(handleError),
+  testDisplay:       (raw, terminator) => api.post('/machine-config/display/test', { ...(raw ? { raw } : {}), terminator: terminator || 'none' }).then(r => r.data).catch(handleError),
 };
 
 // ── Society Info & Document Management API ────────────────────────────────────

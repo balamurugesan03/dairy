@@ -20,7 +20,7 @@ import {
   IconAlertCircle, IconRefresh, IconId, IconReceipt,
   IconDroplet, IconFlame, IconChartBar,
   IconPlus, IconEdit, IconBan, IconHistory,
-  IconPlugConnected, IconPlugConnectedX,
+  IconPlugConnected, IconPlugConnectedX, IconScale,
 } from '@tabler/icons-react';
 import {
   agentAPI, collectionCenterAPI, farmerAPI,
@@ -138,7 +138,7 @@ const printBill = (entry, dateStr, shift, centerName) => {
     <div class="row"><span colspan="2">${entry.producerName}</span></div>
     <div class="line"></div>
     <div class="row"><span>Litres</span><span class="val">${Number(entry.qty).toFixed(2)} L</span></div>
-    <div class="row"><span>FAT %</span><span>${Number(entry.fat).toFixed(2)}</span></div>
+    <div class="row"><span>FAT %</span><span>${Number(entry.fat).toFixed(1)}</span></div>
     <div class="row"><span>CLR</span><span>${Number(entry.clr).toFixed(1)}</span></div>
     <div class="row"><span>SNF %</span><span>${Number(entry.snf).toFixed(2)}</span></div>
     ${Number(entry.addedWater || 0) > 0 ? `<div class="row"><span>Water</span><span>${Number(entry.addedWater).toFixed(2)} L</span></div>` : ''}
@@ -270,7 +270,43 @@ const MilkPurchase = () => {
   const serialPortRef   = useRef(null);
   const serialReaderRef = useRef(null);
   const machineBufferRef = useRef('');    // accumulate partial serial data
-  formRef.current = { producer, ltr, water, fat, clr, snf, date, shift, center, agent, calcResult, editingId, speakEnabled, entries, dupBlocked, entryMode, manualRate, manualAmount, activeTimeIncentive, activeShiftIncentives, cpMode };
+  const scaleLastFilledRef = useRef(null); // last kg value filled into LTR — skip same value to avoid overwrite
+
+  // ── Weight Scale (CH340 / rotary encoder via backend Socket.io) state ───────
+  const [scaleConnected,   setScaleConnected]   = useState(false);
+  const [scaleStatus,      setScaleStatus]      = useState('');
+  const [scaleStarting,    setScaleStarting]    = useState(false);
+  // ── LED Display state ────────────────────────────────────────────────────────
+  const [displayConnected, setDisplayConnected] = useState(false);
+  const [displayStarting,  setDisplayStarting]  = useState(false);
+  const displaySendTimerRef = useRef(null);  // debounce for display sends
+  formRef.current = { producer, ltr, water, fat, clr, snf, date, shift, center, agent, calcResult, editingId, speakEnabled, entries, dupBlocked, entryMode, manualRate, manualAmount, activeTimeIncentive, activeShiftIncentives, cpMode, scaleConnected, displayConnected };
+
+  // ── Send to LED Display whenever entry values change ──────────────────────
+  useEffect(() => {
+    if (!displayConnected) return;
+
+    // FAT/SNF/CLR must ALL be present or ALL absent — never partial
+    const hasFat = fat !== '' && !isNaN(Number(fat));
+    const hasSnf = snf !== '' && !isNaN(Number(snf));
+    const hasClr = clr !== '' && !isNaN(Number(clr));
+    const fatGroupOk = (hasFat && hasSnf && hasClr) || (!hasFat && !hasSnf && !hasClr);
+    if (!fatGroupOk) return; // still typing — wait for all three
+
+    clearTimeout(displaySendTimerRef.current);
+    displaySendTimerRef.current = setTimeout(() => {
+      machineConfigAPI.sendDisplay({
+        id:     producer?.no || producer?.memberNo || '',
+        fat:    hasFat ? Number(fat)   : null,
+        snf:    hasSnf ? Number(snf)   : null,
+        clr:    hasClr ? Number(clr)   : null,
+        qty:    ltr   !== '' ? Number(ltr)   : null,
+        rate:   calcResult.rate   > 0 ? calcResult.rate   : null,
+        amount: calcResult.amount > 0 ? calcResult.amount : null,
+        water:  water !== '' ? Number(water) : null,
+      }).catch(() => {});
+    }, 200);
+  }, [displayConnected, producer, ltr, fat, clr, snf, water, calcResult]);
 
   // ── Machine Serial Data Parser ────────────────────────────────────────────
   // Format 0: 31-char ASCII  (XXXXXXXXXXXXXXXXXXXXXXXXXXXXX)
@@ -329,14 +365,14 @@ const MilkPurchase = () => {
     if (fatVal == null) return; // unrecognised format
 
     if (ltrVal   != null) setLtr(String(parseFloat(ltrVal).toFixed(2)));
-    if (fatVal   != null) setFat(String(parseFloat(fatVal).toFixed(2)));
+    if (fatVal   != null) setFat(String(parseFloat(fatVal).toFixed(1)));
     if (clrVal   != null) setClr(String(parseFloat(clrVal).toFixed(1)));
     if (snfVal   != null) setSnf(String(parseFloat(snfVal).toFixed(2)));
     if (waterVal != null && waterVal > 0) setWater(String(parseFloat(waterVal).toFixed(2)));
 
-    const status = `FAT:${parseFloat(fatVal).toFixed(2)}  SNF:${parseFloat(snfVal ?? 0).toFixed(2)}${clrVal != null ? `  CLR:${parseFloat(clrVal).toFixed(1)}` : ''}`;
+    const status = `FAT:${parseFloat(fatVal).toFixed(1)}  SNF:${parseFloat(snfVal ?? 0).toFixed(2)}${clrVal != null ? `  CLR:${parseFloat(clrVal).toFixed(1)}` : ''}`;
     setMachineStatus(status);
-    notifications.show({ title: 'Machine Reading', message: `FAT ${parseFloat(fatVal).toFixed(2)} | SNF ${parseFloat(snfVal ?? 0).toFixed(2)}${waterVal > 0 ? ` | Water ${waterVal}%` : ''}`, color: 'green', autoClose: 2000 });
+    notifications.show({ title: 'Machine Reading', message: `FAT ${parseFloat(fatVal).toFixed(1)} | SNF ${parseFloat(snfVal ?? 0).toFixed(2)}${waterVal > 0 ? ` | Water ${waterVal}%` : ''}`, color: 'green', autoClose: 2000 });
 
     if (!formRef.current.producer) memberRef.current?.focus();
   }, []);
@@ -400,6 +436,70 @@ const MilkPurchase = () => {
 
   // Cleanup on unmount
   useEffect(() => () => { disconnectMachine(); }, [disconnectMachine]);
+
+  // ── Weight Scale: connect via backend (Socket.io + serialport) ──────────────
+  // Backend reads the port configured in MilkPurchaseSettings → weighingScaleConfig
+  // and emits 'weight-scale-stable' when a stable reading is confirmed (debounced).
+  const connectScale = useCallback(async () => {
+    setScaleStarting(true);
+    try {
+      const res = await machineConfigAPI.startScale();
+      if (res?.success) {
+        setScaleConnected(true);
+        setScaleStatus('Connected — waiting for reading…');
+        notifications.show({ title: 'Scale Connected', message: res.message, color: 'teal', autoClose: 3000 });
+      } else {
+        notifications.show({ title: 'Scale Failed', message: res?.message || 'Could not open scale port', color: 'red', autoClose: 6000 });
+      }
+    } catch (err) {
+      notifications.show({ title: 'Scale Error', message: err.message, color: 'red' });
+    } finally {
+      setScaleStarting(false);
+    }
+  }, []);
+
+  const disconnectScale = useCallback(async () => {
+    try { await machineConfigAPI.stopScale(); } catch {}
+    setScaleConnected(false);
+    setScaleStatus('');
+    notifications.show({ title: 'Scale Disconnected', color: 'orange', autoClose: 1500 });
+  }, []);
+
+  const sendTare = useCallback(async () => {
+    try {
+      await machineConfigAPI.scaleTare();
+      scaleLastFilledRef.current = null; // reset so next stable reading fills LTR again
+      setScaleStatus('⚖ Tare sent — scale zeroed');
+    } catch (err) {
+      notifications.show({ title: 'Tare Failed', message: err.message, color: 'red', autoClose: 3000 });
+    }
+  }, []);
+
+  // ── LED Display: connect / disconnect ────────────────────────────────────
+  const connectDisplay = useCallback(async () => {
+    setDisplayStarting(true);
+    try {
+      const res = await machineConfigAPI.startDisplay();
+      if (res?.success) {
+        setDisplayConnected(true);
+        notifications.show({ title: 'Display Connected', message: res.message, color: 'teal', autoClose: 3000 });
+      } else {
+        notifications.show({ title: 'Display Failed', message: res?.message || 'Could not open display port', color: 'red', autoClose: 6000 });
+      }
+    } catch (err) {
+      notifications.show({ title: 'Display Error', message: err.message, color: 'red' });
+    } finally {
+      setDisplayStarting(false);
+    }
+  }, []);
+
+  const disconnectDisplay = useCallback(async () => {
+    try { await machineConfigAPI.stopDisplay(); } catch {}
+    setDisplayConnected(false);
+    notifications.show({ title: 'Display Disconnected', color: 'orange', autoClose: 1500 });
+  }, []);
+
+
 
   // ── Start backend analyzer via API ────────────────────────────────────────
   const handleStartAnalyzer = async () => {
@@ -493,7 +593,7 @@ const MilkPurchase = () => {
       lastCapturedReadingRef.current  = readingKey;
 
       const f = data;
-      if (f.fat  != null) setFat(String(parseFloat(f.fat).toFixed(2)));
+      if (f.fat  != null) setFat(String(parseFloat(f.fat).toFixed(1)));
       if (f.snf  != null) setSnf(String(parseFloat(f.snf).toFixed(2)));
       if (f.ltr  != null) setLtr(String(parseFloat(f.ltr).toFixed(2)));
       if (f.addedWater != null && f.addedWater > 0) setWater(String(parseFloat(f.addedWater).toFixed(2)));
@@ -510,6 +610,38 @@ const MilkPurchase = () => {
       notifications.show({ title: `${analyzerDeviceNameRef.current || 'Analyzer'} Reading`, message: `FAT ${f.fat ?? '-'} | SNF ${f.snf ?? '-'}${f.addedWater > 0 ? ` | Water ${f.addedWater}%` : ''}`, color: 'green', autoClose: 2000 });
 
       if (!formRef.current.producer) memberRef.current?.focus();
+    });
+
+    // ── Weight scale socket events ───────────────────────────────────────────
+    // Helper: fill LTR from kg — called from both stable events
+   const fillLtrFromKg = (kg) => {
+  if (isNaN(kg) || kg < 0.0) return;  // ✅ 0.0, minus, noise எல்லாம் block
+  if (scaleLastFilledRef.current === kg) return;
+  scaleLastFilledRef.current = kg;
+  setLtr(String(parseFloat(kg)));
+  setTimeout(() => fatRef.current?.focus(), 80);
+};
+
+    socket.on('weight-scale-data', (data) => {
+      const kg = Number(data.value);
+      setScaleStatus(`${data.stable ? '⚖ Stable' : '~ Unstable'} — ${kg.toFixed(2)} kg`);
+      if (!data.stable) scaleLastFilledRef.current = null;
+      if (data.stable) fillLtrFromKg(kg);
+    });
+
+    socket.on('weight-scale-stable', (data) => {
+      // Primary path: backend-debounced stable event → fill LTR
+      fillLtrFromKg(Number(data.value));
+    });
+
+    socket.on('weight-scale-disconnected', () => {
+      setScaleConnected(false);
+      setScaleStatus('');
+    });
+
+    socket.on('weight-scale-error', (data) => {
+      setScaleStatus(`Scale error: ${data.message}`);
+      notifications.show({ title: 'Scale Error', message: data.message, color: 'red', autoClose: 4000 });
     });
 
     return () => socket.disconnect();
@@ -575,6 +707,10 @@ const MilkPurchase = () => {
         if (machines.digitalDisplay)     enabledModes.push('DISP');
         if (machines.announcementSystem) enabledModes.push('SMS');
         if (enabledModes.length) setCpMode(enabledModes);
+        // Auto-connect scale if weighingScale is enabled in settings
+        if (machines.weighingScale) connectScale();
+        // Auto-connect LED display if digitalDisplay is enabled in settings
+        if (machines.digitalDisplay) connectDisplay();
 
         // Load analyzer device config + scan ports
         try {
@@ -862,6 +998,11 @@ const MilkPurchase = () => {
         }
       }
       handleClear();
+      // Auto-tare scale after save so it resets to 0 for the next farmer
+      if (formRef.current.cpMode?.includes('Weight') && formRef.current.scaleConnected) {
+        scaleLastFilledRef.current = null; // reset so next farmer's weight fills LTR
+        machineConfigAPI.scaleTare().catch(() => {});
+      }
     } catch (err) {
       notifications.show({ message: err?.message || 'Save failed', color: 'red', icon: <IconAlertCircle size={14} /> });
     } finally { setSaving(false); }
@@ -873,6 +1014,10 @@ const MilkPurchase = () => {
     setManualRate(''); setManualAmount('');
     setSelectedRow(null); setEditingId(null);
     // analyzerDataCapturedRef stays true — only resets when machine sends a NEW different reading
+    // Send blank frame to display so it clears for the next farmer
+    if (formRef.current.displayConnected) {
+      machineConfigAPI.sendDisplay({}).catch(() => {});
+    }
     setTimeout(() => memberRef.current?.focus({ preventScroll: true }), 60);
   };
 
@@ -1121,7 +1266,7 @@ const MilkPurchase = () => {
           </Card>
 
           {/* ── CARD 3: Current Entry ── */}
-          <Card shadow="xs" radius="lg" withBorder style={{ flex: 1, borderColor: (machineConnected || socketConnected) ? '#6ee7b7' : '#fde68a', borderTop: `3px solid ${(machineConnected || socketConnected) ? '#059669' : '#d97706'}`, padding: '8px 12px' }}>
+          <Card shadow="xs" radius="lg" withBorder style={{ flex: 1, borderColor: (machineConnected || socketConnected || scaleConnected) ? '#6ee7b7' : '#fde68a', borderTop: `3px solid ${(machineConnected || socketConnected) ? '#059669' : scaleConnected ? '#4338ca' : '#d97706'}`, padding: '8px 12px' }}>
             <Group gap={6} mb={6} justify="space-between">
               <Group gap={6}>
                 <Box style={{ background: '#fef9c3', borderRadius: 7, padding: '4px 6px' }}><IconMilk size={15} color="#d97706" /></Box>
@@ -1130,6 +1275,12 @@ const MilkPurchase = () => {
                   <Badge size="xs" color="teal" variant="filled" radius="sm"
                     leftSection={<Box style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff', animation: 'pulse 1s infinite' }} />}>
                     MACHINE LIVE
+                  </Badge>
+                )}
+                {scaleConnected && (
+                  <Badge size="xs" color="indigo" variant="filled" radius="sm"
+                    leftSection={<Box style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff', animation: 'pulse 1s infinite' }} />}>
+                    SCALE LIVE
                   </Badge>
                 )}
                 {activeTimeIncentive && (
@@ -1147,6 +1298,9 @@ const MilkPurchase = () => {
               </Group>
               <Group gap={6}>
                 {machineStatus && <Text size="9px" c="teal.7" fw={600}>{machineStatus}</Text>}
+                {scaleStatus && (
+                  <Text size="9px" fw={600} c={scaleConnected ? 'indigo.7' : 'dimmed'}>{scaleStatus}</Text>
+                )}
                 {/* Backend serial port status (Socket.io) */}
                 <Badge
                   size="xs"
@@ -1156,11 +1310,34 @@ const MilkPurchase = () => {
                 >
                   {socketConnected ? 'COM ✓' : 'COM —'}
                 </Badge>
-                {/* Web Serial API connect button */}
+                {/* Weight Scale connect button (backend Socket.io) */}
+                <ActionIcon
+                  size="sm" radius="sm"
+                  variant={scaleConnected ? 'filled' : 'light'}
+                  color={scaleConnected ? 'indigo' : 'gray'}
+                  loading={scaleStarting}
+                  title={scaleConnected ? 'Disconnect Weight Scale' : 'Connect Weighing Scale (uses port from Settings)'}
+                  onClick={scaleConnected ? disconnectScale : connectScale}
+                >
+                  <IconScale size={14} />
+                </ActionIcon>
+                {/* Tare button — only shown when scale is connected */}
+                {scaleConnected && (
+                  <Button
+                    size="compact-xs" radius="sm"
+                    variant="filled" color="indigo"
+                    title="Send Tare command — zeroes the scale"
+                    onClick={sendTare}
+                    style={{ fontWeight: 700, fontSize: 10, height: 22, padding: '0 7px' }}
+                  >
+                    Tare
+                  </Button>
+                )}
+                {/* Milk Analyzer connect button (Web Serial API) */}
                 <ActionIcon
                   size="sm" radius="sm" variant={machineConnected ? 'filled' : 'light'}
                   color={machineConnected ? 'teal' : 'gray'}
-                  title={machineConnected ? 'Disconnect Web Serial' : 'Connect via Web Serial API (Chrome/Edge)'}
+                  title={machineConnected ? 'Disconnect Milk Analyzer' : 'Connect Milk Analyzer via Web Serial API (Chrome/Edge)'}
                   onClick={machineConnected ? disconnectMachine : connectMachine}
                 >
                   {machineConnected ? <IconPlugConnectedX size={14} /> : <IconPlugConnected size={14} />}
@@ -1457,7 +1634,7 @@ const MilkPurchase = () => {
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 600, color: '#1e293b' }}>{entry.producerName}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0369a1', textAlign: 'right' }}>{(entry.ltr ?? entry.qty).toFixed(2)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#065f46', textAlign: 'right' }}>{entry.qty.toFixed(3)}</Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#c2410c', textAlign: 'right' }}>{entry.fat.toFixed(2)}</Table.Td>
+                      <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#c2410c', textAlign: 'right' }}>{entry.fat.toFixed(1)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', color: '#6d28d9', textAlign: 'right' }}>{entry.clr.toFixed(1)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', color: '#166534', textAlign: 'right' }}>{entry.snf.toFixed(2)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', textAlign: 'right' }}>&#8377;{entry.incentive.toFixed(2)}</Table.Td>
@@ -1479,7 +1656,7 @@ const MilkPurchase = () => {
                     <Table.Td colSpan={4} style={{ padding: '8px 12px', fontWeight: 700, color: '#93c5fd', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#7dd3fc', textAlign: 'right', fontSize: 13 }}>{totalLtr.toFixed(2)}</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#6ee7b7', textAlign: 'right', fontSize: 13 }}>{totalQty.toFixed(3)}</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#fdba74', textAlign: 'right' }}>{avgFat.toFixed(2)}</Table.Td>
+                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#fdba74', textAlign: 'right' }}>{avgFat.toFixed(1)}</Table.Td>
                     <Table.Td colSpan={2} />
                     <Table.Td />
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#e2e8f0', textAlign: 'right' }}>&#8377;{avgRate.toFixed(2)}</Table.Td>
@@ -1501,7 +1678,7 @@ const MilkPurchase = () => {
             </Box>
             <Divider orientation="vertical" style={{ height: 36 }} />
             {[
-              { label: 'FAT Avg',   val: avgFat.toFixed(2),              c: '#c2410c', bg: '#fff7ed', border: '#fed7aa' },
+              { label: 'FAT Avg',   val: avgFat.toFixed(1),              c: '#c2410c', bg: '#fff7ed', border: '#fed7aa' },
               { label: 'CLR Avg',   val: avgClr.toFixed(1),              c: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe' },
               { label: 'Rate Avg',  val: `\u20B9${avgRate.toFixed(2)}`,  c: '#1e40af', bg: '#eff6ff', border: '#bfdbfe' },
               { label: 'Total Ltr', val: `${totalLtr.toFixed(2)} L`,     c: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' },
@@ -1615,7 +1792,18 @@ const MilkPurchase = () => {
               <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 11 }}>
                 <input type="checkbox"
                   checked={cpMode.includes(opt)}
-                  onChange={e => setCpMode(prev => e.target.checked ? [...prev, opt] : prev.filter(x => x !== opt))}
+                  onChange={e => {
+                    const checked = e.target.checked;
+                    setCpMode(prev => checked ? [...prev, opt] : prev.filter(x => x !== opt));
+                    if (opt === 'Weight') {
+                      if (checked) connectScale();
+                      else disconnectScale();
+                    }
+                    if (opt === 'DISP') {
+                      if (checked) connectDisplay();
+                      else disconnectDisplay();
+                    }
+                  }}
                   style={{ accentColor: '#006064', width: 12, height: 12 }}
                 />
                 <span style={{ color: '#004d40', fontWeight: 600 }}>{opt}</span>
@@ -1626,6 +1814,37 @@ const MilkPurchase = () => {
                     boxShadow: analyzerRunning ? '0 0 4px #22c55e' : 'none',
                     flexShrink: 0
                   }} title={analyzerRunning ? 'Analyzer running' : 'Analyzer not started'} />
+                )}
+                {opt === 'DISP' && cpMode.includes('DISP') && (
+                  <>
+                    <Box style={{
+                      width: 7, height: 7, borderRadius: '50%',
+                      background: displayConnected ? '#22c55e' : '#f59e0b',
+                      boxShadow: displayConnected ? '0 0 4px #22c55e' : 'none',
+                      flexShrink: 0
+                    }} title={displayConnected ? 'Display connected' : 'Display not connected'} />
+                    {displayConnected && (
+                      <>
+                        {['none','cr','crlf'].map(term => (
+                          <span
+                            key={term}
+                            style={{ fontSize: 9, color: '#0369a1', cursor: 'pointer', textDecoration: 'underline', fontWeight: 700, marginLeft: 2 }}
+                            title={`Send test frame — terminator: ${term}`}
+                            onClick={async (e) => {
+                              e.preventDefault();
+                              const res = await machineConfigAPI.testDisplay(undefined, term);
+                              const label = term === 'none' ? 'no-term' : term.toUpperCase();
+                              if (res?.success) {
+                                notifications.show({ title: `TEST [${label}] sent`, message: `Check display. HEX tail: ...${res.hex?.slice(-6) || ''}`, color: 'teal', autoClose: 6000 });
+                              } else {
+                                notifications.show({ title: `TEST [${label}] FAILED`, message: res?.message, color: 'red', autoClose: 6000 });
+                              }
+                            }}
+                          >{term === 'none' ? 'T1' : term === 'cr' ? 'T2' : 'T3'}</span>
+                        ))}
+                      </>
+                    )}
+                  </>
                 )}
               </label>
             ))}
@@ -1718,7 +1937,7 @@ const MilkPurchase = () => {
               <Box style={{ padding: '4px 8px 6px' }}>
                 <Box style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 4 }}>
                   {[
-                    { label: 'FAT',     value: liveAnalyzerData.fat != null ? `${parseFloat(liveAnalyzerData.fat).toFixed(2)}%` : '—', color: '#c2410c', bg: '#fff7ed' },
+                    { label: 'FAT',     value: liveAnalyzerData.fat != null ? `${parseFloat(liveAnalyzerData.fat).toFixed(1)}%` : '—', color: '#c2410c', bg: '#fff7ed' },
                     { label: 'SNF',     value: liveAnalyzerData.snf != null ? `${parseFloat(liveAnalyzerData.snf).toFixed(2)}%` : '—', color: '#166534', bg: '#f0fdf4' },
                     { label: 'Density', value: liveAnalyzerData.density != null ? String(liveAnalyzerData.density) : '—',             color: '#6d28d9', bg: '#f5f3ff' },
                     { label: 'Water',   value: liveAnalyzerData.addedWater != null ? `${liveAnalyzerData.addedWater}%` : '0%',         color: '#be123c', bg: '#fff1f2' },

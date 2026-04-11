@@ -5,6 +5,7 @@ import {
   resetSettings,
   toggleMachine,
   getSettingsSummary,
+  fixComPorts,
 } from '../controllers/milkPurchaseSettingsController.js';
 
 const router = express.Router();
@@ -16,6 +17,9 @@ router.get('/summary', getSettingsSummary);
 
 // DELETE /api/milk-purchase-settings/reset  → restore factory defaults
 router.delete('/reset', resetSettings);
+
+// POST /api/milk-purchase-settings/fix-com-ports  → one-time: replace Linux tty* with Windows COM ports
+router.post('/fix-com-ports', fixComPorts);
 
 // PATCH /api/milk-purchase-settings/machines/:key  → toggle a single device
 // e.g. PATCH /api/milk-purchase-settings/machines/weighingScale  { "enabled": true }

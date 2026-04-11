@@ -227,7 +227,7 @@ export default function MilkPurchaseSettings() {
 
     // Weighing Scale COM config
     weighingScaleConfig: {
-      comPort   : 'ttyS0',
+      comPort   : 'COM2',
       baudRate  : 9600,
       tareString: 'T',
       ctrlChar  : '#',
@@ -237,7 +237,7 @@ export default function MilkPurchaseSettings() {
     // LED Display config
     ledDisplayConfig: {
       device  : 'COMIENZ',
-      comPort : 'ttyUSB0',
+      comPort : 'COM3',
       baudRate: 9600,
     },
 
@@ -245,7 +245,7 @@ export default function MilkPurchaseSettings() {
     milkAnalyzerConfig: {
       deviceName            : '',
       device                : 'LACTO SURE ECO',
-      comPort               : 'ttyS1',
+      comPort               : 'COM11',
       baudRate              : 9600,
       manualEntryCombination: 'FAT-SNF',
     },
@@ -274,7 +274,12 @@ export default function MilkPurchaseSettings() {
     }
   }, []);
 
-  useEffect(() => { loadSettings(); loadAnalyzerStatus(); fetchDynamicPorts(); }, [loadSettings]);
+  useEffect(() => {
+    milkPurchaseSettingsAPI.fixComPorts(); // migrate Linux tty* → Windows COM ports if needed
+    loadSettings();
+    loadAnalyzerStatus();
+    fetchDynamicPorts();
+  }, [loadSettings]);
 
   // ── Analyzer helpers ────────────────────────────────────────────────────────
   const loadAnalyzerStatus = async () => {

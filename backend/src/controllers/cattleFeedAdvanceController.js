@@ -37,17 +37,18 @@ async function buildLedgerEntries(farmerId, companyId, start, end) {
   }
 
   // 2. Debit entries — CF Advance deductions in FarmerPayment
+  //    Includes both 'CF Advance' (old style) and 'CF Recovery' (new Payment Register style)
   const payments = await FarmerPayment.find({
     farmerId:    fObjId,
     companyId:   cObjId,
     paymentDate: { $gte: start, $lte: end },
     status:      { $ne: 'Cancelled' },
-    'deductions.type': { $in: ['CF Advance', 'Cattle Feed'] },
+    'deductions.type': { $in: ['CF Advance', 'Cattle Feed', 'CF Recovery'] },
   }).lean();
 
   for (const pmt of payments) {
     const cfDeds = (pmt.deductions || []).filter(d =>
-      d.type === 'CF Advance' || d.type === 'Cattle Feed'
+      d.type === 'CF Advance' || d.type === 'Cattle Feed' || d.type === 'CF Recovery'
     );
     for (const ded of cfDeds) {
       if (!ded.amount) continue;
@@ -55,7 +56,7 @@ async function buildLedgerEntries(farmerId, companyId, start, end) {
         date:        pmt.paymentDate,
         type:        'PAYMENT_DEDUCTION',
         refNo:       pmt.paymentNumber,
-        description: `CF Recovery — Payment (${ded.type})`,
+        description: `CF Recovery — ${ded.description || ded.type}`,
         itemName:    '',
         debit:       r2(ded.amount),
         credit:      0,
@@ -237,11 +238,11 @@ export const getCFAdvanceSummary = async (req, res) => {
           companyId:         cObjId,
           paymentDate:       { $gte: start, $lte: end },
           status:            { $ne: 'Cancelled' },
-          'deductions.type': { $in: ['CF Advance', 'Cattle Feed'] },
+          'deductions.type': { $in: ['CF Advance', 'Cattle Feed', 'CF Recovery'] },
         },
       },
       { $unwind: '$deductions' },
-      { $match: { 'deductions.type': { $in: ['CF Advance', 'Cattle Feed'] } } },
+      { $match: { 'deductions.type': { $in: ['CF Advance', 'Cattle Feed', 'CF Recovery'] } } },
       { $group: { _id: '$farmerId', totalDebit: { $sum: '$deductions.amount' } } },
     ]);
     const debitMap = {};

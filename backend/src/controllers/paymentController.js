@@ -4,7 +4,7 @@ import ProducerLoan from '../models/ProducerLoan.js';
 import ProducerOpening from '../models/ProducerOpening.js';
 import ProducerPayment from '../models/ProducerPayment.js';
 import Farmer from '../models/Farmer.js';
-import { createPaymentVoucher } from '../utils/accountingHelper.js';
+import { createPaymentVoucher, createRecoveryVoucher } from '../utils/accountingHelper.js';
 import mongoose from 'mongoose';
 
 // ==================== FARMER PAYMENT FUNCTIONS ====================
@@ -64,15 +64,21 @@ export const createFarmerPayment = async (req, res) => {
       'Cash Recovery': 'Cash Advance',
     };
 
+    const farmerObjId  = new mongoose.Types.ObjectId(paymentData.farmerId);
+    const companyObjId = new mongoose.Types.ObjectId(paymentData.companyId);
+
     for (const deduction of (paymentData.deductions || [])) {
       let remaining = deduction.amount || 0;
       if (remaining <= 0) continue;
 
       if (advanceDeductionTypes[deduction.type]) {
-        // Reduce Advance records FIFO (oldest first)
+        const advCategory = advanceDeductionTypes[deduction.type];
+
+        // Reduce Advance records FIFO (oldest first), scoped to this company
         const advances = await Advance.find({
-          farmerId: paymentData.farmerId,
-          advanceCategory: advanceDeductionTypes[deduction.type],
+          companyId:       companyObjId,
+          farmerId:        farmerObjId,
+          advanceCategory: advCategory,
           status: { $in: ['Active', 'Partially Adjusted', 'Overdue'] },
         }).sort({ advanceDate: 1 });
 
@@ -94,11 +100,13 @@ export const createFarmerPayment = async (req, res) => {
           await adv.save();
           remaining -= apply;
         }
+
       } else if (deduction.type === 'Loan Advance' || deduction.type === 'Loan Recovery') {
-        // Reduce ProducerLoan records FIFO (oldest first)
+        // Reduce ProducerLoan records FIFO (oldest first), scoped to this company
         const loans = await ProducerLoan.find({
-          farmerId: paymentData.farmerId,
-          status: { $in: ['Active', 'Defaulted'] },
+          companyId: companyObjId,
+          farmerId:  farmerObjId,
+          status:    { $in: ['Active', 'Defaulted'] },
         }).sort({ loanDate: 1 });
 
         for (const loan of loans) {
@@ -113,10 +121,18 @@ export const createFarmerPayment = async (req, res) => {
           await loan.save();
           remaining -= apply;
         }
+
       }
     }
 
-    // Create accounting voucher
+    // Create recovery journal voucher for CF/Cash/Loan recovery deductions (always, even when paidAmount=0)
+    try {
+      await createRecoveryVoucher(payment);
+    } catch (recVoucherErr) {
+      console.error('Recovery voucher creation failed:', recVoucherErr);
+    }
+
+    // Create accounting voucher for cash/bank payment
     if (paymentData.paidAmount > 0) {
       try {
         const voucher = await createPaymentVoucher(payment);
@@ -1083,19 +1099,19 @@ export const getCashAdvanceSummary = async (req, res) => {
     const advancedMap = {};
     advancesAgg.forEach(a => { advancedMap[a._id?.toString()] = r2(a.totalAdvanced); });
 
-    // 3. Recovery in period from FarmerPayment deductions (type = 'Cash Advance')
+    // 3. Recovery in period from FarmerPayment deductions (type = 'Cash Advance' or 'Cash Recovery')
     const pmtMatchStage = {
       companyId:         cObjId,
       paymentDate:       { $gte: start, $lte: end },
       status:            { $ne: 'Cancelled' },
-      'deductions.type': 'Cash Advance',
+      'deductions.type': { $in: ['Cash Advance', 'Cash Recovery'] },
     };
     if (farmerObjId) pmtMatchStage.farmerId = farmerObjId;
 
     const recoveryAgg = await FarmerPayment.aggregate([
       { $match: pmtMatchStage },
       { $unwind: '$deductions' },
-      { $match: { 'deductions.type': 'Cash Advance' } },
+      { $match: { 'deductions.type': { $in: ['Cash Advance', 'Cash Recovery'] } } },
       { $group: { _id: '$farmerId', totalRecovery: { $sum: '$deductions.amount' } } },
     ]);
     const recoveryMap = {};

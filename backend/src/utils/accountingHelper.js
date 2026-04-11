@@ -589,6 +589,81 @@ export const applyProducerOpeningLedgers = async (newData, oldData, companyId, s
   }
 };
 
+// Create journal voucher for advance recovery deductions (CF/Cash/Loan)
+// Dr PRODUCERS DUES (farmer ledger)  /  Cr Advance Ledger
+export const createRecoveryVoucher = async (paymentData, session = null) => {
+  const farmerId  = paymentData.farmerId;
+  const companyId = paymentData.companyId;
+
+  const RECOVERY_LEDGER_MAP = {
+    'CF Recovery':   { name: 'Cattle Feed Advance',  type: 'Other Receivable' },
+    'CF Advance':    { name: 'Cattle Feed Advance',  type: 'Other Receivable' },
+    'Cash Recovery': { name: 'Farmers Cash Advance', type: 'Other Receivable' },
+    'Cash Advance':  { name: 'Farmers Cash Advance', type: 'Other Receivable' },
+    'Loan Recovery': { name: 'Farmers Loan A/c',     type: 'Other Receivable' },
+    'Loan Advance':  { name: 'Farmers Loan A/c',     type: 'Other Receivable' },
+  };
+
+  const recoveries = (paymentData.deductions || []).filter(
+    d => RECOVERY_LEDGER_MAP[d.type] && (d.amount || 0) > 0
+  );
+  if (recoveries.length === 0) return null;
+
+  // Farmer's PRODUCERS DUES ledger
+  const farmerLedger = await Ledger.findOne({
+    'linkedEntity.entityType': 'Farmer',
+    'linkedEntity.entityId':   farmerId,
+    ...(companyId && { companyId }),
+  });
+  if (!farmerLedger) {
+    console.warn(`createRecoveryVoucher: no farmer ledger for farmerId=${farmerId}`);
+    return null;
+  }
+
+  // Accumulate per-ledger debit/credit
+  const ledgerTotals = {}; // key: ledgerId string → { ledgerId, ledgerName, debitAmount, creditAmount }
+
+  const accum = (id, name, dr, cr) => {
+    const k = id.toString();
+    if (!ledgerTotals[k]) ledgerTotals[k] = { ledgerId: id, ledgerName: name, debitAmount: 0, creditAmount: 0 };
+    ledgerTotals[k].debitAmount  += dr;
+    ledgerTotals[k].creditAmount += cr;
+  };
+
+  for (const ded of recoveries) {
+    const linfo    = RECOVERY_LEDGER_MAP[ded.type];
+    const advLedger = await findOrCreateLedger(linfo.name, linfo.type, 'Assets', 'Dr', companyId, session);
+    // Dr PRODUCERS DUES, Cr advance ledger
+    accum(farmerLedger._id, farmerLedger.ledgerName, ded.amount, 0);
+    accum(advLedger._id,    advLedger.ledgerName,    0,          ded.amount);
+  }
+
+  const entries     = Object.values(ledgerTotals);
+  const totalDebit  = entries.reduce((s, e) => s + e.debitAmount,  0);
+  const totalCredit = entries.reduce((s, e) => s + e.creditAmount, 0);
+
+  const voucherNumber = await generateVoucherNumber('Journal', companyId);
+
+  const voucher = new Voucher({
+    voucherType:   'Journal',
+    voucherNumber,
+    voucherDate:   paymentData.paymentDate || new Date(),
+    entries,
+    totalDebit,
+    totalCredit,
+    narration:     `Advance Recovery — ${farmerLedger.ledgerName} | ${paymentData.paymentNumber || ''}`,
+    referenceType: 'FarmerPayment',
+    referenceId:   paymentData._id,
+    ...(companyId && { companyId }),
+  });
+
+  if (session) await voucher.save({ session });
+  else await voucher.save();
+
+  await updateLedgerBalances(entries, session, companyId);
+  return voucher;
+};
+
 export default {
   generateVoucherNumber,
   getFinancialYear,
@@ -596,6 +671,7 @@ export default {
   updateLedgerBalances,
   reverseLedgerBalances,
   createPaymentVoucher,
+  createRecoveryVoucher,
   createPurchaseVoucher,
   createShareCapitalVoucher,
   createAdmissionFeeVoucher,

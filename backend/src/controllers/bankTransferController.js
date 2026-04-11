@@ -57,10 +57,9 @@ export const retrieveBalances = async (req, res) => {
         }).sort({ paymentDate: -1 });
 
         netPayable = pendingPayments.reduce((sum, p) => sum + (p.netPayable || 0), 0);
-        // Use paymentMode from the most recent payment record, normalizing 'Bank' → 'Bank Transfer'
+        // Use paymentMode from the most recent payment record
         if (pendingPayments.length > 0) {
-          const rawMode = pendingPayments[0].paymentMode || 'Bank Transfer';
-          paymentMode = rawMode === 'Bank' ? 'Bank Transfer' : rawMode;
+          paymentMode = pendingPayments[0].paymentMode || 'Bank Transfer';
         }
       } else {
         // Most recent BankTransfer-source pending payment
@@ -73,8 +72,7 @@ export const retrieveBalances = async (req, res) => {
 
         if (lastPeriod) {
           netPayable = lastPeriod.netPayable || 0;
-          const rawMode = lastPeriod.paymentMode || 'Bank Transfer';
-          paymentMode = rawMode === 'Bank' ? 'Bank Transfer' : rawMode;
+          paymentMode = lastPeriod.paymentMode || 'Bank Transfer';
         }
       }
 
