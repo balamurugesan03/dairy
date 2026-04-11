@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Container, Paper, Grid, Group, Text, Title, Box,
   TextInput, NumberInput, Checkbox, ScrollArea, Badge,
-  Divider, Button, Loader, ActionIcon,
+  Divider, Button, Loader,
 } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
@@ -14,7 +15,6 @@ import dayjs from 'dayjs';
 import { useReactToPrint } from 'react-to-print';
 import {
   paymentAPI, dairySettingsAPI, paymentRegisterAPI, producerOpeningAPI, periodicalRuleAPI, milkPurchaseSettingsAPI,
-  bankTransferAPI,
 } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 
@@ -43,8 +43,9 @@ const initRow = (sn) => ({
   payMode:       '',   // 'Bank' | 'Cash'
   paidAmount:    '',
   signature:     '',
+  locked:        false, // user locked via checkbox (before Save Payment)
   paid:          false,
-  bankPending:   false, // true = queued for bank transfer (no paidAmount entered)
+  bankPending:   false, // true = queued for bank transfer (saved, pending bank transfer apply)
 });
 
 /* ─── helpers ─── */
@@ -124,6 +125,7 @@ const recalc = (row) => {
 const PaymentRegisterLedger = () => {
   const { selectedCompany } = useCompany();
   const printRef = useRef();
+  const [searchParams] = useSearchParams();
 
   const handlePrint = useReactToPrint({
     content: () => printRef.current,
@@ -149,7 +151,6 @@ const PaymentRegisterLedger = () => {
   /* ─── data state ─── */
   const [rows,         setRows]         = useState([]);
   const [loading,      setLoading]      = useState(false);
-  const [applying,     setApplying]     = useState({});
   const [quantityUnit, setQuantityUnit] = useState('Litre');
 
   /* ─── Previous cycle carry-forward (farmerId → carry data) ─── */
@@ -179,7 +180,29 @@ const PaymentRegisterLedger = () => {
   };
 
   /* ─── Load settings on mount → auto-advance to next unpaid cycle ─── */
+  /* If navigated from Ledger History with ?from=&to= params, use those dates directly */
   useEffect(() => {
+    const paramFrom = searchParams.get('from');
+    const paramTo   = searchParams.get('to');
+
+    // If URL params supplied (reverse-navigate from history), skip auto-advance and use them
+    if (paramFrom && paramTo) {
+      Promise.all([
+        dairySettingsAPI.get(),
+        milkPurchaseSettingsAPI.getSummary(),
+      ]).then(([dsRes, msRes]) => {
+        const s    = dsRes?.data || dsRes || {};
+        setSettingsDays(s.paymentDays || 15);
+        setQuantityUnit(msRes?.data?.quantityUnit || 'Litre');
+        setFromDate(dayjs(paramFrom).toDate());
+        setToDate(dayjs(paramTo).toDate());
+      }).catch(() => {
+        setFromDate(dayjs(paramFrom).toDate());
+        setToDate(dayjs(paramTo).toDate());
+      });
+      return;
+    }
+
     Promise.all([
       dairySettingsAPI.get(),
       milkPurchaseSettingsAPI.getSummary(),
@@ -239,8 +262,9 @@ const PaymentRegisterLedger = () => {
       totalDed:      '',
       netPay:        '',
       payMode:       '',    // no checkbox pre-ticked — user selects
-      paidAmount:    '',    // user types amount manually
+      paidAmount:    '',
       signature:     '',
+      locked:        false,
       paid:          false,
       bankPending:   false,
     });
@@ -272,8 +296,9 @@ const PaymentRegisterLedger = () => {
       totalDed:      '',
       netPay:        '',
       payMode:       '',    // no checkbox pre-ticked — user selects
-      paidAmount:    '',    // user types amount manually
+      paidAmount:    '',
       signature:     '',
+      locked:        false,
       paid:          false,
       bankPending:   false,
     });
@@ -362,6 +387,7 @@ const PaymentRegisterLedger = () => {
           paidAmount:  isLedgerPmt ? (pmt.paidAmount || row.paidAmount) : row.paidAmount,
           paid:        isLedgerPmt ? (pmt.status === 'Paid' || pmt.status === 'Partial') : isBankPending,
           bankPending: isBankPending,
+          locked:      isLedgerPmt || isBankPending,
         });
       };
 
@@ -436,6 +462,16 @@ const PaymentRegisterLedger = () => {
     });
   };
 
+  /* ─── Toggle lock state per row (UI-only — no API call) ─── */
+  const toggleLock = (idx) => {
+    setRows(prev => {
+      const next = [...prev];
+      if (next[idx].paid || next[idx].bankPending) return next; // already saved, cannot unlock
+      next[idx] = { ...next[idx], locked: !next[idx].locked };
+      return next;
+    });
+  };
+
   /* Toggle pay mode (Bank/Cash — mutually exclusive checkbox) */
   const togglePayMode = (idx, mode) => {
     setRows(prev => {
@@ -468,242 +504,137 @@ const PaymentRegisterLedger = () => {
     });
   };
 
-  /* ─── Build payment payload for a row ───
-     individual=true  → user explicitly clicked Apply on this row; pay full netPay if paidAmount blank.
-                        Source: 'Ledger' (excludes from Bank Transfer).
-     individual=false → Apply All bulk; respect what user typed — blank means queued for bank transfer.
-                        Source: 'BankTransfer' when paidAmount=0 (included in Bank Transfer module).
-  ─── */
-  const buildPayload = (row, individual = false) => {
-    const paidAmt = individual
-      ? (n(row.paidAmount) || n(row.netPay))   // individual apply: default to full netPay
-      : n(row.paidAmount);                      // bulk apply: only what was explicitly entered
-    const deductions = [];
-    // cfAdv/cashAdv/loanAdv are reference-only — NOT included as deductions
-    // Only Rec (recovery) amounts + welfare + otherDed are actual deductions
-    if (n(row.welfare)  > 0) deductions.push({ type: 'Welfare Recovery', amount: n(row.welfare),  description: 'Welfare' });
-    if (n(row.cfRec)    > 0) deductions.push({ type: 'CF Recovery',      amount: n(row.cfRec),    description: 'CF Recovery' });
-    if (n(row.cashRec)  > 0) deductions.push({ type: 'Cash Recovery',    amount: n(row.cashRec),  description: 'Cash Recovery' });
-    if (n(row.loanRec)  > 0) deductions.push({ type: 'Loan Recovery',    amount: n(row.loanRec),  description: 'Loan Recovery' });
-    if (n(row.otherDed) > 0) deductions.push({ type: 'Other',            amount: n(row.otherDed), description: 'Other' });
-    const bonuses = n(row.otherEarnings) > 0
-      ? [{ type: 'Other', amount: n(row.otherEarnings), description: 'Other Earnings' }]
-      : [];
-    return {
-      farmerId:        row.farmerId,
-      farmerName:      row.producerName || '',
-      paymentDate:     new Date(),
-      paymentPeriod:   { fromDate, toDate, periodType: 'Custom' },
-      milkAmount:      n(row.milkValue),
-      previousBalance: n(row.prevBalance),
-      bonuses,
-      deductions,
-      paidAmount:      paidAmt,
-      paymentMode:     row.payMode || 'Cash',
-      // paidAmt>0 = individually paid (Ledger) → excluded from Bank Transfer
-      // paidAmt=0 = pending bank transfer (BankTransfer) → included in Bank Transfer module
-      paymentSource:   paidAmt > 0 ? 'Ledger' : 'BankTransfer',
-      remarks:         `Ledger — ${dayjs(fromDate).format('DD/MM')}–${dayjs(toDate).format('DD/MM/YYYY')}`,
-    };
-  };
+  /* ─── Save Payment — locks all farmers & queues for Bank Transfer ─── */
+  const [saving, setSaving] = useState(false);
 
-  /* ─── Helper: create BankTransfer log for Bank-mode rows ─── */
-  const createBankTransferLog = async (bankRows) => {
-    if (!bankRows.length) return;
-    try {
-      await bankTransferAPI.createFromLedger({
-        farmers:   bankRows.map(r => ({
-          farmerId:    r.farmerId,
-          farmerName:  r.producerName,
-          farmerNumber: r.farmerNumber || '',
-          netPayable:  n(r.netPay),
-          paidAmount:  n(r.paidAmount) || n(r.netPay),
-        })),
-        applyDate: new Date().toISOString(),
-        fromDate,
-        toDate,
-      });
-    } catch (err) {
-      console.warn('Bank transfer log creation failed:', err.message);
-    }
-  };
-
-  /* ─── Apply Payment per row ─── */
-  const applyPayment = async (idx) => {
-    const row = rows[idx];
-    if (!row.farmerId) {
-      notifications.show({ title: 'Error', message: 'No farmer ID', color: 'red' }); return;
-    }
-    if (n(row.netPay) <= 0) {
-      notifications.show({ title: 'Warning', message: 'Net payable is 0 or negative', color: 'orange' }); return;
-    }
-    setApplying(prev => ({ ...prev, [idx]: true }));
-    try {
-      await paymentAPI.create(buildPayload(row, true));  // individual=true → always pays (uses netPay if paidAmount blank)
-      // Individual row pay: do NOT create bank transfer log (only Apply All bulk does)
-      setRows(prev => prev.map((r, i) =>
-        i === idx ? { ...r, paid: true, bankPending: false, payMode: r.payMode || 'Cash' } : r
-      ));
-      notifications.show({
-        title:   'Payment Applied',
-        message: `${row.producerName} — ₹${(n(row.paidAmount) || n(row.netPay)).toFixed(2)} (${row.payMode || 'Cash'})`,
-        color:   'green',
-        icon:    <IconCheck size={14} />,
-        autoClose: 3000,
-      });
-    } catch (err) {
-      notifications.show({ title: 'Failed', message: err.message, color: 'red' });
-    } finally {
-      setApplying(prev => ({ ...prev, [idx]: false }));
-    }
-  };
-
-  /* ─── Apply ALL unpaid rows ─── */
-  const [applyingAll, setApplyingAll] = useState(false);
-  const applyAllPayments = async () => {
+  const savePayment = async () => {
     if (filledRows.length === 0) {
-      notifications.show({ title: 'Nothing to Apply', message: 'No rows in ledger', color: 'orange' });
+      notifications.show({ title: 'No Data', message: 'Generate the register first', color: 'orange' });
       return;
     }
 
-    const unpaid = rows.map((r, i) => ({ r, i })).filter(({ r }) => !r.paid && r.farmerId && n(r.netPay) > 0);
-
-    // All already paid (from individual payments) — save history log, then advance cycle
-    if (unpaid.length === 0) {
-      storeCycleData(filledRows);
-      // Save history log for this cycle
-      try {
-        await paymentRegisterAPI.create({
-          fromDate:     dayjs(fromDate).format('YYYY-MM-DD'),
-          toDate:       dayjs(toDate).format('YYYY-MM-DD'),
-          registerType: 'Ledger',
-          status:       'Saved',
-          entries: filledRows.map(r => ({
-            farmerId:        r.farmerId,
-            productId:       r.producerId   || '',
-            productName:     r.producerName || '',
-            producerId:      r.producerId   || '',
-            producerName:    r.producerName || '',
-            qty:             n(r.qty),
-            milkValue:       n(r.milkValue),
-            previousBalance: n(r.prevBalance),
-            otherEarnings:   n(r.otherEarnings),
-            totalEarnings:   n(r.totalEarnings),
-            welfare:         n(r.welfare),
-            cfAdv:           n(r.cfAdv),
-            cfRec:           n(r.cfRec),
-            cashAdv:         n(r.cashAdv),
-            cashRec:         n(r.cashRec),
-            loanAdv:         n(r.loanAdv),
-            loanRec:         n(r.loanRec),
-            otherDed:        n(r.otherDed),
-            totalDed:        n(r.totalDed),
-            netPay:          n(r.netPay),
-            paidAmount:      n(r.paidAmount) || n(r.netPay),
-            payMode:         r.payMode || 'Cash',
-            paymentMode:     r.payMode || 'Cash',
-            paid:            true,
-          })),
-        });
-      } catch { /* continue */ }
-      const nextFrom = dayjs(toDate).add(1, 'day').toDate();
-      const nextTo   = dayjs(nextFrom).add(settingsDays - 1, 'day').toDate();
-      setFromDate(nextFrom);
-      setToDate(nextTo);
+    // Rows not yet locked or individually paid
+    const unlockedNow = filledRows.filter(r => !r.locked && !r.paid && !r.bankPending);
+    if (unlockedNow.length > 0) {
       notifications.show({
-        title: 'Cycle Advanced',
-        message: `All already paid — Next cycle: ${dayjs(nextFrom).format('DD/MM/YYYY')} – ${dayjs(nextTo).format('DD/MM/YYYY')}`,
-        color: 'blue', icon: <IconCheck size={14} />, autoClose: 5000,
+        title:   'Lock All Farmers First',
+        message: `${unlockedNow.length} farmer(s) not yet locked. Set recovery amounts and click the lock ✓ checkbox for each farmer.`,
+        color:   'orange',
+        autoClose: 5000,
       });
-      await loadData(nextFrom, nextTo, false);
       return;
     }
 
-    setApplyingAll(true);
-
-    // Capture current period before any date advance
+    setSaving(true);
     const periodFrom = fromDate;
     const periodTo   = toDate;
 
+    // Rows to create FarmerPayment for: locked by user, not yet individually paid or bank-pending
+    const toSave = filledRows.filter(r => r.locked && !r.paid && !r.bankPending);
+
     let done = 0;
-    const bankPaid   = [];
-    const savedRows  = [];
-    for (const { r, i } of unpaid) {
-      try {
-        await paymentAPI.create(buildPayload(r));
-        if (r.payMode === 'Bank') bankPaid.push(r);
-        savedRows.push(r);
-        setRows(prev => prev.map((row, idx) =>
-          idx === i ? { ...row, paid: true, payMode: row.payMode || 'Cash' } : row
-        ));
-        done++;
-      } catch { /* continue */ }
-    }
+    const savedFarmerIds = new Set();
 
-    // 1. Create one BankTransfer log for all Bank-mode rows
-    if (bankPaid.length > 0) await createBankTransferLog(bankPaid);
-
-    // 2. Save PaymentRegister log (type: Ledger) for history
-    if (savedRows.length > 0) {
+    for (const row of toSave) {
       try {
-        const logRes = await paymentRegisterAPI.create({
-          fromDate:     dayjs(periodFrom).format('YYYY-MM-DD'),
-          toDate:       dayjs(periodTo).format('YYYY-MM-DD'),
-          registerType: 'Ledger',
-          status:       'Saved',
-          entries:      savedRows.map((r) => ({
-            farmerId:        r.farmerId,
-            productId:       r.producerId   || '',
-            productName:     r.producerName || '',
-            producerId:      r.producerId   || '',
-            producerName:    r.producerName || '',
-            qty:             n(r.qty),
-            milkValue:       n(r.milkValue),
-            previousBalance: n(r.prevBalance),
-            otherEarnings:   n(r.otherEarnings),
-            totalEarnings:   n(r.totalEarnings),
-            welfare:         n(r.welfare),
-            cfAdv:           n(r.cfAdv),
-            cfRec:           n(r.cfRec),
-            cashAdv:         n(r.cashAdv),
-            cashRec:         n(r.cashRec),
-            loanAdv:         n(r.loanAdv),
-            loanRec:         n(r.loanRec),
-            otherDed:        n(r.otherDed),
-            totalDed:        n(r.totalDed),
-            netPay:          n(r.netPay),
-            paidAmount:      n(r.paidAmount) || n(r.netPay),
-            payMode:         r.payMode || 'Cash',
-            paymentMode:     r.payMode || 'Cash',
-            paid:            true,
-          })),
+        const deductions = [];
+        if (n(row.welfare)  > 0) deductions.push({ type: 'Welfare Recovery', amount: n(row.welfare),  description: 'Welfare' });
+        if (n(row.cfRec)    > 0) deductions.push({ type: 'CF Recovery',      amount: n(row.cfRec),    description: 'CF Recovery' });
+        if (n(row.cashRec)  > 0) deductions.push({ type: 'Cash Recovery',    amount: n(row.cashRec),  description: 'Cash Recovery' });
+        if (n(row.loanRec)  > 0) deductions.push({ type: 'Loan Recovery',    amount: n(row.loanRec),  description: 'Loan Recovery' });
+        if (n(row.otherDed) > 0) deductions.push({ type: 'Other',            amount: n(row.otherDed), description: 'Other Deductions' });
+        const bonuses = n(row.otherEarnings) > 0
+          ? [{ type: 'Other', amount: n(row.otherEarnings), description: 'Other Earnings' }]
+          : [];
+
+        await paymentAPI.create({
+          farmerId:        row.farmerId,
+          farmerName:      row.producerName || '',
+          paymentDate:     new Date(),
+          paymentPeriod:   { fromDate: periodFrom, toDate: periodTo, periodType: 'Custom' },
+          milkAmount:      n(row.milkValue),
+          previousBalance: n(row.prevBalance),
+          bonuses,
+          deductions,
+          paidAmount:      0,                        // no amount paid yet — goes to Bank Transfer
+          paymentMode:     row.payMode || 'Cash',    // cash/bank stored for Bank Transfer sorting
+          paymentSource:   'BankTransfer',           // all locked rows go to Bank Transfer module
+          remarks:         `Payment Register — ${dayjs(periodFrom).format('DD/MM')}–${dayjs(periodTo).format('DD/MM/YYYY')}`,
         });
-        if (!logRes?.success) {
-          notifications.show({ title: 'History Save Failed', message: logRes?.message || 'Could not save ledger history log', color: 'orange' });
-        }
+        savedFarmerIds.add(row.farmerId);
+        done++;
       } catch (err) {
-        notifications.show({ title: 'History Save Failed', message: err.message || 'Could not save ledger history log', color: 'orange' });
+        console.error('FarmerPayment create failed:', row.producerName, err.message);
       }
     }
 
-    setApplyingAll(false);
+    // Mark saved rows as bankPending in UI
+    if (savedFarmerIds.size > 0) {
+      setRows(prev => prev.map(r =>
+        savedFarmerIds.has(r.farmerId) ? { ...r, paid: true, bankPending: true } : r
+      ));
+    }
 
-    if (done === 0) {
-      notifications.show({ title: 'No Payments Applied', message: 'All payments failed — dates not advanced', color: 'red' });
+    // Save PaymentRegister history log (includes individually-paid + newly-saved rows)
+    try {
+      await paymentRegisterAPI.create({
+        fromDate:     dayjs(periodFrom).format('YYYY-MM-DD'),
+        toDate:       dayjs(periodTo).format('YYYY-MM-DD'),
+        registerType: 'Ledger',
+        status:       'Saved',
+        entries: filledRows.map(r => ({
+          farmerId:        r.farmerId,
+          productId:       r.producerId   || '',
+          productName:     r.producerName || '',
+          producerId:      r.producerId   || '',
+          producerName:    r.producerName || '',
+          qty:             n(r.qty),
+          milkValue:       n(r.milkValue),
+          previousBalance: n(r.prevBalance),
+          otherEarnings:   n(r.otherEarnings),
+          totalEarnings:   n(r.totalEarnings),
+          welfare:         n(r.welfare),
+          cfAdv:           n(r.cfAdv),
+          cfRec:           n(r.cfRec),
+          cashAdv:         n(r.cashAdv),
+          cashRec:         n(r.cashRec),
+          loanAdv:         n(r.loanAdv),
+          loanRec:         n(r.loanRec),
+          otherDed:        n(r.otherDed),
+          totalDed:        n(r.totalDed),
+          netPay:          n(r.netPay),
+          paidAmount:      n(r.netPay),
+          payMode:         r.payMode || 'Cash',
+          paymentMode:     r.payMode || 'Cash',
+          paid:            true,
+        })),
+      });
+    } catch (err) {
+      notifications.show({ title: 'History Log Failed', message: err.message, color: 'orange' });
+    }
+
+    setSaving(false);
+
+    if (done === 0 && toSave.length > 0) {
+      notifications.show({ title: 'Save Failed', message: 'Could not queue payments for bank transfer', color: 'red' });
       return;
     }
 
-    // 3. Store cycle data for carry-forward, then advance + auto-load next cycle
+    // Store carry-forward data for next cycle
     storeCycleData(filledRows);
+
+    // Advance to next cycle
     const nextFrom = dayjs(periodTo).add(1, 'day').toDate();
     const nextTo   = dayjs(nextFrom).add(settingsDays - 1, 'day').toDate();
     setFromDate(nextFrom);
     setToDate(nextTo);
+    setRows([]);
+    setDateConfirmed(false);
 
     notifications.show({
-      title:   'All Payments Applied',
-      message: `${done} of ${unpaid.length} applied — Loading next cycle: ${dayjs(nextFrom).format('DD/MM/YYYY')} – ${dayjs(nextTo).format('DD/MM/YYYY')}`,
-      color:   done === unpaid.length ? 'green' : 'orange',
+      title:   'Payment Saved',
+      message: `${done > 0 ? `${done} farmer(s) queued for Bank Transfer. ` : 'All individually paid. '}Next cycle: ${dayjs(nextFrom).format('DD/MM/YYYY')} – ${dayjs(nextTo).format('DD/MM/YYYY')}`,
+      color:   'teal',
       icon:    <IconCheck size={14} />,
       autoClose: 6000,
     });
@@ -727,13 +658,15 @@ const PaymentRegisterLedger = () => {
       cashAdv: s('cashAdv'), cashRec: s('cashRec'),
       loanAdv: s('loanAdv'), loanRec: s('loanRec'),
       otherDed: s('otherDed'), totalDed: s('totalDed'),
-      netPay: s('netPay'), paidAmount: s('paidAmount'),
+      netPay: s('netPay'),
     };
   }, [rows]);
 
-  const filledRows  = rows.filter(r => r.producerName.trim());
-  const paidRows    = rows.filter(r => r.paid);
-  const pendingRows = filledRows.filter(r => !r.paid);
+  const filledRows   = rows.filter(r => r.producerName?.trim());
+  const paidRows     = rows.filter(r => r.paid);
+  const lockedRows   = filledRows.filter(r => r.locked && !r.paid && !r.bankPending);
+  const unlockedRows = filledRows.filter(r => !r.locked && !r.paid && !r.bankPending);
+  const allLocked    = filledRows.length > 0 && filledRows.every(r => r.paid || r.locked || r.bankPending);
 
   /* ════════════════ RENDER ════════════════ */
   return (
@@ -767,13 +700,14 @@ const PaymentRegisterLedger = () => {
             </Button>
             <Button
               size="xs"
-              color="green"
+              color={allLocked ? 'teal' : 'orange'}
               variant="filled"
-              leftSection={applyingAll ? <Loader size={12} color="white" /> : <IconCheck size={13} />}
-              onClick={applyAllPayments}
-              disabled={applyingAll || !dateConfirmed || filledRows.length === 0}
+              leftSection={saving ? <Loader size={12} color="white" /> : <IconDeviceFloppy size={13} />}
+              onClick={savePayment}
+              disabled={saving || !dateConfirmed || filledRows.length === 0}
+              title={!allLocked ? `${unlockedRows.length} farmer(s) not yet locked` : 'Save all payments to Bank Transfer queue'}
             >
-              {applyingAll ? 'Applying…' : pendingRows.length > 0 ? `Apply All (${pendingRows.length})` : 'Next Cycle →'}
+              {saving ? 'Saving…' : allLocked ? 'Save Payment' : `Save Payment (${unlockedRows.length} unlocked)`}
             </Button>
             <Button size="xs" variant="light" color="gray" leftSection={<IconRefresh size={13} />} onClick={handleReset}>
               Reset
@@ -870,7 +804,7 @@ const PaymentRegisterLedger = () => {
                   {/* Print-only */}
                   <th style={{ ...thSection('#2d3748'), display: 'none' }} className="print-show" rowSpan={2}>Signature</th>
                   {/* Screen only */}
-                  <th style={thSection('#2d3748')} rowSpan={2} className="no-print">Apply</th>
+                  <th style={thSection('#276749')} rowSpan={2} className="no-print">Lock</th>
                 </tr>
                 <tr>
                   {/* Earnings sub */}
@@ -927,7 +861,7 @@ const PaymentRegisterLedger = () => {
                       <Text size={9} fw={700} c="white">Cheque</Text>
                     </Group>
                   </th>
-                  <th style={thCol('#1a4731')}>Paid Amt</th>
+                  <th style={thCol('#1a4731')}>To Transfer</th>
                 </tr>
               </thead>
 
@@ -942,7 +876,7 @@ const PaymentRegisterLedger = () => {
                     : (idx % 2 === 0 ? '#fff5f5' : '#fde8e8');
 
                   return (
-                    <tr key={idx} style={{ background: isBankPend ? '#ebf8ff' : isPaid ? '#f0fff4' : rowBg }}>
+                    <tr key={idx} style={{ background: isBankPend ? '#ebf8ff' : isPaid ? '#f0fff4' : row.locked ? '#f0fff4' : rowBg }}>
 
                       {/* SN */}
                       <td style={td({ background: '#f7fafc', fontSize: 11, fontWeight: 600, color: '#718096' })}>
@@ -977,10 +911,15 @@ const PaymentRegisterLedger = () => {
                           styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#2b6cb0', width: '100%', cursor: 'default' } }} />
                       </td>
 
-                      {/* Other Earnings */}
+                      {/* Other Earnings — editable unless locked */}
                       <td style={td({ background: '#f0fff4' })}>
-                        <NumberInput {...numPropsRO()} value={row.otherEarnings} placeholder="—"
-                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#276749', width: '100%', cursor: 'default' } }} />
+                        {(isPaid || row.locked)
+                          ? <NumberInput {...numPropsRO()} value={row.otherEarnings} placeholder="—"
+                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#276749', width: '100%', cursor: 'default' } }} />
+                          : <NumberInput {...numProps()} value={row.otherEarnings} placeholder="0.00"
+                              onChange={(v) => updateRow(idx, 'otherEarnings', v)}
+                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#276749', width: '100%', ...EDIT_STYLE } }} />
+                        }
                       </td>
 
                       {/* Total Earnings — auto */}
@@ -989,11 +928,15 @@ const PaymentRegisterLedger = () => {
                           styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 700, color: '#276749', width: '100%', cursor: 'default' } }} />
                       </td>
 
-                      {/* Welfare — always editable */}
+                      {/* Welfare — editable unless locked */}
                       <td style={td({ background: '#fff3cd' })}>
-                        <NumberInput {...numProps()} value={row.welfare} placeholder="0"
-                          onChange={(v) => updateRow(idx, 'welfare', v)}
-                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#92400e', width: '100%' } }} />
+                        {(isPaid || row.locked)
+                          ? <NumberInput {...numPropsRO()} value={row.welfare} placeholder="—"
+                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#92400e', width: '100%', cursor: 'default' } }} />
+                          : <NumberInput {...numProps()} value={row.welfare} placeholder="0"
+                              onChange={(v) => updateRow(idx, 'welfare', v)}
+                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#92400e', width: '100%' } }} />
+                        }
                       </td>
 
                       {/* CF Advance — read-only */}
@@ -1002,9 +945,9 @@ const PaymentRegisterLedger = () => {
                           styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#7b341e', width: '100%', cursor: 'default' } }} />
                       </td>
 
-                      {/* CF Recovery — EDITABLE (locked when paid) */}
+                      {/* CF Recovery — EDITABLE (locked when paid or user-locked) */}
                       <td style={td({ background: '#fff9f0' })}>
-                        {isPaid
+                        {(isPaid || row.locked)
                           ? <NumberInput {...numPropsRO()} value={row.cfRec} placeholder="—"
                               styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', cursor: 'default' } }} />
                           : <NumberInput {...numProps()} value={row.cfRec}
@@ -1019,9 +962,9 @@ const PaymentRegisterLedger = () => {
                           styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#7b341e', width: '100%', cursor: 'default' } }} />
                       </td>
 
-                      {/* Cash Recovery — EDITABLE (locked when paid) */}
+                      {/* Cash Recovery — EDITABLE (locked when paid or user-locked) */}
                       <td style={td({ background: '#fff9f0' })}>
-                        {isPaid
+                        {(isPaid || row.locked)
                           ? <NumberInput {...numPropsRO()} value={row.cashRec} placeholder="—"
                               styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', cursor: 'default' } }} />
                           : <NumberInput {...numProps()} value={row.cashRec}
@@ -1036,9 +979,9 @@ const PaymentRegisterLedger = () => {
                           styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#7b341e', width: '100%', cursor: 'default' } }} />
                       </td>
 
-                      {/* Loan Recovery — EDITABLE (locked when paid) */}
+                      {/* Loan Recovery — EDITABLE (locked when paid or user-locked) */}
                       <td style={td({ background: '#fff9f0' })}>
-                        {isPaid
+                        {(isPaid || row.locked)
                           ? <NumberInput {...numPropsRO()} value={row.loanRec} placeholder="—"
                               styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', cursor: 'default' } }} />
                           : <NumberInput {...numProps()} value={row.loanRec}
@@ -1047,10 +990,15 @@ const PaymentRegisterLedger = () => {
                         }
                       </td>
 
-                      {/* Other Deductions — read-only */}
+                      {/* Other Deductions — editable unless locked */}
                       <td style={td({ background: '#fffaf0' })}>
-                        <NumberInput {...numPropsRO()} value={row.otherDed} placeholder="—"
-                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, width: '100%', cursor: 'default' } }} />
+                        {(isPaid || row.locked)
+                          ? <NumberInput {...numPropsRO()} value={row.otherDed} placeholder="—"
+                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, width: '100%', cursor: 'default' } }} />
+                          : <NumberInput {...numProps()} value={row.otherDed} placeholder="0.00"
+                              onChange={(v) => updateRow(idx, 'otherDed', v)}
+                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, width: '100%', ...EDIT_STYLE } }} />
+                        }
                       </td>
 
                       {/* Total Deductions — auto */}
@@ -1072,9 +1020,9 @@ const PaymentRegisterLedger = () => {
                             size="xs"
                             label={<Text size={9} fw={600}>Bk</Text>}
                             checked={row.payMode === 'Bank'}
-                            onChange={() => !isPaid && togglePayMode(idx, 'Bank')}
+                            onChange={() => !(isPaid || row.locked) && togglePayMode(idx, 'Bank')}
                             color="blue"
-                            disabled={isPaid}
+                            disabled={isPaid || row.locked}
                           />
                         </Group>
                       </td>
@@ -1084,8 +1032,8 @@ const PaymentRegisterLedger = () => {
                         <Group justify="center" align="center" style={{ height: 28 }} gap={2}>
                           <Checkbox size="xs" label={<Text size={9} fw={600}>Ca</Text>}
                             checked={row.payMode === 'Cash'}
-                            onChange={() => !isPaid && togglePayMode(idx, 'Cash')}
-                            color="green" disabled={isPaid} />
+                            onChange={() => !(isPaid || row.locked) && togglePayMode(idx, 'Cash')}
+                            color="green" disabled={isPaid || row.locked} />
                         </Group>
                       </td>
 
@@ -1094,20 +1042,15 @@ const PaymentRegisterLedger = () => {
                         <Group justify="center" align="center" style={{ height: 28 }} gap={2}>
                           <Checkbox size="xs" label={<Text size={9} fw={600}>Chq</Text>}
                             checked={row.payMode === 'Cheque'}
-                            onChange={() => !isPaid && togglePayMode(idx, 'Cheque')}
-                            color="violet" disabled={isPaid} />
+                            onChange={() => !(isPaid || row.locked) && togglePayMode(idx, 'Cheque')}
+                            color="violet" disabled={isPaid || row.locked} />
                         </Group>
                       </td>
 
-                      {/* Paid Amount — user types manually */}
+                      {/* Net Pay (reference — transfer amount going to Bank Transfer) */}
                       <td style={td({ background: '#f0f4ff' })}>
-                        {isPaid
-                          ? <NumberInput {...numPropsRO()} value={row.paidAmount} placeholder="—"
-                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 600, color: '#1a365d', width: '100%', cursor: 'default' } }} />
-                          : <NumberInput {...numProps()} value={row.paidAmount} placeholder="0.00"
-                              onChange={(v) => updateRow(idx, 'paidAmount', v)}
-                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 600, color: '#1a365d', width: '100%' } }} />
-                        }
+                        <NumberInput {...numPropsRO()} value={row.netPay} placeholder="—"
+                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 600, color: '#1a365d', width: '100%', cursor: 'default' } }} />
                       </td>
 
                       {/* Signature — print-only */}
@@ -1115,36 +1058,40 @@ const PaymentRegisterLedger = () => {
                         <TextInput
                           variant="unstyled" size="xs"
                           value={row.signature}
-                          onChange={(e) => !isPaid && updateRow(idx, 'signature', e.target.value)}
-                          readOnly={isPaid}
+                          onChange={(e) => !(isPaid || row.locked) && updateRow(idx, 'signature', e.target.value)}
+                          readOnly={isPaid || row.locked}
                           placeholder="Sign."
                           styles={{ input: { fontSize: 10, height: 26, padding: '0 4px', borderBottom: '1px dashed #cbd5e0', fontStyle: 'italic', width: '100%' } }}
                         />
                       </td>
 
-                      {/* Apply Payment — screen only */}
-                      <td style={td({ padding: '0 2px' })} className="no-print">
-                        {isPaid ? (
-                          isBankPend ? (
-                            <Group justify="center" gap={2} wrap="nowrap">
-                              <IconBuildingBank size={12} color="#2b6cb0" />
-                              <Text size={9} c="blue" fw={600}>Bank</Text>
-                            </Group>
+                      {/* Lock checkbox — screen only; replaces old Apply button */}
+                      <td style={td({ padding: '0 4px', background: row.locked || isPaid ? '#f0fff4' : '#fff' })} className="no-print">
+                        {row.producerName?.trim() ? (
+                          isPaid ? (
+                            isBankPend ? (
+                              <Group justify="center" gap={2} wrap="nowrap">
+                                <IconBuildingBank size={12} color="#2b6cb0" />
+                                <Text size={9} c="blue" fw={600}>Bank</Text>
+                              </Group>
+                            ) : (
+                              <Group justify="center" gap={2} wrap="nowrap">
+                                <IconCheck size={12} color="#38a169" />
+                                <Text size={9} c="green" fw={600}>Paid</Text>
+                              </Group>
+                            )
                           ) : (
-                            <Group justify="center" gap={2} wrap="nowrap">
-                              <IconCheck size={12} color="#38a169" />
-                              <Text size={9} c="green" fw={600}>Paid</Text>
+                            <Group justify="center" align="center" style={{ height: 28 }} gap={0}>
+                              <Checkbox
+                                size="xs"
+                                checked={row.locked}
+                                onChange={() => toggleLock(idx)}
+                                color="teal"
+                                title={row.locked ? 'Locked — click to unlock' : 'Lock this farmer\'s payment'}
+                                styles={{ input: { cursor: 'pointer' } }}
+                              />
                             </Group>
                           )
-                        ) : row.producerName.trim() ? (
-                          <ActionIcon
-                            size="sm" color="blue" variant="light"
-                            loading={!!applying[idx]}
-                            onClick={() => applyPayment(idx)}
-                            title="Apply Payment"
-                          >
-                            <IconDeviceFloppy size={13} />
-                          </ActionIcon>
                         ) : null}
                       </td>
 
@@ -1173,7 +1120,7 @@ const PaymentRegisterLedger = () => {
                   <td style={{ ...tdTotal, background: '#ffe0b2', color: '#7b341e' }}>{fmtN(totals.totalDed)}</td>
                   <td style={{ ...tdBal, background: '#b2f5ea', fontSize: 12 }}>{fmtN(totals.netPay)}</td>
                   <td colSpan={3} style={tdTotal} className="no-print" />
-                  <td style={{ ...tdTotal, background: '#f0f4ff', color: '#1a365d' }}>{fmtN(totals.paidAmount || totals.netPay)}</td>
+                  <td style={{ ...tdTotal, background: '#f0f4ff', color: '#1a365d' }}>{fmtN(totals.netPay)}</td>
                   <td style={tdTotal} className="print-show" />
                   <td style={tdTotal} className="no-print" />
                 </tr>
@@ -1192,7 +1139,8 @@ const PaymentRegisterLedger = () => {
             <Group gap="sm" wrap="nowrap">
               <Badge color="blue"   variant="light" size="sm">Producers: {filledRows.length}</Badge>
               <Badge color="green"  variant="light" size="sm">Paid: {paidRows.length}</Badge>
-              <Badge color="orange" variant="light" size="sm">Pending: {pendingRows.length}</Badge>
+              <Badge color="orange" variant="light" size="sm">Unlocked: {unlockedRows.length}</Badge>
+              <Badge color="violet" variant="light" size="sm">Locked: {lockedRows.length}</Badge>
               <Badge color="teal"   variant="filled" size="sm">Net Pay: ₹{fmtN(totals.netPay)}</Badge>
             </Group>
           </Group>

@@ -918,6 +918,7 @@ export const paymentRegisterAPI = {
   create:               (data)        => api.post('/payment-register', data).then(r => r.data).catch(handleError),
   update:               (id, data)    => api.put(`/payment-register/${id}`, data).then(r => r.data).catch(handleError),
   delete:               (id)          => api.delete(`/payment-register/${id}`).then(r => r.data).catch(handleError),
+  reverse:              (id)          => api.post(`/payment-register/${id}/reverse`).then(r => r.data).catch(handleError),
   applyEntry:           (registerId, entryId, data) =>
     api.post(`/payment-register/${registerId}/entries/${entryId}/apply`, data).then(r => r.data).catch(handleError),
 };

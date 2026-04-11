@@ -333,6 +333,63 @@ export const deletePaymentRegister = async (req, res) => {
   }
 };
 
+// ─── REVERSE register — cancels FarmerPayments for the period + deletes log ───
+export const reversePaymentRegister = async (req, res) => {
+  try {
+    const reg = await PaymentRegister.findOne({ _id: req.params.id, companyId: req.companyId });
+    if (!reg) return res.status(404).json({ success: false, message: 'Register not found' });
+
+    const from = new Date(reg.fromDate);
+    const to   = new Date(reg.toDate);
+
+    // Allow ±2 day tolerance for IST/UTC offset
+    const fromLow  = new Date(from); fromLow.setDate(fromLow.getDate() - 2);
+    const fromHigh = new Date(from); fromHigh.setDate(fromHigh.getDate() + 2);
+    const toLow    = new Date(to);   toLow.setDate(toLow.getDate() - 2);
+    const toHigh   = new Date(to);   toHigh.setDate(toHigh.getDate() + 2);
+
+    // Cancel all FarmerPayments for this period that are BankTransfer-sourced (queued but not yet applied)
+    const cancelResult = await FarmerPayment.updateMany(
+      {
+        companyId:                    req.companyId,
+        'paymentPeriod.fromDate':     { $gte: fromLow,  $lte: fromHigh },
+        'paymentPeriod.toDate':       { $gte: toLow,    $lte: toHigh   },
+        paymentSource:                'BankTransfer',
+        status:                       { $in: ['Pending', 'Partial'] },
+      },
+      { $set: { status: 'Cancelled', cancelledAt: new Date(), cancellationReason: 'Register reversed' } }
+    );
+
+    // Also cancel Ledger-sourced FarmerPayments for individually-paid rows in this register
+    await FarmerPayment.updateMany(
+      {
+        companyId:                    req.companyId,
+        'paymentPeriod.fromDate':     { $gte: fromLow,  $lte: fromHigh },
+        'paymentPeriod.toDate':       { $gte: toLow,    $lte: toHigh   },
+        paymentSource:                { $in: ['Ledger', 'PaymentRegister'] },
+        status:                       { $in: ['Pending', 'Partial', 'Paid'] },
+      },
+      { $set: { status: 'Cancelled', cancelledAt: new Date(), cancellationReason: 'Register reversed' } }
+    );
+
+    // Delete the register log
+    await reg.deleteOne();
+
+    res.json({
+      success: true,
+      message:  `Register reversed. ${cancelResult.modifiedCount} payment(s) cancelled.`,
+      data: {
+        fromDate: reg.fromDate,
+        toDate:   reg.toDate,
+        cancelledCount: cancelResult.modifiedCount,
+      },
+    });
+  } catch (err) {
+    console.error('reversePaymentRegister error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // ─── GET Producers register for a period (latest saved) ───────────────────────
 export const getProducersForPeriod = async (req, res) => {
   try {

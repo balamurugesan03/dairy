@@ -14,7 +14,7 @@ import {
 } from '@tabler/icons-react';
 import { useReactToPrint } from 'react-to-print';
 import dayjs from 'dayjs';
-import { paymentRegisterAPI, dairySettingsAPI, milkPurchaseSettingsAPI } from '../../services/api';
+import { paymentRegisterAPI, dairySettingsAPI, milkPurchaseSettingsAPI, paymentAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 
 /* ─── helpers ────────────────────────────────────────────────────────────────── */
@@ -71,19 +71,28 @@ const PaymentRegisterCreditor = () => {
   const [generating, setGenerating] = useState(false);
   const [savedId,  setSavedId]  = useState(null);
 
-  /* ── Load dairy settings & milk purchase settings on mount ───────────────── */
+  /* ── Load dairy settings, milk purchase settings, and auto-advance cycle ──── */
   useEffect(() => {
     Promise.all([
       dairySettingsAPI.get(),
       milkPurchaseSettingsAPI.getSummary(),
-    ]).then(([ds, ms]) => {
+      paymentAPI.getLatestPeriod(),
+    ]).then(([ds, ms, lpRes]) => {
       const days = ds?.data?.paymentDays ?? 15;
       setPaymentDays(days);
       setQuantityUnit(ms?.data?.quantityUnit ?? 'Litre');
       setActiveChart(ms?.data?.activeRateChartType ?? '');
 
-      // Auto-set toDate based on paymentDays
-      setToDate(dayjs(fromDate).add(days - 1, 'day').toDate());
+      const latestToDate = lpRes?.data?.latestToDate;
+      if (latestToDate) {
+        // Next cycle starts the day after the last applied period ended
+        const nextFrom = dayjs(latestToDate).add(1, 'day').toDate();
+        const nextTo   = dayjs(nextFrom).add(days - 1, 'day').toDate();
+        setFromDate(nextFrom);
+        setToDate(nextTo);
+      } else {
+        setToDate(dayjs(fromDate).add(days - 1, 'day').toDate());
+      }
     }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

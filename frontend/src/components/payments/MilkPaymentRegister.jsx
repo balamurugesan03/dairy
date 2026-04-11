@@ -169,27 +169,32 @@ const MilkPaymentRegister = () => {
     closingBalance: 0,
   });
 
-  // Load payment cycle days from DairySettings on mount
+  // Load payment cycle days from DairySettings on mount + auto-advance to next unpaid cycle
   useEffect(() => {
-    dairySettingsAPI.get().then(res => {
-      if (res?.success && res.data) {
-        const days = res.data.paymentDays || 15;
+    Promise.all([
+      dairySettingsAPI.get(),
+      paymentAPI.getLatestPeriod(),
+    ]).then(([dsRes, lpRes]) => {
+      if (dsRes?.success && dsRes.data) {
+        const days = dsRes.data.paymentDays || 15;
         setPaymentDays(days);
 
-        if (res.data.paymentFromDate) {
-          // Use exact paymentFromDate from settings as fromDate
-          const fd  = dayjs(res.data.paymentFromDate).startOf('day').toDate();
-          const eom = dayjs(fd).endOf('month').toDate();
-          const raw = dayjs(fd).add(days - 1, 'day').toDate();
-          const td  = raw > eom ? eom : raw;
+        const latestToDate = lpRes?.data?.latestToDate;
+        if (latestToDate) {
+          // Next cycle starts the day after the last applied period ended
+          const fd = dayjs(latestToDate).add(1, 'day').startOf('day').toDate();
+          const td = dayjs(fd).add(days - 1, 'day').toDate();
           setFormData(prev => ({ ...prev, fromDate: fd, toDate: td }));
+        } else if (dsRes.data.paymentFromDate) {
+          const fd  = dayjs(dsRes.data.paymentFromDate).startOf('day').toDate();
+          const raw = dayjs(fd).add(days - 1, 'day').toDate();
+          setFormData(prev => ({ ...prev, fromDate: fd, toDate: raw }));
         } else {
-          // Fallback: snap to current period using today
           const [fd, td] = getCyclePeriod(days, new Date());
           setFormData(prev => ({ ...prev, fromDate: fd, toDate: td }));
         }
       }
-    });
+    }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch farmers for dropdown

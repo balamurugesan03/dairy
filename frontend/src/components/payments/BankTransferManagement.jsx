@@ -230,13 +230,16 @@ const BankTransferManagement = () => {
       });
       if (res?.success) {
         const newRows = res.data.map(d => {
+          // Use paymentMode from FarmerPayment (set in Payment Register Detailed)
+          // Fall back to bank-account detection if not set
           const hasBank = d.bankDetails?.accountNumber && d.bankDetails.accountNumber !== '-';
+          const modeFromRegister = d.paymentMode; // 'Cash', 'Bank Transfer', 'Cheque' or undefined
           return {
             ...d,
             paymentAmount: (roundDown > 0 && d.netPayable > 0)
               ? Math.floor(d.netPayable / roundDown) * roundDown
               : (d.netPayable > 0 ? d.netPayable : 0),
-            mode:     hasBank ? 'Bank Transfer' : 'Cash',
+            mode:     modeFromRegister || (hasBank ? 'Bank Transfer' : 'Cash'),
             approved: false,
           };
         });
@@ -295,7 +298,7 @@ const BankTransferManagement = () => {
         transferDetails:       approved.map(r => ({
           ...r,
           transferAmount: r.paymentAmount,
-          paymentMode:    r.mode,
+          paymentMode:    r.mode || 'Bank Transfer',
         })),
       });
       if (res?.success) {

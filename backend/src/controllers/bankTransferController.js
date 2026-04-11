@@ -44,31 +44,26 @@ export const retrieveBalances = async (req, res) => {
       // Calculate net payable based on transfer basis
       let netPayable = 0;
 
-      if (transferBasis === 'As on Date Balance') {
-        // Only 'BankTransfer' source = queued via Apply All with no paidAmount.
-        // 'Ledger', 'PaymentRegister', null = individually paid → excluded from bank transfer.
-        const paymentAgg = await FarmerPayment.aggregate([
-          {
-            $match: {
-              companyId: new mongoose.Types.ObjectId(companyId),
-              farmerId: farmer._id,
-              paymentDate: { $lte: new Date(asOnDate) },
-              status: { $in: ['Pending', 'Partial'] },
-              paymentSource: 'BankTransfer'
-            }
-          },
-          {
-            $group: {
-              _id: null,
-              totalNetPayable: { $sum: '$netPayable' }
-            }
-          }
-        ]);
+      let paymentMode = 'Bank Transfer'; // default
 
-        const payment = paymentAgg[0] || { totalNetPayable: 0 };
-        netPayable = payment.totalNetPayable || 0;
+      if (transferBasis === 'As on Date Balance') {
+        // Only 'BankTransfer' source = queued via Save Payment with no paidAmount.
+        const pendingPayments = await FarmerPayment.find({
+          companyId: new mongoose.Types.ObjectId(companyId),
+          farmerId: farmer._id,
+          paymentDate: { $lte: new Date(asOnDate) },
+          status: { $in: ['Pending', 'Partial'] },
+          paymentSource: 'BankTransfer'
+        }).sort({ paymentDate: -1 });
+
+        netPayable = pendingPayments.reduce((sum, p) => sum + (p.netPayable || 0), 0);
+        // Use paymentMode from the most recent payment record, normalizing 'Bank' → 'Bank Transfer'
+        if (pendingPayments.length > 0) {
+          const rawMode = pendingPayments[0].paymentMode || 'Bank Transfer';
+          paymentMode = rawMode === 'Bank' ? 'Bank Transfer' : rawMode;
+        }
       } else {
-        // Only 'BankTransfer' source = queued via Apply All with no paidAmount
+        // Most recent BankTransfer-source pending payment
         const lastPeriod = await FarmerPayment.findOne({
           companyId: new mongoose.Types.ObjectId(companyId),
           farmerId: farmer._id,
@@ -78,6 +73,8 @@ export const retrieveBalances = async (req, res) => {
 
         if (lastPeriod) {
           netPayable = lastPeriod.netPayable || 0;
+          const rawMode = lastPeriod.paymentMode || 'Bank Transfer';
+          paymentMode = rawMode === 'Bank' ? 'Bank Transfer' : rawMode;
         }
       }
 
@@ -102,8 +99,9 @@ export const retrieveBalances = async (req, res) => {
         farmerId: farmer._id,
         producerId: farmer.farmerNumber,
         producerName: farmer.personalDetails?.name || 'Unknown',
-        netPayable: netPayable,
-        transferAmount: transferAmount,
+        netPayable,
+        transferAmount,
+        paymentMode,           // Cash / Bank Transfer / Cheque from Payment Register
         approved: transferAmount > 0,
         bankDetails: {
           accountNumber: bankDetails.accountNumber || '-',
@@ -222,11 +220,11 @@ export const applyBankTransfer = async (req, res) => {
       }
     }
 
-    // Create payment voucher for bank transfer
+    // Create PRODUCERS DUES vouchers: cash → Payment in Cash Book, bank → Payment in Day Book
     try {
-      const voucher = await createBankTransferVoucher(bankTransfer, companyId);
-      if (voucher) {
-        bankTransfer.voucherId = voucher._id;
+      const vouchers = await createProducerDuesVouchers(bankTransfer, approvedTransfers, companyId);
+      if (vouchers.length > 0) {
+        bankTransfer.voucherId = vouchers[0]._id;
         await bankTransfer.save();
       }
     } catch (voucherError) {
@@ -247,80 +245,105 @@ export const applyBankTransfer = async (req, res) => {
   }
 };
 
-// Helper function to create voucher
-const createBankTransferVoucher = async (bankTransfer, companyId) => {
-  const entries = [];
-
-  // Get or create Bank Transfer ledger
-  let bankLedger = await Ledger.findOne({
-    ledgerName: 'Bank Transfer Payable',
-    companyId
-  });
-
-  if (!bankLedger) {
-    bankLedger = new Ledger({
-      ledgerName: 'Bank Transfer Payable',
-      ledgerType: 'Other Payable',
+// ─── Helper: get-or-create a ledger by name ──────────────────────────────────
+const ensureLedger = async (ledgerName, ledgerType, balanceType, companyId) => {
+  let ledger = await Ledger.findOne({ ledgerName, companyId });
+  if (!ledger) {
+    ledger = new Ledger({
+      ledgerName,
+      ledgerType,
       companyId,
       openingBalance: 0,
       currentBalance: 0,
-      balanceType: 'Cr'
+      balanceType,
     });
-    await bankLedger.save();
+    await ledger.save();
   }
+  return ledger;
+};
 
-  // Get or create Producer Payable ledger
-  let producerLedger = await Ledger.findOne({
-    ledgerName: 'Producer Payable',
-    companyId
-  });
+// ─── Helper: create PRODUCERS DUES vouchers (cash + bank) on apply ───────────
+// Cash payments → Payment voucher in Cash Book  (Dr PRODUCERS DUES, Cr Cash in Hand)
+// Bank payments → Payment voucher in Day Book   (Dr PRODUCERS DUES, Cr Bank Ledger)
+const createProducerDuesVouchers = async (bankTransfer, transferDetails, companyId) => {
+  const vouchers = [];
+  const applyDate = bankTransfer.applyDate;
 
-  if (!producerLedger) {
-    producerLedger = new Ledger({
-      ledgerName: 'Producer Payable',
-      ledgerType: 'Other Payable',
+  // Get or create PRODUCERS DUES ledger (expense/liability — amount owed to farmers)
+  const producerDuesLedger = await ensureLedger(
+    'PRODUCERS DUES', 'Other Payable', 'Cr', companyId
+  );
+
+  // Separate cash vs bank transfers
+  const cashTransfers = transferDetails.filter(
+    d => d.paymentMode === 'Cash' || d.paymentMode === 'Cheque'
+  );
+  const bankTransfers = transferDetails.filter(
+    d => !d.paymentMode || d.paymentMode === 'Bank Transfer' || d.paymentMode === 'Bank'
+  );
+
+  const cashTotal = cashTransfers.reduce((s, d) => s + (d.transferAmount || 0), 0);
+  const bankTotal = bankTransfers.reduce((s, d) => s + (d.transferAmount || 0), 0);
+
+  // ── Cash Payment voucher ──────────────────────────────────────────────────
+  if (cashTotal > 0) {
+    const cashLedger = await ensureLedger('Cash in Hand', 'Cash', 'Dr', companyId);
+    const entries = [
+      // Dr PRODUCERS DUES (reducing liability to producers)
+      { ledgerId: producerDuesLedger._id, ledgerName: producerDuesLedger.ledgerName, debitAmount: cashTotal, creditAmount: 0 },
+      // Cr Cash in Hand (cash going out)
+      { ledgerId: cashLedger._id, ledgerName: cashLedger.ledgerName, debitAmount: 0, creditAmount: cashTotal },
+    ];
+    const voucher = new Voucher({
+      voucherType: 'Payment',
+      voucherNumber: await generateVoucherNumber('Payment', companyId),
+      voucherDate: applyDate,
       companyId,
-      openingBalance: 0,
-      currentBalance: 0,
-      balanceType: 'Cr'
+      entries,
+      totalDebit: cashTotal,
+      totalCredit: cashTotal,
+      narration: `Producers Cash Payment — ${bankTransfer.transferNumber} — ${cashTransfers.length} producer(s)`,
+      referenceType: 'BankTransfer',
+      referenceId: bankTransfer._id,
+      createdBy: bankTransfer.appliedBy,
     });
-    await producerLedger.save();
+    await voucher.save();
+    await updateLedgerBalances(entries);
+    vouchers.push(voucher);
   }
 
-  // Debit Producer Payable
-  entries.push({
-    ledgerId: producerLedger._id,
-    ledgerName: producerLedger.ledgerName,
-    debitAmount: bankTransfer.totalTransferAmount,
-    creditAmount: 0
-  });
+  // ── Bank Payment voucher ──────────────────────────────────────────────────
+  if (bankTotal > 0) {
+    // Use the bank ledger attached to the BankTransfer record, or fallback to generic
+    let bankLedgerName = bankTransfer.bankName && bankTransfer.bankName !== 'All'
+      ? bankTransfer.bankName
+      : 'Bank Account';
+    const bankLedger = await ensureLedger(bankLedgerName, 'Bank', 'Dr', companyId);
+    const entries = [
+      // Dr PRODUCERS DUES (reducing liability to producers)
+      { ledgerId: producerDuesLedger._id, ledgerName: producerDuesLedger.ledgerName, debitAmount: bankTotal, creditAmount: 0 },
+      // Cr Bank Account (bank payment going out)
+      { ledgerId: bankLedger._id, ledgerName: bankLedger.ledgerName, debitAmount: 0, creditAmount: bankTotal },
+    ];
+    const voucher = new Voucher({
+      voucherType: 'Payment',
+      voucherNumber: await generateVoucherNumber('Payment', companyId),
+      voucherDate: applyDate,
+      companyId,
+      entries,
+      totalDebit: bankTotal,
+      totalCredit: bankTotal,
+      narration: `Producers Bank Transfer — ${bankTransfer.transferNumber} — ${bankTransfers.length} producer(s)`,
+      referenceType: 'BankTransfer',
+      referenceId: bankTransfer._id,
+      createdBy: bankTransfer.appliedBy,
+    });
+    await voucher.save();
+    await updateLedgerBalances(entries);
+    vouchers.push(voucher);
+  }
 
-  // Credit Bank Transfer Payable
-  entries.push({
-    ledgerId: bankLedger._id,
-    ledgerName: bankLedger.ledgerName,
-    debitAmount: 0,
-    creditAmount: bankTransfer.totalTransferAmount
-  });
-
-  const voucher = new Voucher({
-    voucherType: 'Journal',
-    voucherNumber: await generateVoucherNumber('Journal', companyId),
-    voucherDate: bankTransfer.applyDate,
-    companyId,
-    entries,
-    totalDebit: bankTransfer.totalTransferAmount,
-    totalCredit: bankTransfer.totalTransferAmount,
-    narration: `Bank Transfer - ${bankTransfer.transferNumber} - ${bankTransfer.totalApproved} producers`,
-    referenceType: 'BankTransfer',
-    referenceId: bankTransfer._id,
-    createdBy: bankTransfer.appliedBy
-  });
-
-  await voucher.save();
-  await updateLedgerBalances(entries);
-
-  return voucher;
+  return vouchers;
 };
 
 // Helper function to create ProducerDue voucher on completion
@@ -601,17 +624,7 @@ export const completeTransfer = async (req, res) => {
     });
 
     await bankTransfer.save();
-
-    // Create ProducerDue voucher on completion
-    try {
-      const completionVoucher = await createCompletionVoucher(bankTransfer, req.userCompany, req.user?._id);
-      if (completionVoucher) {
-        bankTransfer.completionVoucherId = completionVoucher._id;
-        await bankTransfer.save();
-      }
-    } catch (voucherError) {
-      console.error('Completion voucher creation failed:', voucherError);
-    }
+    // Accounting (PRODUCERS DUES vouchers) is already created at Apply time — no additional posting needed here.
 
     res.json({
       success: true,
