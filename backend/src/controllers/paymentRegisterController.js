@@ -192,15 +192,19 @@ export const generateProducerPaymentRegister = async (req, res) => {
       if (fid) openingMap[fid] = o;
     });
 
-    // 4b. Carry-forward from the most recent saved Ledger PaymentRegister before this cycle.
-    //     This register's entries store cfAdv, cfRec, cashAdv, cashRec, loanAdv, loanRec, netPay
-    //     for every farmer — the exact values needed for cycle 2+ carry-forward.
+    // 4b. Carry-forward from the most recent Ledger PaymentRegister before this cycle.
+    //     No status filter — find ANY prior Ledger register (Saved, Printed, etc.)
+    //     so that status changes don't break cycle 2+ carry-forward.
     const lastRegister = await PaymentRegister.findOne({
       companyId,
       registerType: 'Ledger',
       toDate:       { $lt: start },
-      status:       'Saved',
     }).sort({ toDate: -1 }).lean();
+
+    // hasLedgerHistory = true means we are on cycle 2+.
+    // In that case ProducerOpening must NOT be used as a fallback for CF/Cash/Loan —
+    // we use 0 instead (opening data only applies to the very first cycle).
+    const hasLedgerHistory = !!lastRegister;
 
     // Build carry map: farmerId → { cfAdv_rem, cashAdv_rem, loanAdv_rem }
     const carryMap = {};
@@ -302,11 +306,16 @@ export const generateProducerPaymentRegister = async (req, res) => {
         : (pendingBalMap[fid] || 0);         // cycle 2+: pending balance or 0 if fully paid
 
       // 7. CF / Loan / Cash advance opening balances:
-      //    — If prior register exists (cycle 2+): carry = last cycle's (cfAdv - cfRec), etc.
-      //    — First cycle: fall back to Advance model totals, then ProducerOpening
-      const cfAdv   = carry ? carry.cfAdv   : (adv['CF Advance']   ?? opening.cfAdvance   ?? 0);
-      const loanAdv = carry ? carry.loanAdv : (adv['Loan Advance'] ?? opening.loanAdvance ?? 0);
-      const cashAdv = carry ? carry.cashAdv : (adv['Cash Advance'] ?? opening.cashAdvance ?? 0);
+      //    — carry defined (prior Ledger register entry found): use cycle's (cfAdv - cfRec) remaining
+      //    — First cycle (no ledger history AND no prior payments): use ProducerOpening
+      //    — Cycle 2+ but farmer not in lastRegister (e.g. new farmer): use 0 — NOT ProducerOpening
+      const isFirstCycle = !hasLedgerHistory && !hasPriorPayment;
+      const cfAdv   = carry ? carry.cfAdv
+                    : isFirstCycle ? (adv['CF Advance']   ?? opening.cfAdvance   ?? 0) : 0;
+      const loanAdv = carry ? carry.loanAdv
+                    : isFirstCycle ? (adv['Loan Advance'] ?? opening.loanAdvance ?? 0) : 0;
+      const cashAdv = carry ? carry.cashAdv
+                    : isFirstCycle ? (adv['Cash Advance'] ?? opening.cashAdvance ?? 0) : 0;
 
       // 8. Welfare — from PeriodicalRule fixedRate (0 if ONCE_IN_MONTH and already deducted)
       const welfare = (welfareFixed > 0 && !alreadyDeductedSet.has(fid)) ? welfareFixed : 0;
