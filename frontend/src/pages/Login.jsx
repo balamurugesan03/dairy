@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { companyAPI } from '../services/api';
 import './Login.css';
@@ -12,10 +12,24 @@ const Login = () => {
   const [companies, setCompanies] = useState([]);
   const [selectedCompany, setSelectedCompany] = useState('');
   const [loadingCompanies, setLoadingCompanies] = useState(true);
+  const [searchText, setSearchText] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+  const searchRef = useRef(null);
 
   // Fetch companies on mount
   useEffect(() => {
     fetchCompanies();
+  }, []);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (searchRef.current && !searchRef.current.contains(e.target)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const fetchCompanies = async () => {
@@ -29,6 +43,22 @@ const Login = () => {
     } finally {
       setLoadingCompanies(false);
     }
+  };
+
+  const filteredCompanies = companies.filter(c =>
+    c.companyName.toLowerCase().includes(searchText.toLowerCase())
+  );
+
+  const handleSelectCompany = (company) => {
+    setSelectedCompany(company._id);
+    setSearchText(company.companyName);
+    setShowDropdown(false);
+  };
+
+  const handleSearchChange = (e) => {
+    setSearchText(e.target.value);
+    setSelectedCompany('');
+    setShowDropdown(true);
   };
 
   const handleSubmit = async (e) => {
@@ -76,33 +106,51 @@ const Login = () => {
             </div>
           )}
 
-          {/* Company Selection */}
-          {companies.length > 0 && (
-            <div className="form-group">
-              <label htmlFor="company">Select Company</label>
-              <select
-                id="company"
-                value={selectedCompany}
-                onChange={(e) => {
-                  setSelectedCompany(e.target.value);
-                  // Find company and pre-fill username if available
-                  const company = companies.find(c => c._id === e.target.value);
-                  if (company) {
-                    // Don't pre-fill username, let user enter it
-                  }
-                }}
+          {/* Company Search */}
+          <div className="form-group" ref={searchRef}>
+            <label htmlFor="company-search">Company</label>
+            <div className="company-search-wrapper">
+              <input
+                id="company-search"
+                type="text"
+                value={searchText}
+                onChange={handleSearchChange}
+                onFocus={() => setShowDropdown(true)}
+                placeholder={loadingCompanies ? 'Loading companies...' : 'Search company...'}
                 disabled={loading || loadingCompanies}
-                className="company-select"
-              >
-                <option value="">-- Select Company --</option>
-                {companies.map(company => (
-                  <option key={company._id} value={company._id}>
-                    {company.companyName} ({company.businessTypes.map(t => t === 'Dairy Cooperative Society' ? 'Dairy' : 'Private').join(', ')})
-                  </option>
-                ))}
-              </select>
+                autoComplete="off"
+              />
+              {searchText && (
+                <button
+                  type="button"
+                  className="company-clear-btn"
+                  onClick={() => { setSearchText(''); setSelectedCompany(''); setShowDropdown(true); }}
+                  tabIndex={-1}
+                >×</button>
+              )}
+              {showDropdown && filteredCompanies.length > 0 && (
+                <ul className="company-dropdown">
+                  {filteredCompanies.map(company => (
+                    <li
+                      key={company._id}
+                      className={`company-option${selectedCompany === company._id ? ' selected' : ''}`}
+                      onMouseDown={() => handleSelectCompany(company)}
+                    >
+                      <span className="company-option-name">{company.companyName}</span>
+                      <span className="company-option-type">
+                        {company.businessTypes.map(t => t === 'Dairy Cooperative Society' ? 'Dairy' : 'Private').join(', ')}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {showDropdown && !loadingCompanies && searchText && filteredCompanies.length === 0 && (
+                <ul className="company-dropdown">
+                  <li className="company-no-result">No companies found</li>
+                </ul>
+              )}
             </div>
-          )}
+          </div>
 
           {loadingCompanies && (
             <div className="loading-companies">
