@@ -15,6 +15,7 @@ import dayjs from 'dayjs';
 import { useReactToPrint } from 'react-to-print';
 import {
   paymentAPI, dairySettingsAPI, paymentRegisterAPI, producerOpeningAPI, periodicalRuleAPI, milkPurchaseSettingsAPI,
+  cattleFeedAdvanceAPI,
 } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 
@@ -325,13 +326,29 @@ const PaymentRegisterLedger = () => {
       const fd  = dayjs(from).format('YYYY-MM-DD');
       const td  = dayjs(to).format('YYYY-MM-DD');
 
-      // Fetch milk data, welfare rule, and existing payments all in parallel.
+      // Fetch milk data, welfare rule, existing payments, and CF advance balances — all in parallel.
       // Payments: query without period filter (avoid UTC/IST mismatch) — period overlap checked below.
-      const [res, welfareAmt, pmtRes] = await Promise.all([
+      const [res, welfareAmt, pmtRes, cfAdvRes] = await Promise.all([
         paymentRegisterAPI.generateProducers({ fromDate: fd, toDate: td }),
         getWelfareAmount(),
         paymentAPI.getAll({ limit: 1000 }),
+        cattleFeedAdvanceAPI.getSummary().catch(() => ({ success: false })),
       ]);
+
+      // Build farmerId → outstanding CF advance balance map
+      // balance > 0 means farmer owes this amount (to be auto-deducted)
+      const cfAdvMap = {};
+      (cfAdvRes?.data?.rows || []).forEach(r => {
+        if (r.farmerId && r.balance > 0) cfAdvMap[r.farmerId] = r.balance;
+      });
+
+      // Apply CF advance balance to row: set cfAdv = outstanding, cfRec = same (auto-deduct)
+      // mergePayment (called after) will override cfRec if already saved from a prior payment
+      const applyCFAdvance = (row) => {
+        const cfBal = cfAdvMap[row.farmerId];
+        if (!cfBal) return row;
+        return recalc({ ...row, cfAdv: cfBal, cfRec: cfBal });
+      };
       const entries  = res?.data?.entries || [];
       const payments = pmtRes?.data || [];
 
@@ -403,7 +420,9 @@ const PaymentRegisterLedger = () => {
           if (!n(row.welfare) && welfareAmt > 0) row = recalc({ ...row, welfare: welfareAmt });
           // Apply previous cycle carry-forward (prevBalance, cfAdv, cashAdv, loanAdv)
           row = applyPrevCycle(row);
-          // Merge existing individual payment data
+          // Auto-fill cfAdv + cfRec from outstanding CF advance balance
+          row = applyCFAdvance(row);
+          // Merge existing individual payment data (overrides cfRec if already paid)
           return mergePayment(row);
         });
         setRows(mapped);
@@ -423,6 +442,7 @@ const PaymentRegisterLedger = () => {
             let row = openingToRow(o, i);
             if (!n(row.welfare) && welfareAmt > 0) row = recalc({ ...row, welfare: welfareAmt });
             row = applyPrevCycle(row);
+            row = applyCFAdvance(row);
             return mergePayment(row);
           });
           setRows(mapped);
@@ -763,7 +783,7 @@ const PaymentRegisterLedger = () => {
         </Box>
 
         <ScrollArea type="scroll" scrollbarSize={8} scrollHideDelay={0}>
-          <Box style={{ minWidth: 2000 }}>
+          <Box style={{ minWidth: 2180 }}>
             <table style={{ borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed' }}>
               <colgroup>
                 {/* SN */}<col style={{ width: 34 }} />
@@ -777,10 +797,13 @@ const PaymentRegisterLedger = () => {
                 {/* Welfare */}<col style={{ width: 60 }} />
                 {/* CF Adv */}<col style={{ width: 60 }} />
                 {/* CF Rec */}<col style={{ width: 60 }} />
+                {/* CF Out */}<col style={{ width: 60 }} />
                 {/* Cash Adv */}<col style={{ width: 60 }} />
                 {/* Cash Rec */}<col style={{ width: 60 }} />
+                {/* Cash Out */}<col style={{ width: 60 }} />
                 {/* Loan Adv */}<col style={{ width: 60 }} />
                 {/* Loan Rec */}<col style={{ width: 60 }} />
+                {/* Loan Out */}<col style={{ width: 60 }} />
                 {/* Other Ded */}<col style={{ width: 60 }} />
                 {/* Total Ded */}<col style={{ width: 68 }} />
                 {/* Net Pay */}<col style={{ width: 78 }} />
@@ -801,7 +824,7 @@ const PaymentRegisterLedger = () => {
                   {/* EARNINGS */}
                   <th style={thSection('#1a365d')} colSpan={5}>EARNINGS</th>
                   {/* DEDUCTIONS */}
-                  <th style={thSection('#744210')} colSpan={9}>DEDUCTIONS</th>
+                  <th style={thSection('#744210')} colSpan={12}>DEDUCTIONS</th>
                   {/* NET PAY */}
                   <th style={thSection('#276749')} rowSpan={2}>NET PAY</th>
                   {/* PAYMENT */}
