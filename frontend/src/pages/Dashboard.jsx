@@ -471,7 +471,7 @@ const Dashboard = () => {
                     border: '1px solid rgba(168, 85, 247, 0.2)',
                     transition: 'all 0.3s ease',
                   }}
-                  onClick={() => navigate('/payments/advance')}
+                  onClick={() => navigate('/payments/cash-advance')}
                   className="quick-action-card"
                 >
                   <ThemeIcon
