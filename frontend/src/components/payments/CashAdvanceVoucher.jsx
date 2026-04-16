@@ -1,21 +1,25 @@
 import { useState, useEffect, useRef } from 'react';
-import { farmerAPI, advanceAPI } from '../../services/api';
+import { farmerAPI, advanceAPI, producerOpeningAPI } from '../../services/api';
 import {
   Container, Paper, Group, Text, Title, Box, Badge,
   Button, Select, ScrollArea, LoadingOverlay,
-  ActionIcon, Tooltip, Stack,
+  ActionIcon, Tooltip, Stack, Modal, NumberInput,
+  Textarea, TextInput, SimpleGrid, Divider, ThemeIcon,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import {
   IconCalendar, IconSearch, IconRefresh,
   IconPrinter, IconFileSpreadsheet, IconCheck,
+  IconPlus, IconCurrencyRupee, IconUser,
+  IconCash, IconArrowUpRight, IconAlertCircle,
+  IconClipboardText, IconBuildingBank,
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { useReactToPrint } from 'react-to-print';
 import * as XLSX from 'xlsx';
 
-/* ─── Style constants (matches Cattle Feed Advance) ─── */
+/* ─── Style constants ─── */
 const TH = (bg = '#0d3b6e') => ({
   background: bg, color: '#fff', padding: '7px 8px',
   textAlign: 'center', fontSize: 11, fontWeight: 700,
@@ -33,6 +37,39 @@ const TD_NUM = (extra = {}) => ({
 const fmt = (v) =>
   (parseFloat(v) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/* ─── Balance Summary Card ─── */
+const BalanceCard = ({ label, value, color, icon, note }) => {
+  const colorMap = {
+    gray:   { bg: '#f8f9fa', border: '#dee2e6', text: '#495057', badge: 'gray'   },
+    blue:   { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8', badge: 'blue'   },
+    orange: { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c', badge: 'orange' },
+    green:  { bg: '#f0fdf4', border: '#bbf7d0', text: '#15803d', badge: 'green'  },
+  };
+  const c = colorMap[color] || colorMap.gray;
+  return (
+    <Box
+      style={{
+        background: c.bg,
+        border: `1.5px solid ${c.border}`,
+        borderRadius: 12,
+        padding: '14px 18px',
+        minWidth: 150,
+      }}
+    >
+      <Group gap={8} mb={4}>
+        <ThemeIcon size={28} radius="md" color={c.badge} variant="light">
+          {icon}
+        </ThemeIcon>
+        <Text size="xs" c="dimmed" fw={500}>{label}</Text>
+      </Group>
+      <Text fw={800} size="lg" c={c.text} style={{ fontVariantNumeric: 'tabular-nums' }}>
+        ₹ {fmt(value)}
+      </Text>
+      {note && <Text size="10px" c="dimmed" mt={2}>{note}</Text>}
+    </Box>
+  );
+};
+
 /* ════════════════════════════════════════════════════════
    COMPONENT
 ════════════════════════════════════════════════════════ */
@@ -44,7 +81,7 @@ const CashAdvanceVoucher = () => {
     documentTitle: `Cash_Advance_${dayjs().format('DDMMYYYY')}`,
   });
 
-  /* ── state ── */
+  /* ── Report state ── */
   const [fromDate,  setFromDate]  = useState(dayjs().startOf('month').toDate());
   const [toDate,    setToDate]    = useState(dayjs().endOf('month').toDate());
   const [farmers,   setFarmers]   = useState([]);
@@ -52,6 +89,27 @@ const CashAdvanceVoucher = () => {
   const [loading,   setLoading]   = useState(false);
   const [rows,      setRows]      = useState([]);
   const [totals,    setTotals]    = useState(null);
+
+  /* ── Form modal state ── */
+  const [modalOpen,       setModalOpen]       = useState(false);
+  const [submitting,      setSubmitting]       = useState(false);
+  const [openingBalance,  setOpeningBalance]   = useState(null);  // from producerOpenings.cashAdvance
+  const [outstanding,     setOutstanding]      = useState(0);     // from advanceAPI.getStats
+  const [statsLoading,    setStatsLoading]     = useState(false);
+
+  const emptyForm = {
+    farmerId:               null,
+    advanceDate:            new Date(),
+    advanceType:            'Regular',
+    advanceAmount:          '',
+    paymentMode:            'Cash',
+    repaymentType:          'Per Payment Deduction',
+    monthlyDeductionAmount: '',
+    purpose:                '',
+    remarks:                '',
+  };
+  const [form, setForm] = useState(emptyForm);
+  const [errors, setErrors] = useState({});
 
   /* ── Load farmer list ── */
   useEffect(() => {
@@ -64,6 +122,26 @@ const CashAdvanceVoucher = () => {
         })));
       }).catch(() => {});
   }, []);
+
+  /* ── When form farmer changes → load opening + outstanding ── */
+  useEffect(() => {
+    if (!form.farmerId) {
+      setOpeningBalance(null);
+      setOutstanding(0);
+      return;
+    }
+    setStatsLoading(true);
+    Promise.all([
+      producerOpeningAPI.getByFarmer(form.farmerId).catch(() => null),
+      advanceAPI.getStats({ farmerId: form.farmerId }).catch(() => null),
+    ]).then(([openingRes, statsRes]) => {
+      // cashAdvance from Producer Openings page
+      const openingData = openingRes?.data || openingRes;
+      setOpeningBalance(openingData ? Number(openingData.cashAdvance) || 0 : null);
+      // total outstanding from Advance records
+      setOutstanding(statsRes?.data?.totalOutstanding ?? statsRes?.totalOutstanding ?? 0);
+    }).finally(() => setStatsLoading(false));
+  }, [form.farmerId]);
 
   /* ── Generate Report ── */
   const fetchReport = async () => {
@@ -113,16 +191,98 @@ const CashAdvanceVoucher = () => {
     XLSX.writeFile(wb, `Cash_Advance_${dayjs(fromDate).format('MMYYYY')}.xlsx`);
   };
 
+  /* ── Form helpers ── */
+  const setField = (key, val) => {
+    setForm(prev => ({ ...prev, [key]: val }));
+    setErrors(prev => ({ ...prev, [key]: undefined }));
+  };
+
+  const validate = () => {
+    const e = {};
+    if (!form.farmerId)     e.farmerId     = 'Select a producer';
+    if (!form.advanceDate)  e.advanceDate  = 'Date is required';
+    if (!form.advanceAmount || Number(form.advanceAmount) <= 0)
+                            e.advanceAmount = 'Enter a valid amount';
+    return e;
+  };
+
+  const handleSubmit = async () => {
+    const e = validate();
+    if (Object.keys(e).length) { setErrors(e); return; }
+
+    setSubmitting(true);
+    try {
+      const payload = {
+        farmerId:       form.farmerId,
+        advanceDate:    dayjs(form.advanceDate).format('YYYY-MM-DD'),
+        advanceType:    form.advanceType,
+        advanceAmount:  Number(form.advanceAmount),
+        advanceCategory:'Cash Advance',
+        paymentMode:    form.paymentMode,
+        repaymentType:  form.repaymentType,
+        monthlyDeductionAmount: form.monthlyDeductionAmount ? Number(form.monthlyDeductionAmount) : 0,
+        purpose:        form.purpose,
+        remarks:        form.remarks,
+      };
+      const res = await advanceAPI.create(payload);
+      if (!res.success) throw new Error(res.message || 'Failed to save');
+      notifications.show({
+        title: 'Cash Advance Added',
+        message: `Advance ${res.data?.advanceNumber || ''} recorded successfully`,
+        color: 'teal',
+        icon: <IconCheck size={14} />,
+      });
+      setModalOpen(false);
+      setForm(emptyForm);
+      setErrors({});
+      setOpeningBalance(null);
+      setOutstanding(0);
+      // Refresh report if already loaded
+      if (rows.length > 0) fetchReport();
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message || 'Failed', color: 'red' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleModalClose = () => {
+    setModalOpen(false);
+    setForm(emptyForm);
+    setErrors({});
+    setOpeningBalance(null);
+    setOutstanding(0);
+  };
+
+  /* ── Derived balance values for the form ── */
+  const thisAmount  = Number(form.advanceAmount) || 0;
+  const totalDue    = (openingBalance ?? 0) + outstanding + thisAmount;
+  const dueColor    = totalDue > 0 ? 'orange' : 'green';
+
   /* ─────────────────────────── RENDER ─────────────────────────── */
   return (
     <Container fluid px="md" py="sm">
 
-      <Box mb="sm">
-        <Title order={3} fw={700} c="#0d3b6e">Cash Advance</Title>
-        <Text c="dimmed" size="sm">
-          Producer-wise Cash Advance report — Opening, Advances Given, Recovery &amp; Balance
-        </Text>
-      </Box>
+      <Group justify="space-between" align="flex-end" mb="sm">
+        <Box>
+          <Title order={3} fw={700} c="#0d3b6e">Cash Advance</Title>
+          <Text c="dimmed" size="sm">
+            Producer-wise Cash Advance — Opening, Advances Given, Recovery &amp; Balance
+          </Text>
+        </Box>
+        <Button
+          leftSection={<IconPlus size={16} />}
+          size="sm"
+          radius="md"
+          style={{
+            background: 'linear-gradient(135deg, #0d3b6e 0%, #1a5fa8 100%)',
+            boxShadow: '0 4px 14px rgba(13,59,110,0.35)',
+          }}
+          onClick={() => setModalOpen(true)}
+        >
+          New Cash Advance
+        </Button>
+      </Group>
 
       {/* ── Toolbar ── */}
       <Paper withBorder shadow="xs" p="sm" radius="md" mb="md">
@@ -146,9 +306,7 @@ const CashAdvanceVoucher = () => {
             searchable clearable
             style={{ minWidth: 260 }} size="sm"
           />
-
           <Box style={{ flex: 1 }} />
-
           <Button
             leftSection={<IconSearch size={15} />} size="sm"
             onClick={fetchReport} loading={loading} color="blue"
@@ -182,7 +340,6 @@ const CashAdvanceVoucher = () => {
       <Paper withBorder shadow="sm" radius="md" style={{ position: 'relative', overflow: 'hidden' }}>
         <LoadingOverlay visible={loading} />
 
-        {/* Header bar */}
         <Box px="sm" py="xs" style={{ background: '#0d3b6e', borderRadius: '8px 8px 0 0' }}>
           <Group justify="space-between" align="center">
             <Group gap="xs">
@@ -246,8 +403,6 @@ const CashAdvanceVoucher = () => {
                     );
                   })
                 )}
-
-                {/* Total row */}
                 {totals && (
                   <tr style={{ borderTop: '2px solid #0d3b6e', background: '#edf2f7' }}>
                     <td colSpan={3} style={TD({ fontWeight: 700, textAlign: 'center', background: '#2d3748', color: '#fff', letterSpacing: 1 })}>
@@ -264,6 +419,203 @@ const CashAdvanceVoucher = () => {
           </ScrollArea>
         </div>
       </Paper>
+
+      {/* ════════════════════════════════════════════════════════
+          NEW CASH ADVANCE MODAL
+      ════════════════════════════════════════════════════════ */}
+      <Modal
+        opened={modalOpen}
+        onClose={handleModalClose}
+        title={
+          <Group gap="sm">
+            <ThemeIcon size={36} radius="md" style={{ background: 'linear-gradient(135deg,#0d3b6e,#1a5fa8)' }}>
+              <IconCash size={20} color="white" />
+            </ThemeIcon>
+            <Box>
+              <Text fw={700} size="md">New Cash Advance</Text>
+              <Text size="xs" c="dimmed">Record advance given to producer</Text>
+            </Box>
+          </Group>
+        }
+        size="lg"
+        radius="lg"
+        padding="xl"
+        styles={{
+          header: { borderBottom: '1px solid #eee', paddingBottom: 12 },
+          body:   { paddingTop: 16 },
+        }}
+      >
+        <Stack gap="md">
+
+          {/* ── Balance Summary Cards ── */}
+          {form.farmerId && (
+            <Box>
+              <Group justify="space-between" align="center" mb={8}>
+                <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: 0.5 }}>
+                  Producer Balance Summary
+                </Text>
+                {statsLoading && (
+                  <Text size="xs" c="dimmed">Loading…</Text>
+                )}
+              </Group>
+              <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
+                <BalanceCard
+                  label="Opening Cash Advance"
+                  value={openingBalance ?? 0}
+                  color="gray"
+                  icon={<IconCurrencyRupee size={16} />}
+                  note={openingBalance === null ? 'No opening record' : 'From Producer Openings'}
+                />
+                <BalanceCard
+                  label="Outstanding Advances"
+                  value={outstanding}
+                  color="blue"
+                  icon={<IconArrowUpRight size={16} />}
+                  note="Pending from advance records"
+                />
+                <BalanceCard
+                  label="This Advance"
+                  value={thisAmount}
+                  color="blue"
+                  icon={<IconCash size={16} />}
+                  note="Amount being given now"
+                />
+                <BalanceCard
+                  label="Total Due"
+                  value={totalDue}
+                  color={dueColor}
+                  icon={<IconAlertCircle size={16} />}
+                  note={totalDue > 0 ? 'Pending recovery' : 'Fully cleared'}
+                />
+              </SimpleGrid>
+            </Box>
+          )}
+
+          {form.farmerId && <Divider />}
+
+          {/* ── Producer & Date ── */}
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+            <Select
+              label="Producer"
+              placeholder="Search and select producer"
+              data={farmers}
+              value={form.farmerId}
+              onChange={v => setField('farmerId', v)}
+              searchable clearable
+              leftSection={<IconUser size={16} color="#666" />}
+              error={errors.farmerId}
+              required
+              styles={{ input: { borderRadius: 8 } }}
+            />
+            <DatePickerInput
+              label="Advance Date"
+              value={form.advanceDate}
+              onChange={v => setField('advanceDate', v)}
+              leftSection={<IconCalendar size={16} color="#666" />}
+              valueFormat="DD/MM/YYYY"
+              error={errors.advanceDate}
+              required
+              styles={{ input: { borderRadius: 8 } }}
+            />
+          </SimpleGrid>
+
+          {/* ── Type & Amount ── */}
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+            <Select
+              label="Advance Type"
+              data={['Regular','Emergency','Festival','Medical','Agriculture','Cattle Purchase','Feed','Other']}
+              value={form.advanceType}
+              onChange={v => setField('advanceType', v)}
+              styles={{ input: { borderRadius: 8 } }}
+            />
+            <NumberInput
+              label="Advance Amount (₹)"
+              placeholder="0.00"
+              value={form.advanceAmount}
+              onChange={v => setField('advanceAmount', v)}
+              leftSection={<IconCurrencyRupee size={16} color="#666" />}
+              min={1}
+              decimalScale={2}
+              thousandSeparator=","
+              error={errors.advanceAmount}
+              required
+              styles={{ input: { borderRadius: 8, fontWeight: 600 } }}
+            />
+          </SimpleGrid>
+
+          {/* ── Payment Mode & Repayment ── */}
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+            <Select
+              label="Payment Mode"
+              data={['Cash','Bank','UPI','Cheque']}
+              value={form.paymentMode}
+              onChange={v => setField('paymentMode', v)}
+              leftSection={<IconBuildingBank size={16} color="#666" />}
+              styles={{ input: { borderRadius: 8 } }}
+            />
+            <Select
+              label="Repayment Type"
+              data={['Lump Sum','Monthly Deduction','Per Payment Deduction','Custom']}
+              value={form.repaymentType}
+              onChange={v => setField('repaymentType', v)}
+              styles={{ input: { borderRadius: 8 } }}
+            />
+          </SimpleGrid>
+
+          {/* ── Monthly deduction (conditional) ── */}
+          {form.repaymentType === 'Monthly Deduction' && (
+            <NumberInput
+              label="Monthly Deduction Amount (₹)"
+              placeholder="0.00"
+              value={form.monthlyDeductionAmount}
+              onChange={v => setField('monthlyDeductionAmount', v)}
+              leftSection={<IconCurrencyRupee size={16} color="#666" />}
+              min={0}
+              decimalScale={2}
+              thousandSeparator=","
+              styles={{ input: { borderRadius: 8 } }}
+            />
+          )}
+
+          {/* ── Purpose & Remarks ── */}
+          <TextInput
+            label="Purpose"
+            placeholder="e.g. Festival expense, medical emergency…"
+            value={form.purpose}
+            onChange={e => setField('purpose', e.target.value)}
+            leftSection={<IconClipboardText size={16} color="#666" />}
+            styles={{ input: { borderRadius: 8 } }}
+          />
+          <Textarea
+            label="Remarks"
+            placeholder="Additional notes (optional)"
+            value={form.remarks}
+            onChange={e => setField('remarks', e.target.value)}
+            minRows={2}
+            autosize
+            styles={{ input: { borderRadius: 8 } }}
+          />
+
+          <Divider />
+
+          {/* ── Actions ── */}
+          <Group justify="flex-end" gap="sm">
+            <Button variant="subtle" color="gray" radius="md" onClick={handleModalClose}>
+              Cancel
+            </Button>
+            <Button
+              leftSection={<IconCheck size={16} />}
+              radius="md"
+              loading={submitting}
+              onClick={handleSubmit}
+              style={{ background: 'linear-gradient(135deg,#0d3b6e,#1a5fa8)', minWidth: 140 }}
+            >
+              Save Advance
+            </Button>
+          </Group>
+
+        </Stack>
+      </Modal>
 
     </Container>
   );

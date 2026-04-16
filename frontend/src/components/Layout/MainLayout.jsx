@@ -147,8 +147,7 @@ const MainLayout = () => {
         { key: '/collection-centers', label: 'Collection Centre' },
         { key: '/agents', label: 'Agent Management' },
         { key: '/customers', label: 'Customer' },
-        { key: '/farmers/crop-statements', label: 'Crop Damage Statements' },
-        { key: '/farmers/agri-stats',      label: 'Monthly Agri Statistics' },
+       
       ]
     }] : []),
     // PRIVATE FIRM - Customer Module Only
@@ -184,7 +183,7 @@ const MainLayout = () => {
         { key: '/daily-collections/milk-sales',     label: 'Milk Sales' },
         { key: '/daily-collections/union-sales-slip', label: 'Union Sales' },
         { key: '/daily-collections/farmer-wise-summary', label: 'Farmer-Wise Summary' },
-        { key: '/reports/salesman-balance', label: 'Salesman Balance Report' },
+        { key: '/reports/salesman-balance', label: 'Salesman/Customer Ledger' },
         {
           key: 'milk-settings-sub',
           label: 'Settings & Configuration',
@@ -195,6 +194,14 @@ const MainLayout = () => {
             { key: '/daily-collections/shift-incentive',        label: 'Shift Incentive'        },
             { key: '/daily-collections/time-incentive',         label: 'Time Incentive'         },
             { key: '/daily-collections/producer-openings',      label: 'Producer Openings'      },
+          ]
+        },
+         {
+          key: 'Reports',
+          label: 'Reports',
+          children: [
+             { key: '/reports/dairy-register', label: 'Dairy Register' },
+             { key: '/reports/dairy-abstract', label: 'Dairy Abstract' },
           ]
         },
       ]
@@ -216,11 +223,18 @@ const MainLayout = () => {
         { key: '/inventory/sales-returns/list', label: 'Sales Return List' },
         
         { key: '/subsidies', label: 'Subsidy' },
-        { key: '/sales/list', label: 'Sales Report' },
-        { key: '/inventory/report', label: 'Stock Report' },
-        { key: '/reports/purchase-register', label: 'Purchase Register' },
-       
-        { key: '/reports/subsidy', label: 'Subsidy Register' }
+        {
+          key: 'inventory-reports-sub',
+          label: 'Reports',
+          children: [
+            { key: '/reports/purchase-register', label: 'Purchase Report' },
+            { key: '/sales/list',                label: 'Sales Report' },
+            { key: '/inventory/report',          label: 'Stock Report' },
+            { key: '/reports/stock-register',    label: 'Stock Register' },
+            { key: '/reports/subsidy',           label: 'Subsidy Register' },
+            { key: '/reports/cf-abstract',       label: 'CF Abstract' },
+          ]
+        },
       ]
     }] : []),
     // BUSINESS INVENTORY - Only show for Private Firm
@@ -276,15 +290,15 @@ const MainLayout = () => {
       label: 'Producers dues',
       color: 'cyan',
       children: [
-        { key: '/payments/bank-transfer', label: 'Bank Transfer' },
-        { key: '/payments/receipts', label: 'Receipts' },
-        { key: '/payments/farmer-ledger', label: 'Farmer Ledger' },
+        
+        { key: '/payments/receipts', label: ' Producer Receipts' },
         {
           key: 'payments-sub',
           label: 'Payments',
           children: [
             { key: '/payments/register', label: 'Individual Payment' },
             { key: '/payments/register-ledger', label: 'Payment Register Detailed' },
+            { key: '/payments/bank-transfer', label: 'Bank Transfer' },
             { key: '/payments/ledger-history',  label: 'Ledger Payment History' },
             // { key: '/payments/individual', label: 'Individual Payment' },
             { key: '/payments/creditor-bill', label: 'Payment Register (Creditor Bill)' },
@@ -315,8 +329,10 @@ const MainLayout = () => {
           key: 'registers-sub',
           label: 'Registers / Reports',
           children: [
-            { key: '/payments/producer-register', label: 'Producer Register' },
+            { key: '/payments/producer-register',         label: 'Producer Register' },
             { key: '/payments/producer-register-summary', label: 'Producer Summary' },
+            { key: '/reports/milk-bill-report',           label: 'Milk Bill (Producer)' },
+            { key: '/payments/farmer-ledger',             label: 'Producer Ledger' },
           ]
         },
       ]
@@ -329,24 +345,26 @@ const MainLayout = () => {
       label: 'Accounts',
       color: 'violet',
       children: [
-        { key: '/accounting/ledgers', label: 'Ledgers' },
-        { key: '/accounting/receipt', label: 'Receipt Voucher' },
-        { key: '/accounting/payment', label: 'Payment Voucher' },
-        { key: '/accounting/journal', label: 'Adjustment/Journal Entry' },
-        { key: '/accounting/vouchers', label: 'Vouchers Management' },
-        { key: '/accounting/outstanding', label: 'Outstanding Report' },
-        { key: '/reports/cash-book', label: 'Cash Book' },
-        { key: '/reports/daybook', label: 'Day Book' },
-        { key: '/reports/general-ledger', label: 'General Ledger' },
-        { key: '/reports/ledger-abstract', label: 'Ledger Abstract' },
-        { key: '/reports/rd-enhanced', label: 'R&D Enhanced' },
-        { key: '/reports/final-accounts', label: 'Final Accounts' },
-        { key: '/reports/balance-sheet', label: 'Balance Sheet' },
-        { key: '/reports/milk-bill-abstract', label: 'Milk Bill Abstract' },
-        { key: '/reports/milk-bill-report',   label: 'Milk Bill (Producer)' },
-        { key: '/reports/dairy-abstract', label: 'Dairy Abstract' },
-        { key: '/reports/dairy-register', label: 'Dairy Register' },
-
+        { key: '/accounting/ledgers',     label: 'Ledgers' },
+        { key: '/accounting/receipt',     label: 'Receipt Voucher' },
+        { key: '/accounting/payment',     label: 'Payment Voucher' },
+        { key: '/accounting/journal',     label: 'Adjustment/Journal Entry' },
+        { key: '/accounting/vouchers',    label: 'Vouchers Management' },
+        {
+          key: 'accounts-reports-sub',
+          label: 'Reports',
+          children: [
+            { key: '/reports/cash-book',          label: 'Cash Book' },
+            { key: '/reports/daybook',            label: 'Day Book' },
+            { key: '/reports/general-ledger',     label: 'General Ledger' },
+            { key: '/reports/ledger-abstract',    label: 'Ledger Abstract' },
+            { key: '/reports/rd-enhanced',        label: 'R&D Statement' },
+            { key: '/reports/final-accounts',     label: 'Final Accounts' },
+            { key: '/reports/balance-sheet',      label: 'Balance Sheet' },
+            { key: '/reports/milk-bill-abstract', label: 'Milk Bill Abstract' },
+            { key: '/accounting/outstanding',     label: 'Outstanding Report' },
+          ]
+        },
       ]
     }] : []),
     // PRIVATE FIRM - Business Accounts (Separate from Dairy)
@@ -382,17 +400,10 @@ const MainLayout = () => {
       label: 'Dairy Reports',
       color: 'pink',
       children: [
-        // { key: '/reports/sales', label: 'Sales Report' },
-        // { key: '/reports/stock', label: 'Stock Report' },
-        { key: '/reports/stock-register', label: 'Stock Register' },
-        { key: '/reports/purchase-register', label: 'Purchase Register' },
-        { key: '/reports/subsidy', label: 'Subsidy Report' },
-        { key: '/reports/milk-bill-abstract', label: 'Milk Bill Abstract' },
-        { key: '/reports/dairy-abstract', label: 'Dairy Abstract' },
-        { key: '/reports/dairy-register', label: 'Dairy Register' },
-        { key: '/reports/rd-enhanced', label: 'R&D Statement' },
-        { key: '/reports/final-accounts', label: 'Final Accounts' },
-        { key: '/reports/balance-sheet', label: 'Balance Sheet' }
+        { key: '/reports/dairy-abstract',    label: 'Dairy Abstract' },
+        { key: '/reports/dairy-register',    label: 'Dairy Register' },
+        { key: '/farmers/crop-statements',   label: 'Crop Damage Statements' },
+        { key: '/farmers/agri-stats',        label: 'Monthly Agri Statistics' },
       ]
     }] : []),
     // BUSINESS (VYAPAR) REPORTS - Only show for Private Firm
@@ -480,9 +491,10 @@ const MainLayout = () => {
       color: 'violet',
       adminOnly: true,
       children: [
+          { key: '/society-info',     label: 'Society Info' },
         { key: '/financial-year',   label: 'Financial Year' },
         { key: '/payment-settings', label: 'Payment Settings' },
-        { key: '/society-info',     label: 'Society Info' },
+      
         { key: '/user-management',  label: 'User Management' },
       ]
     }] : [])
