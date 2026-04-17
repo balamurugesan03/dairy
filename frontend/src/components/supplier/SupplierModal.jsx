@@ -149,9 +149,7 @@ const SupplierModal = ({ isOpen, onClose, onSuccess, supplierId = null }) => {
       newErrors.name = 'Name is required';
     }
 
-    if (!formData.phone.trim()) {
-      newErrors.phone = 'Phone is required';
-    } else if (!/^[0-9]{10}$/.test(formData.phone)) {
+    if (formData.phone && !/^[0-9]{10}$/.test(formData.phone)) {
       newErrors.phone = 'Phone number must be 10 digits';
     }
 
@@ -258,7 +256,7 @@ const SupplierModal = ({ isOpen, onClose, onSuccess, supplierId = null }) => {
               placeholder="Enter full name"
               leftSection={<IconUser size={16} />}
               value={formData.name}
-              onChange={(e) => handleChange('name', e.target.value)}
+              onChange={(e) => handleChange('name', e.target.value.toUpperCase())}
               error={errors.name}
               required
             />
@@ -272,7 +270,6 @@ const SupplierModal = ({ isOpen, onClose, onSuccess, supplierId = null }) => {
               onChange={(e) => handleChange('phone', e.target.value)}
               error={errors.phone}
               maxLength={10}
-              required
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, sm: 6 }}>

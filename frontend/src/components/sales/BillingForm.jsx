@@ -92,7 +92,7 @@ const BillingForm = () => {
   const form = useForm({
     initialValues: {
       billDate: new Date(),
-      customerType: 'Other',
+      customerType: 'Farmer',
       customerId: null,
       customerName: '',
       customerPhone: '',

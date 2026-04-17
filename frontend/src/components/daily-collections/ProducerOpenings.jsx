@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Container, Group, Title, Button, NumberInput,
   Paper, Table, Box, Divider, Grid, Text, Stack, ThemeIcon,
@@ -44,6 +45,7 @@ function FieldLabel({ children }) {
 //  Main Component
 // ─────────────────────────────────────────────────────────────────
 export default function ProducerOpenings() {
+  const navigate = useNavigate();
   const [form, setForm]           = useState(EMPTY_FORM);
   const [records, setRecords]     = useState([]);
   const [editId, setEditId]       = useState(null);
@@ -308,8 +310,17 @@ export default function ProducerOpenings() {
               <Text size="xs" c="blue.1" mt={1}>Backup Details</Text>
             </Box>
             <Badge color={editId ? 'yellow' : 'teal'} variant="filled" size="sm" ml="auto">
-            {editId ? 'Editing — Click Update to Save' : 'New Record'}
-          </Badge>
+              {editId ? 'Editing — Click Update to Save' : 'New Record'}
+            </Badge>
+            <Button
+              size="xs"
+              variant="white"
+              leftSection={<IconX size={13} />}
+              onClick={() => navigate('/')}
+              style={{ color: '#1971c2' }}
+            >
+              Close
+            </Button>
           </Group>
         </Box>
 

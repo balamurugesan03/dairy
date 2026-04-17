@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Paper,
   Title,
@@ -31,7 +32,8 @@ import {
   IconCircleCheck,
   IconCircle,
   IconColumns,
-  IconClearAll
+  IconClearAll,
+  IconX
 } from '@tabler/icons-react';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
@@ -41,6 +43,7 @@ import { useAuth } from '../../context/AuthContext';
 
 const CollectionCenterManagement = () => {
   const { canWrite, canEdit, canDelete } = useAuth();
+  const navigate = useNavigate();
   const [centers, setCenters] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statistics, setStatistics] = useState({
@@ -366,13 +369,22 @@ const CollectionCenterManagement = () => {
             <Title order={2}>Collection Centre Management</Title>
             <Text c="dimmed" size="sm">Manage collection center information</Text>
           </div>
-          <Button
-            leftSection={<IconPlus size={16} />}
-            onClick={handleOpenAddModal}
-            disabled={!canWrite('collectionCenters')}
-          >
-            Add Collection Center
-          </Button>
+          <Group gap="xs">
+            <Button
+              leftSection={<IconPlus size={16} />}
+              onClick={handleOpenAddModal}
+              disabled={!canWrite('collectionCenters')}
+            >
+              Add Collection Center
+            </Button>
+            <Button
+              variant="default"
+              leftSection={<IconX size={16} />}
+              onClick={() => navigate('/')}
+            >
+              Close
+            </Button>
+          </Group>
         </Group>
 
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 5 }} mb="md">
@@ -524,22 +536,24 @@ const CollectionCenterManagement = () => {
             </Paper>
           )}
 
-          <DataTable
-            columns={columns}
-            records={centers}
-            fetching={loading}
-            totalRecords={pagination.total}
-            recordsPerPage={pagination.pageSize}
-            page={pagination.current}
-            onPageChange={(page) => setPagination(prev => ({ ...prev, current: page }))}
-            recordsPerPageOptions={[10, 25, 50, 100]}
-            onRecordsPerPageChange={(pageSize) => setPagination(prev => ({ ...prev, pageSize, current: 1 }))}
-            selectedRecords={centers.filter(c => selectedCenters.includes(c._id))}
-            onSelectedRecordsChange={(records) => setSelectedCenters(records.map(r => r._id))}
-            highlightOnHover
-            minHeight={centers.length === 0 ? 200 : undefined}
-            noRecordsText="No collection centers found"
-          />
+          <Box style={{ overflowX: 'auto' }}>
+            <DataTable
+              columns={columns}
+              records={centers}
+              fetching={loading}
+              totalRecords={pagination.total}
+              recordsPerPage={pagination.pageSize}
+              page={pagination.current}
+              onPageChange={(page) => setPagination(prev => ({ ...prev, current: page }))}
+              recordsPerPageOptions={[10, 25, 50, 100]}
+              onRecordsPerPageChange={(pageSize) => setPagination(prev => ({ ...prev, pageSize, current: 1 }))}
+              selectedRecords={centers.filter(c => selectedCenters.includes(c._id))}
+              onSelectedRecordsChange={(records) => setSelectedCenters(records.map(r => r._id))}
+              highlightOnHover
+              minHeight={centers.length === 0 ? 200 : undefined}
+              noRecordsText="No collection centers found"
+            />
+          </Box>
         </Paper>
       </Paper>
 

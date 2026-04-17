@@ -91,7 +91,6 @@ const FarmerForm = () => {
       if (active === 0) {
         return {
           farmerNumber: !values.farmerNumber ? 'Farmer number is required' : null,
-          memberId: !values.memberId ? 'Member ID is required' : null,
           'personalDetails.name': !values.personalDetails.name ? 'Name is required' : null,
           'personalDetails.phone': values.personalDetails.phone && !/^[0-9]{10}$/.test(values.personalDetails.phone)
             ? 'Please enter valid 10-digit phone number' : null
@@ -233,7 +232,6 @@ const FarmerForm = () => {
     try {
       const values = form.values;
 
-      // Convert file objects to base64
       const documents = {};
       for (const key in values.documents) {
         if (values.documents[key] instanceof File) {
@@ -381,6 +379,26 @@ const FarmerForm = () => {
     }
   };
 
+  const focusNext = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const formEl = e.target.closest('.farmer-form');
+      if (!formEl) return;
+      const inputs = Array.from(formEl.querySelectorAll('input:not([disabled]):not([type="hidden"]), select:not([disabled])'));
+      const idx = inputs.indexOf(e.target);
+      if (idx !== -1 && idx < inputs.length - 1) inputs[idx + 1].focus();
+    }
+  };
+
+  const handleFarmerNumberKeyDown = (e) => {
+    const allowedKeys = ['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter'];
+    if (!allowedKeys.includes(e.key) && !/^[0-9]$/.test(e.key)) {
+      e.preventDefault();
+      return;
+    }
+    focusNext(e);
+  };
+
   return (
     <Container fluid>
       <Stack gap="lg">
@@ -400,7 +418,7 @@ const FarmerForm = () => {
           </Button>
         </Group>
 
-        <Paper p="lg" withBorder>
+        <Paper p="lg" withBorder className="farmer-form">
           <Stepper active={active} onStepClick={setActive} breakpoint="sm">
             <Stepper.Step label="Personal Details" description="Basic information">
               <Stack gap="md" mt="md">
@@ -412,14 +430,7 @@ const FarmerForm = () => {
                       required
                       disabled={isEditMode}
                       {...form.getInputProps('farmerNumber')}
-                    />
-                  </Grid.Col>
-                  <Grid.Col span={6}>
-                    <TextInput
-                      label="Member ID"
-                      placeholder="Enter member ID"
-                      required
-                      {...form.getInputProps('memberId')}
+                      onKeyDown={handleFarmerNumberKeyDown}
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
@@ -428,6 +439,7 @@ const FarmerForm = () => {
                       placeholder="Enter name"
                       required
                       {...form.getInputProps('personalDetails.name')}
+                      onKeyDown={focusNext}
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
@@ -435,6 +447,7 @@ const FarmerForm = () => {
                       label="Father's Name"
                       placeholder="Enter father's name"
                       {...form.getInputProps('personalDetails.fatherName')}
+                      onKeyDown={focusNext}
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
@@ -445,7 +458,7 @@ const FarmerForm = () => {
                       max={150}
                       value={form.values.personalDetails.age}
                       onChange={handleAgeChange}
-                      description="Enter age or select DOB above"
+                      onKeyDown={focusNext}
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
@@ -473,6 +486,26 @@ const FarmerForm = () => {
                       placeholder="Enter phone number"
                       maxLength={10}
                       {...form.getInputProps('personalDetails.phone')}
+                      onKeyDown={focusNext}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <Select
+                      label="Collection Centre"
+                      placeholder="Select collection centre"
+                      data={collectionCenters.map(c => ({
+                        value: c._id,
+                        label: `${c.centerName} (${c.centerType})`
+                      }))}
+                      searchable
+                      {...form.getInputProps('collectionCenter')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <DatePickerInput
+                      label="Admission Date"
+                      placeholder="Select date"
+                      {...form.getInputProps('admissionDate')}
                     />
                   </Grid.Col>
                 </Grid>
@@ -487,6 +520,7 @@ const FarmerForm = () => {
                       label="Ward"
                       placeholder="Enter ward"
                       {...form.getInputProps('address.ward')}
+                      onKeyDown={focusNext}
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
@@ -504,14 +538,16 @@ const FarmerForm = () => {
                         label="Village"
                         placeholder="Enter village"
                         {...form.getInputProps('address.village')}
+                        onKeyDown={focusNext}
                       />
                     )}
                   </Grid.Col>
                   <Grid.Col span={6}>
                     <TextInput
-                      label="Panchayat"
+                      label="Taluk"
                       placeholder="Auto-filled from PIN code"
                       {...form.getInputProps('address.panchayat')}
+                      onKeyDown={focusNext}
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
@@ -523,6 +559,7 @@ const FarmerForm = () => {
                       onChange={(e) => handlePincodeChange(e.target.value)}
                       error={form.errors['address.pin']}
                       rightSection={pincodeLoading ? <Loader size="xs" /> : null}
+                      onKeyDown={focusNext}
                     />
                   </Grid.Col>
                 </Grid>
@@ -538,6 +575,7 @@ const FarmerForm = () => {
                       placeholder="Enter Aadhaar number"
                       maxLength={12}
                       {...form.getInputProps('identityDetails.aadhaar')}
+                      onKeyDown={focusNext}
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
@@ -545,8 +583,9 @@ const FarmerForm = () => {
                       label="PAN Number"
                       placeholder="Enter PAN number"
                       maxLength={10}
-                      style={{ textTransform: 'uppercase' }}
                       {...form.getInputProps('identityDetails.pan')}
+                      onChange={(e) => form.setFieldValue('identityDetails.pan', e.target.value.toUpperCase())}
+                      onKeyDown={focusNext}
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
@@ -554,6 +593,7 @@ const FarmerForm = () => {
                       label="Welfare Number"
                       placeholder="Enter welfare number"
                       {...form.getInputProps('identityDetails.welfareNo')}
+                      onKeyDown={focusNext}
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
@@ -561,6 +601,7 @@ const FarmerForm = () => {
                       label="Ksheerasree ID"
                       placeholder="Enter Ksheerasree ID"
                       {...form.getInputProps('identityDetails.ksheerasreeId')}
+                      onKeyDown={focusNext}
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
@@ -568,6 +609,7 @@ const FarmerForm = () => {
                       label="ID Card Number"
                       placeholder="Enter ID card number"
                       {...form.getInputProps('identityDetails.idCardNumber')}
+                      onKeyDown={focusNext}
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
@@ -611,32 +653,6 @@ const FarmerForm = () => {
                       {...form.getInputProps('cowType')}
                     />
                   </Grid.Col>
-                  <Grid.Col span={6}>
-                    <Select
-                      label="Collection Center"
-                      placeholder="Select collection center"
-                      data={collectionCenters.map(c => ({
-                        value: c._id,
-                        label: `${c.centerName} (${c.centerType})`
-                      }))}
-                      searchable
-                      {...form.getInputProps('collectionCenter')}
-                    />
-                  </Grid.Col>
-                  <Grid.Col span={6}>
-                    <DatePickerInput
-                      label="Admission Date"
-                      placeholder="Select date"
-                      {...form.getInputProps('admissionDate')}
-                    />
-                  </Grid.Col>
-                  <Grid.Col span={6}>
-                    <DatePickerInput
-                      label="Membership Date"
-                      placeholder="Select date"
-                      {...form.getInputProps('membershipDate')}
-                    />
-                  </Grid.Col>
                 </Grid>
               </Stack>
             </Stepper.Step>
@@ -649,6 +665,7 @@ const FarmerForm = () => {
                       label="Account Number"
                       placeholder="Enter account number"
                       {...form.getInputProps('bankDetails.accountNumber')}
+                      onKeyDown={focusNext}
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
@@ -656,6 +673,7 @@ const FarmerForm = () => {
                       label="Bank Name"
                       placeholder="Enter bank name"
                       {...form.getInputProps('bankDetails.bankName')}
+                      onKeyDown={focusNext}
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
@@ -663,6 +681,7 @@ const FarmerForm = () => {
                       label="Branch"
                       placeholder="Enter branch"
                       {...form.getInputProps('bankDetails.branch')}
+                      onKeyDown={focusNext}
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
@@ -670,8 +689,9 @@ const FarmerForm = () => {
                       label="IFSC Code"
                       placeholder="Enter IFSC code"
                       maxLength={11}
-                      style={{ textTransform: 'uppercase' }}
                       {...form.getInputProps('bankDetails.ifsc')}
+                      onChange={(e) => form.setFieldValue('bankDetails.ifsc', e.target.value.toUpperCase())}
+                      onKeyDown={focusNext}
                     />
                   </Grid.Col>
                 </Grid>
@@ -682,12 +702,28 @@ const FarmerForm = () => {
               <Stack gap="md" mt="md">
                 <Grid>
                   <Grid.Col span={6}>
+                    <TextInput
+                      label="Member Number"
+                      placeholder="Enter member number"
+                      {...form.getInputProps('memberId')}
+                      onKeyDown={focusNext}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <DatePickerInput
+                      label="Membership Date"
+                      placeholder="Select date"
+                      {...form.getInputProps('membershipDate')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
                     <NumberInput
                       label="Number of Shares"
                       placeholder="Enter number of shares"
                       min={0}
                       value={form.values.financialDetails.numberOfShares}
                       onChange={handleSharesChange}
+                      onKeyDown={focusNext}
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
@@ -704,6 +740,7 @@ const FarmerForm = () => {
                       placeholder="Enter admission fee"
                       min={0}
                       {...form.getInputProps('financialDetails.admissionFee')}
+                      onKeyDown={focusNext}
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
@@ -711,6 +748,7 @@ const FarmerForm = () => {
                       label="Resolution Number"
                       placeholder="Enter resolution number"
                       {...form.getInputProps('financialDetails.resolutionNo')}
+                      onKeyDown={focusNext}
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>

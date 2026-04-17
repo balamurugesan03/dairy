@@ -6,12 +6,14 @@ import {
   createMilkSale,
   updateMilkSale,
   deleteMilkSale,
-  getBalanceReport
+  getBalanceReport,
+  getNextBillNo
 } from '../controllers/milkSalesController.js';
 
 const router = express.Router();
 
 router.get('/',               getMilkSales);
+router.get('/next-bill-no',   getNextBillNo);
 router.get('/summary/daily',  getDailySummary);
 router.get('/balance-report', getBalanceReport);
 router.get('/:id',            getMilkSaleById);

@@ -100,7 +100,7 @@ const CashAdvanceVoucher = () => {
   const emptyForm = {
     farmerId:               null,
     advanceDate:            new Date(),
-    advanceType:            'Regular',
+    advanceType:            'Cash',
     advanceAmount:          '',
     paymentMode:            'Cash',
     repaymentType:          'Per Payment Deduction',
@@ -521,12 +521,11 @@ const CashAdvanceVoucher = () => {
 
           {/* ── Type & Amount ── */}
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-            <Select
+            <TextInput
               label="Advance Type"
-              data={['Regular','Emergency','Festival','Medical','Agriculture','Cattle Purchase','Feed','Other']}
-              value={form.advanceType}
-              onChange={v => setField('advanceType', v)}
-              styles={{ input: { borderRadius: 8 } }}
+              value="Cash"
+              readOnly
+              styles={{ input: { borderRadius: 8, background: '#f5f5f5', cursor: 'default' } }}
             />
             <NumberInput
               label="Advance Amount (₹)"

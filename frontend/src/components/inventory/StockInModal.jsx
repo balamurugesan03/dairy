@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Modal,
   TextInput,
@@ -66,6 +66,21 @@ const StockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
   const [pricePopoverOpened, setPricePopoverOpened] = useState({});
 
   const isEditMode = !!editData;
+  const modalBodyRef = useRef(null);
+
+  const focusNext = (e) => {
+    if (e.key !== 'Enter') return;
+    const container = modalBodyRef.current;
+    if (!container) return;
+    const inputs = Array.from(
+      container.querySelectorAll('input:not([disabled]):not([readonly]), textarea:not([disabled])')
+    ).filter(el => el.offsetParent !== null);
+    const idx = inputs.indexOf(e.target);
+    if (idx >= 0 && idx < inputs.length - 1) {
+      e.preventDefault();
+      inputs[idx + 1].focus();
+    }
+  };
 
   // Populate selectedItemInfo when items are loaded in edit mode
   useEffect(() => {
@@ -554,6 +569,7 @@ const StockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
       size="xl"
       centered
     >
+      <div ref={modalBodyRef} onKeyDown={focusNext}>
       <Stack gap="md">
         {/* 1. Purchase Details */}
         <Title order={5}>Purchase Details</Title>
@@ -1087,6 +1103,7 @@ const StockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
           </Button>
         </Group>
       </Stack>
+      </div>
     </Modal>
   );
 };

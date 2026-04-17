@@ -93,12 +93,11 @@ const milkPurchaseSettingsSchema = new mongoose.Schema(
     },
 
     // ── Active rate chart type used for rate calculation ──────────────────
-    activeRateChartType: {
+     activeRateChartType: {
       type    : String,
-      enum    : ['ManualEntry', 'ApplyFormula', 'LowChart', 'GoldLessChart', 'SlabRate'],
+      enum    : ['MilmaChart', 'ManualEntry', 'ApplyFormula', 'LowChart', 'GoldLessChart', 'SlabRate'],
       default : 'ApplyFormula',
     },
-
     // ── Printer / paper type for milk bill printing ────────────────────────
     printSize: {
       type    : String,

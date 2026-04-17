@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Modal,
+  ScrollArea,
   TextInput,
   NumberInput,
   Textarea,
@@ -227,6 +228,7 @@ const CustomerModal = ({ isOpen, onClose, onSuccess, customerId = null }) => {
       }
       size="xl"
       centered
+      scrollAreaComponent={ScrollArea.Autosize}
     >
       <Stack gap="md">
         <Title order={5}>Basic Information</Title>

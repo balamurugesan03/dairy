@@ -1,9 +1,12 @@
 import Sales from '../models/Sales.js';
 import Farmer from '../models/Farmer.js';
 import Customer from '../models/Customer.js';
+import Item from '../models/Item.js';
+import StockTransaction from '../models/StockTransaction.js';
 import mongoose from 'mongoose';
-import { createBulkStockTransactions, reverseStockTransaction } from '../utils/stockHelper.js';
-import { createSalesVoucher } from '../utils/accountingHelper.js';
+import { createBulkStockTransactions } from '../utils/stockHelper.js';
+import { createSalesVoucher, reverseLedgerBalances } from '../utils/accountingHelper.js';
+import Voucher from '../models/Voucher.js';
 import { generateCode } from '../models/Counter.js';
 
 // Create new sale
@@ -298,8 +301,33 @@ export const deleteSale = async (req, res) => {
       });
     }
 
-    // Reverse stock transactions
-    await reverseStockTransaction('Sale', sale._id);
+    // Restore stock for each sold item and delete stock transactions
+    const stockTxns = await StockTransaction.find({
+      referenceType: 'Sale',
+      referenceId: sale._id,
+      companyId: req.companyId
+    });
+
+    for (const txn of stockTxns) {
+      const item = await Item.findById(txn.itemId);
+      if (!item) continue;
+      // Sale created Stock Out — restore by adding back quantity
+      if (txn.transactionType === 'Stock Out') {
+        item.currentBalance = Math.max(0, item.currentBalance + txn.quantity);
+        await item.save();
+      }
+    }
+    await StockTransaction.deleteMany({ referenceType: 'Sale', referenceId: sale._id, companyId: req.companyId });
+
+    // Reverse ledger balances and delete voucher
+    if (sale.ledgerEntries && sale.ledgerEntries.length > 0) {
+      const voucherId = sale.ledgerEntries[0];
+      const voucher = await Voucher.findById(voucherId);
+      if (voucher) {
+        await reverseLedgerBalances(voucher.entries, null, req.companyId);
+        await Voucher.findByIdAndDelete(voucherId);
+      }
+    }
 
     // Delete the sale
     await Sales.findByIdAndDelete(req.params.id);

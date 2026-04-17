@@ -402,6 +402,7 @@ const MainLayout = () => {
       children: [
         { key: '/reports/dairy-abstract',    label: 'Dairy Abstract' },
         { key: '/reports/dairy-register',    label: 'Dairy Register' },
+        { key: '/reports/mis-report',        label: 'MIS Report' },
         { key: '/farmers/crop-statements',   label: 'Crop Damage Statements' },
         { key: '/farmers/agri-stats',        label: 'Monthly Agri Statistics' },
       ]

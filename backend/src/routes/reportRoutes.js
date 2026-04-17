@@ -13,7 +13,8 @@ import {
   getMilkBillAbstractReport,
   getDairyAbstractReport,
   getDairyRegisterReport,
-  getCooperativeRDReport
+  getCooperativeRDReport,
+  getMISReport
 } from '../controllers/reportController.js';
 import { getDayBook } from '../controllers/dayBookController.js';
 import {
@@ -68,6 +69,7 @@ router.get('/milk-bill-abstract', getMilkBillAbstractReport);
 router.get('/dairy-abstract', getDairyAbstractReport);
 router.get('/dairy-register', getDairyRegisterReport);
 router.get('/cooperative-rd', getCooperativeRDReport);
+router.get('/mis-report', getMISReport);
 
 // New accounting reports routes
 router.get('/cash-book', getCashBook);

@@ -6,7 +6,6 @@ import { CompanyProvider, useCompany } from './context/CompanyContext';
 import MainLayout from './components/Layout/MainLayout';
 import CompanySelection from './components/company/CompanySelection';
 import Login from './pages/Login';
-import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import BusinessTypeGuard from './components/common/BusinessTypeGuard';
 import './styles/theme.css';
 
@@ -160,6 +159,7 @@ const DairyRegisterReport = lazy(() => import('./components/reports/DairyRegiste
 const SalesmanBalanceReport = lazy(() => import('./components/reports/SalesmanBalanceReport'));
 const CooperativeRDReport = lazy(() => import('./components/reports/CooperativeRDReport'));
 const MilkBillReport      = lazy(() => import('./components/reports/MilkBillReport'));
+const MISReport           = lazy(() => import('./components/reports/MISReport'));
 
 // Vyapar Report Components - Private Firm
 const VyaparReportsHub = lazy(() => import('./components/reports/vyapar/VyaparReportsHub'));
@@ -247,7 +247,7 @@ const PaymentSettings = lazy(() => import('./components/settings/PaymentSettings
 
 // App content component that uses auth and company context
 const AppContent = () => {
-  const { isAuthenticated, isSuperAdmin, loading: authLoading } = useAuth();
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const { selectedCompany, selectedBusinessType, loading: companyLoading } = useCompany();
 
   // Show loading state while checking auth
@@ -268,18 +268,6 @@ const AppContent = () => {
   // If not authenticated, show login page
   if (!isAuthenticated) {
     return <Login />;
-  }
-
-  // Super admin gets its own protected panel — no company selection needed
-  if (isSuperAdmin) {
-    return (
-      <Router>
-        <Routes>
-          <Route path="/superadmin" element={<SuperAdminDashboard />} />
-          <Route path="*" element={<Navigate to="/superadmin" replace />} />
-        </Routes>
-      </Router>
-    );
   }
 
   // Show loading state while checking for saved company
@@ -512,6 +500,7 @@ const AppContent = () => {
                 <Route path="salesman-balance"      element={<SalesmanBalanceReport />} />
                 <Route path="cooperative-rd"        element={<CooperativeRDReport />} />
                 <Route path="milk-bill-report"      element={<MilkBillReport />} />
+                <Route path="mis-report"            element={<MISReport />} />
               </Route>
 
               {/* Warranty Routes */}
@@ -624,8 +613,6 @@ const AppContent = () => {
               <Route path="payment-settings" element={<PaymentSettings />} />
             </Route>
 
-          {/* Block superadmin route for regular users */}
-          <Route path="/superadmin" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
     </Router>

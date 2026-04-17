@@ -83,6 +83,7 @@ export const upsertSettings = async (req, res) => {
     const {
       quantityUnit,
       manualEntryCombination,
+      activeRateChartType,
       printSize,
       machines,
       weighingScaleConfig,
@@ -95,6 +96,7 @@ export const upsertSettings = async (req, res) => {
 
     if (quantityUnit           !== undefined) update.quantityUnit           = quantityUnit;
     if (manualEntryCombination !== undefined) update.manualEntryCombination = manualEntryCombination;
+    if (activeRateChartType    !== undefined) update.activeRateChartType    = activeRateChartType;
     if (printSize              !== undefined) update.printSize              = printSize;
 
     // Machine toggles – merge individually

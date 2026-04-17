@@ -1154,22 +1154,24 @@ const SupplierList = () => {
             </Paper>
           )}
 
-          <DataTable
-            columns={columns}
-            records={suppliers}
-            fetching={loading}
-            totalRecords={pagination.total}
-            recordsPerPage={pagination.pageSize}
-            page={pagination.current}
-            onPageChange={(page) => setPagination(prev => ({ ...prev, current: page }))}
-            recordsPerPageOptions={[10, 25, 50, 100]}
-            onRecordsPerPageChange={(pageSize) => setPagination(prev => ({ ...prev, pageSize, current: 1 }))}
-            selectedRecords={suppliers.filter(s => selectedSuppliers.includes(s._id))}
-            onSelectedRecordsChange={(records) => setSelectedSuppliers(records.map(r => r._id))}
-            highlightOnHover
-            minHeight={suppliers.length === 0 ? 200 : undefined}
-            noRecordsText="No suppliers found"
-          />
+          <Box style={{ overflowX: 'auto' }}>
+            <DataTable
+              columns={columns}
+              records={suppliers}
+              fetching={loading}
+              totalRecords={pagination.total}
+              recordsPerPage={pagination.pageSize}
+              page={pagination.current}
+              onPageChange={(page) => setPagination(prev => ({ ...prev, current: page }))}
+              recordsPerPageOptions={[10, 25, 50, 100]}
+              onRecordsPerPageChange={(pageSize) => setPagination(prev => ({ ...prev, pageSize, current: 1 }))}
+              selectedRecords={suppliers.filter(s => selectedSuppliers.includes(s._id))}
+              onSelectedRecordsChange={(records) => setSelectedSuppliers(records.map(r => r._id))}
+              highlightOnHover
+              minHeight={suppliers.length === 0 ? 200 : undefined}
+              noRecordsText="No suppliers found"
+            />
+          </Box>
         </Paper>
       </Paper>
 

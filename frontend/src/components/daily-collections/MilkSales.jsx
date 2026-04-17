@@ -8,7 +8,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Box, Group, Text, TextInput, NumberInput, Select, Button,
   Table, ScrollArea, ActionIcon, Badge, Divider, Center,
-  Loader, Card, Stack, SegmentedControl,
+  Loader, Card, Stack, SegmentedControl, Checkbox,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
@@ -99,7 +99,7 @@ export default function MilkSales() {
   const [mode,    setMode]    = useState('LOCAL');
   const [session, setSession] = useState('AM');
   const [date,    setDate]    = useState(new Date());
-  const [billNo,  setBillNo]  = useState(genBillNo);
+  const [billNo,  setBillNo]  = useState('');
 
   const [center,   setCenter]   = useState(null);
   const [agent,    setAgent]    = useState(null);
@@ -120,6 +120,7 @@ export default function MilkSales() {
   const [editingId,    setEditingId]    = useState(null);
   const [saving,       setSaving]       = useState(false);
   const [loading,      setLoading]      = useState(false);
+  const [milkBill,     setMilkBill]     = useState(true);
   const [historySearch, setHistorySearch] = useState('');
   const [showHistory,   setShowHistory]   = useState(false);
 
@@ -182,7 +183,15 @@ export default function MilkSales() {
   useEffect(() => {
     loadDropdowns();
     loadEntries();
+    fetchNextBillNo();
   }, []);
+
+  const fetchNextBillNo = async () => {
+    try {
+      const res = await milkSalesAPI.getNextBillNo();
+      if (res?.data?.billNo) setBillNo(res.data.billNo);
+    } catch { setBillNo(genBillNo()); }
+  };
 
   const loadDropdowns = async () => {
     try {
@@ -211,7 +220,7 @@ export default function MilkSales() {
   // ── Actions ───────────────────────────────────────────────────────────────
   const handleNew = () => {
     setEditingId(null); setSelRow(null);
-    setBillNo(genBillNo());
+    fetchNextBillNo();
     setCenter(null); setAgent(null); setCategory(null); setCreditor(null);
     setOpCr(''); setLitre(''); setRate(''); setAmount(0); setPType('Cash');
     fetchRate({ mode, creditor: null, agent: null, date });
@@ -252,9 +261,8 @@ export default function MilkSales() {
         const saved = result?.data || { ...payload, _id: Date.now().toString() };
         setEntries(p => [saved, ...p]);
         lastEntryRef.current = saved;
-        // Auto-print immediately after save (like MilkPurchase)
-        printSlip(saved);
-        notifications.show({ color: 'teal', message: `Saved & Printing: ${saved.billNo} — \u20B9${am.toFixed(2)}`, autoClose: 2000 });
+        if (milkBill) printSlip(saved);
+        notifications.show({ color: 'teal', message: `Saved${milkBill ? ' & Printing' : ''}: ${saved.billNo} — \u20B9${am.toFixed(2)}`, autoClose: 2000 });
         handleNew();
       }
     } catch {
@@ -418,7 +426,16 @@ export default function MilkSales() {
               <Text size="11px" fw={800} c="#1e3a8a" tt="uppercase" style={{ letterSpacing: '0.4px' }}>Bill Info</Text>
             </Group>
             <Box mb={6}>
-              <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Bill No</Text>
+              <Group justify="space-between" mb={2}>
+                <Text size="9px" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>Bill No</Text>
+                <Checkbox
+                  label="Milk Bill"
+                  size="xs"
+                  checked={milkBill}
+                  onChange={e => setMilkBill(e.currentTarget.checked)}
+                  styles={{ label: { fontSize: 10, fontWeight: 700, color: milkBill ? '#16a34a' : '#94a3b8' } }}
+                />
+              </Group>
               <TextInput value={billNo} onChange={e => setBillNo(e.target.value)} size="xs" radius="sm"
                 styles={{ input: { fontWeight: 800, fontSize: 12, border: '1.5px solid #bfdbfe', color: '#2563eb', height: 28 } }} />
             </Box>

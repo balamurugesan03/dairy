@@ -154,6 +154,9 @@ import businessPromotionRoutes from './routes/businessPromotionRoutes.js';
 // Rate Chart routes
 import rateChartRoutes from './routes/rateChartRoutes.js';
 
+
+// Milma Rate Chart routes
+import { adminRouter as milmaAdminRoutes, userRouter as milmaUserRoutes } from './routes/milmaChartRoutes.js';
 // Milk Purchase Settings routes
 import milkPurchaseSettingsRoutes from './routes/milkPurchaseSettingsRoutes.js';
 
@@ -337,6 +340,11 @@ app.use('/api/union-sales-slips', protect, addCompanyFilter, unionSalesSlipRoute
 
 // Milk Sales routes (daily collection sales screen)
 app.use('/api/milk-sales', protect, addCompanyFilter, milkSalesRoutes);
+
+// Milma Rate Chart — superadmin upload (protect only) + company-user read/lookup
+app.use('/api/milma-charts/admin', protect, milmaAdminRoutes);
+app.use('/api/milma-charts',       protect, addCompanyFilter, milmaUserRoutes);
+
 
 // Milk Sales Rate routes
 app.use('/api/milk-sales-rates', protect, addCompanyFilter, milkSalesRateRoutes);

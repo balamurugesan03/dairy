@@ -79,6 +79,33 @@ async function createMilkSaleVoucher(sale, companyId) {
 }
 
 // ────────────────────────────────────────────────────────────────
+//  GET NEXT BILL NO  (sequential MS-YYMM-01, 02, 03…)
+// ────────────────────────────────────────────────────────────────
+export const getNextBillNo = async (req, res) => {
+  try {
+    const n = new Date();
+    const yymm = `${String(n.getFullYear()).slice(-2)}${String(n.getMonth() + 1).padStart(2, '0')}`;
+    const prefix = `MS-${yymm}-`;
+
+    const last = await MilkSales.findOne(
+      { companyId: req.companyId, billNo: { $regex: `^${prefix}\\d+$` } },
+      { billNo: 1 }
+    ).sort({ billNo: -1 });
+
+    let nextNum = 1;
+    if (last) {
+      const lastNum = parseInt(last.billNo.replace(prefix, '')) || 0;
+      nextNum = lastNum + 1;
+    }
+
+    const billNo = `${prefix}${String(nextNum).padStart(2, '0')}`;
+    res.json({ success: true, data: { billNo } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────
 //  GET ALL  (filter by date, session, saleMode; pagination)
 // ────────────────────────────────────────────────────────────────
 export const getMilkSales = async (req, res) => {
@@ -258,16 +285,11 @@ export const getBalanceReport = async (req, res) => {
       }
     }
 
-    // ── Sales filter ──────────────────────────────────────────────
-    const baseFilter = { companyId };
-    if (creditorId) {
-      baseFilter.creditorId = creditorId;
-      baseFilter.saleMode   = 'CREDIT';
-    } else {
-      baseFilter.saleMode = 'LOCAL';
-    }
+    // ── Sales filter — always CREDIT only (no LOCAL rows) ────────
+    const baseFilter = { companyId, saleMode: 'CREDIT' };
+    if (creditorId) baseFilter.creditorId = creditorId;
 
-    // ── Opening Balance: prior sales − prior receipts ─────────────
+    // ── Opening Balance: prior CREDIT sales − prior receipts ─────
     const priorSalesAgg = await MilkSales.aggregate([
       { $match: { ...baseFilter, date: { $lt: start } } },
       { $group: { _id: null, total: { $sum: '$amount' } } }
@@ -277,14 +299,15 @@ export const getBalanceReport = async (req, res) => {
     let priorReceipts = 0;
     if (creditorLedgerId) {
       const priorVouchers = await Voucher.find({
-        voucherType: 'Receipt',
+        companyId,
+        voucherType: { $in: ['Receipt', 'Payment'] },
         voucherDate: { $lt: start },
         'entries.ledgerId': creditorLedgerId
       }).lean();
       for (const v of priorVouchers) {
         for (const e of v.entries) {
           if (e.ledgerId?.toString() === creditorLedgerId) {
-            priorReceipts += e.creditAmount || 0;
+            if (v.voucherType === 'Receipt') priorReceipts += e.creditAmount || 0;
           }
         }
       }
@@ -298,32 +321,24 @@ export const getBalanceReport = async (req, res) => {
       .sort({ date: 1, session: 1 })
       .lean();
 
-    // ── Daybook vouchers in period ────────────────────────────────
-    const voucherQuery = { voucherDate: { $gte: start, $lte: end } };
+    // ── Daybook Receipt/Payment vouchers in period ─────────────────
+    const voucherQuery = {
+      companyId,
+      voucherType: { $in: ['Receipt', 'Payment'] },
+      voucherDate: { $gte: start, $lte: end }
+    };
     if (creditorLedgerId) voucherQuery['entries.ledgerId'] = creditorLedgerId;
-    const vouchers = await Voucher.find(voucherQuery).lean();
+    const vouchers = creditorLedgerId ? await Voucher.find(voucherQuery).lean() : [];
 
     // Group vouchers by date-key
     const vMap = {};
     for (const v of vouchers) {
       const dk = v.voucherDate.toISOString().split('T')[0];
       if (!vMap[dk]) vMap[dk] = { payment: 0, receipt: 0 };
-      if (v.voucherType === 'Payment') {
-        if (creditorLedgerId) {
-          for (const e of v.entries) {
-            if (e.ledgerId?.toString() === creditorLedgerId) vMap[dk].payment += e.debitAmount || 0;
-          }
-        } else {
-          vMap[dk].payment += v.totalDebit;
-        }
-      }
-      if (v.voucherType === 'Receipt') {
-        if (creditorLedgerId) {
-          for (const e of v.entries) {
-            if (e.ledgerId?.toString() === creditorLedgerId) vMap[dk].receipt += e.creditAmount || 0;
-          }
-        } else {
-          vMap[dk].receipt += v.totalCredit;
+      for (const e of v.entries) {
+        if (e.ledgerId?.toString() === creditorLedgerId) {
+          if (v.voucherType === 'Receipt') vMap[dk].receipt += e.creditAmount || 0;
+          if (v.voucherType === 'Payment') vMap[dk].payment += e.debitAmount  || 0;
         }
       }
     }
@@ -337,10 +352,8 @@ export const getBalanceReport = async (req, res) => {
       else                    { sMap[dk].pm.qty += s.litre; sMap[dk].pm.value += s.amount; }
     }
 
-    // Generate every calendar day in range
-    const allDates = new Set(Object.keys(sMap));
-    const cur = new Date(start);
-    while (cur <= end) { allDates.add(cur.toISOString().split('T')[0]); cur.setDate(cur.getDate() + 1); }
+    // Only include dates that have actual sales OR receipts (no empty rows)
+    const allDates = new Set([...Object.keys(sMap), ...Object.keys(vMap)]);
 
     // Build rows with running balance
     let balance = openingBalance;

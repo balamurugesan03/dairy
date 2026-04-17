@@ -134,6 +134,7 @@ const ItemList = () => {
       itemName: (value) => !value ? 'Item name is required' : null,
       category: (value) => !value ? 'Category is required' : null,
       measurement: (value) => !value ? 'Measurement is required' : null,
+      supplier: (value) => !value ? 'Supplier is required' : null,
     }
   });
 
@@ -966,15 +967,13 @@ const ItemList = () => {
               />
               
               <Select
-                label="Supplier (Optional)"
+                label="Supplier"
                 placeholder="Select supplier"
-                data={[
-                  { value: '', label: 'No supplier' },
-                  ...suppliers.map(supplier => ({
-                    value: supplier._id,
-                    label: `${supplier.name} (${supplier.supplierId})`
-                  }))
-                ]}
+                withAsterisk
+                data={suppliers.map(supplier => ({
+                  value: supplier._id,
+                  label: `${supplier.name} (${supplier.supplierId})`
+                }))}
                 {...itemForm.getInputProps('supplier')}
               />
               

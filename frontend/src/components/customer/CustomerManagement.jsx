@@ -706,22 +706,24 @@ const CustomerManagement = () => {
             </Paper>
           )}
 
-          <DataTable
-            columns={columns}
-            records={customers}
-            fetching={loading}
-            totalRecords={pagination.total}
-            recordsPerPage={pagination.pageSize}
-            page={pagination.current}
-            onPageChange={(page) => setPagination(prev => ({ ...prev, current: page }))}
-            recordsPerPageOptions={[10, 25, 50, 100]}
-            onRecordsPerPageChange={(pageSize) => setPagination(prev => ({ ...prev, pageSize, current: 1 }))}
-            selectedRecords={customers.filter(c => selectedCustomers.includes(c._id))}
-            onSelectedRecordsChange={(records) => setSelectedCustomers(records.map(r => r._id))}
-            highlightOnHover
-            minHeight={customers.length === 0 ? 200 : undefined}
-            noRecordsText="No customers found"
-          />
+          <Box style={{ overflowX: 'auto' }}>
+            <DataTable
+              columns={columns}
+              records={customers}
+              fetching={loading}
+              totalRecords={pagination.total}
+              recordsPerPage={pagination.pageSize}
+              page={pagination.current}
+              onPageChange={(page) => setPagination(prev => ({ ...prev, current: page }))}
+              recordsPerPageOptions={[10, 25, 50, 100]}
+              onRecordsPerPageChange={(pageSize) => setPagination(prev => ({ ...prev, pageSize, current: 1 }))}
+              selectedRecords={customers.filter(c => selectedCustomers.includes(c._id))}
+              onSelectedRecordsChange={(records) => setSelectedCustomers(records.map(r => r._id))}
+              highlightOnHover
+              minHeight={customers.length === 0 ? 200 : undefined}
+              noRecordsText="No customers found"
+            />
+          </Box>
         </Paper>
       </Paper>
 

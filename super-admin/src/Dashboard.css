@@ -91,8 +91,72 @@
 .sa-code-refresh { background: none; border: none; font-size: 16px; cursor: pointer; color: #16a34a; padding: 0 2px; line-height: 1; }
 .sa-code-refresh:hover { color: #166534; }
 
+/* ── Tabs ─────────────────────────────────────────────────────────────────── */
+.sa-tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid #e5e7eb; }
+.sa-tab  { background: none; border: none; padding: 10px 20px; font-size: 14px; font-weight: 600; color: #6b7280; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: color .15s; }
+.sa-tab:hover { color: #374151; }
+.sa-tab.active { color: #667eea; border-bottom-color: #667eea; }
+
+/* ── Milma Chart panel ────────────────────────────────────────────────────── */
+.sa-milma { }
+.sa-milma-form-card, .sa-milma-list-card {
+  background: #fff; border-radius: 12px; padding: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 20px;
+}
+.sa-milma-card-title { font-size: 15px; font-weight: 700; color: #1f2937; margin-bottom: 18px; }
+.sa-milma-loading { font-size: 12px; font-weight: 400; color: #9ca3af; margin-left: 8px; }
+.sa-milma-empty   { font-size: 13px; color: #9ca3af; text-align: center; padding: 24px 0; }
+.sa-milma-info-box {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;
+  padding: 12px 14px; margin-bottom: 16px;
+}
+.sa-milma-info-box span { font-size: 18px; flex-shrink: 0; }
+.sa-milma-info-box p { font-size: 12px; color: #1d4ed8; line-height: 1.5; margin: 0; }
+.sa-milma-file-hint { font-size: 12px; color: #16a34a; margin-top: 4px; }
+.sa-milma-all-hint  { font-size: 12px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 12px; margin-top: 8px; }
+.sa-milma-form-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; }
+.sa-btn-danger { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
+.sa-btn-danger:hover { background: #fee2e2; }
+.sa-btn-primary:disabled, .sa-btn-sec:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Milma detail panel ───────────────────────────────────────────────────── */
+.sa-milma-detail-card {
+  background: #fff; border-radius: 12px; padding: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 20px;
+  border-top: 3px solid #667eea;
+}
+.sa-milma-detail-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  margin-bottom: 16px; gap: 12px;
+}
+.sa-milma-detail-header .sa-milma-card-title { margin-bottom: 0; }
+.sa-milma-detail-meta { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.sa-milma-detail-count { font-size: 12px; color: #6b7280; }
+.sa-detail-table-wrap { max-height: 480px; overflow-y: auto; border-radius: 8px; }
+.sa-detail-table { font-size: 12px; }
+.sa-detail-table th { font-size: 10px; padding: 9px 12px; position: sticky; top: 0; z-index: 1; }
+.sa-detail-table td { padding: 8px 12px; }
+.sa-td-rate { font-weight: 700; color: #15803d; }
+.sa-tr-active td { background: #faf5ff !important; }
+.sa-milma-pagination {
+  display: flex; align-items: center; justify-content: center;
+  gap: 16px; margin-top: 16px; padding-top: 14px;
+  border-top: 1px solid #f3f4f6;
+}
+.sa-milma-page-info { font-size: 13px; color: #6b7280; font-weight: 500; }
+.sa-icon-btn.active { background: #ede9fe; color: #7c3aed; border-color: #c4b5fd; }
+
+.sa-fg select {
+  width: 100%; padding: 9px 12px; border: 1.5px solid #d1d5db;
+  border-radius: 8px; font-size: 13px; background: #fff;
+}
+.sa-fg select:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.1); }
+.sa-fg input[type=file] { padding: 6px 10px; }
+
 @media (max-width: 640px) {
   .sa-dashboard { padding: 12px; }
   .sa-row2 { grid-template-columns: 1fr; }
   .sa-header { flex-direction: column; gap: 12px; align-items: flex-start; }
+  .sa-milma-form-footer { flex-direction: column; gap: 10px; align-items: stretch; }
 }

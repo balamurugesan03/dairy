@@ -272,8 +272,8 @@ const SalesmanBalanceReport = () => {
                   <tr style={{ backgroundColor: '#1c7ed6', color: '#fff' }}>
                     <th rowSpan={2} style={th({ width: 85 })}>Date</th>
                     <th rowSpan={2} style={th({ width: 85 })}>OB</th>
-                    <th colSpan={2} style={th()}>AM — Local Sales</th>
-                    <th colSpan={2} style={th()}>PM — Local Sales</th>
+                    <th colSpan={2} style={th()}>AM — Credit Sales</th>
+                    <th colSpan={2} style={th()}>PM — Credit Sales</th>
                     <th rowSpan={2} style={th({ width: 85 })}>AM & PM<br />Sales Value</th>
                     <th colSpan={2} style={th()}>Posted in Day Book</th>
                     <th rowSpan={2} style={th({ width: 85 })}>Balance</th>

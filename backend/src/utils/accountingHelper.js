@@ -285,7 +285,6 @@ export const createPurchaseVoucher = async (purchaseData, session = null) => {
 
     const gstPercent = item.gstPercent || 0;
     const itemTotal = purchaseItem.quantity * purchaseItem.rate;
-    // Back-calculate base amount from total (if rate includes GST)
     const baseAmount = gstPercent > 0 ? itemTotal / (1 + gstPercent / 100) : itemTotal;
     const gstAmount = itemTotal - baseAmount;
 
@@ -330,7 +329,29 @@ export const createPurchaseVoucher = async (purchaseData, session = null) => {
 
   const totalAmount = purchaseData.totalAmount || 0;
   const paidAmount = purchaseData.paidAmount || 0;
-  const balanceAmount = totalAmount - paidAmount;
+
+  // Credit: ledger deduction entries (amount per unit × total quantity)
+  const ledgerEntriesInput = purchaseData.ledgerEntries || [];
+  const totalQuantity = (purchaseData.items || []).reduce((s, i) => s + parseFloat(i.quantity || 0), 0);
+  let totalLedgerDeduction = 0;
+
+  for (const entry of ledgerEntriesInput) {
+    if (!entry.ledgerId || !entry.amount) continue;
+    const deductionAmt = parseFloat(entry.amount) * totalQuantity;
+    if (deductionAmt <= 0) continue;
+    totalLedgerDeduction += deductionAmt;
+    const dedLedger = await Ledger.findById(entry.ledgerId);
+    if (dedLedger) {
+      entries.push({
+        ledgerId: dedLedger._id,
+        ledgerName: dedLedger.ledgerName,
+        debitAmount: 0,
+        creditAmount: deductionAmt
+      });
+    }
+  }
+
+  const supplierBalance = Math.max(0, totalAmount - paidAmount - totalLedgerDeduction);
 
   // Credit: cash if paid
   if (paidAmount > 0) {
@@ -348,15 +369,15 @@ export const createPurchaseVoucher = async (purchaseData, session = null) => {
     }
   }
 
-  // Credit: supplier for unpaid balance
-  if (balanceAmount > 0 || purchaseData.paymentMode === 'Adjustment') {
+  // Credit: supplier for unpaid balance (after deductions)
+  if (supplierBalance > 0 || purchaseData.paymentMode === 'Adjustment') {
     const supplierLedger = await Ledger.findOne({
       'linkedEntity.entityType': 'Supplier',
       'linkedEntity.entityId': purchaseData.supplierId,
       ...(companyId && { companyId })
     });
     if (supplierLedger) {
-      const creditAmount = purchaseData.paymentMode === 'Adjustment' ? totalAmount : balanceAmount;
+      const creditAmount = purchaseData.paymentMode === 'Adjustment' ? totalAmount : supplierBalance;
       entries.push({
         ledgerId: supplierLedger._id,
         ledgerName: supplierLedger.ledgerName,

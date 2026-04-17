@@ -13,7 +13,6 @@ import {
   Text,
   Box,
   Checkbox,
-  Paper,
   Alert,
   Loader
 } from '@mantine/core';
@@ -90,7 +89,6 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
       if (active === 0) {
         return {
           farmerNumber: !values.farmerNumber ? 'Farmer number is required' : null,
-          memberId: values.isMembership && !values.memberId ? 'Member ID is required' : null,
           'personalDetails.name': !values.personalDetails.name ? 'Name is required' : null,
           'personalDetails.phone': values.personalDetails.phone && !/^[0-9]{10}$/.test(values.personalDetails.phone)
             ? 'Please enter valid 10-digit phone number' : null
@@ -223,15 +221,10 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
     });
   };
 
-  // Helper function to safely convert date to ISO string
   const toISOString = (value) => {
     if (!value) return null;
-    if (value instanceof Date) {
-      return value.toISOString();
-    }
-    if (typeof value === 'string') {
-      return new Date(value).toISOString();
-    }
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === 'string') return new Date(value).toISOString();
     return null;
   };
 
@@ -255,7 +248,6 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
     try {
       const values = form.values;
 
-      // Convert file objects to base64
       const documents = {};
       for (const key in values.documents) {
         if (values.documents[key] instanceof File) {
@@ -339,16 +331,13 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
     const birthDate = new Date(dob);
     let age = today.getFullYear() - birthDate.getFullYear();
     const monthDiff = today.getMonth() - birthDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-    }
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) age--;
     return age >= 0 ? age : '';
   };
 
   const handleDobChange = (date) => {
     form.setFieldValue('personalDetails.dob', date);
-    const age = calculateAge(date);
-    form.setFieldValue('personalDetails.age', age);
+    form.setFieldValue('personalDetails.age', calculateAge(date));
   };
 
   const handleAgeChange = (value) => {
@@ -362,10 +351,8 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
   };
 
   const handleSharesChange = (value) => {
-    const shares = parseFloat(value) || 0;
-    const calculatedShareValue = shares * 10;
     form.setFieldValue('financialDetails.numberOfShares', value);
-    form.setFieldValue('financialDetails.shareValue', calculatedShareValue);
+    form.setFieldValue('financialDetails.shareValue', (parseFloat(value) || 0) * 10);
   };
 
   const handlePincodeChange = async (value) => {
@@ -399,15 +386,11 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
   const handleVillageSelect = (officeName) => {
     form.setFieldValue('address.village', officeName);
     const office = pincodeOptions.find(o => o.Name === officeName);
-    if (office) {
-      form.setFieldValue('address.panchayat', office.Block || office.Taluk || '');
-    }
+    if (office) form.setFieldValue('address.panchayat', office.Block || office.Taluk || '');
   };
 
   const addAdditionalDocument = () => {
-    if (additionalDocs.length < 5) {
-      setAdditionalDocs([...additionalDocs, '']);
-    }
+    if (additionalDocs.length < 5) setAdditionalDocs([...additionalDocs, '']);
   };
 
   const removeAdditionalDocument = (index) => {
@@ -425,6 +408,26 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
     }
   };
 
+  const focusNext = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const container = e.target.closest('.farmer-modal-body');
+      if (!container) return;
+      const inputs = Array.from(container.querySelectorAll('input:not([disabled]):not([type="hidden"]), select:not([disabled])'));
+      const idx = inputs.indexOf(e.target);
+      if (idx !== -1 && idx < inputs.length - 1) inputs[idx + 1].focus();
+    }
+  };
+
+  const handleFarmerNumberKeyDown = (e) => {
+    const allowedKeys = ['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter'];
+    if (!allowedKeys.includes(e.key) && !/^[0-9]$/.test(e.key)) {
+      e.preventDefault();
+      return;
+    }
+    focusNext(e);
+  };
+
   return (
     <Modal
       opened={isOpen}
@@ -433,452 +436,476 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
       size="xl"
       padding="lg"
     >
-      <Stepper active={active} onStepClick={setActive} breakpoint="sm">
-        <Stepper.Step label="Personal Details" description="Basic information">
-          <Stack gap="md" mt="md">
-            <Grid>
-              <Grid.Col span={6}>
-                <TextInput
-                  label="Farmer Number"
-                  placeholder="Enter farmer number"
-                  required
-                  disabled={isEditMode}
-                  {...form.getInputProps('farmerNumber')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <TextInput
-                  label={
-                    <Group gap="xs" mb={2}>
-                      <span>Member ID</span>
-                      <Checkbox
-                        size="xs"
-                        label="Is Member"
-                        checked={form.values.isMembership}
-                        onChange={(e) => {
-                          form.setFieldValue('isMembership', e.currentTarget.checked);
-                          if (!e.currentTarget.checked) {
-                            form.setFieldValue('membershipDate', null);
-                          }
-                        }}
-                        styles={{ label: { fontWeight: 400, fontSize: 12 } }}
-                      />
-                    </Group>
-                  }
-                  placeholder="Tick 'Is Member' to enable"
-                  disabled={!form.values.isMembership}
-                  {...form.getInputProps('memberId')}
-                />
-              </Grid.Col>
-              {form.values.isMembership && (
+      <div className="farmer-modal-body">
+        <Stepper active={active} onStepClick={setActive} breakpoint="sm">
+          <Stepper.Step label="Personal Details" description="Basic information">
+            <Stack gap="md" mt="md">
+              <Grid>
                 <Grid.Col span={6}>
-                  <DatePickerInput
-                    label="Membership Date"
-                    placeholder="Select membership date"
-                    {...form.getInputProps('membershipDate')}
+                  <TextInput
+                    label="Farmer Number"
+                    placeholder="Enter farmer number"
+                    required
+                    disabled={isEditMode}
+                    {...form.getInputProps('farmerNumber')}
+                    onKeyDown={handleFarmerNumberKeyDown}
                   />
                 </Grid.Col>
-              )}
-              <Grid.Col span={6}>
-                <TextInput
-                  label="Name"
-                  placeholder="Enter name"
-                  required
-                  {...form.getInputProps('personalDetails.name')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <TextInput
-                  label="Father's Name"
-                  placeholder="Enter father's name"
-                  {...form.getInputProps('personalDetails.fatherName')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <DatePickerInput
-                  label="Date of Birth"
-                  placeholder="Select date"
-                  value={form.values.personalDetails.dob}
-                  onChange={handleDobChange}
-                  maxDate={new Date()}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <NumberInput
-                  label="Age"
-                  placeholder="Enter age"
-                  min={0}
-                  max={150}
-                  value={form.values.personalDetails.age}
-                  onChange={handleAgeChange}
-                  description="Enter age or select DOB above"
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <Select
-                  label="Gender"
-                  placeholder="Select gender"
-                  data={[
-                    { value: 'Male', label: 'Male' },
-                    { value: 'Female', label: 'Female' },
-                    { value: 'Other', label: 'Other' }
-                  ]}
-                  {...form.getInputProps('personalDetails.gender')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <TextInput
-                  label="Phone"
-                  placeholder="Enter phone number"
-                  maxLength={10}
-                  {...form.getInputProps('personalDetails.phone')}
-                />
-              </Grid.Col>
-            </Grid>
-          </Stack>
-        </Stepper.Step>
-
-        <Stepper.Step label="Address" description="Location details">
-          <Stack gap="md" mt="md">
-            <Grid>
-              <Grid.Col span={6}>
-                <TextInput
-                  label="Ward"
-                  placeholder="Enter ward"
-                  {...form.getInputProps('address.ward')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                {pincodeOptions.length > 1 ? (
-                  <Select
-                    label="Village / Post Office"
-                    placeholder="Select post office"
-                    data={pincodeOptions.map(o => ({ value: o.Name, label: o.Name }))}
-                    value={form.values.address.village}
-                    onChange={handleVillageSelect}
-                    searchable
-                  />
-                ) : (
+                <Grid.Col span={6}>
                   <TextInput
-                    label="Village"
-                    placeholder="Enter village"
-                    {...form.getInputProps('address.village')}
+                    label="Name"
+                    placeholder="Enter name"
+                    required
+                    {...form.getInputProps('personalDetails.name')}
+                    onKeyDown={focusNext}
                   />
-                )}
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <TextInput
-                  label="Panchayat"
-                  placeholder="Auto-filled from PIN code"
-                  {...form.getInputProps('address.panchayat')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <TextInput
-                  label="PIN Code"
-                  placeholder="Enter 6-digit PIN code"
-                  maxLength={6}
-                  value={form.values.address.pin}
-                  onChange={(e) => handlePincodeChange(e.target.value)}
-                  error={form.errors['address.pin']}
-                  rightSection={pincodeLoading ? <Loader size="xs" /> : null}
-                />
-              </Grid.Col>
-            </Grid>
-          </Stack>
-        </Stepper.Step>
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="Father's Name"
+                    placeholder="Enter father's name"
+                    {...form.getInputProps('personalDetails.fatherName')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <NumberInput
+                    label="Age"
+                    placeholder="Enter age"
+                    min={0}
+                    max={150}
+                    value={form.values.personalDetails.age}
+                    onChange={handleAgeChange}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <DatePickerInput
+                    label="Date of Birth"
+                    placeholder="Select date"
+                    value={form.values.personalDetails.dob}
+                    onChange={handleDobChange}
+                    maxDate={new Date()}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <Select
+                    label="Gender"
+                    placeholder="Select gender"
+                    data={[
+                      { value: 'Male', label: 'Male' },
+                      { value: 'Female', label: 'Female' },
+                      { value: 'Other', label: 'Other' }
+                    ]}
+                    {...form.getInputProps('personalDetails.gender')}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="Phone"
+                    placeholder="Enter phone number"
+                    maxLength={10}
+                    {...form.getInputProps('personalDetails.phone')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <Select
+                    label="Collection Centre"
+                    placeholder="Select collection centre"
+                    data={collectionCenters.map(c => ({
+                      value: c._id,
+                      label: `${c.centerName} (${c.centerType})`
+                    }))}
+                    searchable
+                    {...form.getInputProps('collectionCenter')}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <DatePickerInput
+                    label="Admission Date"
+                    placeholder="Select date"
+                    {...form.getInputProps('admissionDate')}
+                  />
+                </Grid.Col>
+              </Grid>
+            </Stack>
+          </Stepper.Step>
 
-        <Stepper.Step label="Identity Details" description="ID information">
-          <Stack gap="md" mt="md">
-            <Grid>
-              <Grid.Col span={6}>
-                <TextInput
-                  label="Aadhaar Number"
-                  placeholder="Enter Aadhaar number"
-                  maxLength={12}
-                  {...form.getInputProps('identityDetails.aadhaar')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <TextInput
-                  label="PAN Number"
-                  placeholder="Enter PAN number"
-                  maxLength={10}
-                  style={{ textTransform: 'uppercase' }}
-                  {...form.getInputProps('identityDetails.pan')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <TextInput
-                  label="Welfare Number"
-                  placeholder="Enter welfare number"
-                  {...form.getInputProps('identityDetails.welfareNo')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <TextInput
-                  label="Ksheerasree ID"
-                  placeholder="Enter Ksheerasree ID"
-                  {...form.getInputProps('identityDetails.ksheerasreeId')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <TextInput
-                  label="ID Card Number"
-                  placeholder="Enter ID card number"
-                  {...form.getInputProps('identityDetails.idCardNumber')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <DatePickerInput
-                  label="Issue Date"
-                  placeholder="Select date"
-                  {...form.getInputProps('identityDetails.issueDate')}
-                />
-              </Grid.Col>
-            </Grid>
-          </Stack>
-        </Stepper.Step>
-
-        <Stepper.Step label="Farmer Type" description="Classification">
-          <Stack gap="md" mt="md">
-            <Grid>
-              <Grid.Col span={6}>
-                <Select
-                  label="Farmer Type"
-                  placeholder="Select farmer type"
-                  data={[
-                    { value: 'A', label: 'Individual Farmer' },
-                    { value: 'B', label: 'Farm' },
-                    { value: 'C', label: 'Institution' },
-                    { value: 'D', label: 'SHG' },
-                    { value: 'E', label: 'Others' }
-                  ]}
-                  {...form.getInputProps('farmerType')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <Select
-                  label="Cow Type"
-                  placeholder="Select cow type"
-                  data={[
-                    { value: 'Desi', label: 'Desi' },
-                    { value: 'Crossbreed', label: 'Crossbreed' },
-                    { value: 'Jersey', label: 'Jersey' },
-                    { value: 'HF', label: 'HF (Holstein Friesian)' }
-                  ]}
-                  {...form.getInputProps('cowType')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <Select
-                  label="Collection Center"
-                  placeholder="Select collection center"
-                  data={collectionCenters.map(c => ({
-                    value: c._id,
-                    label: `${c.centerName} (${c.centerType})`
-                  }))}
-                  searchable
-                  {...form.getInputProps('collectionCenter')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <DatePickerInput
-                  label="Admission Date"
-                  placeholder="Select date"
-                  {...form.getInputProps('admissionDate')}
-                />
-              </Grid.Col>
-            </Grid>
-          </Stack>
-        </Stepper.Step>
-
-        <Stepper.Step label="Bank Details" description="Banking information">
-          <Stack gap="md" mt="md">
-            <Grid>
-              <Grid.Col span={6}>
-                <TextInput
-                  label="Account Number"
-                  placeholder="Enter account number"
-                  {...form.getInputProps('bankDetails.accountNumber')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <TextInput
-                  label="Bank Name"
-                  placeholder="Enter bank name"
-                  {...form.getInputProps('bankDetails.bankName')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <TextInput
-                  label="Branch"
-                  placeholder="Enter branch"
-                  {...form.getInputProps('bankDetails.branch')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <TextInput
-                  label="IFSC Code"
-                  placeholder="Enter IFSC code"
-                  maxLength={11}
-                  style={{ textTransform: 'uppercase' }}
-                  {...form.getInputProps('bankDetails.ifsc')}
-                />
-              </Grid.Col>
-            </Grid>
-          </Stack>
-        </Stepper.Step>
-
-        <Stepper.Step label="Financial Details" description="Shares information">
-          <Stack gap="md" mt="md">
-            {!form.values.isMembership && (
-              <Alert icon={<IconInfoCircle size={16} />} color="yellow" variant="light">
-                Enable "Is Member" in Personal Details to enter share and financial information.
-              </Alert>
-            )}
-            <Grid>
-              <Grid.Col span={6}>
-                <NumberInput
-                  label="Number of Shares"
-                  placeholder="Enter number of shares"
-                  min={0}
-                  disabled={!form.values.isMembership}
-                  value={form.values.financialDetails.numberOfShares}
-                  onChange={handleSharesChange}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <NumberInput
-                  label="Share Value (Auto-calculated)"
-                  value={form.values.financialDetails.shareValue}
-                  disabled
-                  description="Calculated as: Number of Shares × 10"
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <NumberInput
-                  label="Admission Fee"
-                  placeholder="Enter admission fee"
-                  min={0}
-                  disabled={!form.values.isMembership}
-                  {...form.getInputProps('financialDetails.admissionFee')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <TextInput
-                  label="Resolution Number"
-                  placeholder="Enter resolution number"
-                  disabled={!form.values.isMembership}
-                  {...form.getInputProps('financialDetails.resolutionNo')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <DatePickerInput
-                  label="Resolution Date"
-                  placeholder="Select date"
-                  disabled={!form.values.isMembership}
-                  {...form.getInputProps('financialDetails.resolutionDate')}
-                />
-              </Grid.Col>
-            </Grid>
-          </Stack>
-        </Stepper.Step>
-
-        <Stepper.Step label="Documents" description="Upload files">
-          <Stack gap="md" mt="md">
-            <Grid>
-              <Grid.Col span={6}>
-                <FileInput
-                  label="Aadhaar Document"
-                  placeholder="Upload file"
-                  leftSection={<IconUpload size={14} />}
-                  accept="image/*,.pdf"
-                  {...form.getInputProps('documents.aadhaar')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <FileInput
-                  label="Bank Passbook"
-                  placeholder="Upload file"
-                  leftSection={<IconUpload size={14} />}
-                  accept="image/*,.pdf"
-                  {...form.getInputProps('documents.bankPassbook')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <FileInput
-                  label="Ration Card"
-                  placeholder="Upload file"
-                  leftSection={<IconUpload size={14} />}
-                  accept="image/*,.pdf"
-                  {...form.getInputProps('documents.rationCard')}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <FileInput
-                  label="Income Proof"
-                  placeholder="Upload file"
-                  leftSection={<IconUpload size={14} />}
-                  accept="image/*,.pdf"
-                  {...form.getInputProps('documents.incomeProof')}
-                />
-              </Grid.Col>
-            </Grid>
-
-            <Box mt="md">
-              <Group justify="space-between" mb="sm">
-                <Text fw={500}>Additional Documents (Max 5)</Text>
-                {additionalDocs.length < 5 && (
-                  <Button size="xs" variant="light" onClick={addAdditionalDocument}>
-                    Add Document ({additionalDocs.length}/5)
-                  </Button>
-                )}
-              </Group>
-
-              <Stack gap="xs">
-                {additionalDocs.map((doc, index) => (
-                  <Group key={index}>
-                    <FileInput
-                      placeholder="Upload file"
-                      leftSection={<IconUpload size={14} />}
-                      accept="image/*,.pdf"
-                      onChange={(file) => handleAdditionalDocChange(index, file)}
-                      style={{ flex: 1 }}
+          <Stepper.Step label="Address" description="Location details">
+            <Stack gap="md" mt="md">
+              <Grid>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="Ward"
+                    placeholder="Enter ward"
+                    {...form.getInputProps('address.ward')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  {pincodeOptions.length > 1 ? (
+                    <Select
+                      label="Village / Post Office"
+                      placeholder="Select post office"
+                      data={pincodeOptions.map(o => ({ value: o.Name, label: o.Name }))}
+                      value={form.values.address.village}
+                      onChange={handleVillageSelect}
+                      searchable
                     />
-                    <Button
-                      color="red"
-                      variant="subtle"
-                      onClick={() => removeAdditionalDocument(index)}
-                      leftSection={<IconTrash size={14} />}
-                    >
-                      Remove
-                    </Button>
-                  </Group>
-                ))}
-              </Stack>
-            </Box>
-          </Stack>
-        </Stepper.Step>
-      </Stepper>
+                  ) : (
+                    <TextInput
+                      label="Village"
+                      placeholder="Enter village"
+                      {...form.getInputProps('address.village')}
+                      onKeyDown={focusNext}
+                    />
+                  )}
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="Taluk"
+                    placeholder="Auto-filled from PIN code"
+                    {...form.getInputProps('address.panchayat')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="PIN Code"
+                    placeholder="Enter 6-digit PIN code"
+                    maxLength={6}
+                    value={form.values.address.pin}
+                    onChange={(e) => handlePincodeChange(e.target.value)}
+                    error={form.errors['address.pin']}
+                    rightSection={pincodeLoading ? <Loader size="xs" /> : null}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+              </Grid>
+            </Stack>
+          </Stepper.Step>
 
-      <Group justify="space-between" mt="xl">
-        <Button variant="default" onClick={prevStep} disabled={active === 0}>
-          Previous
-        </Button>
-        <Group>
-          <Button variant="default" onClick={onClose}>
-            Cancel
+          <Stepper.Step label="Identity Details" description="ID information">
+            <Stack gap="md" mt="md">
+              <Grid>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="Aadhaar Number"
+                    placeholder="Enter Aadhaar number"
+                    maxLength={12}
+                    {...form.getInputProps('identityDetails.aadhaar')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="PAN Number"
+                    placeholder="Enter PAN number"
+                    maxLength={10}
+                    {...form.getInputProps('identityDetails.pan')}
+                    onChange={(e) => form.setFieldValue('identityDetails.pan', e.target.value.toUpperCase())}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="Welfare Number"
+                    placeholder="Enter welfare number"
+                    {...form.getInputProps('identityDetails.welfareNo')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="Ksheerasree ID"
+                    placeholder="Enter Ksheerasree ID"
+                    {...form.getInputProps('identityDetails.ksheerasreeId')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="ID Card Number"
+                    placeholder="Enter ID card number"
+                    {...form.getInputProps('identityDetails.idCardNumber')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <DatePickerInput
+                    label="Issue Date"
+                    placeholder="Select date"
+                    {...form.getInputProps('identityDetails.issueDate')}
+                  />
+                </Grid.Col>
+              </Grid>
+            </Stack>
+          </Stepper.Step>
+
+          <Stepper.Step label="Farmer Type" description="Classification">
+            <Stack gap="md" mt="md">
+              <Grid>
+                <Grid.Col span={6}>
+                  <Select
+                    label="Farmer Type"
+                    placeholder="Select farmer type"
+                    data={[
+                      { value: 'A', label: 'Individual Farmer' },
+                      { value: 'B', label: 'Farm' },
+                      { value: 'C', label: 'Institution' },
+                      { value: 'D', label: 'SHG' },
+                      { value: 'E', label: 'Others' }
+                    ]}
+                    {...form.getInputProps('farmerType')}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <Select
+                    label="Cow Type"
+                    placeholder="Select cow type"
+                    data={[
+                      { value: 'Desi', label: 'Desi' },
+                      { value: 'Crossbreed', label: 'Crossbreed' },
+                      { value: 'Jersey', label: 'Jersey' },
+                      { value: 'HF', label: 'HF (Holstein Friesian)' }
+                    ]}
+                    {...form.getInputProps('cowType')}
+                  />
+                </Grid.Col>
+              </Grid>
+            </Stack>
+          </Stepper.Step>
+
+          <Stepper.Step label="Bank Details" description="Banking information">
+            <Stack gap="md" mt="md">
+              <Grid>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="Account Number"
+                    placeholder="Enter account number"
+                    {...form.getInputProps('bankDetails.accountNumber')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="Bank Name"
+                    placeholder="Enter bank name"
+                    {...form.getInputProps('bankDetails.bankName')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="Branch"
+                    placeholder="Enter branch"
+                    {...form.getInputProps('bankDetails.branch')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="IFSC Code"
+                    placeholder="Enter IFSC code"
+                    maxLength={11}
+                    {...form.getInputProps('bankDetails.ifsc')}
+                    onChange={(e) => form.setFieldValue('bankDetails.ifsc', e.target.value.toUpperCase())}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+              </Grid>
+            </Stack>
+          </Stepper.Step>
+
+          <Stepper.Step label="Financial Details" description="Shares information">
+            <Stack gap="md" mt="md">
+              <Grid>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label={
+                      <Group gap="xs" mb={2}>
+                        <span>Member Number</span>
+                        <Checkbox
+                          size="xs"
+                          label="Is Member"
+                          checked={form.values.isMembership}
+                          onChange={(e) => {
+                            form.setFieldValue('isMembership', e.currentTarget.checked);
+                            if (!e.currentTarget.checked) form.setFieldValue('membershipDate', null);
+                          }}
+                          styles={{ label: { fontWeight: 400, fontSize: 12 } }}
+                        />
+                      </Group>
+                    }
+                    placeholder="Tick 'Is Member' to enable"
+                    disabled={!form.values.isMembership}
+                    {...form.getInputProps('memberId')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                {form.values.isMembership && (
+                  <Grid.Col span={6}>
+                    <DatePickerInput
+                      label="Membership Date"
+                      placeholder="Select membership date"
+                      {...form.getInputProps('membershipDate')}
+                    />
+                  </Grid.Col>
+                )}
+              </Grid>
+
+              {!form.values.isMembership && (
+                <Alert icon={<IconInfoCircle size={16} />} color="yellow" variant="light">
+                  Enable "Is Member" above to enter share and financial information.
+                </Alert>
+              )}
+
+              <Grid>
+                <Grid.Col span={6}>
+                  <NumberInput
+                    label="Number of Shares"
+                    placeholder="Enter number of shares"
+                    min={0}
+                    disabled={!form.values.isMembership}
+                    value={form.values.financialDetails.numberOfShares}
+                    onChange={handleSharesChange}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <NumberInput
+                    label="Share Value (Auto-calculated)"
+                    value={form.values.financialDetails.shareValue}
+                    disabled
+                    description="Calculated as: Number of Shares × 10"
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <NumberInput
+                    label="Admission Fee"
+                    placeholder="Enter admission fee"
+                    min={0}
+                    disabled={!form.values.isMembership}
+                    {...form.getInputProps('financialDetails.admissionFee')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="Resolution Number"
+                    placeholder="Enter resolution number"
+                    disabled={!form.values.isMembership}
+                    {...form.getInputProps('financialDetails.resolutionNo')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <DatePickerInput
+                    label="Resolution Date"
+                    placeholder="Select date"
+                    disabled={!form.values.isMembership}
+                    {...form.getInputProps('financialDetails.resolutionDate')}
+                  />
+                </Grid.Col>
+              </Grid>
+            </Stack>
+          </Stepper.Step>
+
+          <Stepper.Step label="Documents" description="Upload files">
+            <Stack gap="md" mt="md">
+              <Grid>
+                <Grid.Col span={6}>
+                  <FileInput
+                    label="Aadhaar Document"
+                    placeholder="Upload file"
+                    leftSection={<IconUpload size={14} />}
+                    accept="image/*,.pdf"
+                    {...form.getInputProps('documents.aadhaar')}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <FileInput
+                    label="Bank Passbook"
+                    placeholder="Upload file"
+                    leftSection={<IconUpload size={14} />}
+                    accept="image/*,.pdf"
+                    {...form.getInputProps('documents.bankPassbook')}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <FileInput
+                    label="Ration Card"
+                    placeholder="Upload file"
+                    leftSection={<IconUpload size={14} />}
+                    accept="image/*,.pdf"
+                    {...form.getInputProps('documents.rationCard')}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <FileInput
+                    label="Income Proof"
+                    placeholder="Upload file"
+                    leftSection={<IconUpload size={14} />}
+                    accept="image/*,.pdf"
+                    {...form.getInputProps('documents.incomeProof')}
+                  />
+                </Grid.Col>
+              </Grid>
+
+              <Box mt="md">
+                <Group justify="space-between" mb="sm">
+                  <Text fw={500}>Additional Documents (Max 5)</Text>
+                  {additionalDocs.length < 5 && (
+                    <Button size="xs" variant="light" onClick={addAdditionalDocument}>
+                      Add Document ({additionalDocs.length}/5)
+                    </Button>
+                  )}
+                </Group>
+                <Stack gap="xs">
+                  {additionalDocs.map((doc, index) => (
+                    <Group key={index}>
+                      <FileInput
+                        placeholder="Upload file"
+                        leftSection={<IconUpload size={14} />}
+                        accept="image/*,.pdf"
+                        onChange={(file) => handleAdditionalDocChange(index, file)}
+                        style={{ flex: 1 }}
+                      />
+                      <Button
+                        color="red"
+                        variant="subtle"
+                        onClick={() => removeAdditionalDocument(index)}
+                        leftSection={<IconTrash size={14} />}
+                      >
+                        Remove
+                      </Button>
+                    </Group>
+                  ))}
+                </Stack>
+              </Box>
+            </Stack>
+          </Stepper.Step>
+        </Stepper>
+
+        <Group justify="space-between" mt="xl">
+          <Button variant="default" onClick={prevStep} disabled={active === 0}>
+            Previous
           </Button>
-          {active < 6 ? (
-            <Button onClick={nextStep}>Next</Button>
-          ) : (
-            <Button onClick={handleSubmit} loading={loading}>
-              {isEditMode ? 'Update' : 'Save'}
+          <Group>
+            <Button variant="default" onClick={onClose}>
+              Cancel
             </Button>
-          )}
+            {active < 6 ? (
+              <Button onClick={nextStep}>Next</Button>
+            ) : (
+              <Button onClick={handleSubmit} loading={loading}>
+                {isEditMode ? 'Update' : 'Save'}
+              </Button>
+            )}
+          </Group>
         </Group>
-      </Group>
+      </div>
     </Modal>
   );
 };

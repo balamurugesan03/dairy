@@ -35,3 +35,17 @@ export const companyAPI = {
   update:   (id, data) => api.put(`/companies/${id}`, data).then(r => r.data),
   delete:   (id)       => api.delete(`/companies/${id}`).then(r => r.data)
 };
+
+export const milmaChartAdminAPI = {
+  // Upload Excel for a company (multipart/form-data)
+  upload: (formData) => api.post('/milma-charts/admin/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }).then(r => r.data),
+  // List chart masters for a company
+  getMasters: (companyId) => api.get(`/milma-charts/admin/${companyId}/masters`).then(r => r.data),
+  // Get detail rows for a specific chart version (paginated)
+  getDetail: (companyId, chartId, page = 1, limit = 100) =>
+    api.get(`/milma-charts/admin/${companyId}/detail`, { params: { chartId, page, limit } }).then(r => r.data),
+  // Delete all charts for a company
+  deleteAll: (companyId) => api.delete(`/milma-charts/admin/${companyId}`).then(r => r.data),
+};
