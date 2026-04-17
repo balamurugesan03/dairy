@@ -307,6 +307,12 @@
   background: #fce4ec !important;
 }
 
+/* ---------- Milk entry row ---------- */
+.db-row-milk td {
+  background: #fff8e1 !important;
+  font-weight: 600;
+}
+
 /* ---------- Empty state row ---------- */
 .db-empty-row td {
   border: none !important;

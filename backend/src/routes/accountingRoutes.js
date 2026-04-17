@@ -10,6 +10,7 @@ import {
   updateLedger,
   getOutstandingReport
 } from '../controllers/accountingController.js';
+import { getOutstandingReport as getOutstandingRangeReport } from '../controllers/ledgerController.js';
 import { protect, addCompanyFilter } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -24,6 +25,7 @@ router.delete('/vouchers/:id', deleteVoucher);
 // Ledger routes
 router.post('/ledgers', createLedger);
 router.get('/ledgers', getAllLedgers);
+router.get('/ledgers/outstanding-report', getOutstandingRangeReport);
 router.get('/ledgers/:id', getLedgerById);
 router.put('/ledgers/:id', updateLedger);
 router.get('/ledgers/:id/outstanding', getOutstandingReport);

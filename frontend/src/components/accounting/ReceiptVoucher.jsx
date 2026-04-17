@@ -394,15 +394,6 @@ const ReceiptVoucher = () => {
       <PageHeader
         title="Receipt Voucher"
         subtitle="Manage receipt vouchers for money received"
-        rightSection={
-          <Button
-            leftSection={<IconPlus size={16} />}
-            color="green"
-            onClick={openAddModal}
-          >
-            Add Receipt Voucher
-          </Button>
-        }
       />
 
       {/* Vouchers List */}
@@ -410,16 +401,7 @@ const ReceiptVoucher = () => {
         <LoadingOverlay visible={fetchingVouchers} overlayProps={{ blur: 2 }} />
 
         <Group justify="space-between" mb="md">
-          <Title order={4}>
-            <Group gap="xs">
-              <IconReceipt size={20} />
-              Receipt Vouchers List
-            </Group>
-          </Title>
           <Group gap="sm">
-            <Badge size="lg" variant="filled" color="green">
-              {vouchers.length} Vouchers
-            </Badge>
             <Button
               leftSection={<IconPlus size={16} />}
               color="green"
@@ -427,7 +409,16 @@ const ReceiptVoucher = () => {
             >
               Add Receipt Voucher
             </Button>
+            <Title order={4}>
+              <Group gap="xs">
+                <IconReceipt size={20} />
+                Receipt Vouchers List
+              </Group>
+            </Title>
           </Group>
+          <Badge size="lg" variant="filled" color="green">
+            {vouchers.length} Vouchers
+          </Badge>
         </Group>
 
         {vouchers.length === 0 ? (
@@ -703,10 +694,7 @@ const ReceiptVoucher = () => {
                               placeholder="Select ledger"
                               searchable
                               size="xs"
-                              data={Object.entries(groupedOptions).map(([group, items]) => ({
-                                group,
-                                items: items.map(item => ({ value: item.value, label: item.label }))
-                              }))}
+                              data={selectData}
                               value={entry.ledgerId}
                               onChange={(value) => updateMultipleEntry(index, 'ledgerId', value)}
                             />

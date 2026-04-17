@@ -93,14 +93,15 @@ const DayBook = () => {
       if (dayData) {
         // Build receipt/payment entries
         const mapEntry = (entry) => {
-          const isAdjustment = entry.voucherType === 'MilkPurchase' || entry.voucherType === 'ProducersDue';
+          const isMilkEntry = entry.voucherType === 'MilkPurchase' || entry.voucherType === 'ProducersDue';
           return {
             description: entry.ledgerName || entry.narration || 'Miscellaneous',
             narration: entry.narration || '',
             voucherNumber: entry.voucherNumber || '',
-            cash: isAdjustment ? 0 : entry.amount,
-            adjustment: isAdjustment ? entry.amount : 0,
-            total: entry.amount
+            cash: isMilkEntry ? 0 : entry.amount,
+            adjustment: isMilkEntry ? entry.amount : 0,
+            total: entry.amount,
+            isMilkEntry
           };
         };
 
@@ -181,7 +182,7 @@ const DayBook = () => {
                 </tr>
               ) : (
                 entries.map((entry, idx) => (
-                  <tr key={idx} className={`db-data-row ${idx % 2 === 0 ? 'db-row-even' : 'db-row-odd'}`}>
+                  <tr key={idx} className={`db-data-row ${entry.isMilkEntry ? 'db-row-milk' : idx % 2 === 0 ? 'db-row-even' : 'db-row-odd'}`}>
                     <td className="db-cell-desc" title={entry.description}>
                       {entry.description}
                       {entry.narration && <span className="db-cell-narration">{entry.narration}</span>}

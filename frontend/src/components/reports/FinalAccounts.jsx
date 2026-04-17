@@ -132,37 +132,37 @@ const TradingAccount = ({ data, period }) => {
         left={
           <SideCard title="Dr. — Expenditure / Purchases" color="blue">
             <BaseTable>
-              {/* Opening Stock */}
               <GroupHeader no={1} label="Opening Stock" />
-              <ItemRow
-                label={`Total Opening Stock`}
-                amount={debitSide?.openingStock?.total || 0}
-              />
+              <ItemRow label="Total Opening Stock" amount={debitSide?.openingStock?.total || 0} />
               <SubtotalRow label="Total Opening Stock" amount={debitSide?.openingStock?.total || 0} />
 
-              {/* Purchases */}
-              <GroupHeader no={2} label="Purchases" />
-              {(debitSide?.purchases?.items || []).map((it, i) => (
-                <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />
-              ))}
-              <SubtotalRow label="Total Purchases" amount={debitSide?.purchases?.total || 0} />
+              <GroupHeader no={2} label="Milk Purchase (Dairy)" />
+              <ItemRow
+                label={`Milk Purchase — ${debitSide?.milkPurchase?.farmerCount || 0} Farmers (${(debitSide?.milkPurchase?.qty || 0).toFixed(2)} L)`}
+                amount={debitSide?.milkPurchase?.total || 0}
+                indent
+              />
+              <SubtotalRow label="Total Milk Purchase" amount={debitSide?.milkPurchase?.total || 0} />
 
-              {/* Trade Expenses */}
-              <GroupHeader no={3} label="Trade Expenses" />
+              {(debitSide?.purchases?.items || []).length > 0 && (
+                <>
+                  <GroupHeader no={3} label="Other Purchases" />
+                  {(debitSide.purchases.items).map((it, i) => (
+                    <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />
+                  ))}
+                  <SubtotalRow label="Total Other Purchases" amount={debitSide?.purchases?.total || 0} />
+                </>
+              )}
+
+              <GroupHeader no={4} label="Trade / Establishment Expenses" />
               {(debitSide?.tradeExpenses?.items || []).map((it, i) => (
                 <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />
               ))}
-              <SubtotalRow label="Total Trade Expenses" amount={debitSide?.tradeExpenses?.total || 0} />
+              <SubtotalRow label="Total Expenses" amount={debitSide?.tradeExpenses?.total || 0} />
 
-              {/* Gross Profit (balancing) */}
               {parseFloat(debitSide?.grossProfit || 0) > 0 && (
-                <SpecialRow
-                  label="Gross Profit c/o to P&L A/c"
-                  amount={debitSide.grossProfit}
-                  color="green"
-                />
+                <SpecialRow label="Gross Profit c/o to P&L A/c" amount={debitSide.grossProfit} color="green" />
               )}
-
               <GrandTotalRow label="GRAND TOTAL" amount={totals?.debitTotal || 0} />
             </BaseTable>
           </SideCard>
@@ -170,36 +170,47 @@ const TradingAccount = ({ data, period }) => {
         right={
           <SideCard title="Cr. — Sales / Income" color="teal">
             <BaseTable>
-              {/* Sales */}
-              <GroupHeader no={1} label="Sales" />
-              {(creditSide?.sales?.items || []).map((it, i) => (
-                <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />
-              ))}
-              <SubtotalRow label="Total Sales" amount={creditSide?.sales?.total || 0} />
+              <GroupHeader no={1} label="Milk Sales (Dairy)" />
+              <ItemRow label="Milk Sales to Customers / Local" amount={creditSide?.milkSales?.total || 0} indent />
+              <SubtotalRow label="Total Milk Sales" amount={creditSide?.milkSales?.total || 0} />
 
-              {/* Trade Income */}
-              <GroupHeader no={2} label="Trade Income" />
-              {(creditSide?.tradeIncome?.items || []).map((it, i) => (
-                <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />
-              ))}
-              <SubtotalRow label="Total Trade Income" amount={creditSide?.tradeIncome?.total || 0} />
+              {(creditSide?.unionSales?.total || 0) > 0 && (
+                <>
+                  <GroupHeader no={2} label="Union / Society Sales Slips" />
+                  <ItemRow label="Union Sales Slips" amount={creditSide.unionSales.total} indent />
+                  <SubtotalRow label="Total Union Sales" amount={creditSide.unionSales.total} />
+                </>
+              )}
 
-              {/* Closing Stock */}
-              <GroupHeader no={3} label="Closing Stock" />
+              {(creditSide?.sales?.items || []).length > 0 && (
+                <>
+                  <GroupHeader no={3} label="Other Sales" />
+                  {creditSide.sales.items.map((it, i) => (
+                    <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />
+                  ))}
+                  <SubtotalRow label="Total Other Sales" amount={creditSide?.sales?.total || 0} />
+                </>
+              )}
+
+              {(creditSide?.tradeIncome?.items || []).length > 0 && (
+                <>
+                  <GroupHeader no={4} label="Trade Income" />
+                  {creditSide.tradeIncome.items.map((it, i) => (
+                    <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />
+                  ))}
+                  <SubtotalRow label="Total Trade Income" amount={creditSide?.tradeIncome?.total || 0} />
+                </>
+              )}
+
+              <GroupHeader no={5} label="Closing Stock" />
               {(creditSide?.closingStock?.items || []).map((it, i) => (
                 <ItemRow key={i} label={it.category} amount={it.amount} indent />
               ))}
               <SubtotalRow label="Total Closing Stock" amount={creditSide?.closingStock?.total || 0} />
 
-              {/* Gross Loss (balancing) */}
               {parseFloat(creditSide?.grossLoss || 0) > 0 && (
-                <SpecialRow
-                  label="Gross Loss c/o to P&L A/c"
-                  amount={creditSide.grossLoss}
-                  color="red"
-                />
+                <SpecialRow label="Gross Loss c/o to P&L A/c" amount={creditSide.grossLoss} color="red" />
               )}
-
               <GrandTotalRow label="GRAND TOTAL" amount={totals?.creditTotal || 0} />
             </BaseTable>
           </SideCard>
@@ -428,7 +439,7 @@ const FinalAccounts = () => {
       const [trading, pl, bs] = await Promise.all([
         reportAPI.tradingAccount(params),
         reportAPI.profitLoss(params),
-        reportAPI.balanceSheet()
+        reportAPI.balanceSheet(params)
       ]);
 
       setTradingData(trading?.data || null);

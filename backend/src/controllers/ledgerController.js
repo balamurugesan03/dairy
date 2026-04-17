@@ -1,4 +1,5 @@
 import Ledger from '../models/Ledger.js';
+import Voucher from '../models/Voucher.js';
 
 // Get all ledgers
 export const getAllLedgers = async (req, res) => {
@@ -166,10 +167,84 @@ export const deleteLedger = async (req, res) => {
   }
 };
 
+// Outstanding report — balance as of toDate (opening + voucher movements up to toDate)
+export const getOutstandingReport = async (req, res) => {
+  try {
+    const { fromDate, toDate } = req.query;
+    const companyId = req.companyId;
+
+    const partyTypes = [
+      'Party',
+      'Accounts Due To (Sundry Creditors)',
+      'Accounts Due From (Sundry Debtors)'
+    ];
+
+    const partyLedgers = await Ledger.find({ companyId, ledgerType: { $in: partyTypes }, status: 'Active' });
+
+    const dateFilter = {};
+    if (fromDate) dateFilter.$gte = new Date(fromDate);
+    if (toDate) {
+      const end = new Date(toDate);
+      end.setHours(23, 59, 59, 999);
+      dateFilter.$lte = end;
+    }
+
+    const voucherQuery = { companyId };
+    if (fromDate || toDate) voucherQuery.voucherDate = dateFilter;
+
+    const vouchers = await Voucher.find(voucherQuery).select('voucherDate entries');
+
+    // Build ledger → net movements map from vouchers
+    const movements = {};
+    for (const v of vouchers) {
+      for (const e of v.entries) {
+        const key = e.ledgerId.toString();
+        if (!movements[key]) movements[key] = { debit: 0, credit: 0 };
+        movements[key].debit  += e.debitAmount  || 0;
+        movements[key].credit += e.creditAmount || 0;
+      }
+    }
+
+    const debitNormalTypes = ['Party', 'Accounts Due From (Sundry Debtors)'];
+
+    const results = [];
+    for (const ledger of partyLedgers) {
+      const key = ledger._id.toString();
+      const mv = movements[key] || { debit: 0, credit: 0 };
+
+      if (mv.debit === 0 && mv.credit === 0) continue;
+
+      const isDebitNormal = debitNormalTypes.includes(ledger.ledgerType);
+      const netBalance = isDebitNormal
+        ? mv.debit - mv.credit
+        : mv.credit - mv.debit;
+
+      if (Math.abs(netBalance) < 0.01) continue;
+
+      results.push({
+        _id: ledger._id,
+        ledgerName: ledger.ledgerName,
+        ledgerType: ledger.ledgerType,
+        linkedEntity: ledger.linkedEntity,
+        periodDebit: mv.debit,
+        periodCredit: mv.credit,
+        currentBalance: Math.abs(netBalance),
+        balanceType: netBalance >= 0 ? 'Dr' : 'Cr'
+      });
+    }
+
+    res.json({ success: true, data: results });
+  } catch (error) {
+    console.error('Error in outstanding report:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export default {
   getAllLedgers,
   createLedger,
   getLedgerById,
   updateLedger,
-  deleteLedger
+  deleteLedger,
+  getOutstandingReport
 };

@@ -4,7 +4,8 @@ import {
   createLedger,
   getLedgerById,
   updateLedger,
-  deleteLedger
+  deleteLedger,
+  getOutstandingReport
 } from '../controllers/ledgerController.js';
 import { protect, addCompanyFilter } from '../middleware/auth.js';
 
@@ -12,6 +13,7 @@ const router = express.Router();
 router.use(protect, addCompanyFilter);
 
 // Ledger routes
+router.get('/ledgers/outstanding-report', getOutstandingReport);
 router.get('/ledgers', getAllLedgers);
 router.post('/ledgers', createLedger);
 router.get('/ledgers/:id', getLedgerById);

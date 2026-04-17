@@ -88,12 +88,8 @@ export const getDayBook = async (req, res) => {
         const ledgerType = entry.ledgerId?.ledgerType;
         const isCashBank = cashBankTypes.has(ledgerType);
 
-        // For Receipt vouchers: skip the Cash/Bank debit leg (it's implied cash-in)
-        // For Payment vouchers: skip the Cash/Bank credit leg (it's implied cash-out)
-        if ((isReceiptVoucher && isCashBank && entry.debitAmount > 0) ||
-            (isPaymentVoucher && isCashBank && entry.creditAmount > 0)) {
-          continue;
-        }
+        // Always skip Cash/Bank legs — the cash movement is implied in the day book
+        if (isCashBank) continue;
 
         const entryData = {
           date: voucher.voucherDate,
@@ -106,8 +102,8 @@ export const getDayBook = async (req, res) => {
         };
 
         if (isReceiptVoucher) {
-          // Receipt voucher: non-cash leg → receipt side (cash received for this)
-          const amount = entry.creditAmount || entry.debitAmount || 0;
+          // Receipt voucher non-cash leg → receipt side
+          const amount = entry.creditAmount || 0;
           if (amount > 0) {
             const receiptEntry = { ...entryData, amount };
             dateMap[dateKey].receiptSide.push(receiptEntry);
@@ -115,8 +111,8 @@ export const getDayBook = async (req, res) => {
             receiptSide.push(receiptEntry);
           }
         } else if (isPaymentVoucher) {
-          // Payment voucher: non-cash leg → payment side (cash paid for this)
-          const amount = entry.debitAmount || entry.creditAmount || 0;
+          // Payment voucher non-cash leg → payment side
+          const amount = entry.debitAmount || 0;
           if (amount > 0) {
             const paymentEntry = { ...entryData, amount };
             dateMap[dateKey].paymentSide.push(paymentEntry);
@@ -124,7 +120,7 @@ export const getDayBook = async (req, res) => {
             paymentSide.push(paymentEntry);
           }
         } else {
-          // Journal and other vouchers: use debit/credit sides as-is
+          // Journal and other vouchers: skip cash; debit non-cash → payment, credit non-cash → receipt
           if (entry.debitAmount > 0) {
             const paymentEntry = { ...entryData, amount: entry.debitAmount };
             dateMap[dateKey].paymentSide.push(paymentEntry);
@@ -172,31 +168,35 @@ export const getDayBook = async (req, res) => {
         };
       }
 
-      // Receipt (Dr): Milk Purchase
-      const drEntry = {
-        date: new Date(dateKey),
-        voucherNumber: `MKP-${dateKey.replace(/-/g, '')}`,
-        voucherType: 'MilkPurchase',
-        ledgerName: `Milk Purchase — ${day.farmerCount.length} farmers (${day.totalQty.toFixed(2)} L)`,
-        narration: `Shift Total — ${dateKey}`,
-        amount: day.totalAmount
-      };
-      dateMap[dateKey].receiptSide.push(drEntry);
-      dateMap[dateKey].totalReceipts += day.totalAmount;
-      receiptSide.push(drEntry);
+      const farmerCount = day.farmerCount.length;
+      const totalQty = day.totalQty.toFixed(2);
+      const totalAmt = day.totalAmount;
 
-      // Payment (Cr): Producers Dues
-      const crEntry = {
+      // Receipt side: Producers Dues (what is owed to producers)
+      const producerDueEntry = {
         date: new Date(dateKey),
         voucherNumber: `MKP-${dateKey.replace(/-/g, '')}`,
         voucherType: 'ProducersDue',
-        ledgerName: `Producers Dues — ${day.farmerCount.length} farmers`,
-        narration: `Milk Purchase Day Total — ${dateKey}`,
-        amount: day.totalAmount
+        ledgerName: `Producers Dues — ${farmerCount} Farmers`,
+        narration: `Total Farmers: ${farmerCount} | Qty: ${totalQty} L`,
+        amount: totalAmt
       };
-      dateMap[dateKey].paymentSide.push(crEntry);
-      dateMap[dateKey].totalPayments += day.totalAmount;
-      paymentSide.push(crEntry);
+      dateMap[dateKey].receiptSide.push(producerDueEntry);
+      dateMap[dateKey].totalReceipts += totalAmt;
+      receiptSide.push(producerDueEntry);
+
+      // Payment side: Milk Purchase (milk purchased from farmers)
+      const milkPurchaseEntry = {
+        date: new Date(dateKey),
+        voucherNumber: `MKP-${dateKey.replace(/-/g, '')}`,
+        voucherType: 'MilkPurchase',
+        ledgerName: `Milk Purchase — ${farmerCount} Farmers`,
+        narration: `Qty: ${totalQty} L | Day Total: ₹${totalAmt.toFixed(2)}`,
+        amount: totalAmt
+      };
+      dateMap[dateKey].paymentSide.push(milkPurchaseEntry);
+      dateMap[dateKey].totalPayments += totalAmt;
+      paymentSide.push(milkPurchaseEntry);
     }
 
     // --- Build dayWiseData with chained opening/closing balances ---

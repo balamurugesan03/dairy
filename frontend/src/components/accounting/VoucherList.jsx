@@ -53,8 +53,7 @@ import {
   IconEdit,
   IconCopy,
   IconPrinter,
-  IconInfoCircle,
-  IconTrendingUp,
+IconTrendingUp,
   IconTrendingDown,
   IconCheck,
   IconX
@@ -257,17 +256,6 @@ const VoucherList = () => {
                 onClick={() => handleView(voucher)}
               >
                 <IconEye size={14} />
-              </ActionIcon>
-            </Tooltip>
-            
-            <Tooltip label="View Details" withArrow>
-              <ActionIcon
-                color="gray"
-                variant="light"
-                size="sm"
-                onClick={() => navigate(`/accounting/vouchers/view/${voucher._id}`)}
-              >
-                <IconInfoCircle size={14} />
               </ActionIcon>
             </Tooltip>
             
@@ -623,8 +611,8 @@ const VoucherList = () => {
       <Modal
         opened={viewModalOpened}
         onClose={() => setViewModalOpened(false)}
-        title="Voucher Quick View"
-        size="md"
+        title="Voucher Details"
+        size="lg"
         centered
         radius="md"
       >
@@ -634,55 +622,67 @@ const VoucherList = () => {
               <Badge color={getTypeColor(selectedVoucher.voucherType)} size="lg">
                 {getTypeLabel(selectedVoucher.voucherType)}
               </Badge>
-              <Text fw={500}>{selectedVoucher.voucherNumber}</Text>
+              <Text fw={600}>{selectedVoucher.voucherNumber}</Text>
             </Group>
-            
-            <Divider />
-            
-            <SimpleGrid cols={2} gap="md">
+
+            <SimpleGrid cols={2} gap="sm">
               <Box>
-                <Text size="sm" c="dimmed">Date</Text>
+                <Text size="xs" c="dimmed">Date</Text>
                 <Text fw={500}>{dayjs(selectedVoucher.voucherDate).format('DD-MM-YYYY')}</Text>
               </Box>
               <Box>
-                <Text size="sm" c="dimmed">Reference</Text>
-                <Text fw={500}>{selectedVoucher.referenceNumber || '-'}</Text>
-              </Box>
-              <Box>
-                <Text size="sm" c="dimmed">Total Debit</Text>
-                <Text fw={500} c="red">
-                  ₹{(selectedVoucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </Text>
-              </Box>
-              <Box>
-                <Text size="sm" c="dimmed">Total Credit</Text>
-                <Text fw={500} c="green">
-                  ₹{(selectedVoucher.totalCredit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </Text>
+                <Text size="xs" c="dimmed">Reference</Text>
+                <Text fw={500}>{selectedVoucher.referenceNumber || selectedVoucher.referenceType || '-'}</Text>
               </Box>
             </SimpleGrid>
-            
-            <Box>
-              <Text size="sm" c="dimmed">Narration</Text>
-              <Paper p="sm" withBorder bg="gray.0">
-                <Text size="sm">{selectedVoucher.narration || 'No narration'}</Text>
-              </Paper>
-            </Box>
-            
-            <Divider />
-            
+
+            <Divider label="Ledger Entries" labelPosition="center" />
+
+            <ScrollArea style={{ maxHeight: 250 }}>
+              <Table striped withBorder withColumnBorders fz="sm">
+                <thead>
+                  <tr>
+                    <th>Ledger</th>
+                    <th style={{ textAlign: 'right', color: 'red' }}>Debit (₹)</th>
+                    <th style={{ textAlign: 'right', color: 'green' }}>Credit (₹)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(selectedVoucher.entries || []).map((entry, i) => (
+                    <tr key={i}>
+                      <td>{entry.ledgerName || entry.ledgerId?.ledgerName || '-'}</td>
+                      <td style={{ textAlign: 'right', color: entry.debitAmount > 0 ? 'red' : 'inherit' }}>
+                        {entry.debitAmount > 0 ? entry.debitAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
+                      </td>
+                      <td style={{ textAlign: 'right', color: entry.creditAmount > 0 ? 'green' : 'inherit' }}>
+                        {entry.creditAmount > 0 ? entry.creditAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr style={{ fontWeight: 700, background: '#f8f9fa' }}>
+                    <td>Total</td>
+                    <td style={{ textAlign: 'right', color: 'red' }}>
+                      ₹{(selectedVoucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td style={{ textAlign: 'right', color: 'green' }}>
+                      ₹{(selectedVoucher.totalCredit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                  </tr>
+                </tbody>
+              </Table>
+            </ScrollArea>
+
+            {selectedVoucher.narration && (
+              <Box>
+                <Text size="xs" c="dimmed">Narration</Text>
+                <Paper p="sm" withBorder bg="gray.0">
+                  <Text size="sm">{selectedVoucher.narration}</Text>
+                </Paper>
+              </Box>
+            )}
+
             <Group justify="flex-end">
-              <Button
-                variant="light"
-                onClick={() => navigate(`/accounting/vouchers/view/${selectedVoucher._id}`)}
-              >
-                Full Details
-              </Button>
-              <Button
-                onClick={() => setViewModalOpened(false)}
-              >
-                Close
-              </Button>
+              <Button onClick={() => setViewModalOpened(false)}>Close</Button>
             </Group>
           </Stack>
         )}

@@ -197,7 +197,8 @@ export const ledgerAPI = {
   create: (data) => api.post('/ledgers', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/ledgers/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/ledgers/${id}`).then(res => res.data).catch(handleError),
-  getOutstanding: (id) => api.get(`/ledgers/${id}/outstanding`).then(res => res.data).catch(handleError)
+  getOutstanding: (id) => api.get(`/ledgers/${id}/outstanding`).then(res => res.data).catch(handleError),
+  getOutstandingReport: (params) => api.get('/ledgers/outstanding-report', { params }).then(res => res.data).catch(handleError)
 };
 
 // FARMER PAYMENT APIs
@@ -226,6 +227,14 @@ export const advanceAPI = {
   getStats: (params) => api.get('/advances/stats', { params }).then(res => res.data).catch(handleError),
   getCashSummary: (params) => api.get('/advances/cash-summary', { params }).then(res => res.data).catch(handleError)
 };
+
+
+// ─── MILMA RATE CHART APIs (company-user side) ────────────────────────────────
+export const milmaChartAPI = {
+  getMasters: () => api.get('/milma-charts/masters').then(r => r.data).catch(handleError),
+  lookup: (data) => api.post('/milma-charts/lookup', data).then(r => r.data).catch(handleError),
+};
+
 
 // REPORTS APIs
 export const reportAPI = {
@@ -273,7 +282,8 @@ export const reportAPI = {
   vyaparCashBook: (params) => api.get('/reports/vyapar/cash-book', { params }).then(res => res.data).catch(handleError),
   vyaparTradingAccount: (params) => api.get('/reports/vyapar/trading-account', { params }).then(res => res.data).catch(handleError),
   vyaparRD: (params) => api.get('/reports/vyapar/rd', { params }).then(res => res.data).catch(handleError),
-  salesRegister: (params) => api.get('/reports/sales-register', { params }).then(res => res.data).catch(handleError)
+  salesRegister: (params) => api.get('/reports/sales-register', { params }).then(res => res.data).catch(handleError),
+  misReport: (params) => api.get('/reports/mis-report', { params }).then(res => res.data).catch(handleError)
 };
 
 // DAY BOOK API
@@ -388,6 +398,7 @@ export const milkSalesAPI = {
   delete:  (id)     => api.delete(`/milk-sales/${id}`).then(res => res.data).catch(handleError),
   getDailySummary:  (params) => api.get('/milk-sales/summary/daily',  { params }).then(res => res.data).catch(handleError),
   getBalanceReport: (params) => api.get('/milk-sales/balance-report', { params }).then(res => res.data).catch(handleError),
+  getNextBillNo:    ()       => api.get('/milk-sales/next-bill-no').then(res => res.data).catch(handleError),
 };
 
 // UNION SALES SLIP APIs

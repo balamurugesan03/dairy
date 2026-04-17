@@ -77,27 +77,8 @@ export const createSupplier = async (req, res) => {
     const supplier = new Supplier(supplierData);
     await supplier.save();
 
-    // Auto-create both ledger entries for the supplier
+    // Auto-create ledger entry for the supplier (Due To only — we owe them)
     try {
-      // 1. Accounts Due By (Sundry Debtors) - when supplier owes us (Asset)
-      const dueByLedger = new Ledger({
-        ledgerName: `${supplierData.name} - Due By (${supplierData.supplierId})`,
-        ledgerType: 'Other Receivable',
-        linkedEntity: {
-          entityType: 'Supplier',
-          entityId: supplier._id
-        },
-        openingBalance: 0,
-        openingBalanceType: 'Dr',
-        currentBalance: 0,
-        balanceType: 'Dr',
-        parentGroup: 'Sundry Debtors',
-        status: 'Active',
-        companyId
-      });
-      await dueByLedger.save();
-
-      // 2. Accounts Due To (Sundry Creditors) - when we owe supplier (Liability)
       const dueToLedger = new Ledger({
         ledgerName: `${supplierData.name} - Due To (${supplierData.supplierId})`,
         ledgerType: 'Accounts Due To (Sundry Creditors)',
@@ -115,8 +96,7 @@ export const createSupplier = async (req, res) => {
       });
       await dueToLedger.save();
 
-      // Update supplier with ledger references
-      supplier.dueByLedgerId = dueByLedger._id;
+      // Update supplier with ledger reference
       supplier.dueToLedgerId = dueToLedger._id;
       await supplier.save();
 
