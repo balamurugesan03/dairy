@@ -3,6 +3,7 @@ import { message } from '../../utils/toast';
 import dayjs from 'dayjs';
 import { reportAPI } from '../../services/api';
 import { printReport } from '../../utils/printReport';
+import { useCompany } from '../../context/CompanyContext';
 import PageHeader from '../common/PageHeader';
 import DateFilterToolbar from '../common/DateFilterToolbar';
 import ExportButton from '../common/ExportButton';
@@ -33,6 +34,7 @@ import {
 } from '@tabler/icons-react';
 
 const ReceiptsDisbursement = () => {
+  const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState(null);
   const [format, setFormat] = useState('singleColumnMonthly');
@@ -365,6 +367,195 @@ const ReceiptsDisbursement = () => {
     );
   };
 
+  const renderTwoColumnSideBySide = () => {
+    if (!reportData.formatted?.sections) return null;
+
+    const { sections, grandTotal } = reportData.formatted;
+    const ob    = parseFloat(reportData?.openingBalance || 0);
+    const rT    = parseFloat(grandTotal?.receiptTotal || 0);
+    const pT    = parseFloat(grandTotal?.paymentTotal || 0);
+    const cb    = ob + rT - pT;
+    const grand = rT + ob;
+    const monthYear = dayjs(reportData.startDate).format('MMMM-YYYY').toUpperCase();
+
+    const FF     = 'Arial, Helvetica, sans-serif';
+    const BORDER = '1px solid #bbb';
+    const BORDER2 = '2px solid #555';
+
+    const thS = (extra = {}) => ({
+      border: BORDER, padding: '4px 6px', fontWeight: 700, fontSize: 10,
+      background: '#e8e8e8', textAlign: 'center', fontFamily: FF, whiteSpace: 'nowrap', ...extra
+    });
+    const tdS = (extra = {}) => ({
+      border: BORDER, padding: '3px 6px', fontSize: 10, fontFamily: FF, ...extra
+    });
+    const secHdrS = (extra = {}) => ({
+      border: BORDER, padding: '4px 6px', fontSize: 10, fontWeight: 700,
+      background: '#d4d4d4', textTransform: 'uppercase', letterSpacing: '0.4px',
+      fontFamily: FF, ...extra
+    });
+    const secTotS = (extra = {}) => ({
+      border: BORDER, padding: '3px 6px', fontSize: 10, fontWeight: 700,
+      background: '#f0f0f0', fontFamily: FF, ...extra
+    });
+
+    const fc = (n) => {
+      const v = parseFloat(n || 0);
+      return v === 0 ? '' : v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+    const fz2 = (n) => parseFloat(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const SidePanel = ({ side }) => (
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr>
+            <th style={thS({ textAlign: 'left', width: '38%' })}>Ledger</th>
+            <th style={thS({ width: '20%' })}>Adjustment</th>
+            <th style={thS({ width: '20%' })}>Cash</th>
+            <th style={thS({ width: '22%' })}>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {/* Opening Balance — receipt side */}
+          {side === 'receipt' && (
+            <tr style={{ background: '#e8f5e9' }}>
+              <td style={tdS({ fontWeight: 700, color: '#2e7d32' })}>Opening Balance</td>
+              <td style={tdS({})}></td>
+              <td style={tdS({ textAlign: 'right', fontWeight: 700, color: '#2e7d32' })}>{fz2(ob)}</td>
+              <td style={tdS({ textAlign: 'right', fontWeight: 700, color: '#2e7d32' })}>{fz2(ob)}</td>
+            </tr>
+          )}
+
+          {sections.map((sec, si) => {
+            const items = sec.ledgers.filter(l =>
+              side === 'receipt' ? l.receiptTotal > 0 : l.paymentTotal > 0
+            );
+            if (items.length === 0) return null;
+            return (
+              <React.Fragment key={si}>
+                <tr>
+                  <td colSpan={4} style={secHdrS({ borderTop: '1.5px solid #888' })}>
+                    {sec.sectionName} {sec.subtitle}
+                  </td>
+                </tr>
+                {items.map((item, ii) => (
+                  <tr key={ii} style={{ background: ii % 2 === 0 ? '#fff' : '#fafafa' }}>
+                    <td style={tdS({ paddingLeft: 12 })}>{item.ledgerName}</td>
+                    <td style={tdS({ textAlign: 'right' })}>
+                      {side === 'receipt' ? fc(item.receiptAdj) : fc(item.paymentAdj)}
+                    </td>
+                    <td style={tdS({ textAlign: 'right' })}>
+                      {side === 'receipt' ? fc(item.receiptCash) : fc(item.paymentCash)}
+                    </td>
+                    <td style={tdS({ textAlign: 'right', fontWeight: 600 })}>
+                      {side === 'receipt' ? fc(item.receiptTotal) : fc(item.paymentTotal)}
+                    </td>
+                  </tr>
+                ))}
+                <tr>
+                  <td style={secTotS({ paddingLeft: 12 })}>Account Group Total</td>
+                  <td style={secTotS({ textAlign: 'right' })}>
+                    {side === 'receipt' ? fz2(sec.groupTotal.receiptAdj) : fz2(sec.groupTotal.paymentAdj)}
+                  </td>
+                  <td style={secTotS({ textAlign: 'right' })}>
+                    {side === 'receipt' ? fz2(sec.groupTotal.receiptCash) : fz2(sec.groupTotal.paymentCash)}
+                  </td>
+                  <td style={secTotS({ textAlign: 'right' })}>
+                    {side === 'receipt' ? fz2(sec.groupTotal.receiptTotal) : fz2(sec.groupTotal.paymentTotal)}
+                  </td>
+                </tr>
+              </React.Fragment>
+            );
+          })}
+
+          {/* Sub-total */}
+          <tr style={{ background: '#e0e0e0', borderTop: BORDER2 }}>
+            <td style={thS({ textAlign: 'left', borderTop: BORDER2 })}>
+              {side === 'receipt' ? 'SUB-TOTAL (Receipts)' : 'SUB-TOTAL (Payments)'}
+            </td>
+            <td style={thS({ borderTop: BORDER2 })}>
+              {fz2(side === 'receipt' ? grandTotal?.receiptAdj : grandTotal?.paymentAdj)}
+            </td>
+            <td style={thS({ borderTop: BORDER2 })}>
+              {fz2(side === 'receipt' ? grandTotal?.receiptCash : grandTotal?.paymentCash)}
+            </td>
+            <td style={thS({ borderTop: BORDER2 })}>
+              {fz2(side === 'receipt' ? rT : pT)}
+            </td>
+          </tr>
+
+          {/* Closing Balance — payment side */}
+          {side === 'payment' && (
+            <tr style={{ background: '#fff3e0' }}>
+              <td style={tdS({ fontWeight: 700, color: '#e65100' })}>Closing Balance</td>
+              <td style={tdS({})}></td>
+              <td style={tdS({ textAlign: 'right', fontWeight: 700, color: '#e65100' })}>{fz2(Math.max(0, cb))}</td>
+              <td style={tdS({ textAlign: 'right', fontWeight: 700, color: '#e65100' })}>{fz2(Math.max(0, cb))}</td>
+            </tr>
+          )}
+
+          {/* Grand Total */}
+          <tr style={{ background: '#b0b0b0' }}>
+            <td style={thS({ textAlign: 'left', fontSize: 12 })}>GRAND TOTAL</td>
+            <td style={thS({ fontSize: 12 })}></td>
+            <td style={thS({ fontSize: 12 })}></td>
+            <td style={thS({ fontSize: 12 })}>{fz2(grand)}</td>
+          </tr>
+        </tbody>
+      </table>
+    );
+
+    return (
+      <div style={{ fontFamily: FF }}>
+        {/* Document Header */}
+        <div style={{
+          textAlign: 'center', borderBottom: BORDER2, paddingBottom: 10,
+          marginBottom: 16, fontFamily: FF
+        }}>
+          <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: 2, textTransform: 'uppercase' }}>
+            {selectedCompany?.companyName || 'DAIRY COOPERATIVE'}
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 700, marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+            RECEIPT AND DISBURSEMENT FOR THE MONTH {monthYear}
+          </div>
+          <div style={{ fontSize: 10, color: '#444', marginTop: 3 }}>End of the Month</div>
+          <div style={{ fontSize: 9, color: '#666', marginTop: 4 }}>
+            Period: {dayjs(reportData.startDate).format('DD/MM/YYYY')} to {dayjs(reportData.endDate).format('DD/MM/YYYY')}
+            &nbsp;|&nbsp; Printed: {dayjs().format('DD/MM/YYYY')}
+          </div>
+        </div>
+
+        {/* Two Side-by-Side Panels */}
+        <div style={{ display: 'flex', gap: '1%', alignItems: 'flex-start' }}>
+          <div style={{ width: '49.5%' }}>
+            <div style={{
+              textAlign: 'center', fontWeight: 700, fontSize: 11,
+              background: '#2c5f8a', color: '#fff', padding: '4px 0',
+              marginBottom: 4, fontFamily: FF
+            }}>
+              RECEIPT (Dr)
+            </div>
+            <SidePanel side="receipt" />
+          </div>
+          <div style={{ width: '49.5%' }}>
+            <div style={{
+              textAlign: 'center', fontWeight: 700, fontSize: 11,
+              background: '#7a2a2a', color: '#fff', padding: '4px 0',
+              marginBottom: 4, fontFamily: FF
+            }}>
+              PAYMENT / DISBURSEMENT (Cr)
+            </div>
+            <SidePanel side="payment" />
+          </div>
+        </div>
+
+        <div style={{ marginTop: 16, fontSize: 9, color: '#888', textAlign: 'right', fontFamily: FF }}>
+          Computer generated statement — No signature required.
+        </div>
+      </div>
+    );
+  };
+
   const renderTwoColumnFormat = () => {
     if (!reportData.formatted?.sections) return null;
 
@@ -521,7 +712,7 @@ const ReceiptsDisbursement = () => {
     <Container size="xl" py="md">
       <PageHeader
         title="Receipts & Disbursement Report"
-        subtitle="Single Column Monthly and Three Column Ledger-wise formats"
+        subtitle="Single Column Monthly, Two Column Side-by-Side, and Three Column Ledger-wise formats"
         icon={<IconReceipt size={28} />}
       />
 
@@ -533,6 +724,7 @@ const ReceiptsDisbursement = () => {
             onChange={handleFormatChange}
             data={[
               { label: 'Single Column Monthly', value: 'singleColumnMonthly' },
+              { label: 'Two Column Side-by-Side', value: 'twoColumnMonthly' },
               { label: 'Three Column Ledger-wise', value: 'threeColumnLedgerwise' }
             ]}
           />
@@ -617,6 +809,7 @@ const ReceiptsDisbursement = () => {
 
             {/* Report Content */}
             {format === 'singleColumnMonthly' && renderSingleColumnMonthly()}
+            {format === 'twoColumnMonthly' && renderTwoColumnSideBySide()}
             {format === 'threeColumnLedgerwise' && renderThreeColumnLedgerwise()}
 
             {/* Export Section */}

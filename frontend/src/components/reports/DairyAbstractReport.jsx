@@ -12,7 +12,7 @@ import { notifications } from '@mantine/notifications';
 import * as XLSX from 'xlsx';
 import dayjs from 'dayjs';
 import { reportAPI } from '../../services/api';
-import { printReport } from '../../utils/printReport';
+import { useCompany } from '../../context/CompanyContext';
 
 // ── Formatters ─────────────────────────────────────────────────────────────
 const fmt2 = (n) => parseFloat(n || 0).toFixed(2);
@@ -141,8 +141,145 @@ const dig = (obj, path) => {
   return path.split('.').reduce((o, k) => (o ? o[k] : undefined), obj);
 };
 
+// ── Print builder ──────────────────────────────────────────────────────────
+const buildPrintHtml = (reportData, dateRange, companyName) => {
+  const months     = reportData?.months     || [];
+  const grandTotal = reportData?.grandTotal || null;
+  const [start, end] = dateRange;
+  const period = start && end
+    ? `${dayjs(start).format('DD/MM/YYYY')} to ${dayjs(end).format('DD/MM/YYYY')}`
+    : '';
+
+  const fQ = (n) => { const v = parseFloat(n || 0); return v === 0 ? '-' : v.toFixed(3); };
+  const fV = (n) => { const v = parseFloat(n || 0); return v === 0 ? '-' : v.toFixed(2); };
+
+  const GROUPS = [
+    { label: 'Milk Purchase',  bg: '#0d6b5e', cols: ['Qty\n(Litre)', 'Avg Rate', 'Value (₹)', 'Shortage', 'Excess', 'Handled Qty'] },
+    { label: 'Local Sales',    bg: '#1a6e3c', cols: ['Qty\n(Litre)', 'Avg Rate', 'Value (₹)'] },
+    { label: 'Credit Sales',   bg: '#155e75', cols: ['Qty\n(Litre)', 'Avg Rate', 'Value (₹)'] },
+    { label: 'School Sales',   bg: '#713f12', cols: ['Qty\n(Litre)', 'Avg Rate', 'Value (₹)'] },
+    { label: 'Sample Sales',   bg: '#4c1d95', cols: ['Qty\n(Litre)', 'Avg Rate', 'Value (₹)'] },
+    { label: 'Union Sales',    bg: '#1e3a8a', cols: ['Send Qty', 'Recd Qty', 'Avg Rate', 'Value (₹)', 'Spoilage', 'Excess', 'Shortage'] },
+    { label: 'Sales Total',    bg: '#7f1d1d', cols: ['Qty\n(Litre)', 'Avg Rate', 'Value (₹)'] },
+    { label: 'Profit (₹)',     bg: '#166534', cols: ['Profit'] },
+    { label: 'Other Disposal', bg: '#374151', cols: ['BMC', 'Prod Unit'] },
+  ];
+
+  const getRowCells = (m) => [
+    fQ(m.purchase.qty), fV(m.purchase.avgRate), fV(m.purchase.value),
+    fQ(m.purchase.shortage), fQ(m.purchase.excess), fQ(m.purchase.handledQty),
+    fQ(m.localSales.qty), fV(m.localSales.avgRate), fV(m.localSales.value),
+    fQ(m.creditSales.qty), fV(m.creditSales.avgRate), fV(m.creditSales.value),
+    fQ(m.schoolSales.qty), fV(m.schoolSales.avgRate), fV(m.schoolSales.value),
+    fQ(m.sampleSales.qty), fV(m.sampleSales.avgRate), fV(m.sampleSales.value),
+    fQ(m.union.sendQty), fQ(m.union.receivedQty), fV(m.union.avgRate), fV(m.union.value),
+    fQ(m.union.spoilage), fQ(m.union.excess), fQ(m.union.shortage),
+    fQ(m.salesTotal.qty), fV(m.salesTotal.avgRate), fV(m.salesTotal.value),
+    fV(m.profit),
+    '-', '-'
+  ];
+
+  const getTotalCells = () => {
+    if (!grandTotal) return [];
+    return [
+      fQ(grandTotal.purchase.qty), fV(grandTotal.purchase.avgRate), fV(grandTotal.purchase.value),
+      fQ(grandTotal.purchase.shortage), fQ(grandTotal.purchase.excess), fQ(grandTotal.purchase.handledQty),
+      fQ(grandTotal.localSales.qty), fV(grandTotal.localSales.avgRate), fV(grandTotal.localSales.value),
+      fQ(grandTotal.creditSales.qty), fV(grandTotal.creditSales.avgRate), fV(grandTotal.creditSales.value),
+      fQ(grandTotal.schoolSales.qty), fV(grandTotal.schoolSales.avgRate), fV(grandTotal.schoolSales.value),
+      fQ(grandTotal.sampleSales.qty), fV(grandTotal.sampleSales.avgRate), fV(grandTotal.sampleSales.value),
+      fQ(grandTotal.union.sendQty), fQ(grandTotal.union.receivedQty), fV(grandTotal.union.avgRate), fV(grandTotal.union.value),
+      fQ(grandTotal.union.spoilage), fQ(grandTotal.union.excess), fQ(grandTotal.union.shortage),
+      fQ(grandTotal.salesTotal.qty), fV(grandTotal.salesTotal.avgRate), fV(grandTotal.salesTotal.value),
+      fV(grandTotal.profit),
+      '-', '-'
+    ];
+  };
+
+  // Build header row1 (group) & row2 (sub-cols)
+  let hdr1 = `<th rowspan="2" style="background:#0d6b5e;color:#fff;padding:4px 5px;font-size:8px;white-space:nowrap;position:sticky;left:0;z-index:2;">Month / Year</th>`;
+  let hdr2 = '';
+  GROUPS.forEach(g => {
+    hdr1 += `<th colspan="${g.cols.length}" style="background:${g.bg};color:#fff;padding:4px 5px;font-size:8px;text-align:center;">${g.label}</th>`;
+    g.cols.forEach(c => {
+      hdr2 += `<th style="background:${g.bg};color:#fff;padding:3px 4px;font-size:7.5px;text-align:center;white-space:pre-line;">${c}</th>`;
+    });
+  });
+
+  // Data rows
+  let dataRows = '';
+  months.forEach((m, ri) => {
+    const bg = ri % 2 === 0 ? '#fff' : '#f8fffe';
+    const cells = getRowCells(m);
+    const label = `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m.month - 1]} ${m.year}`;
+    let row = `<tr style="background:${bg};">
+      <td style="background:#f0fdf4;font-weight:700;font-size:8.5px;padding:3px 5px;white-space:nowrap;position:sticky;left:0;z-index:1;">${label}</td>`;
+    cells.forEach(c => { row += `<td style="text-align:right;font-family:monospace;font-size:8px;padding:3px 4px;">${c}</td>`; });
+    row += '</tr>';
+    dataRows += row;
+  });
+
+  // Grand total row
+  if (grandTotal) {
+    const cells = getTotalCells();
+    let row = `<tr style="font-weight:700;">
+      <td style="background:#0d6b5e;color:#fff;font-weight:700;font-size:8.5px;padding:3px 5px;position:sticky;left:0;z-index:1;">TOTAL</td>`;
+    let colIdx = 0;
+    GROUPS.forEach(g => {
+      g.cols.forEach(() => {
+        row += `<td style="background:${g.bg};color:#fff;text-align:right;font-family:monospace;font-size:8px;padding:3px 4px;">${cells[colIdx++] || '-'}</td>`;
+      });
+    });
+    row += '</tr>';
+    dataRows += row;
+  }
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <title>Dairy Abstract — ${companyName}</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:Arial,Helvetica,sans-serif;font-size:9px;color:#111;background:#fff;
+         -webkit-print-color-adjust:exact;print-color-adjust:exact;padding:6mm;}
+    .header{text-align:center;border-bottom:2px solid #0d6b5e;padding-bottom:8px;margin-bottom:10px;}
+    .co-name{font-size:16px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:#0d6b5e;}
+    .rpt-title{font-size:11px;font-weight:700;margin-top:3px;text-transform:uppercase;letter-spacing:1px;}
+    .rpt-meta{font-size:8.5px;color:#555;margin-top:3px;}
+    .tbl-wrap{overflow-x:auto;}
+    table{border-collapse:collapse;width:100%;}
+    th,td{border:1px solid #ccc;vertical-align:middle;}
+    @page{size:A4 landscape;margin:6mm;}
+    @media print{body{padding:0;}}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="co-name">${companyName}</div>
+    <div class="rpt-title">Dairy Abstract Report</div>
+    <div class="rpt-meta">Period: ${period} &nbsp;|&nbsp; Printed: ${dayjs().format('DD/MM/YYYY')}</div>
+  </div>
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>${hdr1}</tr>
+        <tr>${hdr2}</tr>
+      </thead>
+      <tbody>${dataRows}</tbody>
+    </table>
+  </div>
+  <div style="margin-top:8px;font-size:7.5px;color:#888;text-align:right;">
+    Computer generated statement — No signature required.
+  </div>
+  <script>window.onload=function(){window.print();setTimeout(function(){window.close();},1500);};</script>
+</body>
+</html>`;
+};
+
 // ── Component ──────────────────────────────────────────────────────────────
 const DairyAbstractReport = () => {
+  const { selectedCompany } = useCompany();
   const [loading, setLoading]       = useState(false);
   const [reportData, setReportData] = useState(null);
   const [preset, setPreset]         = useState('financialYear');
@@ -367,14 +504,15 @@ const DairyAbstractReport = () => {
               <Button
                 size="sm" variant="outline" color="gray"
                 leftSection={<IconPrinter size={14} />}
-                onClick={() => printReport(printRef, {
-                  title: `Dairy Abstract Report — ${periodLabel}`,
-                  orientation: 'landscape',
-                  extraCss: `
-                    table { font-size: 8px !important; }
-                    th, td { padding: 3px 5px !important; }
-                  `
-                })}
+                onClick={() => {
+                  const pw = window.open('', '_blank');
+                  if (!pw) { alert('Pop-up blocked. Please allow pop-ups and try again.'); return; }
+                  pw.document.write(buildPrintHtml(
+                    reportData, dateRange,
+                    selectedCompany?.companyName || 'DAIRY COOPERATIVE SOCIETY'
+                  ));
+                  pw.document.close();
+                }}
               >
                 Print
               </Button>

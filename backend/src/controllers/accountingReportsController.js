@@ -910,6 +910,113 @@ export const getReceiptsDisbursementEnhanced = async (req, res) => {
       const fyEnd = new Date(Date.UTC(fyStartYear + 1, 2, 31, 23, 59, 59, 999));
 
       formattedData = { sections, grandTotal, fyStart, fyEnd };
+    } else if (format === 'twoColumnMonthly') {
+      // Two-Column Side-by-Side format
+      // Cash/Bank ledgers are the tracked accounts; contra entries form the sections.
+      // Split each contra ledger by: cash (via Cash-type entry) vs adjustment (via Bank-type entry).
+
+      const cashBankLedgersAll = await Ledger.find({
+        ledgerType: { $in: ['Cash', 'Bank'] },
+        status: 'Active',
+        companyId: req.companyId
+      });
+      const cashIds  = new Set(cashBankLedgersAll.filter(l => l.ledgerType === 'Cash').map(l => l._id.toString()));
+      const bankIds  = new Set(cashBankLedgersAll.filter(l => l.ledgerType === 'Bank').map(l => l._id.toString()));
+      const allCBIds = new Set(cashBankLedgersAll.map(l => l._id.toString()));
+      const allCBObjectIds = cashBankLedgersAll.map(l => l._id);
+
+      const duringVouchers2 = await Voucher.find({
+        companyId: req.companyId,
+        voucherDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
+        'entries.ledgerId': { $in: allCBObjectIds }
+      }).populate('entries.ledgerId', 'ledgerName ledgerType');
+
+      const contraMap2 = {};
+
+      duringVouchers2.forEach(voucher => {
+        // Find the cash/bank entry that drove this voucher
+        const cashBankEntry = voucher.entries.find(e =>
+          e.ledgerId?._id && allCBIds.has(e.ledgerId._id.toString())
+        );
+        if (!cashBankEntry) return;
+
+        const isCash = cashIds.has(cashBankEntry.ledgerId._id.toString());
+
+        // Find the contra (non-cash/bank) entry
+        const contraEntry = voucher.entries.find(e =>
+          e.ledgerId?._id && !allCBIds.has(e.ledgerId._id.toString())
+        );
+        if (!contraEntry) return; // contra voucher — skip
+
+        const key = contraEntry.ledgerId._id.toString();
+        if (!contraMap2[key]) {
+          contraMap2[key] = {
+            ledgerName: contraEntry.ledgerName || contraEntry.ledgerId.ledgerName || 'Unknown',
+            ledgerType: contraEntry.ledgerId.ledgerType || 'Other',
+            category:   getLedgerCategory(contraEntry.ledgerId.ledgerType || 'Other'),
+            receiptCash: 0, receiptAdj: 0,
+            paymentCash: 0, paymentAdj: 0
+          };
+        }
+        const rec = contraMap2[key];
+        if (cashBankEntry.debitAmount > 0) {
+          if (isCash) rec.receiptCash += cashBankEntry.debitAmount;
+          else        rec.receiptAdj  += cashBankEntry.debitAmount;
+        } else if (cashBankEntry.creditAmount > 0) {
+          if (isCash) rec.paymentCash += cashBankEntry.creditAmount;
+          else        rec.paymentAdj  += cashBankEntry.creditAmount;
+        }
+      });
+
+      // Group into sections
+      const secMap2 = {
+        'LIABILITIES': { name: 'Advance due by Society', subtitle: '(LIABILITY)', ledgers: [], order: 1 },
+        'ASSETS':      { name: 'Advance due to Society', subtitle: '(ASSET)',      ledgers: [], order: 2 },
+        'EXPENSES':    { name: 'Contingencies/Expenses',  subtitle: '',            ledgers: [], order: 3 },
+        'INCOME':      { name: 'Income Accounts',         subtitle: '',            ledgers: [], order: 4 },
+        'CAPITAL':     { name: 'Capital & Reserves',      subtitle: '',            ledgers: [], order: 5 },
+        'OTHER':       { name: 'Other Accounts',          subtitle: '',            ledgers: [], order: 6 }
+      };
+
+      Object.values(contraMap2).forEach(l => {
+        if (l.receiptCash + l.receiptAdj + l.paymentCash + l.paymentAdj === 0) return;
+        const sec = secMap2[l.category] || secMap2['OTHER'];
+        sec.ledgers.push({
+          ledgerName:   l.ledgerName,
+          receiptAdj:   l.receiptAdj,
+          receiptCash:  l.receiptCash,
+          receiptTotal: l.receiptAdj + l.receiptCash,
+          paymentAdj:   l.paymentAdj,
+          paymentCash:  l.paymentCash,
+          paymentTotal: l.paymentAdj + l.paymentCash
+        });
+      });
+
+      const sections2 = Object.values(secMap2)
+        .filter(s => s.ledgers.length > 0)
+        .sort((a, b) => a.order - b.order)
+        .map(sec => {
+          const groupTotal = sec.ledgers.reduce((acc, l) => ({
+            receiptAdj:   acc.receiptAdj   + l.receiptAdj,
+            receiptCash:  acc.receiptCash  + l.receiptCash,
+            receiptTotal: acc.receiptTotal + l.receiptTotal,
+            paymentAdj:   acc.paymentAdj   + l.paymentAdj,
+            paymentCash:  acc.paymentCash  + l.paymentCash,
+            paymentTotal: acc.paymentTotal + l.paymentTotal
+          }), { receiptAdj: 0, receiptCash: 0, receiptTotal: 0, paymentAdj: 0, paymentCash: 0, paymentTotal: 0 });
+          return { sectionName: sec.name, subtitle: sec.subtitle, ledgers: sec.ledgers, groupTotal };
+        });
+
+      const grandTotal2 = sections2.reduce((acc, s) => ({
+        receiptAdj:   acc.receiptAdj   + s.groupTotal.receiptAdj,
+        receiptCash:  acc.receiptCash  + s.groupTotal.receiptCash,
+        receiptTotal: acc.receiptTotal + s.groupTotal.receiptTotal,
+        paymentAdj:   acc.paymentAdj   + s.groupTotal.paymentAdj,
+        paymentCash:  acc.paymentCash  + s.groupTotal.paymentCash,
+        paymentTotal: acc.paymentTotal + s.groupTotal.paymentTotal
+      }), { receiptAdj: 0, receiptCash: 0, receiptTotal: 0, paymentAdj: 0, paymentCash: 0, paymentTotal: 0 });
+
+      formattedData = { sections: sections2, grandTotal: grandTotal2 };
     } else if (format === 'singleColumnMonthly') {
       // Single Column Monthly format - Only during month transactions
       // Exclude Cash/Bank ledgers — they are the account being tracked; show only contra entries
