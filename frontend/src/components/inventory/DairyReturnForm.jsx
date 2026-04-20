@@ -63,7 +63,9 @@ import {
   IconArrowBack,
   IconArrowForward,
   IconFileInvoice,
-  IconReceipt2
+  IconReceipt2,
+  IconX
+}
 } from '@tabler/icons-react';
 import { itemAPI, dairyPurchaseReturnAPI, dairySalesReturnAPI, supplierAPI, farmerAPI, customerAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
@@ -714,6 +716,13 @@ const DairyReturnForm = () => {
               color={themeColor}
             >
               New Return
+            </Button>
+            <Button
+              variant="default"
+              leftSection={<IconX size={16} />}
+              onClick={() => navigate('/')}
+            >
+              Close
             </Button>
           </Group>
         </Group>

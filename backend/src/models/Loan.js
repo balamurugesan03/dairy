@@ -1,13 +1,16 @@
 import mongoose from 'mongoose';
 
 const loanSchema = new mongoose.Schema({
-  companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
-  employeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee', required: true },
-  totalAmount: { type: Number, required: true, min: 0 },
-  paidAmount: { type: Number, default: 0, min: 0 },
+  companyId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Company',  required: true },
+  employeeId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Employee', required: true },
+  loanType:        { type: String, enum: ['Loan', 'Advance'], default: 'Loan' },
+  loanDate:        { type: Date, default: Date.now },
+  totalAmount:     { type: Number, required: true, min: 0 },
+  paidAmount:      { type: Number, default: 0, min: 0 },
   remainingAmount: { type: Number },
-  purpose: { type: String, trim: true },
-  status: { type: String, enum: ['Active', 'Closed'], default: 'Active' }
+  purpose:         { type: String, trim: true },
+  status:          { type: String, enum: ['Active', 'Closed'], default: 'Active' },
+  disbursalVoucherId: { type: mongoose.Schema.Types.ObjectId, ref: 'Voucher' }
 }, { timestamps: true });
 
 // Auto-calculate remaining amount

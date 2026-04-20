@@ -49,7 +49,8 @@ import {
   IconCircleCheck,
   IconCircleX,
 } from '@tabler/icons-react';
-import { milkPurchaseSettingsAPI, machineConfigAPI } from '../../services/api';
+import { milkPurchaseSettingsAPI, machineConfigAPI,milmaChartAPI} from '../../services/api';
+import dayjs from 'dayjs';
 
 // ─── Theme tokens ──────────────────────────────────────────────────────────────
 const TEAL        = '#0d9488';
@@ -201,6 +202,7 @@ export default function MilkPurchaseSettings() {
   const [error,      setError]      = useState(null);
   const [activeMenu,   setActiveMenu]   = useState('milk-chart');
   const [milmaLocked,  setMilmaLocked]  = useState(false);
+    const [milmaMasters, setMilmaMasters] = useState([]);
 
   // ── Analyzer start/stop state ───────────────────────────────────────────────
   const [analyzerRunning,  setAnalyzerRunning]  = useState(false);
@@ -280,6 +282,15 @@ export default function MilkPurchaseSettings() {
     loadAnalyzerStatus();
     fetchDynamicPorts();
   }, [loadSettings]);
+
+   useEffect(() => { loadSettings(); loadAnalyzerStatus(); fetchDynamicPorts(); loadMilmaMasters(); }, [loadSettings]);
+  
+    const loadMilmaMasters = async () => {
+      try {
+        const res = await milmaChartAPI.getMasters();
+        setMilmaMasters(res?.data || []);
+      } catch { /* silent — no milma charts uploaded yet */ }
+    };
 
   // ── Analyzer helpers ────────────────────────────────────────────────────────
   const loadAnalyzerStatus = async () => {
@@ -673,6 +684,7 @@ export default function MilkPurchaseSettings() {
                   value={form.activeRateChartType}
                   onChange={v => setTop('activeRateChartType', v)}
                   data={[
+                    { value: 'MilmaChart',    label: 'Milma Chart — FAT + CLR table uploaded by admin' },
                     { value: 'ManualEntry',   label: 'Manual Entry — Table lookup (CLR / FAT / SNF)' },
                     { value: 'ApplyFormula',  label: 'Apply Formula — Fat Rate × FAT + SNF Rate × SNF' },
                     { value: 'LowChart',      label: 'Low Chart — Table lookup for below-standard milk' },
@@ -686,6 +698,59 @@ export default function MilkPurchaseSettings() {
                 <HintBox>
                   Active chart: <strong>{form.activeRateChartType}</strong> — configure its records in <em>Rate Chart Settings</em>
                 </HintBox>
+                {/* ── Milma Chart versions panel (shown only when MilmaChart is active) ── */}
+                                {form.activeRateChartType === 'MilmaChart' && (
+                                  <Box
+                                    mt="xs"
+                                    p="sm"
+                                    style={{
+                                      background  : '#f0fdfa',
+                                      borderRadius: 8,
+                                      border      : `1px solid ${TEAL_BORDER}`,
+                                    }}
+                                  >
+                                    <Group justify="space-between" mb="xs">
+                                      <Text size="sm" fw={700} c="teal.8">Milma Rate Chart Versions</Text>
+                                      <Badge color="teal" variant="light" size="sm">
+                                        {milmaMasters.length} version{milmaMasters.length !== 1 ? 's' : ''} loaded
+                                      </Badge>
+                                    </Group>
+                
+                                    {milmaMasters.length === 0 ? (
+                                      <Text size="xs" c="dimmed">
+                                        No Milma chart has been uploaded yet. Please ask the super admin to upload the Excel file from the Super Admin panel.
+                                      </Text>
+                                    ) : (
+                                      <Box style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                                          <thead>
+                                            <tr style={{ background: TEAL_LIGHT }}>
+                                              {['Chart ID', 'Effective From', 'SNF Rate', 'FAT Rate', 'SNF Low <', 'TS Low <', 'SNF High ≥', 'TS High ≥', 'Rows', 'Remarks'].map(h => (
+                                                <th key={h} style={{ padding: '5px 8px', textAlign: 'left', color: TITLE_COLOR, fontWeight: 700, whiteSpace: 'nowrap', borderBottom: `1px solid ${TEAL_BORDER}` }}>{h}</th>
+                                              ))}
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {milmaMasters.map((m, i) => (
+                                              <tr key={m._id} style={{ background: i % 2 === 0 ? '#fff' : '#f8fffd' }}>
+                                                <td style={{ padding: '4px 8px', fontWeight: 700, color: TEAL }}>{m.chartId}</td>
+                                                <td style={{ padding: '4px 8px', whiteSpace: 'nowrap' }}>{dayjs(m.dateFrom).format('DD-MM-YYYY')}</td>
+                                                <td style={{ padding: '4px 8px' }}>{m.rateSNF}</td>
+                                                <td style={{ padding: '4px 8px' }}>{m.rateFAT}</td>
+                                                <td style={{ padding: '4px 8px' }}>{m.subSNF}</td>
+                                                <td style={{ padding: '4px 8px' }}>{m.subTotalSolids}</td>
+                                                <td style={{ padding: '4px 8px' }}>{m.bestSNF}</td>
+                                                <td style={{ padding: '4px 8px' }}>{m.bestTotalSolids}</td>
+                                                <td style={{ padding: '4px 8px' }}>{m.rowCount?.toLocaleString()}</td>
+                                                <td style={{ padding: '4px 8px', color: TEXT_MUTED, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.remarks || '—'}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </Box>
+                                    )}
+                                  </Box>
+                                )}
               </Stack>
             </SectionCard>
 

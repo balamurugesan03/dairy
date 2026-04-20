@@ -1,4 +1,5 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box, Paper, Group, Text, Title, Button, Select,
   Table, ScrollArea, Badge, Stack, SimpleGrid, ThemeIcon, Loader, Center,
@@ -7,7 +8,7 @@ import {
 import { DatePickerInput } from '@mantine/dates';
 import {
   IconPackageImport, IconCalendar, IconRefresh, IconPrinter,
-  IconFileExport, IconInbox, IconShoppingCart, IconPackage
+  IconFileExport, IconInbox, IconShoppingCart, IconPackage, IconX
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import * as XLSX from 'xlsx';
@@ -71,6 +72,7 @@ const addToSub = (acc, row) => {
 };
 
 const InventoryPurchaseRegister = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState(null);
   const [preset, setPreset] = useState('thisMonth');
@@ -301,6 +303,15 @@ const InventoryPurchaseRegister = () => {
                 <Text size="xs" c="rgba(255,255,255,0.8)">Daily purchase flow — dairy cooperative stock-in transactions</Text>
               </Box>
             </Group>
+            <Button
+              variant="white"
+              color="dark"
+              leftSection={<IconX size={16} />}
+              onClick={() => navigate('/')}
+              size="sm"
+            >
+              Close
+            </Button>
           </Group>
         </Box>
 

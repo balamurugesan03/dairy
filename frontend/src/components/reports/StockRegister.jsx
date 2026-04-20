@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box, Paper, Group, Text, Title, Button, Select, SegmentedControl,
   Table, ScrollArea, Stack, SimpleGrid, ThemeIcon, Loader, Center, Badge
@@ -6,7 +7,7 @@ import {
 import { DatePickerInput } from '@mantine/dates';
 import {
   IconPackages, IconCalendar, IconRefresh, IconPrinter,
-  IconFileExport, IconInbox, IconBox
+  IconFileExport, IconInbox, IconBox, IconX
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import * as XLSX from 'xlsx';
@@ -55,6 +56,7 @@ const thStyleR = { ...thStyle, textAlign: 'right' };
 const tdStyle = { padding: '6px 10px', fontSize: 12 };
 
 const StockRegister = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState(null);
   const [preset, setPreset] = useState('thisMonth');
@@ -227,9 +229,20 @@ const StockRegister = () => {
                 </Text>
               </Box>
             </Group>
-            {reportData?.financialYear && (
-              <Badge size="lg" variant="white" color="green">FY {reportData.financialYear}</Badge>
-            )}
+            <Group gap="xs">
+              {reportData?.financialYear && (
+                <Badge size="lg" variant="white" color="green">FY {reportData.financialYear}</Badge>
+              )}
+              <Button
+                variant="white"
+                color="dark"
+                leftSection={<IconX size={16} />}
+                onClick={() => navigate('/')}
+                size="sm"
+              >
+                Close
+              </Button>
+            </Group>
           </Group>
         </Box>
 

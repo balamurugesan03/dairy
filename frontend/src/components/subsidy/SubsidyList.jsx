@@ -40,7 +40,8 @@ import {
   IconDotsVertical,
   IconDownload,
   IconFileSpreadsheet,
-  IconFileTypePdf
+  IconFileTypePdf,
+  IconX
 } from '@tabler/icons-react';
 
 const SubsidyList = () => {
@@ -309,6 +310,14 @@ const SubsidyList = () => {
                   </Menu.Item>
                 </Menu.Dropdown>
               </Menu>
+              <Button
+                variant="default"
+                leftSection={<IconX size={16} />}
+                onClick={() => navigate('/')}
+                radius="md"
+              >
+                Close
+              </Button>
             </Group>
 
             <Group>

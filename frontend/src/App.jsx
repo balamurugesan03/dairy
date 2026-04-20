@@ -153,6 +153,7 @@ const FinalAccounts = lazy(() => import('./components/reports/FinalAccounts'));
 const BalanceSheet = lazy(() => import('./components/reports/BalanceSheet'));
 const InventoryPurchaseRegister = lazy(() => import('./components/reports/InventoryPurchaseRegister'));
 const StockRegister = lazy(() => import('./components/reports/StockRegister'));
+const CfAbstractReport = lazy(() => import('./components/reports/CfAbstractReport'));
 const MilkBillAbstract = lazy(() => import('./components/reports/MilkBillAbstract'));
 const DairyAbstractReport = lazy(() => import('./components/reports/DairyAbstractReport'));
 const DairyRegisterReport = lazy(() => import('./components/reports/DairyRegisterReport'));
@@ -493,6 +494,7 @@ const AppContent = () => {
                 <Route path="stock" element={<StockReportView />} />
                 <Route path="subsidy" element={<SubsidyReport />} />
                 <Route path="stock-register" element={<StockRegister />} />
+                <Route path="cf-abstract" element={<CfAbstractReport />} />
                 <Route path="purchase-register" element={<InventoryPurchaseRegister />} />
                 <Route path="milk-bill-abstract"    element={<MilkBillAbstract />} />
                 <Route path="dairy-abstract"        element={<DairyAbstractReport />} />

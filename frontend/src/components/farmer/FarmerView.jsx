@@ -14,7 +14,8 @@ import {
   Box,
   LoadingOverlay,
   Image,
-  Modal
+  Modal,
+  Avatar
 } from '@mantine/core';
 import {
   IconArrowLeft,
@@ -218,6 +219,11 @@ const FarmerView = () => {
 
               <Paper p="md" withBorder>
                 <Title order={4} mb="md">Personal Details</Title>
+                {farmer.personalDetails?.photo && (
+                  <Group mb="md">
+                    <Avatar src={farmer.personalDetails.photo} size={80} radius={80} />
+                  </Group>
+                )}
                 <Stack gap="xs">
                   <InfoRow label="Name" value={farmer.personalDetails?.name} />
                   <InfoRow label="Father's Name" value={farmer.personalDetails?.fatherName} />
@@ -227,6 +233,7 @@ const FarmerView = () => {
                     value={farmer.personalDetails?.dob ? dayjs(farmer.personalDetails.dob).format('DD-MM-YYYY') : null}
                   />
                   <InfoRow label="Gender" value={farmer.personalDetails?.gender} />
+                  <InfoRow label="Caste" value={farmer.personalDetails?.caste} />
                   <InfoRow label="Phone" value={farmer.personalDetails?.phone} />
                 </Stack>
               </Paper>

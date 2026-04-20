@@ -580,6 +580,13 @@ const StockReport = () => {
               >
                 Transactions
               </Button>
+              <Button
+                variant="default"
+                leftSection={<IconX size={16} />}
+                onClick={() => navigate('/')}
+              >
+                Close
+              </Button>
             </Group>
           </Grid.Col>
         </Grid>

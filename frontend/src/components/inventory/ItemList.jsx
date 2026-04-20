@@ -662,13 +662,23 @@ const ItemList = () => {
           <Title order={2}>Item Master</Title>
           <Text c="dimmed" size="sm">Manage your inventory items</Text>
         </div>
-        <Button
-          leftSection={<IconPlus size={16} />}
-          onClick={handleAdd}
-          size="sm"
-        >
-          Add Item
-        </Button>
+        <Group gap="xs">
+          <Button
+            leftSection={<IconPlus size={16} />}
+            onClick={handleAdd}
+            size="sm"
+          >
+            Add Item
+          </Button>
+          <Button
+            variant="default"
+            leftSection={<IconX size={16} />}
+            size="sm"
+            onClick={() => navigate('/')}
+          >
+            Close
+          </Button>
+        </Group>
       </Group>
 
       {/* Stats */}

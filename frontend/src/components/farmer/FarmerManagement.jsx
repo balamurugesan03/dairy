@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Container,
   Title,
@@ -44,7 +45,8 @@ import {
   IconCoin,
   IconPaw,
   IconUsers,
-  IconCoinRupee
+  IconCoinRupee,
+  IconX
 } from '@tabler/icons-react';
 import { DataTable } from 'mantine-datatable';
 import { farmerAPI, collectionCenterAPI } from '../../services/api';
@@ -58,6 +60,7 @@ import { generateFarmerImportTemplate } from '../../utils/excelTemplate';
 import { useAuth } from '../../context/AuthContext';
 
 const FarmerManagement = () => {
+  const navigate = useNavigate();
   const theme = useMantineTheme();
   const { canWrite, canEdit, canDelete } = useAuth();
   const [farmers, setFarmers] = useState([]);
@@ -618,15 +621,24 @@ const FarmerManagement = () => {
                 Manage dairy cooperative farmers and their details
               </Text>
             </Box>
-            <Button
-              leftSection={<IconPlus size={18} />}
-              onClick={handleAddNew}
-              color="blue"
-              disabled={!canWrite('farmers')}
-              style={{ minWidth: 160 }}
-            >
-              Add Farmer
-            </Button>
+            <Group>
+              <Button
+                leftSection={<IconPlus size={18} />}
+                onClick={handleAddNew}
+                color="blue"
+                disabled={!canWrite('farmers')}
+                style={{ minWidth: 160 }}
+              >
+                Add Farmer
+              </Button>
+              <Button
+                variant="default"
+                leftSection={<IconX size={18} />}
+                onClick={() => navigate('/')}
+              >
+                Close
+              </Button>
+            </Group>
             <Group>
               <Tooltip label="Refresh List">
                 <ActionIcon

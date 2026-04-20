@@ -979,13 +979,22 @@ const SupplierList = () => {
             <Title order={2}>Supplier Management</Title>
             <Text c="dimmed" size="sm">Manage supplier information</Text>
           </div>
-          <Button
-            leftSection={<IconPlus size={16} />}
-            onClick={handleOpenAddModal}
-            disabled={!canWrite('suppliers')}
-          >
-            Add Supplier
-          </Button>
+          <Group gap="xs">
+            <Button
+              leftSection={<IconPlus size={16} />}
+              onClick={handleOpenAddModal}
+              disabled={!canWrite('suppliers')}
+            >
+              Add Supplier
+            </Button>
+            <Button
+              variant="default"
+              leftSection={<IconX size={16} />}
+              onClick={() => navigate('/')}
+            >
+              Close
+            </Button>
+          </Group>
         </Group>
 
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} mb="md">

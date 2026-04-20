@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Container,
   Card,
@@ -41,7 +42,8 @@ import {
   IconTrash,
   IconFileSpreadsheet,
   IconFileTypePdf,
-  IconDownload
+  IconDownload,
+  IconX
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { stockAPI } from '../../services/api';
@@ -51,6 +53,7 @@ import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 
 const StockInManagement = () => {
+  const navigate = useNavigate();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -359,6 +362,13 @@ const StockInManagement = () => {
             onClick={() => setModalOpen(true)}
           >
             Add Purchase
+          </Button>
+          <Button
+            variant="default"
+            leftSection={<IconX size={16} />}
+            onClick={() => navigate('/')}
+          >
+            Close
           </Button>
         </Group>
       </Group>

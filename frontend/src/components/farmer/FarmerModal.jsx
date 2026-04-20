@@ -14,8 +14,12 @@ import {
   Box,
   Checkbox,
   Alert,
-  Loader
+  Loader,
+  Avatar,
+  ActionIcon,
+  rem
 } from '@mantine/core';
+import { IconCamera, IconX } from '@tabler/icons-react';
 import { IconInfoCircle } from '@tabler/icons-react';
 import { DatePickerInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
@@ -49,7 +53,9 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
         age: '',
         dob: null,
         gender: '',
-        phone: ''
+        phone: '',
+        caste: '',
+        photo: null
       },
       address: {
         ward: '',
@@ -165,7 +171,9 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
           age: farmer.personalDetails?.age || '',
           dob: farmer.personalDetails?.dob ? new Date(farmer.personalDetails.dob) : null,
           gender: farmer.personalDetails?.gender || '',
-          phone: farmer.personalDetails?.phone || ''
+          phone: farmer.personalDetails?.phone || '',
+          caste: farmer.personalDetails?.caste || '',
+          photo: farmer.personalDetails?.photo || null
         },
         address: {
           ward: farmer.address?.ward || '',
@@ -266,7 +274,9 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
           age: parseInt(values.personalDetails.age) || null,
           dob: toISOString(values.personalDetails.dob),
           gender: values.personalDetails.gender,
-          phone: values.personalDetails.phone
+          phone: values.personalDetails.phone,
+          caste: values.personalDetails.caste,
+          photo: values.personalDetails.photo
         },
         address: {
           ward: values.address.ward,
@@ -440,6 +450,47 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
         <Stepper active={active} onStepClick={setActive} breakpoint="sm">
           <Stepper.Step label="Personal Details" description="Basic information">
             <Stack gap="md" mt="md">
+              {/* Photo Upload */}
+              <Group justify="center">
+                <Box style={{ position: 'relative', display: 'inline-block' }}>
+                  <Avatar
+                    src={form.values.personalDetails.photo}
+                    size={90}
+                    radius={90}
+                    style={{ border: '2px solid #dee2e6', cursor: 'pointer' }}
+                    onClick={() => document.getElementById('farmer-photo-input-modal').click()}
+                  >
+                    <IconCamera size={32} color="#adb5bd" />
+                  </Avatar>
+                  {form.values.personalDetails.photo && (
+                    <ActionIcon
+                      size="xs"
+                      color="red"
+                      variant="filled"
+                      radius="xl"
+                      style={{ position: 'absolute', top: 0, right: 0 }}
+                      onClick={() => form.setFieldValue('personalDetails.photo', null)}
+                    >
+                      <IconX size={10} />
+                    </ActionIcon>
+                  )}
+                  <input
+                    id="farmer-photo-input-modal"
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={async (e) => {
+                      const file = e.target.files[0];
+                      if (file) {
+                        const base64 = await handleFileToBase64(file);
+                        form.setFieldValue('personalDetails.photo', base64);
+                      }
+                      e.target.value = '';
+                    }}
+                  />
+                </Box>
+              </Group>
+              <Text size="xs" c="dimmed" ta="center" mt={-8}>Click photo to upload</Text>
               <Grid>
                 <Grid.Col span={6}>
                   <TextInput
@@ -507,6 +558,20 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
                     maxLength={10}
                     {...form.getInputProps('personalDetails.phone')}
                     onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <Select
+                    label="Caste"
+                    placeholder="Select caste"
+                    data={[
+                      { value: 'General', label: 'General' },
+                      { value: 'OBC', label: 'OBC' },
+                      { value: 'SC', label: 'SC' },
+                      { value: 'ST', label: 'ST' },
+                      { value: 'Others', label: 'Others' }
+                    ]}
+                    {...form.getInputProps('personalDetails.caste')}
                   />
                 </Grid.Col>
                 <Grid.Col span={6}>

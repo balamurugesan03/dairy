@@ -1,5 +1,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Paper,
@@ -32,13 +33,15 @@ import {
   IconBuilding,
   IconPhone,
   IconToggleLeft,
-  IconToggleRight
+  IconToggleRight,
+  IconX
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { agentAPI } from '../../services/api';
 import AgentModal from './AgentModal';
 
 const AgentManagement = () => {
+  const navigate = useNavigate();
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({ currentPage: 1, totalPages: 1, totalItems: 0 });
@@ -140,14 +143,24 @@ const AgentManagement = () => {
                 <Text size="xs" c="rgba(255,255,255,0.8)">Manage collection agents</Text>
               </Box>
             </Group>
-            <Button
-              leftSection={<IconPlus size={16} />}
-              onClick={handleOpenAdd}
-              style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)' }}
-              size="sm"
-            >
-              Add Agent
-            </Button>
+            <Group gap="xs">
+              <Button
+                leftSection={<IconPlus size={16} />}
+                onClick={handleOpenAdd}
+                style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)' }}
+                size="sm"
+              >
+                Add Agent
+              </Button>
+              <Button
+                leftSection={<IconX size={16} />}
+                onClick={() => navigate('/')}
+                style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.4)' }}
+                size="sm"
+              >
+                Close
+              </Button>
+            </Group>
           </Group>
         </Box>
 

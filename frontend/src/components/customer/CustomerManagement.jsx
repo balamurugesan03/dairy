@@ -42,7 +42,8 @@ import {
   IconColumns,
   IconClearAll,
   IconUpload,
-  IconAlertCircle
+  IconAlertCircle,
+  IconX
 } from '@tabler/icons-react';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
@@ -499,13 +500,22 @@ const CustomerManagement = () => {
             <Title order={2}>Customer Management</Title>
             <Text c="dimmed" size="sm">Manage customer information</Text>
           </div>
-          <Button
-            leftSection={<IconPlus size={16} />}
-            onClick={handleOpenAddModal}
-            disabled={!canWrite('customers')}
-          >
-            Add Customer
-          </Button>
+          <Group gap="xs">
+            <Button
+              leftSection={<IconPlus size={16} />}
+              onClick={handleOpenAddModal}
+              disabled={!canWrite('customers')}
+            >
+              Add Customer
+            </Button>
+            <Button
+              variant="default"
+              leftSection={<IconX size={16} />}
+              onClick={() => navigate('/')}
+            >
+              Close
+            </Button>
+          </Group>
         </Group>
 
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} mb="md">

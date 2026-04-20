@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Container,
   Card,
@@ -34,7 +35,8 @@ import {
   IconCurrencyRupee,
   IconPackage,
   IconTrendingDown,
-  IconReceipt
+  IconReceipt,
+  IconX
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { stockAPI } from '../../services/api';
@@ -42,6 +44,7 @@ import StockOutModal from './StockOutModal';
 import { useAuth } from '../../context/AuthContext';
 
 const StockOutManagement = () => {
+  const navigate = useNavigate();
   const { canWrite } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -175,6 +178,13 @@ const StockOutManagement = () => {
             disabled={!canWrite('inventory')}
           >
             Stock Return
+          </Button>
+          <Button
+            variant="default"
+            leftSection={<IconX size={16} />}
+            onClick={() => navigate('/')}
+          >
+            Close
           </Button>
         </Group>
       </Group>

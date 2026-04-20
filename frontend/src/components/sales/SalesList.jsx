@@ -43,7 +43,9 @@ import {
   IconRefresh,
   IconCalendar,
   IconUsers,
-  IconTruck
+  IconTruck,
+  IconX
+}
 } from '@tabler/icons-react';
 import { salesAPI } from '../../services/api';
 import dayjs from 'dayjs';
@@ -226,6 +228,13 @@ const SalesList = () => {
               onClick={() => navigate('/sales/new')}
             >
               New Bill
+            </Button>
+            <Button
+              variant="default"
+              leftSection={<IconX size={16} />}
+              onClick={() => navigate('/')}
+            >
+              Close
             </Button>
           </Group>
         </Group>

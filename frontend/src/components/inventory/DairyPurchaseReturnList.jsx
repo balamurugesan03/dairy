@@ -45,7 +45,8 @@ import {
   IconAlertCircle,
   IconRefresh,
   IconCalendar,
-  IconArrowBack
+  IconArrowBack,
+  IconX
 } from '@tabler/icons-react';
 import { dairyPurchaseReturnAPI } from '../../services/api';
 import dayjs from 'dayjs';
@@ -334,13 +335,22 @@ const DairyPurchaseReturnList = () => {
               <Text size="sm" c="dimmed">Manage debit notes and purchase returns (Dairy)</Text>
             </div>
           </Group>
-          <Button
-            leftSection={<IconPlus size={16} />}
-            onClick={() => navigate('/inventory/purchase-returns/new')}
-            color="red"
-          >
-            New Purchase Return
-          </Button>
+          <Group gap="xs">
+            <Button
+              leftSection={<IconPlus size={16} />}
+              onClick={() => navigate('/inventory/purchase-returns/new')}
+              color="red"
+            >
+              New Purchase Return
+            </Button>
+            <Button
+              variant="default"
+              leftSection={<IconX size={16} />}
+              onClick={() => navigate('/')}
+            >
+              Close
+            </Button>
+          </Group>
         </Group>
       </Paper>
 

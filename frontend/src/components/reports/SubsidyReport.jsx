@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box, Paper, Group, Text, Title, Button, Table, ScrollArea,
   Badge, Stack, SimpleGrid, ThemeIcon, Loader, Center, Select
@@ -6,7 +7,7 @@ import {
 import { DatePickerInput } from '@mantine/dates';
 import {
   IconLeaf, IconCalendar, IconRefresh, IconFileExport, IconInbox, IconPrinter,
-  IconChevronDown, IconChevronUp
+  IconChevronDown, IconChevronUp, IconX
 } from '@tabler/icons-react';
 import { printReport } from '../../utils/printReport';
 import { notifications } from '@mantine/notifications';
@@ -21,6 +22,7 @@ const TH = { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', color: '
 const TD = { padding: '6px 10px', fontSize: 12 };
 
 const SubsidyReport = () => {
+  const navigate = useNavigate();
   const printRef = useRef(null);
   const [loading, setLoading] = useState(false);
   const [groups, setGroups] = useState([]);
@@ -116,6 +118,15 @@ const SubsidyReport = () => {
                 <Text size="xs" c="rgba(255,255,255,0.9)">Subsidy-wise purchase transaction details</Text>
               </Box>
             </Group>
+            <Button
+              variant="white"
+              color="dark"
+              leftSection={<IconX size={16} />}
+              onClick={() => navigate('/')}
+              size="sm"
+            >
+              Close
+            </Button>
           </Group>
         </Box>
 

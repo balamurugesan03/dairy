@@ -810,7 +810,9 @@ const MilkPurchase = () => {
   // SNF = (CLR/4) + (0.20 × FAT) + 0.50
   // CLR defaults to 26 if empty (standard cow milk value)
   // Debounced 600ms — auto-computes SNF when FAT or CLR is typed; does NOT auto-save
+  // Only runs in CLR-FAT mode (in FAT-SNF mode, SNF is entered manually)
   useEffect(() => {
+    if (paramCombo === 'FAT-SNF') return;
     if (clrAutoSetRef.current) { clrAutoSetRef.current = false; return; }
     if (analyzerDataCapturedRef.current) return; // analyzer set SNF directly — don't overwrite
     const fatVal = parseFloat(fat);
@@ -821,21 +823,23 @@ const MilkPurchase = () => {
       setSnf(((clrVal / 4) + (0.20 * fatVal) + 0.50).toFixed(2));
     }, 600);
     return () => clearTimeout(timer);
-  }, [clr, fat]); // eslint-disable-line
+  }, [clr, fat, paramCombo]); // eslint-disable-line
 
   // CLR = (4 × SNF) − (0.8 × FAT) − 2
-  // Debounced 600ms — auto-computes CLR when SNF is typed; does NOT auto-save
+  // Debounced 600ms — auto-computes CLR when FAT+SNF are typed; does NOT auto-save
+  // Only runs in FAT-SNF mode (in CLR-FAT mode, CLR is entered manually)
   useEffect(() => {
+    if (paramCombo !== 'FAT-SNF') return;
     if (analyzerDataCapturedRef.current) return; // analyzer mode — no CLR auto-calc
     const fatVal = parseFloat(fat);
     const snfVal = parseFloat(snf);
-    if (!snfVal || !fatVal || clr) return;
+    if (!snfVal || !fatVal) { setClr(''); return; }
     const timer = setTimeout(() => {
       clrAutoSetRef.current = true;
       setClr(((4 * snfVal) - (0.8 * fatVal) - 2).toFixed(1));
     }, 600);
     return () => clearTimeout(timer);
-  }, [snf, fat]); // eslint-disable-line
+  }, [snf, fat, paramCombo]); // eslint-disable-line
 
   // Auto-save when LTR is manually entered in analyzer mode (machine gave FAT+SNF, user types LTR)
   useEffect(() => {
@@ -1400,11 +1404,18 @@ const MilkPurchase = () => {
                     <Text size="9px" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>KG</Text>
                     <Text size="14px" fw={700} style={{ color: '#065f46', lineHeight: 1.2 }}>{netKg.toFixed(3)}</Text>
                   </Box>
-                  {/* SNF (Auto) */}
-                  <Box style={{ flex: 1, background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
-                    <Text size="9px" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>SNF (Auto)</Text>
-                    <Text size="14px" fw={700} style={{ color: '#166534', lineHeight: 1.2 }}>{calcResult.snf ? calcResult.snf.toFixed(2) : snf || '—'}</Text>
-                  </Box>
+                  {/* SNF (Auto) or CLR (Auto) depending on paramCombo */}
+                  {paramCombo === 'CLR-FAT' ? (
+                    <Box style={{ flex: 1, background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
+                      <Text size="9px" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>SNF (Auto)</Text>
+                      <Text size="14px" fw={700} style={{ color: '#166534', lineHeight: 1.2 }}>{calcResult.snf ? calcResult.snf.toFixed(2) : snf || '—'}</Text>
+                    </Box>
+                  ) : (
+                    <Box style={{ flex: 1, background: '#f5f3ff', border: '1.5px solid #c4b5fd', borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
+                      <Text size="9px" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>CLR (Auto)</Text>
+                      <Text size="14px" fw={700} style={{ color: '#6d28d9', lineHeight: 1.2 }}>{clr || '—'}</Text>
+                    </Box>
+                  )}
                   {/* Rate — editable in 'rate' mode */}
                   <Box style={{ flex: 1, background: entryMode === 'rate' ? '#e0f2fe' : '#eff6ff', border: `2px solid ${entryMode === 'rate' ? '#0284c7' : '#bfdbfe'}`, borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
                     <Text size="9px" fw={700} style={{ color: entryMode === 'rate' ? '#0284c7' : '#64748b' }} tt="uppercase">{entryMode === 'rate' ? '✏ Rate/KG' : 'Rate/KG'}</Text>
