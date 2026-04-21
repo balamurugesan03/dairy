@@ -10,7 +10,8 @@ import {
   addShareToFarmer,
   getShareHistory,
   terminateFarmer,
-  bulkImportFarmers
+  bulkImportFarmers,
+  bulkImportShares
 } from '../controllers/farmerController.js';
 import { protect, addCompanyFilter } from '../middleware/auth.js';
 
@@ -19,6 +20,9 @@ router.use(protect, addCompanyFilter);
 
 // Bulk import farmers (must be before other routes)
 router.post('/bulk-import', bulkImportFarmers);
+
+// Bulk import share transactions
+router.post('/bulk-import-shares', bulkImportShares);
 
 // Create new farmer
 router.post('/', createFarmer);

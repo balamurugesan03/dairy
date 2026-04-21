@@ -8,6 +8,7 @@
     "dev": "nodemon src/server.js",
     "init:ledgers": "node src/scripts/initLedgers.js",
     "seed:admin": "node src/scripts/seedSuperAdmin.js",
+    "import:farmers": "node src/scripts/importFarmers.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

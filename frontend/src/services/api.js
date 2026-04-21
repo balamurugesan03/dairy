@@ -93,7 +93,8 @@ export const farmerAPI = {
   addShares: (id, data) => api.post(`/farmers/${id}/shares`, data).then(res => res.data).catch(handleError),
   getShareHistory: (id) => api.get(`/farmers/${id}/shares`).then(res => res.data).catch(handleError),
   terminate: (id, data) => api.post(`/farmers/${id}/terminate`, data).then(res => res.data).catch(handleError),
-  bulkImport: (farmers) => api.post('/farmers/bulk-import', { farmers }).then(res => res.data).catch(handleError)
+  bulkImport: (farmers) => api.post('/farmers/bulk-import', { farmers }).then(res => res.data).catch(handleError),
+  bulkImportShares: (shares) => api.post('/farmers/bulk-import-shares', { shares }).then(res => res.data).catch(handleError)
 };
 
 // CUSTOMER APIs

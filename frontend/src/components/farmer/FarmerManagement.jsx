@@ -91,6 +91,7 @@ const FarmerManagement = () => {
   const [selectedFarmerId, setSelectedFarmerId] = useState(null);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showShareImportModal, setShowShareImportModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [selectedFarmerForShare, setSelectedFarmerForShare] = useState(null);
   const [showMembersModal, setShowMembersModal] = useState(false);
@@ -230,14 +231,61 @@ const FarmerManagement = () => {
     fetchFarmers();
   };
 
+  // Convert Excel serial date (e.g. 38294) to JS Date
+  const excelSerialToDate = (val) => {
+    if (!val) return undefined;
+    const n = Number(val);
+    if (!isNaN(n) && n > 1000) return new Date(Math.round((n - 25569) * 86400 * 1000));
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? undefined : d;
+  };
+
+  const cleanPhone = (val) => {
+    if (!val) return undefined;
+    const digits = String(val).replace(/\D/g, '');
+    if (digits.length === 10) return digits;
+    if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+    return undefined;
+  };
+
+  const mapGender = (val) => {
+    if (!val) return undefined;
+    const v = String(val).trim().toUpperCase();
+    if (v === 'M' || v === 'MALE') return 'Male';
+    if (v === 'F' || v === 'FEMALE') return 'Female';
+    return 'Other';
+  };
+
   const handleImport = async (data) => {
     try {
-      const farmers = data.map(row => ({
-        farmerNumber: String(row['Farmer Number'] || '').trim(),
-        memberId: String(row['Member ID'] || '').trim(),
-        name: String(row['Name'] || '').trim(),
-        phone: String(row['Phone Number'] || '').replace(/\D/g, '')
-      }));
+      // Auto-detect Zibitt export (has Supplier_No) vs standard template (has Farmer Number)
+      const isZibitt = data.length > 0 && ('Supplier_No' in data[0] || 'Supplier_Id' in data[0]);
+
+      const farmers = data.map(row => {
+        if (isZibitt) {
+          return {
+            farmerNumber: String(row['Supplier_No'] || '').trim(),
+            memberId:     String(row['RefMemberNo'] || row['RefProducerNo'] || '').trim() || undefined,
+            name:         String(row['Name'] || '').trim(),
+            phone:        cleanPhone(row['Phone'] || row['Mobile']),
+            gender:       mapGender(row['Gender']),
+            dob:          excelSerialToDate(row['DateOfBirth']),
+            caste:        row['Cast1'] ? String(row['Cast1']).trim() : undefined,
+            village:      row['Place'] ? String(row['Place']).trim() : undefined,
+            houseName:    row['HouseName'] ? String(row['HouseName']).trim() : undefined,
+            pin:          row['Pin'] && String(row['Pin']).replace(/\D/g,'').length === 6
+                            ? String(row['Pin']).replace(/\D/g,'') : undefined,
+            membershipDate: excelSerialToDate(row['MembershipDate']),
+            admissionFee:   Number(row['AdmissionFee']) || 0,
+          };
+        }
+        return {
+          farmerNumber: String(row['Farmer Number'] || '').trim(),
+          memberId:     String(row['Member ID'] || '').trim() || undefined,
+          name:         String(row['Name'] || '').trim(),
+          phone:        cleanPhone(row['Phone Number']),
+        };
+      });
 
       const response = await farmerAPI.bulkImport(farmers);
       const { created, updated, errors } = response.data;
@@ -256,6 +304,35 @@ const FarmerManagement = () => {
       return response;
     } catch (error) {
       message.error(error.message || 'Import failed');
+      throw error;
+    }
+  };
+
+  const handleShareImport = async (data) => {
+    try {
+      const shares = data.map(row => ({
+        memberNo:    String(row['MemberNo'] || '').trim(),
+        transDate:   excelSerialToDate(row['TransDate']),
+        noOfShares:  Number(row['NoOfShares']) || 0,
+        shareAmount: Number(row['ShareAmount']) || 10,
+        voucherNo:   row['VoucherNo'] != null ? String(row['VoucherNo']).trim() : undefined,
+        fYear:       row['FYear'] != null ? String(row['FYear']).trim() : undefined,
+        transType:   row['TransType'] ? String(row['TransType']).trim() : 'Purchase',
+      }));
+
+      const response = await farmerAPI.bulkImportShares(shares);
+      const { imported, skipped, errors } = response.data;
+
+      if (errors.length === 0) {
+        message.success(`Share import successful! ${imported} transactions imported.`);
+      } else {
+        message.warning(`Share import done: ${imported} imported, ${skipped} skipped, ${errors.length} errors.`);
+      }
+
+      fetchFarmers();
+      return response;
+    } catch (error) {
+      message.error(error.message || 'Share import failed');
       throw error;
     }
   };
@@ -666,7 +743,16 @@ const FarmerManagement = () => {
                 onClick={() => setShowImportModal(true)}
                 disabled={!canWrite('farmers')}
               >
-                Import
+                Import Farmers
+              </Button>
+              <Button
+                variant="light"
+                color="teal"
+                leftSection={<IconCoin size={18} />}
+                onClick={() => setShowShareImportModal(true)}
+                disabled={!canWrite('farmers')}
+              >
+                Import Shares
               </Button>
             </Group>
           </Group>
@@ -975,12 +1061,20 @@ const FarmerManagement = () => {
         onClose={() => setShowImportModal(false)}
         onImport={handleImport}
         entityType="Farmers"
-        requiredFields={['Farmer Number', 'Member ID', 'Name', 'Phone Number']}
+        requiredFields={['Name']}
         validationSchema={{
-          'Farmer Number': { required: true, type: 'string' },
-          'Member ID': { required: true, type: 'string' },
           'Name': { required: true, type: 'string' },
-          'Phone Number': { required: true, type: 'phone' }
+        }}
+      />
+
+      <ImportModal
+        isOpen={showShareImportModal}
+        onClose={() => setShowShareImportModal(false)}
+        onImport={handleShareImport}
+        entityType="Share Transactions"
+        requiredFields={['MemberNo']}
+        validationSchema={{
+          'MemberNo': { required: true, type: 'string' },
         }}
       />
 

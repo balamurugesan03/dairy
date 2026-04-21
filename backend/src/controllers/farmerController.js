@@ -683,26 +683,23 @@ export const bulkImportFarmers = async (req, res) => {
       const rowNumber = i + 2; // Excel row (header is row 1)
 
       try {
-        // Validate required fields
-        if (!farmerData.farmerNumber || !farmerData.memberId ||
-            !farmerData.name || !farmerData.phone) {
+        // Only farmerNumber and name are truly required
+        if (!farmerData.farmerNumber || !farmerData.name) {
           results.errors.push({
             row: rowNumber,
             farmerNumber: farmerData.farmerNumber || 'N/A',
-            message: 'Missing required fields (farmerNumber, memberId, name, or phone)'
+            message: 'Missing required fields: farmerNumber (Supplier_No) and name are required'
           });
           continue;
         }
 
-        // Validate and clean phone number
-        const phoneStr = String(farmerData.phone).replace(/\D/g, '');
-        if (phoneStr.length !== 10) {
-          results.errors.push({
-            row: rowNumber,
-            farmerNumber: farmerData.farmerNumber,
-            message: 'Phone number must be exactly 10 digits'
-          });
-          continue;
+        // Phone is optional — store only if valid 10-digit number
+        let phoneStr = undefined;
+        if (farmerData.phone) {
+          const digits = String(farmerData.phone).replace(/\D/g, '');
+          if (digits.length === 10) phoneStr = digits;
+          else if (digits.length === 12 && digits.startsWith('91')) phoneStr = digits.slice(2);
+          // else: silently ignore invalid phone (Zibitt often has placeholder values)
         }
 
         // Check if farmer exists (within this company)
@@ -713,9 +710,21 @@ export const bulkImportFarmers = async (req, res) => {
 
         if (existingFarmer) {
           // UPDATE existing farmer
-          existingFarmer.memberId = farmerData.memberId;
+          if (farmerData.memberId) existingFarmer.memberId = farmerData.memberId;
           existingFarmer.personalDetails.name = farmerData.name;
-          existingFarmer.personalDetails.phone = phoneStr;
+          if (phoneStr)             existingFarmer.personalDetails.phone  = phoneStr;
+          if (farmerData.gender)    existingFarmer.personalDetails.gender  = farmerData.gender;
+          if (farmerData.dob)       existingFarmer.personalDetails.dob     = new Date(farmerData.dob);
+          if (farmerData.caste)     existingFarmer.personalDetails.caste   = farmerData.caste;
+          if (farmerData.village)   existingFarmer.address.village         = farmerData.village;
+          if (farmerData.houseName) existingFarmer.address.ward            = farmerData.houseName;
+          if (farmerData.pin)       existingFarmer.address.pin             = farmerData.pin;
+          if (farmerData.membershipDate) {
+            existingFarmer.membershipDate = new Date(farmerData.membershipDate);
+            existingFarmer.isMembership   = true;
+          }
+          if (farmerData.admissionFee)
+            existingFarmer.financialDetails.admissionFee = Number(farmerData.admissionFee) || 0;
 
           await existingFarmer.save();
 
@@ -735,13 +744,25 @@ export const bulkImportFarmers = async (req, res) => {
           // CREATE new farmer
           const newFarmer = new Farmer({
             farmerNumber: farmerData.farmerNumber,
-            memberId: farmerData.memberId,
+            memberId:     farmerData.memberId || undefined,
             personalDetails: {
-              name: farmerData.name,
-              phone: phoneStr
+              name:   farmerData.name,
+              phone:  phoneStr,
+              gender: farmerData.gender  || undefined,
+              dob:    farmerData.dob     ? new Date(farmerData.dob)  : undefined,
+              caste:  farmerData.caste   || undefined,
             },
-            status: 'Active',
-            isMembership: false,
+            address: {
+              village:  farmerData.village   || undefined,
+              ward:     farmerData.houseName || undefined,
+              pin:      farmerData.pin       || undefined,
+            },
+            membershipDate: farmerData.membershipDate ? new Date(farmerData.membershipDate) : undefined,
+            isMembership:   !!farmerData.membershipDate,
+            financialDetails: {
+              admissionFee: Number(farmerData.admissionFee) || 0,
+            },
+            status:    'Active',
             companyId: req.companyId
           });
 
@@ -801,6 +822,89 @@ export const bulkImportFarmers = async (req, res) => {
   }
 };
 
+// Bulk import share transactions (Zibitt export)
+export const bulkImportShares = async (req, res) => {
+  try {
+    const { shares } = req.body;
+
+    if (!shares || !Array.isArray(shares) || shares.length === 0) {
+      return res.status(400).json({ success: false, message: 'Shares array is required' });
+    }
+
+    const results = { total: shares.length, imported: 0, skipped: 0, errors: [] };
+
+    for (let i = 0; i < shares.length; i++) {
+      const row = shares[i];
+      const rowNumber = i + 2;
+
+      try {
+        if (!row.memberNo) {
+          results.errors.push({ row: rowNumber, memberNo: 'N/A', message: 'MemberNo is required' });
+          results.skipped++;
+          continue;
+        }
+
+        const farmer = await Farmer.findOne({
+          farmerNumber: String(row.memberNo),
+          companyId: req.companyId
+        });
+
+        if (!farmer) {
+          results.errors.push({ row: rowNumber, memberNo: row.memberNo, message: `Farmer not found for MemberNo ${row.memberNo}` });
+          results.skipped++;
+          continue;
+        }
+
+        const shares    = Math.max(Number(row.noOfShares) || 0, 1); // 0 in Zibitt = 1 share
+        const shareValue = Number(row.shareAmount) || 10;
+        const oldTotal   = farmer.financialDetails.totalShares || 0;
+        const transactionType = oldTotal > 0 ? 'Additional Allotment' : 'Allotment';
+        const newTotal   = oldTotal + shares;
+        const transDate  = row.transDate ? new Date(row.transDate) : new Date();
+        const resolutionNo = row.voucherNo
+          ? `${row.voucherNo}/${row.fYear || ''}`
+          : `IMP-${rowNumber}`;
+
+        farmer.shareHistory.push({
+          transactionType,
+          shares,
+          shareValue,
+          totalValue:     shares * shareValue,
+          resolutionNo,
+          resolutionDate: transDate,
+          oldTotal,
+          newTotal,
+          remarks:        row.transType || 'Imported from Zibitt',
+          transactionDate: transDate
+        });
+
+        farmer.financialDetails.totalShares = newTotal;
+        farmer.financialDetails.shareValue  = shareValue;
+        if (!farmer.financialDetails.shareTakenDate) {
+          farmer.financialDetails.shareTakenDate = transDate;
+        }
+
+        await farmer.save();
+        results.imported++;
+
+      } catch (error) {
+        results.errors.push({ row: rowNumber, memberNo: row.memberNo || 'N/A', message: error.message });
+        results.skipped++;
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Share import completed: ${results.imported} imported, ${results.skipped} skipped`,
+      data: results
+    });
+
+  } catch (error) {
+    console.error('Bulk share import error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Share import failed' });
+  }
+};
+
 export default {
   createFarmer,
   getAllFarmers,
@@ -812,5 +916,6 @@ export default {
   addShareToFarmer,
   getShareHistory,
   terminateFarmer,
-  bulkImportFarmers
+  bulkImportFarmers,
+  bulkImportShares
 };
