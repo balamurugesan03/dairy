@@ -41,7 +41,8 @@ export default defineConfig({
       'react-router-dom',
       '@mantine/core',
       '@mantine/hooks',
-      'axios'
+      'axios',
+      '@tabler/icons-react'
     ]
   },
   server: {

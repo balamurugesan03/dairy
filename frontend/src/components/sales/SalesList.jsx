@@ -45,7 +45,6 @@ import {
   IconUsers,
   IconTruck,
   IconX
-}
 } from '@tabler/icons-react';
 import { salesAPI } from '../../services/api';
 import dayjs from 'dayjs';

@@ -12,7 +12,8 @@ const ImportModal = ({
   templateUrl = null,
   entityType = 'records',
   validationSchema = {},
-  requiredFields = []
+  requiredFields = [],
+  maxFileSizeMB = 5
 }) => {
   const [file, setFile] = useState(null);
   const [data, setData] = useState([]);
@@ -26,7 +27,7 @@ const ImportModal = ({
 
     // Check required fields
     requiredFields.forEach(field => {
-      if (!row[field] || row[field] === '') {
+      if (row[field] == null || row[field] === '') {
         rowErrors.push({
           row: index + 2,
           field,
@@ -110,8 +111,21 @@ const ImportModal = ({
 
     reader.onload = (e) => {
       try {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
+        const rawBytes = new Uint8Array(e.target.result);
+        const readOptions = { type: 'array' };
+
+        // Detect semicolon-delimited CSVs (e.g. exports from openlypssa / Zibitt)
+        const isCsv = /\.csv$/i.test(file.name) || file.type === 'text/csv';
+        if (isCsv) {
+          const text = new TextDecoder().decode(rawBytes);
+          const firstLine = text.split('\n')[0] || '';
+          const semiCount = (firstLine.match(/;/g) || []).length;
+          const commaCount = (firstLine.match(/,/g) || []).length;
+          if (semiCount > commaCount) readOptions.FS = ';';
+        }
+
+        const data = rawBytes;
+        const workbook = XLSX.read(data, readOptions);
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         const jsonData = XLSX.utils.sheet_to_json(worksheet);
@@ -267,7 +281,7 @@ const ImportModal = ({
             <Dropzone
               onDrop={handleDrop}
               accept={[MIME_TYPES.xlsx, MIME_TYPES.xls, MIME_TYPES.csv]}
-              maxSize={5 * 1024 * 1024}
+              maxSize={maxFileSizeMB * 1024 * 1024}
               maxFiles={1}
             >
               <Group justify="center" gap="xl" style={{ minHeight: 200, pointerEvents: 'none' }}>
@@ -286,7 +300,7 @@ const ImportModal = ({
                     Drag & drop file here, or click to browse
                   </Text>
                   <Text size="sm" c="dimmed" inline mt={7}>
-                    Supported formats: .xlsx, .xls, .csv (Max 5MB)
+                    Supported formats: .xlsx, .xls, .csv (Max {maxFileSizeMB}MB)
                   </Text>
                 </div>
               </Group>

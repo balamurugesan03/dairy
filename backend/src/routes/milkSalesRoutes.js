@@ -7,7 +7,8 @@ import {
   updateMilkSale,
   deleteMilkSale,
   getBalanceReport,
-  getNextBillNo
+  getNextBillNo,
+  bulkImportMilkSales
 } from '../controllers/milkSalesController.js';
 
 const router = express.Router();
@@ -17,6 +18,7 @@ router.get('/next-bill-no',   getNextBillNo);
 router.get('/summary/daily',  getDailySummary);
 router.get('/balance-report', getBalanceReport);
 router.get('/:id',            getMilkSaleById);
+router.post('/bulk-import',   bulkImportMilkSales);
 router.post('/',              createMilkSale);
 router.put('/:id',            updateMilkSale);
 router.delete('/:id',         deleteMilkSale);

@@ -141,9 +141,7 @@ const CustomerModal = ({ isOpen, onClose, onSuccess, customerId = null }) => {
       newErrors.name = 'Name is required';
     }
 
-    if (!formData.phone.trim()) {
-      newErrors.phone = 'Phone is required';
-    } else if (!/^[0-9]{10}$/.test(formData.phone)) {
+    if (formData.phone.trim() && !/^[0-9]{10}$/.test(formData.phone)) {
       newErrors.phone = 'Phone number must be 10 digits';
     }
 

@@ -1,14 +1,25 @@
 import express from 'express';
+import multer from 'multer';
+import os from 'os';
 import {
   createSlip,
   getAllSlips,
   getSlipById,
   updateSlip,
   deleteSlip,
+  bulkImportSlips,
+  fileUploadImportSlips,
 } from '../controllers/unionSalesSlipController.js';
 
 const router = express.Router();
 
+const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 500 * 1024 * 1024 } });
+
+// Import routes — before /:id
+router.post('/file-import',  upload.single('file'), fileUploadImportSlips);
+router.post('/bulk-import',  bulkImportSlips);
+
+// Main CRUD
 router.post('/',      createSlip);
 router.get('/',       getAllSlips);
 router.get('/:id',    getSlipById);

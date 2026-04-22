@@ -110,20 +110,21 @@ export const getNextBillNo = async (req, res) => {
 // ────────────────────────────────────────────────────────────────
 export const getMilkSales = async (req, res) => {
   try {
-    const { date, session, saleMode, page = 1, limit = 500 } = req.query;
+    const { date, month, year, session, saleMode, page = 1, limit = 500 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const filter = { companyId: req.companyId };
 
-    if (date) {
-      // Match the full calendar day (ignoring time)
-      const start = new Date(date);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(date);
-      end.setHours(23, 59, 59, 999);
+    if (month && year) {
+      const start = new Date(parseInt(year), parseInt(month) - 1, 1);
+      const end   = new Date(parseInt(year), parseInt(month), 0, 23, 59, 59, 999);
+      filter.date = { $gte: start, $lte: end };
+    } else if (date) {
+      const start = new Date(date); start.setHours(0, 0, 0, 0);
+      const end   = new Date(date); end.setHours(23, 59, 59, 999);
       filter.date = { $gte: start, $lte: end };
     }
-    if (session) filter.session = session;
+    if (session)  filter.session  = session;
     if (saleMode) filter.saleMode = saleMode;
 
     const [sales, total] = await Promise.all([
@@ -253,6 +254,28 @@ export const deleteMilkSale = async (req, res) => {
     res.json({ success: true, message: 'Deleted successfully' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────
+//  BULK IMPORT  (Zibitt / CSV — no accounting vouchers)
+// ────────────────────────────────────────────────────────────────
+export const bulkImportMilkSales = async (req, res) => {
+  try {
+    const { records } = req.body;
+    if (!Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({ success: false, message: 'No records provided' });
+    }
+
+    const docs = records.map(r => ({ ...r, companyId: req.companyId }));
+    const inserted = await MilkSales.insertMany(docs, { ordered: false });
+    res.status(201).json({ success: true, data: { inserted: inserted.length }, message: `${inserted.length} records imported` });
+  } catch (err) {
+    if (err.name === 'BulkWriteError' || err.code === 11000) {
+      const inserted = err.result?.nInserted ?? 0;
+      return res.status(207).json({ success: true, data: { inserted }, message: `${inserted} records imported (some skipped as duplicates)` });
+    }
+    res.status(400).json({ success: false, message: err.message });
   }
 };
 

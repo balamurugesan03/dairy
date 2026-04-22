@@ -65,7 +65,6 @@ import {
   IconFileInvoice,
   IconReceipt2,
   IconX
-}
 } from '@tabler/icons-react';
 import { itemAPI, dairyPurchaseReturnAPI, dairySalesReturnAPI, supplierAPI, farmerAPI, customerAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
