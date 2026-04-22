@@ -94,7 +94,8 @@ export const farmerAPI = {
   getShareHistory: (id) => api.get(`/farmers/${id}/shares`).then(res => res.data).catch(handleError),
   terminate: (id, data) => api.post(`/farmers/${id}/terminate`, data).then(res => res.data).catch(handleError),
   bulkImport: (farmers) => api.post('/farmers/bulk-import', { farmers }).then(res => res.data).catch(handleError),
-  bulkImportShares: (shares) => api.post('/farmers/bulk-import-shares', { shares }).then(res => res.data).catch(handleError)
+  bulkImportShares: (shares) => api.post('/farmers/bulk-import-shares', { shares }).then(res => res.data).catch(handleError),
+  bulkDelete: (ids) => api.post('/farmers/bulk-delete', { ids }).then(res => res.data).catch(handleError)
 };
 
 // CUSTOMER APIs
@@ -385,6 +386,16 @@ export const milkCollectionAPI = {
   create: (data) => api.post('/milk-collections', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/milk-collections/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/milk-collections/${id}`).then(res => res.data).catch(handleError),
+  bulkImport: (records) => api.post('/milk-collections/bulk-import', { records }).then(res => res.data).catch(handleError),
+  fileImport: (file, onUploadProgress) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post('/milk-collections/file-import', form, {
+      headers: { 'Content-Type': undefined }, // clear default JSON header so axios sets multipart+boundary from FormData
+      timeout: 30 * 60 * 1000,
+      onUploadProgress,
+    }).then(res => res.data).catch(handleError);
+  },
   getFarmerHistory: (farmerNumber, params) => api.get(`/milk-collections/farmer/${farmerNumber}`, { params }).then(res => res.data).catch(handleError),
   getFarmerStats: (farmerNumber, params) => api.get(`/milk-collections/farmer/${farmerNumber}/stats`, { params }).then(res => res.data).catch(handleError),
   getFarmerWiseSummary: (params) => api.get('/milk-collections/summary/farmer-wise', { params }).then(res => res.data).catch(handleError),
@@ -400,6 +411,7 @@ export const milkSalesAPI = {
   getDailySummary:  (params) => api.get('/milk-sales/summary/daily',  { params }).then(res => res.data).catch(handleError),
   getBalanceReport: (params) => api.get('/milk-sales/balance-report', { params }).then(res => res.data).catch(handleError),
   getNextBillNo:    ()       => api.get('/milk-sales/next-bill-no').then(res => res.data).catch(handleError),
+  bulkImport: (records) => api.post('/milk-sales/bulk-import', { records }).then(res => res.data).catch(handleError),
 };
 
 // UNION SALES SLIP APIs
@@ -409,6 +421,16 @@ export const unionSalesSlipAPI = {
   create:  (data)   => api.post('/union-sales-slips', data).then(res => res.data).catch(handleError),
   update:  (id, data) => api.put(`/union-sales-slips/${id}`, data).then(res => res.data).catch(handleError),
   delete:  (id)     => api.delete(`/union-sales-slips/${id}`).then(res => res.data).catch(handleError),
+  bulkImport: (records) => api.post('/union-sales-slips/bulk-import', { records }).then(res => res.data).catch(handleError),
+  fileImport: (file, onUploadProgress) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post('/union-sales-slips/file-import', form, {
+      headers: { 'Content-Type': undefined },
+      timeout: 30 * 60 * 1000,
+      onUploadProgress,
+    }).then(res => res.data).catch(handleError);
+  },
 };
 
 // EMPLOYEE APIs

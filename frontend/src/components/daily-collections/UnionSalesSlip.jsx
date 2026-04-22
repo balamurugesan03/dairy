@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box, Group, Stack, Text, Badge, Button, ActionIcon,
   NumberInput, TextInput, Table, ScrollArea, Loader, Center,
-  Checkbox, Card, Divider, Select,
+  Checkbox, Card, Divider, Select, Modal, Progress,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
@@ -14,7 +14,7 @@ import {
   IconPlus, IconEdit, IconX, IconSearch, IconRefresh,
   IconTrash, IconPrinter, IconMilk, IconFilter,
   IconDeviceFloppy, IconCheck, IconReceipt, IconDroplet,
-  IconAlertTriangle, IconHistory, IconBan,
+  IconAlertTriangle, IconHistory, IconBan, IconUpload,
 } from '@tabler/icons-react';
 import { SegmentedControl } from '@mantine/core';
 import { unionSalesSlipAPI } from '../../services/api';
@@ -34,10 +34,10 @@ const months = [
   { value: '11', label: 'November' }, { value: '12', label: 'December' },
 ];
 const currentYear = new Date().getFullYear();
-const years = Array.from({ length: 5 }, (_, i) => {
-  const y = currentYear - 2 + i;
+const years = Array.from({ length: currentYear - 2010 + 2 }, (_, i) => {
+  const y = 2011 + i;
   return { value: String(y), label: String(y) };
-});
+}).reverse(); // newest first
 
 /* ══════════════════════════════════════════════════════════════════
    MAIN COMPONENT
@@ -69,6 +69,11 @@ export default function UnionSalesSlip() {
   const [totals,        setTotals]        = useState({ totalQty: 0, totalAmount: 0, totalUnionSpoilage: 0, totalTransportationSpoilage: 0 });
   const [filterMonth,   setFilterMonth]   = useState(String(new Date().getMonth() + 1));
   const [filterYear,    setFilterYear]    = useState(String(new Date().getFullYear()));
+
+  // ── Import state ─────────────────────────────────────────────────────────
+  const [importStatus, setImportStatus] = useState('idle'); // idle|uploading|done|error
+  const [importPct,    setImportPct]    = useState(0);
+  const [importResult, setImportResult] = useState(null);
 
   const qtyRef    = useRef(null);
   const fatRef    = useRef(null);
@@ -143,6 +148,45 @@ export default function UnionSalesSlip() {
   };
 
   const handleLastEnter = e => { if (e.key === 'Enter') { e.preventDefault(); handleSave(); } };
+
+  // ── Dairy DB file import handler ──────────────────────────────────────────
+  const handleDairyFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setImportPct(0);
+    setImportStatus('uploading');
+    setImportResult(null);
+    try {
+      const response = await unionSalesSlipAPI.fileImport(file, (evt) => {
+        if (evt.total) setImportPct(Math.round((evt.loaded / evt.total) * 100));
+      });
+      setImportPct(100);
+      setImportStatus('done');
+      setImportResult(response.data);
+      const { created, skipped, errors } = response.data;
+      if (errors.length === 0) {
+        notifications.show({ message: `Import successful! ${created} created, ${skipped} skipped.`, color: 'green' });
+      } else {
+        notifications.show({ message: `Import done: ${created} created, ${skipped} skipped, ${errors.length} errors.`, color: 'yellow' });
+      }
+      // Auto-switch filter to the imported data's year/month so records are visible
+      const sample = response.data?.debugSample?.[0];
+      if (sample?.date) {
+        const d = new Date(sample.date);
+        const importYear = String(d.getFullYear());
+        const importMonth = String(d.getMonth() + 1);
+        setFilterYear(importYear);
+        setFilterMonth(importMonth);
+        loadEntries(importMonth, importYear);
+      } else {
+        loadEntries();
+      }
+    } catch (err) {
+      setImportStatus('error');
+      notifications.show({ message: err?.message || 'Import failed', color: 'red' });
+    }
+  };
 
   const handleEdit = (row) => {
     const r = row || selRow;
@@ -226,6 +270,7 @@ export default function UnionSalesSlip() {
 
   /* ══ RENDER ══════════════════════════════════════════════════════════════ */
   return (
+    <>
     <Box style={{ height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#eef4fb' }}>
 
       {/* ══ HEADER ══════════════════════════════════════════════════════════ */}
@@ -546,6 +591,17 @@ export default function UnionSalesSlip() {
                 style={{ background: selRow ? '#991b1b' : 'rgba(255,255,255,0.07)', border: selRow ? '1px solid #f87171' : 'none', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Delete
               </Button>
+
+              <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
+
+              {/* Import Dairy DB — green */}
+              <Button leftSection={<IconUpload size={12} />}
+                onClick={() => document.getElementById('union-dairy-file-input').click()}
+                size="compact-xs" radius="sm"
+                style={{ background: '#15803d', border: '1px solid #4ade80', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                Import Dairy
+              </Button>
+              <input id="union-dairy-file-input" type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleDairyFileSelect} />
             </Group>
           </Group>
         </Box>
@@ -669,5 +725,87 @@ export default function UnionSalesSlip() {
 
       </Box>
     </Box>
+
+    {/* ══ DAIRY IMPORT MODAL ══════════════════════════════════════════════ */}
+    <Modal
+      opened={importStatus === 'uploading' || importStatus === 'done' || importStatus === 'error'}
+      onClose={() => setImportStatus('idle')}
+      title="Dairy DB Import — Union Sales"
+      size="sm"
+      closeOnClickOutside={importStatus !== 'uploading'}
+    >
+      <Stack gap="md">
+        {importStatus === 'uploading' && (
+          <>
+            <Text size="sm">Uploading & processing file on server...</Text>
+            <Progress value={importPct} animated size="lg" color="green" />
+            <Text size="xs" c="dimmed" ta="center">{importPct}% uploaded</Text>
+          </>
+        )}
+
+        {importStatus === 'done' && importResult && (
+          <>
+            <Group grow>
+              <Box ta="center" p="xs" style={{ background: '#f0fdf4', borderRadius: 8 }}>
+                <Text size="xs" c="dimmed">Created</Text>
+                <Text size="xl" fw={800} c="green">{importResult.created}</Text>
+              </Box>
+              <Box ta="center" p="xs" style={{ background: '#fafafa', borderRadius: 8 }}>
+                <Text size="xs" c="dimmed">Skipped</Text>
+                <Text size="xl" fw={800} c="gray">{importResult.skipped}</Text>
+              </Box>
+              <Box ta="center" p="xs" style={{ background: '#fff7ed', borderRadius: 8 }}>
+                <Text size="xs" c="dimmed">Errors</Text>
+                <Text size="xl" fw={800} c="orange">{importResult.errors?.length || 0}</Text>
+              </Box>
+            </Group>
+
+            {/* Skip reasons */}
+            {importResult.skipped > 0 && importResult.skipReasons && Object.keys(importResult.skipReasons).length > 0 && (
+              <Box style={{ background: '#fff7ed', borderRadius: 8, padding: 8 }}>
+                <Text size="xs" fw={700} c="orange" mb={4}>Skip Reasons:</Text>
+                {Object.entries(importResult.skipReasons).map(([reason, count]) => (
+                  <Text key={reason} size="xs" c="dimmed">
+                    • {reason === 'duplicate_date_time' ? 'Duplicate date+shift already exists' :
+                       reason === 'qty_zero' ? 'Qty is 0 (check ToQTY/FromQTY columns)' :
+                       reason === 'date_null' ? 'Date could not be parsed (check DDate column)' :
+                       reason}: {count} rows
+                  </Text>
+                ))}
+              </Box>
+            )}
+
+            {/* Debug sample */}
+            {importResult.debugSample?.length > 0 && (
+              <Box style={{ background: '#f0f9ff', borderRadius: 8, padding: 8 }}>
+                <Text size="xs" fw={700} c="blue" mb={4}>First parsed row (debug):</Text>
+                {(() => { const s = importResult.debugSample[0]; return (
+                  <Text size="xs" c="dimmed">
+                    date={s.date} | time={s.time} | qty={s.qty} | fat={s.fat} | snf={s.snf} | rate={s.rate} | amt={s.amount}
+                  </Text>
+                ); })()}
+              </Box>
+            )}
+
+            {importResult.errors?.length > 0 && (
+              <Box style={{ maxHeight: 100, overflowY: 'auto', background: '#fef2f2', borderRadius: 8, padding: 8 }}>
+                {importResult.errors.slice(0, 5).map((e, i) => (
+                  <Text key={i} size="xs" c="red">Row {e.row}: {e.message}</Text>
+                ))}
+              </Box>
+            )}
+            <Button fullWidth color="green" onClick={() => setImportStatus('idle')}>Done</Button>
+          </>
+        )}
+
+        {importStatus === 'error' && (
+          <>
+            <Text c="red" size="sm">Import failed. Check that your file has columns: DDate, Shift, ToQTY/FromQTY, ToFAT/FromFAT, ToSNF/FromSNF, ToRate/FromRate.</Text>
+            <Button fullWidth onClick={() => setImportStatus('idle')}>Close</Button>
+          </>
+        )}
+      </Stack>
+    </Modal>
+    </>
   );
 }

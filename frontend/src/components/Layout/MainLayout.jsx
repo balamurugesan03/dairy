@@ -91,7 +91,7 @@ const MainLayout = () => {
   };
 
   const isOnDashboard = location.pathname === '/';
-  const hideBackButton = isOnDashboard || location.pathname === '/daily-collections/milk-purchase';
+  const hideBackButton = isOnDashboard || location.pathname === '/daily-collections/milk-purchase' || location.pathname === '/farmers' || location.pathname === '/collection-centers' || location.pathname === '/agents' || location.pathname === '/customers' || location.pathname === '/daily-collections/union-sales-slip' || location.pathname === '/daily-collections/milk-sales' || location.pathname === '/daily-collections/list' || location.pathname === '/reports/salesman-balance' || location.pathname === '/daily-collections/rate-chart-settings';
 
   // ── Global hotkeys ──────────────────────────────────────────────────────
   useEffect(() => {

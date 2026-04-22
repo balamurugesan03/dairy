@@ -11,7 +11,8 @@ import {
   getShareHistory,
   terminateFarmer,
   bulkImportFarmers,
-  bulkImportShares
+  bulkImportShares,
+  bulkDeleteFarmers
 } from '../controllers/farmerController.js';
 import { protect, addCompanyFilter } from '../middleware/auth.js';
 
@@ -23,6 +24,9 @@ router.post('/bulk-import', bulkImportFarmers);
 
 // Bulk import share transactions
 router.post('/bulk-import-shares', bulkImportShares);
+
+// Bulk delete farmers
+router.post('/bulk-delete', bulkDeleteFarmers);
 
 // Create new farmer
 router.post('/', createFarmer);

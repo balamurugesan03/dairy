@@ -11,6 +11,7 @@ import {
   Box, Group, Text, TextInput, NumberInput, Select, Button,
   Table, ScrollArea, ActionIcon, Badge, Divider, Center,
   Loader, Avatar, Card, SimpleGrid, Stack, Checkbox,
+  Modal, Progress, RingProgress,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { DatePickerInput } from '@mantine/dates';
@@ -20,7 +21,7 @@ import {
   IconAlertCircle, IconRefresh, IconId, IconReceipt,
   IconDroplet, IconFlame, IconChartBar,
   IconPlus, IconEdit, IconBan, IconHistory,
-  IconPlugConnected, IconPlugConnectedX, IconScale,
+  IconPlugConnected, IconPlugConnectedX, IconScale, IconUpload, IconFilter,
 } from '@tabler/icons-react';
 import {
   agentAPI, collectionCenterAPI, farmerAPI,
@@ -92,7 +93,8 @@ const calcValues = (qty, fat, clr, snf, chartType, chartRows) => {
   const rate = chartRate !== null ? chartRate : fallbackRate(fat, clr || 0);
   const incentive = 0;
   const amount = parseFloat((qty * rate).toFixed(2));
-  const autoSnf = snf || parseFloat(((fat / 0.21) * 0.125 + 0.082 * (clr || 26)).toFixed(2));
+  // SNF = (CLR/4) + (0.20 × FAT) + 0.50  — only auto-derive when CLR is known and SNF not yet set
+  const autoSnf = snf || (clr ? parseFloat(((clr / 4) + (0.20 * fat) + 0.50).toFixed(2)) : 0);
   return { snf: autoSnf, incentive, rate: parseFloat(rate.toFixed(2)), amount };
 };
 
@@ -171,6 +173,20 @@ const AvgCard = ({ label, value, unit, icon, color, bg }) => (
   </Box>
 );
 
+
+const MONTHS = [
+  { value: '1', label: 'January' }, { value: '2', label: 'February' },
+  { value: '3', label: 'March' },   { value: '4', label: 'April' },
+  { value: '5', label: 'May' },     { value: '6', label: 'June' },
+  { value: '7', label: 'July' },    { value: '8', label: 'August' },
+  { value: '9', label: 'September' },{ value: '10', label: 'October' },
+  { value: '11', label: 'November' },{ value: '12', label: 'December' },
+];
+const _cy = new Date().getFullYear();
+const YEARS = Array.from({ length: _cy - 2009 + 2 }, (_, i) => {
+  const y = 2009 + i; return { value: String(y), label: String(y) };
+}).reverse();
+
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 // Convert any date-like value (Date, dayjs, string) to a native JS Date
 const toDate = (d) => {
@@ -213,6 +229,14 @@ const MilkPurchase = () => {
   const [editingId,      setEditingId]      = useState(null);   // row being edited
   const [historySearch,  setHistorySearch]  = useState('');     // filter text
   const [showHistory,    setShowHistory]    = useState(false);  // search bar toggle
+  const [importOpen,     setImportOpen]     = useState(false);
+  const [filterMonth,    setFilterMonth]    = useState(String(new Date().getMonth() + 1));
+  const [filterYear,     setFilterYear]     = useState(String(new Date().getFullYear()));
+  const [monthMode,      setMonthMode]      = useState(false);  // true = showing month range, false = today's date
+  const [importProgress, setImportProgress] = useState(0);    // 0-100
+  const [importResult,   setImportResult]   = useState(null); // { inserted, skipped, total, message }
+  const [importUploading,setImportUploading]= useState(false);
+  const importFileRef = useRef(null);
 
   const memberRef   = useRef(null);
   const dropdownRef = useRef(null);
@@ -667,6 +691,29 @@ const MilkPurchase = () => {
     finally { setLoadingEntries(false); }
   };
 
+  const loadMonthEntries = async (month, year) => {
+    setLoadingEntries(true);
+    setMonthMode(true);
+    try {
+      const m = parseInt(month);
+      const y = parseInt(year);
+      const fromDate = new Date(y, m - 1, 1).toISOString().slice(0, 10);
+      const toDate_  = new Date(y, m, 0).toISOString().slice(0, 10); // last day of month
+      const res = await milkCollectionAPI.getAll({ fromDate, toDate: toDate_, limit: 5000 });
+      const records = res?.data || [];
+      setEntries(records.map((r, i) => ({
+        id: r._id, sl: i + 1, billNo: r.billNo,
+        producerNo: r.farmerNumber, producerName: r.farmerName || '',
+        qty: r.qty, ltr: r.ltr ?? parseFloat((r.qty / 1.03).toFixed(2)),
+        clr: r.clr, fat: r.fat, snf: r.snf,
+        incentive: r.incentive, rate: r.rate, amount: r.amount,
+        addedWater: r.addedWater || 0,
+        date: r.date, shift: r.shift,
+      })));
+    } catch { setEntries([]); }
+    finally { setLoadingEntries(false); }
+  };
+
   const loadChartData = useCallback(async (chartType) => {
     try {
       const loaders = { ManualEntry: () => rateChartAPI.getManualEntries(), ApplyFormula: () => rateChartAPI.getFormulas(), LowChart: () => rateChartAPI.getLowCharts(), GoldLessChart: () => rateChartAPI.getGoldLessCharts(), SlabRate: () => rateChartAPI.getSlabRates() };
@@ -808,18 +855,15 @@ const MilkPurchase = () => {
   }, [center, agentsData]);
 
   // SNF = (CLR/4) + (0.20 × FAT) + 0.50
-  // CLR defaults to 26 if empty (standard cow milk value)
-  // Debounced 600ms — auto-computes SNF when FAT or CLR is typed; does NOT auto-save
-  // Only runs in CLR-FAT mode (in FAT-SNF mode, SNF is entered manually)
+  // Only runs in CLR-FAT mode. Requires BOTH fat AND clr to be entered — no auto-fill defaults.
   useEffect(() => {
     if (paramCombo === 'FAT-SNF') return;
     if (clrAutoSetRef.current) { clrAutoSetRef.current = false; return; }
     if (analyzerDataCapturedRef.current) return; // analyzer set SNF directly — don't overwrite
     const fatVal = parseFloat(fat);
-    if (!fatVal) { setSnf(''); return; }
-    const clrVal = parseFloat(clr) || 26; // default CLR = 26 when empty
+    const clrVal = parseFloat(clr);
+    if (!fatVal || !clrVal) { setSnf(''); return; } // wait for both fat AND clr
     const timer = setTimeout(() => {
-      if (!clr) setClr('26');  // auto-fill CLR field with default
       setSnf(((clrVal / 4) + (0.20 * fatVal) + 0.50).toFixed(2));
     }, 600);
     return () => clearTimeout(timer);
@@ -1056,6 +1100,26 @@ const MilkPurchase = () => {
     } catch (err) { notifications.show({ message: err?.message || 'Delete failed', color: 'red' }); }
   };
 
+  const handleZibittFileUpload = async (file) => {
+    if (!file) return;
+    setImportUploading(true);
+    setImportProgress(0);
+    setImportResult(null);
+    try {
+      const res = await milkCollectionAPI.fileImport(file, (evt) => {
+        if (evt.total) setImportProgress(Math.round((evt.loaded / evt.total) * 100));
+      });
+      setImportProgress(100);
+      setImportResult(res?.data ?? { message: res?.message });
+      notifications.show({ color: 'teal', message: res?.message || 'Import complete', autoClose: 5000 });
+      loadTodayEntries(date, shift, center);
+    } catch (err) {
+      notifications.show({ color: 'red', title: 'Import failed', message: err?.message || 'Upload error', autoClose: 6000 });
+    } finally {
+      setImportUploading(false);
+    }
+  };
+
   // ── Keyboard ──────────────────────────────────────────────────────────────
   const handleMemberKeyDown = (e) => {
     if (e.key === 'Enter') {
@@ -1085,6 +1149,7 @@ const MilkPurchase = () => {
 
   // ─── RENDER ───────────────────────────────────────────────────────────────
   return (
+    <>
     <Box style={{ height: 'calc(100vh - 120px)', margin: 'calc(-1 * var(--mantine-spacing-md))', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#eef4fb' }}>
 
       {/* ══ HEADER ══════════════════════════════════════════════════════════ */}
@@ -1133,7 +1198,7 @@ const MilkPurchase = () => {
             leftSection={<IconX size={14} />}
             onClick={() => navigate('/')}
             size="sm" radius="md" variant="light" color="red"
-            style={{ marginLeft: 'auto', fontWeight: 700 }}
+            style={{ fontWeight: 700 }}
           >
             Close
           </Button>
@@ -1355,17 +1420,17 @@ const MilkPurchase = () => {
               {(() => {
                 const ltrLabel = qtyUnit === 'KG' ? 'KG' : 'LTR';
                 const clrFat = paramCombo === 'CLR-FAT';
-                // CLR-FAT: LTR→FAT→CLR→Water (SNF auto)
-                // FAT-SNF: LTR→FAT→SNF→Water (CLR auto)
+                // CLR-FAT: LTR→FAT→CLR→Save (SNF auto, Water skipped in Enter flow)
+                // FAT-SNF: LTR→FAT→SNF→Save (CLR auto, Water skipped in Enter flow)
                 return clrFat ? [
                   { label: ltrLabel, ref: ltrRef,   value: ltr,   setter: setLtr,   next: fatRef,   color: '#0369a1', bg: '#f0f9ff', border: '#7dd3fc', step: 0.1,  dec: 2 },
                   { label: 'FAT %',  ref: fatRef,   value: fat,   setter: setFat,   next: clrRef,   color: '#c2410c', bg: '#fff7ed', border: '#fdba74', step: 0.01, dec: 2 },
-                  { label: 'CLR',    ref: clrRef,   value: clr,   setter: setClr,   next: waterRef, color: '#6d28d9', bg: '#f5f3ff', border: '#c4b5fd', step: 0.1,  dec: 1 },
+                  { label: 'CLR',    ref: clrRef,   value: clr,   setter: setClr,   next: null,     color: '#6d28d9', bg: '#f5f3ff', border: '#c4b5fd', step: 0.1,  dec: 1 },
                   { label: 'Water',  ref: waterRef, value: water, setter: setWater, next: null,     color: '#be123c', bg: '#fff1f2', border: '#fda4af', step: 0.1,  dec: 2 },
                 ] : [
                   { label: ltrLabel, ref: ltrRef,   value: ltr,   setter: setLtr,   next: fatRef,   color: '#0369a1', bg: '#f0f9ff', border: '#7dd3fc', step: 0.1,  dec: 2 },
                   { label: 'FAT %',  ref: fatRef,   value: fat,   setter: setFat,   next: snfRef,   color: '#c2410c', bg: '#fff7ed', border: '#fdba74', step: 0.01, dec: 2 },
-                  { label: 'SNF %',  ref: snfRef,   value: snf,   setter: setSnf,   next: waterRef, color: '#166534', bg: '#f0fdf4', border: '#86efac', step: 0.01, dec: 2 },
+                  { label: 'SNF %',  ref: snfRef,   value: snf,   setter: setSnf,   next: null,     color: '#166534', bg: '#f0fdf4', border: '#86efac', step: 0.01, dec: 2 },
                   { label: 'Water',  ref: waterRef, value: water, setter: setWater, next: null,     color: '#be123c', bg: '#fff1f2', border: '#fda4af', step: 0.1,  dec: 2 },
                 ];
               })().map(({ label, ref: iRef, value, setter, next, color, bg, border, step, dec }) => (
@@ -1508,6 +1573,42 @@ const MilkPurchase = () => {
               {editingId && (
                 <Badge size="sm" color="yellow" variant="filled" radius="sm">EDIT MODE</Badge>
               )}
+              {monthMode && (
+                <Badge size="sm" color="violet" variant="filled" radius="sm">
+                  {MONTHS.find(m => m.value === filterMonth)?.label} {filterYear}
+                </Badge>
+              )}
+
+              {/* Month / Year filter */}
+              <Group gap={4} wrap="nowrap">
+                <Select
+                  data={MONTHS} value={filterMonth} onChange={v => v && setFilterMonth(v)}
+                  size="xs" radius="md" style={{ width: 108 }}
+                  styles={{ input: { fontWeight: 600, border: '1.5px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.1)', color: 'white', height: 24, fontSize: 11, padding: '0 8px' } }}
+                />
+                <Select
+                  data={YEARS} value={filterYear} onChange={v => v && setFilterYear(v)}
+                  size="xs" radius="md" style={{ width: 68 }}
+                  styles={{ input: { fontWeight: 600, border: '1.5px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.1)', color: 'white', height: 24, fontSize: 11, padding: '0 8px' } }}
+                />
+                <Button
+                  leftSection={<IconFilter size={11} />}
+                  onClick={() => loadMonthEntries(filterMonth, filterYear)}
+                  size="xs" radius="md"
+                  style={{ height: 24, padding: '0 10px', fontSize: 10, fontWeight: 700, background: '#6d28d9', color: 'white', border: '1px solid #a78bfa' }}
+                >
+                  Go
+                </Button>
+                {monthMode && (
+                  <Button
+                    size="xs" radius="md"
+                    onClick={() => { setMonthMode(false); loadTodayEntries(date, shift, center); }}
+                    style={{ height: 24, padding: '0 8px', fontSize: 10, fontWeight: 700, background: 'rgba(255,255,255,0.08)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}
+                  >
+                    Today
+                  </Button>
+                )}
+              </Group>
             </Group>
 
             <Group gap={4} wrap="nowrap">
@@ -1579,6 +1680,13 @@ const MilkPurchase = () => {
                 size="compact-xs" radius="sm"
                 style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Refresh
+              </Button>
+
+              {/* IMPORT ZIBITT */}
+              <Button leftSection={<IconUpload size={12} />} onClick={() => setImportOpen(true)}
+                size="compact-xs" radius="sm"
+                style={{ background: '#7c3aed', border: '1px solid #a78bfa', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                Import
               </Button>
 
               <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
@@ -2051,6 +2159,66 @@ const MilkPurchase = () => {
       {/* ══ END MAIN CONTENT ══ */}
 
     </Box>
+
+      {/* ── Zibitt File Import Modal ───────────────────────────────────────── */}
+      <Modal
+        opened={importOpen}
+        onClose={() => { if (!importUploading) { setImportOpen(false); setImportResult(null); setImportProgress(0); if (importFileRef.current) importFileRef.current.value = ''; } }}
+        title="Import Milk Purchase — Zibitt DailyCollection"
+        size="sm"
+        closeOnClickOutside={!importUploading}
+      >
+        <Stack gap="md">
+          <Text size="xs" c="dimmed">
+            Accepts .xlsx, .xls, .csv (any size). Columns needed:
+            <br /><strong>Receipt_NO, Rt_Date, Shift, Supplier_ID, CowQtyLtr, CowFAT, CowCLR, CowSNF, CowRate, Amount, TimeIncentive</strong>
+          </Text>
+
+          {/* Hidden file input */}
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            style={{ display: 'none' }}
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleZibittFileUpload(f); }}
+          />
+
+          {!importResult && (
+            <Button
+              leftSection={<IconUpload size={16} />}
+              onClick={() => importFileRef.current?.click()}
+              loading={importUploading}
+              disabled={importUploading}
+              fullWidth
+              color="violet"
+            >
+              {importUploading ? 'Uploading…' : 'Choose File & Upload'}
+            </Button>
+          )}
+
+          {importUploading && (
+            <Stack gap={4}>
+              <Progress value={importProgress} animated color="violet" size="lg" radius="sm" />
+              <Text size="xs" c="dimmed" ta="center">{importProgress < 100 ? `Uploading… ${importProgress}%` : 'Processing on server…'}</Text>
+            </Stack>
+          )}
+
+          {importResult && (
+            <Stack gap="xs" align="center">
+              <RingProgress
+                size={80} thickness={8}
+                sections={[{ value: importResult.total ? Math.round((importResult.inserted / importResult.total) * 100) : 100, color: 'teal' }]}
+              />
+              <Text fw={700} c="teal.7">{importResult.inserted ?? 0} records imported</Text>
+              {importResult.skipped > 0 && <Text size="xs" c="orange">{importResult.skipped} skipped (farmer not found)</Text>}
+              <Button size="xs" variant="light" onClick={() => { setImportOpen(false); setImportResult(null); setImportProgress(0); if (importFileRef.current) importFileRef.current.value = ''; }}>
+                Close
+              </Button>
+            </Stack>
+          )}
+        </Stack>
+      </Modal>
+    </>
   );
 };
 

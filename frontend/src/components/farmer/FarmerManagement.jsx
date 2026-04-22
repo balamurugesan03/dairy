@@ -107,10 +107,12 @@ const FarmerManagement = () => {
   const [collectionCenters, setCollectionCenters] = useState([]);
   const [villages, setVillages] = useState([]);
   const [panchayats, setPanchayats] = useState([]);
+  const [selectedRecords, setSelectedRecords] = useState([]);
   const [sortStatus, setSortStatus] = useState({ columnAccessor: '', direction: 'asc' });
 
   useEffect(() => {
     fetchFarmers();
+    setSelectedRecords([]);
   }, [pagination.current, pagination.pageSize, filters]);
 
   useEffect(() => {
@@ -199,6 +201,26 @@ const FarmerManagement = () => {
     });
   };
 
+  const handleBulkDelete = () => {
+    if (selectedRecords.length === 0) return;
+    showConfirmDialog({
+      title: 'Delete Farmers',
+      content: `Are you sure you want to permanently delete ${selectedRecords.length} selected farmer(s)? This cannot be undone.`,
+      type: 'danger',
+      onConfirm: async () => {
+        try {
+          const ids = selectedRecords.map(r => r._id);
+          const res = await farmerAPI.bulkDelete(ids);
+          message.success(res.message || `${selectedRecords.length} farmer(s) deleted`);
+          setSelectedRecords([]);
+          fetchFarmers();
+        } catch (error) {
+          message.error(error.message || 'Bulk delete failed');
+        }
+      }
+    });
+  };
+
   const handleMembershipToggle = async (id, currentStatus) => {
     const action = currentStatus ? 'deactivate' : 'activate';
     showConfirmDialog({
@@ -258,25 +280,57 @@ const FarmerManagement = () => {
 
   const handleImport = async (data) => {
     try {
-      // Auto-detect Zibitt export (has Supplier_No) vs standard template (has Farmer Number)
-      const isZibitt = data.length > 0 && ('Supplier_No' in data[0] || 'Supplier_Id' in data[0]);
+      // Detect source format
+      const isOpenLyPSSA = data.length > 0 && 'pro_name' in data[0];
+      const isZibitt = !isOpenLyPSSA && data.length > 0 && ('Supplier_No' in data[0] || 'Supplier_Id' in data[0]);
+
+      const parseDate = (val) => {
+        if (!val || val === '0000-00-00') return undefined;
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? undefined : d;
+      };
 
       const farmers = data.map(row => {
-        if (isZibitt) {
+        if (isOpenLyPSSA) {
+          // openlypssa / Zibitt semicolon CSV export format
+          const pinRaw = String(row['pin_code'] || '').replace(/\D/g, '');
           return {
-            farmerNumber: String(row['Supplier_No'] || '').trim(),
-            memberId:     String(row['RefMemberNo'] || row['RefProducerNo'] || '').trim() || undefined,
-            name:         String(row['Name'] || '').trim(),
-            phone:        cleanPhone(row['Phone'] || row['Mobile']),
-            gender:       mapGender(row['Gender']),
-            dob:          excelSerialToDate(row['DateOfBirth']),
-            caste:        row['Cast1'] ? String(row['Cast1']).trim() : undefined,
-            village:      row['Place'] ? String(row['Place']).trim() : undefined,
-            houseName:    row['HouseName'] ? String(row['HouseName']).trim() : undefined,
-            pin:          row['Pin'] && String(row['Pin']).replace(/\D/g,'').length === 6
-                            ? String(row['Pin']).replace(/\D/g,'') : undefined,
-            membershipDate: excelSerialToDate(row['MembershipDate']),
+            farmerNumber: String(row['producer_id'] || '').trim(),
+            name:         String(row['pro_name'] || '').trim(),
+            phone:        cleanPhone(row['mobile_no'] || row['phone_no']),
+            gender:       mapGender(row['sex']),
+            dob:          parseDate(row['date_of_birth']),
+            admissionDate: parseDate(row['date_join']),
+            houseName:    row['house_name'] ? String(row['house_name']).trim() : undefined,
+            village:      row['place'] ? String(row['place']).trim() : undefined,
+            pin:          pinRaw.length === 6 ? pinRaw : undefined,
+            membershipDate: parseDate(row['mem_doa']),
+            memberNumber: row['member_no'] != null ? String(row['member_no']).trim() : undefined,
+            totalShares:  Number(row['mem_total_share_nos']) || undefined,
+            nominee:      row['nominee'] ? String(row['nominee']).trim() : undefined,
+          };
+        }
+        if (isZibitt) {
+          const status     = String(row['Status'] || '').trim().toUpperCase();
+          const isMember   = status === 'M';   // M = Member, P = Producer (non-member)
+          const supplierId = String(row['Supplier_Id'] || row['Supplier_No'] || '').trim();
+          const supplierNo = String(row['Supplier_No'] || '').trim();
+          const pinRaw     = String(row['Pin'] || '').replace(/\D/g, '');
+          return {
+            farmerNumber:   supplierId,                          // Supplier_Id → producer number
+            memberId:       isMember ? supplierNo : null,        // Supplier_No only for members
+            isMembership:   isMember,                            // false for P (Producer)
+            name:           String(row['Name'] || '').trim(),
+            phone:          cleanPhone(row['Phone']),
+            gender:         mapGender(row['Gender']),
+            dob:            excelSerialToDate(row['DateOfBirth']),
+            caste:          row['Cast1'] ? String(row['Cast1']).trim() : undefined,
+            village:        row['Place'] ? String(row['Place']).trim() : undefined,
+            houseName:      row['HouseName'] ? String(row['HouseName']).trim() : undefined,
+            pin:            pinRaw.length === 6 ? pinRaw : undefined,
+            membershipDate: isMember ? excelSerialToDate(row['MembershipDate']) : undefined,
             admissionFee:   Number(row['AdmissionFee']) || 0,
+            nominee:        row['Nominee'] ? String(row['Nominee']).trim() : undefined,
           };
         }
         return {
@@ -335,6 +389,27 @@ const FarmerManagement = () => {
       message.error(error.message || 'Share import failed');
       throw error;
     }
+  };
+
+  const getSortedFarmers = () => {
+    if (!sortStatus.columnAccessor) return farmers;
+    const dir = sortStatus.direction === 'asc' ? 1 : -1;
+    return [...farmers].sort((a, b) => {
+      let aVal, bVal;
+      switch (sortStatus.columnAccessor) {
+        case 'farmerNumber':      aVal = a.farmerNumber; bVal = b.farmerNumber; break;
+        case 'memberId':          aVal = a.memberId; bVal = b.memberId; break;
+        case 'personalDetails.name': aVal = a.personalDetails?.name; bVal = b.personalDetails?.name; break;
+        case 'address.village':   aVal = a.address?.village; bVal = b.address?.village; break;
+        case 'shares':            aVal = a.financialDetails?.totalShares ?? 0; bVal = b.financialDetails?.totalShares ?? 0; break;
+        case 'admissionDate':     aVal = a.admissionDate ? new Date(a.admissionDate) : 0; bVal = b.admissionDate ? new Date(b.admissionDate) : 0; break;
+        default:                  return 0;
+      }
+      if (aVal == null) return dir;
+      if (bVal == null) return -dir;
+      if (typeof aVal === 'string') return aVal.localeCompare(bVal) * dir;
+      return (aVal > bVal ? 1 : aVal < bVal ? -1 : 0) * dir;
+    });
   };
 
   const handleDownloadTemplate = () => {
@@ -708,6 +783,16 @@ const FarmerManagement = () => {
               >
                 Add Farmer
               </Button>
+              {selectedRecords.length > 0 && (
+                <Button
+                  color="red"
+                  leftSection={<IconTrash size={18} />}
+                  onClick={handleBulkDelete}
+                  disabled={!canDelete('farmers')}
+                >
+                  Delete Selected ({selectedRecords.length})
+                </Button>
+              )}
               <Button
                 variant="default"
                 leftSection={<IconX size={18} />}
@@ -955,10 +1040,15 @@ const FarmerManagement = () => {
           />
           <DataTable
             columns={columns}
-            records={farmers}
+            records={getSortedFarmers()}
+            idAccessor="_id"
             minHeight={500}
             noRecordsText="No farmers found"
             highlightOnHover
+            selectedRecords={selectedRecords}
+            onSelectedRecordsChange={setSelectedRecords}
+            sortStatus={sortStatus}
+            onSortStatusChange={setSortStatus}
             verticalSpacing="sm"
             horizontalSpacing="md"
             fontSize="sm"
@@ -1061,10 +1151,6 @@ const FarmerManagement = () => {
         onClose={() => setShowImportModal(false)}
         onImport={handleImport}
         entityType="Farmers"
-        requiredFields={['Name']}
-        validationSchema={{
-          'Name': { required: true, type: 'string' },
-        }}
       />
 
       <ImportModal

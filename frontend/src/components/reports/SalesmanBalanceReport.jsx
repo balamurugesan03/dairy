@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Container, Paper, Text, Group, Button, LoadingOverlay,
   Stack, Title, Grid, Card, Badge, Select, TextInput,
@@ -42,6 +43,7 @@ const PRINT_STYLE = `
 const SalesmanBalanceReport = () => {
   const { selectedCompany } = useCompany();
   const companyName = selectedCompany?.companyName || 'Dairy Co-operative Society';
+  const navigate = useNavigate();
 
   const [fromDate, setFromDate]         = useState(null);
   const [toDate, setToDate]             = useState(null);
@@ -169,16 +171,19 @@ const SalesmanBalanceReport = () => {
               </Text>
             </div>
           </Group>
-          {report && (
-            <Group gap="sm" className="no-print">
+          <Group gap="sm" className="no-print">
+            {report && (<>
               <Button leftSection={<IconFileSpreadsheet size={16} />} variant="light" color="green" size="sm" onClick={exportExcel}>
                 Export Excel
               </Button>
               <Button leftSection={<IconPrinter size={16} />} variant="light" color="gray" size="sm" onClick={() => printReport(printRef, { title: 'Salesman Balance Report', orientation: 'landscape' })}>
                 Print / PDF
               </Button>
-            </Group>
-          )}
+            </>)}
+            <Button leftSection={<IconX size={16} />} variant="default" size="sm" onClick={() => navigate('/')}>
+              Close
+            </Button>
+          </Group>
         </Group>
       </Paper>
 

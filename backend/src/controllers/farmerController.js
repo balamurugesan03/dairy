@@ -710,7 +710,9 @@ export const bulkImportFarmers = async (req, res) => {
 
         if (existingFarmer) {
           // UPDATE existing farmer
-          if (farmerData.memberId) existingFarmer.memberId = farmerData.memberId;
+          // memberId: set if truthy, explicitly clear if null (Producer status from Zibitt)
+          if (farmerData.memberId)        existingFarmer.memberId = farmerData.memberId;
+          else if (farmerData.memberId === null) existingFarmer.memberId = undefined;
           existingFarmer.personalDetails.name = farmerData.name;
           if (phoneStr)             existingFarmer.personalDetails.phone  = phoneStr;
           if (farmerData.gender)    existingFarmer.personalDetails.gender  = farmerData.gender;
@@ -721,10 +723,17 @@ export const bulkImportFarmers = async (req, res) => {
           if (farmerData.pin)       existingFarmer.address.pin             = farmerData.pin;
           if (farmerData.membershipDate) {
             existingFarmer.membershipDate = new Date(farmerData.membershipDate);
-            existingFarmer.isMembership   = true;
           }
+          if (farmerData.isMembership !== undefined)
+            existingFarmer.isMembership = farmerData.isMembership;
+          else if (farmerData.membershipDate)
+            existingFarmer.isMembership = true;
+          if (farmerData.admissionDate)
+            existingFarmer.admissionDate = new Date(farmerData.admissionDate);
           if (farmerData.admissionFee)
             existingFarmer.financialDetails.admissionFee = Number(farmerData.admissionFee) || 0;
+          if (farmerData.totalShares)
+            existingFarmer.financialDetails.totalShares = Number(farmerData.totalShares);
 
           await existingFarmer.save();
 
@@ -744,7 +753,7 @@ export const bulkImportFarmers = async (req, res) => {
           // CREATE new farmer
           const newFarmer = new Farmer({
             farmerNumber: farmerData.farmerNumber,
-            memberId:     farmerData.memberId || undefined,
+            memberId:     farmerData.memberId || undefined,   // null → undefined (not stored)
             personalDetails: {
               name:   farmerData.name,
               phone:  phoneStr,
@@ -757,10 +766,12 @@ export const bulkImportFarmers = async (req, res) => {
               ward:     farmerData.houseName || undefined,
               pin:      farmerData.pin       || undefined,
             },
+            admissionDate:  farmerData.admissionDate  ? new Date(farmerData.admissionDate)  : undefined,
             membershipDate: farmerData.membershipDate ? new Date(farmerData.membershipDate) : undefined,
-            isMembership:   !!farmerData.membershipDate,
+            isMembership:   farmerData.isMembership !== undefined ? farmerData.isMembership : !!farmerData.membershipDate,
             financialDetails: {
               admissionFee: Number(farmerData.admissionFee) || 0,
+              totalShares:  Number(farmerData.totalShares)  || 0,
             },
             status:    'Active',
             companyId: req.companyId
@@ -905,6 +916,27 @@ export const bulkImportShares = async (req, res) => {
   }
 };
 
+// Bulk delete farmers
+export const bulkDeleteFarmers = async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: 'IDs array is required' });
+    }
+
+    const result = await Farmer.deleteMany({ _id: { $in: ids }, companyId: req.companyId });
+
+    res.status(200).json({
+      success: true,
+      message: `${result.deletedCount} farmer(s) deleted`,
+      data: { deletedCount: result.deletedCount }
+    });
+  } catch (error) {
+    console.error('Bulk delete error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Bulk delete failed' });
+  }
+};
+
 export default {
   createFarmer,
   getAllFarmers,
@@ -917,5 +949,6 @@ export default {
   getShareHistory,
   terminateFarmer,
   bulkImportFarmers,
-  bulkImportShares
+  bulkImportShares,
+  bulkDeleteFarmers
 };

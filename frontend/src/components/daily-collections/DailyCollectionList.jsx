@@ -14,7 +14,7 @@ import {
   IconMilk, IconDroplet, IconFlame, IconScale,
   IconCurrencyRupee, IconCalendar, IconFilter,
   IconSun, IconBuildingStore, IconPrinter,
-  IconFileTypeXls, IconFileTypePdf, IconChevronDown,
+  IconFileTypeXls, IconFileTypePdf, IconChevronDown, IconX,
 } from '@tabler/icons-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -590,6 +590,13 @@ const DailyCollectionList = () => {
             onClick={() => navigate('/daily-collections/milk-purchase')}
           >
             New Entry
+          </Button>
+          <Button
+            leftSection={<IconX size={16} />}
+            variant="default"
+            onClick={() => navigate('/')}
+          >
+            Close
           </Button>
         </Group>
       </Group>

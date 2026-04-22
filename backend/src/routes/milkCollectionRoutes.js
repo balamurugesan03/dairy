@@ -1,4 +1,6 @@
 import express from 'express';
+import multer from 'multer';
+import os from 'os';
 import {
   createCollection,
   getAllCollections,
@@ -8,14 +10,21 @@ import {
   getFarmerHistory,
   getFarmerStats,
   getFarmerWiseSummary,
+  bulkImportCollections,
+  fileUploadImportCollections,
 } from '../controllers/milkCollectionController.js';
 
 const router = express.Router();
+const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 500 * 1024 * 1024 } }); // 500 MB
 
 // Summary / aggregate routes — BEFORE /:id
 router.get('/summary/farmer-wise',         getFarmerWiseSummary);
 router.get('/farmer/:farmerNumber/stats',  getFarmerStats);
 router.get('/farmer/:farmerNumber',        getFarmerHistory);
+
+// Import routes (Zibitt)
+router.post('/file-import',  upload.single('file'), fileUploadImportCollections);
+router.post('/bulk-import',  bulkImportCollections);
 
 // Main CRUD
 router.post('/',      createCollection);

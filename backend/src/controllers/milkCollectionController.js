@@ -1,4 +1,7 @@
+import fs from 'fs';
+import XLSX from 'xlsx';
 import MilkCollection from '../models/MilkCollection.js';
+import Farmer from '../models/Farmer.js';
 import Voucher from '../models/Voucher.js';
 import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances, findOrCreateLedger } from '../utils/accountingHelper.js';
 
@@ -195,6 +198,157 @@ export const deleteCollection = async (req, res) => {
     res.json({ success: true, message: 'Record deleted' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ── BULK IMPORT  (Zibitt DailyCollection / CSV — no accounting vouchers) ──────
+export const bulkImportCollections = async (req, res) => {
+  try {
+    const { records } = req.body;
+    if (!Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({ success: false, message: 'No records provided' });
+    }
+
+    // Resolve farmerNumber → ObjectId in one batch query
+    const uniqueNumbers = [...new Set(records.map(r => String(r.farmerNumber || '')).filter(Boolean))];
+    const farmers = await Farmer.find(
+      { farmerNumber: { $in: uniqueNumbers }, companyId: req.companyId },
+      { farmerNumber: 1, 'personalDetails.name': 1 }
+    ).lean();
+    const farmerMap = {};
+    for (const f of farmers) farmerMap[f.farmerNumber] = { id: f._id, name: f.personalDetails?.name || '' };
+
+    const skipped = [];
+    const docs = [];
+    for (const r of records) {
+      const fn = String(r.farmerNumber || '');
+      const fm = farmerMap[fn];
+      if (!fm) { skipped.push(fn); continue; }
+      docs.push({ ...r, farmer: fm.id, farmerName: r.farmerName || fm.name, farmerNumber: fn, companyId: req.companyId });
+    }
+
+    if (docs.length === 0) {
+      const unknown = [...new Set(skipped)].slice(0, 10).join(', ');
+      return res.status(400).json({ success: false, message: `No matching farmers found. Unknown numbers: ${unknown}` });
+    }
+
+    let inserted = 0;
+    try {
+      const result = await MilkCollection.insertMany(docs, { ordered: false });
+      inserted = result.length;
+    } catch (err) {
+      if (err.name === 'BulkWriteError' || err.code === 11000) {
+        inserted = err.result?.nInserted ?? 0;
+      } else {
+        throw err;
+      }
+    }
+
+    const unknown = [...new Set(skipped)].slice(0, 5).join(', ');
+    const msg = skipped.length
+      ? `${inserted} imported, ${skipped.length} skipped (farmer not found: ${unknown}${skipped.length > 5 ? '…' : ''})`
+      : `${inserted} records imported`;
+
+    res.status(201).json({ success: true, data: { inserted, skipped: skipped.length }, message: msg });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+// ── FILE UPLOAD IMPORT  (server-side parse — handles large files >50 MB) ──────
+// Maps Zibitt DailyCollection columns to milkCollectionSchema
+const mapDailyCollectionRow = (row, idx) => ({
+  billNo:       String(row.Receipt_NO ?? row.ReceiptNo ?? row.receipt_no ?? `ZB-${idx + 1}`),
+  date:         (() => {
+    const v = row.Rt_Date ?? row.rt_date ?? row.Date ?? row.date ?? '';
+    if (!v && v !== 0) return new Date();
+    if (typeof v === 'number') return new Date(Math.round((v - 25569) * 86400000));
+    return new Date(v);
+  })(),
+  shift:        String(row.Shift ?? row.shift ?? '1') === '0' ? 'AM' : 'PM',
+  farmerNumber: String(row.Supplier_ID ?? row.supplier_id ?? row.SupplierId ?? ''),
+  qty:          Number(row.CowQtyLtr  ?? row.cowqtyltr  ?? row.Qty   ?? 0) || Number(row.CowQtyKG ?? row.cowqtykg ?? 0) || 0,
+  fat:          Number(row.CowFAT     ?? row.cowfat     ?? row.FAT   ?? 0),
+  clr:          Number(row.CowCLR     ?? row.cowclr     ?? row.CLR   ?? 0),
+  snf:          Number(row.CowSNF     ?? row.cowsnf     ?? row.SNF   ?? 0),
+  rate:         Number(row.CowRate    ?? row.cowrate    ?? row.Rate  ?? 0),
+  amount:       Number(row.Amount     ?? row.amount     ?? 0),
+  incentive:    Number(row.TimeIncentive ?? row.timeincentive ?? 0),
+});
+
+export const fileUploadImportCollections = async (req, res) => {
+  let filePath = null;
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+    filePath = req.file.path;
+
+    // Parse file server-side — detect semicolon-delimited CSV (Zibitt export)
+    const raw = fs.readFileSync(filePath);
+    const sample = raw.slice(0, 4000).toString('utf8');
+    const semiCount  = (sample.match(/;/g)  || []).length;
+    const commaCount = (sample.match(/,/g)  || []).length;
+    const opts = { type: 'buffer', cellDates: false, sheetStubs: false, defval: '' };
+    if (semiCount > commaCount) opts.FS = ';';
+
+    const wb = XLSX.read(raw, opts);
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const jsonData = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+    if (!jsonData.length) return res.status(400).json({ success: false, message: 'File is empty' });
+
+    const rows = jsonData.filter(r => Object.values(r).some(v => v !== '' && v !== null));
+    console.log(`[MilkCollection Import] File rows: ${rows.length}, columns: ${Object.keys(rows[0] || {}).join(', ')}`);
+
+    // Resolve farmerNumbers → ObjectIds
+    const mapped = rows.map((r, i) => mapDailyCollectionRow(r, i));
+    const uniqueNums = [...new Set(mapped.map(r => r.farmerNumber).filter(Boolean))];
+    const farmers = await Farmer.find(
+      { farmerNumber: { $in: uniqueNums }, companyId: req.companyId },
+      { farmerNumber: 1, 'personalDetails.name': 1 }
+    ).lean();
+    const farmerMap = {};
+    for (const f of farmers) farmerMap[f.farmerNumber] = { id: f._id, name: f.personalDetails?.name || '' };
+
+    const skipped = [];
+    const docs = [];
+    for (const r of mapped) {
+      const fm = farmerMap[r.farmerNumber];
+      if (!fm) { skipped.push(r.farmerNumber); continue; }
+      docs.push({ ...r, farmer: fm.id, farmerName: fm.name, companyId: req.companyId });
+    }
+
+    if (docs.length === 0) {
+      const unknown = [...new Set(skipped)].slice(0, 10).join(', ');
+      return res.status(400).json({ success: false, message: `No matching farmers found. Unknown producer numbers: ${unknown}` });
+    }
+
+    // Insert in chunks of 1000 to avoid driver limits
+    const CHUNK = 1000;
+    let inserted = 0;
+    for (let i = 0; i < docs.length; i += CHUNK) {
+      try {
+        const result = await MilkCollection.insertMany(docs.slice(i, i + CHUNK), { ordered: false });
+        inserted += result.length;
+      } catch (err) {
+        if (err.name === 'BulkWriteError' || err.code === 11000) {
+          inserted += err.result?.nInserted ?? 0;
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    const unknownSample = [...new Set(skipped)].slice(0, 5).join(', ');
+    const msg = skipped.length
+      ? `${inserted} imported, ${skipped.length} skipped (farmer not found: ${unknownSample}${skipped.length > 5 ? '…' : ''})`
+      : `${inserted} records imported`;
+
+    res.json({ success: true, data: { inserted, skipped: skipped.length, total: rows.length }, message: msg });
+  } catch (err) {
+    console.error('[MilkCollection fileImport] Error:', err.message);
+    res.status(400).json({ success: false, message: err.message });
+  } finally {
+    if (filePath) try { fs.unlinkSync(filePath); } catch (_) {}
   }
 };
 

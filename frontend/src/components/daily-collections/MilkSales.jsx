@@ -16,9 +16,49 @@ import {
   IconMilk, IconReceipt, IconUser, IconBuilding,
   IconDeviceFloppy, IconX, IconPlus, IconEdit, IconBan,
   IconTrash, IconPrinter, IconRefresh, IconSearch, IconHistory,
-  IconAlertCircle, IconCash, IconCreditCard,
+  IconAlertCircle, IconCash, IconCreditCard, IconUpload, IconFilter,
 } from '@tabler/icons-react';
 import { customerAPI, collectionCenterAPI, milkSalesAPI, agentAPI, milkSalesRateAPI, thermalPrintAPI } from '../../services/api';
+import ImportModal from '../common/ImportModal';
+
+// ── Zibitt Local Sales → MilkSales schema ────────────────────────────────────
+// Columns: BillNo, SalesDate, SalesShift (0=AM/1=PM), Sales_Qty, RatePerLtr,
+//          TotalAmt, Description, Centercode, Agent, VoucherNo, VoucherID
+//
+// SalesDate arrives as an Excel serial number (e.g. 43556).
+// Formula: (serial - 25569) * 86400000 ms from Unix epoch.
+const excelSerialToDate = (val) => {
+  if (val == null || val === '') return new Date();
+  if (typeof val === 'number') return new Date(Math.round((val - 25569) * 86400000));
+  return new Date(val);
+};
+
+const mapZibittRows = (rows) =>
+  rows.map((row, i) => ({
+    billNo:      String(row.BillNo || row.VoucherNo || `IMP-${i + 1}`),
+    date:        excelSerialToDate(row.SalesDate),
+    session:     String(row.SalesShift) === '0' ? 'AM' : 'PM',
+    saleMode:    'LOCAL',
+    litre:       Number(row.Sales_Qty)  || 0,
+    rate:        Number(row.RatePerLtr) || 0,
+    amount:      Number(row.TotalAmt)   || 0,
+    centerName:  row.Centercode ? String(row.Centercode) : undefined,
+    agentName:   row.Agent      ? String(row.Agent)      : undefined,
+    paymentType: 'Cash',
+  }));
+
+// ── Month / Year filter data ──────────────────────────────────────────────────
+const MONTHS = [
+  { value: '1', label: 'January' }, { value: '2', label: 'February' },
+  { value: '3', label: 'March' },   { value: '4', label: 'April' },
+  { value: '5', label: 'May' },     { value: '6', label: 'June' },
+  { value: '7', label: 'July' },    { value: '8', label: 'August' },
+  { value: '9', label: 'September' },{ value: '10', label: 'October' },
+  { value: '11', label: 'November' },{ value: '12', label: 'December' },
+];
+const YEARS = Array.from({ length: new Date().getFullYear() - 2010 + 2 }, (_, i) => {
+  const y = 2011 + i; return { value: String(y), label: String(y) };
+}).reverse();
 
 // ── Bill No generator ─────────────────────────────────────────────────────────
 const genBillNo = () => {
@@ -123,6 +163,9 @@ export default function MilkSales() {
   const [milkBill,     setMilkBill]     = useState(true);
   const [historySearch, setHistorySearch] = useState('');
   const [showHistory,   setShowHistory]   = useState(false);
+  const [importOpen,    setImportOpen]    = useState(false);
+  const [filterMonth,   setFilterMonth]   = useState(String(new Date().getMonth() + 1));
+  const [filterYear,    setFilterYear]    = useState(String(new Date().getFullYear()));
 
   const isLocal = mode === 'LOCAL' || mode === 'SAMPLE';
 
@@ -208,10 +251,10 @@ export default function MilkSales() {
     } catch { /* silent */ }
   };
 
-  const loadEntries = async () => {
+  const loadEntries = async (month = filterMonth, year = filterYear) => {
     setLoading(true);
     try {
-      const res = await milkSalesAPI.getAll({ date: new Date().toISOString().slice(0, 10), limit: 500 });
+      const res = await milkSalesAPI.getAll({ month, year, limit: 2000 });
       setEntries(res?.data || []);
     } catch { setEntries([]); }
     finally { setLoading(false); }
@@ -305,6 +348,20 @@ export default function MilkSales() {
       setSelRow(null); handleNew();
       notifications.show({ color: 'orange', message: 'Deleted', autoClose: 1500 });
     } catch { notifications.show({ color: 'red', message: 'Delete failed' }); }
+  };
+
+  const handleZibittImport = async (rawRows) => {
+    const records = mapZibittRows(rawRows);
+    const CHUNK = 500;
+    let totalInserted = 0;
+    for (let i = 0; i < records.length; i += CHUNK) {
+      const batch = records.slice(i, i + CHUNK);
+      const res = await milkSalesAPI.bulkImport(batch);
+      totalInserted += res?.data?.inserted ?? batch.length;
+    }
+    notifications.show({ color: 'teal', message: `${totalInserted} of ${records.length} records imported`, autoClose: 3000 });
+    loadEntries();
+    fetchNextBillNo();
   };
 
   // ── Keyboard handlers ─────────────────────────────────────────────────────
@@ -565,6 +622,28 @@ export default function MilkSales() {
                 {loading ? <Loader size={10} color="white" /> : `${filteredEntries.length}${historySearch ? ` / ${entries.length}` : ''} records`}
               </Badge>
               {editingId && <Badge size="sm" color="yellow" variant="filled" radius="sm">EDIT MODE</Badge>}
+
+              {/* Month / Year filter */}
+              <Group gap={4} wrap="nowrap">
+                <Select
+                  data={MONTHS} value={filterMonth} onChange={v => v && setFilterMonth(v)}
+                  size="xs" radius="md" style={{ width: 108 }}
+                  styles={{ input: { fontWeight: 600, border: '1.5px solid #bfdbfe', height: 26, fontSize: 11 } }}
+                />
+                <Select
+                  data={YEARS} value={filterYear} onChange={v => v && setFilterYear(v)}
+                  size="xs" radius="md" style={{ width: 70 }}
+                  styles={{ input: { fontWeight: 600, border: '1.5px solid #bfdbfe', height: 26, fontSize: 11 } }}
+                />
+                <Button
+                  leftSection={<IconFilter size={11} />}
+                  onClick={() => loadEntries(filterMonth, filterYear)}
+                  size="xs" radius="md"
+                  style={{ height: 26, padding: '0 10px', fontSize: 10, fontWeight: 700, background: '#6d28d9', color: 'white', border: '1px solid #a78bfa' }}
+                >
+                  Go
+                </Button>
+              </Group>
             </Group>
 
             <Group gap={4} wrap="nowrap">
@@ -623,6 +702,11 @@ export default function MilkSales() {
               <Button leftSection={<IconRefresh size={12} />} onClick={loadEntries} size="compact-xs" radius="sm"
                 style={{ background: '#0891b2', border: '1px solid #67e8f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Refresh
+              </Button>
+              {/* Import Zibitt — violet */}
+              <Button leftSection={<IconUpload size={12} />} onClick={() => setImportOpen(true)} size="compact-xs" radius="sm"
+                style={{ background: '#7c3aed', border: '1px solid #a78bfa', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                Import
               </Button>
 
               <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
@@ -753,7 +837,7 @@ export default function MilkSales() {
           <Group gap={10} wrap="nowrap" align="center">
             <Box style={{ flexShrink: 0 }}>
               <Text size="10px" fw={800} c="#14532d" tt="uppercase" style={{ letterSpacing: '0.5px' }}>Summary</Text>
-              <Text size="9px" c="#94a3b8">{entries.length} records</Text>
+              <Text size="9px" c="#94a3b8">{entries.length} records · {MONTHS.find(m => m.value === filterMonth)?.label} {filterYear}</Text>
             </Box>
             <Divider orientation="vertical" style={{ height: 36 }} />
             {[
@@ -771,6 +855,15 @@ export default function MilkSales() {
           </Group>
         </Box>
       </Box>
+
+      <ImportModal
+        isOpen={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImport={handleZibittImport}
+        entityType="Milk Sales (Zibitt Local Sales)"
+        requiredFields={['BillNo', 'SalesDate', 'Sales_Qty', 'RatePerLtr', 'TotalAmt']}
+        maxFileSizeMB={50}
+      />
     </Box>
   );
 }
