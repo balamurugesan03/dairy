@@ -406,6 +406,51 @@ const processImportSlips = async (rows, companyId, userId) => {
   return results;
 };
 
+// ── ZIBITT RAW DB IMPORT ─────────────────────────────────────────────────────
+//  Raw fields: dcs_id, ms_id, ms_date (dd-mm-yyyy), ms_time (AM/PM),
+//  qty_ltr, fat, snf, rate, amount, union_spoilage, transit_spoilage
+//  Upserts by date+time — safe to re-run.
+export const zibittRawImportSlips = async (req, res) => {
+  try {
+    const { records } = req.body;
+    if (!Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({ success: false, message: 'No records provided' });
+    }
+
+    const parseDate = (dateStr) => {
+      if (!dateStr) return null;
+      const str = String(dateStr);
+      const parts = str.split('-');
+      if (parts.length !== 3) return null;
+      const [dd, mm, yyyy] = parts;
+      const d = new Date(`${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`);
+      return isNaN(d.getTime()) ? null : d;
+    };
+
+    const mapped = records.map(row => ({
+      date:                   parseDate(row.ms_date),
+      time:                   String(row.ms_time || '').toUpperCase() === 'PM' ? 'PM' : 'AM',
+      qty:                    Number(row.qty_ltr)          || 0,
+      fat:                    Number(row.fat)              || 0,
+      snf:                    Number(row.snf)              || 0,
+      rate:                   Number(row.rate)             || 0,
+      amount:                 Number(row.amount)           || 0,
+      spoilage:               Number(row.union_spoilage) > 0 || Number(row.transit_spoilage) > 0,
+      unionSpoilage:          Number(row.union_spoilage)   || 0,
+      transportationSpoilage: Number(row.transit_spoilage) || 0,
+    }));
+
+    const results = await processImportSlips(mapped, req.companyId, req.user?._id);
+    res.json({
+      success: true,
+      data: results,
+      message: `${results.created} created, ${results.updated} updated, ${results.skipped} skipped`
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
 // ── BULK IMPORT via JSON body ───────────────────────────────────────────────
 export const bulkImportSlips = async (req, res) => {
   try {

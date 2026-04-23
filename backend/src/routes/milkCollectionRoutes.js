@@ -12,6 +12,7 @@ import {
   getFarmerWiseSummary,
   bulkImportCollections,
   fileUploadImportCollections,
+  zibittRawImportCollections,
 } from '../controllers/milkCollectionController.js';
 
 const router = express.Router();
@@ -23,8 +24,9 @@ router.get('/farmer/:farmerNumber/stats',  getFarmerStats);
 router.get('/farmer/:farmerNumber',        getFarmerHistory);
 
 // Import routes (Zibitt)
-router.post('/file-import',  upload.single('file'), fileUploadImportCollections);
-router.post('/bulk-import',  bulkImportCollections);
+router.post('/file-import',      upload.single('file'), fileUploadImportCollections);
+router.post('/bulk-import',      bulkImportCollections);
+router.post('/zibitt-raw-import', zibittRawImportCollections);
 
 // Main CRUD
 router.post('/',      createCollection);

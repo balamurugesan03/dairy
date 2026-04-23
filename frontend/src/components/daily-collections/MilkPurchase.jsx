@@ -28,6 +28,7 @@ import {
   milkCollectionAPI, milkPurchaseSettingsAPI, rateChartAPI, milkSalesAPI,
   thermalPrintAPI, machineConfigAPI, timeIncentiveAPI, shiftIncentiveAPI,
 } from '../../services/api';
+import ImportModal from '../common/ImportModal';
 
 // ── Rate Calculation ─────────────────────────────────────────────────────────
 const fallbackRate = (fat, clr) =>
@@ -230,6 +231,7 @@ const MilkPurchase = () => {
   const [historySearch,  setHistorySearch]  = useState('');     // filter text
   const [showHistory,    setShowHistory]    = useState(false);  // search bar toggle
   const [importOpen,     setImportOpen]     = useState(false);
+  const [rawImportOpen,  setRawImportOpen]  = useState(false);
   const [filterMonth,    setFilterMonth]    = useState(String(new Date().getMonth() + 1));
   const [filterYear,     setFilterYear]     = useState(String(new Date().getFullYear()));
   const [monthMode,      setMonthMode]      = useState(false);  // true = showing month range, false = today's date
@@ -1120,6 +1122,24 @@ const MilkPurchase = () => {
     }
   };
 
+  // Raw Zibitt DB import — frontend parses Excel, backend transforms + farmer lookup
+  const handleZibittRawImportCollection = async (rawRows) => {
+    const CHUNK = 500;
+    let totalInserted = 0, totalSkipped = 0;
+    for (let i = 0; i < rawRows.length; i += CHUNK) {
+      const batch = rawRows.slice(i, i + CHUNK);
+      const res = await milkCollectionAPI.zibittRawImport(batch);
+      totalInserted += res?.data?.inserted ?? 0;
+      totalSkipped  += res?.data?.skipped  ?? 0;
+    }
+    notifications.show({
+      color: totalSkipped ? 'yellow' : 'teal',
+      message: `${totalInserted} imported${totalSkipped ? `, ${totalSkipped} skipped` : ''}`,
+      autoClose: 4000
+    });
+    loadTodayEntries(date, shift, center);
+  };
+
   // ── Keyboard ──────────────────────────────────────────────────────────────
   const handleMemberKeyDown = (e) => {
     if (e.key === 'Enter') {
@@ -1688,6 +1708,12 @@ const MilkPurchase = () => {
                 style={{ background: '#7c3aed', border: '1px solid #a78bfa', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Import
               </Button>
+              {/* IMPORT ZIBITT RAW DB */}
+              <Button leftSection={<IconUpload size={12} />} onClick={() => setRawImportOpen(true)}
+                size="compact-xs" radius="sm"
+                style={{ background: '#a21caf', border: '1px solid #e879f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                Import DB
+              </Button>
 
               <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
 
@@ -2159,6 +2185,16 @@ const MilkPurchase = () => {
       {/* ══ END MAIN CONTENT ══ */}
 
     </Box>
+
+      {/* ── Zibitt Raw DB Import Modal ────────────────────────────────────── */}
+      <ImportModal
+        isOpen={rawImportOpen}
+        onClose={() => setRawImportOpen(false)}
+        onImport={handleZibittRawImportCollection}
+        entityType="Milk Purchase (Zibitt DB — dcs_id/mc_id/producer_id/col_mode)"
+        requiredFields={['dcs_id', 'mc_id', 'slno', 'producer_id', 'qty', 'fat', 'rate', 'amount', 'col_mode', 'date_entry']}
+        maxFileSizeMB={50}
+      />
 
       {/* ── Zibitt File Import Modal ───────────────────────────────────────── */}
       <Modal

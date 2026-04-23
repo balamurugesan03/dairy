@@ -18,6 +18,7 @@ import {
 } from '@tabler/icons-react';
 import { SegmentedControl } from '@mantine/core';
 import { unionSalesSlipAPI } from '../../services/api';
+import ImportModal from '../common/ImportModal';
 import dayjs from 'dayjs';
 
 /* ── helpers ── */
@@ -72,6 +73,7 @@ export default function UnionSalesSlip() {
 
   // ── Import state ─────────────────────────────────────────────────────────
   const [importStatus, setImportStatus] = useState('idle'); // idle|uploading|done|error
+  const [rawImportOpen, setRawImportOpen] = useState(false);
   const [importPct,    setImportPct]    = useState(0);
   const [importResult, setImportResult] = useState(null);
 
@@ -186,6 +188,25 @@ export default function UnionSalesSlip() {
       setImportStatus('error');
       notifications.show({ message: err?.message || 'Import failed', color: 'red' });
     }
+  };
+
+  // Raw Zibitt DB import — frontend parses Excel, backend transforms + upserts
+  const handleZibittRawImportSlip = async (rawRows) => {
+    const CHUNK = 500;
+    let totalCreated = 0, totalUpdated = 0, totalSkipped = 0;
+    for (let i = 0; i < rawRows.length; i += CHUNK) {
+      const batch = rawRows.slice(i, i + CHUNK);
+      const res = await unionSalesSlipAPI.zibittRawImport(batch);
+      totalCreated  += res?.data?.created  ?? 0;
+      totalUpdated  += res?.data?.updated  ?? 0;
+      totalSkipped  += res?.data?.skipped  ?? 0;
+    }
+    notifications.show({
+      color: totalSkipped && !totalCreated && !totalUpdated ? 'orange' : 'teal',
+      message: `${totalCreated} created, ${totalUpdated} updated${totalSkipped ? `, ${totalSkipped} skipped` : ''}`,
+      autoClose: 4000
+    });
+    loadEntries();
   };
 
   const handleEdit = (row) => {
@@ -602,6 +623,12 @@ export default function UnionSalesSlip() {
                 Import Dairy
               </Button>
               <input id="union-dairy-file-input" type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleDairyFileSelect} />
+              {/* Import Zibitt Raw DB — fuchsia */}
+              <Button leftSection={<IconUpload size={12} />} onClick={() => setRawImportOpen(true)}
+                size="compact-xs" radius="sm"
+                style={{ background: '#a21caf', border: '1px solid #e879f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                Import DB
+              </Button>
             </Group>
           </Group>
         </Box>
@@ -725,6 +752,16 @@ export default function UnionSalesSlip() {
 
       </Box>
     </Box>
+
+    {/* ══ ZIBITT RAW DB IMPORT MODAL ══════════════════════════════════════ */}
+    <ImportModal
+      isOpen={rawImportOpen}
+      onClose={() => setRawImportOpen(false)}
+      onImport={handleZibittRawImportSlip}
+      entityType="Union Sales Slip (Zibitt DB — ms_id/ms_date/ms_time/qty_ltr)"
+      requiredFields={['dcs_id', 'ms_id', 'ms_date', 'ms_time', 'qty_ltr', 'fat', 'snf', 'rate', 'amount']}
+      maxFileSizeMB={50}
+    />
 
     {/* ══ DAIRY IMPORT MODAL ══════════════════════════════════════════════ */}
     <Modal

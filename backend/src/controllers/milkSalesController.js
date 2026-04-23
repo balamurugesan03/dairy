@@ -258,6 +258,99 @@ export const deleteMilkSale = async (req, res) => {
 };
 
 // ────────────────────────────────────────────────────────────────
+//  ZIBITT RAW DB IMPORT
+//  Accepts raw Zibitt table rows (dcs_id, mc_id, slno, cust_id,
+//  qty, rate, amount, source_id, date_entry) and transforms them.
+//  source_id 1 → LOCAL, 2 → CREDIT (customer lookup by customerId)
+// ────────────────────────────────────────────────────────────────
+export const zibittRawImport = async (req, res) => {
+  try {
+    const { records } = req.body;
+    if (!Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({ success: false, message: 'No records provided' });
+    }
+
+    const companyId = req.companyId;
+
+    // Pre-load all customers into a map for O(1) lookup
+    const allCustomers = await Customer.find({ companyId }, 'customerId name _id').lean();
+    const custMap = {};
+    for (const c of allCustomers) {
+      custMap[String(c.customerId)] = c;
+    }
+
+    const parseDateTime = (dateStr) => {
+      if (!dateStr) return new Date();
+      const str = String(dateStr);
+      const [datePart, timePart] = str.split(' ');
+      const parts = datePart.split('-');
+      if (parts.length !== 3) return new Date(str);
+      const [dd, mm, yyyy] = parts;
+      return new Date(`${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T${timePart || '00:00'}:00`);
+    };
+
+    const getSession = (dateStr) => {
+      const timePart = dateStr ? String(dateStr).split(' ')[1] : null;
+      if (!timePart) return 'AM';
+      return parseInt(timePart.split(':')[0]) < 12 ? 'AM' : 'PM';
+    };
+
+    const docs = [];
+    const skipped = [];
+
+    for (const row of records) {
+      const saleMode = String(row.source_id) === '2' ? 'CREDIT' : 'LOCAL';
+      const billNo   = `MS-${row.dcs_id}-${row.mc_id}-${row.cust_id}-${row.slno}`;
+
+      const doc = {
+        billNo,
+        date:        parseDateTime(row.date_entry),
+        session:     getSession(row.date_entry),
+        saleMode,
+        litre:       Number(row.qty)    || 0,
+        rate:        Number(row.rate)   || 0,
+        amount:      Number(row.amount) || 0,
+        paymentType: 'Cash',
+        companyId,
+      };
+
+      if (saleMode === 'CREDIT') {
+        const customer = custMap[String(row.cust_id)];
+        if (!customer) {
+          skipped.push(`cust_id=${row.cust_id} not found`);
+          continue;
+        }
+        doc.creditorId   = customer._id;
+        doc.creditorName = customer.name;
+      }
+
+      docs.push(doc);
+    }
+
+    let inserted = 0;
+    try {
+      const result = await MilkSales.insertMany(docs, { ordered: false });
+      inserted = result.length;
+    } catch (err) {
+      if (err.name === 'MongoBulkWriteError' || err.code === 11000) {
+        inserted = err.result?.nInserted ?? 0;
+      } else {
+        throw err;
+      }
+    }
+
+    const totalSkipped = skipped.length + (docs.length - inserted);
+    res.status(201).json({
+      success: true,
+      data: { inserted, skipped: totalSkipped, skipReasons: skipped.slice(0, 20) },
+      message: `${inserted} inserted, ${totalSkipped} skipped`
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────
 //  BULK IMPORT  (Zibitt / CSV — no accounting vouchers)
 // ────────────────────────────────────────────────────────────────
 export const bulkImportMilkSales = async (req, res) => {

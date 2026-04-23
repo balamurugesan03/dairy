@@ -55,9 +55,12 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
         gender: '',
         phone: '',
         caste: '',
-        photo: null
+        photo: null,
+        nomineeName: '',
+        nomineeRelation: ''
       },
       address: {
+        houseName: '',
         ward: '',
         village: '',
         panchayat: '',
@@ -173,9 +176,12 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
           gender: farmer.personalDetails?.gender || '',
           phone: farmer.personalDetails?.phone || '',
           caste: farmer.personalDetails?.caste || '',
-          photo: farmer.personalDetails?.photo || null
+          photo: farmer.personalDetails?.photo || null,
+          nomineeName: farmer.personalDetails?.nomineeName || '',
+          nomineeRelation: farmer.personalDetails?.nomineeRelation || ''
         },
         address: {
+          houseName: farmer.address?.houseName || '',
           ward: farmer.address?.ward || '',
           village: farmer.address?.village || '',
           panchayat: farmer.address?.panchayat || '',
@@ -276,9 +282,12 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
           gender: values.personalDetails.gender,
           phone: values.personalDetails.phone,
           caste: values.personalDetails.caste,
-          photo: values.personalDetails.photo
+          photo: values.personalDetails.photo,
+          nomineeName: values.personalDetails.nomineeName,
+          nomineeRelation: values.personalDetails.nomineeRelation
         },
         address: {
+          houseName: values.address.houseName,
           ward: values.address.ward,
           village: values.address.village,
           panchayat: values.address.panchayat,
@@ -593,6 +602,22 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
                     {...form.getInputProps('admissionDate')}
                   />
                 </Grid.Col>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="Name of Nominee"
+                    placeholder="Enter nominee name"
+                    {...form.getInputProps('personalDetails.nomineeName')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="Relation with Producer"
+                    placeholder="e.g. Son, Daughter, Spouse"
+                    {...form.getInputProps('personalDetails.nomineeRelation')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
               </Grid>
             </Stack>
           </Stepper.Step>
@@ -600,6 +625,14 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
           <Stepper.Step label="Address" description="Location details">
             <Stack gap="md" mt="md">
               <Grid>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="House Name"
+                    placeholder="Enter house name"
+                    {...form.getInputProps('address.houseName')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
                 <Grid.Col span={6}>
                   <TextInput
                     label="Ward"

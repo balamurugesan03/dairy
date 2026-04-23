@@ -43,9 +43,21 @@ const farmerSchema = new mongoose.Schema({
     photo: {
       type: String,
       trim: true
+    },
+    nomineeName: {
+      type: String,
+      trim: true
+    },
+    nomineeRelation: {
+      type: String,
+      trim: true
     }
   },
   address: {
+    houseName: {
+      type: String,
+      trim: true
+    },
     ward: {
       type: String,
       trim: true

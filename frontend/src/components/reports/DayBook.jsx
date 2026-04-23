@@ -520,7 +520,6 @@ const DayBook = () => {
               w={160}
               clearable={false}
               radius="md"
-              maxDate={toDate}
             />
             <DatePickerInput
               label="To Date"
@@ -532,7 +531,6 @@ const DayBook = () => {
               w={160}
               clearable={false}
               radius="md"
-              minDate={fromDate}
             />
 
             <Button

@@ -164,6 +164,7 @@ export default function MilkSales() {
   const [historySearch, setHistorySearch] = useState('');
   const [showHistory,   setShowHistory]   = useState(false);
   const [importOpen,    setImportOpen]    = useState(false);
+  const [rawImportOpen, setRawImportOpen] = useState(false);
   const [filterMonth,   setFilterMonth]   = useState(String(new Date().getMonth() + 1));
   const [filterYear,    setFilterYear]    = useState(String(new Date().getFullYear()));
 
@@ -360,6 +361,25 @@ export default function MilkSales() {
       totalInserted += res?.data?.inserted ?? batch.length;
     }
     notifications.show({ color: 'teal', message: `${totalInserted} of ${records.length} records imported`, autoClose: 3000 });
+    loadEntries();
+    fetchNextBillNo();
+  };
+
+  // Raw Zibitt DB import — backend does transformation + customer lookup
+  const handleZibittRawImport = async (rawRows) => {
+    const CHUNK = 500;
+    let totalInserted = 0, totalSkipped = 0;
+    for (let i = 0; i < rawRows.length; i += CHUNK) {
+      const batch = rawRows.slice(i, i + CHUNK);
+      const res = await milkSalesAPI.zibittRawImport(batch);
+      totalInserted += res?.data?.inserted ?? 0;
+      totalSkipped  += res?.data?.skipped  ?? 0;
+    }
+    notifications.show({
+      color: totalSkipped ? 'yellow' : 'teal',
+      message: `${totalInserted} imported${totalSkipped ? `, ${totalSkipped} skipped` : ''}`,
+      autoClose: 4000
+    });
     loadEntries();
     fetchNextBillNo();
   };
@@ -703,10 +723,15 @@ export default function MilkSales() {
                 style={{ background: '#0891b2', border: '1px solid #67e8f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Refresh
               </Button>
-              {/* Import Zibitt — violet */}
+              {/* Import Zibitt Local Sales CSV — violet */}
               <Button leftSection={<IconUpload size={12} />} onClick={() => setImportOpen(true)} size="compact-xs" radius="sm"
                 style={{ background: '#7c3aed', border: '1px solid #a78bfa', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Import
+              </Button>
+              {/* Import Zibitt Raw DB — fuchsia */}
+              <Button leftSection={<IconUpload size={12} />} onClick={() => setRawImportOpen(true)} size="compact-xs" radius="sm"
+                style={{ background: '#a21caf', border: '1px solid #e879f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                Import DB
               </Button>
 
               <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
@@ -862,6 +887,15 @@ export default function MilkSales() {
         onImport={handleZibittImport}
         entityType="Milk Sales (Zibitt Local Sales)"
         requiredFields={['BillNo', 'SalesDate', 'Sales_Qty', 'RatePerLtr', 'TotalAmt']}
+        maxFileSizeMB={50}
+      />
+
+      <ImportModal
+        isOpen={rawImportOpen}
+        onClose={() => setRawImportOpen(false)}
+        onImport={handleZibittRawImport}
+        entityType="Milk Sales (Zibitt DB — dcs_id/mc_id/cust_id/qty/source_id)"
+        requiredFields={['dcs_id', 'mc_id', 'slno', 'cust_id', 'qty', 'rate', 'amount', 'source_id', 'date_entry']}
         maxFileSizeMB={50}
       />
     </Box>

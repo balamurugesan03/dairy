@@ -201,6 +201,107 @@ export const deleteCollection = async (req, res) => {
   }
 };
 
+// ── ZIBITT RAW DB IMPORT ──────────────────────────────────────────────────────
+//  Accepts raw Zibitt table rows: dcs_id, mc_id, slno, producer_id,
+//  qty, fat, clr, snf, rate, amount, incentive, col_mode, date_entry
+//  col_mode: D → AM (Morning),  M → PM (Evening)
+export const zibittRawImportCollections = async (req, res) => {
+  try {
+    const { records } = req.body;
+    if (!Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({ success: false, message: 'No records provided' });
+    }
+
+    const companyId = req.companyId;
+
+    // Pre-load all farmers for O(1) lookup (farmerNumber + memberId fallback)
+    const allFarmers = await Farmer.find(
+      { companyId },
+      'farmerNumber memberId personalDetails.name _id'
+    ).lean();
+
+    const farmerMap = {};
+    for (const f of allFarmers) {
+      if (f.farmerNumber) farmerMap[String(f.farmerNumber)] = { id: f._id, name: f.personalDetails?.name || '' };
+    }
+    for (const f of allFarmers) {
+      if (f.memberId && !farmerMap[String(f.memberId)]) {
+        farmerMap[String(f.memberId)] = { id: f._id, name: f.personalDetails?.name || '' };
+      }
+    }
+
+    const parseDateTime = (dateStr) => {
+      if (!dateStr) return new Date();
+      const str = String(dateStr);
+      const [datePart, timePart] = str.split(' ');
+      const parts = datePart.split('-');
+      if (parts.length !== 3) return new Date(str);
+      const [dd, mm, yyyy] = parts;
+      return new Date(`${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T${timePart || '00:00'}:00`);
+    };
+
+    const docs = [];
+    const skipped = [];
+
+    for (const row of records) {
+      const producerId = String(row.producer_id || '');
+      const fm = farmerMap[producerId];
+
+      if (!fm) {
+        skipped.push(producerId || `slno-${row.slno}`);
+        continue;
+      }
+
+      docs.push({
+        billNo:       `MC-${row.dcs_id}-${row.mc_id}-${row.producer_id}-${row.slno}`,
+        date:         parseDateTime(row.date_entry),
+        shift:        String(row.col_mode) === 'D' ? 'AM' : 'PM',
+        farmer:       fm.id,
+        farmerNumber: producerId,
+        farmerName:   fm.name,
+        qty:          Number(row.qty)       || 0,
+        fat:          Number(row.fat)       || 0,
+        clr:          Number(row.clr)       || 0,
+        snf:          Number(row.snf)       || 0,
+        rate:         Number(row.rate)      || 0,
+        incentive:    Number(row.incentive) || 0,
+        amount:       Number(row.amount)    || 0,
+        companyId,
+      });
+    }
+
+    if (docs.length === 0) {
+      const unknown = [...new Set(skipped)].slice(0, 10).join(', ');
+      return res.status(400).json({ success: false, message: `No matching farmers found. Unknown producer_ids: ${unknown}` });
+    }
+
+    const CHUNK = 1000;
+    let inserted = 0;
+    for (let i = 0; i < docs.length; i += CHUNK) {
+      try {
+        const result = await MilkCollection.insertMany(docs.slice(i, i + CHUNK), { ordered: false });
+        inserted += result.length;
+      } catch (err) {
+        if (err.name === 'MongoBulkWriteError' || err.code === 11000) {
+          inserted += err.result?.nInserted ?? 0;
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    const unknownSample = [...new Set(skipped)].slice(0, 5).join(', ');
+    const totalSkipped = skipped.length + (docs.length - inserted);
+    const msg = skipped.length
+      ? `${inserted} imported, ${totalSkipped} skipped (farmer not found: ${unknownSample}${skipped.length > 5 ? '…' : ''})`
+      : `${inserted} records imported`;
+
+    res.status(201).json({ success: true, data: { inserted, skipped: totalSkipped }, message: msg });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
 // ── BULK IMPORT  (Zibitt DailyCollection / CSV — no accounting vouchers) ──────
 export const bulkImportCollections = async (req, res) => {
   try {
@@ -209,14 +310,27 @@ export const bulkImportCollections = async (req, res) => {
       return res.status(400).json({ success: false, message: 'No records provided' });
     }
 
-    // Resolve farmerNumber → ObjectId in one batch query
+    // Resolve supplier numbers → Farmer ObjectIds
+    // First pass: match by farmerNumber; second pass: match unresolved by memberId
     const uniqueNumbers = [...new Set(records.map(r => String(r.farmerNumber || '')).filter(Boolean))];
     const farmers = await Farmer.find(
       { farmerNumber: { $in: uniqueNumbers }, companyId: req.companyId },
-      { farmerNumber: 1, 'personalDetails.name': 1 }
+      { farmerNumber: 1, memberId: 1, 'personalDetails.name': 1 }
     ).lean();
     const farmerMap = {};
     for (const f of farmers) farmerMap[f.farmerNumber] = { id: f._id, name: f.personalDetails?.name || '' };
+
+    // Fallback: numbers not found by farmerNumber → try memberId (members in Zibitt/OpenlyPSSA)
+    const unmatched = uniqueNumbers.filter(n => !farmerMap[n]);
+    if (unmatched.length > 0) {
+      const memberFarmers = await Farmer.find(
+        { memberId: { $in: unmatched }, companyId: req.companyId },
+        { memberId: 1, farmerNumber: 1, 'personalDetails.name': 1 }
+      ).lean();
+      for (const f of memberFarmers) {
+        if (f.memberId) farmerMap[f.memberId] = { id: f._id, name: f.personalDetails?.name || '' };
+      }
+    }
 
     const skipped = [];
     const docs = [];
@@ -283,6 +397,7 @@ export const fileUploadImportCollections = async (req, res) => {
     filePath = req.file.path;
 
     // Parse file server-side — detect semicolon-delimited CSV (Zibitt export)
+    // Parse file server-side — detect semicolon-delimited CSV (Zibitt export)
     const raw = fs.readFileSync(filePath);
     const sample = raw.slice(0, 4000).toString('utf8');
     const semiCount  = (sample.match(/;/g)  || []).length;
@@ -299,15 +414,28 @@ export const fileUploadImportCollections = async (req, res) => {
     const rows = jsonData.filter(r => Object.values(r).some(v => v !== '' && v !== null));
     console.log(`[MilkCollection Import] File rows: ${rows.length}, columns: ${Object.keys(rows[0] || {}).join(', ')}`);
 
-    // Resolve farmerNumbers → ObjectIds
+    // Resolve supplier numbers → Farmer ObjectIds
+    // First pass: match by farmerNumber; second pass: match unresolved by memberId
     const mapped = rows.map((r, i) => mapDailyCollectionRow(r, i));
     const uniqueNums = [...new Set(mapped.map(r => r.farmerNumber).filter(Boolean))];
     const farmers = await Farmer.find(
       { farmerNumber: { $in: uniqueNums }, companyId: req.companyId },
-      { farmerNumber: 1, 'personalDetails.name': 1 }
+      { farmerNumber: 1, memberId: 1, 'personalDetails.name': 1 }
     ).lean();
     const farmerMap = {};
     for (const f of farmers) farmerMap[f.farmerNumber] = { id: f._id, name: f.personalDetails?.name || '' };
+
+    // Fallback: numbers not found by farmerNumber → try memberId (members in Zibitt/OpenlyPSSA)
+    const unmatched = uniqueNums.filter(n => !farmerMap[n]);
+    if (unmatched.length > 0) {
+      const memberFarmers = await Farmer.find(
+        { memberId: { $in: unmatched }, companyId: req.companyId },
+        { memberId: 1, farmerNumber: 1, 'personalDetails.name': 1 }
+      ).lean();
+      for (const f of memberFarmers) {
+        if (f.memberId) farmerMap[f.memberId] = { id: f._id, name: f.personalDetails?.name || '' };
+      }
+    }
 
     const skipped = [];
     const docs = [];
