@@ -37,8 +37,10 @@ import {
   IconX
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
-import { agentAPI } from '../../services/api';
+import { agentAPI, collectionCenterAPI } from '../../services/api';
 import AgentModal from './AgentModal';
+import ImportModal from '../common/ImportModal';
+import { IconUpload } from '@tabler/icons-react';
 
 const AgentManagement = () => {
   const navigate = useNavigate();
@@ -49,6 +51,9 @@ const AgentManagement = () => {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importCenterId, setImportCenterId] = useState('');
+  const [collectionCenters, setCollectionCenters] = useState([]);
 
   const fetchAgents = useCallback(async () => {
     setLoading(true);
@@ -69,6 +74,14 @@ const AgentManagement = () => {
   }, [filters]);
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
+
+  useEffect(() => {
+    collectionCenterAPI.getAll({ status: 'Active', limit: 100 }).then(res => {
+      const centers = res.data || [];
+      setCollectionCenters(centers);
+      if (centers.length === 1) setImportCenterId(centers[0]._id);
+    }).catch(() => {});
+  }, []);
 
   const handleFilterChange = (field, value) => {
     setFilters(prev => ({ ...prev, [field]: value, page: 1 }));
@@ -100,6 +113,58 @@ const AgentManagement = () => {
     } catch (error) {
       notifications.show({ title: 'Error', message: error.message || 'Failed to delete agent', color: 'red' });
     }
+  };
+
+  const handleImport = async (data) => {
+    if (!importCenterId) {
+      notifications.show({ title: 'Select Center', message: 'Please select a collection center before importing', color: 'yellow' });
+      throw new Error('No collection center selected');
+    }
+
+    // Normalize keys to lowercase (handles Excel casing differences)
+    const parseDateTime = (val) => {
+      if (!val) return undefined;
+      if (typeof val === 'number') {
+        if (val <= 0) return undefined;
+        return new Date(Math.round((val - 25569) * 86400 * 1000));
+      }
+      const str = String(val).trim();
+      if (!str || str === '0000-00-00' || str.startsWith('#')) return undefined;
+      // DD-MM-YYYY HH:MM or DD-MM-YYYY
+      const m = str.match(/^(\d{2})-(\d{2})-(\d{4})(?:\s+(\d{2}:\d{2}))?/);
+      if (m) {
+        const d = new Date(`${m[3]}-${m[2]}-${m[1]}T${m[4] || '00:00'}:00`);
+        return isNaN(d.getTime()) ? undefined : d;
+      }
+      const d = new Date(str);
+      return isNaN(d.getTime()) ? undefined : d;
+    };
+
+    const agents = data.map(row => {
+      const r = Object.fromEntries(
+        Object.entries(row).map(([k, v]) => [k.toLowerCase().trim(), v])
+      );
+      const caId  = String(r['ca_id']  || '').trim();
+      const dcsId = String(r['dcs_id'] || '').trim();
+      return {
+        agentCode:          caId && dcsId ? `AG-${dcsId}-${caId}` : `AG-${caId}`,
+        agentName:          String(r['name'] || '').trim(),
+        status:             String(r['active'] || '').toUpperCase() === 'N' ? 'Inactive' : 'Active',
+        dateOfJoining:      parseDateTime(r['date_entry']),
+        collectionCenterId: importCenterId,
+      };
+    });
+
+    const response = await agentAPI.bulkImport(agents);
+    const { created, updated, errors } = response.data;
+
+    if (errors.length === 0) {
+      notifications.show({ title: 'Import Successful', message: `${created} agents created, ${updated} updated.`, color: 'green' });
+    } else {
+      notifications.show({ title: 'Import Completed', message: `${created} created, ${updated} updated, ${errors.length} failed.`, color: 'yellow' });
+    }
+    fetchAgents();
+    return response;
   };
 
   // Stats — fetched globally (not page-scoped)
@@ -151,6 +216,23 @@ const AgentManagement = () => {
                 size="sm"
               >
                 Add Agent
+              </Button>
+              <Select
+                placeholder="Select Center"
+                value={importCenterId}
+                onChange={v => setImportCenterId(v || '')}
+                data={collectionCenters.map(c => ({ value: c._id, label: c.centerName }))}
+                size="sm"
+                style={{ minWidth: 160 }}
+                styles={{ input: { background: 'rgba(255,255,255,0.9)' } }}
+              />
+              <Button
+                leftSection={<IconUpload size={16} />}
+                onClick={() => setShowImportModal(true)}
+                style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)' }}
+                size="sm"
+              >
+                Import
               </Button>
               <Button
                 leftSection={<IconX size={16} />}
@@ -372,6 +454,14 @@ const AgentManagement = () => {
         onClose={() => setModalOpen(false)}
         onSuccess={() => { fetchAgents(); setModalOpen(false); }}
         agentId={selectedId}
+      />
+
+      <ImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImport={handleImport}
+        entityType="Agents (OpenLyssa)"
+        requiredFields={['ca_id', 'name']}
       />
     </Box>
   );

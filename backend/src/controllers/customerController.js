@@ -341,6 +341,65 @@ export const searchCustomer = async (req, res) => {
   }
 };
 
+// Bulk import customers from OpenLyssa
+export const bulkImportCustomers = async (req, res) => {
+  try {
+    const { customers } = req.body;
+    if (!customers || !Array.isArray(customers) || customers.length === 0) {
+      return res.status(400).json({ success: false, message: 'Customers array is required' });
+    }
+
+    const CATEGORY_MAP = {
+      '1': 'Others', '2': 'Others', '3': 'Anganwadi',
+      '4': 'Others', '5': 'Hotel', '6': 'Others',
+      '7': 'Others', '8': 'Others', '9': 'School'
+    };
+
+    const results = { total: customers.length, created: 0, updated: 0, errors: [] };
+
+    for (let i = 0; i < customers.length; i++) {
+      const row = customers[i];
+      const rowNumber = i + 2;
+      try {
+        if (!row.customerId || !row.name) {
+          results.errors.push({ row: rowNumber, customerId: row.customerId || 'N/A', message: 'customerId and name required' });
+          continue;
+        }
+
+        const data = {
+          customerId:    String(row.customerId),
+          name:          String(row.name).trim(),
+          address:       row.address  || undefined,
+          category:      CATEGORY_MAP[String(row.catId || '')] || 'Others',
+          active:        row.active !== false && row.active !== 'false',
+          dateOfJoining: row.dateOfJoining ? new Date(row.dateOfJoining) : undefined,
+          companyId:     req.companyId,
+        };
+
+        const existing = await Customer.findOne({ customerId: data.customerId, companyId: req.companyId });
+        if (existing) {
+          await Customer.findByIdAndUpdate(existing._id, { $set: data });
+          results.updated++;
+        } else {
+          await Customer.create(data);
+          results.created++;
+        }
+      } catch (err) {
+        results.errors.push({ row: rowNumber, customerId: row.customerId || 'N/A', message: err.message });
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Import done: ${results.created} created, ${results.updated} updated, ${results.errors.length} errors`,
+      data: results
+    });
+  } catch (error) {
+    console.error('Bulk import customers error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Bulk import failed' });
+  }
+};
+
 // Get customer by customerId (for lookups)
 export const getCustomerByCustomerId = async (req, res) => {
   try {

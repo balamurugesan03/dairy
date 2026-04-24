@@ -6,12 +6,16 @@ import {
   updateCustomer,
   deleteCustomer,
   searchCustomer,
-  getCustomerByCustomerId
+  getCustomerByCustomerId,
+  bulkImportCustomers
 } from '../controllers/customerController.js';
 import { protect, addCompanyFilter } from '../middleware/auth.js';
 
 const router = express.Router();
 router.use(protect, addCompanyFilter);
+
+// Bulk import from OpenLyssa (must be before /:id routes)
+router.post('/bulk-import', bulkImportCustomers);
 
 // Create new customer
 router.post('/', createCustomer);

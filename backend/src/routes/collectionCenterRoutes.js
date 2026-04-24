@@ -5,12 +5,16 @@ import {
   getCollectionCenterById,
   updateCollectionCenter,
   deleteCollectionCenter,
-  toggleStatus
+  toggleStatus,
+  bulkImportCollectionCenters
 } from '../controllers/collectionCenterController.js';
 import { protect, addCompanyFilter } from '../middleware/auth.js';
 
 const router = express.Router();
 router.use(protect, addCompanyFilter);
+
+// Bulk import from OpenLyssa (must be before /:id routes)
+router.post('/bulk-import', bulkImportCollectionCenters);
 
 // Create new collection center
 router.post('/', createCollectionCenter);

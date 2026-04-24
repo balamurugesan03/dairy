@@ -710,20 +710,24 @@ export const bulkImportFarmers = async (req, res) => {
 
         if (existingFarmer) {
           // UPDATE existing farmer
-          // memberId: set if truthy, explicitly clear if null (Producer status from Zibitt)
+          // memberId: set if truthy, explicitly clear if null (Non-member from OpenLyssa)
           if (farmerData.memberId)        existingFarmer.memberId = farmerData.memberId;
           else if (farmerData.memberId === null) existingFarmer.memberId = undefined;
           existingFarmer.personalDetails.name = farmerData.name;
-          if (phoneStr)             existingFarmer.personalDetails.phone  = phoneStr;
-          if (farmerData.gender)    existingFarmer.personalDetails.gender  = farmerData.gender;
-          if (farmerData.dob)       existingFarmer.personalDetails.dob     = new Date(farmerData.dob);
-          if (farmerData.caste)     existingFarmer.personalDetails.caste   = farmerData.caste;
-          if (farmerData.village)   existingFarmer.address.village         = farmerData.village;
-          if (farmerData.houseName) existingFarmer.address.ward            = farmerData.houseName;
-          if (farmerData.pin)       existingFarmer.address.pin             = farmerData.pin;
-          if (farmerData.membershipDate) {
+          if (phoneStr)                       existingFarmer.personalDetails.phone           = phoneStr;
+          if (farmerData.fatherName)          existingFarmer.personalDetails.fatherName      = farmerData.fatherName;
+          if (farmerData.gender)              existingFarmer.personalDetails.gender           = farmerData.gender;
+          if (farmerData.dob)                 existingFarmer.personalDetails.dob              = new Date(farmerData.dob);
+          if (farmerData.caste)               existingFarmer.personalDetails.caste            = farmerData.caste;
+          if (farmerData.nomineeName)         existingFarmer.personalDetails.nomineeName      = farmerData.nomineeName;
+          if (farmerData.nomineeRelation)     existingFarmer.personalDetails.nomineeRelation  = farmerData.nomineeRelation;
+          if (farmerData.houseName)           existingFarmer.address.houseName                = farmerData.houseName;
+          if (farmerData.ward)                existingFarmer.address.ward                     = farmerData.ward;
+          if (farmerData.village)             existingFarmer.address.village                  = farmerData.village;
+          if (farmerData.panchayat)           existingFarmer.address.panchayat                = farmerData.panchayat;
+          if (farmerData.pin)                 existingFarmer.address.pin                      = farmerData.pin;
+          if (farmerData.membershipDate)
             existingFarmer.membershipDate = new Date(farmerData.membershipDate);
-          }
           if (farmerData.isMembership !== undefined)
             existingFarmer.isMembership = farmerData.isMembership;
           else if (farmerData.membershipDate)
@@ -734,6 +738,11 @@ export const bulkImportFarmers = async (req, res) => {
             existingFarmer.financialDetails.admissionFee = Number(farmerData.admissionFee) || 0;
           if (farmerData.totalShares)
             existingFarmer.financialDetails.totalShares = Number(farmerData.totalShares);
+
+          // Mark nested objects modified so Mongoose saves all changes
+          existingFarmer.markModified('personalDetails');
+          existingFarmer.markModified('address');
+          existingFarmer.markModified('financialDetails');
 
           await existingFarmer.save();
 
@@ -753,18 +762,23 @@ export const bulkImportFarmers = async (req, res) => {
           // CREATE new farmer
           const newFarmer = new Farmer({
             farmerNumber: farmerData.farmerNumber,
-            memberId:     farmerData.memberId || undefined,   // null → undefined (not stored)
+            memberId:     farmerData.memberId || undefined,
             personalDetails: {
-              name:   farmerData.name,
-              phone:  phoneStr,
-              gender: farmerData.gender  || undefined,
-              dob:    farmerData.dob     ? new Date(farmerData.dob)  : undefined,
-              caste:  farmerData.caste   || undefined,
+              name:            farmerData.name,
+              phone:           phoneStr,
+              fatherName:      farmerData.fatherName      || undefined,
+              gender:          farmerData.gender          || undefined,
+              dob:             farmerData.dob             ? new Date(farmerData.dob) : undefined,
+              caste:           farmerData.caste           || undefined,
+              nomineeName:     farmerData.nomineeName     || undefined,
+              nomineeRelation: farmerData.nomineeRelation || undefined,
             },
             address: {
-              village:  farmerData.village   || undefined,
-              ward:     farmerData.houseName || undefined,
-              pin:      farmerData.pin       || undefined,
+              houseName: farmerData.houseName  || undefined,
+              ward:      farmerData.ward       || undefined,
+              village:   farmerData.village    || undefined,
+              panchayat: farmerData.panchayat  || undefined,
+              pin:       farmerData.pin        || undefined,
             },
             admissionDate:  farmerData.admissionDate  ? new Date(farmerData.admissionDate)  : undefined,
             membershipDate: farmerData.membershipDate ? new Date(farmerData.membershipDate) : undefined,

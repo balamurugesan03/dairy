@@ -5,10 +5,14 @@ import {
   getAgentById,
   updateAgent,
   toggleAgentStatus,
-  deleteAgent
+  deleteAgent,
+  bulkImportAgents
 } from '../controllers/agentController.js';
 
 const router = express.Router();
+
+// Bulk import from OpenLyssa (must be before /:id routes)
+router.post('/bulk-import', bulkImportAgents);
 
 // Create new agent
 router.post('/', createAgent);

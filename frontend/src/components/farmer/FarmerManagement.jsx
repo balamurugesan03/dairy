@@ -280,34 +280,79 @@ const FarmerManagement = () => {
 
   const handleImport = async (data) => {
     try {
-      // Detect source format
-      const isOpenLyPSSA = data.length > 0 && 'pro_name' in data[0];
-      const isZibitt = !isOpenLyPSSA && data.length > 0 && ('Supplier_No' in data[0] || 'Supplier_Id' in data[0]);
+      // Detect source format — case-insensitive key check
+      const firstKeys = data.length > 0
+        ? Object.keys(data[0]).map(k => k.toLowerCase().trim())
+        : [];
+      const isOpenLyssa = firstKeys.includes('pro_name') || firstKeys.includes('producer_id');
+      const isZibitt    = !isOpenLyssa && (firstKeys.includes('supplier_no') || firstKeys.includes('supplier_id'));
 
+      // Handles: null, '0000-00-00', '########', Excel serials, DD-MM-YYYY, ISO
       const parseDate = (val) => {
-        if (!val || val === '0000-00-00') return undefined;
-        const d = new Date(val);
+        if (!val) return undefined;
+        if (typeof val === 'number') {
+          if (val <= 0) return undefined;
+          return new Date(Math.round((val - 25569) * 86400 * 1000));
+        }
+        const str = String(val).trim();
+        if (!str || str === '0000-00-00' || str.startsWith('#')) return undefined;
+        // DD-MM-YYYY (common OpenLyssa format)
+        const ddmmyyyy = str.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+        if (ddmmyyyy) {
+          const d = new Date(`${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`);
+          return isNaN(d.getTime()) ? undefined : d;
+        }
+        const d = new Date(str);
         return isNaN(d.getTime()) ? undefined : d;
       };
 
+      const CASTE_MAP = { '1': 'SC', '2': 'ST', '3': 'OBC' };
+      const parseCaste = (val) => {
+        if (!val) return undefined;
+        const key = String(val).trim();
+        return CASTE_MAP[key] ?? (key === '0' ? undefined : key || undefined);
+      };
+
+      const cleanStr = (val) => {
+        if (!val) return undefined;
+        const s = String(val).trim();
+        return s === '' || s === '0' ? undefined : s;
+      };
+
       const farmers = data.map(row => {
-        if (isOpenLyPSSA) {
-          // openlypssa / Zibitt semicolon CSV export format
-          const pinRaw = String(row['pin_code'] || '').replace(/\D/g, '');
+        if (isOpenLyssa) {
+          // Normalize all keys to lowercase so casing differences in Excel headers don't matter
+          const r = Object.fromEntries(
+            Object.entries(row).map(([k, v]) => [k.toLowerCase().trim(), v])
+          );
+          const isMember = String(r['member_status'] ?? '').trim().toUpperCase() === 'Y';
+          // Excel often stores pin as float (682301.0) → round first, then stringify
+          const pinRaw = (() => {
+            const v = r['pin_code'];
+            if (!v) return '';
+            const n = Number(v);
+            return !isNaN(n) && n > 0 ? String(Math.round(n)) : String(v).replace(/\D/g, '');
+          })();
           return {
-            farmerNumber: String(row['producer_id'] || '').trim(),
-            name:         String(row['pro_name'] || '').trim(),
-            phone:        cleanPhone(row['mobile_no'] || row['phone_no']),
-            gender:       mapGender(row['sex']),
-            dob:          parseDate(row['date_of_birth']),
-            admissionDate: parseDate(row['date_join']),
-            houseName:    row['house_name'] ? String(row['house_name']).trim() : undefined,
-            village:      row['place'] ? String(row['place']).trim() : undefined,
-            pin:          pinRaw.length === 6 ? pinRaw : undefined,
-            membershipDate: parseDate(row['mem_doa']),
-            memberNumber: row['member_no'] != null ? String(row['member_no']).trim() : undefined,
-            totalShares:  Number(row['mem_total_share_nos']) || undefined,
-            nominee:      row['nominee'] ? String(row['nominee']).trim() : undefined,
+            farmerNumber:    String(r['producer_id'] || '').trim(),
+            name:            String(r['pro_name'] || '').trim(),
+            fatherName:      cleanStr(r['father_hus_name']),
+            phone:           cleanPhone(r['mobile_no'] || r['phone_no']),
+            gender:          mapGender(r['sex']),
+            dob:             parseDate(r['date_of_birth']),
+            caste:           parseCaste(r['caste_id']),
+            nomineeName:     cleanStr(r['nominee']),
+            nomineeRelation: cleanStr(r['rel_id']),
+            houseName:       cleanStr(r['house_name']),
+            ward:            cleanStr(r['ward_no']),
+            village:         cleanStr(r['place']),
+            panchayat:       cleanStr(r['post']),
+            pin:             pinRaw.length === 6 ? pinRaw : undefined,
+            admissionDate:   parseDate(r['date_join']),
+            isMembership:    isMember,
+            memberId:        isMember ? cleanStr(r['member_no']) : null,
+            membershipDate:  isMember ? parseDate(r['mem_doa']) : undefined,
+            totalShares:     Number(r['mem_total_share_nos']) || undefined,
           };
         }
         if (isZibitt) {

@@ -105,6 +105,7 @@ export const customerAPI = {
   getByCustomerId: (customerId) => api.get(`/customers/customerId/${customerId}`).then(res => res.data).catch(handleError),
   create: (data) => api.post('/customers', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/customers/${id}`, data).then(res => res.data).catch(handleError),
+  bulkImport: (customers) => api.post('/customers/bulk-import', { customers }).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/customers/${id}`).then(res => res.data).catch(handleError),
   search: (query) => {
     // Validate query parameter - must be non-empty string
@@ -376,7 +377,8 @@ export const collectionCenterAPI = {
   create: (data) => api.post('/collection-centers', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/collection-centers/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/collection-centers/${id}`).then(res => res.data).catch(handleError),
-  toggleStatus: (id) => api.patch(`/collection-centers/${id}/status`).then(res => res.data).catch(handleError)
+  toggleStatus: (id) => api.patch(`/collection-centers/${id}/status`).then(res => res.data).catch(handleError),
+  bulkImport: (centers) => api.post('/collection-centers/bulk-import', { centers }).then(res => res.data).catch(handleError)
 };
 
 // MILK COLLECTION APIs
@@ -763,7 +765,8 @@ export const agentAPI = {
   create: (data) => api.post('/agents', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/agents/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/agents/${id}`).then(res => res.data).catch(handleError),
-  toggleStatus: (id) => api.patch(`/agents/${id}/status`).then(res => res.data).catch(handleError)
+  toggleStatus: (id) => api.patch(`/agents/${id}/status`).then(res => res.data).catch(handleError),
+  bulkImport: (agents) => api.post('/agents/bulk-import', { agents }).then(res => res.data).catch(handleError)
 };
 
 // ─── MILK PURCHASE SETTINGS APIs (Daily Collections - Dairy Cooperative) ─────

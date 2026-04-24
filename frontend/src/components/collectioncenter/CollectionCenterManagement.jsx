@@ -33,12 +33,14 @@ import {
   IconCircle,
   IconColumns,
   IconClearAll,
-  IconX
+  IconX,
+  IconUpload
 } from '@tabler/icons-react';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { collectionCenterAPI } from '../../services/api';
 import CollectionCenterModal from './CollectionCenterModal';
+import ImportModal from '../common/ImportModal';
 import { useAuth } from '../../context/AuthContext';
 
 const CollectionCenterManagement = () => {
@@ -78,6 +80,7 @@ const CollectionCenterManagement = () => {
   const [showExportModal, setShowExportModal] = useState(false);
   const [showCenterModal, setShowCenterModal] = useState(false);
   const [selectedCenterId, setSelectedCenterId] = useState(null);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   useEffect(() => {
     fetchCenters();
@@ -189,6 +192,71 @@ const CollectionCenterManagement = () => {
         }
       }
     });
+  };
+
+  const handleImport = async (data) => {
+    // Parse DD-MM-YYYY or leave as-is for ISO / Excel serial
+    const parseDate = (val) => {
+      if (!val) return undefined;
+      if (typeof val === 'number') {
+        if (val <= 0) return undefined;
+        return new Date(Math.round((val - 25569) * 86400 * 1000));
+      }
+      const str = String(val).trim();
+      if (!str || str === '0000-00-00' || str.startsWith('#')) return undefined;
+      const ddmmyyyy = str.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+      if (ddmmyyyy) {
+        const d = new Date(`${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`);
+        return isNaN(d.getTime()) ? undefined : d;
+      }
+      const d = new Date(str);
+      return isNaN(d.getTime()) ? undefined : d;
+    };
+
+    // Detect OpenLyssa format (has center_name column)
+    const isOpenLyssa = data.length > 0 && 'center_name' in data[0];
+
+    const centers = data.map(row => {
+      if (isOpenLyssa) {
+        return {
+          centerName:  String(row['center_name'] || '').trim(),
+          centerType:  row['head_office'] === 'Y' ? 'Head Office' : 'Sub Centre',
+          status:      row['active'] === 'Y' ? 'Active' : 'Inactive',
+          startDate:   parseDate(row['start_date']),
+          street:      row['address'] ? String(row['address']).trim() : undefined,
+          description: row['short']   ? String(row['short']).trim()   : undefined,
+        };
+      }
+      // Generic / manual template
+      return {
+        centerName:  String(row['Center Name'] || '').trim(),
+        centerType:  row['Center Type'] || 'Sub Centre',
+        status:      row['Status'] || 'Active',
+        startDate:   parseDate(row['Start Date']),
+        street:      row['Address'] ? String(row['Address']).trim() : undefined,
+        description: row['Description'] ? String(row['Description']).trim() : undefined,
+      };
+    });
+
+    const response = await collectionCenterAPI.bulkImport(centers);
+    const { created, updated, errors } = response.data;
+
+    if (errors.length === 0) {
+      notifications.show({
+        title: 'Import Successful',
+        message: `${created} centers created, ${updated} updated.`,
+        color: 'green'
+      });
+    } else {
+      notifications.show({
+        title: 'Import Completed with Errors',
+        message: `${created} created, ${updated} updated, ${errors.length} failed.`,
+        color: 'yellow'
+      });
+    }
+
+    fetchCenters();
+    return response;
   };
 
   const handleExport = (format) => {
@@ -376,6 +444,15 @@ const CollectionCenterManagement = () => {
               disabled={!canWrite('collectionCenters')}
             >
               Add Collection Center
+            </Button>
+            <Button
+              variant="light"
+              color="teal"
+              leftSection={<IconUpload size={16} />}
+              onClick={() => setShowImportModal(true)}
+              disabled={!canWrite('collectionCenters')}
+            >
+              Import (OpenLyssa)
             </Button>
             <Button
               variant="default"
@@ -586,6 +663,14 @@ const CollectionCenterManagement = () => {
         onClose={handleCloseModal}
         onSuccess={handleModalSuccess}
         centerId={selectedCenterId}
+      />
+
+      <ImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImport={handleImport}
+        entityType="Collection Centers (OpenLyssa)"
+        requiredFields={['center_name']}
       />
     </Box>
   );

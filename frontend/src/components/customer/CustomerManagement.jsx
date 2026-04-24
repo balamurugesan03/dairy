@@ -113,6 +113,7 @@ const CustomerManagement = () => {
   const [importMapping, setImportMapping] = useState({});
   const [importLoading, setImportLoading] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
+  const [isOpenLyssaImport, setIsOpenLyssaImport] = useState(false);
   const fileInputRef = useRef(null);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
@@ -294,6 +295,23 @@ const CustomerManagement = () => {
     }
   };
 
+  const parseDateTime = (val) => {
+    if (!val) return undefined;
+    if (typeof val === 'number') {
+      if (val <= 0) return undefined;
+      return new Date(Math.round((val - 25569) * 86400 * 1000));
+    }
+    const str = String(val).trim();
+    if (!str || str === '0000-00-00' || str.startsWith('#')) return undefined;
+    const m = str.match(/^(\d{2})-(\d{2})-(\d{4})(?:\s+(\d{2}:\d{2}))?/);
+    if (m) {
+      const d = new Date(`${m[3]}-${m[2]}-${m[1]}T${m[4] || '00:00'}:00`);
+      return isNaN(d.getTime()) ? undefined : d;
+    }
+    const d = new Date(str);
+    return isNaN(d.getTime()) ? undefined : d;
+  };
+
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -307,23 +325,50 @@ const CustomerManagement = () => {
           notifications.show({ title: 'Error', message: 'Excel file has no data rows', color: 'red' });
           return;
         }
-        const headers = rawRows[0].map(h => String(h).trim());
-        // Build mapping: excel header index → customer field
+        const headers = rawRows[0].map(h => String(h).trim().toLowerCase());
+
+        // ── OpenLyssa format detection ──────────────────────────────────────
+        if (headers.includes('cust_id')) {
+          setIsOpenLyssaImport(true);
+          const dataRows = rawRows.slice(1).filter(row => row.some(c => c !== ''));
+          const getIdx = (col) => headers.indexOf(col);
+          const parsed = dataRows
+            .map(row => ({
+              customerId:    String(row[getIdx('cust_id')] ?? '').trim(),
+              name:          String(row[getIdx('name')] ?? '').trim(),
+              address:       String(row[getIdx('address')] ?? '').trim() || undefined,
+              catId:         String(row[getIdx('cat_id')] ?? '').trim(),
+              active:        String(row[getIdx('active')] ?? '').trim().toUpperCase() !== 'N',
+              dateOfJoining: parseDateTime(row[getIdx('date_entry')]),
+            }))
+            .filter(r => r.customerId && r.name);
+          setImportHeaders(['customerId', 'name', 'address', 'catId', 'active']);
+          setImportMapping({});
+          setImportRows(parsed);
+          notifications.show({
+            title: 'OpenLyssa Format Detected',
+            message: `${parsed.length} customers ready to import`,
+            color: 'blue'
+          });
+          e.target.value = '';
+          return;
+        }
+
+        // ── Standard column mapping ─────────────────────────────────────────
+        setIsOpenLyssaImport(false);
         const mapping = {};
         headers.forEach((h, i) => {
-          const key = h.toLowerCase().replace(/\s+/g, ' ').trim();
+          const key = h.replace(/\s+/g, ' ').trim();
           if (COLUMN_MAP[key]) mapping[i] = COLUMN_MAP[key];
         });
-        const matchedCount = Object.keys(mapping).length;
-        if (matchedCount === 0) {
+        if (Object.keys(mapping).length === 0) {
           notifications.show({
             title: 'No matching columns',
-            message: `None of the Excel headers matched known fields. Headers found: ${headers.join(', ')}`,
+            message: `Headers found: ${headers.join(', ')}`,
             color: 'orange'
           });
           return;
         }
-        // Parse data rows
         const dataRows = rawRows.slice(1).filter(row => row.some(cell => cell !== ''));
         const parsed = dataRows.map(row => {
           const obj = {};
@@ -331,7 +376,7 @@ const CustomerManagement = () => {
             obj[field] = row[colIdx] !== undefined && row[colIdx] !== '' ? String(row[colIdx]).trim() : '';
           });
           return obj;
-        }).filter(obj => obj.name); // name is required
+        }).filter(obj => obj.name);
         setImportHeaders(Object.values(mapping).filter((v, i, arr) => arr.indexOf(v) === i));
         setImportMapping(mapping);
         setImportRows(parsed);
@@ -343,7 +388,6 @@ const CustomerManagement = () => {
       }
     };
     reader.readAsBinaryString(file);
-    // Reset input so same file can be re-selected
     e.target.value = '';
   };
 
@@ -351,6 +395,30 @@ const CustomerManagement = () => {
     if (importRows.length === 0) return;
     setImportLoading(true);
     setImportProgress(0);
+
+    // ── OpenLyssa: single bulk API call ────────────────────────────────────
+    if (isOpenLyssaImport) {
+      try {
+        const response = await customerAPI.bulkImport(importRows);
+        const { created, updated, errors } = response.data;
+        notifications.show({
+          title: 'Import Complete',
+          message: `${created} created, ${updated} updated, ${errors.length} failed`,
+          color: errors.length === 0 ? 'green' : 'orange'
+        });
+      } catch (err) {
+        notifications.show({ title: 'Import Failed', message: err.message || 'Import failed', color: 'red' });
+      }
+      setImportLoading(false);
+      setImportProgress(100);
+      setShowImportModal(false);
+      setImportRows([]);
+      setIsOpenLyssaImport(false);
+      fetchCustomers();
+      return;
+    }
+
+    // ── Standard: one by one ───────────────────────────────────────────────
     let success = 0, failed = 0;
     for (let i = 0; i < importRows.length; i++) {
       const row = importRows[i];
@@ -836,7 +904,7 @@ const CustomerManagement = () => {
           )}
 
           <Group justify="flex-end">
-            <Button variant="default" onClick={() => { setShowImportModal(false); setImportRows([]); setImportHeaders([]); }} disabled={importLoading}>
+            <Button variant="default" onClick={() => { setShowImportModal(false); setImportRows([]); setImportHeaders([]); setIsOpenLyssaImport(false); }} disabled={importLoading}>
               Cancel
             </Button>
             <Button

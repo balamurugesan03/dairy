@@ -202,11 +202,71 @@ export const toggleStatus = async (req, res) => {
   }
 };
 
+// Bulk import from OpenLyssa collection_center table
+export const bulkImportCollectionCenters = async (req, res) => {
+  try {
+    const { centers } = req.body;
+
+    if (!centers || !Array.isArray(centers) || centers.length === 0) {
+      return res.status(400).json({ success: false, message: 'Centers array is required' });
+    }
+
+    const results = { total: centers.length, created: 0, updated: 0, errors: [] };
+
+    for (let i = 0; i < centers.length; i++) {
+      const row = centers[i];
+      const rowNumber = i + 2;
+
+      try {
+        if (!row.centerName) {
+          results.errors.push({ row: rowNumber, centerName: 'N/A', message: 'centerName is required' });
+          continue;
+        }
+
+        const existing = await CollectionCenter.findOne({
+          centerName: row.centerName,
+          companyId: req.companyId
+        });
+
+        const data = {
+          centerName:  row.centerName,
+          centerType:  row.centerType  || 'Sub Centre',
+          status:      row.status      || 'Active',
+          startDate:   row.startDate   ? new Date(row.startDate) : new Date(),
+          description: row.description || undefined,
+          companyId:   req.companyId,
+        };
+        if (row.street) data['address.street'] = row.street;
+
+        if (existing) {
+          await CollectionCenter.findByIdAndUpdate(existing._id, { $set: data });
+          results.updated++;
+        } else {
+          await CollectionCenter.create({ ...data, address: { street: row.street || undefined } });
+          results.created++;
+        }
+      } catch (err) {
+        results.errors.push({ row: rowNumber, centerName: row.centerName || 'N/A', message: err.message });
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Import done: ${results.created} created, ${results.updated} updated, ${results.errors.length} errors`,
+      data: results
+    });
+  } catch (error) {
+    console.error('Bulk import collection centers error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Bulk import failed' });
+  }
+};
+
 export default {
   createCollectionCenter,
   getAllCollectionCenters,
   getCollectionCenterById,
   updateCollectionCenter,
   deleteCollectionCenter,
-  toggleStatus
+  toggleStatus,
+  bulkImportCollectionCenters
 };

@@ -231,6 +231,74 @@ export const toggleAgentStatus = async (req, res) => {
   }
 };
 
+// Bulk import agents from OpenLyssa collection_agent table
+export const bulkImportAgents = async (req, res) => {
+  try {
+    const { agents } = req.body;
+
+    if (!agents || !Array.isArray(agents) || agents.length === 0) {
+      return res.status(400).json({ success: false, message: 'Agents array is required' });
+    }
+
+    const results = { total: agents.length, created: 0, updated: 0, errors: [] };
+
+    for (let i = 0; i < agents.length; i++) {
+      const row = agents[i];
+      const rowNumber = i + 2;
+
+      try {
+        if (!row.agentCode || !row.agentName) {
+          results.errors.push({ row: rowNumber, agentCode: row.agentCode || 'N/A', message: 'agentCode and agentName are required' });
+          continue;
+        }
+
+        // Resolve collectionCenterId
+        let collectionCenterId = row.collectionCenterId || null;
+        if (!collectionCenterId) {
+          // Fall back: first active center for this company
+          const center = await CollectionCenter.findOne({ companyId: req.companyId, status: 'Active' });
+          collectionCenterId = center?._id || null;
+        }
+
+        if (!collectionCenterId) {
+          results.errors.push({ row: rowNumber, agentCode: row.agentCode, message: 'No collection center found for this company' });
+          continue;
+        }
+
+        const data = {
+          agentCode:          row.agentCode,
+          agentName:          row.agentName,
+          collectionCenterId: collectionCenterId,
+          status:             row.status || 'Active',
+          dateOfJoining:      row.dateOfJoining ? new Date(row.dateOfJoining) : undefined,
+          companyId:          req.companyId,
+        };
+
+        const existing = await Agent.findOne({ agentCode: row.agentCode, companyId: req.companyId });
+
+        if (existing) {
+          await Agent.findByIdAndUpdate(existing._id, { $set: data });
+          results.updated++;
+        } else {
+          await Agent.create(data);
+          results.created++;
+        }
+      } catch (err) {
+        results.errors.push({ row: rowNumber, agentCode: row.agentCode || 'N/A', message: err.message });
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Import done: ${results.created} created, ${results.updated} updated, ${results.errors.length} errors`,
+      data: results
+    });
+  } catch (error) {
+    console.error('Bulk import agents error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Bulk import failed' });
+  }
+};
+
 // Delete agent (soft delete)
 export const deleteAgent = async (req, res) => {
   try {
