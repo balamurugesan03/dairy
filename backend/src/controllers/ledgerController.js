@@ -12,6 +12,9 @@ export const getAllLedgers = async (req, res) => {
 
     const query = { companyId: req.companyId };
 
+    // Exclude farmer ledgers (bulk records) from general ledger list; agents should be visible
+    query['linkedEntity.entityType'] = { $nin: ['Farmer'] };
+
     if (status) {
       query.status = status;
     }

@@ -107,6 +107,7 @@ export const customerAPI = {
   update: (id, data) => api.put(`/customers/${id}`, data).then(res => res.data).catch(handleError),
   bulkImport: (customers) => api.post('/customers/bulk-import', { customers }).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/customers/${id}`).then(res => res.data).catch(handleError),
+  bulkDelete: (ids) => api.delete('/customers/bulk-delete', { data: { ids } }).then(res => res.data).catch(handleError),
   search: (query) => {
     // Validate query parameter - must be non-empty string
     if (!query || typeof query !== 'string' || query.trim().length === 0) {

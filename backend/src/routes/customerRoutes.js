@@ -7,7 +7,8 @@ import {
   deleteCustomer,
   searchCustomer,
   getCustomerByCustomerId,
-  bulkImportCustomers
+  bulkImportCustomers,
+  bulkDeleteCustomers
 } from '../controllers/customerController.js';
 import { protect, addCompanyFilter } from '../middleware/auth.js';
 
@@ -16,6 +17,9 @@ router.use(protect, addCompanyFilter);
 
 // Bulk import from OpenLyssa (must be before /:id routes)
 router.post('/bulk-import', bulkImportCustomers);
+
+// Bulk delete permanently (must be before /:id routes)
+router.delete('/bulk-delete', bulkDeleteCustomers);
 
 // Create new customer
 router.post('/', createCustomer);

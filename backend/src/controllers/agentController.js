@@ -1,6 +1,36 @@
 import Agent from '../models/Agent.js';
+import Ledger from '../models/Ledger.js';
 import CollectionCenter from '../models/CollectionCenter.js';
 import { generateCode } from '../models/Counter.js';
+
+// Auto-create ledger for a newly saved agent
+const createAgentLedger = async (agent, companyId) => {
+  const existing = await Ledger.findOne({
+    'linkedEntity.entityType': 'Agent',
+    'linkedEntity.entityId':   agent._id,
+    companyId
+  });
+  if (existing) return existing;
+
+  const ledger = new Ledger({
+    ledgerName:           `${agent.agentName} (${agent.agentCode})`,
+    ledgerType:           'Advance due to Society',
+    linkedEntity:         { entityType: 'Agent', entityId: agent._id },
+    openingBalance:       0,
+    openingBalanceType:   'Dr',
+    currentBalance:       0,
+    balanceType:          'Dr',
+    parentGroup:          'Advance due to Society',
+    status:               'Active',
+    companyId
+  });
+  await ledger.save();
+
+  agent.ledgerId = ledger._id;
+  await agent.save();
+
+  return ledger;
+};
 
 // Auto-generate agent code: AGT-0001, AGT-0002, ...
 const generateAgentCode = async (companyId) =>
@@ -36,6 +66,14 @@ export const createAgent = async (req, res) => {
     });
 
     await agent.save();
+
+    // Auto-create ledger entry in accounts
+    try {
+      await createAgentLedger(agent, req.companyId);
+    } catch (ledgerErr) {
+      console.error('Agent ledger creation error (non-fatal):', ledgerErr.message);
+    }
+
     await agent.populate('collectionCenterId', 'centerName centerType');
 
     res.status(201).json({
@@ -279,9 +317,13 @@ export const bulkImportAgents = async (req, res) => {
         if (existing) {
           await Agent.findByIdAndUpdate(existing._id, { $set: data });
           results.updated++;
+          // Ensure ledger exists for previously imported agents too
+          try { await createAgentLedger(existing, req.companyId); } catch (_) {}
         } else {
-          await Agent.create(data);
+          const newAgent = await Agent.create(data);
           results.created++;
+          // Auto-post to ledger / accounts
+          try { await createAgentLedger(newAgent, req.companyId); } catch (_) {}
         }
       } catch (err) {
         results.errors.push({ row: rowNumber, agentCode: row.agentCode || 'N/A', message: err.message });

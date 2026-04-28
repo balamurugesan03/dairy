@@ -1,24 +1,44 @@
 import Customer from '../models/Customer.js';
 import Ledger from '../models/Ledger.js';
 
-// Helper function to generate next customer ID
+const createCustomerLedger = async (customer, companyId) => {
+  const existing = await Ledger.findOne({
+    'linkedEntity.entityType': 'Customer',
+    'linkedEntity.entityId':   customer._id,
+    companyId
+  });
+  if (existing) return existing;
+
+  const ledger = new Ledger({
+    ledgerName:         `${customer.name} (${customer.customerId})`,
+    ledgerType:         'Advance due to Society',
+    linkedEntity:       { entityType: 'Customer', entityId: customer._id },
+    openingBalance:     customer.openingBalance || 0,
+    openingBalanceType: 'Dr',
+    currentBalance:     customer.openingBalance || 0,
+    balanceType:        'Dr',
+    parentGroup:        'Advance due to Society',
+    status:             'Active',
+    companyId
+  });
+  await ledger.save();
+
+  customer.ledgerId = ledger._id;
+  await customer.save();
+  return ledger;
+};
+
+// Auto-generate customer ID: CUST0001, CUST0002, ...
 const generateCustomerId = async (companyId) => {
   try {
-    // Find the last customer by sorting in descending order within this company
     const lastCustomer = await Customer.findOne({ companyId })
       .sort({ createdAt: -1 })
       .select('customerId');
 
-    if (!lastCustomer || !lastCustomer.customerId) {
-      return 'CUST0001';
-    }
+    if (!lastCustomer || !lastCustomer.customerId) return 'CUST0001';
 
-    // Extract the numeric part from the last customer ID (e.g., CUST0001 -> 1)
     const lastNumber = parseInt(lastCustomer.customerId.replace('CUST', ''));
-    const nextNumber = lastNumber + 1;
-
-    // Generate new customer ID with zero padding (e.g., CUST0002)
-    return `CUST${String(nextNumber).padStart(4, '0')}`;
+    return `CUST${String(lastNumber + 1).padStart(4, '0')}`;
   } catch (error) {
     console.error('Error generating customer ID:', error);
     return 'CUST0001';
@@ -31,95 +51,38 @@ export const createCustomer = async (req, res) => {
     const companyId = req.companyId;
     const customerData = { ...req.body, companyId };
 
-    // Auto-generate customer ID if not provided
     if (!customerData.customerId) {
       customerData.customerId = await generateCustomerId(companyId);
     }
 
-    // Check for duplicate customerId within this company
-    const existingCustomer = await Customer.findOne({
-      customerId: customerData.customerId,
-      companyId
-    });
-
+    const existingCustomer = await Customer.findOne({ customerId: customerData.customerId, companyId });
     if (existingCustomer) {
-      return res.status(400).json({
-        success: false,
-        message: 'Customer ID already exists'
-      });
+      return res.status(400).json({ success: false, message: 'Customer ID already exists' });
     }
 
-    // Check for duplicate phone within this company
-    const existingPhone = await Customer.findOne({
-      phone: customerData.phone,
-      companyId
-    });
-
+    const existingPhone = await Customer.findOne({ phone: customerData.phone, companyId });
     if (existingPhone) {
-      return res.status(400).json({
-        success: false,
-        message: 'Phone number already exists'
-      });
+      return res.status(400).json({ success: false, message: 'Phone number already exists' });
     }
 
-    // Create customer
     const customer = new Customer(customerData);
     await customer.save();
 
-    // Create Ledger 1: "Due to Society" - Credit balance (Liability)
-    const dueToSocietyLedger = new Ledger({
-      ledgerName: `${customerData.name} - Due to Society (${customerData.customerId})`,
-      ledgerType: 'Liability',
-      linkedEntity: {
-        entityType: 'Customer',
-        entityId: customer._id
-      },
-      openingBalance: 0,
-      openingBalanceType: 'Cr',
-      currentBalance: 0,
-      balanceType: 'Cr',
-      parentGroup: 'Current Liabilities',
-      status: 'Active',
-      companyId
-    });
-
-    await dueToSocietyLedger.save();
-
-    // Create Ledger 2: "Due By" - Debit balance (Asset/Receivable)
-    const dueByLedger = new Ledger({
-      ledgerName: `${customerData.name} - Due By (${customerData.customerId})`,
-      ledgerType: 'Asset',
-      linkedEntity: {
-        entityType: 'Customer',
-        entityId: customer._id
-      },
-      openingBalance: customerData.openingBalance || 0,
-      openingBalanceType: 'Dr',
-      currentBalance: customerData.openingBalance || 0,
-      balanceType: 'Dr',
-      parentGroup: customerData.category || 'Sundry Debtors',
-      status: 'Active',
-      companyId
-    });
-
-    await dueByLedger.save();
-
-    // Link both ledgers to customer
-    customer.ledgerId = dueByLedger._id; // Primary ledger for receivables
-    customer.dueToSocietyLedgerId = dueToSocietyLedger._id; // Secondary ledger for dues to society
-    await customer.save();
+    // Auto-post ledger under "Advance due to Society" group
+    try {
+      await createCustomerLedger(customer, companyId);
+    } catch (ledgerErr) {
+      console.error('Customer ledger creation error (non-fatal):', ledgerErr.message);
+    }
 
     res.status(201).json({
       success: true,
-      message: 'Customer created successfully with ledger accounts',
+      message: 'Customer created successfully with ledger account',
       data: customer
     });
   } catch (error) {
     console.error('Error creating customer:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error creating customer'
-    });
+    res.status(500).json({ success: false, message: error.message || 'Error creating customer' });
   }
 };
 
@@ -140,23 +103,19 @@ export const getAllCustomers = async (req, res) => {
 
     const query = { companyId: req.companyId };
 
-    // Search by customerId, name, phone, or email
     if (search) {
       query.$or = [
         { customerId: { $regex: search, $options: 'i' } },
-        { name: { $regex: search, $options: 'i' } },
-        { phone: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } }
+        { name:       { $regex: search, $options: 'i' } },
+        { phone:      { $regex: search, $options: 'i' } },
+        { email:      { $regex: search, $options: 'i' } }
       ];
     }
 
-    if (active !== '') {
-      query.active = active === 'true';
-    }
-
-    if (category) query.category = category;
-    if (state) query.state = { $regex: state, $options: 'i' };
-    if (district) query.district = { $regex: district, $options: 'i' };
+    if (active !== '') query.active = active === 'true';
+    if (category)      query.category = category;
+    if (state)         query.state    = { $regex: state,    $options: 'i' };
+    if (district)      query.district = { $regex: district, $options: 'i' };
     if (minBalance !== '' || maxBalance !== '') {
       query.openingBalance = {};
       if (minBalance !== '') query.openingBalance.$gte = parseFloat(minBalance);
@@ -175,18 +134,11 @@ export const getAllCustomers = async (req, res) => {
     res.status(200).json({
       success: true,
       data: customers,
-      pagination: {
-        total,
-        page: parseInt(page),
-        pages: Math.ceil(total / parseInt(limit))
-      }
+      pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) }
     });
   } catch (error) {
     console.error('Error fetching customers:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error fetching customers'
-    });
+    res.status(500).json({ success: false, message: error.message || 'Error fetching customers' });
   }
 };
 
@@ -196,57 +148,38 @@ export const getCustomerById = async (req, res) => {
     const customer = await Customer.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!customer) {
-      return res.status(404).json({
-        success: false,
-        message: 'Customer not found'
-      });
+      return res.status(404).json({ success: false, message: 'Customer not found' });
     }
 
-    res.status(200).json({
-      success: true,
-      data: customer
-    });
+    res.status(200).json({ success: true, data: customer });
   } catch (error) {
     console.error('Error fetching customer:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error fetching customer'
-    });
+    res.status(500).json({ success: false, message: error.message || 'Error fetching customer' });
   }
 };
 
 // Update customer
 export const updateCustomer = async (req, res) => {
   try {
-    // Check if customerId is being changed and if it's already taken
     if (req.body.customerId) {
       const existingCustomer = await Customer.findOne({
         customerId: req.body.customerId,
-        companyId: req.companyId,
-        _id: { $ne: req.params.id }
+        companyId:  req.companyId,
+        _id:        { $ne: req.params.id }
       });
-
       if (existingCustomer) {
-        return res.status(400).json({
-          success: false,
-          message: 'Customer ID already exists'
-        });
+        return res.status(400).json({ success: false, message: 'Customer ID already exists' });
       }
     }
 
-    // Check if phone is being changed and if it's already taken
     if (req.body.phone) {
       const existingPhone = await Customer.findOne({
-        phone: req.body.phone,
+        phone:     req.body.phone,
         companyId: req.companyId,
-        _id: { $ne: req.params.id }
+        _id:       { $ne: req.params.id }
       });
-
       if (existingPhone) {
-        return res.status(400).json({
-          success: false,
-          message: 'Phone number already exists'
-        });
+        return res.status(400).json({ success: false, message: 'Phone number already exists' });
       }
     }
 
@@ -257,52 +190,32 @@ export const updateCustomer = async (req, res) => {
     );
 
     if (!customer) {
-      return res.status(404).json({
-        success: false,
-        message: 'Customer not found'
-      });
+      return res.status(404).json({ success: false, message: 'Customer not found' });
     }
 
-    res.status(200).json({
-      success: true,
-      message: 'Customer updated successfully',
-      data: customer
-    });
+    res.status(200).json({ success: true, message: 'Customer updated successfully', data: customer });
   } catch (error) {
     console.error('Error updating customer:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error updating customer'
-    });
+    res.status(500).json({ success: false, message: error.message || 'Error updating customer' });
   }
 };
 
-// Delete/Deactivate customer
+// Delete/Deactivate customer (soft delete)
 export const deleteCustomer = async (req, res) => {
   try {
     const customer = await Customer.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!customer) {
-      return res.status(404).json({
-        success: false,
-        message: 'Customer not found'
-      });
+      return res.status(404).json({ success: false, message: 'Customer not found' });
     }
 
-    // Soft delete by setting active to false
     customer.active = false;
     await customer.save();
 
-    res.status(200).json({
-      success: true,
-      message: 'Customer deactivated successfully'
-    });
+    res.status(200).json({ success: true, message: 'Customer deactivated successfully' });
   } catch (error) {
     console.error('Error deleting customer:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error deleting customer'
-    });
+    res.status(500).json({ success: false, message: error.message || 'Error deleting customer' });
   }
 };
 
@@ -312,32 +225,23 @@ export const searchCustomer = async (req, res) => {
     const { query } = req.query;
 
     if (!query) {
-      return res.status(400).json({
-        success: false,
-        message: 'Search query is required'
-      });
+      return res.status(400).json({ success: false, message: 'Search query is required' });
     }
 
     const customers = await Customer.find({
       $or: [
         { customerId: { $regex: query, $options: 'i' } },
-        { name: { $regex: query, $options: 'i' } },
-        { phone: { $regex: query, $options: 'i' } }
+        { name:       { $regex: query, $options: 'i' } },
+        { phone:      { $regex: query, $options: 'i' } }
       ],
-      active: true,
+      active:    true,
       companyId: req.companyId
     }).limit(10);
 
-    res.status(200).json({
-      success: true,
-      data: customers
-    });
+    res.status(200).json({ success: true, data: customers });
   } catch (error) {
     console.error('Error searching customer:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error searching customer'
-    });
+    res.status(500).json({ success: false, message: error.message || 'Error searching customer' });
   }
 };
 
@@ -351,7 +255,7 @@ export const bulkImportCustomers = async (req, res) => {
 
     const CATEGORY_MAP = {
       '1': 'Others', '2': 'Others', '3': 'Anganwadi',
-      '4': 'Others', '5': 'Hotel', '6': 'Others',
+      '4': 'Others', '5': 'Hotel',  '6': 'Others',
       '7': 'Others', '8': 'Others', '9': 'School'
     };
 
@@ -369,7 +273,7 @@ export const bulkImportCustomers = async (req, res) => {
         const data = {
           customerId:    String(row.customerId),
           name:          String(row.name).trim(),
-          address:       row.address  || undefined,
+          address:       row.address       || undefined,
           category:      CATEGORY_MAP[String(row.catId || '')] || 'Others',
           active:        row.active !== false && row.active !== 'false',
           dateOfJoining: row.dateOfJoining ? new Date(row.dateOfJoining) : undefined,
@@ -380,9 +284,11 @@ export const bulkImportCustomers = async (req, res) => {
         if (existing) {
           await Customer.findByIdAndUpdate(existing._id, { $set: data });
           results.updated++;
+          try { await createCustomerLedger(existing, req.companyId); } catch (_) {}
         } else {
-          await Customer.create(data);
+          const newCustomer = await Customer.create(data);
           results.created++;
+          try { await createCustomerLedger(newCustomer, req.companyId); } catch (_) {}
         }
       } catch (err) {
         results.errors.push({ row: rowNumber, customerId: row.customerId || 'N/A', message: err.message });
@@ -400,31 +306,50 @@ export const bulkImportCustomers = async (req, res) => {
   }
 };
 
+// Bulk delete customers permanently (hard delete)
+export const bulkDeleteCustomers = async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: 'Customer IDs array is required' });
+    }
+
+    // Delete linked ledgers first
+    await Ledger.deleteMany({
+      'linkedEntity.entityType': 'Customer',
+      'linkedEntity.entityId': { $in: ids },
+      companyId: req.companyId
+    });
+
+    const result = await Customer.deleteMany({ _id: { $in: ids }, companyId: req.companyId });
+
+    res.json({
+      success: true,
+      message: `${result.deletedCount} customer(s) deleted permanently`,
+      data: { deletedCount: result.deletedCount }
+    });
+  } catch (error) {
+    console.error('Bulk delete customers error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Bulk delete failed' });
+  }
+};
+
 // Get customer by customerId (for lookups)
 export const getCustomerByCustomerId = async (req, res) => {
   try {
     const customer = await Customer.findOne({
       customerId: req.params.customerId,
-      active: true,
-      companyId: req.companyId
+      active:     true,
+      companyId:  req.companyId
     });
 
     if (!customer) {
-      return res.status(404).json({
-        success: false,
-        message: 'Customer not found'
-      });
+      return res.status(404).json({ success: false, message: 'Customer not found' });
     }
 
-    res.status(200).json({
-      success: true,
-      data: customer
-    });
+    res.status(200).json({ success: true, data: customer });
   } catch (error) {
     console.error('Error fetching customer:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error fetching customer'
-    });
+    res.status(500).json({ success: false, message: error.message || 'Error fetching customer' });
   }
 };

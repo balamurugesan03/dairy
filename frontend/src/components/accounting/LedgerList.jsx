@@ -25,6 +25,61 @@ import {
 import { useForm } from '@mantine/form';
 import { IconSearch, IconPlus, IconEye, IconEdit, IconTrash, IconFilter } from '@tabler/icons-react';
 
+const ACCOUNT_GROUPS = [
+  { group: '🟢 ASSET', items: [
+    'Cash in Hand',
+    'Bank Accounts',
+    'Share in Other Institutions',
+    'Investment in Govt. Securities',
+    'Other Investments',
+    'Loans & Advances to Members',
+    'Interest Receivable',
+    'Other Assets',
+    'Fixed Assets - Movables',
+    'Fixed Assets - Immovables',
+    'Advance due to Society',
+    'Loss',
+  ]},
+  { group: '🔴 LIABILITY', items: [
+    'Share Capital',
+    'Deposits',
+    'Borrowings (Loans, Cash Credits)',
+    'Statutory Funds and Reserves',
+    'Other Funds, Reserves and Provisions',
+    'Interest Payable',
+    'Grants and Subsidies',
+    'Education Fund',
+    'Other Liabilities',
+    'Advance due by Society',
+    'Profit',
+  ]},
+  { group: '🟡 INCOME', items: [
+    'Miscellaneous Income',
+    'Sales',
+    'Trade Income',
+  ]},
+  { group: '🔵 EXPENSE', items: [
+    'Establishment Charges',
+    'Contingencies',
+    'Purchases',
+    'Trade Expenses',
+  ]},
+  { group: '🟣 STOCK', items: [
+    'Closing Stock',
+    'Opening Stock',
+    'Closing Stock (Trading)',
+  ]},
+  { group: '⚫ P&L', items: [
+    'Net Loss Brought From P&L A/c',
+    'Net Profit Brought From P&L A/c',
+  ]},
+];
+
+const ACCOUNT_GROUP_SELECT_DATA = ACCOUNT_GROUPS.map(g => ({
+  group: g.group,
+  items: g.items.map(v => ({ value: v, label: v })),
+}));
+
 const LedgerList = () => {
   const navigate = useNavigate();
   const [ledgers, setLedgers] = useState([]);
@@ -120,100 +175,33 @@ const LedgerList = () => {
   };
 
   const getLedgerTypeColor = (type) => {
-    const colorMap = {
-      'Sales A/c': 'cyan',
-      'Trade Income': 'teal',
-      'Miscellaneous Income': 'green',
-      'Other Revenue': 'lime',
-      'Grants & Aid': 'teal',
-      'Subsidies': 'green',
-      'Purchases A/c': 'red',
-      'Trade Expenses': 'orange',
-      'Establishment Charges': 'pink',
-      'Miscellaneous Expenses': 'red',
-      'Accounts Due To (Sundry Creditors)': 'blue',
-      'Other Payable': 'violet',
-      'Other Liabilities': 'grape',
-      'Deposit A/c': 'violet',
-      'Contingency Fund': 'grape',
-      'Education Fund': 'violet',
-      'Fixed Assets': 'grape',
-      'Movable Assets': 'violet',
-      'Immovable Assets': 'grape',
-      'Other Assets': 'violet',
-      'Other Receivable': 'grape',
-      'Investment A/c': 'indigo',
-      'Other Investment': 'blue',
-      'Government Securities': 'indigo',
-      'Share Capital': 'blue',
-      'Profit & Loss A/c': 'yellow',
-      'Party': 'blue',
-      'Bank': 'green',
-      'Cash': 'yellow',
-      'Income': 'teal',
-      'Expense': 'red',
-      'Asset': 'grape',
-      'Liability': 'violet',
-      'Capital': 'blue'
-    };
-    return colorMap[type] || 'gray';
+    // ASSET → green shades
+    if (['Cash in Hand','Bank Accounts','Share in Other Institutions','Investment in Govt. Securities',
+         'Other Investments','Loans & Advances to Members','Interest Receivable','Other Assets',
+         'Fixed Assets - Movables','Fixed Assets - Immovables','Advance due to Society','Loss',
+         'Fixed Assets','Movable Assets','Immovable Assets','Other Receivable',
+         'Investment A/c','Other Investment','Government Securities','Asset'].includes(type)) return 'green';
+    // LIABILITY → red shades
+    if (['Share Capital','Deposits','Borrowings (Loans, Cash Credits)','Statutory Funds and Reserves',
+         'Other Funds, Reserves and Provisions','Interest Payable','Grants and Subsidies','Education Fund',
+         'Other Liabilities','Advance due by Society','Profit',
+         'Other Payable','Deposit A/c','Contingency Fund','Liability','Capital'].includes(type)) return 'red';
+    // INCOME → teal
+    if (['Miscellaneous Income','Sales','Trade Income','Sales A/c','Other Revenue',
+         'Grants & Aid','Subsidies','Income'].includes(type)) return 'teal';
+    // EXPENSE → orange
+    if (['Establishment Charges','Contingencies','Purchases','Trade Expenses',
+         'Purchases A/c','Miscellaneous Expenses','Expense'].includes(type)) return 'orange';
+    // STOCK → violet
+    if (['Closing Stock','Opening Stock','Closing Stock (Trading)'].includes(type)) return 'violet';
+    // P&L → yellow
+    if (['Net Loss Brought From P&L A/c','Net Profit Brought From P&L A/c','Profit & Loss A/c'].includes(type)) return 'yellow';
+    // Party / legacy
+    if (['Party','Accounts Due To (Sundry Creditors)'].includes(type)) return 'blue';
+    if (['Bank','Cash'].includes(type)) return 'cyan';
+    return 'gray';
   };
 
-  const ledgerTypeOptions = [
-    { value: '', label: 'All Account Groups' },
-    { group: 'Income', items: [
-      { value: 'Sales A/c', label: 'Sales A/c' },
-      { value: 'Trade Income', label: 'Trade Income' },
-      { value: 'Miscellaneous Income', label: 'Miscellaneous Income' },
-      { value: 'Other Revenue', label: 'Other Revenue' },
-      { value: 'Grants & Aid', label: 'Grants & Aid' },
-      { value: 'Subsidies', label: 'Subsidies' }
-    ]},
-    { group: 'Expense', items: [
-      { value: 'Purchases A/c', label: 'Purchases A/c' },
-      { value: 'Trade Expenses', label: 'Trade Expenses' },
-      { value: 'Establishment Charges', label: 'Establishment Charges' },
-      { value: 'Miscellaneous Expenses', label: 'Miscellaneous Expenses' }
-    ]},
-    { group: 'Party', items: [
-      { value: 'Accounts Due To (Sundry Creditors)', label: 'Accounts Due To (Sundry Creditors)' }
-    ]},
-    { group: 'Liability', items: [
-      { value: 'Other Payable', label: 'Other Payable' },
-      { value: 'Other Liabilities', label: 'Other Liabilities' },
-      { value: 'Deposit A/c', label: 'Deposit A/c' },
-      { value: 'Contingency Fund', label: 'Contingency Fund' },
-      { value: 'Education Fund', label: 'Education Fund' }
-    ]},
-    { group: 'Asset', items: [
-      { value: 'Fixed Assets', label: 'Fixed Assets' },
-      { value: 'Movable Assets', label: 'Movable Assets' },
-      { value: 'Immovable Assets', label: 'Immovable Assets' },
-      { value: 'Other Assets', label: 'Other Assets' },
-      { value: 'Other Receivable', label: 'Other Receivable' }
-    ]},
-    { group: 'Investment', items: [
-      { value: 'Investment A/c', label: 'Investment A/c' },
-      { value: 'Other Investment', label: 'Other Investment' },
-      { value: 'Government Securities', label: 'Government Securities' }
-    ]},
-    { group: 'Capital', items: [
-      { value: 'Share Capital', label: 'Share Capital' }
-    ]},
-    { group: 'Final Accounts', items: [
-      { value: 'Profit & Loss A/c', label: 'Profit & Loss A/c' }
-    ]},
-    { group: 'Legacy/Basic Types', items: [
-      { value: 'Party', label: 'Party' },
-      { value: 'Bank', label: 'Bank' },
-      { value: 'Cash', label: 'Cash' },
-      { value: 'Income', label: 'Income' },
-      { value: 'Expense', label: 'Expense' },
-      { value: 'Asset', label: 'Asset' },
-      { value: 'Liability', label: 'Liability' },
-      { value: 'Capital', label: 'Capital' }
-    ]}
-  ];
 
   const filteredLedgers = ledgers.filter(ledger => {
     if (filters.search && !ledger.ledgerName.toLowerCase().includes(filters.search.toLowerCase())) {
@@ -315,11 +303,7 @@ const LedgerList = () => {
           <Grid.Col span={{ base: 12, md: 6 }}>
             <Select
               placeholder="Filter by account group"
-              data={ledgerTypeOptions.flatMap(opt =>
-                opt.group
-                  ? [{ group: opt.group, items: opt.items }]
-                  : [{ value: opt.value, label: opt.label }]
-              )}
+              data={ACCOUNT_GROUP_SELECT_DATA}
               value={filters.ledgerType}
               onChange={(value) => setFilters(prev => ({ ...prev, ledgerType: value }))}
               leftSection={<IconFilter size={16} />}
@@ -388,53 +372,10 @@ const LedgerList = () => {
 
             <Select
               label="Account Group"
-              placeholder="Select ledger type"
+              placeholder="Select account group"
               required
-              data={[
-                { value: '', label: 'Select Ledger' },
-                { group: 'Income', items: [
-                  { value: 'Sales A/c', label: 'Sales A/c' },
-                  { value: 'Trade Income', label: 'Trade Income' },
-                  { value: 'Miscellaneous Income', label: 'Miscellaneous Income' },
-                  { value: 'Other Revenue', label: 'Other Revenue' },
-                  { value: 'Grants & Aid', label: 'Grants & Aid' },
-                  { value: 'Subsidies', label: 'Subsidies' }
-                ]},
-                { group: 'Expense', items: [
-                  { value: 'Purchases A/c', label: 'Purchases A/c' },
-                  { value: 'Trade Expenses', label: 'Trade Expenses' },
-                  { value: 'Establishment Charges', label: 'Establishment Charges' },
-                  { value: 'Miscellaneous Expenses', label: 'Miscellaneous Expenses' }
-                ]},
-                { group: 'Party', items: [
-                  { value: 'Accounts Due To (Sundry Creditors)', label: 'Accounts Due To (Sundry Creditors)' }
-                ]},
-                { group: 'Liability', items: [
-                  { value: 'Other Payable', label: 'Other Payable' },
-                  { value: 'Other Liabilities', label: 'Other Liabilities' },
-                  { value: 'Deposit A/c', label: 'Deposit A/c' },
-                  { value: 'Contingency Fund', label: 'Contingency Fund' },
-                  { value: 'Education Fund', label: 'Education Fund' }
-                ]},
-                { group: 'Asset', items: [
-                  { value: 'Fixed Assets', label: 'Fixed Assets' },
-                  { value: 'Movable Assets', label: 'Movable Assets' },
-                  { value: 'Immovable Assets', label: 'Immovable Assets' },
-                  { value: 'Other Assets', label: 'Other Assets' },
-                  { value: 'Other Receivable', label: 'Other Receivable' }
-                ]},
-                { group: 'Investment', items: [
-                  { value: 'Investment A/c', label: 'Investment A/c' },
-                  { value: 'Other Investment', label: 'Other Investment' },
-                  { value: 'Government Securities', label: 'Government Securities' }
-                ]},
-                { group: 'Capital', items: [
-                  { value: 'Share Capital', label: 'Share Capital' }
-                ]},
-                { group: 'Final Accounts', items: [
-                  { value: 'Profit & Loss A/c', label: 'Profit & Loss A/c' }
-                ]}
-              ]}
+              data={ACCOUNT_GROUP_SELECT_DATA}
+              searchable
               {...form.getInputProps('ledgerType')}
             />
 

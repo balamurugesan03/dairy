@@ -492,10 +492,10 @@ const MainLayout = () => {
       color: 'violet',
       adminOnly: true,
       children: [
-          { key: '/society-info',     label: 'Society Info' },
+        { key: '/society-info',     label: 'Society Info' },
         { key: '/financial-year',   label: 'Financial Year' },
         { key: '/payment-settings', label: 'Payment Settings' },
-      
+        { key: '/openlyssa-merge',  label: 'OpenLyssa Merge Tool' },
         { key: '/user-management',  label: 'User Management' },
       ]
     }] : [])

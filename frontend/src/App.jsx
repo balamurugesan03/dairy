@@ -246,6 +246,9 @@ const FinancialYearManagement = lazy(() => import('./components/settings/Financi
 // Payment & Account Settings
 const PaymentSettings = lazy(() => import('./components/settings/PaymentSettings'));
 
+// OpenLyssa Data Merge Tool
+const OpenLyssaMergeTool = lazy(() => import('./components/settings/OpenLyssaMergeTool'));
+
 // App content component that uses auth and company context
 const AppContent = () => {
   const { isAuthenticated, loading: authLoading } = useAuth();
@@ -613,6 +616,9 @@ const AppContent = () => {
 
               {/* Payment & Account Settings */}
               <Route path="payment-settings" element={<PaymentSettings />} />
+
+              {/* OpenLyssa Data Merge Tool */}
+              <Route path="openlyssa-merge" element={<OpenLyssaMergeTool />} />
             </Route>
 
         </Routes>

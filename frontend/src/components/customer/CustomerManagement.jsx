@@ -209,15 +209,20 @@ const CustomerManagement = () => {
 
     modals.openConfirmModal({
       title: 'Bulk Delete Customers',
-      children: <Text size="sm">Are you sure you want to deactivate {selectedCustomers.length} customer(s)?</Text>,
-      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      children: (
+        <Text size="sm">
+          Are you sure you want to <strong>permanently delete</strong> {selectedCustomers.length} customer(s)?
+          This will also remove their ledger accounts. This action cannot be undone.
+        </Text>
+      ),
+      labels: { confirm: `Delete ${selectedCustomers.length} Customer(s)`, cancel: 'Cancel' },
       confirmProps: { color: 'red' },
       onConfirm: async () => {
         try {
-          await Promise.all(selectedCustomers.map(id => customerAPI.delete(id)));
+          await customerAPI.bulkDelete(selectedCustomers);
           notifications.show({
-            title: 'Success',
-            message: `${selectedCustomers.length} customer(s) deactivated successfully`,
+            title: 'Deleted',
+            message: `${selectedCustomers.length} customer(s) permanently deleted`,
             color: 'green'
           });
           setSelectedCustomers([]);
@@ -225,7 +230,7 @@ const CustomerManagement = () => {
         } catch (error) {
           notifications.show({
             title: 'Error',
-            message: error.message || 'Failed to deactivate customers',
+            message: error.message || 'Failed to delete customers',
             color: 'red'
           });
         }
@@ -774,7 +779,7 @@ const CustomerManagement = () => {
                 <Text size="sm" fw={500}>{selectedCustomers.length} customer(s) selected</Text>
                 <Group gap="xs">
                   <Button size="xs" color="red" onClick={handleBulkDelete} disabled={!canDelete('customers')}>
-                    Deactivate Selected
+                    Delete Selected
                   </Button>
                   <Button size="xs" variant="default" onClick={() => setSelectedCustomers([])}>
                     Clear Selection
@@ -786,6 +791,7 @@ const CustomerManagement = () => {
 
           <Box style={{ overflowX: 'auto' }}>
             <DataTable
+              idAccessor="_id"
               columns={columns}
               records={customers}
               fetching={loading}
