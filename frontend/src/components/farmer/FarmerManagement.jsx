@@ -92,6 +92,7 @@ const FarmerManagement = () => {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showShareImportModal, setShowShareImportModal] = useState(false);
+  const [showOpenLyssaShareImportModal, setShowOpenLyssaShareImportModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [selectedFarmerForShare, setSelectedFarmerForShare] = useState(null);
   const [showMembersModal, setShowMembersModal] = useState(false);
@@ -426,6 +427,60 @@ const FarmerManagement = () => {
         message.success(`Share import successful! ${imported} transactions imported.`);
       } else {
         message.warning(`Share import done: ${imported} imported, ${skipped} skipped, ${errors.length} errors.`);
+      }
+
+      fetchFarmers();
+      return response;
+    } catch (error) {
+      message.error(error.message || 'Share import failed');
+      throw error;
+    }
+  };
+
+  const handleOpenLyssaShareImport = async (data) => {
+    try {
+      const parseShareDate = (val) => {
+        if (!val) return undefined;
+        if (typeof val === 'number') {
+          if (val <= 0) return undefined;
+          return new Date(Math.round((val - 25569) * 86400 * 1000));
+        }
+        const str = String(val).trim();
+        if (!str || str === '0000-00-00' || str.startsWith('#')) return undefined;
+        const ddmm = str.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+        if (ddmm) {
+          const d = new Date(`${ddmm[3]}-${ddmm[2]}-${ddmm[1]}`);
+          return isNaN(d.getTime()) ? undefined : d;
+        }
+        const d = new Date(str);
+        return isNaN(d.getTime()) ? undefined : d;
+      };
+
+      const shares = data.map(row => {
+        const r = Object.fromEntries(
+          Object.entries(row).map(([k, v]) => [k.toLowerCase().trim(), v])
+        );
+        const faceValue  = Number(r['share_face_value']) || 10;
+        const shareCount = Number(r['share_nos']) || 1;
+        return {
+          memberNo:       String(r['member_no'] || '').trim(),
+          transDate:      parseShareDate(r['date_share_taken']),
+          noOfShares:     shareCount,
+          shareAmount:    faceValue,
+          totalShareValue: shareCount * faceValue,
+          voucherNo:      r['resolution_no'] != null ? String(r['resolution_no']).trim() : undefined,
+          resolutionDate: parseShareDate(r['resolution_date']),
+          transType:      'Allotment',
+        };
+      });
+
+      const response = await farmerAPI.bulkImportShares(shares);
+      const { imported, skipped, errors } = response.data;
+
+      if (errors.length === 0) {
+        message.success(`OpenLyssa share import successful! ${imported} transactions imported.`);
+      } else {
+        message.warning(`Import done: ${imported} imported, ${skipped} skipped, ${errors.length} errors.`);
       }
 
       fetchFarmers();
@@ -884,6 +939,15 @@ const FarmerManagement = () => {
               >
                 Import Shares
               </Button>
+              <Button
+                variant="light"
+                color="violet"
+                leftSection={<IconCoin size={18} />}
+                onClick={() => setShowOpenLyssaShareImportModal(true)}
+                disabled={!canWrite('farmers')}
+              >
+                Import Shares (OpenLyssa)
+              </Button>
             </Group>
           </Group>
         </Paper>
@@ -1207,6 +1271,13 @@ const FarmerManagement = () => {
         validationSchema={{
           'MemberNo': { required: true, type: 'string' },
         }}
+      />
+
+      <ImportModal
+        isOpen={showOpenLyssaShareImportModal}
+        onClose={() => setShowOpenLyssaShareImportModal(false)}
+        onImport={handleOpenLyssaShareImport}
+        entityType="Share Transactions (OpenLyssa)"
       />
 
       {/* Add Share Modal */}

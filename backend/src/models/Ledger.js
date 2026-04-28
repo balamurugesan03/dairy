@@ -9,41 +9,66 @@ const ledgerSchema = new mongoose.Schema({
   ledgerType: {
     type: String,
     enum: [
-      // Income Types
-      'Sales A/c',
-      'Trade Income',
+      // ASSET
+      'Cash in Hand',
+      'Bank Accounts',
+      'Share in Other Institutions',
+      'Investment in Govt. Securities',
+      'Other Investments',
+      'Loans & Advances to Members',
+      'Interest Receivable',
+      'Other Assets',
+      'Fixed Assets - Movables',
+      'Fixed Assets - Immovables',
+      'Advance due to Society',
+      'Loss',
+      // LIABILITY
+      'Share Capital',
+      'Deposits',
+      'Borrowings (Loans, Cash Credits)',
+      'Statutory Funds and Reserves',
+      'Other Funds, Reserves and Provisions',
+      'Interest Payable',
+      'Grants and Subsidies',
+      'Education Fund',
+      'Other Liabilities',
+      'Advance due by Society',
+      'Profit',
+      // INCOME
       'Miscellaneous Income',
+      'Sales',
+      'Trade Income',
+      // EXPENSE
+      'Establishment Charges',
+      'Contingencies',
+      'Purchases',
+      'Trade Expenses',
+      // STOCK
+      'Closing Stock',
+      'Opening Stock',
+      'Closing Stock (Trading)',
+      // P&L
+      'Net Loss Brought From P&L A/c',
+      'Net Profit Brought From P&L A/c',
+      // Legacy/Basic Types (keeping for backward compatibility)
+      'Sales A/c',
+      'Miscellaneous Expenses',
       'Other Revenue',
       'Grants & Aid',
       'Subsidies',
-      // Expense Types
       'Purchases A/c',
-      'Trade Expenses',
-      'Establishment Charges',
-      'Miscellaneous Expenses',
-      // Party Types
       'Accounts Due To (Sundry Creditors)',
-      // Liability Types
       'Other Payable',
-      'Other Liabilities',
       'Deposit A/c',
       'Contingency Fund',
-      'Education Fund',
-      // Asset Types
       'Fixed Assets',
       'Movable Assets',
       'Immovable Assets',
-      'Other Assets',
       'Other Receivable',
-      // Investment Types
       'Investment A/c',
       'Other Investment',
       'Government Securities',
-      // Capital Types
-      'Share Capital',
-      // Final/Special Types
       'Profit & Loss A/c',
-      // Legacy/Basic Types (keeping for backward compatibility)
       'Party',
       'Bank',
       'Cash',
@@ -58,7 +83,7 @@ const ledgerSchema = new mongoose.Schema({
   linkedEntity: {
     entityType: {
       type: String,
-      enum: ['Farmer', 'Customer', 'Supplier', 'None'],
+      enum: ['Farmer', 'Customer', 'Supplier', 'Agent', 'None'],
       default: 'None'
     },
     entityId: {

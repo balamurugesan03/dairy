@@ -882,13 +882,15 @@ export const bulkImportShares = async (req, res) => {
 
         const shares    = Math.max(Number(row.noOfShares) || 0, 1); // 0 in Zibitt = 1 share
         const shareValue = Number(row.shareAmount) || 10;
-        const oldTotal   = farmer.financialDetails.totalShares || 0;
+        const oldTotal   = farmer.financialDetails?.totalShares || 0;
         const transactionType = oldTotal > 0 ? 'Additional Allotment' : 'Allotment';
         const newTotal   = oldTotal + shares;
         const transDate  = row.transDate ? new Date(row.transDate) : new Date();
         const resolutionNo = row.voucherNo
-          ? `${row.voucherNo}/${row.fYear || ''}`
+          ? `${row.voucherNo}/${row.fYear || ''}`.replace(/\/$/, '')
           : `IMP-${rowNumber}`;
+
+        const resDate = row.resolutionDate ? new Date(row.resolutionDate) : transDate;
 
         farmer.shareHistory.push({
           transactionType,
@@ -896,10 +898,10 @@ export const bulkImportShares = async (req, res) => {
           shareValue,
           totalValue:     shares * shareValue,
           resolutionNo,
-          resolutionDate: transDate,
+          resolutionDate: resDate,
           oldTotal,
           newTotal,
-          remarks:        row.transType || 'Imported from Zibitt',
+          remarks:        row.transType || 'Imported',
           transactionDate: transDate
         });
 
@@ -908,7 +910,17 @@ export const bulkImportShares = async (req, res) => {
         if (!farmer.financialDetails.shareTakenDate) {
           farmer.financialDetails.shareTakenDate = transDate;
         }
+        if (!farmer.financialDetails.resolutionNo && row.voucherNo) {
+          farmer.financialDetails.resolutionNo   = resolutionNo;
+          farmer.financialDetails.resolutionDate = resDate;
+        }
 
+        farmer.isMembership = true;
+        if (!farmer.membershipDate) {
+          farmer.membershipDate = transDate;
+        }
+
+        farmer.markModified('financialDetails');
         await farmer.save();
         results.imported++;
 

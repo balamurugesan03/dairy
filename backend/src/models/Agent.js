@@ -38,6 +38,10 @@ const agentSchema = new mongoose.Schema({
     enum: ['Active', 'Inactive'],
     default: 'Active'
   },
+  ledgerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Ledger'
+  },
   companyId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Company'

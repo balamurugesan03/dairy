@@ -5,6 +5,48 @@ import Farmer from '../models/Farmer.js';
 import Voucher from '../models/Voucher.js';
 import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances, findOrCreateLedger } from '../utils/accountingHelper.js';
 
+// ── Auto-post bulk milk purchase to PRODUCERS DUES / MILK PURCHASE ────────────
+// Groups docs by date+shift, creates one Journal voucher per group
+const postBulkMilkPurchaseVouchers = async (docs, companyId) => {
+  try {
+    const groups = {};
+    for (const doc of docs) {
+      const dateKey = new Date(doc.date).toISOString().slice(0, 10);
+      const key     = `${dateKey}-${doc.shift}`;
+      if (!groups[key]) groups[key] = { date: new Date(doc.date), shift: doc.shift, total: 0 };
+      groups[key].total += Number(doc.amount) || 0;
+    }
+
+    const [producerDues, milkPurchase] = await Promise.all([
+      findOrCreateLedger('PRODUCERS DUES', 'Liability', 'Current Liabilities', 'Cr', companyId),
+      findOrCreateLedger('MILK PURCHASE',  'Expense',   'Purchase Accounts',   'Dr', companyId)
+    ]);
+
+    for (const g of Object.values(groups)) {
+      if (g.total <= 0) continue;
+      const entries = [
+        { ledgerId: producerDues._id, ledgerName: producerDues.ledgerName, debitAmount: g.total, creditAmount: 0 },
+        { ledgerId: milkPurchase._id, ledgerName: milkPurchase.ledgerName, debitAmount: 0, creditAmount: g.total }
+      ];
+      const vNo = await generateVoucherNumber('MilkPurchase', companyId);
+      await new Voucher({
+        voucherType:   'MilkPurchase',
+        voucherNumber: vNo,
+        voucherDate:   g.date,
+        entries,
+        totalDebit:    g.total,
+        totalCredit:   g.total,
+        narration:     `Milk Purchase Import — ${g.date.toISOString().slice(0, 10)} (${g.shift})`,
+        referenceType: 'MilkPurchase',
+        companyId
+      }).save();
+      await updateLedgerBalances(entries);
+    }
+  } catch (vErr) {
+    console.warn('[MilkCollection] Bulk voucher posting failed (non-fatal):', vErr.message);
+  }
+};
+
 // ── Auto-generate bill number: MC-YYMM-XXXXX ─────────────────────────────────
 // Reads actual DB max each call — always returns next available number
 const generateBillNo = async (companyId) => {
@@ -230,13 +272,17 @@ export const zibittRawImportCollections = async (req, res) => {
       }
     }
 
-    const parseDateTime = (dateStr) => {
+    const parseDateTime = (row) => {
+      const dateStr = row.date_entry || row.mc_date || row.date || '';
       if (!dateStr) return new Date();
-      const str = String(dateStr);
+      if (typeof dateStr === 'number') return new Date(Math.round((dateStr - 25569) * 86400000));
+      const str = String(dateStr).trim();
       const [datePart, timePart] = str.split(' ');
-      const parts = datePart.split('-');
+      const parts = datePart.split(/[-/]/);
       if (parts.length !== 3) return new Date(str);
-      const [dd, mm, yyyy] = parts;
+      // DD-MM-YYYY or YYYY-MM-DD
+      const isYearFirst = parts[0].length === 4;
+      const [dd, mm, yyyy] = isYearFirst ? [parts[2], parts[1], parts[0]] : [parts[0], parts[1], parts[2]];
       return new Date(`${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T${timePart || '00:00'}:00`);
     };
 
@@ -253,9 +299,9 @@ export const zibittRawImportCollections = async (req, res) => {
       }
 
       docs.push({
-        billNo:       `MC-${row.dcs_id}-${row.mc_id}-${row.producer_id}-${row.slno}`,
-        date:         parseDateTime(row.date_entry),
-        shift:        String(row.col_mode) === 'D' ? 'AM' : 'PM',
+        billNo:       `MC-${row.dcs_id || 0}-${row.mc_id || 0}-${row.producer_id}-${row.slno || 0}`,
+        date:         parseDateTime(row),
+        shift:        parseShift(row),
         farmer:       fm.id,
         farmerNumber: producerId,
         farmerName:   fm.name,
@@ -289,6 +335,9 @@ export const zibittRawImportCollections = async (req, res) => {
         }
       }
     }
+
+    // Auto-post to PRODUCERS DUES / MILK PURCHASE
+    await postBulkMilkPurchaseVouchers(docs, companyId);
 
     const unknownSample = [...new Set(skipped)].slice(0, 5).join(', ');
     const totalSkipped = skipped.length + (docs.length - inserted);
@@ -358,6 +407,9 @@ export const bulkImportCollections = async (req, res) => {
       }
     }
 
+    // Auto-post to PRODUCERS DUES / MILK PURCHASE
+    await postBulkMilkPurchaseVouchers(docs, req.companyId);
+
     const unknown = [...new Set(skipped)].slice(0, 5).join(', ');
     const msg = skipped.length
       ? `${inserted} imported, ${skipped.length} skipped (farmer not found: ${unknown}${skipped.length > 5 ? '…' : ''})`
@@ -370,24 +422,40 @@ export const bulkImportCollections = async (req, res) => {
 };
 
 // ── FILE UPLOAD IMPORT  (server-side parse — handles large files >50 MB) ──────
-// Maps Zibitt DailyCollection columns to milkCollectionSchema
+// Maps Zibitt DailyCollection AND OpenLyssa mc_proc_detail columns
+const parseAnyDate = (v) => {
+  if (!v && v !== 0) return new Date();
+  if (typeof v === 'number') return new Date(Math.round((v - 25569) * 86400000));
+  const s = String(v).trim();
+  // DD-MM-YYYY or DD-MM-YYYY HH:MM
+  const m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (m) return new Date(`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`);
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? new Date() : d;
+};
+
+const parseShift = (row) => {
+  // Zibitt: Shift 0=AM, 1=PM  |  OpenLyssa: mc_time='AM'/'PM', shift_id=1/2, col_mode=D/M
+  if (row.Shift != null) return String(row.Shift) === '0' ? 'AM' : 'PM';
+  if (row.shift != null) return String(row.shift) === '0' ? 'AM' : 'PM';
+  if (row.mc_time) { const t = String(row.mc_time).toUpperCase(); return t.includes('AM') ? 'AM' : 'PM'; }
+  if (row.col_mode) return String(row.col_mode).toUpperCase() === 'D' ? 'AM' : 'PM';
+  if (row.shift_id) return String(row.shift_id) === '1' ? 'AM' : 'PM';
+  return 'AM';
+};
+
 const mapDailyCollectionRow = (row, idx) => ({
-  billNo:       String(row.Receipt_NO ?? row.ReceiptNo ?? row.receipt_no ?? `ZB-${idx + 1}`),
-  date:         (() => {
-    const v = row.Rt_Date ?? row.rt_date ?? row.Date ?? row.date ?? '';
-    if (!v && v !== 0) return new Date();
-    if (typeof v === 'number') return new Date(Math.round((v - 25569) * 86400000));
-    return new Date(v);
-  })(),
-  shift:        String(row.Shift ?? row.shift ?? '1') === '0' ? 'AM' : 'PM',
-  farmerNumber: String(row.Supplier_ID ?? row.supplier_id ?? row.SupplierId ?? ''),
-  qty:          Number(row.CowQtyLtr  ?? row.cowqtyltr  ?? row.Qty   ?? 0) || Number(row.CowQtyKG ?? row.cowqtykg ?? 0) || 0,
-  fat:          Number(row.CowFAT     ?? row.cowfat     ?? row.FAT   ?? 0),
-  clr:          Number(row.CowCLR     ?? row.cowclr     ?? row.CLR   ?? 0),
-  snf:          Number(row.CowSNF     ?? row.cowsnf     ?? row.SNF   ?? 0),
-  rate:         Number(row.CowRate    ?? row.cowrate    ?? row.Rate  ?? 0),
-  amount:       Number(row.Amount     ?? row.amount     ?? 0),
-  incentive:    Number(row.TimeIncentive ?? row.timeincentive ?? 0),
+  billNo:       String(row.Receipt_NO ?? row.ReceiptNo ?? row.receipt_no ?? row.slno ?? `ZB-${idx + 1}`),
+  date:         parseAnyDate(row.Rt_Date ?? row.rt_date ?? row.Date ?? row.date ?? row.mc_date ?? ''),
+  shift:        parseShift(row),
+  farmerNumber: String(row.Supplier_ID ?? row.supplier_id ?? row.SupplierId ?? row.producer_id ?? ''),
+  qty:          Number(row.CowQtyLtr ?? row.cowqtyltr ?? row.Qty ?? row.qty ?? 0) || Number(row.CowQtyKG ?? row.cowqtykg ?? 0) || 0,
+  fat:          Number(row.CowFAT ?? row.cowfat ?? row.FAT ?? row.fat ?? 0),
+  clr:          Number(row.CowCLR ?? row.cowclr ?? row.CLR ?? row.clr ?? 0),
+  snf:          Number(row.CowSNF ?? row.cowsnf ?? row.SNF ?? row.snf ?? 0),
+  rate:         Number(row.CowRate ?? row.cowrate ?? row.Rate ?? row.rate ?? 0),
+  amount:       Number(row.Amount ?? row.amount ?? 0),
+  incentive:    Number(row.TimeIncentive ?? row.timeincentive ?? row.incentive ?? 0),
 });
 
 export const fileUploadImportCollections = async (req, res) => {
@@ -470,6 +538,8 @@ export const fileUploadImportCollections = async (req, res) => {
     const msg = skipped.length
       ? `${inserted} imported, ${skipped.length} skipped (farmer not found: ${unknownSample}${skipped.length > 5 ? '…' : ''})`
       : `${inserted} records imported`;
+
+    await postBulkMilkPurchaseVouchers(docs, req.companyId);
 
     res.json({ success: true, data: { inserted, skipped: skipped.length, total: rows.length }, message: msg });
   } catch (err) {

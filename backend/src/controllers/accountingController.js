@@ -200,6 +200,9 @@ export const getAllLedgers = async (req, res) => {
 
     const query = { companyId: req.companyId };
 
+    // Exclude auto-linked party ledgers (Farmers, Agents) from general ledger list
+    query['linkedEntity.entityType'] = { $nin: ['Farmer', 'Agent'] };
+
     if (ledgerType) {
       query.ledgerType = ledgerType;
     }
