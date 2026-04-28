@@ -25,8 +25,7 @@ const milkCollectionSchema = new mongoose.Schema({
   },
   farmer: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Farmer',
-    required: true
+    ref: 'Farmer'
   },
   farmerNumber: {
     type: String,

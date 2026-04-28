@@ -23,7 +23,8 @@ import {
   Container
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { IconSearch, IconPlus, IconEye, IconEdit, IconTrash, IconFilter } from '@tabler/icons-react';
+import { IconSearch, IconPlus, IconEye, IconEdit, IconTrash, IconFilter, IconDatabaseImport } from '@tabler/icons-react';
+import { notifications } from '@mantine/notifications';
 
 const ACCOUNT_GROUPS = [
   { group: '🟢 ASSET', items: [
@@ -92,6 +93,7 @@ const LedgerList = () => {
   });
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
+  const [seeding, setSeeding] = useState(false);
 
   const form = useForm({
     initialValues: {
@@ -222,6 +224,24 @@ const LedgerList = () => {
     setCurrentPage(1);
   }, [filters.search, filters.ledgerType]);
 
+  const handleSeedDefaults = async () => {
+    if (!window.confirm('This will add all standard dairy cooperative ledgers. Existing ledgers will not be changed. Continue?')) return;
+    setSeeding(true);
+    try {
+      const res = await ledgerAPI.seedDefaults();
+      notifications.show({
+        title: 'Default Ledgers Loaded',
+        message: res.message,
+        color: 'green'
+      });
+      fetchLedgers();
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
+    } finally {
+      setSeeding(false);
+    }
+  };
+
   const rows = currentLedgers.map((ledger) => (
     <tr key={ledger._id}>
       <td>{ledger.ledgerName}</td>
@@ -282,13 +302,24 @@ const LedgerList = () => {
 
       <Paper p="md" mb="md" withBorder>
         <Group justify="space-between" mb="md">
-          <Button
-            leftSection={<IconPlus size={16} />}
-            onClick={handleAdd}
-            color="blue"
-          >
-            Add Ledger
-          </Button>
+          <Group>
+            <Button
+              leftSection={<IconPlus size={16} />}
+              onClick={handleAdd}
+              color="blue"
+            >
+              Add Ledger
+            </Button>
+            <Button
+              leftSection={<IconDatabaseImport size={16} />}
+              onClick={handleSeedDefaults}
+              loading={seeding}
+              color="teal"
+              variant="light"
+            >
+              Load Default Ledgers
+            </Button>
+          </Group>
         </Group>
 
         <Grid gutter="md" mb="md">

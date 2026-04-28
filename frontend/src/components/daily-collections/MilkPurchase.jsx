@@ -2191,8 +2191,8 @@ const MilkPurchase = () => {
         isOpen={rawImportOpen}
         onClose={() => setRawImportOpen(false)}
         onImport={handleZibittRawImportCollection}
-        entityType="Milk Purchase (Zibitt DB — dcs_id/mc_id/producer_id/col_mode)"
-        requiredFields={['dcs_id', 'mc_id', 'slno', 'producer_id', 'qty', 'fat', 'rate', 'amount', 'col_mode', 'date_entry']}
+        entityType="Milk Purchase (Zibitt DB — producer_id/qty/fat/rate/amount)"
+        requiredFields={['producer_id', 'qty', 'fat', 'rate', 'amount']}
         maxFileSizeMB={50}
       />
 

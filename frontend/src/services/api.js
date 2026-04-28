@@ -202,7 +202,8 @@ export const ledgerAPI = {
   update: (id, data) => api.put(`/ledgers/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/ledgers/${id}`).then(res => res.data).catch(handleError),
   getOutstanding: (id) => api.get(`/ledgers/${id}/outstanding`).then(res => res.data).catch(handleError),
-  getOutstandingReport: (params) => api.get('/ledgers/outstanding-report', { params }).then(res => res.data).catch(handleError)
+  getOutstandingReport: (params) => api.get('/ledgers/outstanding-report', { params }).then(res => res.data).catch(handleError),
+  seedDefaults: () => api.post('/ledgers/seed-defaults').then(res => res.data).catch(handleError)
 };
 
 // FARMER PAYMENT APIs

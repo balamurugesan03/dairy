@@ -895,7 +895,7 @@ export default function MilkSales() {
         onClose={() => setRawImportOpen(false)}
         onImport={handleZibittRawImport}
         entityType="Milk Sales (Zibitt DB — dcs_id/mc_id/cust_id/qty/source_id)"
-        requiredFields={['dcs_id', 'mc_id', 'slno', 'cust_id', 'qty', 'rate', 'amount', 'source_id', 'date_entry']}
+        requiredFields={[]}
         maxFileSizeMB={50}
       />
     </Box>

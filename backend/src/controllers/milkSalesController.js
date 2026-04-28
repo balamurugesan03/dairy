@@ -281,16 +281,27 @@ export const zibittRawImport = async (req, res) => {
 
     const parseDateTime = (dateStr) => {
       if (!dateStr) return new Date();
-      const str = String(dateStr);
+      // Excel serial number (e.g. 43132.827...)
+      if (typeof dateStr === 'number' || /^\d{5}(\.\d+)?$/.test(String(dateStr))) {
+        return new Date(Math.round((Number(dateStr) - 25569) * 86400000));
+      }
+      const str = String(dateStr).trim();
       const [datePart, timePart] = str.split(' ');
-      const parts = datePart.split('-');
+      const parts = datePart.split(/[-/]/);
       if (parts.length !== 3) return new Date(str);
-      const [dd, mm, yyyy] = parts;
+      const isYearFirst = parts[0].length === 4;
+      const [dd, mm, yyyy] = isYearFirst ? [parts[2], parts[1], parts[0]] : [parts[0], parts[1], parts[2]];
       return new Date(`${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T${timePart || '00:00'}:00`);
     };
 
     const getSession = (dateStr) => {
-      const timePart = dateStr ? String(dateStr).split(' ')[1] : null;
+      if (!dateStr) return 'AM';
+      // Excel serial — fractional part is fraction of day; >= 0.5 = PM (noon)
+      if (typeof dateStr === 'number' || /^\d{5}(\.\d+)?$/.test(String(dateStr))) {
+        const frac = Number(dateStr) % 1;
+        return frac >= 0.5 ? 'PM' : 'AM';
+      }
+      const timePart = String(dateStr).split(' ')[1];
       if (!timePart) return 'AM';
       return parseInt(timePart.split(':')[0]) < 12 ? 'AM' : 'PM';
     };
@@ -299,6 +310,9 @@ export const zibittRawImport = async (req, res) => {
     const skipped = [];
 
     for (const row of records) {
+      // Skip empty/summary rows (no quantity or amount)
+      if (!row.qty && !row.amount) { skipped.push('empty row'); continue; }
+
       const saleMode = String(row.source_id) === '2' ? 'CREDIT' : 'LOCAL';
       const billNo   = `MS-${row.dcs_id}-${row.mc_id}-${row.cust_id}-${row.slno}`;
 

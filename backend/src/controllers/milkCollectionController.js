@@ -273,7 +273,7 @@ export const zibittRawImportCollections = async (req, res) => {
     }
 
     const parseDateTime = (row) => {
-      const dateStr = row.date_entry || row.mc_date || row.date || '';
+      const dateStr = row.date_entry || row.mc_date || row.date || row.Date || '';
       if (!dateStr) return new Date();
       if (typeof dateStr === 'number') return new Date(Math.round((dateStr - 25569) * 86400000));
       const str = String(dateStr).trim();
@@ -287,24 +287,21 @@ export const zibittRawImportCollections = async (req, res) => {
     };
 
     const docs = [];
-    const skipped = [];
+    const unmatched = [];
 
     for (const row of records) {
       const producerId = String(row.producer_id || '');
       const fm = farmerMap[producerId];
 
-      if (!fm) {
-        skipped.push(producerId || `slno-${row.slno}`);
-        continue;
-      }
+      if (!fm) unmatched.push(producerId);
 
       docs.push({
         billNo:       `MC-${row.dcs_id || 0}-${row.mc_id || 0}-${row.producer_id}-${row.slno || 0}`,
         date:         parseDateTime(row),
         shift:        parseShift(row),
-        farmer:       fm.id,
+        farmer:       fm ? fm.id : null,
         farmerNumber: producerId,
-        farmerName:   fm.name,
+        farmerName:   fm ? fm.name : '',
         qty:          Number(row.qty)       || 0,
         fat:          Number(row.fat)       || 0,
         clr:          Number(row.clr)       || 0,
@@ -317,8 +314,7 @@ export const zibittRawImportCollections = async (req, res) => {
     }
 
     if (docs.length === 0) {
-      const unknown = [...new Set(skipped)].slice(0, 10).join(', ');
-      return res.status(400).json({ success: false, message: `No matching farmers found. Unknown producer_ids: ${unknown}` });
+      return res.status(400).json({ success: false, message: 'No records to import' });
     }
 
     const CHUNK = 1000;
@@ -339,13 +335,13 @@ export const zibittRawImportCollections = async (req, res) => {
     // Auto-post to PRODUCERS DUES / MILK PURCHASE
     await postBulkMilkPurchaseVouchers(docs, companyId);
 
-    const unknownSample = [...new Set(skipped)].slice(0, 5).join(', ');
-    const totalSkipped = skipped.length + (docs.length - inserted);
-    const msg = skipped.length
-      ? `${inserted} imported, ${totalSkipped} skipped (farmer not found: ${unknownSample}${skipped.length > 5 ? '…' : ''})`
+    const uniqueUnmatched = [...new Set(unmatched)];
+    const dupSkipped = docs.length - inserted;
+    const msg = uniqueUnmatched.length
+      ? `${inserted} imported (${uniqueUnmatched.length} producer_ids not linked to farmers: ${uniqueUnmatched.slice(0, 5).join(', ')}${uniqueUnmatched.length > 5 ? '…' : ''})`
       : `${inserted} records imported`;
 
-    res.status(201).json({ success: true, data: { inserted, skipped: totalSkipped }, message: msg });
+    res.status(201).json({ success: true, data: { inserted, skipped: dupSkipped, unmatchedFarmers: uniqueUnmatched.length }, message: msg });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
@@ -435,9 +431,18 @@ const parseAnyDate = (v) => {
 };
 
 const parseShift = (row) => {
-  // Zibitt: Shift 0=AM, 1=PM  |  OpenLyssa: mc_time='AM'/'PM', shift_id=1/2, col_mode=D/M
-  if (row.Shift != null) return String(row.Shift) === '0' ? 'AM' : 'PM';
-  if (row.shift != null) return String(row.shift) === '0' ? 'AM' : 'PM';
+  // Zibitt raw DB: Shift 0=AM, 1=PM  |  CSV export: Shift 'AM'/'PM'
+  // OpenLyssa: mc_time='AM'/'PM', shift_id=1/2, col_mode=D/M
+  if (row.Shift != null) {
+    const s = String(row.Shift).toUpperCase().trim();
+    if (s === 'AM' || s === 'PM') return s;
+    return s === '0' ? 'AM' : 'PM';
+  }
+  if (row.shift != null) {
+    const s = String(row.shift).toUpperCase().trim();
+    if (s === 'AM' || s === 'PM') return s;
+    return s === '0' ? 'AM' : 'PM';
+  }
   if (row.mc_time) { const t = String(row.mc_time).toUpperCase(); return t.includes('AM') ? 'AM' : 'PM'; }
   if (row.col_mode) return String(row.col_mode).toUpperCase() === 'D' ? 'AM' : 'PM';
   if (row.shift_id) return String(row.shift_id) === '1' ? 'AM' : 'PM';

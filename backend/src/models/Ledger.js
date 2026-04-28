@@ -112,6 +112,15 @@ const ledgerSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  voucherType: {
+    type: String,
+    enum: ['B', 'P', 'R'],  // B=Balance Sheet, P=Profit&Loss, R=Receipt
+    default: 'P'
+  },
+  isFixed: {
+    type: Boolean,
+    default: false
+  },
   status: {
     type: String,
     enum: ['Active', 'Inactive'],

@@ -305,8 +305,21 @@ const MilkPurchaseSection = () => {
 };
 
 // ─── MILK SALES SECTION ────────────────────────────────────────────────────
+// Joins 4 Zibitt tables:
+//   mc_master   → mc_id → date, shift
+//   customer    → cust_id → name
+//   item        → item_id → item_name
+//   sales_detail (main) → mc_id + cust_id + item_id foreign keys
 
-const SALES_COLS = ['date', 'shift', 'saleType', 'customerId', 'customerName', 'qty', 'rate', 'amount', 'remarks'];
+const detectSalesSheetType = (rows) => {
+  if (!rows.length) return null;
+  const keys = Object.keys(rows[0]).map((k) => k.toLowerCase());
+  if (keys.includes('mc_date') && keys.includes('shift_id')) return 'mc_master';
+  if (keys.includes('source_id') && keys.includes('slno'))    return 'sales_detail';
+  if (keys.includes('item_name'))                              return 'item';
+  if (keys.includes('cust_id') && keys.includes('name'))      return 'customer';
+  return null;
+};
 
 const MilkSalesSection = () => {
   const [files, setFiles] = useState([]);
@@ -319,24 +332,126 @@ const MilkSalesSection = () => {
 
   const handleConvert = async () => {
     if (!files.length) {
-      notifications.show({ title: 'No Files', message: 'Please select at least one file', color: 'orange' });
+      notifications.show({ title: 'No Files', message: 'Please select files', color: 'orange' });
       return;
     }
     setStatus('processing');
     setResult(null);
 
     try {
-      const allRows = [];
-      const fileSummary = [];
+      const tables = { mc_master: [], sales_detail: [], customer: [], item: [] };
+      const unrecognised = [];
 
       for (const file of files) {
         const { sheets } = await readFileSheets(file);
-        const firstSheet = Object.values(sheets)[0] ?? [];
-        allRows.push(...firstSheet);
-        fileSummary.push({ name: file.name, rows: firstSheet.length });
+        let matched = false;
+        for (const [, rows] of Object.entries(sheets)) {
+          const type = detectSalesSheetType(rows);
+          if (type) { tables[type].push(...rows); matched = true; }
+        }
+        if (!matched) unrecognised.push(file.name);
       }
 
-      setResult({ rows: allRows, fileSummary });
+      if (unrecognised.length) {
+        notifications.show({
+          title: 'Unrecognised file(s)',
+          message: unrecognised.join(', '),
+          color: 'orange'
+        });
+      }
+
+      if (!tables.sales_detail.length) {
+        setStatus('error');
+        notifications.show({ title: 'Missing Sales Detail', message: 'No sales detail rows found (needs source_id + slno columns)', color: 'red' });
+        return;
+      }
+
+      // Build lookup maps
+      // mc_id → { date string, shift }
+      const mcMap = new Map();
+      tables.mc_master.forEach((row) => {
+        const mcId = String(row.mc_id ?? '').trim();
+        if (!mcId) return;
+        const date = parseDate(row.mc_date);
+        const shiftId = Number(row.shift_id);
+        const mcTime = String(row.mc_time ?? '').trim().toUpperCase();
+        const shift = mcTime === 'AM' ? 'AM' : mcTime === 'PM' ? 'PM'
+          : shiftId === 1 ? 'AM' : shiftId === 2 ? 'PM' : 'AM';
+        if (date) {
+          // Encode shift into time so the import backend can detect AM/PM via getSession
+          const timeStr = shift === 'AM' ? '06:00' : '18:00';
+          const dd = String(date.getDate()).padStart(2, '0');
+          const mm = String(date.getMonth() + 1).padStart(2, '0');
+          const yyyy = date.getFullYear();
+          mcMap.set(mcId, { dateEntry: `${dd}-${mm}-${yyyy} ${timeStr}`, shift });
+        }
+      });
+
+      // cust_id → name
+      const custMap = new Map();
+      tables.customer.forEach((row) => {
+        const id = String(row.cust_id ?? '').trim();
+        if (id) custMap.set(id, String(row.name ?? '').trim());
+      });
+
+      // item_id → item_name
+      const itemMap = new Map();
+      tables.item.forEach((row) => {
+        const id = String(row.item_id ?? '').trim();
+        if (id) itemMap.set(id, String(row.item_name ?? '').trim());
+      });
+
+      // Join
+      const merged = [];
+      let skippedNoQty = 0;
+
+      tables.sales_detail.forEach((row) => {
+        if (!row.qty && !row.amount) { skippedNoQty++; return; }
+
+        const mcId    = String(row.mc_id   ?? '').trim();
+        const custId  = String(row.cust_id ?? '').trim();
+        const itemId  = String(row.item_id ?? '').trim();
+        const mc      = mcMap.get(mcId);
+
+        // Use mc_date for date_entry if available, else fall back to row's date_entry
+        let dateEntry = mc?.dateEntry ?? '';
+        if (!dateEntry && row.date_entry) {
+          const d = parseDate(row.date_entry);
+          if (d) {
+            const dd = String(d.getDate()).padStart(2, '0');
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            dateEntry = `${dd}-${mm}-${d.getFullYear()} 06:00`;
+          }
+        }
+
+        merged.push({
+          dcs_id:     row.dcs_id ?? '',
+          mc_id:      mcId,
+          slno:       row.slno ?? '',
+          cust_id:    custId,
+          cust_name:  custMap.get(custId) ?? '',
+          item_id:    itemId,
+          item_name:  itemMap.get(itemId) ?? '',
+          qty:        num(row.qty),
+          rate:       num(row.rate),
+          amount:     num(row.amount),
+          source_id:  row.source_id ?? '',
+          date_entry: dateEntry,
+          shift:      mc?.shift ?? '',
+        });
+      });
+
+      setResult({
+        rows: merged,
+        stats: {
+          mc_master:    tables.mc_master.length,
+          customer:     tables.customer.length,
+          item:         tables.item.length,
+          sales_detail: tables.sales_detail.length,
+          merged:       merged.length,
+          skippedNoQty,
+        }
+      });
       setStatus('done');
     } catch (err) {
       setStatus('error');
@@ -358,18 +473,19 @@ const MilkSalesSection = () => {
         </ThemeIcon>
         <div>
           <Title order={4}>Milk Sales</Title>
-          <Text size="xs" c="dimmed">Merge multiple OpenLyssa milk sales export files</Text>
+          <Text size="xs" c="dimmed">Join 4 Zibitt tables: Customer + MC Master + Item + Sales Detail</Text>
         </div>
       </Group>
 
       <Alert icon={<IconAlertCircle size={14} />} color="teal" variant="light" mb="md" p="xs">
         <Text size="xs">
-          Select any number of milk sales Excel files. All rows from every file will be combined into one output file.
+          Upload all 4 Zibitt export files (customer, mc_master, item, sales_detail) — separately or in one Excel with multiple sheets.
+          The tool auto-detects each table and joins them on mc_id / cust_id / item_id.
         </Text>
       </Alert>
 
       <FileListBox
-        label="Sales Files"
+        label="Customer + MC Master + Item + Sales Detail Files"
         color="teal"
         files={files}
         onAdd={addFiles}
@@ -379,13 +495,15 @@ const MilkSalesSection = () => {
       {status === 'done' && result && (
         <Alert icon={<IconCircleCheck size={14} />} color="green" variant="light" mt="md" p="xs">
           <Stack gap={2}>
-            {result.fileSummary.map((f, i) => (
-              <Text key={i} size="xs">
-                {i + 1}. {f.name} — <strong>{f.rows}</strong> rows
-              </Text>
-            ))}
+            <Text size="xs">MC Master rows: <strong>{result.stats.mc_master}</strong></Text>
+            <Text size="xs">Customer rows: <strong>{result.stats.customer}</strong></Text>
+            <Text size="xs">Item rows: <strong>{result.stats.item}</strong></Text>
+            <Text size="xs">Sales Detail rows: <strong>{result.stats.sales_detail}</strong></Text>
             <Divider my={4} />
-            <Text size="xs" fw={700}>Total: {result.rows.length} rows merged</Text>
+            <Text size="xs" fw={700} c="green">Merged output: {result.stats.merged} rows</Text>
+            {result.stats.skippedNoQty > 0 && (
+              <Text size="xs" c="dimmed">Skipped (no qty/amount): {result.stats.skippedNoQty}</Text>
+            )}
           </Stack>
         </Alert>
       )}
@@ -398,7 +516,7 @@ const MilkSalesSection = () => {
           loading={status === 'processing'}
           disabled={!files.length}
         >
-          Convert
+          Convert & Merge
         </Button>
         <Button
           color="green"

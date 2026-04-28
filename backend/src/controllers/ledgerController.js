@@ -1,5 +1,6 @@
 import Ledger from '../models/Ledger.js';
 import Voucher from '../models/Voucher.js';
+import { seedDairyLedgersForCompany } from '../scripts/seedDairyLedgers.js';
 
 // Get all ledgers
 export const getAllLedgers = async (req, res) => {
@@ -243,11 +244,25 @@ export const getOutstandingReport = async (req, res) => {
   }
 };
 
+export const seedDefaultLedgers = async (req, res) => {
+  try {
+    const result = await seedDairyLedgersForCompany(req.companyId);
+    res.json({
+      success: true,
+      message: `${result.created} ledgers created, ${result.skipped} already existed`,
+      data: result
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 export default {
   getAllLedgers,
   createLedger,
   getLedgerById,
   updateLedger,
   deleteLedger,
-  getOutstandingReport
+  getOutstandingReport,
+  seedDefaultLedgers
 };
