@@ -649,6 +649,80 @@ export const getFarmerWiseSummary = async (req, res) => {
   }
 };
 
+// ── DATE-WISE SUMMARY ─────────────────────────────────────────────────────────
+export const getDateWiseSummary = async (req, res) => {
+  try {
+    const { fromDate, toDate, shift } = req.query;
+    const match = { companyId: req.companyId };
+
+    if (fromDate || toDate) {
+      match.date = {};
+      if (fromDate) match.date.$gte = new Date(fromDate);
+      if (toDate) {
+        const to = new Date(toDate);
+        to.setHours(23, 59, 59, 999);
+        match.date.$lte = to;
+      }
+    }
+    if (shift) match.shift = shift;
+
+    const pipeline = [
+      { $match: match },
+      {
+        $group: {
+          _id: {
+            date:  { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+            shift: '$shift',
+          },
+          nos:    { $addToSet: '$farmerNumber' },
+          qty:    { $sum: '$qty' },
+          amount: { $sum: '$amount' },
+          fat:    { $avg: '$fat' },
+          snf:    { $avg: '$snf' },
+        },
+      },
+      {
+        $group: {
+          _id:       '$_id.date',
+          amNos:     { $sum: { $cond: [{ $eq: ['$_id.shift','AM'] }, { $size: '$nos' }, 0] } },
+          amQty:     { $sum: { $cond: [{ $eq: ['$_id.shift','AM'] }, '$qty',    0] } },
+          amAmt:     { $sum: { $cond: [{ $eq: ['$_id.shift','AM'] }, '$amount', 0] } },
+          pmNos:     { $sum: { $cond: [{ $eq: ['$_id.shift','PM'] }, { $size: '$nos' }, 0] } },
+          pmQty:     { $sum: { $cond: [{ $eq: ['$_id.shift','PM'] }, '$qty',    0] } },
+          pmAmt:     { $sum: { $cond: [{ $eq: ['$_id.shift','PM'] }, '$amount', 0] } },
+          totalQty:  { $sum: '$qty' },
+          totalAmt:  { $sum: '$amount' },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ];
+
+    const rows = await MilkCollection.aggregate(pipeline);
+
+    const f2 = v => +Number(v || 0).toFixed(2);
+    const f3 = v => +Number(v || 0).toFixed(3);
+
+    const result = rows.map(r => ({
+      date:        r._id,
+      amNos:       r.amNos    || 0,
+      amQty:       f3(r.amQty),
+      amAmt:       f2(r.amAmt),
+      pmNos:       r.pmNos    || 0,
+      pmQty:       f3(r.pmQty),
+      pmAmt:       f2(r.pmAmt),
+      totalNos:    (r.amNos || 0) + (r.pmNos || 0),
+      totalQty:    f3(r.totalQty),
+      totalAmt:    f2(r.totalAmt),
+      avgRate:     r.totalQty > 0 ? f2(r.totalAmt / r.totalQty) : 0,
+    }));
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    console.error('Date-wise summary error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // ── FARMER STATS (10-day avg or custom days) ──────────────────────────────────
 export const getFarmerStats = async (req, res) => {
   try {

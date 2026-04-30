@@ -51,6 +51,7 @@ const DailyCollectionList = () => {
   const [shift,  setShift]  = useState('');
   const [center, setCenter] = useState('');
   const [search, setSearch] = useState('');
+  const [sortStatus, setSortStatus] = useState({ columnAccessor: '', direction: 'asc' });
 
   // Load centers
   useEffect(() => {
@@ -89,6 +90,30 @@ const DailyCollectionList = () => {
   }, [pagination.page, date, shift, center, search]);
 
   useEffect(() => { fetchRecords(); }, [fetchRecords]);
+
+  const getSortedRecords = () => {
+    const { columnAccessor: col, direction: dir } = sortStatus;
+    if (!col) return records;
+    const d = dir === 'asc' ? 1 : -1;
+    return [...records].sort((a, b) => {
+      let av, bv;
+      if      (col === 'billNo')  { av = a.billNo;       bv = b.billNo; }
+      else if (col === 'date')    { av = new Date(a.date||0); bv = new Date(b.date||0); }
+      else if (col === 'shift')   { av = a.shift;        bv = b.shift; }
+      else if (col === 'farmer')  { av = a.farmerName || a.farmerNumber; bv = b.farmerName || b.farmerNumber; }
+      else if (col === 'qty')     { av = a.qty    ?? 0;  bv = b.qty    ?? 0; }
+      else if (col === 'fat')     { av = a.fat    ?? 0;  bv = b.fat    ?? 0; }
+      else if (col === 'clr')     { av = a.clr    ?? 0;  bv = b.clr    ?? 0; }
+      else if (col === 'snf')     { av = a.snf    ?? 0;  bv = b.snf    ?? 0; }
+      else if (col === 'rate')    { av = a.rate   ?? 0;  bv = b.rate   ?? 0; }
+      else if (col === 'incentive') { av = a.incentive ?? 0; bv = b.incentive ?? 0; }
+      else if (col === 'amount')  { av = a.amount ?? 0;  bv = b.amount ?? 0; }
+      else return 0;
+      if (av == null) return d; if (bv == null) return -d;
+      if (typeof av === 'string') return av.localeCompare(bv) * d;
+      return (av > bv ? 1 : av < bv ? -1 : 0) * d;
+    });
+  };
 
   // ── Delete ─────────────────────────────────────────────────────────────────
   const handleDelete = (row) => {
@@ -668,23 +693,25 @@ const DailyCollectionList = () => {
       {/* ── Table ── */}
       <Paper withBorder radius="md" style={{ overflow: 'hidden' }}>
         <DataTable
-          records={records}
+          records={getSortedRecords()}
           fetching={loading}
           minHeight={300}
           noRecordsText="No collection entries found for this date/shift"
           striped
           highlightOnHover
+          sortStatus={sortStatus}
+          onSortStatusChange={setSortStatus}
           columns={[
             {
-              accessor: 'billNo', title: 'Bill No', width: 130,
+              accessor: 'billNo', title: 'Bill No', width: 130, sortable: true,
               render: r => <Text size="sm" fw={700} c="blue">{r.billNo}</Text>,
             },
             {
-              accessor: 'date', title: 'Date', width: 110,
+              accessor: 'date', title: 'Date', width: 110, sortable: true,
               render: r => <Text size="sm">{dayjs(r.date).format('DD MMM YY')}</Text>,
             },
             {
-              accessor: 'shift', title: 'Shift', width: 80,
+              accessor: 'shift', title: 'Shift', width: 80, sortable: true,
               render: r => (
                 <Badge size="sm" color={r.shift === 'AM' ? 'yellow' : 'indigo'} variant="light">
                   {r.shift === 'AM' ? '☀ AM' : '🌙 PM'}
@@ -692,7 +719,7 @@ const DailyCollectionList = () => {
               ),
             },
             {
-              accessor: 'farmer', title: 'Farmer',
+              accessor: 'farmer', title: 'Farmer', sortable: true,
               render: r => (
                 <Box>
                   <Badge size="xs" color="green" variant="filled" radius="sm">{r.farmerNumber}</Badge>
@@ -701,31 +728,31 @@ const DailyCollectionList = () => {
               ),
             },
             {
-              accessor: 'qty', title: 'Qty (L)', width: 80, textAlign: 'right',
+              accessor: 'qty', title: 'Qty (L)', width: 80, textAlign: 'right', sortable: true,
               render: r => <Text size="sm" fw={700} c="blue">{(r.qty || 0).toFixed(2)}</Text>,
             },
             {
-              accessor: 'fat', title: 'FAT %', width: 75, textAlign: 'right',
+              accessor: 'fat', title: 'FAT %', width: 75, textAlign: 'right', sortable: true,
               render: r => <Text size="sm" fw={600} c="orange">{(r.fat || 0).toFixed(2)}</Text>,
             },
             {
-              accessor: 'clr', title: 'CLR', width: 70, textAlign: 'right',
+              accessor: 'clr', title: 'CLR', width: 70, textAlign: 'right', sortable: true,
               render: r => <Text size="sm" c="violet">{(r.clr || 0).toFixed(1)}</Text>,
             },
             {
-              accessor: 'snf', title: 'SNF %', width: 75, textAlign: 'right',
+              accessor: 'snf', title: 'SNF %', width: 75, textAlign: 'right', sortable: true,
               render: r => <Text size="sm" c="green">{(r.snf || 0).toFixed(2)}</Text>,
             },
             {
-              accessor: 'rate', title: 'Rate', width: 80, textAlign: 'right',
+              accessor: 'rate', title: 'Rate', width: 80, textAlign: 'right', sortable: true,
               render: r => <Text size="sm" fw={600}>₹{(r.rate || 0).toFixed(2)}</Text>,
             },
             {
-              accessor: 'incentive', title: 'Incentive', width: 85, textAlign: 'right',
+              accessor: 'incentive', title: 'Incentive', width: 85, textAlign: 'right', sortable: true,
               render: r => <Text size="sm" c="teal">₹{(r.incentive || 0).toFixed(2)}</Text>,
             },
             {
-              accessor: 'amount', title: 'Amount', width: 100, textAlign: 'right',
+              accessor: 'amount', title: 'Amount', width: 100, textAlign: 'right', sortable: true,
               render: r => (
                 <Text size="sm" fw={700} c="green.8">
                   ₹{(r.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}

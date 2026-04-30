@@ -167,6 +167,36 @@ const AgentManagement = () => {
     return response;
   };
 
+  const [sortKey, setSortKey] = useState('');
+  const [sortDir, setSortDir] = useState('asc');
+
+  const handleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+
+  const getSortedAgents = () => {
+    if (!sortKey) return agents;
+    const d = sortDir === 'asc' ? 1 : -1;
+    return [...agents].sort((a, b) => {
+      const av = a[sortKey] ?? ''; const bv = b[sortKey] ?? '';
+      if (typeof av === 'number') return (av - bv) * d;
+      return String(av).localeCompare(String(bv)) * d;
+    });
+  };
+
+  const SortTh = ({ label, sk, style = {} }) => (
+    <Table.Th
+      onClick={() => sk && handleSort(sk)}
+      style={{ fontWeight:700, fontSize:11, textTransform:'uppercase', color:'#1565c0',
+               padding:'10px 14px', whiteSpace:'nowrap', cursor: sk ? 'pointer' : 'default',
+               userSelect:'none', ...style }}
+    >
+      {label}
+      {sk && sortKey === sk && (sortDir === 'asc' ? ' ▲' : ' ▼')}
+    </Table.Th>
+  );
+
   // Stats — fetched globally (not page-scoped)
   const [globalStats, setGlobalStats] = useState({ active: 0, inactive: 0 });
 
@@ -326,25 +356,17 @@ const AgentManagement = () => {
             <Table striped highlightOnHover withColumnBorders style={{ fontSize: 13 }}>
               <Table.Thead style={{ background: 'linear-gradient(180deg, #e3f2fd 0%, #bbdefb 100%)' }}>
                 <Table.Tr>
-                  {['#', 'Code', 'Agent Name', 'Collection Center', 'Phone', 'Status', 'Actions'].map(col => (
-                    <Table.Th
-                      key={col}
-                      style={{
-                        fontWeight: 700,
-                        fontSize: 11,
-                        textTransform: 'uppercase',
-                        color: '#1565c0',
-                        padding: '10px 14px',
-                        whiteSpace: 'nowrap'
-                      }}
-                    >
-                      {col}
-                    </Table.Th>
-                  ))}
+                  <SortTh label="#"                 sk={null} />
+                  <SortTh label="Code"              sk="agentCode" />
+                  <SortTh label="Agent Name"        sk="agentName" />
+                  <SortTh label="Collection Center" sk={null} />
+                  <SortTh label="Phone"             sk="phone" />
+                  <SortTh label="Status"            sk="status" />
+                  <SortTh label="Actions"           sk={null} />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {agents.map((agent, idx) => (
+                {getSortedAgents().map((agent, idx) => (
                   <Table.Tr key={agent._id}>
                     <Table.Td style={{ padding: '8px 14px', color: '#1565c0', fontWeight: 700 }}>
                       {(filters.page - 1) * filters.limit + idx + 1}

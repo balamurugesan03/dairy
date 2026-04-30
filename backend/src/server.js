@@ -230,6 +230,7 @@ import producerOpeningRoutes from './routes/producerOpeningRoutes.js';
 import cattleFeedAdvanceRoutes from './routes/cattleFeedAdvanceRoutes.js';
 import cropStatementRoutes from './routes/cropStatementRoutes.js';
 import agriStatsRoutes from './routes/agriStatsRoutes.js';
+import inspectionReportRoutes from './routes/inspectionReportRoutes.js';
 
 // Auth routes (public login, protected user management)
 app.use('/api/auth', authRoutes);
@@ -398,6 +399,7 @@ app.use('/api', protect, addCompanyFilter, producerOpeningRoutes);
 app.use('/api/cattle-feed-advance', protect, addCompanyFilter, cattleFeedAdvanceRoutes);
 app.use('/api/crop-statements',    protect, addCompanyFilter, cropStatementRoutes);
 app.use('/api/agri-stats',         protect, addCompanyFilter, agriStatsRoutes);
+app.use('/api/inspection-report',  protect, addCompanyFilter, inspectionReportRoutes);
 
 // Protected company routes (for superadmin management)
 app.use('/api/companies', protect, companyRoutes);

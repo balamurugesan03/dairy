@@ -117,6 +117,7 @@ const CustomerManagement = () => {
   const fileInputRef = useRef(null);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+  const [sortStatus, setSortStatus] = useState({ columnAccessor: '', direction: 'asc' });
 
   useEffect(() => {
     fetchCustomers();
@@ -486,6 +487,26 @@ const CustomerManagement = () => {
     fetchCustomers();
   };
 
+  const getSortedCustomers = () => {
+    const { columnAccessor: col, direction: dir } = sortStatus;
+    if (!col) return customers;
+    const d = dir === 'asc' ? 1 : -1;
+    return [...customers].sort((a, b) => {
+      let av, bv;
+      if (col === 'customerId')      { av = a.customerId;      bv = b.customerId; }
+      else if (col === 'name')       { av = a.name;            bv = b.name; }
+      else if (col === 'phone')      { av = a.phone;           bv = b.phone; }
+      else if (col === 'category')   { av = a.category;        bv = b.category; }
+      else if (col === 'district')   { av = a.district;        bv = b.district; }
+      else if (col === 'openingBalance') { av = a.openingBalance ?? 0; bv = b.openingBalance ?? 0; }
+      else if (col === 'status')     { av = a.active ? 'Active' : 'Inactive'; bv = b.active ? 'Active' : 'Inactive'; }
+      else return 0;
+      if (av == null) return d; if (bv == null) return -d;
+      if (typeof av === 'string') return av.localeCompare(bv) * d;
+      return (av > bv ? 1 : av < bv ? -1 : 0) * d;
+    });
+  };
+
   const columns = [
     visibleColumns.customerId && {
       accessor: 'customerId',
@@ -499,7 +520,8 @@ const CustomerManagement = () => {
     },
     visibleColumns.phone && {
       accessor: 'phone',
-      title: 'Phone'
+      title: 'Phone',
+      sortable: true,
     },
     visibleColumns.email && {
       accessor: 'email',
@@ -509,6 +531,7 @@ const CustomerManagement = () => {
     visibleColumns.category && {
       accessor: 'category',
       title: 'Category',
+      sortable: true,
       render: (customer) => customer.category ? (
         <Badge color="grape" variant="light">{customer.category}</Badge>
       ) : '-'
@@ -521,6 +544,7 @@ const CustomerManagement = () => {
     visibleColumns.district && {
       accessor: 'district',
       title: 'District',
+      sortable: true,
       render: (customer) => customer.district || '-'
     },
     visibleColumns.openingBalance && {
@@ -532,6 +556,7 @@ const CustomerManagement = () => {
     visibleColumns.status && {
       accessor: 'status',
       title: 'Status',
+      sortable: true,
       render: (customer) => (
         <Badge color={customer.active ? 'green' : 'red'} variant="light">
           {customer.active ? 'Active' : 'Inactive'}
@@ -796,8 +821,10 @@ const CustomerManagement = () => {
             <DataTable
               idAccessor="_id"
               columns={columns}
-              records={customers}
+              records={getSortedCustomers()}
               fetching={loading}
+              sortStatus={sortStatus}
+              onSortStatusChange={setSortStatus}
               totalRecords={pagination.total}
               recordsPerPage={pagination.pageSize}
               page={pagination.current}

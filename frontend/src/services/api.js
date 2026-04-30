@@ -292,6 +292,9 @@ export const reportAPI = {
   dddMisReport:       (params) => api.get('/reports/ddd-mis-report', { params }).then(res => res.data).catch(handleError),
   saveDddMisReport:   (data)   => api.post('/reports/ddd-mis-report', data).then(res => res.data).catch(handleError),
   updateDddMisReport: (id, data) => api.put(`/reports/ddd-mis-report/${id}`, data).then(res => res.data).catch(handleError),
+  getInspectionReport:    (params)     => api.get('/inspection-report', { params }).then(res => res.data).catch(handleError),
+  saveInspectionReport:   (data)       => api.post('/inspection-report', data).then(res => res.data).catch(handleError),
+  updateInspectionReport: (id, data)   => api.put(`/inspection-report/${id}`, data).then(res => res.data).catch(handleError),
 };
 
 // DAY BOOK API
@@ -407,6 +410,7 @@ export const milkCollectionAPI = {
   getFarmerHistory: (farmerNumber, params) => api.get(`/milk-collections/farmer/${farmerNumber}`, { params }).then(res => res.data).catch(handleError),
   getFarmerStats: (farmerNumber, params) => api.get(`/milk-collections/farmer/${farmerNumber}/stats`, { params }).then(res => res.data).catch(handleError),
   getFarmerWiseSummary: (params) => api.get('/milk-collections/summary/farmer-wise', { params }).then(res => res.data).catch(handleError),
+  getDateWiseSummary:   (params) => api.get('/milk-collections/summary/date-wise',   { params }).then(res => res.data).catch(handleError),
 };
 
 // MILK SALES APIs

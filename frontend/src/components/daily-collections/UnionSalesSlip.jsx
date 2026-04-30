@@ -102,6 +102,26 @@ export default function UnionSalesSlip() {
 
   useEffect(() => { loadEntries(); }, []); // eslint-disable-line
 
+  const [sortKey, setSortKey] = useState('');
+  const [sortDir, setSortDir] = useState('asc');
+
+  const handleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+
+  const SortTh = ({ label, sk }) => (
+    <Table.Th
+      onClick={() => sk && handleSort(sk)}
+      style={{ fontWeight:800, fontSize:10, textTransform:'uppercase', letterSpacing:'0.5px',
+               color:'#4c1d95', whiteSpace:'nowrap', padding:'9px 12px',
+               borderBottom:'2px solid #c4b5fd', cursor: sk ? 'pointer' : 'default',
+               userSelect:'none' }}
+    >
+      {label}{sk && sortKey === sk ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+    </Table.Th>
+  );
+
   const filteredEntries = historySearch.trim()
     ? entries.filter(e =>
         (e.slipNo || '').toLowerCase().includes(historySearch.toLowerCase()) ||
@@ -109,6 +129,17 @@ export default function UnionSalesSlip() {
         (e.time || '').toLowerCase().includes(historySearch.toLowerCase())
       )
     : entries;
+
+  const sortedEntries = (() => {
+    if (!sortKey) return filteredEntries;
+    const d = sortDir === 'asc' ? 1 : -1;
+    return [...filteredEntries].sort((a, b) => {
+      const numFields = ['qty','fat','snf','rate','amount','unionSpoilage','transportationSpoilage'];
+      if (numFields.includes(sortKey)) return ((a[sortKey] ?? 0) - (b[sortKey] ?? 0)) * d;
+      if (sortKey === 'date') return (new Date(a.date||0) - new Date(b.date||0)) * d;
+      return String(a[sortKey] ?? '').localeCompare(String(b[sortKey] ?? '')) * d;
+    });
+  })();
 
   const handleClear = () => { setForm(initForm()); setEditingId(null); setSelRow(null); focusRef(qtyRef); };
 
@@ -642,11 +673,18 @@ export default function UnionSalesSlip() {
               <Table striped highlightOnHover stickyHeader withColumnBorders style={{ fontSize: 12 }}>
                 <Table.Thead style={{ background: 'linear-gradient(180deg,#ede9fe 0%,#ddd6fe 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
                   <Table.Tr>
-                    {['#', 'Slip No', 'Date', 'Session', 'Qty (L)', 'FAT', 'SNF', 'Rate ₹', 'Amount ₹', 'Union Spg', 'Trans Spg', 'Actions'].map((col, i) => (
-                      <Table.Th key={i} style={{ fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#4c1d95', whiteSpace: 'nowrap', padding: '9px 12px', borderBottom: '2px solid #c4b5fd' }}>
-                        {col}
-                      </Table.Th>
-                    ))}
+                    <SortTh label="#"           sk={null} />
+                    <SortTh label="Slip No"     sk="slipNo" />
+                    <SortTh label="Date"        sk="date" />
+                    <SortTh label="Session"     sk="time" />
+                    <SortTh label="Qty (L)"     sk="qty" />
+                    <SortTh label="FAT"         sk="fat" />
+                    <SortTh label="SNF"         sk="snf" />
+                    <SortTh label="Rate ₹"      sk="rate" />
+                    <SortTh label="Amount ₹"    sk="amount" />
+                    <SortTh label="Union Spg"   sk="unionSpoilage" />
+                    <SortTh label="Trans Spg"   sk="transportationSpoilage" />
+                    <SortTh label="Actions"     sk={null} />
                   </Table.Tr>
                 </Table.Thead>
 

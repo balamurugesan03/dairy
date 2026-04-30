@@ -391,10 +391,41 @@ export default function MilkSales() {
     if (e.key === 'Enter') { e.preventDefault(); handleSave(); }
   };
 
+  const [sortKey, setSortKey] = useState('');
+  const [sortDir, setSortDir] = useState('asc');
+
+  const handleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+
+  const SortTh = ({ label, sk, style = {} }) => (
+    <Table.Th
+      onClick={() => sk && handleSort(sk)}
+      style={{ fontWeight:800, fontSize:10, textTransform:'uppercase', letterSpacing:'0.5px',
+               color:'#14532d', whiteSpace:'nowrap', padding:'9px 12px',
+               borderBottom:'2px solid #86efac', cursor: sk ? 'pointer' : 'default',
+               userSelect:'none', ...style }}
+    >
+      {label}{sk && sortKey === sk ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+    </Table.Th>
+  );
+
   // Filtered entries
   const filteredEntries = historySearch.trim()
     ? entries.filter(e => [e.billNo, e.creditorName, e.centerName].some(v => (v || '').toLowerCase().includes(historySearch.toLowerCase())))
     : entries;
+
+  const sortedEntries = (() => {
+    if (!sortKey) return filteredEntries;
+    const d = sortDir === 'asc' ? 1 : -1;
+    return [...filteredEntries].sort((a, b) => {
+      const numFields = ['litre', 'rate', 'amount', 'openingCredit'];
+      if (numFields.includes(sortKey)) return ((a[sortKey] ?? 0) - (b[sortKey] ?? 0)) * d;
+      if (sortKey === 'date') return (new Date(a.date||0) - new Date(b.date||0)) * d;
+      return String(a[sortKey] ?? '').localeCompare(String(b[sortKey] ?? '')) * d;
+    });
+  })();
 
   // Aggregates
   const totL = filteredEntries.reduce((s, e) => s + (parseFloat(e.litre) || 0), 0);
@@ -760,11 +791,20 @@ export default function MilkSales() {
             <Table striped highlightOnHover stickyHeader withColumnBorders style={{ fontSize: 12 }}>
               <Table.Thead style={{ background: 'linear-gradient(180deg,#dcfce7 0%,#bbf7d0 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
                 <Table.Tr>
-                  {['#', 'Bill No', 'Date', 'Sess', 'Mode', isLocal ? 'Center' : 'Creditor', ...(isLocal ? ['Agent'] : ['Op. Credit', 'Center', 'Agent']), 'Litres', 'Rate/L', 'Amount', ...(isLocal ? ['Payment'] : []), ''].map((col, i) => (
-                    <Table.Th key={i} style={{ fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#14532d', whiteSpace: 'nowrap', padding: '9px 12px', borderBottom: '2px solid #86efac' }}>
-                      {col}
-                    </Table.Th>
-                  ))}
+                  <SortTh label="#"           sk={null} />
+                  <SortTh label="Bill No"     sk="billNo" />
+                  <SortTh label="Date"        sk="date" />
+                  <SortTh label="Sess"        sk="session" />
+                  <SortTh label="Mode"        sk="saleMode" />
+                  <SortTh label={isLocal ? 'Center' : 'Creditor'} sk={isLocal ? 'centerName' : 'creditorName'} />
+                  {!isLocal && <SortTh label="Op. Credit" sk="openingCredit" />}
+                  {!isLocal && <SortTh label="Center"     sk="centerName" />}
+                  <SortTh label="Agent"       sk="agentName" />
+                  <SortTh label="Litres"      sk="litre" />
+                  <SortTh label="Rate/L"      sk="rate" />
+                  <SortTh label="Amount"      sk="amount" />
+                  {isLocal && <SortTh label="Payment"    sk="paymentType" />}
+                  <SortTh label=""            sk={null} />
                 </Table.Tr>
               </Table.Thead>
 
@@ -783,7 +823,7 @@ export default function MilkSales() {
                       </Center>
                     </Table.Td>
                   </Table.Tr>
-                ) : filteredEntries.map((e, idx) => {
+                ) : sortedEntries.map((e, idx) => {
                   const isSel = selRow?._id === e._id;
                   const isEdit = editingId === e._id;
                   const rowIsLocal = e.saleMode === 'LOCAL' || e.saleMode === 'SAMPLE';

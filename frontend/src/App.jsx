@@ -163,6 +163,8 @@ const MilkBillReport      = lazy(() => import('./components/reports/MilkBillRepo
 const MISReport           = lazy(() => import('./components/reports/MISReport'));
 const DairyMISReport      = lazy(() => import('./components/reports/DairyMISReport'));
 const DDDMISReport        = lazy(() => import('./components/reports/DDDMISReport'));
+const InspectionReport    = lazy(() => import('./components/reports/InspectionReport'));
+const MilkPurchaseReport  = lazy(() => import('./components/reports/MilkPurchaseReport'));
 
 // Vyapar Report Components - Private Firm
 const VyaparReportsHub = lazy(() => import('./components/reports/vyapar/VyaparReportsHub'));
@@ -510,6 +512,8 @@ const AppContent = () => {
                 <Route path="mis-report"            element={<MISReport />} />
                 <Route path="dairy-mis-report"      element={<DairyMISReport />} />
                 <Route path="ddd-mis-report"        element={<DDDMISReport />} />
+                <Route path="inspection-report"       element={<InspectionReport />} />
+                <Route path="milk-purchase-report"  element={<MilkPurchaseReport />} />
               </Route>
 
               {/* MIS Report Department — Standalone Module */}

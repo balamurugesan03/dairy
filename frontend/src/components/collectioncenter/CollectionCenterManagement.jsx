@@ -81,6 +81,7 @@ const CollectionCenterManagement = () => {
   const [showCenterModal, setShowCenterModal] = useState(false);
   const [selectedCenterId, setSelectedCenterId] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [sortStatus, setSortStatus] = useState({ columnAccessor: '', direction: 'asc' });
 
   useEffect(() => {
     fetchCenters();
@@ -351,6 +352,25 @@ const CollectionCenterManagement = () => {
     fetchCenters();
   };
 
+  const getSortedCenters = () => {
+    const { columnAccessor: col, direction: dir } = sortStatus;
+    if (!col) return centers;
+    const d = dir === 'asc' ? 1 : -1;
+    return [...centers].sort((a, b) => {
+      let av, bv;
+      if (col === 'centerName')  { av = a.centerName;           bv = b.centerName; }
+      else if (col === 'centerType') { av = a.centerType;       bv = b.centerType; }
+      else if (col === 'village')    { av = a.address?.village; bv = b.address?.village; }
+      else if (col === 'district')   { av = a.address?.district;bv = b.address?.district; }
+      else if (col === 'startDate')  { av = new Date(a.startDate||0); bv = new Date(b.startDate||0); }
+      else if (col === 'status')     { av = a.status;           bv = b.status; }
+      else return 0;
+      if (av == null) return d; if (bv == null) return -d;
+      if (typeof av === 'string') return av.localeCompare(bv) * d;
+      return (av > bv ? 1 : av < bv ? -1 : 0) * d;
+    });
+  };
+
   const columns = [
     visibleColumns.centerName && {
       accessor: 'centerName',
@@ -370,11 +390,13 @@ const CollectionCenterManagement = () => {
     visibleColumns.village && {
       accessor: 'village',
       title: 'Village',
+      sortable: true,
       render: (center) => center.address?.village || '-'
     },
     visibleColumns.district && {
       accessor: 'district',
       title: 'District',
+      sortable: true,
       render: (center) => center.address?.district || '-'
     },
     visibleColumns.incharge && {
@@ -616,8 +638,10 @@ const CollectionCenterManagement = () => {
           <Box style={{ overflowX: 'auto' }}>
             <DataTable
               columns={columns}
-              records={centers}
+              records={getSortedCenters()}
               fetching={loading}
+              sortStatus={sortStatus}
+              onSortStatusChange={setSortStatus}
               totalRecords={pagination.total}
               recordsPerPage={pagination.pageSize}
               page={pagination.current}
