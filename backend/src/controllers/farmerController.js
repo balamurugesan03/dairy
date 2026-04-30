@@ -146,6 +146,8 @@ export const getAllFarmers = async (req, res) => {
       village = '',
       panchayat = '',
       ward = '',
+      place = '',
+      post = '',
       isMembership = '',
       collectionCenter = '',
       admissionDateFrom = '',
@@ -180,17 +182,11 @@ export const getAllFarmers = async (req, res) => {
     }
 
     // Address filters
-    if (village) {
-      query['address.village'] = { $regex: village, $options: 'i' };
-    }
-
-    if (panchayat) {
-      query['address.panchayat'] = { $regex: panchayat, $options: 'i' };
-    }
-
-    if (ward) {
-      query['address.ward'] = { $regex: ward, $options: 'i' };
-    }
+    if (village)   query['address.village']   = { $regex: village,   $options: 'i' };
+    if (panchayat) query['address.panchayat'] = { $regex: panchayat, $options: 'i' };
+    if (ward)      query['address.ward']      = { $regex: ward,      $options: 'i' };
+    if (place)     query['address.place']     = { $regex: place,     $options: 'i' };
+    if (post)      query['address.post']      = { $regex: post,      $options: 'i' };
 
     // Membership filter
     if (isMembership !== '') {
@@ -721,11 +717,13 @@ export const bulkImportFarmers = async (req, res) => {
           if (farmerData.caste)               existingFarmer.personalDetails.caste            = farmerData.caste;
           if (farmerData.nomineeName)         existingFarmer.personalDetails.nomineeName      = farmerData.nomineeName;
           if (farmerData.nomineeRelation)     existingFarmer.personalDetails.nomineeRelation  = farmerData.nomineeRelation;
-          if (farmerData.houseName)           existingFarmer.address.houseName                = farmerData.houseName;
-          if (farmerData.ward)                existingFarmer.address.ward                     = farmerData.ward;
-          if (farmerData.village)             existingFarmer.address.village                  = farmerData.village;
-          if (farmerData.panchayat)           existingFarmer.address.panchayat                = farmerData.panchayat;
-          if (farmerData.pin)                 existingFarmer.address.pin                      = farmerData.pin;
+          if (farmerData.houseName)  existingFarmer.address.houseName  = farmerData.houseName;
+          if (farmerData.ward)       existingFarmer.address.ward       = farmerData.ward;
+          if (farmerData.place)      existingFarmer.address.place      = farmerData.place;
+          if (farmerData.post)       existingFarmer.address.post       = farmerData.post;
+          if (farmerData.village)    existingFarmer.address.village    = farmerData.village;
+          if (farmerData.panchayat)  existingFarmer.address.panchayat  = farmerData.panchayat;
+          if (farmerData.pin)        existingFarmer.address.pin        = farmerData.pin;
           if (farmerData.membershipDate)
             existingFarmer.membershipDate = new Date(farmerData.membershipDate);
           if (farmerData.isMembership !== undefined)
@@ -736,8 +734,15 @@ export const bulkImportFarmers = async (req, res) => {
             existingFarmer.admissionDate = new Date(farmerData.admissionDate);
           if (farmerData.admissionFee)
             existingFarmer.financialDetails.admissionFee = Number(farmerData.admissionFee) || 0;
-          if (farmerData.totalShares)
-            existingFarmer.financialDetails.totalShares = Number(farmerData.totalShares);
+          if (farmerData.totalShares) {
+            const shares = Number(farmerData.totalShares);
+            existingFarmer.financialDetails.totalShares = shares;
+            existingFarmer.financialDetails.shareValue  = shares * 10;
+          }
+          if (farmerData.resolutionNo)
+            existingFarmer.financialDetails.resolutionNo   = farmerData.resolutionNo;
+          if (farmerData.resolutionDate)
+            existingFarmer.financialDetails.resolutionDate = new Date(farmerData.resolutionDate);
 
           // Mark nested objects modified so Mongoose saves all changes
           existingFarmer.markModified('personalDetails');
@@ -776,6 +781,8 @@ export const bulkImportFarmers = async (req, res) => {
             address: {
               houseName: farmerData.houseName  || undefined,
               ward:      farmerData.ward       || undefined,
+              place:     farmerData.place      || undefined,
+              post:      farmerData.post       || undefined,
               village:   farmerData.village    || undefined,
               panchayat: farmerData.panchayat  || undefined,
               pin:       farmerData.pin        || undefined,
@@ -784,8 +791,11 @@ export const bulkImportFarmers = async (req, res) => {
             membershipDate: farmerData.membershipDate ? new Date(farmerData.membershipDate) : undefined,
             isMembership:   farmerData.isMembership !== undefined ? farmerData.isMembership : !!farmerData.membershipDate,
             financialDetails: {
-              admissionFee: Number(farmerData.admissionFee) || 0,
-              totalShares:  Number(farmerData.totalShares)  || 0,
+              admissionFee:   Number(farmerData.admissionFee) || 0,
+              totalShares:    Number(farmerData.totalShares)  || 0,
+              shareValue:     (Number(farmerData.totalShares) || 0) * 10,
+              resolutionNo:   farmerData.resolutionNo   || undefined,
+              resolutionDate: farmerData.resolutionDate ? new Date(farmerData.resolutionDate) : undefined,
             },
             status:    'Active',
             companyId: req.companyId

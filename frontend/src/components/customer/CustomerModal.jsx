@@ -259,15 +259,16 @@ const CustomerModal = ({ isOpen, onClose, onSuccess, customerId = null }) => {
               value={formData.category}
               onChange={(value) => handleChange('category', value)}
               data={[
-                { value: 'School', label: 'School' },
-                { value: 'Anganwadi', label: 'Anganwadi' },
-                { value: 'Hospital', label: 'Hospital' },
-                { value: 'Booth', label: 'Booth' },
-                { value: 'Hotel', label: 'Hotel' },
+                { value: 'Local Sale',   label: 'Local Sale' },
+                { value: 'Hospital',     label: 'Hospital' },
+                { value: 'Anganwadi',    label: 'Anganwadi' },
+                { value: 'Public',       label: 'Public' },
+                { value: 'Hotel',        label: 'Hotel' },
+                { value: 'Booth',        label: 'Booth' },
+                { value: 'Hostel',       label: 'Hostel' },
+                { value: 'School',       label: 'School' },
                 { value: 'Vendor Sales', label: 'Vendor Sales' },
-                  { value: 'SalesMan', label: 'Sales Man' },
-                
-                { value: 'Others', label: 'Others' }
+                { value: 'Others',       label: 'Others' },
               ]}
             />
           </Grid.Col>

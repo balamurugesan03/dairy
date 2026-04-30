@@ -242,6 +242,8 @@ const FarmerView = () => {
                 <Title order={4} mb="md">Address</Title>
                 <Stack gap="xs">
                   <InfoRow label="Ward" value={farmer.address?.ward} />
+                  <InfoRow label="Place" value={farmer.address?.place} />
+                  <InfoRow label="Post" value={farmer.address?.post} />
                   <InfoRow label="Village" value={farmer.address?.village} />
                   <InfoRow label="Panchayat" value={farmer.address?.panchayat} />
                   <InfoRow label="PIN Code" value={farmer.address?.pin} />

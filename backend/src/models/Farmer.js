@@ -62,6 +62,14 @@ const farmerSchema = new mongoose.Schema({
       type: String,
       trim: true
     },
+    place: {
+      type: String,
+      trim: true
+    },
+    post: {
+      type: String,
+      trim: true
+    },
     village: {
       type: String,
       trim: true

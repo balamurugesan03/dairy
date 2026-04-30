@@ -1776,138 +1776,327 @@ export const getMISReport = async (req, res) => {
     const dateFilter = { $gte: start, $lte: end };
     const base = { companyId };
 
-    // ── 1. Milk Procurement ──────────────────────────────────────────────────
-    const collections = await MilkCollection.find({ ...base, date: dateFilter });
+    // ── 1. Milk Purchase by Member Type ────────────────────────────────────
+    const collections = await MilkCollection.find({ ...base, date: dateFilter })
+      .populate('farmer', 'isMembership personalDetails.gender personalDetails.caste');
 
-    let totalQty = 0, morningQty = 0, eveningQty = 0;
-    let totalFat = 0, totalSNF = 0, totalRate = 0, totalProcurementAmount = 0;
-    let fatCount = 0, snfCount = 0, rateCount = 0;
+    const purchase = {
+      members:    { qty: 0, amount: 0, fatSum: 0, snfSum: 0, rateSum: 0, cnt: 0 },
+      nonMembers: { qty: 0, amount: 0, fatSum: 0, snfSum: 0, rateSum: 0, cnt: 0 },
+    };
     const activeFarmerSet = new Set();
 
     collections.forEach(c => {
+      const isMember = c.farmer?.isMembership === true;
+      const grp = isMember ? purchase.members : purchase.nonMembers;
       const qty = c.qty || 0;
-      totalQty += qty;
-      totalProcurementAmount += c.amount || 0;
-      if (c.shift === 'AM') morningQty += qty;
-      else eveningQty += qty;
-      if (c.fat)  { totalFat  += c.fat;  fatCount++;  }
-      if (c.snf)  { totalSNF  += c.snf;  snfCount++;  }
-      if (c.rate) { totalRate += c.rate; rateCount++; }
-      if (c.farmer || c.farmerNumber) activeFarmerSet.add(String(c.farmer || c.farmerNumber));
+      grp.qty    += qty;
+      grp.amount += c.amount || 0;
+      grp.fatSum += (c.fat || 0) * qty;
+      grp.snfSum += (c.snf || 0) * qty;
+      grp.rateSum += (c.rate || 0);
+      grp.cnt    += 1;
+      activeFarmerSet.add(String(c.farmer?._id || c.farmerNumber));
     });
 
-    const avgFat  = fatCount  ? (totalFat  / fatCount).toFixed(2)  : '0.00';
-    const avgSNF  = snfCount  ? (totalSNF  / snfCount).toFixed(2)  : '0.00';
-    const avgRate = rateCount ? (totalRate / rateCount).toFixed(2) : '0.00';
+    const mkPurchaseRow = (g) => ({
+      qty:     +g.qty.toFixed(2),
+      value:   +g.amount.toFixed(2),
+      avgRate: g.qty > 0 ? +(g.amount / g.qty).toFixed(2) : 0,
+      avgFat:  g.qty > 0 ? +(g.fatSum  / g.qty).toFixed(2) : 0,
+      avgSNF:  g.qty > 0 ? +(g.snfSum  / g.qty).toFixed(2) : 0,
+    });
+    const totalPurch = {
+      qty:     purchase.members.qty    + purchase.nonMembers.qty,
+      amount:  purchase.members.amount + purchase.nonMembers.amount,
+      fatSum:  purchase.members.fatSum + purchase.nonMembers.fatSum,
+      snfSum:  purchase.members.snfSum + purchase.nonMembers.snfSum,
+    };
+    const milkPurchase = {
+      members:    mkPurchaseRow(purchase.members),
+      nonMembers: mkPurchaseRow(purchase.nonMembers),
+      total: {
+        qty:     +totalPurch.qty.toFixed(2),
+        value:   +totalPurch.amount.toFixed(2),
+        avgRate: totalPurch.qty > 0 ? +(totalPurch.amount / totalPurch.qty).toFixed(2) : 0,
+        avgFat:  totalPurch.qty > 0 ? +(totalPurch.fatSum  / totalPurch.qty).toFixed(2) : 0,
+        avgSNF:  totalPurch.qty > 0 ? +(totalPurch.snfSum  / totalPurch.qty).toFixed(2) : 0,
+      }
+    };
 
-    // ── 2. Milk Sales ────────────────────────────────────────────────────────
+    // ── 2. Disposals / Sales ─────────────────────────────────────────────────
     const salesDocs = await MilkSales.find({ ...base, date: dateFilter });
-
-    const salesBySaleMode = {};
-    let totalSalesLitre = 0, totalSalesAmount = 0;
-
+    let localQty = 0, localAmt = 0, creditQty = 0, creditAmt = 0, sampleQty = 0, sampleAmt = 0;
     salesDocs.forEach(s => {
-      const mode = s.saleMode || 'LOCAL';
-      if (!salesBySaleMode[mode]) salesBySaleMode[mode] = { litre: 0, amount: 0 };
-      salesBySaleMode[mode].litre  += s.litre  || 0;
-      salesBySaleMode[mode].amount += s.amount || 0;
-      totalSalesLitre  += s.litre  || 0;
-      totalSalesAmount += s.amount || 0;
+      const q = s.litre || 0, a = s.amount || 0;
+      if (s.saleMode === 'LOCAL')  { localQty  += q; localAmt  += a; }
+      if (s.saleMode === 'CREDIT') { creditQty += q; creditAmt += a; }
+      if (s.saleMode === 'SAMPLE') { sampleQty += q; sampleAmt += a; }
+    });
+    const totalSalesLitre  = localQty + creditQty + sampleQty;
+    const totalSalesAmount = localAmt + creditAmt + sampleAmt;
+
+    // Union Sales Slips
+    const unionSlips = await UnionSalesSlip.find({ ...base, date: dateFilter });
+    let unionQty = 0, unionAmt = 0, unionFatSum = 0, unionSnfSum = 0, unionSpoilage = 0;
+    unionSlips.forEach(u => {
+      const q = u.qty || 0;
+      unionQty     += q;
+      unionAmt     += u.amount || 0;
+      unionFatSum  += (u.fat || 0) * q;
+      unionSnfSum  += (u.snf || 0) * q;
+      unionSpoilage += (u.unionSpoilage || 0) + (u.transportationSpoilage || 0);
     });
 
-    // ── 3. Farmer / Member Summary ───────────────────────────────────────────
-    const totalFarmers  = await Farmer.countDocuments({ ...base });
-    const activeFarmers = activeFarmerSet.size;
+    // Current stock as "Stock" row under disposals
+    const allItems = await Item.find({ ...base, status: 'Active' });
+    const stockQty   = allItems.reduce((s, it) => s + (it.currentBalance || 0), 0);
+    const stockValue  = allItems.reduce((s, it) => s + ((it.currentBalance || 0) * (it.salesRate || it.purchasePrice || 0)), 0);
+    const totalItems  = allItems.length;
 
-    // ── 4. Farmer Payment Summary ────────────────────────────────────────────
-    const paymentDocs = await FarmerPayment.find({
-      ...base,
-      paymentDate: dateFilter,
-      status: { $ne: 'Cancelled' }
+    const grandSalesPct = totalSalesLitre > 0 ? 100 : 0;
+    const disposals = {
+      localSales:  { qty: +localQty.toFixed(2),  value: +localAmt.toFixed(2),  pct: totalSalesLitre > 0 ? +((localQty  / totalSalesLitre) * 100).toFixed(1) : 0 },
+      otherSales:  { qty: +creditQty.toFixed(2), value: +creditAmt.toFixed(2), pct: totalSalesLitre > 0 ? +((creditQty / totalSalesLitre) * 100).toFixed(1) : 0 },
+      products:    { qty: +sampleQty.toFixed(2), value: +sampleAmt.toFixed(2), pct: totalSalesLitre > 0 ? +((sampleQty / totalSalesLitre) * 100).toFixed(1) : 0 },
+      byProduct:   { qty: 0, value: 0, pct: 0 },
+      stock:       { qty: +stockQty.toFixed(2),  value: +stockValue.toFixed(2), pct: 0 },
+      total:       { qty: +totalSalesLitre.toFixed(2), value: +totalSalesAmount.toFixed(2), pct: 100 },
+      unionDetails: {
+        receivedQty: +unionQty.toFixed(2),
+        amount:      +unionAmt.toFixed(2),
+        avgRate:     unionQty > 0 ? +(unionAmt / unionQty).toFixed(2) : 0,
+        avgFat:      unionQty > 0 ? +(unionFatSum / unionQty).toFixed(2) : 0,
+        avgSNF:      unionQty > 0 ? +(unionSnfSum / unionQty).toFixed(2) : 0,
+        spoilage:    +unionSpoilage.toFixed(2),
+      }
+    };
+
+    // ── 3 & 4. Milk Pouring Members — count & qty by category ───────────────
+    const casteMap = (caste) => {
+      if (!caste) return 'General';
+      const c = caste.toLowerCase();
+      if (c.includes('obc') || c.includes('bc')) return 'OBC';
+      if (c.includes('sc') || c.includes('st') || c.includes('scheduled')) return 'SC/ST';
+      return 'General';
+    };
+
+    // Collect distinct farmers who poured in this period
+    const memberFarmerMap    = {}; // farmerId -> { gender, casteCategory }
+    const nonMemberFarmerMap = {};
+    const memberQtyMap    = {}; // farmerId -> { qty, gender, casteCategory }
+    const nonMemberQtyMap = {};
+
+    collections.forEach(c => {
+      const fId = String(c.farmer?._id || c.farmerNumber);
+      const isMember = c.farmer?.isMembership === true;
+      const gender   = c.farmer?.personalDetails?.gender || 'Male';
+      const category = casteMap(c.farmer?.personalDetails?.caste);
+      const qty      = c.qty || 0;
+
+      if (isMember) {
+        memberFarmerMap[fId] = { gender, category };
+        memberQtyMap[fId]    = { gender, category, qty: (memberQtyMap[fId]?.qty || 0) + qty };
+      } else {
+        nonMemberFarmerMap[fId] = { gender, category };
+        nonMemberQtyMap[fId]    = { gender, category, qty: (nonMemberQtyMap[fId]?.qty || 0) + qty };
+      }
     });
 
-    let totalGross = 0, totalDeductions = 0, totalNetPayable = 0, totalPaid = 0;
-    let farmersPaid = 0;
-    const paidFarmerSet = new Set();
+    const buildCountTable = (map) => {
+      const t = { OBC: { Male: 0, Female: 0 }, General: { Male: 0, Female: 0 }, 'SC/ST': { Male: 0, Female: 0 } };
+      Object.values(map).forEach(({ gender, category }) => {
+        const g = gender === 'Female' ? 'Female' : 'Male';
+        if (t[category]) t[category][g]++;
+      });
+      return {
+        OBC:     { male: t.OBC.Male,     female: t.OBC.Female,     total: t.OBC.Male     + t.OBC.Female },
+        General: { male: t.General.Male, female: t.General.Female, total: t.General.Male + t.General.Female },
+        'SC/ST': { male: t['SC/ST'].Male, female: t['SC/ST'].Female, total: t['SC/ST'].Male + t['SC/ST'].Female },
+        total:   {
+          male:   t.OBC.Male   + t.General.Male   + t['SC/ST'].Male,
+          female: t.OBC.Female + t.General.Female + t['SC/ST'].Female,
+          total:  Object.values(t).reduce((s, v) => s + v.Male + v.Female, 0)
+        }
+      };
+    };
 
-    paymentDocs.forEach(p => {
-      totalGross       += p.grossAmount    || 0;
-      totalDeductions  += p.totalDeduction || 0;
-      totalNetPayable  += p.netPayable     || 0;
-      totalPaid        += p.paidAmount     || 0;
-      if ((p.paidAmount || 0) > 0) paidFarmerSet.add(String(p.farmerId));
+    const buildQtyTable = (map) => {
+      const t = { OBC: { Male: 0, Female: 0 }, General: { Male: 0, Female: 0 }, 'SC/ST': { Male: 0, Female: 0 } };
+      Object.values(map).forEach(({ gender, category, qty }) => {
+        const g = gender === 'Female' ? 'Female' : 'Male';
+        if (t[category]) t[category][g] += qty;
+      });
+      return {
+        OBC:     { male: +t.OBC.Male.toFixed(2),     female: +t.OBC.Female.toFixed(2),     total: +(t.OBC.Male     + t.OBC.Female).toFixed(2) },
+        General: { male: +t.General.Male.toFixed(2), female: +t.General.Female.toFixed(2), total: +(t.General.Male + t.General.Female).toFixed(2) },
+        'SC/ST': { male: +t['SC/ST'].Male.toFixed(2), female: +t['SC/ST'].Female.toFixed(2), total: +(t['SC/ST'].Male + t['SC/ST'].Female).toFixed(2) },
+        total: {
+          male:   +(Object.values(t).reduce((s, v) => s + v.Male,   0)).toFixed(2),
+          female: +(Object.values(t).reduce((s, v) => s + v.Female, 0)).toFixed(2),
+          total:  +(Object.values(t).reduce((s, v) => s + v.Male + v.Female, 0)).toFixed(2),
+        }
+      };
+    };
+
+    const milkPouringCount = {
+      members:    buildCountTable(memberFarmerMap),
+      nonMembers: buildCountTable(nonMemberFarmerMap),
+    };
+    const milkPouringQty = {
+      members:    buildQtyTable(memberQtyMap),
+      nonMembers: buildQtyTable(nonMemberQtyMap),
+    };
+
+    // ── 5. Welfare Fund Contribution ────────────────────────────────────────
+    const WF_RATE_LOCAL  = 0.10;
+    const WF_RATE_UNION  = 0.05;
+    const WF_RATE_MEMBER = 2.00;
+    const activeMembers  = Object.keys(memberFarmerMap).length;
+    const welfareLocalAmt  = +(localAmt  * WF_RATE_LOCAL).toFixed(2);
+    const welfareUnionAmt  = +(unionAmt  * WF_RATE_UNION).toFixed(2);
+    const welfareMemberAmt = +(activeMembers * WF_RATE_MEMBER).toFixed(2);
+    const welfareFund = {
+      localSales:     { value: +localAmt.toFixed(2),    wfRate: WF_RATE_LOCAL,  amount: welfareLocalAmt },
+      unionSales:     { value: +unionAmt.toFixed(2),    wfRate: WF_RATE_UNION,  amount: welfareUnionAmt },
+      memberCount:    { value: activeMembers,            wfRate: WF_RATE_MEMBER, amount: welfareMemberAmt },
+      total:          { amount: +(welfareLocalAmt + welfareUnionAmt + welfareMemberAmt).toFixed(2) }
+    };
+
+    // ── 6. Cattle / Feed Stock ──────────────────────────────────────────────
+    const cattleItems = await Item.find({ ...base });
+    const purchaseTxns = await StockTransaction.find({ ...base, date: dateFilter, transactionType: 'Stock In',  referenceType: 'Purchase' }).populate('itemId', 'itemName');
+    const salesTxns    = await StockTransaction.find({ ...base, date: dateFilter, transactionType: 'Stock Out', referenceType: 'Sale' }).populate('itemId', 'itemName');
+
+    let openingStockQty = 0, openingStockValue = 0;
+    let purchaseQty = 0, purchaseAmount = 0;
+    let salesQty    = 0, salesAmount    = 0;
+
+    cattleItems.forEach(it => {
+      const purchQty = purchaseTxns.filter(t => String(t.itemId?._id) === String(it._id)).reduce((s, t) => s + (t.quantity || 0), 0);
+      const saleQty  = salesTxns.filter(t => String(t.itemId?._id) === String(it._id)).reduce((s, t) => s + (t.quantity || 0), 0);
+      const closeQty = it.currentBalance || 0;
+      const openQty  = closeQty + saleQty - purchQty;
+      const cp       = it.costPrice || it.purchasePrice || 0;
+      openingStockQty   += Math.max(openQty, 0);
+      openingStockValue += Math.max(openQty, 0) * cp;
     });
-    farmersPaid = paidFarmerSet.size;
 
-    // ── 5. Financial Summary (Vouchers) ──────────────────────────────────────
+    purchaseTxns.forEach(t => { purchaseQty += t.quantity || 0; purchaseAmount += (t.quantity || 0) * (t.rate || 0); });
+    salesTxns.forEach(t    => { salesQty    += t.quantity || 0; salesAmount    += (t.quantity || 0) * (t.rate || 0); });
+
+    const cattleFeedStock = {
+      openingQty:    +openingStockQty.toFixed(2),
+      openingValue:  +openingStockValue.toFixed(2),
+      purchaseQty:   +purchaseQty.toFixed(2),
+      purchaseAmount:+purchaseAmount.toFixed(2),
+      salesQty:      +salesQty.toFixed(2),
+      salesAmount:   +salesAmount.toFixed(2),
+      closingQty:    +(allItems.reduce((s, it) => s + (it.currentBalance || 0), 0)).toFixed(2),
+      closingValue:  +stockValue.toFixed(2),
+    };
+
+    // ── 7. Financial Details (Trading A/C) ──────────────────────────────────
+    const tradingAc = {
+      debit: {
+        openingStock: +openingStockValue.toFixed(2),
+        purchases:    +totalPurch.amount.toFixed(2),
+        grossProfit:  0,
+      },
+      credit: {
+        closingStock: +stockValue.toFixed(2),
+        totalSales:   +totalSalesAmount.toFixed(2),
+        totalIncome:  0,
+        grossLoss:    0,
+      }
+    };
+    const debitTotal  = tradingAc.debit.openingStock + tradingAc.debit.purchases;
+    const creditTotal = tradingAc.credit.closingStock + tradingAc.credit.totalSales;
+    if (creditTotal >= debitTotal) tradingAc.debit.grossProfit  = +(creditTotal - debitTotal).toFixed(2);
+    else                           tradingAc.credit.grossLoss   = +(debitTotal  - creditTotal).toFixed(2);
+    tradingAc.credit.totalIncome = +(tradingAc.credit.totalSales + tradingAc.credit.closingStock).toFixed(2);
+
+    // ── 8. Profit & Loss A/C ────────────────────────────────────────────────
     const vouchers = await Voucher.find({ ...base, voucherDate: dateFilter })
       .populate('entries.ledgerId', 'ledgerName ledgerGroup ledgerType');
 
-    let totalReceipts = 0, totalPayments = 0;
-
+    let totalReceipts = 0, totalPayments = 0, contingencies = 0, miscIncome = 0;
     vouchers.forEach(v => {
       (v.entries || []).forEach(e => {
         const ltype = e.ledgerId?.ledgerType || '';
-        if ((ltype === 'Cash' || ltype === 'Bank') && e.debitAmount > 0) totalReceipts  += e.debitAmount;
-        if ((ltype === 'Cash' || ltype === 'Bank') && e.creditAmount > 0) totalPayments += e.creditAmount;
+        const lgrp  = e.ledgerId?.ledgerGroup || '';
+        if (e.ledgerId && (ltype === 'Cash' || ltype === 'Bank') && e.debitAmount  > 0) totalReceipts  += e.debitAmount;
+        if (e.ledgerId && (ltype === 'Cash' || ltype === 'Bank') && e.creditAmount > 0) totalPayments  += e.creditAmount;
+        if (e.ledgerId && lgrp === 'Indirect Expenses' && e.debitAmount > 0) contingencies += e.debitAmount;
+        if (e.ledgerId && lgrp === 'Indirect Income'   && e.creditAmount > 0) miscIncome    += e.creditAmount;
       });
     });
 
-    // ── 6. Stock Summary ─────────────────────────────────────────────────────
-    const items = await Item.find({ ...base, status: 'Active' });
-    const totalItems      = items.length;
-    const totalStockValue = items.reduce((sum, it) => sum + ((it.currentBalance || 0) * (it.costPrice || 0)), 0);
+    const grossProfit = tradingAc.debit.grossProfit;
+    const netProfit   = +(grossProfit + miscIncome - contingencies).toFixed(2);
 
-    // ── 7. Key Ratios ─────────────────────────────────────────────────────────
-    const netRevenue     = totalSalesAmount - totalProcurementAmount;
-    const procurementPct = totalSalesAmount > 0 ? ((totalProcurementAmount / totalSalesAmount) * 100).toFixed(2) : '0.00';
-    const paymentPct     = totalProcurementAmount > 0 ? ((totalNetPayable / totalProcurementAmount) * 100).toFixed(2) : '0.00';
+    const profitLoss = {
+      contingencies: +contingencies.toFixed(2),
+      grossProfit:   +grossProfit.toFixed(2),
+      miscIncome:    +miscIncome.toFixed(2),
+      netProfit,
+      totalReceipts: +totalReceipts.toFixed(2),
+      totalPayments: +totalPayments.toFixed(2),
+    };
+
+    // Farmer totals for summary
+    const totalFarmers = await Farmer.countDocuments({ ...base });
+    const activeFarmers = activeFarmerSet.size;
+
+    // Payment summary
+    const paymentDocs = await FarmerPayment.find({ ...base, paymentDate: dateFilter, status: { $ne: 'Cancelled' } });
+    let totalGross = 0, totalDeductions = 0, totalNetPayable = 0, totalPaid = 0;
+    const paidFarmerSet = new Set();
+    paymentDocs.forEach(p => {
+      totalGross      += p.grossAmount    || 0;
+      totalDeductions += p.totalDeduction || 0;
+      totalNetPayable += p.netPayable     || 0;
+      totalPaid       += p.paidAmount     || 0;
+      if ((p.paidAmount || 0) > 0) paidFarmerSet.add(String(p.farmerId));
+    });
 
     res.json({
       success: true,
       data: {
         period: { startDate: start, endDate: end },
+        milkPurchase,
+        disposals,
+        milkPouringCount,
+        milkPouringQty,
+        welfareFund,
+        cattleFeedStock,
+        tradingAc,
+        profitLoss,
+        // legacy keys kept for backward compat
         milkProcurement: {
-          totalQty: +totalQty.toFixed(2),
-          morningQty: +morningQty.toFixed(2),
-          eveningQty: +eveningQty.toFixed(2),
-          avgFat: +avgFat,
-          avgSNF: +avgSNF,
-          avgRate: +avgRate,
-          totalAmount: +totalProcurementAmount.toFixed(2),
-          activeFarmers
+          totalQty:   milkPurchase.total.qty,
+          morningQty: 0,
+          eveningQty: 0,
+          avgFat:     milkPurchase.total.avgFat,
+          avgSNF:     milkPurchase.total.avgSNF,
+          avgRate:    milkPurchase.total.avgRate,
+          totalAmount:milkPurchase.total.value,
+          activeFarmers,
         },
         milkSales: {
-          totalLitre: +totalSalesLitre.toFixed(2),
-          totalAmount: +totalSalesAmount.toFixed(2),
-          bySaleMode: salesBySaleMode
+          totalLitre:  disposals.total.qty,
+          totalAmount: disposals.total.value,
+          bySaleMode: {
+            LOCAL:  { litre: disposals.localSales.qty,  amount: disposals.localSales.value },
+            CREDIT: { litre: disposals.otherSales.qty,  amount: disposals.otherSales.value },
+            SAMPLE: { litre: disposals.products.qty,    amount: disposals.products.value },
+          }
         },
-        farmerSummary: {
-          totalRegistered: totalFarmers,
-          activeSuppliers: activeFarmers,
-          farmersPaid
-        },
-        paymentSummary: {
-          grossAmount:     +totalGross.toFixed(2),
-          totalDeductions: +totalDeductions.toFixed(2),
-          netPayable:      +totalNetPayable.toFixed(2),
-          paidAmount:      +totalPaid.toFixed(2),
-          pendingAmount:   +(totalNetPayable - totalPaid).toFixed(2)
-        },
-        financialSummary: {
-          totalReceipts: +totalReceipts.toFixed(2),
-          totalPayments: +totalPayments.toFixed(2),
-          netCash:       +(totalReceipts - totalPayments).toFixed(2)
-        },
-        stockSummary: {
-          totalItems,
-          totalStockValue: +totalStockValue.toFixed(2)
-        },
-        ratios: {
-          netRevenue:      +netRevenue.toFixed(2),
-          procurementPct:  +procurementPct,
-          paymentPct:      +paymentPct
-        }
+        farmerSummary:   { totalRegistered: totalFarmers, activeSuppliers: activeFarmers, farmersPaid: paidFarmerSet.size },
+        paymentSummary:  { grossAmount: +totalGross.toFixed(2), totalDeductions: +totalDeductions.toFixed(2), netPayable: +totalNetPayable.toFixed(2), paidAmount: +totalPaid.toFixed(2), pendingAmount: +(totalNetPayable - totalPaid).toFixed(2) },
+        financialSummary:{ totalReceipts: +totalReceipts.toFixed(2), totalPayments: +totalPayments.toFixed(2), netCash: +(totalReceipts - totalPayments).toFixed(2) },
+        stockSummary:    { totalItems, totalStockValue: +stockValue.toFixed(2) },
+        ratios:          { netRevenue: +(totalSalesAmount - totalPurch.amount).toFixed(2), procurementPct: totalSalesAmount > 0 ? +((totalPurch.amount / totalSalesAmount) * 100).toFixed(2) : 0, paymentPct: totalPurch.amount > 0 ? +((totalNetPayable / totalPurch.amount) * 100).toFixed(2) : 0 }
       }
     });
   } catch (err) {

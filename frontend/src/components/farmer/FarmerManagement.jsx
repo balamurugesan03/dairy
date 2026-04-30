@@ -346,14 +346,16 @@ const FarmerManagement = () => {
             nomineeRelation: cleanStr(r['rel_id']),
             houseName:       cleanStr(r['house_name']),
             ward:            cleanStr(r['ward_no']),
-            village:         cleanStr(r['place']),
-            panchayat:       cleanStr(r['post']),
+            place:           cleanStr(r['place']),
+            post:            cleanStr(r['post']),
             pin:             pinRaw.length === 6 ? pinRaw : undefined,
             admissionDate:   parseDate(r['date_join']),
             isMembership:    isMember,
             memberId:        isMember ? cleanStr(r['member_no']) : null,
             membershipDate:  isMember ? parseDate(r['mem_doa']) : undefined,
             totalShares:     Number(r['mem_total_share_nos']) || undefined,
+            resolutionNo:    cleanStr(r['res_no'] || r['resolution_no'] || r['mem_resolution_no']),
+            resolutionDate:  parseDate(r['res_date'] || r['resolution_date'] || r['mem_resolution_date']),
           };
         }
         if (isZibitt) {
@@ -371,12 +373,14 @@ const FarmerManagement = () => {
             gender:         mapGender(row['Gender']),
             dob:            excelSerialToDate(row['DateOfBirth']),
             caste:          row['Cast1'] ? String(row['Cast1']).trim() : undefined,
-            village:        row['Place'] ? String(row['Place']).trim() : undefined,
+            place:          row['Place'] ? String(row['Place']).trim() : undefined,
             houseName:      row['HouseName'] ? String(row['HouseName']).trim() : undefined,
             pin:            pinRaw.length === 6 ? pinRaw : undefined,
             membershipDate: isMember ? excelSerialToDate(row['MembershipDate']) : undefined,
             admissionFee:   Number(row['AdmissionFee']) || 0,
             nominee:        row['Nominee'] ? String(row['Nominee']).trim() : undefined,
+            resolutionNo:   row['ResolutionNo'] ? String(row['ResolutionNo']).trim() : undefined,
+            resolutionDate: row['ResolutionDate'] ? excelSerialToDate(row['ResolutionDate']) : undefined,
           };
         }
         return {

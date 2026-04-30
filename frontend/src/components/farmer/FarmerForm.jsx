@@ -59,6 +59,8 @@ const FarmerForm = () => {
       },
       address: {
         ward: '',
+        place: '',
+        post: '',
         village: '',
         panchayat: '',
         pin: ''
@@ -166,6 +168,8 @@ const FarmerForm = () => {
         },
         address: {
           ward: farmer.address?.ward || '',
+          place: farmer.address?.place || '',
+          post: farmer.address?.post || '',
           village: farmer.address?.village || '',
           panchayat: farmer.address?.panchayat || '',
           pin: farmer.address?.pin || ''
@@ -262,6 +266,8 @@ const FarmerForm = () => {
         },
         address: {
           ward: values.address.ward,
+          place: values.address.place,
+          post: values.address.post,
           village: values.address.village,
           panchayat: values.address.panchayat,
           pin: values.address.pin
@@ -583,6 +589,22 @@ const FarmerForm = () => {
                       label="Ward"
                       placeholder="Enter ward"
                       {...form.getInputProps('address.ward')}
+                      onKeyDown={focusNext}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Place"
+                      placeholder="Enter place"
+                      {...form.getInputProps('address.place')}
+                      onKeyDown={focusNext}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="Post"
+                      placeholder="Enter post office"
+                      {...form.getInputProps('address.post')}
                       onKeyDown={focusNext}
                     />
                   </Grid.Col>

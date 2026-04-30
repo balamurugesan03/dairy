@@ -1,5 +1,10 @@
 import express from 'express';
 import {
+  getDDDMISReport,
+  saveDDDMISReport,
+  updateDDDMISReport,
+} from '../controllers/dairyMISReportController.js';
+import {
   getReceiptsDisbursementReport,
   getTradingAccount,
   getProfitLoss,
@@ -70,6 +75,11 @@ router.get('/dairy-abstract', getDairyAbstractReport);
 router.get('/dairy-register', getDairyRegisterReport);
 router.get('/cooperative-rd', getCooperativeRDReport);
 router.get('/mis-report', getMISReport);
+
+// DDD Government MIS Report
+router.get('/ddd-mis-report', getDDDMISReport);
+router.post('/ddd-mis-report', saveDDDMISReport);
+router.put('/ddd-mis-report/:id', updateDDDMISReport);
 
 // New accounting reports routes
 router.get('/cash-book', getCashBook);

@@ -663,14 +663,17 @@ const CustomerManagement = () => {
               value={filters.category}
               onChange={(value) => setFilters(prev => ({ ...prev, category: value || '' }))}
               data={[
-                { value: '', label: 'All Categories' },
-                { value: 'School', label: 'School' },
-                { value: 'Anganwadi', label: 'Anganwadi' },
-                { value: 'Hospital', label: 'Hospital' },
-                { value: 'Booth', label: 'Booth' },
-                { value: 'Hotel', label: 'Hotel' },
-                { value: 'Vendor Sales', label: 'Vendor Sales' },
-                { value: 'Others', label: 'Others' }
+                { value: '',            label: 'All Categories' },
+                { value: 'Local Sale',  label: 'Local Sale' },
+                { value: 'Hospital',    label: 'Hospital' },
+                { value: 'Anganwadi',   label: 'Anganwadi' },
+                { value: 'Public',      label: 'Public' },
+                { value: 'Hotel',       label: 'Hotel' },
+                { value: 'Booth',       label: 'Booth' },
+                { value: 'Hostel',      label: 'Hostel' },
+                { value: 'School',      label: 'School' },
+                { value: 'Vendor Sales',label: 'Vendor Sales' },
+                { value: 'Others',      label: 'Others' },
               ]}
               style={{ width: 160 }}
               clearable

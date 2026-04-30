@@ -1,277 +1,292 @@
-/* ── MIS Report ─────────────────────────────────────────────────────────── */
+/* ── MIS Report — Dairy Society Excel-like Layout ─────────────────────────── */
+
+* { box-sizing: border-box; }
 
 .mis-wrap {
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 14px;
   font-family: 'Segoe UI', Arial, sans-serif;
-  font-size: 13px;
-  color: #1a202c;
+  font-size: 12px;
+  color: #1a1a1a;
 }
 
-/* Top Bar */
+/* ── Top Bar ─────────────────────────────────────────────────────────────── */
 .mis-topbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 .mis-back-btn {
-  background: none;
-  border: 1px solid #cbd5e0;
-  border-radius: 4px;
-  padding: 5px 12px;
+  background: #fff;
+  border: 1px solid #aaa;
+  border-radius: 3px;
+  padding: 4px 10px;
   cursor: pointer;
-  font-size: 12px;
-  color: #4a5568;
+  font-size: 11px;
+  color: #444;
 }
-.mis-back-btn:hover { background: #f7fafc; }
+.mis-back-btn:hover { background: #f0f0f0; }
 .mis-page-title {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
   flex: 1;
   margin: 0;
-  color: #1a202c;
 }
-.mis-actions { display: flex; gap: 8px; }
+.mis-actions { display: flex; gap: 6px; }
 
-/* Buttons */
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
 .mis-btn {
-  padding: 6px 14px;
-  border-radius: 4px;
-  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 3px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-  border: none;
+  border: 1px solid #aaa;
 }
-.mis-btn-outline  { background: #fff; border: 1px solid #a0aec0; color: #2d3748; }
-.mis-btn-outline:hover  { background: #f7fafc; }
-.mis-btn-primary  { background: #2b6cb0; color: #fff; }
-.mis-btn-primary:hover  { background: #2c5282; }
-.mis-btn-generate { background: #276749; color: #fff; padding: 7px 20px; font-size: 13px; font-weight: 600; border-radius: 4px; border: none; cursor: pointer; }
-.mis-btn-generate:hover:not(:disabled) { background: #22543d; }
-.mis-btn-generate:disabled { opacity: 0.6; cursor: not-allowed; }
+.mis-btn-outline { background: #fff; color: #333; }
+.mis-btn-outline:hover { background: #f5f5f5; }
+.mis-btn-excel { background: #217346; color: #fff; border-color: #1a5c38; }
+.mis-btn-excel:hover { background: #1a5c38; }
+.mis-btn-generate {
+  background: #2563eb;
+  color: #fff;
+  padding: 6px 18px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 3px;
+  border: none;
+  cursor: pointer;
+}
+.mis-btn-generate:hover:not(:disabled) { background: #1d4ed8; }
+.mis-btn-generate:disabled { opacity: 0.55; cursor: not-allowed; }
 
-/* Filter Card */
+/* ── Filter Card ─────────────────────────────────────────────────────────── */
 .mis-filter-card {
   background: #fff;
-  border: 1px solid #cbd5e0;
-  border-radius: 6px;
-  padding: 14px 16px;
-  margin-bottom: 16px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
 }
 .mis-filter-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr 2fr;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
   gap: 10px;
   margin-bottom: 10px;
 }
-@media (max-width: 900px) {
-  .mis-filter-grid { grid-template-columns: 1fr 1fr; }
-  .mis-field-wide  { grid-column: span 2; }
-}
+@media (max-width: 768px) { .mis-filter-grid { grid-template-columns: 1fr 1fr; } }
 .mis-field { display: flex; flex-direction: column; gap: 3px; }
-.mis-field label { font-size: 11px; font-weight: 600; color: #4a5568; text-transform: uppercase; letter-spacing: 0.3px; }
-.mis-field input {
-  border: 1px solid #cbd5e0;
-  border-radius: 4px;
-  padding: 5px 8px;
-  font-size: 12px;
-  color: #2d3748;
-  background: #f7fafc;
+.mis-field label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
 }
-.mis-field input:focus { outline: none; border-color: #4299e1; background: #fff; }
+.mis-field input {
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  padding: 4px 7px;
+  font-size: 11px;
+  color: #222;
+  background: #fafafa;
+}
+.mis-field input:focus { outline: none; border-color: #2563eb; background: #fff; }
 
 .mis-filter-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
   gap: 8px;
+  flex-wrap: wrap;
 }
-.mis-quick-btns { display: flex; gap: 6px; }
+.mis-quick-btns { display: flex; gap: 5px; }
 .mis-quick-btns button {
-  padding: 4px 10px;
-  font-size: 11px;
-  border: 1px solid #bee3f8;
-  background: #ebf8ff;
-  color: #2b6cb0;
+  padding: 3px 9px;
+  font-size: 10px;
+  border: 1px solid #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
   border-radius: 3px;
   cursor: pointer;
   font-weight: 600;
 }
-.mis-quick-btns button:hover { background: #bee3f8; }
+.mis-quick-btns button:hover { background: #dbeafe; }
 
-/* Error */
+/* ── Error / Empty ───────────────────────────────────────────────────────── */
 .mis-error {
-  background: #fff5f5;
-  border: 1px solid #fc8181;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
   border-radius: 4px;
-  padding: 10px 14px;
-  color: #c53030;
-  margin-bottom: 12px;
-  font-size: 12px;
+  padding: 8px 12px;
+  color: #b91c1c;
+  margin-bottom: 10px;
+  font-size: 11px;
 }
-
-/* Empty state */
-.mis-empty {
-  text-align: center;
-  padding: 60px 20px;
-  color: #718096;
-}
-.mis-empty-icon { font-size: 48px; margin-bottom: 12px; }
-.mis-empty p { font-size: 14px; }
+.mis-empty { text-align: center; padding: 60px 20px; color: #888; }
+.mis-empty-icon { font-size: 44px; margin-bottom: 10px; }
 
 /* ── Report Body ─────────────────────────────────────────────────────────── */
 .mis-report-body {
   background: #fff;
-  border: 1px solid #cbd5e0;
-  border-radius: 6px;
-  padding: 24px;
+  border: 2px solid #999;
+  padding: 16px 20px;
 }
 
-/* Report Header */
-.mis-report-header {
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.mis-hdr {
   text-align: center;
-  border-bottom: 2px solid #2d3748;
-  padding-bottom: 12px;
-  margin-bottom: 18px;
+  border-bottom: 2px solid #333;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
 }
-.mis-company-name {
-  font-size: 17px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #1a202c;
-}
-.mis-report-title {
-  font-size: 14px;
-  font-weight: 700;
-  margin-top: 3px;
-  color: #2d3748;
+.mis-hdr-top {
+  font-size: 16px;
+  font-weight: 800;
   letter-spacing: 1px;
   text-transform: uppercase;
 }
-.mis-report-period {
-  font-size: 11px;
-  color: #4a5568;
-  margin-top: 4px;
-}
-.mis-report-addr {
-  font-size: 11px;
-  color: #718096;
-  margin-top: 2px;
-}
-
-/* Summary Cards */
-.mis-summary-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-  margin-bottom: 18px;
-}
-@media (max-width: 800px) { .mis-summary-row { grid-template-columns: repeat(2, 1fr); } }
-
-.mis-card {
-  border: 1px solid #e2e8f0;
-  border-radius: 5px;
-  padding: 10px 12px;
-  border-left-width: 4px;
-}
-.mis-card-blue   { border-left-color: #3182ce; background: #ebf8ff; }
-.mis-card-green  { border-left-color: #38a169; background: #f0fff4; }
-.mis-card-teal   { border-left-color: #319795; background: #e6fffa; }
-.mis-card-orange { border-left-color: #dd6b20; background: #fffaf0; }
-.mis-card-red    { border-left-color: #e53e3e; background: #fff5f5; }
-
-.mis-card-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #4a5568; letter-spacing: 0.3px; }
-.mis-card-value { font-size: 16px; font-weight: 700; margin-top: 3px; color: #1a202c; }
-.mis-card-sub   { font-size: 10px; color: #718096; margin-top: 2px; }
-
-/* Section */
-.mis-section {
-  margin-bottom: 16px;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
-  overflow: hidden;
-}
-.mis-section-head {
-  background: #edf2f7;
-  padding: 7px 12px;
+.mis-hdr-sub {
   font-size: 12px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  color: #2d3748;
-  border-bottom: 1px solid #cbd5e0;
+  margin-top: 2px;
+  letter-spacing: 0.5px;
+}
+.mis-hdr-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  margin-top: 6px;
+  padding: 0 4px;
 }
 
-/* Table */
-.mis-table {
+/* ── Section Titles ──────────────────────────────────────────────────────── */
+.sec-title {
+  background: #d9d9d9;
+  font-weight: 800;
+  font-size: 11px;
+  padding: 4px 8px;
+  border: 1px solid #999;
+  margin-top: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+.mis-sub-title {
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  background: #f0f0f0;
+  border: 1px solid #ccc;
+  border-bottom: none;
+  padding: 3px 6px;
+  text-align: center;
+  letter-spacing: 0.3px;
+}
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
+.mis-tbl {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
-}
-.mis-table th {
-  background: #f7fafc;
-  padding: 6px 10px;
-  text-align: left;
   font-size: 11px;
+}
+.mis-th {
+  background: #e8e8e8;
+  border: 1px solid #999;
+  padding: 4px 7px;
+  text-align: center;
   font-weight: 700;
+  font-size: 10px;
   text-transform: uppercase;
-  color: #4a5568;
-  letter-spacing: 0.3px;
-  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
 }
-.mis-table td {
-  padding: 5px 10px;
-  border-bottom: 1px solid #edf2f7;
-  color: #2d3748;
+.mis-td {
+  border: 1px solid #bbb;
+  padding: 3px 7px;
+  font-size: 11px;
+  color: #1a1a1a;
 }
-.mis-table tr:last-child td { border-bottom: none; }
-.mis-table tr:hover td { background: #f7fafc; }
-.mis-table .total-row td {
-  background: #f0fff4;
+.mis-td.r  { text-align: right; }
+.mis-td.b  { font-weight: 700; }
+
+.mis-total-row .mis-td {
+  background: #f0f0f0;
   font-weight: 700;
-  border-top: 1px solid #c6f6d5;
-  border-bottom: 1px solid #c6f6d5;
+  border-top: 1px solid #999;
+  border-bottom: 1px solid #999;
 }
 
-.right { text-align: right; }
-.bold  { font-weight: 700; }
-.green { color: #276749; }
-.red   { color: #c53030; }
+.mis-green { color: #166534; }
+.mis-red   { color: #991b1b; }
 
-/* Two-column layout */
-.mis-two-col {
+/* ── Two-column layouts ──────────────────────────────────────────────────── */
+.mis-two-col-sales {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 0;
+  border: 1px solid #999;
+  border-top: none;
+}
+.mis-two-col-equal {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 0;
+  gap: 10px;
+  margin-top: 4px;
 }
-@media (max-width: 700px) { .mis-two-col { grid-template-columns: 1fr; } }
+@media (max-width: 700px) {
+  .mis-two-col-sales  { grid-template-columns: 1fr; }
+  .mis-two-col-equal  { grid-template-columns: 1fr; }
+}
 
-/* Footer */
+/* ── Union Details Box ───────────────────────────────────────────────────── */
+.mis-union-box {
+  border-left: 1px solid #999;
+  background: #fafaf8;
+}
+.mis-union-box-title {
+  font-weight: 800;
+  font-size: 10px;
+  text-transform: uppercase;
+  background: #e8e8e8;
+  border-bottom: 1px solid #999;
+  padding: 4px 8px;
+  text-align: center;
+  letter-spacing: 0.4px;
+}
+.mis-tbl-inner .mis-td { font-size: 10px; padding: 3px 6px; }
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
 .mis-footer {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
-  border-top: 1px solid #e2e8f0;
-  margin-top: 16px;
-  padding-top: 10px;
-  font-size: 10px;
-  color: #718096;
-  flex-wrap: wrap;
-  gap: 4px;
+  border-top: 1px solid #ccc;
+  margin-top: 14px;
+  padding-top: 8px;
+  font-size: 9px;
+  color: #666;
 }
-.mis-footer-right { margin-left: auto; }
 
-/* Print styles */
+/* ── Print Styles ────────────────────────────────────────────────────────── */
 @media print {
-  .mis-topbar, .mis-filter-card, .mis-actions { display: none !important; }
-  .mis-wrap { padding: 0; max-width: 100%; }
-  .mis-report-body { border: none; padding: 10px; }
-  .mis-card { border: 1px solid #ccc !important; }
-  .mis-section { break-inside: avoid; }
-  .mis-two-col { grid-template-columns: 1fr 1fr; }
+  .mis-topbar,
+  .mis-filter-card,
+  .mis-actions { display: none !important; }
+
+  .mis-wrap {
+    padding: 0;
+    max-width: 100%;
+    font-size: 9px;
+  }
+  .mis-report-body {
+    border: none;
+    padding: 4mm;
+  }
+  .sec-title { margin-top: 6px; }
+  .mis-two-col-equal { gap: 6px; }
+  .mis-tbl { font-size: 9px; }
+  .mis-th, .mis-td { padding: 2px 4px; font-size: 9px; }
+
+  @page { size: A4; margin: 10mm; }
 }

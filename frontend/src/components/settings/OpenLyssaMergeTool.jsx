@@ -424,6 +424,9 @@ const MilkSalesSection = () => {
           }
         }
 
+        const itemName = itemMap.get(itemId) ?? '';
+        const saleType = itemName.trim().toLowerCase() === 'local sale' ? 'CASH' : 'CREDIT';
+
         merged.push({
           dcs_id:     row.dcs_id ?? '',
           mc_id:      mcId,
@@ -431,7 +434,8 @@ const MilkSalesSection = () => {
           cust_id:    custId,
           cust_name:  custMap.get(custId) ?? '',
           item_id:    itemId,
-          item_name:  itemMap.get(itemId) ?? '',
+          item_name:  itemName,
+          sale_type:  saleType,
           qty:        num(row.qty),
           rate:       num(row.rate),
           amount:     num(row.amount),

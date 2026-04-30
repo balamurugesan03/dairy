@@ -24,7 +24,7 @@ import {
   IconCash, IconFileReport, IconShield, IconTool, IconSearch,
   IconSpeakerphone, IconBriefcase, IconChevronDown, IconChevronRight, IconMenu2, IconLogout, IconUser,
   IconUserCog, IconBuildingStore, IconSettings, IconMilk, IconArrowLeft, IconBuildingCommunity,
-  IconCalendarEvent, IconAdjustments
+  IconCalendarEvent, IconAdjustments, IconReportAnalytics
 } from '@tabler/icons-react';
 import { useCompany } from '../../context/CompanyContext';
 import { useAuth } from '../../context/AuthContext';
@@ -333,6 +333,7 @@ const MainLayout = () => {
             { key: '/payments/producer-register-summary', label: 'Producer Summary' },
             { key: '/reports/milk-bill-report',           label: 'Milk Bill (Producer)' },
             { key: '/payments/farmer-ledger',             label: 'Producer Ledger' },
+            
           ]
         },
       ]
@@ -403,10 +404,23 @@ const MainLayout = () => {
         { key: '/reports/dairy-abstract',    label: 'Dairy Abstract' },
         { key: '/reports/dairy-register',    label: 'Dairy Register' },
         { key: '/reports/mis-report',        label: 'MIS Report' },
+        // { key: '/reports/ddd-mis-report',   label: 'DDD MIS Report' },
+        { key: '/mis-department/report',    label: 'MIS Report Department' },
         { key: '/farmers/crop-statements',   label: 'Crop Damage Statements' },
         { key: '/farmers/agri-stats',        label: 'Monthly Agri Statistics' },
       ]
     }] : []),
+
+    // // MIS REPORT DEPARTMENT - Separate standalone module for Dairy Cooperative
+    // ...(selectedBusinessType === 'Dairy Cooperative Society' ? [{
+    //   key: 'mis-department-menu',
+    //   icon: <IconReportAnalytics size={18} />,
+    //   label: 'MIS Report Department',
+    //   color: 'red',
+    //   children: [
+    //     { key: '/mis-department/report', label: 'DDD MIS Report' },
+    //   ]
+    // }] : []),
     // BUSINESS (VYAPAR) REPORTS - Only show for Private Firm
    
  

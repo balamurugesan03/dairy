@@ -225,6 +225,18 @@ const ReportsDashboard = () => {
       ),
       path: '/reports/dairy-register',
       color: '#eef4ff'
+    },
+    {
+      title: 'DDD MIS Report',
+      description: 'Government-style Dairy Development Department Management Information System report with all 8 sections, printable A4 format',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="#8b0000">
+          <rect x="3" y="3" width="18" height="18" rx="1" strokeWidth="2"/>
+          <path d="M3 8h18M3 12h18M3 16h18M8 3v18M16 3v18" strokeWidth="1.5" strokeLinecap="round"/>
+        </svg>
+      ),
+      path: '/reports/dairy-mis-report',
+      color: '#fff0f0'
     }
   ];
 

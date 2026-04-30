@@ -254,9 +254,15 @@ export const bulkImportCustomers = async (req, res) => {
     }
 
     const CATEGORY_MAP = {
-      '1': 'Others', '2': 'Others', '3': 'Anganwadi',
-      '4': 'Others', '5': 'Hotel',  '6': 'Others',
-      '7': 'Others', '8': 'Others', '9': 'School'
+      '1': 'Local Sale',  // LOCAL SALE
+      '2': 'Hospital',    // HOSPITAL
+      '3': 'Anganwadi',   // ANGANAVADI
+      '4': 'Public',      // PUBLIC
+      '5': 'Hotel',       // HOTEL
+      '6': 'Booth',       // BOOTH
+      '7': 'Hostel',      // HOSTEL
+      '8': 'Others',      // OTHERS
+      '9': 'School',      // SCHOOL
     };
 
     const results = { total: customers.length, created: 0, updated: 0, errors: [] };
