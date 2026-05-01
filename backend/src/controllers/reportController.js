@@ -1413,13 +1413,17 @@ export const getDairyRegisterReport = async (req, res) => {
       if (s._id.saleMode === 'LOCAL') {
         slot.localQty  += s.qty;
         slot.localAmt  += s.amount;
-      } else if (SCHOOL_CATS.has(s._id.category)) {
-        slot.schoolQty += s.qty;
-        slot.schoolAmt += s.amount;
-      } else if (s._id.category === 'Sample') {
+      } else if (s._id.saleMode === 'SAMPLE') {
+        // Sample/production-unit sales — must check saleMode before category
+        // because sample records have no creditorId (category defaults to 'Others')
         slot.sampleQty += s.qty;
         slot.sampleAmt += s.amount;
+      } else if (SCHOOL_CATS.has(s._id.category)) {
+        // CREDIT sales to school / anganwadi customers
+        slot.schoolQty += s.qty;
+        slot.schoolAmt += s.amount;
       } else {
+        // All other CREDIT sales
         slot.creditQty += s.qty;
         slot.creditAmt += s.amount;
       }

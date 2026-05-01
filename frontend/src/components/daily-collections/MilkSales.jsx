@@ -170,6 +170,13 @@ export default function MilkSales() {
 
   const isLocal = mode === 'LOCAL' || mode === 'SAMPLE';
 
+  const isSameLocalDate = (a, b) => {
+    const da = new Date(a), db = new Date(b);
+    return da.getFullYear() === db.getFullYear() &&
+           da.getMonth()    === db.getMonth()    &&
+           da.getDate()     === db.getDate();
+  };
+
   const litrRef   = useRef(null);
   const rateRef   = useRef(null);
   const lastEntryRef = useRef(null);
@@ -229,6 +236,17 @@ export default function MilkSales() {
     loadEntries();
     fetchNextBillNo();
   }, []);
+
+  // Auto-reload table when form date changes to a different month
+  useEffect(() => {
+    const m = String(date.getMonth() + 1);
+    const y = String(date.getFullYear());
+    if (m !== filterMonth || y !== filterYear) {
+      setFilterMonth(m);
+      setFilterYear(y);
+      loadEntries(m, y);
+    }
+  }, [date]); // eslint-disable-line
 
   const fetchNextBillNo = async () => {
     try {
@@ -411,10 +429,10 @@ export default function MilkSales() {
     </Table.Th>
   );
 
-  // Filtered entries
+  // Filtered entries — by selected date, or by search (shows whole month)
   const filteredEntries = historySearch.trim()
     ? entries.filter(e => [e.billNo, e.creditorName, e.centerName].some(v => (v || '').toLowerCase().includes(historySearch.toLowerCase())))
-    : entries;
+    : entries.filter(e => e.date && isSameLocalDate(e.date, date));
 
   const sortedEntries = (() => {
     if (!sortKey) return filteredEntries;
@@ -791,20 +809,18 @@ export default function MilkSales() {
             <Table striped highlightOnHover stickyHeader withColumnBorders style={{ fontSize: 12 }}>
               <Table.Thead style={{ background: 'linear-gradient(180deg,#dcfce7 0%,#bbf7d0 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
                 <Table.Tr>
-                  <SortTh label="#"           sk={null} />
-                  <SortTh label="Bill No"     sk="billNo" />
-                  <SortTh label="Date"        sk="date" />
-                  <SortTh label="Sess"        sk="session" />
-                  <SortTh label="Mode"        sk="saleMode" />
-                  <SortTh label={isLocal ? 'Center' : 'Creditor'} sk={isLocal ? 'centerName' : 'creditorName'} />
-                  {!isLocal && <SortTh label="Op. Credit" sk="openingCredit" />}
-                  {!isLocal && <SortTh label="Center"     sk="centerName" />}
-                  <SortTh label="Agent"       sk="agentName" />
-                  <SortTh label="Litres"      sk="litre" />
-                  <SortTh label="Rate/L"      sk="rate" />
-                  <SortTh label="Amount"      sk="amount" />
-                  {isLocal && <SortTh label="Payment"    sk="paymentType" />}
-                  <SortTh label=""            sk={null} />
+                  <SortTh label="#"        sk={null} />
+                  <SortTh label="Bill No"  sk="billNo" />
+                  <SortTh label="Date"     sk="date" />
+                  <SortTh label="Sess"     sk="session" />
+                  <SortTh label="Mode"     sk="saleMode" />
+                  <SortTh label="Party"    sk="creditorName" />
+                  <SortTh label="Agent"    sk="agentName" />
+                  <SortTh label="Litres"   sk="litre" />
+                  <SortTh label="Rate/L"   sk="rate" />
+                  <SortTh label="Amount"   sk="amount" />
+                  <SortTh label="Type"     sk="paymentType" />
+                  <SortTh label=""         sk={null} />
                 </Table.Tr>
               </Table.Thead>
 
@@ -817,7 +833,7 @@ export default function MilkSales() {
                       <Center py="xl">
                         <Stack align="center" gap={6}>
                           <IconMilk size={48} color="#bbf7d0" />
-                          <Text c="dimmed" size="sm" fw={600}>{historySearch ? `No results for "${historySearch}"` : 'No sales entries today'}</Text>
+                          <Text c="dimmed" size="sm" fw={600}>{historySearch ? `No results for "${historySearch}"` : `No sales for ${date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`}</Text>
                           <Text c="dimmed" size="xs">Fill in the form above and press Save</Text>
                         </Stack>
                       </Center>

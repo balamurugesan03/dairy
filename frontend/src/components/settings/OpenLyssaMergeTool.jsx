@@ -6,7 +6,8 @@ import {
 import { notifications } from '@mantine/notifications';
 import {
   IconUpload, IconTrash, IconDownload, IconRefresh,
-  IconAlertCircle, IconCircleCheck, IconMilk, IconShoppingCart
+  IconAlertCircle, IconCircleCheck, IconMilk, IconShoppingCart,
+  IconCalendar, IconFilter
 } from '@tabler/icons-react';
 import * as XLSX from 'xlsx';
 
@@ -24,8 +25,12 @@ const parseDate = (val) => {
   if (typeof val === 'number') return excelSerialToDate(val);
   const str = String(val).trim();
   if (!str || str === '0000-00-00') return null;
-  const m = str.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-  if (m) return new Date(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`);
+  // DD-MM-YYYY (dashes)
+  const m1 = str.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (m1) return new Date(`${m1[3]}-${m1[2].padStart(2, '0')}-${m1[1].padStart(2, '0')}`);
+  // DD/MM/YYYY (slashes — OpenLyssa default export format)
+  const m2 = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m2) return new Date(`${m2[3]}-${m2[2].padStart(2, '0')}-${m2[1].padStart(2, '0')}`);
   const d = new Date(str);
   return isNaN(d) ? null : d;
 };
@@ -42,7 +47,7 @@ const readFileSheets = (file) =>
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const wb = XLSX.read(e.target.result, { type: 'binary' });
+        const wb = XLSX.read(e.target.result, { type: 'binary', cellDates: true });
         const sheets = {};
         wb.SheetNames.forEach((name) => {
           sheets[name] = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: null });
@@ -64,12 +69,26 @@ const downloadExcel = (rows, filename, sheetName = 'Data') => {
   XLSX.writeFile(wb, filename);
 };
 
-// Detect if a sheet's rows look like mc_proc_master or mc_proc_detail
+// Find a value from a row by checking column names (exact then partial, case-insensitive)
+const findRowVal = (row, ...candidates) => {
+  const keys = Object.keys(row);
+  for (const cand of candidates) {
+    const cl = cand.toLowerCase();
+    const k = keys.find(k => k.toLowerCase() === cl) ?? keys.find(k => k.toLowerCase().includes(cl));
+    if (k !== undefined && row[k] !== null && row[k] !== undefined) return row[k];
+  }
+  return null;
+};
+
+// Detect if a sheet's rows look like mc_proc_master, mc_proc_detail, or flat (combined)
 const detectSheetType = (rows) => {
   if (!rows.length) return null;
   const keys = Object.keys(rows[0]).map((k) => k.toLowerCase());
-  if (keys.includes('mc_date') || keys.includes('mc_time') || keys.includes('shift_id')) return 'master';
-  if (keys.includes('producer_id') || keys.includes('qty') || keys.includes('fat')) return 'detail';
+  const hasMaster = keys.some(k => k === 'mc_date' || k === 'mc_time' || k === 'shift_id');
+  const hasDetail = keys.some(k => k === 'producer_id' || k === 'qty' || k === 'fat');
+  if (hasMaster && hasDetail) return 'flat';   // combined single-sheet export
+  if (hasMaster) return 'master';
+  if (hasDetail) return 'detail';
   return null;
 };
 
@@ -130,17 +149,95 @@ const FileListBox = ({ label, color, files, onAdd, onRemove, accept = '.xlsx,.xl
 // ─── MILK PURCHASE SECTION ─────────────────────────────────────────────────
 
 const MilkPurchaseSection = () => {
-  const [files, setFiles] = useState([]);        // all uploaded files (auto-detect master/detail)
-  const [status, setStatus] = useState(null);    // null | 'processing' | 'done' | 'error'
-  const [result, setResult] = useState(null);    // { rows, stats }
+  const [files, setFiles] = useState([]);
+  const [status, setStatus] = useState(null); // null | 'scanning' | 'ready' | 'processing' | 'done' | 'error'
+  const [availableYears, setAvailableYears] = useState([]);
+  const [selectedYears, setSelectedYears] = useState(new Set());
+  const [result, setResult] = useState(null);
 
-  const addFiles = (picked) => setFiles((prev) => [...prev, ...picked]);
-  const removeFile = (i) => setFiles((prev) => prev.filter((_, idx) => idx !== i));
-  const reset = () => { setFiles([]); setStatus(null); setResult(null); };
+  const addFiles = (picked) => {
+    setFiles((prev) => [...prev, ...picked]);
+    setStatus(null); setAvailableYears([]); setSelectedYears(new Set()); setResult(null);
+  };
+  const removeFile = (i) => {
+    setFiles((prev) => prev.filter((_, idx) => idx !== i));
+    setStatus(null); setAvailableYears([]); setSelectedYears(new Set()); setResult(null);
+  };
+  const reset = () => { setFiles([]); setStatus(null); setAvailableYears([]); setSelectedYears(new Set()); setResult(null); };
+
+  const toggleYear = (y) => setSelectedYears(prev => {
+    const next = new Set(prev);
+    next.has(y) ? next.delete(y) : next.add(y);
+    return next;
+  });
+
+  // Step 1 — scan BOTH master + detail to find years that actually have data
+  const handleScanYears = async () => {
+    if (!files.length) return;
+    setStatus('scanning'); setAvailableYears([]); setSelectedYears(new Set()); setResult(null);
+    try {
+      const mcYearMap  = new Map(); // mc_id → year  (built from master)
+      const yearCounts = new Map(); // year  → detail row count
+
+      for (const file of files) {
+        const { sheets } = await readFileSheets(file);
+        for (const [, rows] of Object.entries(sheets)) {
+          const type = detectSheetType(rows);
+
+          if (type === 'master') {
+            rows.forEach(row => {
+              const mcId = String(row.mc_id ?? '').trim();
+              const d = parseDate(findRowVal(row, 'mc_date', 'date', 'dt', 'entry_date', 'date_entry'));
+              if (mcId && d) mcYearMap.set(mcId, d.getFullYear());
+            });
+          } else if (type === 'flat') {
+            // flat has both date and detail — count directly
+            rows.forEach(row => {
+              const d = parseDate(findRowVal(row, 'mc_date', 'date', 'dt', 'entry_date', 'date_entry'));
+              if (d) yearCounts.set(d.getFullYear(), (yearCounts.get(d.getFullYear()) ?? 0) + 1);
+            });
+          }
+        }
+      }
+
+      // Second pass — count detail rows per year using master map
+      for (const file of files) {
+        const { sheets } = await readFileSheets(file);
+        for (const [, rows] of Object.entries(sheets)) {
+          const type = detectSheetType(rows);
+          if (type === 'detail') {
+            rows.forEach(row => {
+              const mcId = String(row.mc_id ?? '').trim();
+              const year = mcYearMap.get(mcId);
+              if (year) yearCounts.set(year, (yearCounts.get(year) ?? 0) + 1);
+            });
+          }
+        }
+      }
+
+      if (!yearCounts.size) {
+        notifications.show({ title: 'No Data Found', message: 'Could not match detail rows to any year — check that master and detail files are both uploaded.', color: 'orange' });
+        setStatus(null); return;
+      }
+
+      // yearsWithData = only years that have at least 1 matching detail row
+      const sorted = [...yearCounts.entries()].sort((a, b) => a[0] - b[0]);
+      setAvailableYears(sorted); // [ [year, count], ... ]
+      setSelectedYears(new Set(sorted.map(([y]) => y)));
+      setStatus('ready');
+    } catch (err) {
+      setStatus('error');
+      notifications.show({ title: 'Scan Error', message: err.message, color: 'red' });
+    }
+  };
 
   const handleConvert = async () => {
     if (!files.length) {
       notifications.show({ title: 'No Files', message: 'Please select master and detail files', color: 'orange' });
+      return;
+    }
+    if (!selectedYears.size) {
+      notifications.show({ title: 'No Year Selected', message: 'Select at least one year to convert.', color: 'orange' });
       return;
     }
     setStatus('processing');
@@ -149,62 +246,70 @@ const MilkPurchaseSection = () => {
     try {
       const masterRows = [];
       const detailRows = [];
+      const flatRows   = [];
+      const debugSheets = [];
 
       for (const file of files) {
         const { sheets } = await readFileSheets(file);
-        let foundMaster = false, foundDetail = false;
+        let anyDetected = false;
 
         for (const [sheetName, rows] of Object.entries(sheets)) {
+          if (!rows.length) continue;
           const type = detectSheetType(rows);
-          if (type === 'master') { masterRows.push(...rows); foundMaster = true; }
-          else if (type === 'detail') { detailRows.push(...rows); foundDetail = true; }
+          const colNames = Object.keys(rows[0]).join(', ');
+          debugSheets.push({ file: file.name, sheet: sheetName, type: type ?? 'unrecognised', rows: rows.length, cols: colNames });
+
+          if (type === 'master')       { rows.forEach(r => masterRows.push(r)); anyDetected = true; }
+          else if (type === 'detail')  { rows.forEach(r => detailRows.push(r)); anyDetected = true; }
+          else if (type === 'flat')    { rows.forEach(r => flatRows.push(r));   anyDetected = true; }
         }
 
-        if (!foundMaster && !foundDetail) {
+        if (!anyDetected) {
           notifications.show({
             title: `Unrecognised: ${file.name}`,
-            message: 'Could not detect master or detail columns. Expected mc_date / producer_id columns.',
-            color: 'red'
+            message: 'No mc_date / producer_id columns found. Check the debug panel below.',
+            color: 'orange'
           });
         }
       }
 
-      if (!masterRows.length || !detailRows.length) {
+      const totalSourceRows = masterRows.length + detailRows.length + flatRows.length;
+      if (!totalSourceRows) {
         setStatus('error');
-        notifications.show({
-          title: 'Missing Data',
-          message: `Found ${masterRows.length} master rows and ${detailRows.length} detail rows. Both are required.`,
-          color: 'red'
-        });
+        setResult({ rows: [], stats: { error: 'No rows detected', debugSheets } });
         return;
       }
 
-      // Build mc_id → { date, shift } from master
+      // Build mc_id → { date, shift } from master rows
       const masterMap = new Map();
       masterRows.forEach((row) => {
         const mcId = String(row.mc_id ?? '').trim();
         if (!mcId || mcId === '0') return;
         const date = parseDate(row.mc_date);
         const t = String(row.mc_time ?? '').trim().toUpperCase();
+        const shiftId = Number(row.shift_id);
         const shift = t === 'AM' ? 'AM' : t === 'PM' ? 'PM'
-          : Number(row.shift_id) === 1 ? 'AM' : Number(row.shift_id) === 2 ? 'PM' : null;
+          : shiftId === 1 ? 'AM' : shiftId === 2 ? 'PM' : null;
         if (date && shift) masterMap.set(mcId, { date, shift });
       });
 
-      // Join detail with master
-      const merged = [];
-      let skipped = 0;
-      detailRows.forEach((row) => {
-        const mcId = String(row.mc_id ?? '').trim();
-        const session = masterMap.get(mcId);
-        if (!session) { skipped++; return; }
+      const masterMcIds   = [...masterMap.keys()].map(Number).filter(Boolean);
+      const masterMcMin   = masterMcIds.length ? masterMcIds.reduce((a, b) => b < a ? b : a, Infinity) : null;
+      const masterMcMax   = masterMcIds.length ? masterMcIds.reduce((a, b) => b > a ? b : a, -Infinity) : null;
 
+      const merged = [];
+      let skippedNoMaster = 0;
+      let skippedNoDate   = 0;
+
+      // Helper to build a row from session + detail row (respects year filter)
+      const pushRow = (session, row) => {
+        if (!selectedYears.has(session.date.getFullYear())) return;
         merged.push({
           Date:        fmtDate(session.date),
           Shift:       session.shift,
-          mc_id:       mcId,
-          producer_id: row.producer_id,
-          slno:        row.slno ?? row.sl_no ?? '',
+          mc_id:       String(row.mc_id ?? ''),
+          producer_id: row.producer_id ?? findRowVal(row, 'producer_id', 'farmer_id', 'member_id') ?? '',
+          slno:        row.slno ?? row.sl_no ?? row.slNo ?? '',
           qty:         num(row.qty),
           fat:         num(row.fat),
           clr:         num(row.clr),
@@ -213,15 +318,78 @@ const MilkPurchaseSection = () => {
           amount:      num(row.amount),
           incentive:   num(row.incentive),
         });
+      };
+
+      // Process regular detail rows (join with master, fallback to row's own date)
+      detailRows.forEach((row) => {
+        const mcId = String(row.mc_id ?? '').trim();
+        let session = masterMap.get(mcId);
+
+        if (!session) {
+          // Fallback: look for any date/shift column directly in the row
+          const rawDate  = findRowVal(row, 'mc_date', 'date', 'dt', 'entry_date', 'date_entry', 'collection_date');
+          const rawShiftStr = String(findRowVal(row, 'mc_time', 'shift', 'session', 'time') ?? '').trim().toUpperCase();
+          const rawShiftId  = Number(findRowVal(row, 'shift_id') ?? 0);
+          if (rawDate) {
+            const d = parseDate(rawDate);
+            const s = rawShiftStr === 'AM' ? 'AM' : rawShiftStr === 'PM' ? 'PM'
+              : rawShiftId === 1 ? 'AM' : rawShiftId === 2 ? 'PM' : null;
+            if (d && s) session = { date: d, shift: s };
+            else        { skippedNoDate++; return; }
+          } else {
+            skippedNoMaster++; return;
+          }
+        }
+        pushRow(session, row);
       });
+
+      // Process flat rows (date + shift already in each row)
+      flatRows.forEach((row) => {
+        const rawDate     = findRowVal(row, 'mc_date', 'date', 'dt', 'entry_date', 'date_entry', 'collection_date');
+        const rawShiftStr = String(findRowVal(row, 'mc_time', 'shift', 'session', 'time') ?? '').trim().toUpperCase();
+        const rawShiftId  = Number(findRowVal(row, 'shift_id') ?? 0);
+        const d = parseDate(rawDate);
+        const s = rawShiftStr === 'AM' ? 'AM' : rawShiftStr === 'PM' ? 'PM'
+          : rawShiftId === 1 ? 'AM' : rawShiftId === 2 ? 'PM' : null;
+        if (!d || !s) { skippedNoDate++; return; }
+        pushRow({ date: d, shift: s }, row);
+      });
+
+      const sourceRows = flatRows.length ? flatRows : detailRows;
+      const detailMcIds = sourceRows.map(r => Number(r.mc_id)).filter(Boolean);
+      const detailMcMin = detailMcIds.length ? detailMcIds.reduce((a, b) => b < a ? b : a, Infinity) : null;
+      const detailMcMax = detailMcIds.length ? detailMcIds.reduce((a, b) => b > a ? b : a, -Infinity) : null;
+
+      // Detect .xls 65535-row truncation and find missing date range from master
+      const xlsTruncated = (detailRows.length + flatRows.length) === 65535;
+      let missingDateMin = null, missingDateMax = null, missingMcCount = 0;
+      if (xlsTruncated && masterMap.size > 0) {
+        const presentMcIds = new Set(sourceRows.map(r => String(r.mc_id)));
+        const missingEntries = [...masterMap.entries()].filter(([id]) => !presentMcIds.has(id));
+        missingMcCount = missingEntries.length;
+        const missingDates = missingEntries.map(([, v]) => v.date).filter(Boolean);
+        if (missingDates.length) {
+          missingDateMin = new Date(missingDates.reduce((a, b) => b.getTime() < a ? b.getTime() : a, Infinity));
+          missingDateMax = new Date(missingDates.reduce((a, b) => b.getTime() > a ? b.getTime() : a, -Infinity));
+        }
+      }
 
       setResult({
         rows: merged,
         stats: {
           masterRows: masterRows.length,
           detailRows: detailRows.length,
-          merged: merged.length,
-          skipped
+          flatRows:   flatRows.length,
+          merged:     merged.length,
+          skippedNoMaster,
+          skippedNoDate,
+          masterMcMin, masterMcMax,
+          detailMcMin, detailMcMax,
+          xlsTruncated,
+          missingMcCount,
+          missingDateMin,
+          missingDateMax,
+          debugSheets,
         }
       });
       setStatus('done');
@@ -231,10 +399,15 @@ const MilkPurchaseSection = () => {
     }
   };
 
-  const handleDownload = () => {
+  const downloadYear = (year) => {
     if (!result?.rows?.length) return;
-    downloadExcel(result.rows, `milk_purchase_merged_${Date.now()}.xlsx`, 'Milk Purchase');
-    notifications.show({ title: 'Downloaded', message: `${result.rows.length} rows exported`, color: 'green' });
+    const rows = year === 'all' ? result.rows : result.rows.filter(r => {
+      const parts = String(r.Date).split('/');
+      return parts.length === 3 && Number(parts[2]) === year;
+    });
+    if (!rows.length) { notifications.show({ title: 'No Data', message: `No rows for ${year}`, color: 'orange' }); return; }
+    downloadExcel(rows, `milk_purchase_${year}_${Date.now()}.xlsx`, 'Milk Purchase');
+    notifications.show({ title: 'Downloaded', message: `${rows.length} rows for ${year}`, color: 'green' });
   };
 
   return (
@@ -245,61 +418,151 @@ const MilkPurchaseSection = () => {
         </ThemeIcon>
         <div>
           <Title order={4}>Milk Purchase</Title>
-          <Text size="xs" c="dimmed">Merge mc_proc_master + mc_proc_detail files (multiple months)</Text>
+          <Text size="xs" c="dimmed">Merge mc_proc_master + mc_proc_detail — select year before converting</Text>
         </div>
       </Group>
 
-      <Alert icon={<IconAlertCircle size={14} />} color="blue" variant="light" mb="md" p="xs">
-        <Text size="xs">
-          Select Excel files containing <strong>mc_proc_master</strong> and <strong>mc_proc_detail</strong> sheets (or separate files).
-          The tool auto-detects each sheet type and joins them on mc_id.
-        </Text>
-      </Alert>
-
+      {/* Step 1: Upload files */}
       <FileListBox
-        label="Master + Detail Files"
+        label="Step 1 — Upload Master + Detail Files"
         color="blue"
         files={files}
         onAdd={addFiles}
         onRemove={removeFile}
       />
 
-      {status === 'done' && result && (
-        <Alert icon={<IconCircleCheck size={14} />} color="green" variant="light" mt="md" p="xs">
-          <Text size="xs">
-            Master rows: <strong>{result.stats.masterRows}</strong> &nbsp;|&nbsp;
-            Detail rows: <strong>{result.stats.detailRows}</strong> &nbsp;|&nbsp;
-            Merged: <strong>{result.stats.merged}</strong> &nbsp;|&nbsp;
-            Skipped (no master): <strong>{result.stats.skipped}</strong>
-          </Text>
-        </Alert>
-      )}
-
-      <Group mt="md">
+      {/* Step 2: Scan years */}
+      <Group mt="xs">
         <Button
+          size="xs"
+          variant="light"
           color="blue"
-          leftSection={<IconRefresh size={16} />}
-          onClick={handleConvert}
-          loading={status === 'processing'}
+          leftSection={<IconCalendar size={14} />}
+          onClick={handleScanYears}
+          loading={status === 'scanning'}
           disabled={!files.length}
         >
-          Convert
-        </Button>
-        <Button
-          color="green"
-          variant="light"
-          leftSection={<IconDownload size={16} />}
-          onClick={handleDownload}
-          disabled={!result?.rows?.length}
-        >
-          Download ({result?.rows?.length ?? 0} rows)
+          Scan Available Years
         </Button>
         {(files.length > 0 || result) && (
-          <Button variant="subtle" color="gray" size="xs" onClick={reset}>
-            Clear
-          </Button>
+          <Button variant="subtle" color="gray" size="xs" onClick={reset}>Clear</Button>
         )}
       </Group>
+
+      {/* Step 3: Year selector — only shows years that have actual detail data */}
+      {availableYears.length > 0 && (
+        <Paper withBorder p="sm" mt="sm" radius="sm">
+          <Group mb="xs" justify="space-between">
+            <Group gap={6}>
+              <IconFilter size={14} />
+              <Text size="xs" fw={600}>Step 2 — Select Years to Convert</Text>
+            </Group>
+            <Group gap={6}>
+              <Button size="xs" variant="subtle" compact onClick={() => setSelectedYears(new Set(availableYears.map(([y]) => y)))}>All</Button>
+              <Button size="xs" variant="subtle" compact onClick={() => setSelectedYears(new Set())}>None</Button>
+            </Group>
+          </Group>
+          <Group gap="xs">
+            {availableYears.map(([y, count]) => (
+              <Badge
+                key={y}
+                size="lg"
+                variant={selectedYears.has(y) ? 'filled' : 'outline'}
+                color="blue"
+                style={{ cursor: 'pointer', userSelect: 'none' }}
+                onClick={() => toggleYear(y)}
+              >
+                {y} ({count.toLocaleString()})
+              </Badge>
+            ))}
+          </Group>
+          <Text size="xs" c="dimmed" mt={6}>
+            {selectedYears.size} of {availableYears.length} year{availableYears.length !== 1 ? 's' : ''} selected
+            &nbsp;— only years with actual detail data are shown
+          </Text>
+        </Paper>
+      )}
+
+      {/* Step 4: Convert */}
+      {status === 'ready' || status === 'processing' || status === 'done' ? (
+        <Group mt="sm">
+          <Button
+            color="blue"
+            leftSection={<IconRefresh size={16} />}
+            onClick={handleConvert}
+            loading={status === 'processing'}
+            disabled={!selectedYears.size}
+          >
+            Convert Selected Years
+          </Button>
+        </Group>
+      ) : null}
+
+      {/* Results */}
+      {status === 'done' && result && (
+        <Stack gap="xs" mt="md">
+          <Alert icon={<IconCircleCheck size={14} />} color="green" variant="light" p="xs">
+            <Stack gap={2}>
+              <Text size="xs">
+                Master rows: <strong>{result.stats.masterRows}</strong> &nbsp;|&nbsp;
+                Detail rows: <strong>{result.stats.detailRows + (result.stats.flatRows ?? 0)}</strong>
+                &nbsp;|&nbsp; <Text span c="green" fw={700}>Merged: {result.stats.merged} rows</Text>
+                &nbsp;|&nbsp; Years: <strong>{[...selectedYears].sort().join(', ')}</strong>
+              </Text>
+              {result.stats.skippedNoMaster > 0 && (
+                <Text size="xs" c="orange">Skipped {result.stats.skippedNoMaster} rows — mc_id not in master</Text>
+              )}
+            </Stack>
+          </Alert>
+
+          {/* Year-wise download buttons */}
+          <Paper withBorder p="sm" radius="sm">
+            <Text size="xs" fw={600} mb="xs">Download by Year</Text>
+            <Group gap="xs" wrap="wrap">
+              {[...selectedYears].sort().map(y => {
+                const count = result.rows.filter(r => {
+                  const parts = String(r.Date).split('/');
+                  return parts.length === 3 && Number(parts[2]) === y;
+                }).length;
+                return (
+                  <Button
+                    key={y}
+                    size="xs"
+                    variant="light"
+                    color="green"
+                    leftSection={<IconDownload size={13} />}
+                    onClick={() => downloadYear(y)}
+                    disabled={!count}
+                  >
+                    {y} ({count})
+                  </Button>
+                );
+              })}
+              {selectedYears.size > 1 && (
+                <Button
+                  size="xs"
+                  color="green"
+                  leftSection={<IconDownload size={13} />}
+                  onClick={() => downloadYear('all')}
+                >
+                  All Years ({result.rows.length})
+                </Button>
+              )}
+            </Group>
+          </Paper>
+
+          {result.stats.debugSheets?.length > 0 && (
+            <Alert icon={<IconAlertCircle size={14} />} color="gray" variant="light" p="xs">
+              <Text size="xs" fw={600} mb={4}>Detected sheets:</Text>
+              {result.stats.debugSheets.map((s, i) => (
+                <Text size="xs" key={i} c={s.type === 'unrecognised' ? 'red' : 'dimmed'}>
+                  [{s.type.toUpperCase()}] {s.file} › {s.sheet} ({s.rows} rows)
+                </Text>
+              ))}
+            </Alert>
+          )}
+        </Stack>
+      )}
     </Paper>
   );
 };
@@ -347,7 +610,7 @@ const MilkSalesSection = () => {
         let matched = false;
         for (const [, rows] of Object.entries(sheets)) {
           const type = detectSalesSheetType(rows);
-          if (type) { tables[type].push(...rows); matched = true; }
+          if (type) { rows.forEach(r => tables[type].push(r)); matched = true; }
         }
         if (!matched) unrecognised.push(file.name);
       }

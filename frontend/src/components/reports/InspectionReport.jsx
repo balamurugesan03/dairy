@@ -118,9 +118,14 @@ export default function InspectionReport() {
     try {
       const res = await reportAPI.getInspectionReport({ date: form.dateOfInspection });
       if (!res.success) throw new Error(res.message || 'Load failed');
-      // Backend always returns computed data (with saved overrides merged)
+      const loaded = populate(res.data);
       setSavedId(res.data?._id || null);
-      setForm(prev => ({ ...populate(res.data), district: prev.district, society: prev.society }));
+      setForm(prev => ({
+        ...loaded,
+        // Preserve user-typed district/society; fall back to API value if empty
+        district: prev.district || loaded.district,
+        society:  prev.society  || loaded.society,
+      }));
       if (!silent) {
         const hasSaved = !!res.data?._id;
         setMsg({
@@ -184,6 +189,7 @@ export default function InspectionReport() {
       td.sno{text-align:center;font-weight:700;width:35px;background:#f8f8f8;font-size:8px;color:#333}
       td.lbl{font-weight:600;width:60%;background:#fafafa}
       td.val{width:30%;background:#fff}
+      td.val-db{width:30%;background:#eff6ff}
       td.val-auto{width:30%;background:#fffbeb}
       td.val-calc{width:30%;background:#e8f4e8}
       tr.sec-hdr td{background:#d9e8ff;font-weight:800;font-size:8.5px;text-transform:uppercase;color:#1a3a6b;border-top:2px solid #1a3a6b;padding:3px 6px}
@@ -632,12 +638,12 @@ export default function InspectionReport() {
             <tr>
               <td className="sno">25</td>
               <td className="lbl">Cash Balance as on Date (₹)</td>
-              <td className="val">{numInput('cashBalanceAsOnDate')}</td>
+              <td className="val-db">{numInput('cashBalanceAsOnDate')}</td>
             </tr>
             <tr>
               <td className="sno">26</td>
               <td className="lbl">Bank Balance as on Previous Month (₹)</td>
-              <td className="val">{numInput('bankBalancePreviousMonth')}</td>
+              <td className="val-db">{numInput('bankBalancePreviousMonth')}</td>
             </tr>
             <tr>
               <td className="sno">27</td>
@@ -647,7 +653,7 @@ export default function InspectionReport() {
             <tr>
               <td className="sno">28</td>
               <td className="lbl">Producer Due Amount Outstanding (₹)</td>
-              <td className="val">{numInput('producerDueAmountOutstanding')}</td>
+              <td className="val-db">{numInput('producerDueAmountOutstanding')}</td>
             </tr>
 
           </tbody>

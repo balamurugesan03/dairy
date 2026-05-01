@@ -4,6 +4,11 @@ import MilkSales        from '../models/MilkSales.js';
 import UnionSalesSlip   from '../models/UnionSalesSlip.js';
 import Farmer           from '../models/Farmer.js';
 import Advance          from '../models/Advance.js';
+import FarmerPayment    from '../models/FarmerPayment.js';
+import Ledger           from '../models/Ledger.js';
+import Voucher          from '../models/Voucher.js';
+import Company          from '../models/Company.js';
+import mongoose         from 'mongoose';
 
 const f2   = v => +Number(v || 0).toFixed(2);
 const isSC = c => /\bsc\b/i.test(c);
@@ -16,13 +21,61 @@ const dayRange = (dateStr) => {
   return { start, end };
 };
 
+// Sum of balances for ledgers of given types as of a specific date
+const ledgerBalanceAsOf = async (companyId, ledgerTypes, asOfDate) => {
+  const cid     = new mongoose.Types.ObjectId(String(companyId));
+  const ledgers = await Ledger.find({
+    companyId,
+    ledgerType: { $in: ledgerTypes },
+    status: 'Active',
+  }).lean();
+  if (!ledgers.length) return 0;
+
+  const ledgerIds = ledgers.map(l => l._id);
+
+  const entries = await Voucher.aggregate([
+    { $match: { companyId: cid, voucherDate: { $lte: asOfDate }, status: 'Posted' } },
+    { $unwind: '$entries' },
+    { $match: { 'entries.ledgerId': { $in: ledgerIds } } },
+    { $group: {
+        _id:         '$entries.ledgerId',
+        totalDebit:  { $sum: '$entries.debitAmount' },
+        totalCredit: { $sum: '$entries.creditAmount' },
+    }},
+  ]);
+
+  const entryMap = {};
+  entries.forEach(e => { entryMap[String(e._id)] = e; });
+
+  let total = 0;
+  for (const ledger of ledgers) {
+    const e   = entryMap[String(ledger._id)] || {};
+    const dr  = e.totalDebit  || 0;
+    const cr  = e.totalCredit || 0;
+    const ob  = ledger.openingBalance || 0;
+    // Assets (Cash, Bank) carry a Dr balance
+    const obN = ledger.openingBalanceType === 'Dr' ? ob : -ob;
+    total += obN + dr - cr;
+  }
+  return f2(Math.max(0, total));
+};
+
 // ── Compute live values from dairy data for a given date ─────────────────────
 const computeFromData = async (companyId, date) => {
   const { start, end } = dayRange(date);
   const df   = { $gte: start, $lte: end };
   const base = { companyId };
+  const cid  = new mongoose.Types.ObjectId(String(companyId));
 
-  const [collections, salesDocs, unionSlips, allFarmers, cfAdvances] = await Promise.all([
+  // Last day of the previous month (for bank balance field)
+  const d            = new Date(date);
+  const prevMonthEnd = new Date(d.getFullYear(), d.getMonth(), 0, 23, 59, 59, 999);
+
+  const [
+    collections, salesDocs, unionSlips, allFarmers, cfAdvances,
+    company, producerDueAgg,
+    cashBal, bankBal,
+  ] = await Promise.all([
     MilkCollection.find({ ...base, date: df })
       .populate('farmer', 'isMembership personalDetails.caste')
       .lean(),
@@ -36,6 +89,13 @@ const computeFromData = async (companyId, date) => {
       advanceCategory: 'CF Advance',
       status: { $in: ['Active', 'Partially Adjusted', 'Overdue'] },
     }).lean(),
+    Company.findById(companyId).lean(),
+    FarmerPayment.aggregate([
+      { $match: { companyId: cid, status: { $in: ['Pending', 'Partial'] } } },
+      { $group: { _id: null, total: { $sum: '$balanceAmount' } } },
+    ]),
+    ledgerBalanceAsOf(companyId, ['Cash in Hand', 'Cash'], end),
+    ledgerBalanceAsOf(companyId, ['Bank Accounts', 'Bank'], prevMonthEnd),
   ]);
 
   // ── Milk Collection ─────────────────────────────────────────────────────────
@@ -74,9 +134,6 @@ const computeFromData = async (companyId, date) => {
   });
 
   // ── Milk Sales ──────────────────────────────────────────────────────────────
-  // LOCAL  → daily cash local sales (shops / route)
-  // CREDIT → school / anganwadi (credit customer sales)
-  // SAMPLE → production unit
   let locQ = 0, locA = 0, credQ = 0, credA = 0, sampQ = 0, sampA = 0;
   salesDocs.forEach(s => {
     const q = s.litre || 0, a = s.amount || 0;
@@ -85,22 +142,27 @@ const computeFromData = async (companyId, date) => {
     if (s.saleMode === 'SAMPLE') { sampQ += q; sampA += a; }
   });
 
-  // UnionSalesSlip → dairy/union sales
   let uniQ = 0, uniA = 0;
   unionSlips.forEach(u => { uniQ += (u.qty || 0); uniA += (u.amount || 0); });
 
-  // ── Cattle Feed Advance Outstanding ────────────────────────────────────────
+  // ── Cattle Feed Advance Outstanding ─────────────────────────────────────────
   const cfOutstanding = f2(cfAdvances.reduce((s, a) => s + (a.balanceAmount || 0), 0));
 
   // ── Auto-calculated totals ──────────────────────────────────────────────────
-  const totalMilkQty          = f2(mQty + nmQty);
-  const totalMilkAmount       = f2(nmAmt);                          // non-member cash purchase
-  const totalSalesQty         = f2(locQ + credQ + sampQ + uniQ);
-  const totalSalesAmount      = f2(locA + credA + sampA + uniA);
-  const milkShortfallExcess   = f2(totalMilkQty - totalSalesQty);
-  const dailyProfitMilkTrading= f2(totalSalesAmount - totalMilkAmount);
+  const totalMilkQty           = f2(mQty + nmQty);
+  const totalMilkAmount        = f2(nmAmt);
+  const totalSalesQty          = f2(locQ + credQ + sampQ + uniQ);
+  const totalSalesAmount       = f2(locA + credA + sampA + uniA);
+  const milkShortfallExcess    = f2(totalMilkQty - totalSalesQty);
+  const dailyProfitMilkTrading = f2(totalSalesAmount - totalMilkAmount);
 
   return {
+    // Company defaults (only used when no saved value)
+    district:                     company?.district    || '',
+    nameOfSociety:                company?.societyName || company?.companyName || '',
+    dairyDevelopmentUnit:         company?.district    || '',
+
+    // Milk collection
     membersMillingCount:          memberSet.size,
     membersMilkQty:               f2(mQty),
     nonMembersMillingCount:       nonMemberSet.size,
@@ -108,8 +170,12 @@ const computeFromData = async (companyId, date) => {
     nonMembersMilkPrice,
     totalMilkQty,
     totalMilkAmount,
+
+    // SC/ST
     scStFarmersCount:             scStCount,
     scStMilkQty:                  f2(scStQty),
+
+    // Sales
     localSalesQty:                f2(locQ),
     localSalesPrice:              f2(locA),
     schoolSalesQty:               f2(credQ),
@@ -122,7 +188,12 @@ const computeFromData = async (companyId, date) => {
     totalSalesAmount,
     milkShortfallExcess,
     dailyProfitMilkTrading,
+
+    // Financial — auto-computed from ledger & FarmerPayment
     cattleFeedAdvanceOutstanding: cfOutstanding,
+    cashBalanceAsOnDate:          cashBal,
+    bankBalancePreviousMonth:     bankBal,
+    producerDueAmountOutstanding: f2(producerDueAgg[0]?.total || 0),
   };
 };
 
@@ -151,8 +222,7 @@ export const getInspectionReport = async (req, res) => {
     // 2. Live computed data from dairy transactions
     const live = await computeFromData(companyId, date);
 
-    // 3. Merge: DB-computed values are primary source; saved values win only for
-    //    text fields, financial fields, and explicit manual overrides (non-zero saved)
+    // 3. Merge: saved non-zero values override computed; always re-compute totals
     const pick = (savedVal, liveVal) => {
       if (savedVal !== undefined && savedVal !== null && savedVal !== 0 && savedVal !== '')
         return savedVal;
@@ -162,12 +232,14 @@ export const getInspectionReport = async (req, res) => {
     const data = {
       _id:                          saved?._id   || null,
       dateOfInspection:             date,
-      district:                     saved?.district          || '',
-      society:                      saved?.society           || '',
-      dairyDevelopmentUnit:         saved?.dairyDevelopmentUnit || '',
-      nameOfSociety:                saved?.nameOfSociety     || '',
 
-      // DB-primary fields (saved overrides only if non-zero)
+      // Text fields: saved first, then company defaults
+      district:             saved?.district          || live.district,
+      society:              saved?.society            || '',
+      dairyDevelopmentUnit: saved?.dairyDevelopmentUnit || live.dairyDevelopmentUnit,
+      nameOfSociety:        saved?.nameOfSociety       || live.nameOfSociety,
+
+      // DB-primary numeric fields (saved overrides only if non-zero)
       membersMillingCount:          pick(saved?.membersMillingCount,    live.membersMillingCount),
       membersMilkQty:               pick(saved?.membersMilkQty,         live.membersMilkQty),
       nonMembersMillingCount:       pick(saved?.nonMembersMillingCount,  live.nonMembersMillingCount),
@@ -196,11 +268,13 @@ export const getInspectionReport = async (req, res) => {
       milkShortfallExcess:          live.milkShortfallExcess,
       dailyProfitMilkTrading:       live.dailyProfitMilkTrading,
 
-      // Financial — saved values preferred; cattle feed from DB if no saved value
-      cashBalanceAsOnDate:          saved?.cashBalanceAsOnDate       || 0,
-      bankBalancePreviousMonth:     saved?.bankBalancePreviousMonth  || 0,
+      // Financial — computed from ledger/advances; saved override if user manually entered
+      cashBalanceAsOnDate:          pick(saved?.cashBalanceAsOnDate,      live.cashBalanceAsOnDate),
+      bankBalancePreviousMonth:     pick(saved?.bankBalancePreviousMonth,  live.bankBalancePreviousMonth),
       cattleFeedAdvanceOutstanding: pick(saved?.cattleFeedAdvanceOutstanding, live.cattleFeedAdvanceOutstanding),
-      producerDueAmountOutstanding: saved?.producerDueAmountOutstanding || 0,
+
+      // Producer due always live from FarmerPayment
+      producerDueAmountOutstanding: live.producerDueAmountOutstanding,
     };
 
     res.json({ success: true, data });

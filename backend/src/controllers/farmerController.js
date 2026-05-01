@@ -714,6 +714,7 @@ export const bulkImportFarmers = async (req, res) => {
           if (farmerData.fatherName)          existingFarmer.personalDetails.fatherName      = farmerData.fatherName;
           if (farmerData.gender)              existingFarmer.personalDetails.gender           = farmerData.gender;
           if (farmerData.dob)                 existingFarmer.personalDetails.dob              = new Date(farmerData.dob);
+          if (farmerData.age)                 existingFarmer.personalDetails.age              = farmerData.age;
           if (farmerData.caste)               existingFarmer.personalDetails.caste            = farmerData.caste;
           if (farmerData.nomineeName)         existingFarmer.personalDetails.nomineeName      = farmerData.nomineeName;
           if (farmerData.nomineeRelation)     existingFarmer.personalDetails.nomineeRelation  = farmerData.nomineeRelation;
@@ -774,6 +775,7 @@ export const bulkImportFarmers = async (req, res) => {
               fatherName:      farmerData.fatherName      || undefined,
               gender:          farmerData.gender          || undefined,
               dob:             farmerData.dob             ? new Date(farmerData.dob) : undefined,
+              age:             farmerData.age             || undefined,
               caste:           farmerData.caste           || undefined,
               nomineeName:     farmerData.nomineeName     || undefined,
               nomineeRelation: farmerData.nomineeRelation || undefined,

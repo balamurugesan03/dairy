@@ -320,6 +320,16 @@ const FarmerManagement = () => {
         return s === '' || s === '0' ? undefined : s;
       };
 
+      const ageFromDob = (dob) => {
+        if (!dob) return undefined;
+        const today = new Date();
+        const birth = new Date(dob);
+        let age = today.getFullYear() - birth.getFullYear();
+        const m = today.getMonth() - birth.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+        return age > 0 ? age : undefined;
+      };
+
       const farmers = data.map(row => {
         if (isOpenLyssa) {
           // Normalize all keys to lowercase so casing differences in Excel headers don't matter
@@ -341,6 +351,7 @@ const FarmerManagement = () => {
             phone:           cleanPhone(r['mobile_no'] || r['phone_no']),
             gender:          mapGender(r['sex']),
             dob:             parseDate(r['date_of_birth']),
+            age:             ageFromDob(parseDate(r['date_of_birth'])),
             caste:           parseCaste(r['caste_id']),
             nomineeName:     cleanStr(r['nominee']),
             nomineeRelation: cleanStr(r['rel_id']),
@@ -372,6 +383,7 @@ const FarmerManagement = () => {
             phone:          cleanPhone(row['Phone']),
             gender:         mapGender(row['Gender']),
             dob:            excelSerialToDate(row['DateOfBirth']),
+            age:            ageFromDob(excelSerialToDate(row['DateOfBirth'])),
             caste:          row['Cast1'] ? String(row['Cast1']).trim() : undefined,
             place:          row['Place'] ? String(row['Place']).trim() : undefined,
             houseName:      row['HouseName'] ? String(row['HouseName']).trim() : undefined,

@@ -11,9 +11,11 @@ const postBulkMilkPurchaseVouchers = async (docs, companyId) => {
   try {
     const groups = {};
     for (const doc of docs) {
-      const dateKey = new Date(doc.date).toISOString().slice(0, 10);
+      const d = doc.date instanceof Date ? doc.date : new Date(doc.date);
+      if (isNaN(d.getTime())) continue;
+      const dateKey = d.toISOString().slice(0, 10);
       const key     = `${dateKey}-${doc.shift}`;
-      if (!groups[key]) groups[key] = { date: new Date(doc.date), shift: doc.shift, total: 0 };
+      if (!groups[key]) groups[key] = { date: d, shift: doc.shift, total: 0 };
       groups[key].total += Number(doc.amount) || 0;
     }
 
@@ -383,7 +385,7 @@ export const bulkImportCollections = async (req, res) => {
       const fn = String(r.farmerNumber || '');
       const fm = farmerMap[fn];
       if (!fm) { skipped.push(fn); continue; }
-      docs.push({ ...r, farmer: fm.id, farmerName: r.farmerName || fm.name, farmerNumber: fn, companyId: req.companyId });
+      docs.push({ ...r, date: parseAnyDate(r.date), farmer: fm.id, farmerName: r.farmerName || fm.name, farmerNumber: fn, companyId: req.companyId });
     }
 
     if (docs.length === 0) {
