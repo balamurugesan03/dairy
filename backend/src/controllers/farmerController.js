@@ -153,7 +153,9 @@ export const getAllFarmers = async (req, res) => {
       admissionDateFrom = '',
       admissionDateTo = '',
       minShares = '',
-      maxShares = ''
+      maxShares = '',
+      sortBy = 'farmerNumber',
+      sortOrder = 'asc'
     } = req.query;
 
     const query = { companyId: req.companyId };
@@ -222,8 +224,12 @@ export const getAllFarmers = async (req, res) => {
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
+    const allowedSortFields = { farmerNumber: 'farmerNumber', name: 'personalDetails.name', createdAt: 'createdAt' };
+    const sortField = allowedSortFields[sortBy] || 'farmerNumber';
+    const sortDir   = sortOrder === 'desc' ? -1 : 1;
+
     const farmers = await Farmer.find(query)
-      .sort({ createdAt: -1 })
+      .sort({ [sortField]: sortDir })
       .skip(skip)
       .limit(parseInt(limit))
       .populate('ledgerId', 'ledgerName currentBalance balanceType')

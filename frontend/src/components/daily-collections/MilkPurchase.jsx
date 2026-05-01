@@ -1184,12 +1184,20 @@ const MilkPurchase = () => {
           </Box>
 
           <DatePickerInput
-            value={date} onChange={v => v && setDate(toDate(v))} valueFormat="DD MMM YYYY"
+            value={date}
+            onChange={v => {
+              if (!v) return;
+              const d = toDate(v);
+              setDate(d);
+              setMonthMode(false);
+              if (center) loadTodayEntries(d, shift, center);
+            }}
+            valueFormat="DD MMM YYYY"
             size="sm" radius="md" style={{ width: 130 }}
             styles={{ input: { fontWeight: 700, fontSize: 13, border: '1.5px solid #bfdbfe' } }}
           />
           <Select
-            value={shift} onChange={setShift}
+            value={shift} onChange={v => { if (v) { setShift(v); setMonthMode(false); } }}
             data={[{ value: 'AM', label: 'AM Shift' }, { value: 'PM', label: 'PM Shift' }]}
             size="sm" radius="md" style={{ width: 110 }}
             styles={{ input: { fontWeight: 700, border: '1.5px solid #bfdbfe' } }}

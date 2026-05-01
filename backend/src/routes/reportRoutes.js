@@ -4,6 +4,7 @@ import {
   saveDDDMISReport,
   updateDDDMISReport,
 } from '../controllers/dairyMISReportController.js';
+import { getMonthlyMISReport } from '../controllers/monthlyMISController.js';
 import {
   getReceiptsDisbursementReport,
   getTradingAccount,
@@ -75,6 +76,9 @@ router.get('/dairy-abstract', getDairyAbstractReport);
 router.get('/dairy-register', getDairyRegisterReport);
 router.get('/cooperative-rd', getCooperativeRDReport);
 router.get('/mis-report', getMISReport);
+
+// Monthly MIS Report (government form)
+router.get('/monthly-mis', getMonthlyMISReport);
 
 // DDD Government MIS Report
 router.get('/ddd-mis-report', getDDDMISReport);

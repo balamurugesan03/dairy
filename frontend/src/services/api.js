@@ -289,6 +289,7 @@ export const reportAPI = {
   vyaparRD: (params) => api.get('/reports/vyapar/rd', { params }).then(res => res.data).catch(handleError),
   salesRegister: (params) => api.get('/reports/sales-register', { params }).then(res => res.data).catch(handleError),
   misReport:          (params) => api.get('/reports/mis-report', { params }).then(res => res.data).catch(handleError),
+  monthlyMIS:         (params) => api.get('/reports/monthly-mis', { params }).then(res => res.data).catch(handleError),
   dddMisReport:       (params) => api.get('/reports/ddd-mis-report', { params }).then(res => res.data).catch(handleError),
   saveDddMisReport:   (data)   => api.post('/reports/ddd-mis-report', data).then(res => res.data).catch(handleError),
   updateDddMisReport: (id, data) => api.put(`/reports/ddd-mis-report/${id}`, data).then(res => res.data).catch(handleError),

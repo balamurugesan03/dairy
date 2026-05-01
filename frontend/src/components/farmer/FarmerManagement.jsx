@@ -151,6 +151,8 @@ const FarmerManagement = () => {
       const params = {
         page: pagination.current,
         limit: pagination.pageSize,
+        sortBy: 'farmerNumber',
+        sortOrder: 'asc',
         status: filters.status,
         farmerType: filters.farmerType,
         cowType: filters.cowType,

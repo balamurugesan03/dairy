@@ -404,6 +404,7 @@ const MainLayout = () => {
         { key: '/reports/dairy-abstract',    label: 'Dairy Abstract' },
         { key: '/reports/dairy-register',    label: 'Dairy Register' },
         { key: '/reports/mis-report',          label: 'MIS Report' },
+        { key: '/reports/monthly-mis-report',  label: 'Monthly MIS Report' },
         // { key: '/reports/ddd-mis-report',   label: 'DDD MIS Report' },
         { key: '/mis-department/report',      label: 'MIS Report Department' },
         { key: '/reports/inspection-report',     label: 'Inspection Report' },
