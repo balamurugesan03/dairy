@@ -199,13 +199,15 @@ const BankTransferManagement = () => {
       if (cRes?.success) {
         setCenters([
           { value: 'all', label: 'All Centers' },
-          ...cRes.data.map(c => ({ value: c._id, label: c.name || c.centerName || 'Center' })),
+          ...cRes.data.map(c => ({ value: String(c._id), label: c.name || c.centerName || 'Center' })),
         ]);
       }
       if (bRes?.success) {
         setBanks([
           { value: 'all', label: 'All Banks' },
-          ...bRes.data.map(b => ({ value: b.name, label: `${b.name} (${b.count || 0})` })),
+          ...bRes.data
+            .filter(b => b.name && typeof b.name === 'string')
+            .map(b => ({ value: b.name, label: `${b.name} (${b.count || 0})` })),
         ]);
       }
     } catch { /* silent */ }

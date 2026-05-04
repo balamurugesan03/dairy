@@ -109,7 +109,7 @@ const FarmerManagement = () => {
   const [villages, setVillages] = useState([]);
   const [panchayats, setPanchayats] = useState([]);
   const [selectedRecords, setSelectedRecords] = useState([]);
-  const [sortStatus, setSortStatus] = useState({ columnAccessor: '', direction: 'asc' });
+  const [sortStatus, setSortStatus] = useState({ columnAccessor: 'farmerNumber', direction: 'asc' });
 
   useEffect(() => {
     fetchFarmers();
@@ -515,7 +515,12 @@ const FarmerManagement = () => {
     return [...farmers].sort((a, b) => {
       let aVal, bVal;
       switch (sortStatus.columnAccessor) {
-        case 'farmerNumber':      aVal = a.farmerNumber; bVal = b.farmerNumber; break;
+        case 'farmerNumber': {
+          const na = parseInt(a.farmerNumber, 10);
+          const nb = parseInt(b.farmerNumber, 10);
+          if (!isNaN(na) && !isNaN(nb)) return (na - nb) * dir;
+          return String(a.farmerNumber || '').localeCompare(String(b.farmerNumber || '')) * dir;
+        }
         case 'memberId':          aVal = a.memberId; bVal = b.memberId; break;
         case 'personalDetails.name': aVal = a.personalDetails?.name; bVal = b.personalDetails?.name; break;
         case 'address.village':   aVal = a.address?.village; bVal = b.address?.village; break;

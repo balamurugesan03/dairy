@@ -422,7 +422,7 @@ export const zibittRawImportSlips = async (req, res) => {
       const str = String(dateStr);
       const parts = str.split('-');
       if (parts.length !== 3) return null;
-      const [dd, mm, yyyy] = parts;
+      const [yyyy, mm, dd] = parts; // ms_date is yyyy-mm-dd format
       const d = new Date(`${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`);
       return isNaN(d.getTime()) ? null : d;
     };

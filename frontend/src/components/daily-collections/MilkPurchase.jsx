@@ -27,6 +27,7 @@ import {
   agentAPI, collectionCenterAPI, farmerAPI,
   milkCollectionAPI, milkPurchaseSettingsAPI, rateChartAPI, milkSalesAPI,
   thermalPrintAPI, machineConfigAPI, timeIncentiveAPI, shiftIncentiveAPI,
+  milmaChartAPI,
 } from '../../services/api';
 import ImportModal from '../common/ImportModal';
 
@@ -34,7 +35,8 @@ import ImportModal from '../common/ImportModal';
 const fallbackRate = (fat, clr) =>
   parseFloat((fat * 5.5 + (clr || 26) * 0.15 + 10).toFixed(2));
 
-const calcRateFromChart = (fat, clr, snf, chartType, chartRows) => {
+const calcRateFromChart = (fat, clr, snf, chartType, chartRows, milmaRate = null) => {
+  if (chartType === 'MilmaChart') return milmaRate; // async-fetched; null when not yet resolved
   if (!chartRows?.length) return null;
   const today = new Date();
   const effective = chartRows.filter(r => new Date(r.fromDate) <= today);
@@ -88,9 +90,9 @@ const calcShiftIncentiveAmt = (incentives, netKg, netLtr, fat, snf, baseAmount) 
   return parseFloat(total.toFixed(2));
 };
 
-const calcValues = (qty, fat, clr, snf, chartType, chartRows) => {
+const calcValues = (qty, fat, clr, snf, chartType, chartRows, milmaRate = null) => {
   if (!qty || !fat) return { snf: snf || 0, incentive: 0, rate: 0, amount: 0 };
-  const chartRate = calcRateFromChart(fat, clr || 0, snf || 0, chartType, chartRows);
+  const chartRate = calcRateFromChart(fat, clr || 0, snf || 0, chartType, chartRows, milmaRate);
   const rate = chartRate !== null ? chartRate : fallbackRate(fat, clr || 0);
   const incentive = 0;
   const amount = parseFloat((qty * rate).toFixed(2));
@@ -219,12 +221,24 @@ const MilkPurchase = () => {
   const [clr, setClr] = useState('');
   const [snf, setSnf] = useState('');
 
-  const [calcResult,  setCalcResult]  = useState({ snf: 0, incentive: 0, rate: 0, amount: 0 });
-  const [activeChart, setActiveChart] = useState('ApplyFormula');
-  const [chartRows,   setChartRows]   = useState([]);
+  const [calcResult,       setCalcResult]       = useState({ snf: 0, incentive: 0, rate: 0, amount: 0 });
+  const [activeChart,      setActiveChart]      = useState('ApplyFormula');
+  const [chartRows,        setChartRows]        = useState([]);
+  const [milmaLookedUpRate,setMilmaLookedUpRate]= useState(null);
 
   const [entries,        setEntries]        = useState([]);
   const [selectedRow,    setSelectedRow]    = useState(null);
+
+  // Sort entries by farmer/member number ascending, reassign sl
+  const sortByProducerNo = (arr) =>
+    [...arr]
+      .sort((a, b) => {
+        const na = parseInt(a.producerNo, 10);
+        const nb = parseInt(b.producerNo, 10);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return String(a.producerNo).localeCompare(String(b.producerNo));
+      })
+      .map((e, i) => ({ ...e, sl: i + 1 }));
   const [saving,         setSaving]         = useState(false);
   const [loadingEntries, setLoadingEntries] = useState(false);
   const [editingId,      setEditingId]      = useState(null);   // row being edited
@@ -306,7 +320,7 @@ const MilkPurchase = () => {
   const [displayConnected, setDisplayConnected] = useState(false);
   const [displayStarting,  setDisplayStarting]  = useState(false);
   const displaySendTimerRef = useRef(null);  // debounce for display sends
-  formRef.current = { producer, ltr, water, fat, clr, snf, date, shift, center, agent, calcResult, editingId, speakEnabled, entries, dupBlocked, entryMode, manualRate, manualAmount, activeTimeIncentive, activeShiftIncentives, cpMode, scaleConnected, displayConnected };
+  formRef.current = { producer, ltr, water, fat, clr, snf, date, shift, center, agent, calcResult, editingId, speakEnabled, entries, dupBlocked, entryMode, manualRate, manualAmount, activeTimeIncentive, activeShiftIncentives, cpMode, scaleConnected, displayConnected, milmaLookedUpRate };
 
   // ── Send to LED Display whenever entry values change ──────────────────────
   useEffect(() => {
@@ -677,18 +691,18 @@ const MilkPurchase = () => {
   const loadTodayEntries = async (d, sh, ct) => {
     setLoadingEntries(true);
     try {
-      const res = await milkCollectionAPI.getAll({ date: toDate(d).toISOString().slice(0, 10), shift: sh, collectionCenter: ct || undefined, limit: 500 });
+      const res = await milkCollectionAPI.getAll({ date: toDate(d).toISOString().slice(0, 10), collectionCenter: ct || undefined, limit: 500 });
       const records = res?.data || [];
-      setEntries(records.map((r, i) => {
+      setEntries(sortByProducerNo(records.map(r => {
         return {
-          id: r._id, sl: i + 1, billNo: r.billNo,
+          id: r._id, sl: 0, billNo: r.billNo,
           producerNo: r.farmerNumber, producerName: r.farmerName || '',
           qty: r.qty, ltr: r.ltr ?? parseFloat((r.qty / 1.03).toFixed(2)),
           clr: r.clr, fat: r.fat, snf: r.snf,
           incentive: r.incentive, rate: r.rate, amount: r.amount,
           addedWater: r.addedWater || 0,
         };
-      }));
+      })));
     } catch { setEntries([]); }
     finally { setLoadingEntries(false); }
   };
@@ -703,15 +717,15 @@ const MilkPurchase = () => {
       const toDate_  = new Date(y, m, 0).toISOString().slice(0, 10); // last day of month
       const res = await milkCollectionAPI.getAll({ fromDate, toDate: toDate_, limit: 5000 });
       const records = res?.data || [];
-      setEntries(records.map((r, i) => ({
-        id: r._id, sl: i + 1, billNo: r.billNo,
+      setEntries(sortByProducerNo(records.map(r => ({
+        id: r._id, sl: 0, billNo: r.billNo,
         producerNo: r.farmerNumber, producerName: r.farmerName || '',
         qty: r.qty, ltr: r.ltr ?? parseFloat((r.qty / 1.03).toFixed(2)),
         clr: r.clr, fat: r.fat, snf: r.snf,
         incentive: r.incentive, rate: r.rate, amount: r.amount,
         addedWater: r.addedWater || 0,
         date: r.date, shift: r.shift,
-      })));
+      }))));
     } catch { setEntries([]); }
     finally { setLoadingEntries(false); }
   };
@@ -789,7 +803,7 @@ const MilkPurchase = () => {
       const found = centersData.find(c => c.value === center);
       if (found) centerNameRef.current = found.label;
     }
-  }, [date, shift, center]); // eslint-disable-line
+  }, [date, center]); // eslint-disable-line
 
   // Load milk sales summary for the day
   useEffect(() => {
@@ -900,13 +914,32 @@ const MilkPurchase = () => {
     return () => clearTimeout(timer);
   }, [ltr]); // eslint-disable-line
 
+  // Async Milma chart lookup — runs when FAT/CLR/SNF change in MilmaChart mode
+  useEffect(() => {
+    if (activeChart !== 'MilmaChart') { setMilmaLookedUpRate(null); return; }
+    const fatVal = parseFloat(fat);
+    const clrVal = parseFloat(clr);
+    const snfVal = parseFloat(snf);
+    if (!fatVal) { setMilmaLookedUpRate(null); return; }
+    const isFatSnf = paramCombo === 'FAT-SNF';
+    if (isFatSnf && !snfVal) { setMilmaLookedUpRate(null); return; }
+    if (!isFatSnf && !clrVal) { setMilmaLookedUpRate(null); return; }
+    const lookupDate = date instanceof Date ? date.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const body = isFatSnf
+      ? { date: lookupDate, fat: fatVal, snf: snfVal }
+      : { date: lookupDate, fat: fatVal, clr: clrVal };
+    milmaChartAPI.lookup(body).then(res => {
+      setMilmaLookedUpRate(res?.success ? (res.rate ?? null) : null);
+    }).catch(() => setMilmaLookedUpRate(null));
+  }, [fat, clr, snf, activeChart, date, paramCombo]); // eslint-disable-line
+
   // Auto-calc — Net LTR → KG (× 1.03), then calc rate/amount
   useEffect(() => {
     const grossLtr = parseFloat(ltr) || 0;
     const waterLtr = parseFloat(water) || 0;
     const netLtr   = Math.max(0, grossLtr - waterLtr);
     const netKg    = parseFloat((netLtr * 1.03).toFixed(3));
-    const base = calcValues(netKg, parseFloat(fat) || 0, parseFloat(clr) || 0, parseFloat(snf) || 0, activeChart, chartRows);
+    const base = calcValues(netKg, parseFloat(fat) || 0, parseFloat(clr) || 0, parseFloat(snf) || 0, activeChart, chartRows, milmaLookedUpRate);
     if (entryMode === 'rate' && manualRate !== '') {
       const rate = parseFloat(manualRate) || 0;
       const amount = parseFloat((netKg * rate + base.incentive).toFixed(2));
@@ -918,7 +951,7 @@ const MilkPurchase = () => {
     } else {
       setCalcResult(base);
     }
-  }, [ltr, water, fat, clr, snf, activeChart, chartRows, entryMode, manualRate, manualAmount]); // eslint-disable-line
+  }, [ltr, water, fat, clr, snf, activeChart, chartRows, entryMode, manualRate, manualAmount, milmaLookedUpRate]); // eslint-disable-line
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -992,7 +1025,7 @@ const MilkPurchase = () => {
 
   // ── Save / Update ─────────────────────────────────────────────────────────
   const handleSave = async () => {
-    const { producer: p, ltr: q, water: w, fat: f, clr: c, snf: s, date: d, shift: sh, center: ct, agent: ag, calcResult: cr, editingId: eid, entryMode: em, manualRate: mr, manualAmount: ma, activeTimeIncentive: ati, activeShiftIncentives: asi } = formRef.current;
+    const { producer: p, ltr: q, water: w, fat: f, clr: c, snf: s, date: d, shift: sh, center: ct, agent: ag, calcResult: cr, editingId: eid, entryMode: em, manualRate: mr, manualAmount: ma, activeTimeIncentive: ati, activeShiftIncentives: asi, milmaLookedUpRate: milmaRate } = formRef.current;
     if (formRef.current.dupBlocked) return;
     if (!p || !q || !f) { notifications.show({ message: 'Member, Litres and FAT are required', color: 'red', autoClose: 2500 }); return; }
     setSaving(true);
@@ -1001,7 +1034,7 @@ const MilkPurchase = () => {
     const netLtr   = Math.max(0, grossLtr - waterLtr);
     const netKg    = parseFloat((netLtr * 1.03).toFixed(3));
     // Always recalculate fresh to avoid stale calcResult (race condition on fast Enter)
-    const fresh = calcValues(netKg, parseFloat(f) || 0, parseFloat(c) || 0, parseFloat(s) || 0, activeChart, chartRows);
+    const fresh = calcValues(netKg, parseFloat(f) || 0, parseFloat(c) || 0, parseFloat(s) || 0, activeChart, chartRows, milmaRate);
     let freshRate   = fresh.rate;
     let freshAmount = fresh.amount;
     if (em === 'rate' && mr !== '') { freshRate = parseFloat(mr) || 0; freshAmount = parseFloat((netKg * freshRate).toFixed(2)); }
@@ -1027,7 +1060,7 @@ const MilkPurchase = () => {
         const saved = res.data;
         const newEntry = { id: saved._id, billNo: saved.billNo, producerNo: saved.farmerNumber, producerName: saved.farmerName || p.name, qty: saved.qty, ltr: saved.ltr ?? netLtr, clr: saved.clr, fat: saved.fat, snf: saved.snf, incentive: saved.incentive, rate: saved.rate, amount: saved.amount, addedWater: saved.addedWater || 0 };
         setBillNo(saved.billNo);
-        setEntries(prev => [...prev, { ...newEntry, sl: prev.length + 1 }]);
+        setEntries(prev => sortByProducerNo([...prev, { ...newEntry, sl: 0 }]));
         tableScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
         lastEntryRef.current = newEntry;
         // Auto-print immediately after save — only if 'Milk Bill' mode is ticked
@@ -1096,7 +1129,7 @@ const MilkPurchase = () => {
   const handleDelete = async (id) => {
     try {
       await milkCollectionAPI.delete(id);
-      setEntries(prev => prev.filter(e => e.id !== id).map((e, i) => ({ ...e, sl: i + 1 })));
+      setEntries(prev => sortByProducerNo(prev.filter(e => e.id !== id)));
       if (selectedRow?.id === id) setSelectedRow(null);
       notifications.show({ message: 'Entry deleted', color: 'orange', autoClose: 1500 });
     } catch (err) { notifications.show({ message: err?.message || 'Delete failed', color: 'red' }); }
@@ -1190,7 +1223,6 @@ const MilkPurchase = () => {
               const d = toDate(v);
               setDate(d);
               setMonthMode(false);
-              if (center) loadTodayEntries(d, shift, center);
             }}
             valueFormat="DD MMM YYYY"
             size="sm" radius="md" style={{ width: 130 }}

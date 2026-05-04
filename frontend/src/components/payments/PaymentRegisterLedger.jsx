@@ -824,7 +824,7 @@ const PaymentRegisterLedger = () => {
                   {/* EARNINGS */}
                   <th style={thSection('#1a365d')} colSpan={5}>EARNINGS</th>
                   {/* DEDUCTIONS */}
-                  <th style={thSection('#744210')} colSpan={12}>DEDUCTIONS</th>
+                  <th style={thSection('#744210')} colSpan={9}>DEDUCTIONS</th>
                   {/* NET PAY */}
                   <th style={thSection('#276749')} rowSpan={2}>NET PAY</th>
                   {/* PAYMENT */}

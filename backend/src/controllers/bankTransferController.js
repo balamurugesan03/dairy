@@ -890,7 +890,7 @@ export const getBanks = async (req, res) => {
         _id: '$bankDetails.bankName',
         count: { $sum: 1 }
       }},
-      { $match: { _id: { $ne: null, $ne: '' } } },
+      { $match: { _id: { $type: 'string', $ne: '' } } },
       { $project: {
         name: '$_id',
         count: 1,
