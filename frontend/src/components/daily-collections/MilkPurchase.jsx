@@ -27,7 +27,7 @@ import {
   agentAPI, collectionCenterAPI, farmerAPI,
   milkCollectionAPI, milkPurchaseSettingsAPI, rateChartAPI, milkSalesAPI,
   thermalPrintAPI, machineConfigAPI, timeIncentiveAPI, shiftIncentiveAPI,
-  milmaChartAPI,
+  milmaChartAPI, whatsappAPI,
 } from '../../services/api';
 import ImportModal from '../common/ImportModal';
 
@@ -270,6 +270,10 @@ const MilkPurchase = () => {
   const [cpMode,      setCpMode]      = useState([]);
   const [paramCombo,  setParamCombo]  = useState('CLR-FAT'); // 'CLR-FAT' | 'FAT-SNF'
   const [qtyUnit,     setQtyUnit]     = useState('Litre');   // 'Litre' | 'KG'
+  const whatsAppSettingsRef = useRef({ enabled: false });
+  const [waStatus,       setWaStatus]       = useState({ connected: false, initializing: false, qr: null });
+  const [waBulkSending,  setWaBulkSending]  = useState(false);
+  const [waBulkProgress, setWaBulkProgress] = useState({ done: 0, total: 0 });
   // Keep ref in sync so the socket handler (which captures nothing) can read latest value
   useEffect(() => { analyzerModeRef.current = cpMode.includes('Analyzer'); }, [cpMode]);
   const [entryMode,   setEntryMode]   = useState('chart'); // 'chart' = auto from rate chart | 'rate' = manual rate→auto amount | 'amount' = manual amount→auto rate
@@ -762,6 +766,20 @@ const MilkPurchase = () => {
         if (settingsRes?.data?.manualEntryCombination) setParamCombo(settingsRes.data.manualEntryCombination);
         if (settingsRes?.data?.quantityUnit)           setQtyUnit(settingsRes.data.quantityUnit);
 
+        // Apply manual entry mode from settings
+        if (settingsRes?.data?.manualEntryMode === 'litre-and-amount') setEntryMode('amount');
+        else if (settingsRes?.data?.manualEntryMode === 'litre-x-rate') setEntryMode('rate');
+
+        // Store WhatsApp settings for use during save; fill default template if empty
+        if (settingsRes?.data?.whatsApp) {
+          const wa = settingsRes.data.whatsApp;
+          whatsAppSettingsRef.current = {
+            ...wa,
+            messageTemplate: wa.messageTemplate ||
+              '🐄 Milk Bill\nDate: {date} {shift}\nBill No: {billNo}\nFarmer: {name} ({farmerNo})\nQty: {qty} Ltr\nFat: {fat} | CLR: {clr} | SNF: {snf}\nRate: ₹{rate}/Ltr\nAmount: ₹{amount}',
+          };
+        }
+
         // Sync cpMode checkboxes from machine toggles saved in settings
         const machines = settingsRes?.data?.machines || {};
         const enabledModes = [];
@@ -863,6 +881,18 @@ const MilkPurchase = () => {
     };
     fetch();
   }, [center, shift, date]); // eslint-disable-line
+
+  // WhatsApp status polling — every 3 s when WA mode is enabled
+  useEffect(() => {
+    if (!cpMode.includes('WhatsApp')) { setWaStatus({ connected: false, initializing: false, qr: null }); return; }
+    const poll = async () => {
+      try { const r = await whatsappAPI.status(); setWaStatus(r?.data || { connected: false, initializing: false, qr: null }); }
+      catch { /* silent */ }
+    };
+    poll();
+    const id = setInterval(poll, 3000);
+    return () => clearInterval(id);
+  }, [cpMode]); // eslint-disable-line
 
   const filteredAgents = useCallback(() => {
     if (!center) return agentsData;
@@ -1070,6 +1100,29 @@ const MilkPurchase = () => {
           printBill(newEntry, dateStr, formRef.current.shift, centerNameRef.current);
         }
         notifications.show({ message: `Saved${milkBillEnabled ? ' & Printing' : ''}: ${saved.billNo} \u2014 \u20B9${saved.amount.toFixed(2)}`, color: 'teal', autoClose: 2000 });
+
+        // WhatsApp bill send
+        const wa = whatsAppSettingsRef.current;
+        const farmerPhone = p?.phone;
+        if (wa?.enabled && farmerPhone) {
+          const dateStr = toDate(formRef.current.date).toLocaleDateString('en-IN');
+          const msg = (wa.messageTemplate || '')
+            .replace(/{name}/g,      p.name || '')
+            .replace(/{farmerNo}/g,  p.no   || '')
+            .replace(/{date}/g,      dateStr)
+            .replace(/{shift}/g,     formRef.current.shift)
+            .replace(/{billNo}/g,    saved.billNo)
+            .replace(/{qty}/g,       netLtr.toFixed(3))
+            .replace(/{fat}/g,       (parseFloat(f) || 0).toFixed(1))
+            .replace(/{clr}/g,       (parseFloat(c) || 0).toFixed(0))
+            .replace(/{snf}/g,       (parseFloat(s) || 0).toFixed(2))
+            .replace(/{rate}/g,      freshRate.toFixed(2))
+            .replace(/{amount}/g,    freshAmount.toFixed(2));
+          whatsappAPI.send(farmerPhone, msg).then(res => {
+            if (res?.success) notifications.show({ message: `WhatsApp sent to ${farmerPhone}`, color: 'green', autoClose: 2500, icon: '\uD83D\uDCF1' });
+          }).catch(() => {});
+        }
+
         if (formRef.current.speakEnabled) {
           const utterance = new SpeechSynthesisUtterance(
             `Fat ${saved.fat.toFixed(1)}. Rate ${saved.rate.toFixed(2)}. Amount ${saved.amount.toFixed(2)}.`
@@ -1191,6 +1244,52 @@ const MilkPurchase = () => {
         e.billNo.toLowerCase().includes(historySearch.toLowerCase())
       )
     : entries;
+
+  const WA_DEFAULT_TEMPLATE = '🐄 Milk Bill\nDate: {date} {shift}\nBill No: {billNo}\nFarmer: {name} ({farmerNo})\nQty: {qty} Ltr\nFat: {fat} | CLR: {clr} | SNF: {snf}\nRate: ₹{rate}/Ltr\nAmount: ₹{amount}';
+
+  // WhatsApp bulk send — sends today's bill message to all farmers in the current table
+  const handleWaBulkSend = async () => {
+    const wa = whatsAppSettingsRef.current;
+    const template = wa?.messageTemplate || WA_DEFAULT_TEMPLATE;
+    const rows = filteredEntries;
+    if (!rows.length) return;
+    const dateStr = toDate(formRef.current.date).toLocaleDateString('en-IN');
+    setWaBulkSending(true);
+    setWaBulkProgress({ done: 0, total: rows.length });
+    try {
+      const farmersRes = await farmerAPI.getAll({ limit: 2000 });
+      const phoneMap = {};
+      (farmersRes?.data || []).forEach(f => {
+        if (f.farmerNumber) phoneMap[f.farmerNumber] = f.personalDetails?.phone || '';
+      });
+      let done = 0, sent = 0;
+      for (const entry of rows) {
+        const phone = phoneMap[entry.producerNo];
+        if (phone) {
+          const msg = template
+            .replace(/{name}/g,     entry.producerName || '')
+            .replace(/{farmerNo}/g, entry.producerNo   || '')
+            .replace(/{date}/g,     dateStr)
+            .replace(/{shift}/g,    formRef.current.shift)
+            .replace(/{billNo}/g,   entry.billNo       || '')
+            .replace(/{qty}/g,      Number(entry.qty).toFixed(3))
+            .replace(/{fat}/g,      Number(entry.fat).toFixed(1))
+            .replace(/{clr}/g,      Number(entry.clr).toFixed(0))
+            .replace(/{snf}/g,      Number(entry.snf).toFixed(2))
+            .replace(/{rate}/g,     Number(entry.rate).toFixed(2))
+            .replace(/{amount}/g,   Number(entry.amount).toFixed(2));
+          try { await whatsappAPI.send(phone, msg); sent++; } catch { /* skip */ }
+        }
+        done++;
+        setWaBulkProgress({ done, total: rows.length });
+      }
+      notifications.show({ message: `📱 WhatsApp sent to ${sent} of ${rows.length} farmers`, color: 'green', autoClose: 4000 });
+    } catch (err) {
+      notifications.show({ message: err?.message || 'Bulk send failed', color: 'red' });
+    } finally {
+      setWaBulkSending(false);
+    }
+  };
 
   // Aggregates
   const totalQty = entries.reduce((s, e) => s + e.qty, 0);
@@ -1755,6 +1854,19 @@ const MilkPurchase = () => {
                 Import DB
               </Button>
 
+              {/* WHATSAPP BULK SEND — only when WA mode enabled and connected */}
+              {cpMode.includes('WhatsApp') && waStatus.connected && (
+                <Button
+                  onClick={handleWaBulkSend}
+                  loading={waBulkSending}
+                  size="compact-xs" radius="sm"
+                  style={{ background: '#15803d', border: '1px solid #86efac', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}
+                  title={`Send WhatsApp to all ${filteredEntries.length} farmers in list`}
+                >
+                  {waBulkSending ? `${waBulkProgress.done}/${waBulkProgress.total}` : `📱 Bulk Send (${filteredEntries.length})`}
+                </Button>
+              )}
+
               <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
 
               {/* PRINT */}
@@ -1988,6 +2100,10 @@ const MilkPurchase = () => {
                       if (checked) connectDisplay();
                       else disconnectDisplay();
                     }
+                    if (opt === 'WhatsApp') {
+                      if (checked) whatsappAPI.connect().catch(() => {});
+                      else whatsappAPI.disconnect().catch(() => {});
+                    }
                   }}
                   style={{ accentColor: '#006064', width: 12, height: 12 }}
                 />
@@ -1999,6 +2115,14 @@ const MilkPurchase = () => {
                     boxShadow: analyzerRunning ? '0 0 4px #22c55e' : 'none',
                     flexShrink: 0
                   }} title={analyzerRunning ? 'Analyzer running' : 'Analyzer not started'} />
+                )}
+                {opt === 'WhatsApp' && cpMode.includes('WhatsApp') && (
+                  <Box style={{
+                    width: 7, height: 7, borderRadius: '50%',
+                    background: waStatus.connected ? '#22c55e' : '#f59e0b',
+                    boxShadow: waStatus.connected ? '0 0 4px #22c55e' : 'none',
+                    flexShrink: 0
+                  }} title={waStatus.connected ? 'WhatsApp connected' : 'WhatsApp not connected'} />
                 )}
                 {opt === 'DISP' && cpMode.includes('DISP') && (
                   <>
@@ -2035,6 +2159,77 @@ const MilkPurchase = () => {
             ))}
           </Box>
         </Box>
+
+        {/* WHATSAPP Panel — shown when WhatsApp mode is checked */}
+        {cpMode.includes('WhatsApp') && (
+          <Box style={{ margin: '6px 8px 0', borderRadius: 4, border: `1px solid ${waStatus.connected ? '#86efac' : '#fde68a'}`, background: waStatus.connected ? 'rgba(240,255,244,0.9)' : 'rgba(255,251,235,0.9)', overflow: 'hidden' }}>
+            {/* Header */}
+            <Box style={{ background: waStatus.connected ? '#15803d' : '#d97706', padding: '3px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Box style={{ width: 7, height: 7, borderRadius: '50%', background: waStatus.connected ? '#bbf7d0' : '#fef3c7', animation: waStatus.initializing ? 'pulse 1.2s infinite' : 'none' }} />
+                <Text size="10px" fw={800} c="white" tt="uppercase" style={{ letterSpacing: '0.5px' }}>WhatsApp</Text>
+              </Box>
+              <Text size="9px" c="white" style={{ opacity: 0.85 }}>
+                {waStatus.connected ? 'CONNECTED' : waStatus.initializing ? 'SCANNING…' : 'NOT CONNECTED'}
+              </Text>
+            </Box>
+
+            <Box style={{ padding: '6px 8px 8px' }}>
+              {waStatus.connected ? (
+                <Box style={{ textAlign: 'center', padding: '4px 0' }}>
+                  <Text size="18px" mb={4}>✅</Text>
+                  <Text size="10px" fw={700} c="#15803d">Ready to send</Text>
+                </Box>
+              ) : waStatus.qr ? (
+                <Box style={{ textAlign: 'center' }}>
+                  <Text size="9px" c="dimmed" mb={4} fw={600}>Scan with WhatsApp</Text>
+                  <img src={waStatus.qr} alt="WhatsApp QR" style={{ width: '100%', borderRadius: 4, border: '1px solid #d1d5db' }} />
+                </Box>
+              ) : waStatus.initializing ? (
+                <Box style={{ textAlign: 'center', padding: '6px 0' }}>
+                  <Loader size="xs" color="yellow" />
+                  <Text size="9px" c="dimmed" mt={4}>Generating QR…</Text>
+                </Box>
+              ) : (
+                <Box style={{ textAlign: 'center', padding: '4px 0' }}>
+                  <Text size="9px" c="dimmed" fw={600}>Click Connect to start</Text>
+                </Box>
+              )}
+
+              {/* Connect / Disconnect buttons */}
+              <Box style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+                <button
+                  onClick={() => whatsappAPI.connect().catch(() => {})}
+                  disabled={waStatus.connected || waStatus.initializing}
+                  style={{
+                    flex: 1, fontSize: 10, fontWeight: 700, padding: '4px 0', borderRadius: 4,
+                    cursor: (waStatus.connected || waStatus.initializing) ? 'not-allowed' : 'pointer',
+                    background: waStatus.connected ? '#d1fae5' : '#15803d',
+                    color: waStatus.connected ? '#065f46' : 'white',
+                    border: `1px solid ${waStatus.connected ? '#86efac' : '#166534'}`,
+                    opacity: (waStatus.connected || waStatus.initializing) ? 0.6 : 1,
+                  }}
+                >
+                  {waStatus.initializing ? '...' : waStatus.connected ? '● Connected' : '▶ Connect'}
+                </button>
+                <button
+                  onClick={() => whatsappAPI.disconnect().then(() => setWaStatus({ connected: false, initializing: false, qr: null })).catch(() => {})}
+                  disabled={!waStatus.connected && !waStatus.initializing}
+                  style={{
+                    flex: 1, fontSize: 10, fontWeight: 700, padding: '4px 0', borderRadius: 4,
+                    cursor: (!waStatus.connected && !waStatus.initializing) ? 'not-allowed' : 'pointer',
+                    background: (!waStatus.connected && !waStatus.initializing) ? '#fef2f2' : '#dc2626',
+                    color: (!waStatus.connected && !waStatus.initializing) ? '#9ca3af' : 'white',
+                    border: `1px solid ${(!waStatus.connected && !waStatus.initializing) ? '#fecaca' : '#b91c1c'}`,
+                    opacity: (!waStatus.connected && !waStatus.initializing) ? 0.5 : 1,
+                  }}
+                >
+                  ■ Disconnect
+                </button>
+              </Box>
+            </Box>
+          </Box>
+        )}
 
         {/* ANALYZER Panel — shown when Analyzer mode is checked */}
         {cpMode.includes('Analyzer') && (

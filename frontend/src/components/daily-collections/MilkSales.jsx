@@ -160,7 +160,7 @@ export default function MilkSales() {
   const [editingId,    setEditingId]    = useState(null);
   const [saving,       setSaving]       = useState(false);
   const [loading,      setLoading]      = useState(false);
-  const [milkBill,     setMilkBill]     = useState(true);
+  const [milkBill,     setMilkBill]     = useState(false);
   const [historySearch, setHistorySearch] = useState('');
   const [showHistory,   setShowHistory]   = useState(false);
   const [importOpen,    setImportOpen]    = useState(false);
@@ -218,7 +218,11 @@ export default function MilkSales() {
         return;
       }
 
-      const res = await milkSalesRateAPI.getLatest(partyId, salesItemKey, dateStr);
+      let res = await milkSalesRateAPI.getLatest(partyId, salesItemKey, dateStr);
+      // Fallback to general (null-party) rate when agent-specific rate not found
+      if (res?.data?.rate == null && partyId && (m === 'LOCAL' || m === 'SAMPLE')) {
+        res = await milkSalesRateAPI.getLatest(null, salesItemKey, dateStr);
+      }
       if (res?.data?.rate != null) {
         setRate(String(res.data.rate));
         notifications.show({ color: 'blue', message: `Rate auto-filled: ₹${res.data.rate} (W.E.F ${new Date(res.data.wefDate).toLocaleDateString('en-IN')})`, autoClose: 2500 });
@@ -229,6 +233,14 @@ export default function MilkSales() {
   };
 
   useEffect(() => { fetchRate(); }, [creditor, agent, mode, date]); // eslint-disable-line
+
+  // Auto-select first center/agent when switching to LOCAL or SAMPLE
+  useEffect(() => {
+    if (mode === 'LOCAL' || mode === 'SAMPLE') {
+      if (!center && centers.length) setCenter(centers[0].value);
+      if (!agent  && agents.length)  setAgent(agents[0].value);
+    }
+  }, [mode]); // eslint-disable-line
 
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -265,8 +277,15 @@ export default function MilkSales() {
       const raw = c?.data || [];
       setCustomersRaw(raw);
       setCustomers(raw.map(x => ({ value: x._id, label: x.name || x.customerName || '—', category: x.category || 'Others' })));
-      setCenters((cc?.data || []).map(x => ({ value: x._id, label: x.centerName || x.name || '—' })));
-      setAgents((ag?.data || []).map(x => ({ value: x._id, label: x.agentName || '—' })));
+      const centerList = (cc?.data || []).map(x => ({ value: x._id, label: x.centerName || x.name || '—' }));
+      const agentList  = (ag?.data || []).map(x => ({ value: x._id, label: x.agentName || '—' }));
+      setCenters(centerList);
+      setAgents(agentList);
+      // Auto-select first center & agent for LOCAL mode on initial load
+      if (formRef.current.mode === 'LOCAL' || formRef.current.mode === 'SAMPLE') {
+        if (!formRef.current.center && centerList.length) setCenter(centerList[0].value);
+        if (!formRef.current.agent  && agentList.length)  setAgent(agentList[0].value);
+      }
     } catch { /* silent */ }
   };
 

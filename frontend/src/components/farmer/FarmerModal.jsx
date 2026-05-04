@@ -136,6 +136,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
         fetchFarmer();
       } else {
         resetForm();
+        fetchNextFarmerNumber();
       }
     }
   }, [isOpen, farmerId]);
@@ -144,6 +145,21 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
     form.reset();
     setActive(0);
     setAdditionalDocs([]);
+  };
+
+  const fetchNextFarmerNumber = async () => {
+    try {
+      const response = await farmerAPI.getAll({ sortBy: 'farmerNumber', sortOrder: 'desc', limit: 1 });
+      const farmers = response.data || [];
+      if (farmers.length === 0) {
+        form.setFieldValue('farmerNumber', '1');
+      } else {
+        const last = parseInt(farmers[0].farmerNumber, 10);
+        form.setFieldValue('farmerNumber', isNaN(last) ? '' : String(last + 1));
+      }
+    } catch {
+      form.setFieldValue('farmerNumber', '1');
+    }
   };
 
   const fetchCollectionCenters = async () => {
@@ -617,11 +633,34 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
                   />
                 </Grid.Col>
                 <Grid.Col span={6}>
-                  <TextInput
+                  <Select
                     label="Relation with Producer"
-                    placeholder="e.g. Son, Daughter, Spouse"
+                    placeholder="Select relation"
+                    data={[
+                      { value: 'Wife', label: 'Wife' },
+                      { value: 'Husband', label: 'Husband' },
+                      { value: 'Son', label: 'Son' },
+                      { value: 'Daughter', label: 'Daughter' },
+                      { value: 'Father', label: 'Father' },
+                      { value: 'Mother', label: 'Mother' },
+                      { value: 'Brother', label: 'Brother' },
+                      { value: 'Sister', label: 'Sister' },
+                      { value: 'Grand Father', label: 'Grand Father' },
+                      { value: 'Grand Mother', label: 'Grand Mother' },
+                      { value: 'Grand Son', label: 'Grand Son' },
+                      { value: 'Grand Daughter', label: 'Grand Daughter' },
+                      { value: 'Uncle', label: 'Uncle' },
+                      { value: 'Aunty', label: 'Aunty' },
+                      { value: 'Nephew', label: 'Nephew' },
+                      { value: 'Niece', label: 'Niece' },
+                      { value: 'Father-in-law', label: 'Father-in-law' },
+                      { value: 'Mother-in-law', label: 'Mother-in-law' },
+                      { value: 'Son-in-law', label: 'Son-in-law' },
+                      { value: 'Daughter-in-law', label: 'Daughter-in-law' },
+                      { value: 'Others', label: 'Others' },
+                    ]}
+                    searchable
                     {...form.getInputProps('personalDetails.nomineeRelation')}
-                    onKeyDown={focusNext}
                   />
                 </Grid.Col>
               </Grid>

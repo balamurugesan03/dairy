@@ -30,8 +30,10 @@
     "node-thermal-printer": "^4.6.0",
     "nodemailer": "^8.0.1",
     "pdfkit": "^0.17.2",
+    "qrcode": "^1.5.4",
     "serialport": "^13.0.0",
     "socket.io": "^4.8.3",
+    "whatsapp-web.js": "^1.34.7",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

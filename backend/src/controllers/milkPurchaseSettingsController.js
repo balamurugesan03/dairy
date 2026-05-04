@@ -18,8 +18,17 @@ import MilkPurchaseSettings from '../models/MilkPurchaseSettings.js';
 const DEFAULTS = {
   quantityUnit           : 'Litre',
   manualEntryCombination : 'CLR-FAT',
+  manualEntryMode        : 'litre-x-rate',
   activeRateChartType    : 'ApplyFormula',
   printSize              : '3 inch',
+  whatsApp: {
+    enabled        : false,
+    apiType        : 'ultramsg',
+    instanceId     : '',
+    token          : '',
+    apiUrl         : '',
+    messageTemplate: '🐄 Milk Bill\nDate: {date} {shift}\nBill No: {billNo}\nFarmer: {name} ({farmerNo})\nQty: {qty} Ltr\nFat: {fat} | CLR: {clr} | SNF: {snf}\nRate: ₹{rate}/Kg\nAmount: ₹{amount}',
+  },
   machines: {
     weighingScale      : false,
     milkAnalyzer       : false,
@@ -83,8 +92,10 @@ export const upsertSettings = async (req, res) => {
     const {
       quantityUnit,
       manualEntryCombination,
+      manualEntryMode,
       activeRateChartType,
       printSize,
+      whatsApp,
       machines,
       weighingScaleConfig,
       ledDisplayConfig,
@@ -96,8 +107,10 @@ export const upsertSettings = async (req, res) => {
 
     if (quantityUnit           !== undefined) update.quantityUnit           = quantityUnit;
     if (manualEntryCombination !== undefined) update.manualEntryCombination = manualEntryCombination;
+    if (manualEntryMode        !== undefined) update.manualEntryMode        = manualEntryMode;
     if (activeRateChartType    !== undefined) update.activeRateChartType    = activeRateChartType;
     if (printSize              !== undefined) update.printSize              = printSize;
+    if (whatsApp && typeof whatsApp === 'object') flattenConfig('whatsApp', whatsApp, update);
 
     // Machine toggles – merge individually
     if (machines && typeof machines === 'object') {

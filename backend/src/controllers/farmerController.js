@@ -228,12 +228,29 @@ export const getAllFarmers = async (req, res) => {
     const sortField = allowedSortFields[sortBy] || 'farmerNumber';
     const sortDir   = sortOrder === 'desc' ? -1 : 1;
 
-    const farmers = await Farmer.find(query)
-      .sort({ [sortField]: sortDir })
-      .skip(skip)
-      .limit(parseInt(limit))
-      .populate('ledgerId', 'ledgerName currentBalance balanceType')
-      .populate('collectionCenter', 'centerName centerType');
+    let farmers;
+    if (sortField === 'farmerNumber') {
+      // Numeric sort: convert farmerNumber string to integer before sorting
+      farmers = await Farmer.aggregate([
+        { $match: query },
+        { $addFields: { _farmerNumInt: { $convert: { input: '$farmerNumber', to: 'int', onError: 999999, onNull: 999999 } } } },
+        { $sort: { _farmerNumInt: sortDir, farmerNumber: sortDir } },
+        { $skip: skip },
+        { $limit: parseInt(limit) },
+        { $lookup: { from: 'ledgers', localField: 'ledgerId', foreignField: '_id', as: 'ledgerId' } },
+        { $unwind: { path: '$ledgerId', preserveNullAndEmptyArrays: true } },
+        { $lookup: { from: 'collectioncenters', localField: 'collectionCenter', foreignField: '_id', as: 'collectionCenter' } },
+        { $unwind: { path: '$collectionCenter', preserveNullAndEmptyArrays: true } },
+        { $project: { _farmerNumInt: 0 } }
+      ]);
+    } else {
+      farmers = await Farmer.find(query)
+        .sort({ [sortField]: sortDir })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .populate('ledgerId', 'ledgerName currentBalance balanceType')
+        .populate('collectionCenter', 'centerName centerType');
+    }
 
     const total = await Farmer.countDocuments(query);
 

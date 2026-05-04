@@ -1048,4 +1048,13 @@ export const cropStatementAPI = {
   delete:   (id)       => api.delete(`/crop-statements/${id}`).then(r => r.data).catch(handleError),
 };
 
+// ── WhatsApp API ──────────────────────────────────────────────────────────────
+export const whatsappAPI = {
+  status:     ()               => api.get('/whatsapp/status').then(r => r.data).catch(handleError),
+  connect:    ()               => api.post('/whatsapp/connect').then(r => r.data).catch(handleError),
+  disconnect: ()               => api.post('/whatsapp/disconnect').then(r => r.data).catch(handleError),
+  send:       (phone, message) => api.post('/whatsapp/send', { phone, message }).then(r => r.data).catch(handleError),
+  test:       (phone)          => api.get('/whatsapp/test', { params: { phone } }).then(r => r.data).catch(handleError),
+};
+
 export default api;

@@ -98,6 +98,29 @@ const milkPurchaseSettingsSchema = new mongoose.Schema(
       enum    : ['MilmaChart', 'ManualEntry', 'ApplyFormula', 'LowChart', 'GoldLessChart', 'SlabRate'],
       default : 'ApplyFormula',
     },
+    // ── Manual rate entry mode: litre×rate=amount OR litre+amount→rate ───────
+    manualEntryMode: {
+      type    : String,
+      enum    : ['litre-x-rate', 'litre-and-amount'],
+      default : 'litre-x-rate',
+    },
+
+    // ── WhatsApp messaging configuration ─────────────────────────────────
+    whatsApp: {
+      type: new mongoose.Schema({
+        enabled     : { type: Boolean, default: false },
+        apiType     : { type: String, enum: ['ultramsg', 'custom'], default: 'ultramsg' },
+        instanceId  : { type: String, default: '' },
+        token       : { type: String, default: '' },
+        apiUrl      : { type: String, default: '' },
+        messageTemplate: {
+          type   : String,
+          default: '🐄 Milk Bill\nDate: {date} {shift}\nBill No: {billNo}\nFarmer: {name} ({farmerNo})\nQty: {qty} Ltr\nFat: {fat} | CLR: {clr} | SNF: {snf}\nRate: ₹{rate}/Kg\nAmount: ₹{amount}',
+        },
+      }, { _id: false }),
+      default: () => ({}),
+    },
+
     // ── Printer / paper type for milk bill printing ────────────────────────
     printSize: {
       type    : String,

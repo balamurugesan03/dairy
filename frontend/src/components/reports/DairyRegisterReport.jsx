@@ -173,10 +173,11 @@ const DataRow = ({ row, bg, bold, shiftLabel, shiftBg, isGrand }) => {
 
       {/* ── Milma / Union Sales ── */}
       <TD bold={bold} bg={rowBg} color={clr}>{fn3(row.unionSendQty)}</TD>
+      <TD bold={bold} bg={rowBg} color={clr}>{fn3(row.milmaQtyLtr)}</TD>
       <TD bold={bold} bg={rowBg} color={clr}>{fn2(row.unionAmt)}</TD>
       <TD bold={bold} bg={rowBg} color={row.unionSpoilage > 0 ? (isGrand ? '#fca5a5' : '#dc2626') : clr}>{fn3(row.unionSpoilage)}</TD>
-      <TD bold={bold} bg={rowBg} color={clr}>{fn3(row.unionExcess)}</TD>
-      <TD bold={bold} bg={rowBg} color={clr}>{fn3(row.unionShortage)}</TD>
+      <TD bold={bold} bg={rowBg} color={row.unionExcess > 0   ? (isGrand ? '#86efac' : '#16a34a') : clr}>{fn3(row.unionExcess)}</TD>
+      <TD bold={bold} bg={rowBg} color={row.unionShortage > 0 ? (isGrand ? '#fca5a5' : '#dc2626') : clr}>{fn3(row.unionShortage)}</TD>
       <TD bold={bold} bg={rowBg} color={clr}>{fn3(row.milmaTotalQty)}</TD>
       <TD bold={bold} bg={rowBg} color={clr}>{fn2(row.milmaTotalAmt)}</TD>
 
@@ -194,8 +195,8 @@ const DataRow = ({ row, bg, bold, shiftLabel, shiftBg, isGrand }) => {
   );
 };
 
-// Total data columns = 1(shift)+3(member)+3(nonMember)+6(purchase)+8(sales)+7(milma)+1(profit) = 29
-const TOTAL_COLS = 29;
+// Total data columns = 1(shift)+3(member)+3(nonMember)+6(purchase)+8(sales)+8(milma)+1(profit) = 30
+const TOTAL_COLS = 30;
 
 // ── Main Component ────────────────────────────────────────────────────────────
 const DairyRegisterReport = () => {
@@ -254,8 +255,9 @@ const DairyRegisterReport = () => {
         'Credit Qty': row.creditQty, 'Credit Amt': row.creditAmt,
         'School Qty': row.schoolQty, 'School Amt': row.schoolAmt,
         'Sample Qty': row.sampleQty, 'Sample Amt': row.sampleAmt,
-        'Union Send Qty': row.unionSendQty, 'Union Amt': row.unionAmt,
-        'Union Spoilage': row.unionSpoilage, 'Union Excess': row.unionExcess, 'Union Shortage': row.unionShortage,
+        'Send Qty': row.unionSendQty, 'Milma Qty Ltr': row.milmaQtyLtr,
+        'Milma Value': row.unionAmt, 'Milma Spoilage': row.unionSpoilage,
+        'Milma Excess': row.unionExcess, 'Milma Shortage': row.unionShortage,
         'Total Sales Qty': row.milmaTotalQty, 'Total Sales Amt': row.milmaTotalAmt,
         'Profit': row.profit,
       });
@@ -458,7 +460,7 @@ const DairyRegisterReport = () => {
                   <TH colSpan={8} bg="#065f46">Milk Sales</TH>
 
                   {/* Milma / Union */}
-                  <TH colSpan={7} bg={CLR.milma}>Milma / Union Sales</TH>
+                  <TH colSpan={8} bg={CLR.milma}>Milma / Union Sales</TH>
 
                   {/* Profit */}
                   <TH rowSpan={3} bg={CLR.profit} minW={68}>{'Profit\n(₹)'}</TH>
@@ -487,6 +489,7 @@ const DairyRegisterReport = () => {
 
                   {/* Milma sub */}
                   <TH rowSpan={2} bg={CLR.milma} minW={64}>{'Send\nQty'}</TH>
+                  <TH rowSpan={2} bg={CLR.milma} minW={66}>{'Milma\nQty (Ltr)'}</TH>
                   <TH rowSpan={2} bg={CLR.milma} minW={66}>{'Value\n(₹)'}</TH>
                   <TH rowSpan={2} bg={CLR.milma} minW={58} style={{ color: '#fca5a5' }}>{'Spoilage\n(Ltr)'}</TH>
                   <TH rowSpan={2} bg={CLR.milma} minW={50} style={{ color: '#86efac' }}>{'Excess\n(Ltr)'}</TH>

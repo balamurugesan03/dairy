@@ -1325,13 +1325,13 @@ export const getDairyRegisterReport = async (req, res) => {
 
     const start = new Date(startDate); start.setHours(0, 0, 0, 0);
     const end   = new Date(endDate);   end.setHours(23, 59, 59, 999);
-    const companyFilter = req.userCompany ? { companyId: req.userCompany } : {};
+    const companyId = req.companyId;
 
     const SCHOOL_CATS = new Set(['School', 'Anganwadi']);
 
     // ── 1. MilkCollection with farmer membership lookup
     const collectionAgg = await MilkCollection.aggregate([
-      { $match: { ...companyFilter, date: { $gte: start, $lte: end } } },
+      { $match: { companyId, date: { $gte: start, $lte: end } } },
       { $lookup: { from: 'farmers', localField: 'farmer', foreignField: '_id', as: 'farmerDoc' } },
       { $addFields: {
         isMember:  { $ifNull: [{ $arrayElemAt: ['$farmerDoc.isMembership', 0] }, false] },
@@ -1348,7 +1348,7 @@ export const getDairyRegisterReport = async (req, res) => {
 
     // ── 2. MilkSales with customer category lookup
     const salesAgg = await MilkSales.aggregate([
-      { $match: { ...companyFilter, date: { $gte: start, $lte: end } } },
+      { $match: { companyId, date: { $gte: start, $lte: end } } },
       { $lookup: { from: 'customers', localField: 'creditorId', foreignField: '_id', as: 'creditor' } },
       { $addFields: {
         creditorCategory: { $ifNull: [{ $arrayElemAt: ['$creditor.category', 0] }, 'Others'] },
@@ -1364,7 +1364,7 @@ export const getDairyRegisterReport = async (req, res) => {
 
     // ── 3. UnionSalesSlip
     const unionAgg = await UnionSalesSlip.aggregate([
-      { $match: { ...companyFilter, date: { $gte: start, $lte: end } } },
+      { $match: { companyId, date: { $gte: start, $lte: end } } },
       { $group: {
         _id: { dateStr: { $dateToString: { format: '%Y-%m-%d', date: '$date' } }, shift: '$time' },
         sendQty:  { $sum: '$qty' },
@@ -1439,53 +1439,63 @@ export const getDairyRegisterReport = async (req, res) => {
 
     // ── Derive row values from a raw slot
     const deriveRow = (raw) => {
-      const procQty      = raw.memberQty + raw.nonMemberQty;
-      const purchaseAmt  = raw.memberAmt + raw.nonMemberAmt;
-      const totalNos     = raw.memberNos + raw.nonMemberNos;
+      // Milk Purchase
+      const procQty     = raw.memberQty + raw.nonMemberQty;
+      const handQty     = procQty;                                  // Hand.Qty = Proc.Qty (same source)
+      const purchaseAmt = raw.memberAmt + raw.nonMemberAmt;
+      const totalNos    = raw.memberNos + raw.nonMemberNos;
+      const shortage    = 0;                                        // procQty == handQty always
+      const excess      = 0;
 
-      const unionReceived = Math.max(0, raw.unionSendQty - raw.unionSpoilage);
-      const unionExcess   = unionReceived > raw.unionSendQty ? unionReceived - raw.unionSendQty : 0;
-      const unionShortage = raw.unionSendQty > unionReceived ? raw.unionSendQty - unionReceived : 0;
-      const unionTotalQty = unionReceived;
+      // Send = Proc Qty − (Local + Sample + Credit + School)
+      const localDistQty = raw.localQty + raw.sampleQty + raw.creditQty + raw.schoolQty;
+      const unionSendQty = Math.max(0, procQty - localDistQty);    // calculated send to Milma
 
-      const milmaTotalQty = raw.localQty + raw.creditQty + raw.schoolQty + raw.sampleQty + unionTotalQty;
-      const milmaTotalAmt = raw.localAmt + raw.creditAmt + raw.schoolAmt + raw.sampleAmt + raw.unionAmt;
+      // Milma / Union Sales data from Union Sales Slip
+      const milmaQtyLtr  = raw.unionSendQty;                       // actual qty received by Milma
+      const unionAmt     = raw.unionAmt;
+      const unionSpoilage= raw.unionSpoilage;
 
-      const handQty   = milmaTotalQty;
-      const shortage  = procQty > handQty ? procQty - handQty : 0;
-      const excess    = handQty > procQty ? handQty - procQty : 0;
-      const profit    = milmaTotalAmt - purchaseAmt;
+      // Milma shortage/excess: Send vs Milma received
+      const unionExcess   = milmaQtyLtr > unionSendQty ? milmaQtyLtr - unionSendQty : 0;
+      const unionShortage = unionSendQty > milmaQtyLtr ? unionSendQty - milmaQtyLtr : 0;
+
+      // Total Sales Section
+      const milmaTotalQty = procQty;                               // Total Qty = Proc Qty
+      const milmaTotalAmt = raw.localAmt + raw.sampleAmt + raw.creditAmt + raw.schoolAmt + unionAmt;
+
+      const profit = milmaTotalAmt - purchaseAmt;
 
       return {
-        memberNos:      raw.memberNos,
-        memberQty:      raw.memberQty,
-        memberAmt:      raw.memberAmt,
-        nonMemberNos:   raw.nonMemberNos,
-        nonMemberQty:   raw.nonMemberQty,
-        nonMemberAmt:   raw.nonMemberAmt,
+        memberNos:    raw.memberNos,
+        memberQty:    raw.memberQty,
+        memberAmt:    raw.memberAmt,
+        nonMemberNos: raw.nonMemberNos,
+        nonMemberQty: raw.nonMemberQty,
+        nonMemberAmt: raw.nonMemberAmt,
         totalNos,
         procQty,
         handQty,
         purchaseAmt,
         shortage,
         excess,
-        localQty:      raw.localQty,
-        localAmt:      raw.localAmt,
-        creditQty:     raw.creditQty,
-        creditAmt:     raw.creditAmt,
-        schoolQty:     raw.schoolQty,
-        schoolAmt:     raw.schoolAmt,
-        sampleQty:     raw.sampleQty,
-        sampleAmt:     raw.sampleAmt,
-        unionSendQty:  raw.unionSendQty,
-        unionAmt:      raw.unionAmt,
-        unionSpoilage: raw.unionSpoilage,
+        localQty:     raw.localQty,
+        localAmt:     raw.localAmt,
+        creditQty:    raw.creditQty,
+        creditAmt:    raw.creditAmt,
+        schoolQty:    raw.schoolQty,
+        schoolAmt:    raw.schoolAmt,
+        sampleQty:    raw.sampleQty,
+        sampleAmt:    raw.sampleAmt,
+        unionSendQty,                                              // calculated: Proc − local dist
+        milmaQtyLtr,                                               // from union sales slip
+        unionAmt,
+        unionSpoilage,
         unionExcess,
         unionShortage,
-        unionTotalQty,
         milmaTotalQty,
         milmaTotalAmt,
-        profit
+        profit,
       };
     };
 

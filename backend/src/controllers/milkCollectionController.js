@@ -3,6 +3,7 @@ import XLSX from 'xlsx';
 import MilkCollection from '../models/MilkCollection.js';
 import Farmer from '../models/Farmer.js';
 import Voucher from '../models/Voucher.js';
+import MilkSales from '../models/MilkSales.js';
 import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances, findOrCreateLedger } from '../utils/accountingHelper.js';
 
 // ── Auto-post bulk milk purchase to PRODUCERS DUES / MILK PURCHASE ────────────
@@ -591,57 +592,56 @@ export const getFarmerWiseSummary = async (req, res) => {
     const { fromDate, toDate, shift, collectionCenter } = req.query;
 
     const match = { companyId: req.companyId };
-
     if (fromDate || toDate) {
       match.date = {};
       if (fromDate) match.date.$gte = new Date(fromDate);
-      if (toDate) {
-        const to = new Date(toDate);
-        to.setHours(23, 59, 59, 999);
-        match.date.$lte = to;
-      }
+      if (toDate) { const to = new Date(toDate); to.setHours(23, 59, 59, 999); match.date.$lte = to; }
     }
     if (shift)            match.shift            = shift;
     if (collectionCenter) match.collectionCenter = new (await import('mongoose')).default.Types.ObjectId(collectionCenter);
 
     const pipeline = [
       { $match: match },
+      { $lookup: { from: 'farmers', localField: 'farmer', foreignField: '_id', as: 'farmerDoc' } },
+      { $addFields: { isMember: { $ifNull: [{ $arrayElemAt: ['$farmerDoc.isMembership', 0] }, false] } } },
       {
         $group: {
-          _id:          '$farmerNumber',
-          farmerName:   { $first: '$farmerName' },
-          farmerId:     { $first: '$farmer' },
-          totalEntries: { $sum: 1 },
-          amEntries:    { $sum: { $cond: [{ $eq: ['$shift', 'AM'] }, 1, 0] } },
-          pmEntries:    { $sum: { $cond: [{ $eq: ['$shift', 'PM'] }, 1, 0] } },
-          totalQty:     { $sum: '$qty' },
-          avgFat:       { $avg: '$fat' },
-          avgClr:       { $avg: '$clr' },
-          avgSnf:       { $avg: '$snf' },
-          avgRate:      { $avg: '$rate' },
+          _id:            '$farmerNumber',
+          farmerName:     { $first: '$farmerName' },
+          farmerId:       { $first: '$farmer' },
+          isMember:       { $first: '$isMember' },
+          totalEntries:   { $sum: 1 },
+          amEntries:      { $sum: { $cond: [{ $eq: ['$shift', 'AM'] }, 1, 0] } },
+          pmEntries:      { $sum: { $cond: [{ $eq: ['$shift', 'PM'] }, 1, 0] } },
+          totalQty:       { $sum: '$qty' },
+          avgFat:         { $avg: '$fat' },
+          avgClr:         { $avg: '$clr' },
+          avgSnf:         { $avg: '$snf' },
+          avgRate:        { $avg: '$rate' },
           totalIncentive: { $sum: '$incentive' },
-          totalAmount:  { $sum: '$amount' },
+          totalAmount:    { $sum: '$amount' },
         },
       },
       { $sort: { _id: 1 } },
     ];
 
     const rows = await MilkCollection.aggregate(pipeline);
-
+    const f2 = v => parseFloat(Number(v || 0).toFixed(2));
     const result = rows.map(r => ({
-      farmerNumber:   r._id,
+      farmerNo:       r._id,
       farmerName:     r.farmerName   || '',
       farmerId:       r.farmerId,
+      isMember:       r.isMember     || false,
       totalEntries:   r.totalEntries,
       amEntries:      r.amEntries,
       pmEntries:      r.pmEntries,
-      totalQty:       parseFloat(r.totalQty.toFixed(2)),
-      avgFat:         parseFloat(r.avgFat.toFixed(2)),
-      avgClr:         parseFloat(r.avgClr.toFixed(1)),
-      avgSnf:         parseFloat(r.avgSnf.toFixed(2)),
-      avgRate:        parseFloat(r.avgRate.toFixed(2)),
-      totalIncentive: parseFloat(r.totalIncentive.toFixed(2)),
-      totalAmount:    parseFloat(r.totalAmount.toFixed(2)),
+      totalQty:       f2(r.totalQty),
+      avgFat:         f2(r.avgFat),
+      avgClr:         parseFloat(Number(r.avgClr || 0).toFixed(1)),
+      avgSnf:         f2(r.avgSnf),
+      avgRate:        f2(r.avgRate),
+      totalIncentive: f2(r.totalIncentive),
+      totalAmount:    f2(r.totalAmount),
     }));
 
     res.json({ success: true, data: result });
@@ -654,69 +654,100 @@ export const getFarmerWiseSummary = async (req, res) => {
 // ── DATE-WISE SUMMARY ─────────────────────────────────────────────────────────
 export const getDateWiseSummary = async (req, res) => {
   try {
-    const { fromDate, toDate, shift } = req.query;
-    const match = { companyId: req.companyId };
-
-    if (fromDate || toDate) {
-      match.date = {};
-      if (fromDate) match.date.$gte = new Date(fromDate);
-      if (toDate) {
-        const to = new Date(toDate);
-        to.setHours(23, 59, 59, 999);
-        match.date.$lte = to;
-      }
-    }
-    if (shift) match.shift = shift;
-
-    const pipeline = [
-      { $match: match },
-      {
-        $group: {
-          _id: {
-            date:  { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
-            shift: '$shift',
-          },
-          nos:    { $addToSet: '$farmerNumber' },
-          qty:    { $sum: '$qty' },
-          amount: { $sum: '$amount' },
-          fat:    { $avg: '$fat' },
-          snf:    { $avg: '$snf' },
-        },
-      },
-      {
-        $group: {
-          _id:       '$_id.date',
-          amNos:     { $sum: { $cond: [{ $eq: ['$_id.shift','AM'] }, { $size: '$nos' }, 0] } },
-          amQty:     { $sum: { $cond: [{ $eq: ['$_id.shift','AM'] }, '$qty',    0] } },
-          amAmt:     { $sum: { $cond: [{ $eq: ['$_id.shift','AM'] }, '$amount', 0] } },
-          pmNos:     { $sum: { $cond: [{ $eq: ['$_id.shift','PM'] }, { $size: '$nos' }, 0] } },
-          pmQty:     { $sum: { $cond: [{ $eq: ['$_id.shift','PM'] }, '$qty',    0] } },
-          pmAmt:     { $sum: { $cond: [{ $eq: ['$_id.shift','PM'] }, '$amount', 0] } },
-          totalQty:  { $sum: '$qty' },
-          totalAmt:  { $sum: '$amount' },
-        },
-      },
-      { $sort: { _id: 1 } },
-    ];
-
-    const rows = await MilkCollection.aggregate(pipeline);
-
+    const { fromDate, toDate } = req.query;
+    const companyId = req.companyId;
     const f2 = v => +Number(v || 0).toFixed(2);
     const f3 = v => +Number(v || 0).toFixed(3);
 
-    const result = rows.map(r => ({
-      date:        r._id,
-      amNos:       r.amNos    || 0,
-      amQty:       f3(r.amQty),
-      amAmt:       f2(r.amAmt),
-      pmNos:       r.pmNos    || 0,
-      pmQty:       f3(r.pmQty),
-      pmAmt:       f2(r.pmAmt),
-      totalNos:    (r.amNos || 0) + (r.pmNos || 0),
-      totalQty:    f3(r.totalQty),
-      totalAmt:    f2(r.totalAmt),
-      avgRate:     r.totalQty > 0 ? f2(r.totalAmt / r.totalQty) : 0,
-    }));
+    const dateFilter = {};
+    if (fromDate) dateFilter.$gte = new Date(fromDate);
+    if (toDate)   { const t = new Date(toDate); t.setHours(23,59,59,999); dateFilter.$lte = t; }
+    const dateMatch = Object.keys(dateFilter).length ? { date: dateFilter } : {};
+
+    const SCHOOL_CATS = new Set(['School', 'Anganwadi']);
+
+    // 1. Purchase — member/non-member per date
+    const purchaseAgg = await MilkCollection.aggregate([
+      { $match: { companyId, ...dateMatch } },
+      { $lookup: { from: 'farmers', localField: 'farmer', foreignField: '_id', as: 'fd' } },
+      { $addFields: {
+        isMember: { $ifNull: [{ $arrayElemAt: ['$fd.isMembership', 0] }, false] },
+        dateStr:  { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+      }},
+      { $group: {
+        _id:       { dateStr: '$dateStr', isMember: '$isMember' },
+        farmerIds: { $addToSet: '$farmerNumber' },
+        qty:       { $sum: '$qty' },
+        amount:    { $sum: '$amount' },
+      }},
+      { $sort: { '_id.dateStr': 1 } },
+    ]);
+
+    // 2. Sales — local / credit / school / sample per date
+    const salesAgg = await MilkSales.aggregate([
+      { $match: { companyId, ...dateMatch } },
+      { $lookup: { from: 'customers', localField: 'creditorId', foreignField: '_id', as: 'cred' } },
+      { $addFields: {
+        category: { $ifNull: [{ $arrayElemAt: ['$cred.category', 0] }, 'Others'] },
+        dateStr:  { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+      }},
+      { $group: {
+        _id:    { dateStr: '$dateStr', saleMode: '$saleMode', category: '$category' },
+        qty:    { $sum: '$litre' },
+        amount: { $sum: '$amount' },
+      }},
+      { $sort: { '_id.dateStr': 1 } },
+    ]);
+
+    // Build slot map
+    const slotMap = {};
+    const slot = d => {
+      if (!slotMap[d]) slotMap[d] = {
+        memNos: 0, memQty: 0, memAmt: 0,
+        nonMemNos: 0, nonMemQty: 0, nonMemAmt: 0,
+        localQty: 0, localAmt: 0,
+        creditQty: 0, creditAmt: 0,
+        schoolQty: 0, schoolAmt: 0,
+        sampleQty: 0, sampleAmt: 0,
+      };
+      return slotMap[d];
+    };
+
+    for (const c of purchaseAgg) {
+      const s = slot(c._id.dateStr);
+      if (c._id.isMember) {
+        s.memNos += c.farmerIds.length; s.memQty += c.qty; s.memAmt += c.amount;
+      } else {
+        s.nonMemNos += c.farmerIds.length; s.nonMemQty += c.qty; s.nonMemAmt += c.amount;
+      }
+    }
+
+    for (const x of salesAgg) {
+      const s = slot(x._id.dateStr);
+      if      (x._id.saleMode === 'LOCAL')               { s.localQty  += x.qty; s.localAmt  += x.amount; }
+      else if (x._id.saleMode === 'SAMPLE')              { s.sampleQty += x.qty; s.sampleAmt += x.amount; }
+      else if (SCHOOL_CATS.has(x._id.category))         { s.schoolQty += x.qty; s.schoolAmt += x.amount; }
+      else                                               { s.creditQty += x.qty; s.creditAmt += x.amount; }
+    }
+
+    const result = Object.entries(slotMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([dateStr, s]) => {
+        const totalNos = s.memNos + s.nonMemNos;
+        const totalQty = s.memQty + s.nonMemQty;
+        const totalAmt = s.memAmt + s.nonMemAmt;
+        return {
+          date:       dateStr,
+          memNos:     s.memNos,      memQty: f3(s.memQty),    memAmt: f2(s.memAmt),
+          nonMemNos:  s.nonMemNos,   nonMemQty: f3(s.nonMemQty), nonMemAmt: f2(s.nonMemAmt),
+          totalNos,                  totalQty: f3(totalQty),   totalAmt: f2(totalAmt),
+          avgRate: totalQty > 0 ? f2(totalAmt / totalQty) : 0,
+          localQty:  f3(s.localQty),  localAmt:  f2(s.localAmt),
+          creditQty: f3(s.creditQty), creditAmt: f2(s.creditAmt),
+          schoolQty: f3(s.schoolQty), schoolAmt: f2(s.schoolAmt),
+          sampleQty: f3(s.sampleQty), sampleAmt: f2(s.sampleAmt),
+        };
+      });
 
     res.json({ success: true, data: result });
   } catch (err) {

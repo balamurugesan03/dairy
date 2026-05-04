@@ -205,6 +205,9 @@ import milkAnalyzerRoutes from './routes/milkAnalyzerRoutes.js';
 // Machine Config routes
 import machineConfigRoutes from './routes/machineConfigRoutes.js';
 
+// WhatsApp messaging routes
+import whatsappRoutes from './routes/whatsappRoutes.js';
+
 // Society Info & Document Management routes
 import societyInfoRoutes from './routes/societyInfoRoutes.js';
 
@@ -373,6 +376,9 @@ app.use('/api/milk-analyzer', protect, addCompanyFilter, milkAnalyzerRoutes);
 
 // Machine Config routes (analyzer device configuration + start/stop)
 app.use('/api/machine-config', protect, addCompanyFilter, machineConfigRoutes);
+
+// WhatsApp messaging
+app.use('/api/whatsapp', protect, addCompanyFilter, whatsappRoutes);
 
 // Society Info & Document Management routes
 app.use('/api/society-info', protect, addCompanyFilter, societyInfoRoutes);

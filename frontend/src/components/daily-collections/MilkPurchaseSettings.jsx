@@ -49,7 +49,8 @@ import {
   IconCircleCheck,
   IconCircleX,
 } from '@tabler/icons-react';
-import { milkPurchaseSettingsAPI, machineConfigAPI,milmaChartAPI} from '../../services/api';
+import { milkPurchaseSettingsAPI, machineConfigAPI, milmaChartAPI, whatsappAPI } from '../../services/api';
+import { useInterval } from '@mantine/hooks';
 import dayjs from 'dayjs';
 
 // ─── Theme tokens ──────────────────────────────────────────────────────────────
@@ -204,6 +205,50 @@ export default function MilkPurchaseSettings() {
   const [milmaLocked,  setMilmaLocked]  = useState(false);
     const [milmaMasters, setMilmaMasters] = useState([]);
 
+  // ── WhatsApp QR state ──────────────────────────────────────────────────────
+  const [waStatus,      setWaStatus]      = useState({ connected: false, initializing: false, qr: null });
+  const [waConnecting,  setWaConnecting]  = useState(false);
+  const [waDisconnecting, setWaDisconnecting] = useState(false);
+
+  const pollWaStatus = async () => {
+    try {
+      const res = await whatsappAPI.status();
+      if (res?.data) setWaStatus(res.data);
+    } catch { /* silent */ }
+  };
+
+  // poll every 3 s while initializing (waiting for QR scan)
+  const waPoller = useInterval(pollWaStatus, 3000);
+
+  useEffect(() => {
+    if (waStatus.initializing || waStatus.qr) {
+      waPoller.start();
+    } else {
+      waPoller.stop();
+    }
+    return waPoller.stop;
+  }, [waStatus.initializing, waStatus.qr]);
+
+  const handleWaConnect = async () => {
+    setWaConnecting(true);
+    try {
+      await whatsappAPI.connect();
+      pollWaStatus();
+    } catch (err) {
+      notifications.show({ color: 'red', message: err?.message || 'Failed to start WhatsApp client' });
+    } finally { setWaConnecting(false); }
+  };
+
+  const handleWaDisconnect = async () => {
+    setWaDisconnecting(true);
+    try {
+      await whatsappAPI.disconnect();
+      setWaStatus({ connected: false, initializing: false, qr: null });
+    } catch (err) {
+      notifications.show({ color: 'red', message: err?.message || 'Failed to disconnect' });
+    } finally { setWaDisconnecting(false); }
+  };
+
   // ── Analyzer start/stop state ───────────────────────────────────────────────
   const [analyzerRunning,  setAnalyzerRunning]  = useState(false);
   const [analyzerStarting, setAnalyzerStarting] = useState(false);
@@ -212,12 +257,24 @@ export default function MilkPurchaseSettings() {
   const [portsLoading,     setPortsLoading]     = useState(false);
 
   // ── Form state ─────────────────────────────────────────────────────────────
+  const [whatsAppTestPhone, setWhatsAppTestPhone] = useState('');
+  const [whatsAppTesting,   setWhatsAppTesting]   = useState(false);
+
   const [form, setForm] = useState({
     // General purchase settings
     quantityUnit           : 'Litre',
     manualEntryCombination : 'CLR-FAT',
+    manualEntryMode        : 'litre-x-rate',
     activeRateChartType    : 'ApplyFormula',
     printSize              : '3 inch',
+    whatsApp: {
+      enabled        : false,
+      apiType        : 'ultramsg',
+      instanceId     : '',
+      token          : '',
+      apiUrl         : '',
+      messageTemplate: '🐄 Milk Bill\nDate: {date} {shift}\nBill No: {billNo}\nFarmer: {name} ({farmerNo})\nQty: {qty} Ltr\nFat: {fat} | CLR: {clr} | SNF: {snf}\nRate: ₹{rate}/Kg\nAmount: ₹{amount}',
+    },
 
     // Hardware device toggles
     machines: {
@@ -277,10 +334,11 @@ export default function MilkPurchaseSettings() {
   }, []);
 
   useEffect(() => {
-    milkPurchaseSettingsAPI.fixComPorts(); // migrate Linux tty* → Windows COM ports if needed
+    milkPurchaseSettingsAPI.fixComPorts();
     loadSettings();
     loadAnalyzerStatus();
     fetchDynamicPorts();
+    pollWaStatus();
   }, [loadSettings]);
 
    useEffect(() => { loadSettings(); loadAnalyzerStatus(); fetchDynamicPorts(); loadMilmaMasters(); }, [loadSettings]);
@@ -348,8 +406,14 @@ export default function MilkPurchaseSettings() {
       ...prev,
       quantityUnit           : data.quantityUnit            ?? prev.quantityUnit,
       manualEntryCombination : data.manualEntryCombination  ?? prev.manualEntryCombination,
+      manualEntryMode        : data.manualEntryMode         ?? prev.manualEntryMode,
       activeRateChartType    : data.activeRateChartType     ?? prev.activeRateChartType,
       printSize              : data.printSize               ?? prev.printSize,
+      whatsApp: {
+        ...prev.whatsApp,
+        ...(data.whatsApp || {}),
+        messageTemplate: data.whatsApp?.messageTemplate || prev.whatsApp.messageTemplate,
+      },
       machines: {
         ...prev.machines,
         ...(data.machines || {}),
@@ -383,6 +447,20 @@ export default function MilkPurchaseSettings() {
     setForm(prev => ({ ...prev, [section]: { ...prev[section], [field]: value } }));
   const setMachine = (key, value) =>
     setForm(prev => ({ ...prev, machines: { ...prev.machines, [key]: value } }));
+  const setWA = (field, value) =>
+    setForm(prev => ({ ...prev, whatsApp: { ...prev.whatsApp, [field]: value } }));
+
+  const handleTestWhatsApp = async () => {
+    if (!whatsAppTestPhone) { notifications.show({ color: 'red', message: 'Enter a phone number to test' }); return; }
+    setWhatsAppTesting(true);
+    try {
+      const res = await whatsappAPI.test(whatsAppTestPhone);
+      if (res?.success) notifications.show({ color: 'teal', title: 'Test Sent', message: 'WhatsApp test message sent successfully!' });
+      else notifications.show({ color: 'red', title: 'Test Failed', message: res?.message || 'Failed to send test message' });
+    } catch (err) {
+      notifications.show({ color: 'red', title: 'Error', message: err?.message || 'Test failed' });
+    } finally { setWhatsAppTesting(false); }
+  };
 
   // ── Save all settings ──────────────────────────────────────────────────────
   async function handleSave() {
@@ -755,6 +833,38 @@ export default function MilkPurchaseSettings() {
             </SectionCard>
 
             {/* ──────────────────────────────────────
+                Manual Rate Entry Mode (shown when manual-rate sidebar is active)
+            ────────────────────────────────────── */}
+            {activeMenu === 'manual-rate' && (
+              <SectionCard icon={IconPencil} title="Manual Rate Entry Mode" badge="Calculation">
+                <Stack gap="sm">
+                  <FieldLabel>How should amount be calculated during manual entry?</FieldLabel>
+                  <SegmentedControl
+                    data={[
+                      { value: 'litre-x-rate',      label: 'Litre × Rate  →  Amount (auto)' },
+                      { value: 'litre-and-amount',  label: 'Litre & Amount  →  Rate (auto)' },
+                    ]}
+                    value={form.manualEntryMode}
+                    onChange={v => setTop('manualEntryMode', v)}
+                    size="sm"
+                    radius="sm"
+                    color="teal"
+                    fullWidth
+                    styles={{
+                      root : { background: TEAL_LIGHT, border: `1px solid ${TEAL_BORDER}` },
+                      label: { fontSize: 13, fontWeight: 600 },
+                    }}
+                  />
+                  <HintBox>
+                    {form.manualEntryMode === 'litre-x-rate'
+                      ? 'Enter Litre and Rate — Amount is auto-calculated (Litre × Rate)'
+                      : 'Enter Litre and Amount — Rate is auto-calculated (Amount ÷ Litre)'}
+                  </HintBox>
+                </Stack>
+              </SectionCard>
+            )}
+
+            {/* ──────────────────────────────────────
                 ROW 1 — Quantity Settings + Manual Entry Combination
             ────────────────────────────────────── */}
             <Grid gutter="md">
@@ -923,6 +1033,145 @@ export default function MilkPurchaseSettings() {
                 </SectionCard>
               </Grid.Col>
             </Grid>
+
+            {/* ──────────────────────────────────────
+                WhatsApp Integration — QR Scan
+            ────────────────────────────────────── */}
+            <SectionCard icon={IconWifi} title="WhatsApp Bill Messaging" badge="QR Link">
+              <Stack gap="sm">
+
+                {/* Enable toggle */}
+                <Group justify="space-between" align="center">
+                  <Box>
+                    <Text size="sm" fw={600} style={{ color: TITLE_COLOR }}>Enable WhatsApp Bills</Text>
+                    <Text size="xs" style={{ color: TEXT_MUTED }}>Send bill to farmer's WhatsApp after every save</Text>
+                  </Box>
+                  <Switch
+                    checked={form.whatsApp.enabled}
+                    onChange={e => setWA('enabled', e.currentTarget.checked)}
+                    color="teal"
+                    size="md"
+                    thumbIcon={form.whatsApp.enabled ? <IconCheck size={10} color={TEAL} /> : null}
+                  />
+                </Group>
+
+                {form.whatsApp.enabled && (
+                  <Stack gap="sm">
+                    <Divider color={TEAL_BORDER} />
+
+                    {/* Connection status badge */}
+                    <Group gap="xs" align="center">
+                      {waStatus.connected ? (
+                        <Badge color="teal" variant="filled" size="md" leftSection={<IconCircleCheck size={12} />}>
+                          Connected
+                        </Badge>
+                      ) : waStatus.initializing || waStatus.qr ? (
+                        <Badge color="yellow" variant="filled" size="md" leftSection={<Loader size={10} color="white" />}>
+                          Waiting for QR scan…
+                        </Badge>
+                      ) : (
+                        <Badge color="gray" variant="filled" size="md" leftSection={<IconCircleX size={12} />}>
+                          Not Connected
+                        </Badge>
+                      )}
+
+                      {/* Connect / Disconnect buttons */}
+                      {!waStatus.connected && !waStatus.initializing && !waStatus.qr && (
+                        <Button
+                          size="xs" color="teal" radius="sm"
+                          leftSection={<IconPlug size={13} />}
+                          loading={waConnecting}
+                          onClick={handleWaConnect}
+                        >
+                          Connect WhatsApp
+                        </Button>
+                      )}
+                      {waStatus.connected && (
+                        <Button
+                          size="xs" color="red" variant="outline" radius="sm"
+                          leftSection={<IconPlugConnectedX size={13} />}
+                          loading={waDisconnecting}
+                          onClick={handleWaDisconnect}
+                        >
+                          Disconnect
+                        </Button>
+                      )}
+                    </Group>
+
+                    {/* QR Code display */}
+                    {waStatus.qr && (
+                      <Box
+                        p="sm"
+                        style={{
+                          background  : '#f0fdfa',
+                          border      : `1.5px solid ${TEAL_BORDER}`,
+                          borderRadius: 10,
+                          textAlign   : 'center',
+                        }}
+                      >
+                        <Text size="xs" fw={600} style={{ color: TITLE_COLOR, marginBottom: 8 }}>
+                          Scan this QR code with WhatsApp on your phone
+                        </Text>
+                        <Text size="xs" style={{ color: TEXT_MUTED, marginBottom: 10 }}>
+                          Open WhatsApp → ⋮ Menu → Linked Devices → Link a Device
+                        </Text>
+                        <img
+                          src={waStatus.qr}
+                          alt="WhatsApp QR"
+                          style={{ width: 220, height: 220, borderRadius: 8, border: `1px solid ${TEAL_BORDER}` }}
+                        />
+                        <Text size="xs" mt={8} style={{ color: TEXT_MUTED }}>
+                          QR refreshes automatically every 20 seconds
+                        </Text>
+                      </Box>
+                    )}
+
+                    {/* Message template */}
+                    <Box>
+                      <FieldLabel>Message Template</FieldLabel>
+                      <Text size="xs" style={{ color: TEXT_MUTED, marginBottom: 4 }}>
+                        Variables: {'{name}'} {'{farmerNo}'} {'{date}'} {'{shift}'} {'{billNo}'} {'{qty}'} {'{fat}'} {'{clr}'} {'{snf}'} {'{rate}'} {'{amount}'}
+                      </Text>
+                      <textarea
+                        value={form.whatsApp.messageTemplate}
+                        onChange={e => setWA('messageTemplate', e.target.value)}
+                        rows={6}
+                        style={{
+                          width: '100%', borderRadius: 6, fontSize: 12, fontFamily: 'monospace',
+                          padding: '8px', border: `1px solid ${TEAL_BORDER}`, resize: 'vertical',
+                          outline: 'none', lineHeight: 1.6,
+                        }}
+                      />
+                    </Box>
+
+                    {/* Test message (only when connected) */}
+                    {waStatus.connected && (
+                      <>
+                        <Divider color={TEAL_BORDER} label="Test Connection" labelPosition="left" />
+                        <Group gap="sm">
+                          <TextInput
+                            placeholder="91XXXXXXXXXX"
+                            value={whatsAppTestPhone}
+                            onChange={e => setWhatsAppTestPhone(e.target.value)}
+                            size="sm" radius="sm"
+                            styles={{ input: { borderColor: TEAL_BORDER, fontSize: 13 } }}
+                            style={{ flex: 1 }}
+                          />
+                          <Button
+                            size="sm" color="teal" radius="sm"
+                            loading={whatsAppTesting}
+                            onClick={handleTestWhatsApp}
+                            leftSection={<IconWifi size={14} />}
+                          >
+                            Send Test
+                          </Button>
+                        </Group>
+                      </>
+                    )}
+                  </Stack>
+                )}
+              </Stack>
+            </SectionCard>
 
             {/* ──────────────────────────────────────
                 SECTION DIVIDER — Hardware Configuration
