@@ -252,6 +252,7 @@ const MilkPurchase = () => {
   const [importProgress, setImportProgress] = useState(0);    // 0-100
   const [importResult,   setImportResult]   = useState(null); // { inserted, skipped, total, message }
   const [importUploading,setImportUploading]= useState(false);
+  const [formEnabled,    setFormEnabled]    = useState(false); // true only after OK is clicked
   const importFileRef = useRef(null);
 
   const memberRef   = useRef(null);
@@ -695,7 +696,7 @@ const MilkPurchase = () => {
   const loadTodayEntries = async (d, sh, ct) => {
     setLoadingEntries(true);
     try {
-      const res = await milkCollectionAPI.getAll({ date: toDate(d).toISOString().slice(0, 10), limit: 500 });
+      const res = await milkCollectionAPI.getAll({ date: toDate(d).toISOString().slice(0, 10), shift: sh, limit: 500 });
       const records = res?.data || [];
       setEntries(sortByProducerNo(records.map(r => {
         return {
@@ -761,7 +762,6 @@ const MilkPurchase = () => {
         const chartType = settingsRes?.data?.activeRateChartType || 'ApplyFormula';
         setActiveChart(chartType);
         await loadChartData(chartType);
-        await loadTodayEntries(new Date(), 'AM', firstCenter);
 
         // Sync parameter combo + quantity unit from settings
         if (settingsRes?.data?.manualEntryCombination) setParamCombo(settingsRes.data.manualEntryCombination);
@@ -1036,7 +1036,8 @@ const MilkPurchase = () => {
     }
 
     setProducer(base);
-    setMemberInput(farmer.memberId || farmer.farmerNumber);
+    // Show memberId (cooperative membership number) when available, else keep farmerNumber
+    setMemberInput(farmer.memberId != null && String(farmer.memberId).trim() !== '' ? String(farmer.memberId) : farmer.farmerNumber);
     setShowDropdown(false);
     setTimeout(() => ltrRef.current?.focus({ preventScroll: true }), 50);
     try {
@@ -1368,7 +1369,12 @@ const MilkPurchase = () => {
             />
           </Group>
           <Button
-            onClick={() => { setMonthMode(false); loadTodayEntries(date, shift, center); }}
+            onClick={async () => {
+              setMonthMode(false);
+              setFormEnabled(false);
+              await loadTodayEntries(date, shift, center);
+              setFormEnabled(true);
+            }}
             size="sm" radius="md" color="blue" variant="filled"
             style={{ fontWeight: 700 }}
           >
@@ -1410,7 +1416,15 @@ const MilkPurchase = () => {
           </Box>
         )}
 
-        <Group gap={12} align="stretch" wrap="nowrap" style={{ pointerEvents: dupBlocked ? 'none' : 'all', opacity: dupBlocked ? 0.45 : 1, transition: 'opacity 0.2s' }}>
+        {/* Form cards: locked until OK is clicked for the selected date + shift */}
+        {!formEnabled && (
+          <Box style={{ background: '#eff6ff', border: '1.5px dashed #93c5fd', borderRadius: 8, padding: '6px 14px', marginBottom: 6 }}>
+            <Text size="11px" fw={700} c="#1e40af" ta="center">
+              Select date &amp; shift above, then click <b>OK</b> to load entries and activate the entry form.
+            </Text>
+          </Box>
+        )}
+        <Group gap={12} align="stretch" wrap="nowrap" style={{ pointerEvents: (dupBlocked || !formEnabled) ? 'none' : 'all', opacity: dupBlocked ? 0.45 : (!formEnabled ? 0.35 : 1), transition: 'opacity 0.2s' }}>
 
           {/* ── CARD 1: Bill Information ── */}
           <Card shadow="xs" radius="lg" withBorder style={{ flex: '0 0 280px', borderColor: '#bfdbfe', borderTop: '3px solid #2563eb', padding: '8px 12px' }}>
@@ -1784,7 +1798,7 @@ const MilkPurchase = () => {
                 {monthMode && (
                   <Button
                     size="xs" radius="md"
-                    onClick={() => { setMonthMode(false); loadTodayEntries(date, shift, center); }}
+                    onClick={async () => { setMonthMode(false); setFormEnabled(false); await loadTodayEntries(date, shift, center); setFormEnabled(true); }}
                     style={{ height: 24, padding: '0 8px', fontSize: 10, fontWeight: 700, background: 'rgba(255,255,255,0.08)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}
                   >
                     Today
@@ -1858,7 +1872,7 @@ const MilkPurchase = () => {
               </Button>
 
               {/* REFRESH */}
-              <Button leftSection={<IconRefresh size={12} />} onClick={() => loadTodayEntries(date, shift, center)}
+              <Button leftSection={<IconRefresh size={12} />} onClick={async () => { setFormEnabled(false); await loadTodayEntries(date, shift, center); setFormEnabled(true); }}
                 size="compact-xs" radius="sm"
                 style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Refresh

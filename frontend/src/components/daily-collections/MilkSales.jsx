@@ -247,16 +247,17 @@ export default function MilkSales() {
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
     loadDropdowns();
-    loadByDate(new Date());
+    loadByDate(new Date(), session);
     fetchNextBillNo();
   }, []);
 
-  // Reload table whenever date or session changes
+  // Reload table whenever date or session changes — pass session explicitly so the
+  // API filters to only the selected shift (not both AM + PM for the date)
   useEffect(() => {
     const d = toDate(date);
     setFilterMonth(String(d.getMonth() + 1));
     setFilterYear(String(d.getFullYear()));
-    loadByDate(d);
+    loadByDate(d, session);
   }, [date, session]); // eslint-disable-line
 
   const fetchNextBillNo = async () => {
@@ -288,13 +289,14 @@ export default function MilkSales() {
     } catch { /* silent */ }
   };
 
-  // Load entries for a specific date (default view)
-  const loadByDate = async (d) => {
+  // Load entries for a specific date + session (default view)
+  const loadByDate = async (d, ses) => {
     setLoading(true);
     setMonthMode(false);
     try {
       const dateStr = toDate(d).toISOString().slice(0, 10);
-      const res = await milkSalesAPI.getAll({ date: dateStr, limit: 500 });
+      const currentSession = ses ?? formRef.current.session;
+      const res = await milkSalesAPI.getAll({ date: dateStr, session: currentSession, limit: 500 });
       setEntries(res?.data || []);
     } catch { setEntries([]); }
     finally { setLoading(false); }
@@ -748,7 +750,7 @@ export default function MilkSales() {
                 {monthMode && (
                   <Button
                     size="xs" radius="md"
-                    onClick={() => loadByDate(toDate(date))}
+                    onClick={() => loadByDate(toDate(date), session)}
                     style={{ height: 26, padding: '0 8px', fontSize: 10, fontWeight: 700, background: 'rgba(255,255,255,0.08)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}
                   >
                     Today
