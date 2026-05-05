@@ -211,18 +211,23 @@ export const lookupRate = async (req, res) => {
     }
 
     let detail;
+    // Round to chart precision: FAT/SNF to 1 decimal, CLR to nearest integer
+    const fatR = Math.round(Number(fat) * 10) / 10;
+    const clrR = Math.round(Number(clr));
+    const snfR = Math.round(Number(snf) * 10) / 10;
+
     if (mode === 'FAT-CLR') {
       // CLR-FAT combination: lookup by fat+clr → return snf+rate
       detail = await MilmaChartDetail.findOne({
         companyId: req.companyId,
         chartId:   master.chartId,
-        fat:       Number(fat),
-        clr:       Number(clr),
+        fat:       fatR,
+        clr:       clrR,
       });
       if (!detail) {
         return res.status(404).json({
           success: false,
-          message: `No rate found for FAT=${fat}, CLR=${clr} in chart ${master.chartId}`,
+          message: `No rate found for FAT=${fatR}, CLR=${clrR} in chart ${master.chartId}`,
           chartId: master.chartId,
           dateFrom: master.dateFrom,
         });
@@ -242,13 +247,13 @@ export const lookupRate = async (req, res) => {
       detail = await MilmaChartDetail.findOne({
         companyId: req.companyId,
         chartId:   master.chartId,
-        fat:       Number(fat),
-        snf:       Number(snf),
+        fat:       fatR,
+        snf:       snfR,
       });
       if (!detail) {
         return res.status(404).json({
           success: false,
-          message: `No rate found for FAT=${fat}, SNF=${snf} in chart ${master.chartId}`,
+          message: `No rate found for FAT=${fatR}, SNF=${snfR} in chart ${master.chartId}`,
           chartId: master.chartId,
           dateFrom: master.dateFrom,
         });

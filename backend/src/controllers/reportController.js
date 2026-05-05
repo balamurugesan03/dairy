@@ -1093,10 +1093,11 @@ export const getDairyAbstractReport = async (req, res) => {
     const companyFilter = req.userCompany ? { companyId: req.userCompany } : {};
 
     // ── 1. Milk Purchase (MilkCollection) grouped by month
+    //       Proc.Qty = sum of all farmer qty (member + non-member)
     const purchaseAgg = await MilkCollection.aggregate([
       { $match: { ...companyFilter, date: { $gte: start, $lte: end } } },
       { $group: {
-        _id: { year: { $year: '$date' }, month: { $month: '$date' } },
+        _id:    { year: { $year: '$date' }, month: { $month: '$date' } },
         qty:    { $sum: '$qty' },
         amount: { $sum: '$amount' },
         days:   { $addToSet: { $dateToString: { format: '%Y-%m-%d', date: '$date' } } }
@@ -1104,26 +1105,16 @@ export const getDairyAbstractReport = async (req, res) => {
       { $sort: { '_id.year': 1, '_id.month': 1 } }
     ]);
 
-    // ── 2. Local Sales (saleMode=LOCAL) grouped by month
-    const localAgg = await MilkSales.aggregate([
-      { $match: { ...companyFilter, date: { $gte: start, $lte: end }, saleMode: 'LOCAL' } },
-      { $group: {
-        _id: { year: { $year: '$date' }, month: { $month: '$date' } },
-        qty:    { $sum: '$litre' },
-        amount: { $sum: '$amount' }
-      }},
-      { $sort: { '_id.year': 1, '_id.month': 1 } }
-    ]);
-
-    // ── 3. Credit Sales with Customer category lookup, grouped by month + category
-    const creditAgg = await MilkSales.aggregate([
-      { $match: { ...companyFilter, date: { $gte: start, $lte: end }, saleMode: 'CREDIT' } },
+    // ── 2. All Milk Sales — unified aggregation (LOCAL + CREDIT + SAMPLE)
+    //       Routed by saleMode first, then by customer category (like Dairy Register)
+    const salesAgg = await MilkSales.aggregate([
+      { $match: { ...companyFilter, date: { $gte: start, $lte: end } } },
       { $lookup: { from: 'customers', localField: 'creditorId', foreignField: '_id', as: 'creditor' } },
       { $addFields: { creditorCategory: { $ifNull: [{ $arrayElemAt: ['$creditor.category', 0] }, 'Others'] } } },
       { $group: {
         _id: {
           year: { $year: '$date' }, month: { $month: '$date' },
-          category: '$creditorCategory'
+          saleMode: '$saleMode', category: '$creditorCategory'
         },
         qty:    { $sum: '$litre' },
         amount: { $sum: '$amount' }
@@ -1131,12 +1122,13 @@ export const getDairyAbstractReport = async (req, res) => {
       { $sort: { '_id.year': 1, '_id.month': 1 } }
     ]);
 
-    // ── 4. Union Sales (UnionSalesSlip) grouped by month
+    // ── 3. Union Sales (UnionSalesSlip) grouped by month
+    //       UnionSalesSlip.qty = actual qty received by Milma (milmaQtyLtr)
     const unionAgg = await UnionSalesSlip.aggregate([
       { $match: { ...companyFilter, date: { $gte: start, $lte: end } } },
       { $group: {
-        _id: { year: { $year: '$date' }, month: { $month: '$date' } },
-        sendQty:  { $sum: '$qty' },
+        _id:      { year: { $year: '$date' }, month: { $month: '$date' } },
+        milmaQty: { $sum: '$qty' },
         spoilage: { $sum: { $add: ['$unionSpoilage', '$transportationSpoilage'] } },
         amount:   { $sum: '$amount' },
         rateSum:  { $sum: { $multiply: ['$qty', '$rate'] } }
@@ -1146,7 +1138,6 @@ export const getDairyAbstractReport = async (req, res) => {
 
     // ── Build month map
     const SCHOOL_CATS = new Set(['School', 'Anganwadi']);
-    const SAMPLE_CATS = new Set(['Sample']);
     const monthMap = {};
 
     const getM = (year, month) => {
@@ -1160,7 +1151,7 @@ export const getDairyAbstractReport = async (req, res) => {
           creditSales: { qty: 0, amount: 0 },
           schoolSales: { qty: 0, amount: 0 },
           sampleSales: { qty: 0, amount: 0 },
-          union:       { sendQty: 0, spoilage: 0, amount: 0, rateSum: 0 }
+          union:       { milmaQty: 0, spoilage: 0, amount: 0, rateSum: 0 }
         };
       }
       return monthMap[key];
@@ -1168,26 +1159,25 @@ export const getDairyAbstractReport = async (req, res) => {
 
     for (const p of purchaseAgg) {
       const m = getM(p._id.year, p._id.month);
-      m.purchase.qty    = p.qty;
-      m.purchase.amount = p.amount;
-      m.collectionDays  = p.days.length;
+      m.purchase.qty   = p.qty;
+      m.purchase.amount= p.amount;
+      m.collectionDays = p.days.length;
     }
 
-    for (const s of localAgg) {
+    // Route sales by saleMode first, then customer category (mirrors deriveRow in Register)
+    for (const s of salesAgg) {
       const m = getM(s._id.year, s._id.month);
-      m.localSales.qty    += s.qty;
-      m.localSales.amount += s.amount;
-    }
-
-    for (const s of creditAgg) {
-      const m = getM(s._id.year, s._id.month);
-      if (SCHOOL_CATS.has(s._id.category)) {
-        m.schoolSales.qty    += s.qty;
-        m.schoolSales.amount += s.amount;
-      } else if (SAMPLE_CATS.has(s._id.category)) {
+      if (s._id.saleMode === 'LOCAL') {
+        m.localSales.qty    += s.qty;
+        m.localSales.amount += s.amount;
+      } else if (s._id.saleMode === 'SAMPLE') {
         m.sampleSales.qty    += s.qty;
         m.sampleSales.amount += s.amount;
+      } else if (SCHOOL_CATS.has(s._id.category)) {
+        m.schoolSales.qty    += s.qty;
+        m.schoolSales.amount += s.amount;
       } else {
+        // All other CREDIT sales
         m.creditSales.qty    += s.qty;
         m.creditSales.amount += s.amount;
       }
@@ -1195,52 +1185,66 @@ export const getDairyAbstractReport = async (req, res) => {
 
     for (const u of unionAgg) {
       const m = getM(u._id.year, u._id.month);
-      m.union.sendQty  = u.sendQty;
+      m.union.milmaQty = u.milmaQty;   // actual qty received by Milma
       m.union.spoilage = u.spoilage;
       m.union.amount   = u.amount;
       m.union.rateSum  = u.rateSum;
     }
 
-    // ── Derive values per month
+    // ── Derive values per month (same logic as Dairy Register deriveRow)
+    const avg = (amt, qty) => qty > 0 ? amt / qty : 0;
+
     const months = Object.values(monthMap)
       .sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month)
       .map(m => {
-        const unionReceived = Math.max(0, m.union.sendQty - m.union.spoilage);
-        const unionShortage = m.union.sendQty > unionReceived ? m.union.sendQty - unionReceived : 0;
-        const unionExcess   = unionReceived > m.union.sendQty ? unionReceived - m.union.sendQty : 0;
+        // Purchase: Proc.Qty = Hand.Qty = total from MilkCollection
+        const procQty     = m.purchase.qty;
+        const handQty     = procQty;   // same source → no shortage/excess at purchase level
+        const purchShortage = 0;
+        const purchExcess   = 0;
 
-        const totalSalesQty    = m.localSales.qty + m.creditSales.qty + m.schoolSales.qty + m.sampleSales.qty + unionReceived;
-        const totalSalesAmount = m.localSales.amount + m.creditSales.amount + m.schoolSales.amount + m.sampleSales.amount + m.union.amount;
+        // Send Qty = Proc Qty − (Local + Sample + Credit + School qty)
+        const localDistQty = m.localSales.qty + m.sampleSales.qty + m.creditSales.qty + m.schoolSales.qty;
+        const sendQty      = Math.max(0, procQty - localDistQty);
 
-        const handledQty      = totalSalesQty;
-        const diff            = m.purchase.qty - handledQty;
-        const purchShortage   = diff > 0 ? diff : 0;
-        const purchExcess     = diff < 0 ? Math.abs(diff) : 0;
-        const profit          = totalSalesAmount - m.purchase.amount;
+        // Milma Qty Ltr = from UnionSalesSlip (actual received by Milma)
+        const milmaQtyLtr   = m.union.milmaQty;
+        const unionSpoilage = m.union.spoilage;
+        const unionAmt      = m.union.amount;
 
-        const avg = (amt, qty) => qty > 0 ? amt / qty : 0;
+        // Union shortage/excess: calculated Send vs actual Milma qty
+        const unionExcess   = milmaQtyLtr > sendQty ? milmaQtyLtr - sendQty : 0;
+        const unionShortage = sendQty > milmaQtyLtr ? sendQty - milmaQtyLtr : 0;
+
+        // Sales Total: Qty = Proc Qty; Value = all sales combined
+        const totalSalesQty    = procQty;
+        const totalSalesAmount = m.localSales.amount + m.sampleSales.amount +
+                                  m.creditSales.amount + m.schoolSales.amount + unionAmt;
+
+        // Profit = Total Sales Value − Total Purchase Value
+        const profit = totalSalesAmount - m.purchase.amount;
 
         return {
           year: m.year, month: m.month, key: m.key,
           collectionDays: m.collectionDays,
           purchase: {
-            qty: m.purchase.qty,
-            avgRate: avg(m.purchase.amount, m.purchase.qty),
-            value: m.purchase.amount,
-            shortage: purchShortage,
-            excess:   purchExcess,
-            handledQty
+            qty:        procQty,
+            avgRate:    avg(m.purchase.amount, procQty),
+            value:      m.purchase.amount,
+            shortage:   purchShortage,
+            excess:     purchExcess,
+            handledQty: handQty
           },
           localSales:  { qty: m.localSales.qty,  avgRate: avg(m.localSales.amount,  m.localSales.qty),  value: m.localSales.amount },
           creditSales: { qty: m.creditSales.qty, avgRate: avg(m.creditSales.amount, m.creditSales.qty), value: m.creditSales.amount },
           schoolSales: { qty: m.schoolSales.qty, avgRate: avg(m.schoolSales.amount, m.schoolSales.qty), value: m.schoolSales.amount },
           sampleSales: { qty: m.sampleSales.qty, avgRate: avg(m.sampleSales.amount, m.sampleSales.qty), value: m.sampleSales.amount },
           union: {
-            sendQty:     m.union.sendQty,
-            receivedQty: unionReceived,
-            avgRate:     avg(m.union.rateSum, m.union.sendQty),
-            value:       m.union.amount,
-            spoilage:    m.union.spoilage,
+            sendQty:     sendQty,       // calculated: Proc − local distribution
+            receivedQty: milmaQtyLtr,   // from UnionSalesSlip = actual Milma qty
+            avgRate:     avg(m.union.rateSum, milmaQtyLtr || sendQty),
+            value:       unionAmt,
+            spoilage:    unionSpoilage,
             excess:      unionExcess,
             shortage:    unionShortage
           },
@@ -1265,38 +1269,37 @@ export const getDairyAbstractReport = async (req, res) => {
     };
 
     for (const m of months) {
-      gt.collectionDays     += m.collectionDays;
-      gt.purchase.qty       += m.purchase.qty;
-      gt.purchase.value     += m.purchase.value;
-      gt.purchase.shortage  += m.purchase.shortage;
-      gt.purchase.excess    += m.purchase.excess;
-      gt.purchase.handledQty+= m.purchase.handledQty;
-      gt.localSales.qty     += m.localSales.qty;
-      gt.localSales.value   += m.localSales.value;
-      gt.creditSales.qty    += m.creditSales.qty;
-      gt.creditSales.value  += m.creditSales.value;
-      gt.schoolSales.qty    += m.schoolSales.qty;
-      gt.schoolSales.value  += m.schoolSales.value;
-      gt.sampleSales.qty    += m.sampleSales.qty;
-      gt.sampleSales.value  += m.sampleSales.value;
-      gt.union.sendQty      += m.union.sendQty;
-      gt.union.receivedQty  += m.union.receivedQty;
-      gt.union.value        += m.union.value;
-      gt.union.spoilage     += m.union.spoilage;
-      gt.union.excess       += m.union.excess;
-      gt.union.shortage     += m.union.shortage;
-      gt.salesTotal.qty     += m.salesTotal.qty;
-      gt.salesTotal.value   += m.salesTotal.value;
-      gt.profit             += m.profit;
+      gt.collectionDays      += m.collectionDays;
+      gt.purchase.qty        += m.purchase.qty;
+      gt.purchase.value      += m.purchase.value;
+      gt.purchase.shortage   += m.purchase.shortage;
+      gt.purchase.excess     += m.purchase.excess;
+      gt.purchase.handledQty += m.purchase.handledQty;
+      gt.localSales.qty      += m.localSales.qty;
+      gt.localSales.value    += m.localSales.value;
+      gt.creditSales.qty     += m.creditSales.qty;
+      gt.creditSales.value   += m.creditSales.value;
+      gt.schoolSales.qty     += m.schoolSales.qty;
+      gt.schoolSales.value   += m.schoolSales.value;
+      gt.sampleSales.qty     += m.sampleSales.qty;
+      gt.sampleSales.value   += m.sampleSales.value;
+      gt.union.sendQty       += m.union.sendQty;
+      gt.union.receivedQty   += m.union.receivedQty;
+      gt.union.value         += m.union.value;
+      gt.union.spoilage      += m.union.spoilage;
+      gt.union.excess        += m.union.excess;
+      gt.union.shortage      += m.union.shortage;
+      gt.salesTotal.qty      += m.salesTotal.qty;
+      gt.salesTotal.value    += m.salesTotal.value;
+      gt.profit              += m.profit;
     }
 
-    const avg = (amt, qty) => qty > 0 ? amt / qty : 0;
     gt.purchase.avgRate    = avg(gt.purchase.value,    gt.purchase.qty);
     gt.localSales.avgRate  = avg(gt.localSales.value,  gt.localSales.qty);
     gt.creditSales.avgRate = avg(gt.creditSales.value, gt.creditSales.qty);
     gt.schoolSales.avgRate = avg(gt.schoolSales.value, gt.schoolSales.qty);
     gt.sampleSales.avgRate = avg(gt.sampleSales.value, gt.sampleSales.qty);
-    gt.union.avgRate       = avg(gt.union.value,       gt.union.sendQty);
+    gt.union.avgRate       = avg(gt.union.value,       gt.union.receivedQty || gt.union.sendQty);
     gt.salesTotal.avgRate  = avg(gt.salesTotal.value,  gt.salesTotal.qty);
 
     const summary = {

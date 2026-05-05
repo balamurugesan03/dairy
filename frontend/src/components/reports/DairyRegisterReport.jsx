@@ -387,9 +387,25 @@ const DairyRegisterReport = () => {
                   title: `Dairy Register — ${periodLabel}`,
                   orientation: 'landscape',
                   extraCss: `
-                    table { font-size: 7px !important; border-collapse: collapse !important; }
-                    th, td { padding: 2px 3px !important; }
-                    .no-print { display: none !important; }
+                    @page { size: A4 landscape; margin: 5mm; }
+                    body { width: 287mm; }
+                    table {
+                      font-size: 6px !important;
+                      border-collapse: collapse !important;
+                      width: 100% !important;
+                      table-layout: auto !important;
+                    }
+                    th, td {
+                      padding: 1px 2px !important;
+                      min-width: 0 !important;
+                      font-size: 6px !important;
+                      white-space: nowrap !important;
+                    }
+                    td[colspan="30"] {
+                      font-size: 8px !important;
+                      padding: 3px 6px !important;
+                      white-space: normal !important;
+                    }
                   `
                 })}
               >

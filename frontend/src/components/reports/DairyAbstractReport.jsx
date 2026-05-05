@@ -242,15 +242,17 @@ const buildPrintHtml = (reportData, dateRange, companyName) => {
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:Arial,Helvetica,sans-serif;font-size:9px;color:#111;background:#fff;
-         -webkit-print-color-adjust:exact;print-color-adjust:exact;padding:6mm;}
-    .header{text-align:center;border-bottom:2px solid #0d6b5e;padding-bottom:8px;margin-bottom:10px;}
-    .co-name{font-size:16px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:#0d6b5e;}
-    .rpt-title{font-size:11px;font-weight:700;margin-top:3px;text-transform:uppercase;letter-spacing:1px;}
-    .rpt-meta{font-size:8.5px;color:#555;margin-top:3px;}
-    .tbl-wrap{overflow-x:auto;}
-    table{border-collapse:collapse;width:100%;}
-    th,td{border:1px solid #ccc;vertical-align:middle;}
-    @page{size:A4 landscape;margin:6mm;}
+         -webkit-print-color-adjust:exact;print-color-adjust:exact;padding:3mm;width:287mm;}
+    .header{text-align:center;border-bottom:2px solid #0d6b5e;padding-bottom:5px;margin-bottom:7px;}
+    .co-name{font-size:14px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:#0d6b5e;}
+    .rpt-title{font-size:10px;font-weight:700;margin-top:2px;text-transform:uppercase;letter-spacing:1px;}
+    .rpt-meta{font-size:7.5px;color:#555;margin-top:2px;}
+    .tbl-wrap{overflow:visible;}
+    table{border-collapse:collapse !important;width:100% !important;table-layout:auto !important;}
+    th,td{border:1px solid #aaa !important;vertical-align:middle !important;
+          font-size:5.5px !important;padding:1px 2px !important;min-width:0 !important;}
+    *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;}
+    @page{size:A4 landscape;margin:5mm;}
     @media print{body{padding:0;}}
   </style>
 </head>

@@ -248,15 +248,17 @@ export const getSettingsSummary = async (req, res) => {
   try {
     const settings = await MilkPurchaseSettings
       .findOne({ companyId: req.companyId })
-      .select('quantityUnit manualEntryCombination activeRateChartType printSize machines milkAnalyzerConfig -_id');
+      .select('quantityUnit manualEntryCombination activeRateChartType printSize machines milkAnalyzerConfig manualEntryMode whatsApp -_id');
 
     const data = settings || {
       quantityUnit           : DEFAULTS.quantityUnit,
       manualEntryCombination : DEFAULTS.manualEntryCombination,
       activeRateChartType    : DEFAULTS.activeRateChartType,
+      manualEntryMode        : DEFAULTS.manualEntryMode,
       printSize              : DEFAULTS.printSize,
       machines               : DEFAULTS.machines,
       milkAnalyzerConfig     : DEFAULTS.milkAnalyzerConfig,
+      whatsApp               : DEFAULTS.whatsApp,
     };
 
     res.json({ success: true, data });

@@ -695,7 +695,7 @@ const MilkPurchase = () => {
   const loadTodayEntries = async (d, sh, ct) => {
     setLoadingEntries(true);
     try {
-      const res = await milkCollectionAPI.getAll({ date: toDate(d).toISOString().slice(0, 10), collectionCenter: ct || undefined, limit: 500 });
+      const res = await milkCollectionAPI.getAll({ date: toDate(d).toISOString().slice(0, 10), limit: 500 });
       const records = res?.data || [];
       setEntries(sortByProducerNo(records.map(r => {
         return {
@@ -705,6 +705,7 @@ const MilkPurchase = () => {
           clr: r.clr, fat: r.fat, snf: r.snf,
           incentive: r.incentive, rate: r.rate, amount: r.amount,
           addedWater: r.addedWater || 0,
+          date: r.date, shift: r.shift,
         };
       })));
     } catch { setEntries([]); }
@@ -766,9 +767,14 @@ const MilkPurchase = () => {
         if (settingsRes?.data?.manualEntryCombination) setParamCombo(settingsRes.data.manualEntryCombination);
         if (settingsRes?.data?.quantityUnit)           setQtyUnit(settingsRes.data.quantityUnit);
 
-        // Apply manual entry mode from settings
-        if (settingsRes?.data?.manualEntryMode === 'litre-and-amount') setEntryMode('amount');
-        else if (settingsRes?.data?.manualEntryMode === 'litre-x-rate') setEntryMode('rate');
+        // Apply manual entry mode from settings.
+        // MilmaChart always uses auto-chart mode so the looked-up rate is shown read-only.
+        if (chartType === 'MilmaChart') {
+          setEntryMode('chart');
+        } else {
+          if (settingsRes?.data?.manualEntryMode === 'litre-and-amount') setEntryMode('amount');
+          else if (settingsRes?.data?.manualEntryMode === 'litre-x-rate') setEntryMode('rate');
+        }
 
         // Store WhatsApp settings for use during save; fill default template if empty
         if (settingsRes?.data?.whatsApp) {
@@ -821,7 +827,7 @@ const MilkPurchase = () => {
       const found = centersData.find(c => c.value === center);
       if (found) centerNameRef.current = found.label;
     }
-  }, [date, center]); // eslint-disable-line
+  }, [date, shift, center]); // eslint-disable-line
 
   // Load milk sales summary for the day
   useEffect(() => {
@@ -1002,9 +1008,10 @@ const MilkPurchase = () => {
     return () => document.removeEventListener('keydown', block, true);
   }, [dupBlocked]);
 
-  // Search debounce
+  // Search debounce — skip live dropdown when input is purely numeric (farmer number)
   useEffect(() => {
     if (memberInput.trim().length < 2) { setSearchResults([]); setShowDropdown(false); return; }
+    if (/^\d+$/.test(memberInput.trim())) { setSearchResults([]); setShowDropdown(false); return; }
     const t = setTimeout(async () => {
       setSearchLoading(true);
       try {
@@ -1088,7 +1095,7 @@ const MilkPurchase = () => {
         // CREATE new entry
         const res = await milkCollectionAPI.create(payload);
         const saved = res.data;
-        const newEntry = { id: saved._id, billNo: saved.billNo, producerNo: saved.farmerNumber, producerName: saved.farmerName || p.name, qty: saved.qty, ltr: saved.ltr ?? netLtr, clr: saved.clr, fat: saved.fat, snf: saved.snf, incentive: saved.incentive, rate: saved.rate, amount: saved.amount, addedWater: saved.addedWater || 0 };
+        const newEntry = { id: saved._id, billNo: saved.billNo, producerNo: saved.farmerNumber, producerName: saved.farmerName || p.name, qty: saved.qty, ltr: saved.ltr ?? netLtr, clr: saved.clr, fat: saved.fat, snf: saved.snf, incentive: saved.incentive, rate: saved.rate, amount: saved.amount, addedWater: saved.addedWater || 0, date: saved.date, shift: saved.shift };
         setBillNo(saved.billNo);
         setEntries(prev => sortByProducerNo([...prev, { ...newEntry, sl: 0 }]));
         tableScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1200,7 +1207,7 @@ const MilkPurchase = () => {
       setImportProgress(100);
       setImportResult(res?.data ?? { message: res?.message });
       notifications.show({ color: 'teal', message: res?.message || 'Import complete', autoClose: 5000 });
-      loadTodayEntries(date, shift, center);
+      loadMonthEntries(filterMonth, filterYear);
     } catch (err) {
       notifications.show({ color: 'red', title: 'Import failed', message: err?.message || 'Upload error', autoClose: 6000 });
     } finally {
@@ -1223,7 +1230,7 @@ const MilkPurchase = () => {
       message: `${totalInserted} imported${totalSkipped ? `, ${totalSkipped} skipped` : ''}`,
       autoClose: 4000
     });
-    loadTodayEntries(date, shift, center);
+    loadMonthEntries(filterMonth, filterYear);
   };
 
   // ── Keyboard ──────────────────────────────────────────────────────────────
@@ -1234,7 +1241,14 @@ const MilkPurchase = () => {
     }
   };
   const focusNext = (ref) => (e) => { if (e.key === 'Enter') { e.preventDefault(); ref.current?.focus(); } };
-  const onLastEnter = (e) => { if (e.key === 'Enter') { e.preventDefault(); handleSave(); } };
+  const onLastEnter = (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const em = formRef.current.entryMode;
+    if (em === 'rate')   { manualRateRef.current?.focus();   return; }
+    if (em === 'amount') { manualAmountRef.current?.focus(); return; }
+    handleSave();
+  };
 
   // Filtered entries for history search
   const filteredEntries = historySearch.trim()
@@ -1354,10 +1368,17 @@ const MilkPurchase = () => {
             />
           </Group>
           <Button
+            onClick={() => { setMonthMode(false); loadTodayEntries(date, shift, center); }}
+            size="sm" radius="md" color="blue" variant="filled"
+            style={{ fontWeight: 700 }}
+          >
+            OK
+          </Button>
+          <Button
             leftSection={<IconX size={14} />}
             onClick={() => navigate('/')}
             size="sm" radius="md" variant="light" color="red"
-            style={{ fontWeight: 700 }}
+            style={{ fontWeight: 700, marginLeft: 'auto' }}
           >
             Close
           </Button>
@@ -1648,6 +1669,7 @@ const MilkPurchase = () => {
                         ref={manualRateRef}
                         value={manualRate === '' ? '' : parseFloat(manualRate)}
                         onChange={v => setManualRate(String(v ?? ''))}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSave(); } }}
                         step={0.01} decimalScale={2} min={0}
                         size="xs" hideControls
                         styles={{ input: { height: 22, fontSize: 14, fontWeight: 900, background: 'transparent', border: 'none', color: '#1e40af', textAlign: 'center', padding: '0 4px' } }}
@@ -1696,6 +1718,7 @@ const MilkPurchase = () => {
                         ref={manualAmountRef}
                         value={manualAmount === '' ? '' : parseFloat(manualAmount)}
                         onChange={v => setManualAmount(String(v ?? ''))}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSave(); } }}
                         step={1} decimalScale={2} min={0}
                         size="xs" hideControls
                         styles={{ input: { height: 22, fontSize: 16, fontWeight: 900, background: 'transparent', border: 'none', color: '#92400e', textAlign: 'center', padding: '0 4px' } }}
@@ -1894,7 +1917,7 @@ const MilkPurchase = () => {
             <Table striped highlightOnHover stickyHeader withColumnBorders style={{ fontSize: 12 }}>
               <Table.Thead style={{ background: 'linear-gradient(180deg,#dbeafe 0%,#bfdbfe 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
                 <Table.Tr>
-                  {['#', 'Bill No', 'Mem. No', 'Member Name', 'Litres', 'KG', 'FAT %', 'CLR', 'SNF %', 'Incentive', 'Rate/L', 'Amount', ''].map(col => (
+                  {['#', 'Bill No', 'Mem. No', 'Member Name', 'Date', 'Shift', 'Litres', 'KG', 'FAT %', 'CLR', 'SNF %', 'Incentive', 'Rate/L', 'Amount', ''].map(col => (
                     <Table.Th key={col} style={{ fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#1e40af', whiteSpace: 'nowrap', padding: '9px 12px', borderBottom: '2px solid #93c5fd' }}>
                       {col}
                     </Table.Th>
@@ -1905,7 +1928,7 @@ const MilkPurchase = () => {
               <Table.Tbody>
                 {filteredEntries.length === 0 ? (
                   <Table.Tr>
-                    <Table.Td colSpan={13}>
+                    <Table.Td colSpan={15}>
                       <Center py="xl">
                         <Stack align="center" gap={6}>
                           <IconMilk size={48} color="#bfdbfe" />
@@ -1929,6 +1952,8 @@ const MilkPurchase = () => {
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#1e40af', whiteSpace: 'nowrap' }}>{entry.billNo}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px' }}><Badge size="sm" color="blue" variant="light" radius="sm">{entry.producerNo}</Badge></Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 600, color: '#1e293b' }}>{entry.producerName}</Table.Td>
+                      <Table.Td style={{ padding: '6px 8px', color: '#475569', fontSize: 11, whiteSpace: 'nowrap' }}>{entry.date ? new Date(entry.date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit' }) : '—'}</Table.Td>
+                      <Table.Td style={{ padding: '6px 8px' }}><Badge size="xs" color={entry.shift === 'AM' ? 'orange' : 'indigo'} variant="light" radius="sm">{entry.shift || '—'}</Badge></Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0369a1', textAlign: 'right' }}>{(entry.ltr ?? entry.qty).toFixed(2)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#065f46', textAlign: 'right' }}>{entry.qty.toFixed(3)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#c2410c', textAlign: 'right' }}>{entry.fat.toFixed(1)}</Table.Td>
@@ -1950,7 +1975,7 @@ const MilkPurchase = () => {
               {entries.length > 0 && (
                 <Table.Tfoot>
                   <Table.Tr style={{ background: '#1e3a8a' }}>
-                    <Table.Td colSpan={4} style={{ padding: '8px 12px', fontWeight: 700, color: '#93c5fd', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
+                    <Table.Td colSpan={6} style={{ padding: '8px 12px', fontWeight: 700, color: '#93c5fd', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#7dd3fc', textAlign: 'right', fontSize: 13 }}>{totalLtr.toFixed(2)}</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#6ee7b7', textAlign: 'right', fontSize: 13 }}>{totalQty.toFixed(3)}</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#fdba74', textAlign: 'right' }}>{avgFat.toFixed(1)}</Table.Td>

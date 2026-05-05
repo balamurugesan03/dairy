@@ -26,6 +26,20 @@ const fmt2 = v => parseFloat(v || 0).toFixed(2);
 const fmt3 = v => parseFloat(v || 0).toFixed(3);
 const fmtInr = v => `₹${parseFloat(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
+const toDate = (d) => {
+  if (!d) return new Date();
+  if (d instanceof Date) return d;
+  if (typeof d?.toDate === 'function') return d.toDate(); // dayjs
+  return new Date(d);
+};
+
+const isSameDate = (a, b) => {
+  const da = toDate(a), db = toDate(b);
+  return da.getFullYear() === db.getFullYear() &&
+         da.getMonth()    === db.getMonth()    &&
+         da.getDate()     === db.getDate();
+};
+
 const months = [
   { value: '1', label: 'January' }, { value: '2', label: 'February' },
   { value: '3', label: 'March' }, { value: '4', label: 'April' },
@@ -70,6 +84,7 @@ export default function UnionSalesSlip() {
   const [totals,        setTotals]        = useState({ totalQty: 0, totalAmount: 0, totalUnionSpoilage: 0, totalTransportationSpoilage: 0 });
   const [filterMonth,   setFilterMonth]   = useState(String(new Date().getMonth() + 1));
   const [filterYear,    setFilterYear]    = useState(String(new Date().getFullYear()));
+  const [monthMode,     setMonthMode]     = useState(false);
 
   // ── Import state ─────────────────────────────────────────────────────────
   const [importStatus, setImportStatus] = useState('idle'); // idle|uploading|done|error
@@ -87,10 +102,11 @@ export default function UnionSalesSlip() {
   const focusRef = r => setTimeout(() => r?.current?.querySelector?.('input')?.focus(), 30);
   const moveOn   = nextRef => e => { if (e.key === 'Enter') { e.preventDefault(); focusRef(nextRef); } };
 
-  const loadEntries = useCallback(async (month = filterMonth, year = filterYear) => {
+  const loadEntries = useCallback(async (month = filterMonth, year = filterYear, asMonthMode = true) => {
     setLoading(true);
+    setMonthMode(asMonthMode);
     try {
-      const res = await unionSalesSlipAPI.getAll({ month, year, limit: 200, sortField: 'date', sortOrder: 'desc' });
+      const res = await unionSalesSlipAPI.getAll({ month, year, limit: 2000, sortField: 'date', sortOrder: 'desc' });
       setEntries(res?.data || []);
       setTotals(res?.totals || { totalQty: 0, totalAmount: 0, totalUnionSpoilage: 0, totalTransportationSpoilage: 0 });
     } catch (err) {
@@ -100,7 +116,19 @@ export default function UnionSalesSlip() {
     }
   }, [filterMonth, filterYear]);
 
-  useEffect(() => { loadEntries(); }, []); // eslint-disable-line
+  // Load by specific date: fetches the whole month then filters frontend by date+shift
+  const loadByDate = (d) => {
+    const dt = toDate(d);
+    const m  = String(dt.getMonth() + 1);
+    const y  = String(dt.getFullYear());
+    setFilterMonth(m);
+    setFilterYear(y);
+    loadEntries(m, y, false); // false = date mode, frontend filters by date+shift
+  };
+
+  // On mount load today; reload when form date changes
+  useEffect(() => { loadByDate(new Date()); }, []); // eslint-disable-line
+  useEffect(() => { loadByDate(form.date); }, [form.date]); // eslint-disable-line
 
   const [sortKey, setSortKey] = useState('');
   const [sortDir, setSortDir] = useState('asc');
@@ -128,7 +156,9 @@ export default function UnionSalesSlip() {
         dayjs(e.date).format('DD MMM YYYY').toLowerCase().includes(historySearch.toLowerCase()) ||
         (e.time || '').toLowerCase().includes(historySearch.toLowerCase())
       )
-    : entries;
+    : monthMode
+      ? entries
+      : entries.filter(e => e.date && isSameDate(e.date, form.date) && e.time === form.time);
 
   const sortedEntries = (() => {
     if (!sortKey) return filteredEntries;
@@ -203,7 +233,7 @@ export default function UnionSalesSlip() {
       } else {
         notifications.show({ message: `Import done: ${created} created, ${skipped} skipped, ${errors.length} errors.`, color: 'yellow' });
       }
-      // Auto-switch filter to the imported data's year/month so records are visible
+      // Auto-switch to the imported data's month so all records are visible
       const sample = response.data?.debugSample?.[0];
       if (sample?.date) {
         const d = new Date(sample.date);
@@ -211,9 +241,9 @@ export default function UnionSalesSlip() {
         const importMonth = String(d.getMonth() + 1);
         setFilterYear(importYear);
         setFilterMonth(importMonth);
-        loadEntries(importMonth, importYear);
+        loadEntries(importMonth, importYear, true);
       } else {
-        loadEntries();
+        loadEntries(filterMonth, filterYear, true);
       }
     } catch (err) {
       setImportStatus('error');
@@ -237,7 +267,20 @@ export default function UnionSalesSlip() {
       message: `${totalCreated} created, ${totalUpdated} updated${totalSkipped ? `, ${totalSkipped} skipped` : ''}`,
       autoClose: 4000
     });
-    loadEntries();
+    // Try to detect the imported month from the first raw row
+    const firstDate = rawRows[0]?.date_entry || rawRows[0]?.SalesDate || rawRows[0]?.date;
+    if (firstDate) {
+      const d = new Date(typeof firstDate === 'number' ? Math.round((firstDate - 25569) * 86400000) : firstDate);
+      if (!isNaN(d.getTime())) {
+        const m = String(d.getMonth() + 1);
+        const y = String(d.getFullYear());
+        setFilterMonth(m);
+        setFilterYear(y);
+        loadEntries(m, y, true);
+        return;
+      }
+    }
+    loadEntries(filterMonth, filterYear, true);
   };
 
   const handleEdit = (row) => {
@@ -551,28 +594,35 @@ export default function UnionSalesSlip() {
                 {loading ? <Loader size={10} color="white" /> : `${filteredEntries.length}${historySearch ? ` / ${entries.length}` : ''} records`}
               </Badge>
               {editingId && <Badge size="sm" color="yellow" variant="filled" radius="sm">EDIT MODE</Badge>}
-                <Box style={{ flexShrink: 0 }}>
-              <Text size="9px" fw={700} c="#64748b" tt="uppercase" mb={3} style={{ letterSpacing: '0.4px' }}>Month</Text>
+              {monthMode && <Badge size="sm" color="violet" variant="filled" radius="sm">{months.find(m => m.value === filterMonth)?.label} {filterYear}</Badge>}
               <Group gap={4} wrap="nowrap">
                 <Select
                   data={months} value={filterMonth} onChange={v => v && setFilterMonth(v)}
                   size="xs" radius="md" style={{ width: 110 }}
-                  styles={{ input: { fontWeight: 600, border: '1.5px solid #bfdbfe', height: 28, fontSize: 11 } }}
+                  styles={{ input: { fontWeight: 600, border: '1.5px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.1)', color: 'white', height: 28, fontSize: 11 } }}
                 />
                 <Select
                   data={years} value={filterYear} onChange={v => v && setFilterYear(v)}
                   size="xs" radius="md" style={{ width: 72 }}
-                  styles={{ input: { fontWeight: 600, border: '1.5px solid #bfdbfe', height: 28, fontSize: 11 } }}
+                  styles={{ input: { fontWeight: 600, border: '1.5px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.1)', color: 'white', height: 28, fontSize: 11 } }}
                 />
                 <Button
-                  leftSection={<IconFilter size={11} />} onClick={() => loadEntries(filterMonth, filterYear)}
+                  leftSection={<IconFilter size={11} />} onClick={() => loadEntries(filterMonth, filterYear, true)}
                   size="xs" radius="md"
                   style={{ height: 28, padding: '0 10px', fontSize: 10, fontWeight: 700, background: '#6d28d9', color: 'white' }}
                 >
                   Go
                 </Button>
+                {monthMode && (
+                  <Button
+                    size="xs" radius="md"
+                    onClick={() => loadByDate(form.date)}
+                    style={{ height: 28, padding: '0 8px', fontSize: 10, fontWeight: 700, background: 'rgba(255,255,255,0.08)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}
+                  >
+                    Today
+                  </Button>
+                )}
               </Group>
-            </Box>
             </Group>
 
             <Group gap={4} wrap="nowrap">

@@ -134,6 +134,14 @@ const printSlip = (entry) => {
   });
 };
 
+// Convert dayjs / string / undefined to a native JS Date
+const toDate = (d) => {
+  if (!d) return new Date();
+  if (d instanceof Date) return d;
+  if (typeof d?.toDate === 'function') return d.toDate(); // dayjs
+  return new Date(d);
+};
+
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 export default function MilkSales() {
   const [mode,    setMode]    = useState('LOCAL');
@@ -167,15 +175,9 @@ export default function MilkSales() {
   const [rawImportOpen, setRawImportOpen] = useState(false);
   const [filterMonth,   setFilterMonth]   = useState(String(new Date().getMonth() + 1));
   const [filterYear,    setFilterYear]    = useState(String(new Date().getFullYear()));
+  const [monthMode,     setMonthMode]     = useState(false);
 
   const isLocal = mode === 'LOCAL' || mode === 'SAMPLE';
-
-  const isSameLocalDate = (a, b) => {
-    const da = new Date(a), db = new Date(b);
-    return da.getFullYear() === db.getFullYear() &&
-           da.getMonth()    === db.getMonth()    &&
-           da.getDate()     === db.getDate();
-  };
 
   const litrRef   = useRef(null);
   const rateRef   = useRef(null);
@@ -195,7 +197,7 @@ export default function MilkSales() {
       const cr  = overrides.creditor !== undefined ? overrides.creditor : creditor;
       const ag  = overrides.agent    !== undefined ? overrides.agent    : agent;
       const dt  = overrides.date     ?? date;
-      const base = dt instanceof Date ? dt : new Date();
+      const base = toDate(dt);
       const istDate = new Date(base.getTime() + 5.5 * 60 * 60000);
       const dateStr = istDate.toISOString().slice(0, 10);
 
@@ -245,20 +247,17 @@ export default function MilkSales() {
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
     loadDropdowns();
-    loadEntries();
+    loadByDate(new Date());
     fetchNextBillNo();
   }, []);
 
-  // Auto-reload table when form date changes to a different month
+  // Reload table whenever date or session changes
   useEffect(() => {
-    const m = String(date.getMonth() + 1);
-    const y = String(date.getFullYear());
-    if (m !== filterMonth || y !== filterYear) {
-      setFilterMonth(m);
-      setFilterYear(y);
-      loadEntries(m, y);
-    }
-  }, [date]); // eslint-disable-line
+    const d = toDate(date);
+    setFilterMonth(String(d.getMonth() + 1));
+    setFilterYear(String(d.getFullYear()));
+    loadByDate(d);
+  }, [date, session]); // eslint-disable-line
 
   const fetchNextBillNo = async () => {
     try {
@@ -289,8 +288,22 @@ export default function MilkSales() {
     } catch { /* silent */ }
   };
 
+  // Load entries for a specific date (default view)
+  const loadByDate = async (d) => {
+    setLoading(true);
+    setMonthMode(false);
+    try {
+      const dateStr = toDate(d).toISOString().slice(0, 10);
+      const res = await milkSalesAPI.getAll({ date: dateStr, limit: 500 });
+      setEntries(res?.data || []);
+    } catch { setEntries([]); }
+    finally { setLoading(false); }
+  };
+
+  // Load entries for a month range (month view / import view / Go button)
   const loadEntries = async (month = filterMonth, year = filterYear) => {
     setLoading(true);
+    setMonthMode(true);
     try {
       const res = await milkSalesAPI.getAll({ month, year, limit: 2000 });
       setEntries(res?.data || []);
@@ -320,7 +333,7 @@ export default function MilkSales() {
 
     const payload = {
       billNo: bn, session: ses, saleMode: m,
-      date: d.toISOString().slice(0, 10),
+      date: toDate(d).toISOString().slice(0, 10),
       centerId: ct || undefined, centerName: ct ? ccLabel : undefined,
       agentId: ag || undefined, agentName: ag ? agLabel : undefined,
       creditorId: !isLoc ? cr : undefined, creditorName: !isLoc ? crLabel : undefined,
@@ -448,10 +461,10 @@ export default function MilkSales() {
     </Table.Th>
   );
 
-  // Filtered entries — by selected date, or by search (shows whole month)
+  // All loaded entries (date-filtered at API level); search filters on top
   const filteredEntries = historySearch.trim()
-    ? entries.filter(e => [e.billNo, e.creditorName, e.centerName].some(v => (v || '').toLowerCase().includes(historySearch.toLowerCase())))
-    : entries.filter(e => e.date && isSameLocalDate(e.date, date));
+    ? entries.filter(e => [e.billNo, e.creditorName, e.centerName, e.agentName].some(v => (v || '').toLowerCase().includes(historySearch.toLowerCase())))
+    : entries;
 
   const sortedEntries = (() => {
     if (!sortKey) return filteredEntries;
@@ -500,7 +513,7 @@ export default function MilkSales() {
             <Box style={{ flexShrink: 0 }}>
               <Text size="9px" fw={700} c="#64748b" tt="uppercase" mb={3} style={{ letterSpacing: '0.4px' }}>Date</Text>
               <DatePickerInput
-                value={date} onChange={v => v && setDate(v)} valueFormat="DD MMM YYYY"
+                value={date} onChange={v => v && setDate(toDate(v))} valueFormat="DD MMM YYYY"
                 size="xs" radius="md" style={{ width: 120 }}
                 styles={{ input: { fontWeight: 700, fontSize: 12, border: '1.5px solid #bfdbfe', height: 28 } }}
               />
@@ -710,18 +723,19 @@ export default function MilkSales() {
                 {loading ? <Loader size={10} color="white" /> : `${filteredEntries.length}${historySearch ? ` / ${entries.length}` : ''} records`}
               </Badge>
               {editingId && <Badge size="sm" color="yellow" variant="filled" radius="sm">EDIT MODE</Badge>}
+              {monthMode && <Badge size="sm" color="violet" variant="filled" radius="sm">{MONTHS.find(m => m.value === filterMonth)?.label} {filterYear}</Badge>}
 
               {/* Month / Year filter */}
               <Group gap={4} wrap="nowrap">
                 <Select
                   data={MONTHS} value={filterMonth} onChange={v => v && setFilterMonth(v)}
                   size="xs" radius="md" style={{ width: 108 }}
-                  styles={{ input: { fontWeight: 600, border: '1.5px solid #bfdbfe', height: 26, fontSize: 11 } }}
+                  styles={{ input: { fontWeight: 600, border: '1.5px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.1)', color: 'white', height: 26, fontSize: 11 } }}
                 />
                 <Select
                   data={YEARS} value={filterYear} onChange={v => v && setFilterYear(v)}
                   size="xs" radius="md" style={{ width: 70 }}
-                  styles={{ input: { fontWeight: 600, border: '1.5px solid #bfdbfe', height: 26, fontSize: 11 } }}
+                  styles={{ input: { fontWeight: 600, border: '1.5px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.1)', color: 'white', height: 26, fontSize: 11 } }}
                 />
                 <Button
                   leftSection={<IconFilter size={11} />}
@@ -731,6 +745,15 @@ export default function MilkSales() {
                 >
                   Go
                 </Button>
+                {monthMode && (
+                  <Button
+                    size="xs" radius="md"
+                    onClick={() => loadByDate(toDate(date))}
+                    style={{ height: 26, padding: '0 8px', fontSize: 10, fontWeight: 700, background: 'rgba(255,255,255,0.08)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}
+                  >
+                    Today
+                  </Button>
+                )}
               </Group>
             </Group>
 
@@ -852,7 +875,7 @@ export default function MilkSales() {
                       <Center py="xl">
                         <Stack align="center" gap={6}>
                           <IconMilk size={48} color="#bbf7d0" />
-                          <Text c="dimmed" size="sm" fw={600}>{historySearch ? `No results for "${historySearch}"` : `No sales for ${date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`}</Text>
+                          <Text c="dimmed" size="sm" fw={600}>{historySearch ? `No results for "${historySearch}"` : `No sales for ${toDate(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`}</Text>
                           <Text c="dimmed" size="xs">Fill in the form above and press Save</Text>
                         </Stack>
                       </Center>
@@ -937,7 +960,7 @@ export default function MilkSales() {
           <Group gap={10} wrap="nowrap" align="center">
             <Box style={{ flexShrink: 0 }}>
               <Text size="10px" fw={800} c="#14532d" tt="uppercase" style={{ letterSpacing: '0.5px' }}>Summary</Text>
-              <Text size="9px" c="#94a3b8">{entries.length} records · {MONTHS.find(m => m.value === filterMonth)?.label} {filterYear}</Text>
+              <Text size="9px" c="#94a3b8">{entries.length} records · {monthMode ? `${MONTHS.find(m => m.value === filterMonth)?.label} ${filterYear}` : toDate(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</Text>
             </Box>
             <Divider orientation="vertical" style={{ height: 36 }} />
             {[
