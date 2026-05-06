@@ -13,7 +13,7 @@ import { generateCode } from '../models/Counter.js';
 // Helper function to find or create category-based ledger
 const findOrCreateCategoryLedger = async (category, ledgerType, companyId) => {
   const isPurchase = ledgerType === 'purchase';
-  const ledgerName = `${category} ${isPurchase ? 'Purchase Ledger' : 'Sales Ledger'}`;
+  const ledgerName = `${category} ${isPurchase ? 'Purchase' : 'Sales'}`;
 
   // Try to find existing ledger within this company
   let ledger = await Ledger.findOne({ ledgerName, status: 'Active', companyId });
