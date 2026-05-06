@@ -393,42 +393,41 @@ export const stockIn = async (req, res) => {
       ? ledgerEntries.reduce((sum, entry) => sum + (parseFloat(entry.amount || 0) * totalQuantity), 0)
       : 0;
 
-    // Create accounting voucher if supplier and payment mode are provided
-    if (supplierId && paymentMode && paymentMode !== 'N/A') {
-      try {
-        voucher = await createPurchaseVoucher({
-          items: items.map(item => ({
-            itemId: item.itemId,
-            quantity: parseFloat(item.quantity),
-            rate: parseFloat(item.rate) || 0
-          })),
-          supplierId,
-          supplierName,
-          paymentMode,
-          paidAmount: parseFloat(paidAmount) || 0,
-          totalAmount,
-          purchaseDate: purchaseDate ? new Date(purchaseDate) : new Date(),
-          invoiceNumber,
-          referenceId: transactions[0]._id, // Link to first transaction
-          ledgerEntries: ledgerEntries || [] // Pass ledger entries for voucher creation
-        });
+    // Always create accounting voucher for every inventory purchase
+    try {
+      voucher = await createPurchaseVoucher({
+        companyId: req.companyId,
+        items: items.map(item => ({
+          itemId: item.itemId,
+          quantity: parseFloat(item.quantity),
+          rate: parseFloat(item.rate) || 0
+        })),
+        supplierId: supplierId || null,
+        supplierName: supplierName || '',
+        paymentMode: paymentMode || 'Credit',
+        paidAmount: parseFloat(paidAmount) || 0,
+        totalAmount,
+        purchaseDate: purchaseDate ? new Date(purchaseDate) : new Date(),
+        invoiceNumber,
+        referenceId: transactions[0]._id,
+        ledgerEntries: ledgerEntries || []
+      });
 
-        // Update transactions with voucher reference and ledger entries
-        for (const transaction of transactions) {
-          transaction.voucherId = voucher._id;
-          if (ledgerEntries && ledgerEntries.length > 0) {
-            transaction.ledgerEntries = ledgerEntries.map(entry => ({
-              ledgerId: entry.ledgerId,
-              amount: parseFloat(entry.amount || 0),
-              narration: entry.narration || ''
-            }));
-          }
-          await transaction.save();
+      // Update transactions with voucher reference and ledger entries
+      for (const transaction of transactions) {
+        transaction.voucherId = voucher._id;
+        if (ledgerEntries && ledgerEntries.length > 0) {
+          transaction.ledgerEntries = ledgerEntries.map(entry => ({
+            ledgerId: entry.ledgerId,
+            amount: parseFloat(entry.amount || 0),
+            narration: entry.narration || ''
+          }));
         }
-      } catch (voucherError) {
-        console.error('Error creating voucher:', voucherError);
-        // Continue even if voucher creation fails
+        await transaction.save();
       }
+    } catch (voucherError) {
+      console.error('Error creating purchase voucher:', voucherError);
+      // Continue even if voucher creation fails — stock is already saved
     }
 
     // If ledger entries provided but no voucher (N/A payment mode), still store them
