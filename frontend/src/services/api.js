@@ -1007,11 +1007,13 @@ export const financialYearAPI = {
 
 // ── Producer Payment API ───────────────────────────────────────────────────────
 export const producerPaymentAPI = {
-  getAll:             (params)   => api.get('/producer-payments', { params }).then(res => res.data).catch(handleError),
-  create:             (data)     => api.post('/producer-payments', data).then(res => res.data).catch(handleError),
-  getProducerBalance: (farmerId, params) => api.get(`/producer-payments/balance/${farmerId}`, { params }).then(res => res.data).catch(handleError),
-  update:             (id, data) => api.put(`/producer-payments/${id}`, data).then(res => res.data).catch(handleError),
-  cancel:             (id)       => api.post(`/producer-payments/${id}/cancel`).then(res => res.data).catch(handleError),
+  getAll:              (params)        => api.get('/producer-payments', { params }).then(res => res.data).catch(handleError),
+  create:              (data)          => api.post('/producer-payments', data).then(res => res.data).catch(handleError),
+  getProducerBalance:  (farmerId, p)   => api.get(`/producer-payments/balance/${farmerId}`, { params: p }).then(res => res.data).catch(handleError),
+  update:              (id, data)      => api.put(`/producer-payments/${id}`, data).then(res => res.data).catch(handleError),
+  cancel:              (id)            => api.post(`/producer-payments/${id}/cancel`).then(res => res.data).catch(handleError),
+  getCycles:           ()              => api.get('/producer-payments/cycles').then(res => res.data).catch(handleError),
+  getBankTransferPaid: (params)        => api.get('/producer-payments/bank-transfer-paid', { params }).then(res => res.data).catch(handleError),
 };
 
 // ── Producer Opening API ───────────────────────────────────────────────────────

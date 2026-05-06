@@ -4,6 +4,90 @@ import Farmer from '../models/Farmer.js';
 import FarmerPayment from '../models/FarmerPayment.js';
 import PaymentRegister from '../models/PaymentRegister.js';
 
+function fmtDateDMY(d) {
+  const dt = new Date(d);
+  const dd = String(dt.getDate()).padStart(2, '0');
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${dt.getFullYear()}`;
+}
+
+// ±2-day window to handle timezone differences when comparing stored dates
+function cycleDateRange(dateStr) {
+  const mid = new Date(dateStr);
+  return {
+    $gte: new Date(mid.getTime() - 2 * 24 * 60 * 60 * 1000),
+    $lt:  new Date(mid.getTime() + 2 * 24 * 60 * 60 * 1000),
+  };
+}
+
+// ─── Get Payment Cycles ────────────────────────────────────────────────────────
+// Returns distinct from/to date pairs from saved PaymentRegisters (Producers/Ledger)
+export const getCycles = async (req, res) => {
+  try {
+    const companyId = new mongoose.Types.ObjectId(req.userCompany);
+
+    const registers = await PaymentRegister.find({
+      companyId,
+      registerType: { $in: ['Producers', 'Ledger'] },
+      status: { $in: ['Saved', 'Printed'] },
+    })
+      .select('fromDate toDate')
+      .sort({ toDate: -1 })
+      .lean();
+
+    const seen = new Set();
+    const cycles = [];
+    for (const r of registers) {
+      const key = `${new Date(r.fromDate).toISOString().slice(0,10)}|${new Date(r.toDate).toISOString().slice(0,10)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        cycles.push({ fromDate: r.fromDate, toDate: r.toDate, label: `${fmtDateDMY(r.fromDate)} – ${fmtDateDMY(r.toDate)}` });
+      }
+    }
+
+    res.json({ success: true, data: cycles });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── Get Bank-Transfer-Paid Farmers for a Cycle ────────────────────────────────
+export const getBankTransferPaid = async (req, res) => {
+  try {
+    const { cycleFromDate, cycleToDate } = req.query;
+    const companyId = new mongoose.Types.ObjectId(req.userCompany);
+
+    if (!cycleFromDate || !cycleToDate) return res.json({ success: true, data: [] });
+
+    const fps = await FarmerPayment.find({
+      companyId,
+      paymentSource: 'BankTransfer',
+      status: 'Paid',
+      'paymentPeriod.fromDate': cycleDateRange(cycleFromDate),
+      'paymentPeriod.toDate':   cycleDateRange(cycleToDate),
+    })
+      .populate('farmerId', 'farmerNumber personalDetails')
+      .select('farmerId farmerName paidAmount netPayable paymentDate')
+      .lean();
+
+    const data = fps.map(fp => ({
+      _id:            fp._id,
+      farmerId:       fp.farmerId,
+      producerNumber: fp.farmerId?.farmerNumber || '',
+      producerName:   fp.farmerName || fp.farmerId?.personalDetails?.name || '',
+      amountPaid:     fp.paidAmount || fp.netPayable || 0,
+      paymentDate:    fp.paymentDate,
+      paymentMode:    'Bank Transfer',
+      paymentType:    'BankTransfer',
+      status:         'Paid',
+    }));
+
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // ─── Create Payment ────────────────────────────────────────────────────────────
 export const createPayment = async (req, res) => {
   try {
@@ -106,6 +190,8 @@ export const getPayments = async (req, res) => {
       last5Days,
       fromDate,
       toDate,
+      cycleFromDate,
+      cycleToDate,
       centerId,
       search
     } = req.query;
@@ -113,8 +199,11 @@ export const getPayments = async (req, res) => {
     const companyId = req.userCompany;
     const filter = { companyId: new mongoose.Types.ObjectId(companyId) };
 
-    // Date filters
-    if (last5Days === 'true') {
+    // Cycle-based filter takes priority over paymentDate
+    if (cycleFromDate && cycleToDate) {
+      filter['processingPeriod.fromDate'] = cycleDateRange(cycleFromDate);
+      filter['processingPeriod.toDate']   = cycleDateRange(cycleToDate);
+    } else if (last5Days === 'true') {
       const fiveDaysAgo = new Date();
       fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
       fiveDaysAgo.setHours(0, 0, 0, 0);
@@ -260,10 +349,22 @@ export const getProducerBalance = async (req, res) => {
       }
     }
 
+    // Check if already paid via Bank Transfer for this cycle
+    const btFilter = {
+      companyId:     new mongoose.Types.ObjectId(companyId),
+      farmerId:      new mongoose.Types.ObjectId(farmerId),
+      paymentSource: 'BankTransfer',
+      status:        'Paid',
+    };
+    if (fromDate) btFilter['paymentPeriod.fromDate'] = cycleDateRange(fromDate);
+    if (toDate)   btFilter['paymentPeriod.toDate']   = cycleDateRange(toDate);
+    const btPaid = await FarmerPayment.exists(btFilter);
+
     return res.json({
       success: true,
       data: {
         balance,
+        bankTransferPaid: !!btPaid,
         farmer: {
           _id: farmer._id,
           number: farmer.farmerNumber,

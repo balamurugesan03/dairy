@@ -22,6 +22,7 @@ import {
   Center,
   Divider,
   Paper,
+  Alert,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
@@ -35,6 +36,7 @@ import {
   IconCheck,
   IconBuildingBank,
   IconUser,
+  IconAlertCircle,
 } from '@tabler/icons-react';
 import { useReactToPrint } from 'react-to-print';
 import dayjs from 'dayjs';
@@ -69,8 +71,8 @@ export default function PaymentToProducer() {
   // ── Period / Filter state ───────────────────────────────────────────────────
   const [periodConfirmed, setPeriodConfirmed] = useState(false);
   const [isPartialPayment, setIsPartialPayment] = useState(false);
-  const [fromDate, setFromDate] = useState(dayjs().startOf('month').toDate());
-  const [toDate, setToDate] = useState(dayjs().endOf('month').toDate());
+  const [cycles, setCycles] = useState([]);
+  const [selectedCycle, setSelectedCycle] = useState(null); // { fromDate, toDate, label }
   const [paymentDate, setPaymentDate] = useState(new Date());
   const [centerId, setCenterId] = useState(null);
   const [centerName, setCenterName] = useState('All');
@@ -85,12 +87,14 @@ export default function PaymentToProducer() {
   const [paymentMode, setPaymentMode] = useState('Cash');
   const [printSlip, setPrintSlip] = useState(false);
   const [selectedFarmer, setSelectedFarmer] = useState(null);
+  const [bankTransferPaid, setBankTransferPaid] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
 
   // ── Table state ─────────────────────────────────────────────────────────────
   const [payments, setPayments] = useState([]);
+  const [bankTransferRows, setBankTransferRows] = useState([]);
   const [tableLoading, setTableLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
@@ -100,18 +104,21 @@ export default function PaymentToProducer() {
   const [tableSearch, setTableSearch] = useState('');
 
   const printRef = useRef();
+  const amountPaidWrapRef = useRef(null);
 
-  // ─── Load collection centers on mount ──────────────────────────────────────
+  // ─── Load collection centers + cycles on mount ───────────────────────────────
   useEffect(() => {
     collectionCenterAPI
       .getAll({ status: 'Active' })
       .then((res) => {
         const list = res?.data || [];
-        setCenters(
-          list.map((c) => ({ value: c._id, label: c.centerName }))
-        );
+        setCenters(list.map((c) => ({ value: c._id, label: c.centerName })));
       })
       .catch(() => setCenters([]));
+
+    producerPaymentAPI.getCycles()
+      .then((res) => setCycles(res?.data || []))
+      .catch(() => setCycles([]));
   }, []);
 
   // ─── Load payments when filters/pagination change (and period confirmed) ────
@@ -122,13 +129,15 @@ export default function PaymentToProducer() {
       const params = {
         page,
         limit,
-        last5Days: last5Days ? 'true' : 'false',
         search: tableSearch || undefined,
         centerId: centerId || undefined,
       };
-      if (!last5Days) {
-        if (fromDate) params.fromDate = dayjs(fromDate).format('YYYY-MM-DD');
-        if (toDate) params.toDate = dayjs(toDate).format('YYYY-MM-DD');
+
+      if (last5Days) {
+        params.last5Days = 'true';
+      } else if (selectedCycle) {
+        params.cycleFromDate = dayjs(selectedCycle.fromDate).format('YYYY-MM-DD');
+        params.cycleToDate   = dayjs(selectedCycle.toDate).format('YYYY-MM-DD');
       }
 
       const res = await producerPaymentAPI.getAll(params);
@@ -139,35 +148,40 @@ export default function PaymentToProducer() {
         setGrandTotal(res.summary?.totalAmount || 0);
       }
     } catch (err) {
-      console.error('Error loading payments:', err);
-      notifications.show({
-        title: 'Error',
-        message: 'Failed to load payments',
-        color: 'red',
-      });
+      notifications.show({ title: 'Error', message: 'Failed to load payments', color: 'red' });
     } finally {
       setTableLoading(false);
     }
-  }, [periodConfirmed, page, limit, last5Days, fromDate, toDate, centerId, tableSearch]);
+  }, [periodConfirmed, page, limit, last5Days, selectedCycle, centerId, tableSearch]);
+
+  // ─── Load bank-transfer-paid rows for the selected cycle ────────────────────
+  const loadBankTransferRows = useCallback(async () => {
+    if (!periodConfirmed || !selectedCycle) { setBankTransferRows([]); return; }
+    try {
+      const res = await producerPaymentAPI.getBankTransferPaid({
+        cycleFromDate: dayjs(selectedCycle.fromDate).format('YYYY-MM-DD'),
+        cycleToDate:   dayjs(selectedCycle.toDate).format('YYYY-MM-DD'),
+      });
+      setBankTransferRows(res?.data || []);
+    } catch {
+      setBankTransferRows([]);
+    }
+  }, [periodConfirmed, selectedCycle]);
 
   useEffect(() => {
     if (periodConfirmed) {
       loadPayments();
+      loadBankTransferRows();
     }
-  }, [loadPayments]);
+  }, [loadPayments, loadBankTransferRows]);
 
   // ─── Handle period OK / Cancel ──────────────────────────────────────────────
   const handleOK = () => {
-    if (!fromDate || !toDate) {
-      notifications.show({
-        title: 'Validation',
-        message: 'Please select From Date and To Date',
-        color: 'orange',
-      });
+    if (!selectedCycle) {
+      notifications.show({ title: 'Validation', message: 'Please select a payment cycle', color: 'orange' });
       return;
     }
     setPeriodConfirmed(true);
-    // loadPayments will trigger via the useEffect
   };
 
   const handleCancel = () => {
@@ -175,81 +189,96 @@ export default function PaymentToProducer() {
     resetDetailsForm();
   };
 
-  // ─── Fetch producer balance on producer ID blur ──────────────────────────────
-  const fetchProducerBalance = async () => {
-    if (!producerIdInput || !producerIdInput.trim()) return;
+  // ─── Fetch producer balance on producer ID blur / Enter ──────────────────────
+  const fetchProducerBalance = useCallback(async () => {
+    if (!producerIdInput?.trim()) return null;
 
     setBalanceLoading(true);
     try {
-      // Search farmer by farmerNumber
       const searchRes = await farmerAPI.search(producerIdInput.trim());
       const farmers = searchRes?.data || [];
       if (farmers.length === 0) {
-        notifications.show({
-          title: 'Not Found',
-          message: `No producer found with ID "${producerIdInput}"`,
-          color: 'orange',
-        });
+        notifications.show({ title: 'Not Found', message: `No producer found with ID "${producerIdInput}"`, color: 'orange' });
         setSelectedFarmer(null);
         setAbstractBalance(0);
-        return;
+        setBankTransferPaid(false);
+        return null;
       }
 
       const farmer = farmers[0];
-
-      // Now get balance + opening — pass period so backend can filter to the current cycle
       const periodParams = {};
-      if (fromDate) periodParams.fromDate = dayjs(fromDate).format('YYYY-MM-DD');
-      if (toDate)   periodParams.toDate   = dayjs(toDate).format('YYYY-MM-DD');
+      if (selectedCycle) {
+        periodParams.fromDate = dayjs(selectedCycle.fromDate).format('YYYY-MM-DD');
+        periodParams.toDate   = dayjs(selectedCycle.toDate).format('YYYY-MM-DD');
+      }
 
       const [balanceRes, openingRes] = await Promise.all([
         producerPaymentAPI.getProducerBalance(farmer._id, periodParams),
         producerOpeningAPI.getByFarmer(farmer._id),
       ]);
+
       if (balanceRes?.success) {
-        const payBalance     = balanceRes.data?.balance || 0;
-        const openingDue     = Number(openingRes?.data?.dueAmount) || 0;
+        const isBT = balanceRes.data?.bankTransferPaid || false;
+        const payBalance = balanceRes.data?.balance || 0;
+        const openingDue = Number(openingRes?.data?.dueAmount) || 0;
+
         setAbstractBalance(payBalance + openingDue);
         setSelectedFarmer({
           _id: farmer._id,
           farmerNumber: farmer.farmerNumber,
           name: farmer.personalDetails?.name || '',
           bankName: balanceRes.data?.farmer?.bankName || farmer.bankDetails?.bankName || '',
-          accountNumber:
-            balanceRes.data?.farmer?.accountNumber || farmer.bankDetails?.accountNumber || '',
+          accountNumber: balanceRes.data?.farmer?.accountNumber || farmer.bankDetails?.accountNumber || '',
         });
+        setBankTransferPaid(isBT);
+
+        if (isBT) {
+          notifications.show({
+            title: 'Already Paid',
+            message: 'This producer has already been paid via Bank Transfer for this cycle.',
+            color: 'orange',
+            icon: <IconBuildingBank size={16} />,
+          });
+        }
+        return { bankTransferPaid: isBT };
       }
     } catch (err) {
-      console.error('Error fetching producer balance:', err);
-      notifications.show({
-        title: 'Error',
-        message: err?.message || 'Failed to fetch producer balance',
-        color: 'red',
-      });
+      notifications.show({ title: 'Error', message: err?.message || 'Failed to fetch producer balance', color: 'red' });
       setSelectedFarmer(null);
       setAbstractBalance(0);
+      setBankTransferPaid(false);
     } finally {
       setBalanceLoading(false);
+    }
+    return null;
+  }, [producerIdInput, selectedCycle]);
+
+  // ─── Enter key on producer ID → fetch balance → focus amount paid ────────────
+  const handleProducerIdKeyDown = async (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const result = await fetchProducerBalance();
+      if (result && !result.bankTransferPaid) {
+        setTimeout(() => {
+          amountPaidWrapRef.current?.querySelector('input')?.focus();
+        }, 50);
+      }
     }
   };
 
   // ─── Save (create or update) ────────────────────────────────────────────────
   const handleSave = async () => {
     if (!selectedFarmer) {
-      notifications.show({
-        title: 'Validation',
-        message: 'Please enter a valid Producer ID',
-        color: 'orange',
-      });
+      notifications.show({ title: 'Validation', message: 'Please enter a valid Producer ID', color: 'orange' });
+      return;
+    }
+    if (bankTransferPaid) {
+      notifications.show({ title: 'Blocked', message: 'This producer is already paid via Bank Transfer', color: 'orange' });
       return;
     }
     const paid = parseFloat(amountPaid);
     if (!paid || paid <= 0) {
-      notifications.show({
-        title: 'Validation',
-        message: 'Amount Paid must be greater than 0',
-        color: 'orange',
-      });
+      notifications.show({ title: 'Validation', message: 'Amount Paid must be greater than 0', color: 'orange' });
       return;
     }
 
@@ -261,12 +290,12 @@ export default function PaymentToProducer() {
         producerName: selectedFarmer.name,
         amountPaid: paid,
         processingPeriod: {
-          fromDate: dayjs(fromDate).toISOString(),
-          toDate: dayjs(toDate).toISOString(),
+          fromDate: dayjs(selectedCycle.fromDate).toISOString(),
+          toDate:   dayjs(selectedCycle.toDate).toISOString(),
         },
-        paymentDate: dayjs(paymentDate).toISOString(),
+        paymentDate:        dayjs(paymentDate).toISOString(),
         isPartialPayment,
-        paymentCenter: centerId || null,
+        paymentCenter:     centerId || null,
         paymentCenterName: centerName || 'All',
         refNo,
         lastAbstractBalance: abstractBalance,
@@ -274,17 +303,14 @@ export default function PaymentToProducer() {
         paymentMode,
       };
 
-      let res;
-      if (editingId) {
-        res = await producerPaymentAPI.update(editingId, payload);
-      } else {
-        res = await producerPaymentAPI.create(payload);
-      }
+      const res = editingId
+        ? await producerPaymentAPI.update(editingId, payload)
+        : await producerPaymentAPI.create(payload);
 
       if (res?.success) {
         notifications.show({
           title: 'Success',
-          message: editingId ? 'Payment updated successfully' : 'Payment saved successfully',
+          message: editingId ? 'Payment updated' : 'Payment saved',
           color: 'green',
           icon: <IconCheck size={16} />,
         });
@@ -292,12 +318,7 @@ export default function PaymentToProducer() {
         loadPayments();
       }
     } catch (err) {
-      console.error('Error saving payment:', err);
-      notifications.show({
-        title: 'Error',
-        message: err?.message || 'Failed to save payment',
-        color: 'red',
-      });
+      notifications.show({ title: 'Error', message: err?.message || 'Failed to save payment', color: 'red' });
     } finally {
       setSaving(false);
     }
@@ -308,15 +329,16 @@ export default function PaymentToProducer() {
     setEditingId(payment._id);
     setProducerIdInput(payment.producerNumber || '');
     setSelectedFarmer({
-      _id: payment.farmerId?._id || payment.farmerId,
+      _id:          payment.farmerId?._id || payment.farmerId,
       farmerNumber: payment.producerNumber || '',
-      name: payment.producerName || '',
+      name:         payment.producerName || '',
     });
     setRefNo(payment.refNo || '');
     setAbstractBalance(payment.lastAbstractBalance || 0);
     setAmountPaid(payment.amountPaid || '');
     setPaymentMode(payment.paymentMode || 'Cash');
     setPrintSlip(payment.printSlip || false);
+    setBankTransferPaid(false);
   };
 
   // ─── Delete (cancel) ────────────────────────────────────────────────────────
@@ -325,19 +347,11 @@ export default function PaymentToProducer() {
     try {
       const res = await producerPaymentAPI.cancel(id);
       if (res?.success) {
-        notifications.show({
-          title: 'Cancelled',
-          message: 'Payment has been cancelled',
-          color: 'orange',
-        });
+        notifications.show({ title: 'Cancelled', message: 'Payment has been cancelled', color: 'orange' });
         loadPayments();
       }
     } catch (err) {
-      notifications.show({
-        title: 'Error',
-        message: err?.message || 'Failed to cancel payment',
-        color: 'red',
-      });
+      notifications.show({ title: 'Error', message: err?.message || 'Failed to cancel payment', color: 'red' });
     }
   };
 
@@ -351,6 +365,7 @@ export default function PaymentToProducer() {
     setPrintSlip(false);
     setSelectedFarmer(null);
     setEditingId(null);
+    setBankTransferPaid(false);
   };
 
   // ─── Print ──────────────────────────────────────────────────────────────────
@@ -364,6 +379,11 @@ export default function PaymentToProducer() {
   const sheetTotal = payments
     .filter((p) => p.status !== 'Cancelled')
     .reduce((sum, p) => sum + (p.amountPaid || 0), 0);
+
+  const cycleSelectData = cycles.map(c => ({
+    value: `${dayjs(c.fromDate).format('YYYY-MM-DD')}|${dayjs(c.toDate).format('YYYY-MM-DD')}`,
+    label: c.label,
+  }));
 
   /* ─── Render ─────────────────────────────────────────────────────────────── */
   return (
@@ -398,28 +418,27 @@ export default function PaymentToProducer() {
                   </Group>
                 </Radio.Group>
 
-                <DatePickerInput
-                  label="From Date"
-                  placeholder="Select from date"
-                  value={fromDate}
+                <Select
+                  label="Payment Cycle"
+                  placeholder="Select cycle..."
+                  data={cycleSelectData}
+                  value={selectedCycle
+                    ? `${dayjs(selectedCycle.fromDate).format('YYYY-MM-DD')}|${dayjs(selectedCycle.toDate).format('YYYY-MM-DD')}`
+                    : null}
                   onChange={(val) => {
-                    setFromDate(val);
+                    if (!val) { setSelectedCycle(null); setPeriodConfirmed(false); return; }
+                    const [from, to] = val.split('|');
+                    const found = cycles.find(c =>
+                      dayjs(c.fromDate).format('YYYY-MM-DD') === from &&
+                      dayjs(c.toDate).format('YYYY-MM-DD') === to
+                    );
+                    setSelectedCycle(found ? { fromDate: new Date(found.fromDate), toDate: new Date(found.toDate), label: found.label } : null);
                     setPeriodConfirmed(false);
+                    resetDetailsForm();
                   }}
-                  clearable={false}
-                  required
-                />
-
-                <DatePickerInput
-                  label="To Date"
-                  placeholder="Select to date"
-                  value={toDate}
-                  onChange={(val) => {
-                    setToDate(val);
-                    setPeriodConfirmed(false);
-                  }}
-                  clearable={false}
-                  required
+                  clearable
+                  searchable
+                  nothingFoundMessage="No saved cycles found"
                 />
 
                 <Select
@@ -475,24 +494,40 @@ export default function PaymentToProducer() {
                 <Box pos="relative">
                   <TextInput
                     label="Producer ID"
-                    placeholder="Enter Producer ID"
+                    placeholder="Enter Producer ID and press Enter"
                     value={producerIdInput}
-                    onChange={(e) => setProducerIdInput(e.currentTarget.value)}
+                    onChange={(e) => {
+                      setProducerIdInput(e.currentTarget.value);
+                      setSelectedFarmer(null);
+                      setBankTransferPaid(false);
+                      setAbstractBalance(0);
+                    }}
                     onBlur={fetchProducerBalance}
+                    onKeyDown={handleProducerIdKeyDown}
                     rightSection={balanceLoading ? <Loader size="xs" /> : null}
                   />
-                  {selectedFarmer && (
+                  {selectedFarmer && !bankTransferPaid && (
                     <Text size="xs" c="teal" mt={2}>
                       <IconUser size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />
                       {selectedFarmer.name}
                       {selectedFarmer.bankName ? ` — ${selectedFarmer.bankName}` : ''}
                     </Text>
                   )}
+                  {bankTransferPaid && (
+                    <Alert
+                      mt={4}
+                      p="xs"
+                      color="orange"
+                      icon={<IconBuildingBank size={14} />}
+                    >
+                      <Text size="xs" fw={600}>Already paid by Bank Transfer for this cycle</Text>
+                    </Alert>
+                  )}
                 </Box>
 
                 <TextInput
                   label="Ref No"
-                  placeholder="Reference number"
+                  placeholder="Reference number (optional)"
                   value={refNo}
                   onChange={(e) => setRefNo(e.currentTarget.value)}
                 />
@@ -506,21 +541,25 @@ export default function PaymentToProducer() {
                   styles={{ input: { backgroundColor: '#f8f9fa', color: '#495057', cursor: 'default' } }}
                 />
 
-                <NumberInput
-                  label="Amount Paid"
-                  placeholder="0.00"
-                  value={amountPaid}
-                  onChange={setAmountPaid}
-                  min={0}
-                  decimalScale={2}
-                  prefix="₹ "
-                />
+                <Box ref={amountPaidWrapRef}>
+                  <NumberInput
+                    label="Amount Paid"
+                    placeholder="0.00"
+                    value={amountPaid}
+                    onChange={setAmountPaid}
+                    min={0}
+                    decimalScale={2}
+                    prefix="₹ "
+                    disabled={bankTransferPaid}
+                  />
+                </Box>
 
                 <Select
                   label="Payment Mode"
                   data={['Cash', 'Bank', 'Cheque', 'UPI', 'NEFT', 'RTGS']}
                   value={paymentMode}
                   onChange={setPaymentMode}
+                  disabled={bankTransferPaid}
                 />
 
                 <Checkbox
@@ -530,7 +569,7 @@ export default function PaymentToProducer() {
                 />
 
                 <Group justify="flex-start" mt="xs">
-                  <Button color="blue" loading={saving} onClick={handleSave}>
+                  <Button color="blue" loading={saving} onClick={handleSave} disabled={bankTransferPaid}>
                     Save
                   </Button>
                   <Button variant="outline" onClick={resetDetailsForm}>
@@ -554,23 +593,17 @@ export default function PaymentToProducer() {
                 <Badge color="blue" variant="filled" size="sm">
                   {totalCount}
                 </Badge>
+                {selectedCycle && (
+                  <Badge color="teal" variant="light" size="sm">
+                    {selectedCycle.label}
+                  </Badge>
+                )}
               </Group>
               <Group gap="xs" className="no-print">
-                <Button
-                  size="xs"
-                  variant="light"
-                  leftSection={<IconRefresh size={14} />}
-                  onClick={loadPayments}
-                >
+                <Button size="xs" variant="light" leftSection={<IconRefresh size={14} />} onClick={() => { loadPayments(); loadBankTransferRows(); }}>
                   Refresh
                 </Button>
-                <Button
-                  size="xs"
-                  variant="light"
-                  color="teal"
-                  leftSection={<IconPrinter size={14} />}
-                  onClick={handlePrint}
-                >
+                <Button size="xs" variant="light" color="teal" leftSection={<IconPrinter size={14} />} onClick={handlePrint}>
                   Print
                 </Button>
               </Group>
@@ -584,10 +617,7 @@ export default function PaymentToProducer() {
                   size="xs"
                   data={['10', '25', '50', '100']}
                   value={String(limit)}
-                  onChange={(val) => {
-                    setLimit(parseInt(val));
-                    setPage(1);
-                  }}
+                  onChange={(val) => { setLimit(parseInt(val)); setPage(1); }}
                   w={70}
                 />
                 <Text size="sm">entries</Text>
@@ -597,10 +627,7 @@ export default function PaymentToProducer() {
                 placeholder="Search producer / ref..."
                 leftSection={<IconSearch size={13} />}
                 value={tableSearch}
-                onChange={(e) => {
-                  setTableSearch(e.currentTarget.value);
-                  setPage(1);
-                }}
+                onChange={(e) => { setTableSearch(e.currentTarget.value); setPage(1); }}
                 w={220}
               />
             </Group>
@@ -609,50 +636,35 @@ export default function PaymentToProducer() {
             <Box ref={printRef} id="ptp-print-area">
               {/* Print header (hidden on screen) */}
               <Box style={{ display: 'none' }} className="print-only" mb="sm">
-                <Title order={4} ta="center">
-                  Payment to Producer
-                </Title>
+                <Title order={4} ta="center">Payment to Producer</Title>
                 <Text ta="center" size="sm">
-                  Period: {fmtDate(fromDate)} to {fmtDate(toDate)}
+                  Cycle: {selectedCycle?.label || '-'}
                 </Text>
                 <Divider my="xs" />
               </Box>
 
               {tableLoading ? (
-                <Center py="xl">
-                  <Loader size="md" />
-                </Center>
-              ) : payments.length === 0 ? (
+                <Center py="xl"><Loader size="md" /></Center>
+              ) : payments.length === 0 && bankTransferRows.length === 0 ? (
                 <Center py="xl">
                   <Text c="dimmed" size="sm">
                     {periodConfirmed
-                      ? 'No payments found for the selected period.'
-                      : 'Set the processing period and click OK to load payments.'}
+                      ? 'No payments found for the selected cycle.'
+                      : 'Select a payment cycle and click OK to load payments.'}
                   </Text>
                 </Center>
               ) : (
-                <Table
-                  striped
-                  highlightOnHover
-                  withTableBorder
-                  withColumnBorders
-                  verticalSpacing="xs"
-                  fz="sm"
-                >
+                <Table striped highlightOnHover withTableBorder withColumnBorders verticalSpacing="xs" fz="sm">
                   <Table.Thead>
                     <Table.Tr>
-                      <Table.Th ta="center" w={40}>
-                        Sl.No
-                      </Table.Th>
+                      <Table.Th ta="center" w={40}>Sl.No</Table.Th>
                       <Table.Th>Pro.No</Table.Th>
                       <Table.Th>Name</Table.Th>
                       <Table.Th>Ref No</Table.Th>
                       <Table.Th ta="right">Amt Paid</Table.Th>
                       <Table.Th>Mode</Table.Th>
                       <Table.Th>Date</Table.Th>
-                      <Table.Th ta="center" className="no-print">
-                        Action
-                      </Table.Th>
+                      <Table.Th ta="center" className="no-print">Action</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
@@ -674,31 +686,51 @@ export default function PaymentToProducer() {
                         <Table.Td ta="center" className="no-print">
                           {pmt.status !== 'Cancelled' && (
                             <Group gap={4} justify="center">
-                              <ActionIcon
-                                size="sm"
-                                variant="subtle"
-                                color="blue"
-                                title="Edit"
-                                onClick={() => handleEdit(pmt)}
-                              >
+                              <ActionIcon size="sm" variant="subtle" color="blue" title="Edit" onClick={() => handleEdit(pmt)}>
                                 <IconEdit size={14} />
                               </ActionIcon>
-                              <ActionIcon
-                                size="sm"
-                                variant="subtle"
-                                color="red"
-                                title="Cancel"
-                                onClick={() => handleDelete(pmt._id)}
-                              >
+                              <ActionIcon size="sm" variant="subtle" color="red" title="Cancel" onClick={() => handleDelete(pmt._id)}>
                                 <IconTrash size={14} />
                               </ActionIcon>
                             </Group>
                           )}
                           {pmt.status === 'Cancelled' && (
-                            <Badge size="xs" color="red" variant="light">
-                              Cancelled
-                            </Badge>
+                            <Badge size="xs" color="red" variant="light">Cancelled</Badge>
                           )}
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+
+                    {/* ── Bank Transfer rows ─────────────────────────────── */}
+                    {bankTransferRows.length > 0 && (
+                      <Table.Tr style={{ background: 'var(--mantine-color-indigo-0)' }}>
+                        <Table.Td colSpan={8} py={4}>
+                          <Group gap="xs">
+                            <IconBuildingBank size={13} color="var(--mantine-color-indigo-6)" />
+                            <Text size="xs" fw={700} c="indigo.7">
+                              Already Paid via Bank Transfer ({bankTransferRows.length} farmer{bankTransferRows.length > 1 ? 's' : ''})
+                            </Text>
+                          </Group>
+                        </Table.Td>
+                      </Table.Tr>
+                    )}
+                    {bankTransferRows.map((row, idx) => (
+                      <Table.Tr key={row._id} style={{ background: 'var(--mantine-color-indigo-0)', color: '#495057' }}>
+                        <Table.Td ta="center">
+                          <Text size="xs" c="dimmed">{idx + 1}</Text>
+                        </Table.Td>
+                        <Table.Td><Text size="xs">{row.producerNumber || '-'}</Text></Table.Td>
+                        <Table.Td><Text size="xs">{row.producerName || '-'}</Text></Table.Td>
+                        <Table.Td><Text size="xs" c="dimmed">—</Text></Table.Td>
+                        <Table.Td ta="right"><Text size="xs">₹ {fmt(row.amountPaid)}</Text></Table.Td>
+                        <Table.Td>
+                          <Badge size="xs" color="indigo" variant="filled" leftSection={<IconBuildingBank size={9} />}>
+                            Bank Transfer
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td><Text size="xs">{fmtDate(row.paymentDate)}</Text></Table.Td>
+                        <Table.Td ta="center">
+                          <Badge size="xs" color="green" variant="light">Paid</Badge>
                         </Table.Td>
                       </Table.Tr>
                     ))}
@@ -710,12 +742,7 @@ export default function PaymentToProducer() {
             {/* Pagination */}
             {totalPages > 1 && (
               <Group justify="center" mt="md" className="no-print">
-                <Pagination
-                  total={totalPages}
-                  value={page}
-                  onChange={setPage}
-                  size="sm"
-                />
+                <Pagination total={totalPages} value={page} onChange={setPage} size="sm" />
               </Group>
             )}
 
@@ -723,20 +750,12 @@ export default function PaymentToProducer() {
             <Divider mt="md" mb="xs" />
             <Paper px="md" py="xs" bg="teal.0" radius="sm">
               <Group justify="space-between">
-                <Text fw={600} size="sm" c="teal.8">
-                  Amount Total in Sheet:
-                </Text>
-                <Text fw={700} size="sm" c="teal.8">
-                  ₹ {fmt(sheetTotal)}
-                </Text>
+                <Text fw={600} size="sm" c="teal.8">Amount Total in Sheet:</Text>
+                <Text fw={700} size="sm" c="teal.8">₹ {fmt(sheetTotal)}</Text>
               </Group>
               <Group justify="space-between" mt={4}>
-                <Text fw={600} size="sm" c="teal.9">
-                  Grand Total:
-                </Text>
-                <Text fw={700} size="sm" c="teal.9">
-                  ₹ {fmt(grandTotal)}
-                </Text>
+                <Text fw={600} size="sm" c="teal.9">Grand Total:</Text>
+                <Text fw={700} size="sm" c="teal.9">₹ {fmt(grandTotal)}</Text>
               </Group>
             </Paper>
           </Card>
