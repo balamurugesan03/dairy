@@ -772,8 +772,10 @@ const MilkPurchase = () => {
         if (chartType === 'MilmaChart') {
           setEntryMode('chart');
         } else {
-          if (settingsRes?.data?.manualEntryMode === 'litre-and-amount') setEntryMode('amount');
-          else if (settingsRes?.data?.manualEntryMode === 'litre-x-rate') setEntryMode('rate');
+          const mem = settingsRes?.data?.manualEntryMode;
+          if (mem === 'litre-and-amount') setEntryMode('amount');
+          else if (mem === 'litre-x-rate') setEntryMode('rate');
+          else setEntryMode('rate'); // default: manual rate entry
         }
 
         // Store WhatsApp settings for use during save; fill default template if empty
@@ -1008,10 +1010,9 @@ const MilkPurchase = () => {
     return () => document.removeEventListener('keydown', block, true);
   }, [dupBlocked]);
 
-  // Search debounce — skip live dropdown when input is purely numeric (farmer number)
+  // Search debounce — show dropdown for both name and farmer number input
   useEffect(() => {
     if (memberInput.trim().length < 2) { setSearchResults([]); setShowDropdown(false); return; }
-    if (/^\d+$/.test(memberInput.trim())) { setSearchResults([]); setShowDropdown(false); return; }
     const t = setTimeout(async () => {
       setSearchLoading(true);
       try {
@@ -1036,8 +1037,7 @@ const MilkPurchase = () => {
     }
 
     setProducer(base);
-    // Show memberId (cooperative membership number) when available, else keep farmerNumber
-    setMemberInput(farmer.memberId != null && String(farmer.memberId).trim() !== '' ? String(farmer.memberId) : farmer.farmerNumber);
+    setMemberInput(farmer.farmerNumber);
     setShowDropdown(false);
     setTimeout(() => ltrRef.current?.focus({ preventScroll: true }), 50);
     try {
@@ -1181,7 +1181,7 @@ const MilkPurchase = () => {
     farmerAPI.search(selectedRow.producerNo).then(res => {
       const farmers = res?.data || [];
       const match = farmers.find(f => f.farmerNumber === selectedRow.producerNo);
-      if (match) { setProducer(prev => ({ ...prev, _id: match._id, memberId: match.memberId || '', phone: match.personalDetails?.phone || '' })); setMemberInput(match.memberId || match.farmerNumber); }
+      if (match) { setProducer(prev => ({ ...prev, _id: match._id, memberId: match.memberId || '', phone: match.personalDetails?.phone || '' })); setMemberInput(match.farmerNumber); }
     }).catch(() => {});
     setTimeout(() => ltrRef.current?.focus({ preventScroll: true }), 60);
     notifications.show({ message: `Editing: ${selectedRow.billNo} — modify values and press Save`, color: 'blue', autoClose: 3000 });

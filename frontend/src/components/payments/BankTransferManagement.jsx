@@ -98,6 +98,8 @@ const BankTransferManagement = () => {
   const [logLoading, setLogLoading] = useState(false);
   const [logPage,    setLogPage]    = useState(1);
   const [logPages,   setLogPages]   = useState(1);
+  const [rowsPage,     setRowsPage]     = useState(1);
+  const [rowsPageSize, setRowsPageSize] = useState(20);
   const [logFilters, setLogFilters] = useState({ status: '', fromDate: null, toDate: null });
 
   /* modals */
@@ -152,6 +154,7 @@ const BankTransferManagement = () => {
 
   const clearData = (newTo) => {
     setRows([]);
+    setRowsPage(1);
     setDataLoaded(false);
     // auto-advance applyDate to day after new toDate if needed
     const refTo = newTo || toDate;
@@ -208,6 +211,7 @@ const BankTransferManagement = () => {
           };
         });
         setRows(newRows);
+        setRowsPage(1);
         setDataLoaded(true);
         notifications.show({ message: `Loaded ${newRows.length} producers`, color: 'green' });
       }
@@ -443,6 +447,9 @@ const BankTransferManagement = () => {
     perChequeCount: rows.filter(r => r.mode === 'Personal Cheque').length,
   };
   summ.grandTotal = summ.bankAmt + summ.cashAmt + summ.allChequeAmt + summ.perChequeAmt;
+
+  const rowsTotalPages = Math.max(1, Math.ceil(rows.length / rowsPageSize));
+  const pagedRows = rows.slice((rowsPage - 1) * rowsPageSize, rowsPage * rowsPageSize);
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
@@ -755,13 +762,15 @@ const BankTransferManagement = () => {
                         </Table.Tr>
                       </Table.Thead>
                       <Table.Tbody>
-                        {rows.map((row, idx) => (
+                        {pagedRows.map((row, idx) => {
+                          const absIdx = (rowsPage - 1) * rowsPageSize + idx;
+                          return (
                           <Table.Tr
-                            key={row.farmerId || idx}
+                            key={row.farmerId || absIdx}
                             style={row.approved ? { background: 'var(--mantine-color-green-0)' } : {}}
                           >
                             <Table.Td ta="center">
-                              <Text size="xs">{idx + 1}</Text>
+                              <Text size="xs">{absIdx + 1}</Text>
                             </Table.Td>
                             <Table.Td>
                               <Text size="xs" fw={500}>{row.producerId}</Text>
@@ -789,7 +798,7 @@ const BankTransferManagement = () => {
                               <NumberInput
                                 size="xs"
                                 value={row.paymentAmount}
-                                onChange={v => setRowField(idx, 'paymentAmount', v || 0)}
+                                onChange={v => setRowField(absIdx, 'paymentAmount', v || 0)}
                                 min={0}
                                 hideControls
                                 disabled={row.netPayable <= 0}
@@ -805,7 +814,7 @@ const BankTransferManagement = () => {
                                     color={m.color}
                                     label={<Text size={9} fw={600}>{m.short}</Text>}
                                     checked={row.mode === m.value}
-                                    onChange={() => setRowField(idx, 'mode', m.value)}
+                                    onChange={() => setRowField(absIdx, 'mode', m.value)}
                                     styles={{ input: { cursor: 'pointer' } }}
                                   />
                                 ))}
@@ -814,12 +823,13 @@ const BankTransferManagement = () => {
                             <Table.Td ta="center">
                               <Checkbox
                                 checked={row.approved}
-                                onChange={() => toggleApprove(idx)}
+                                onChange={() => toggleApprove(absIdx)}
                                 disabled={row.paymentAmount <= 0}
                               />
                             </Table.Td>
                           </Table.Tr>
-                        ))}
+                          );
+                        })}
                       </Table.Tbody>
                     </Table>
                   </ScrollArea>
@@ -852,6 +862,30 @@ const BankTransferManagement = () => {
                         <Text fw={700} c="green" size="lg">{fmt(summ.grandTotal)}</Text>
                       </Grid.Col>
                     </Grid>
+                    <Group justify="space-between" align="center" mt="sm">
+                      <Group gap="xs" align="center">
+                        <Text size="xs" c="dimmed">Rows per page:</Text>
+                        <Select
+                          size="xs"
+                          w={70}
+                          data={['10','20','30','50','100']}
+                          value={String(rowsPageSize)}
+                          onChange={v => { setRowsPageSize(Number(v)); setRowsPage(1); }}
+                          allowDeselect={false}
+                        />
+                        <Text size="xs" c="dimmed">
+                          {rows.length === 0 ? '0' : `${(rowsPage - 1) * rowsPageSize + 1}–${Math.min(rowsPage * rowsPageSize, rows.length)}`} of {rows.length}
+                        </Text>
+                      </Group>
+                      {rowsTotalPages > 1 && (
+                        <Pagination
+                          total={rowsTotalPages}
+                          value={rowsPage}
+                          onChange={setRowsPage}
+                          size="xs"
+                        />
+                      )}
+                    </Group>
                   </Box>
                 </Card>
               )}

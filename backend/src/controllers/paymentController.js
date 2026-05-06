@@ -90,7 +90,7 @@ export const createFarmerPayment = async (req, res) => {
           adv.status = adv.balanceAmount <= 0 ? 'Adjusted' : 'Partially Adjusted';
           adv.adjustments = adv.adjustments || [];
           adv.adjustments.push({
-            date: new Date(),
+            date: payment.paymentDate || new Date(),
             amount: apply,
             referenceType: 'Payment',
             referenceId: payment._id,
@@ -116,7 +116,7 @@ export const createFarmerPayment = async (req, res) => {
           loan.outstandingAmount = loan.totalLoanAmount - loan.recoveredAmount;
           if (loan.outstandingAmount <= 0) {
             loan.status    = 'Closed';
-            loan.closedAt  = new Date();
+            loan.closedAt  = payment.paymentDate || new Date();
           }
           await loan.save();
           remaining -= apply;

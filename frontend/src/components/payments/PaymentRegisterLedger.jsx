@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Container, Paper, Grid, Group, Text, Title, Box,
   TextInput, NumberInput, Checkbox, ScrollArea, Badge,
-  Divider, Button, Loader,
+  Divider, Button, Loader, Pagination, Select,
 } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
@@ -327,6 +327,10 @@ const PaymentRegisterLedger = () => {
   const [loading,      setLoading]      = useState(false);
   const [quantityUnit, setQuantityUnit] = useState('Litre');
 
+  /* ─── Pagination ─── */
+  const [page,     setPage]     = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+
   /* ─── Previous cycle carry-forward (farmerId → carry data) ─── */
   const prevCycleRef = useRef({});
 
@@ -538,6 +542,7 @@ const PaymentRegisterLedger = () => {
       payments.forEach(pmt => {
         const fid = pmt.farmerId?._id?.toString() || pmt.farmerId?.toString() || '';
         if (!fid) return;
+        if (pmt.status === 'Cancelled') return; // skip reversed/cancelled payments
 
         // Skip payments whose period does not overlap with the displayed cycle
         const pmtFrom = pmt.paymentPeriod?.fromDate ? dayjs(pmt.paymentPeriod.fromDate) : null;
@@ -604,6 +609,7 @@ const PaymentRegisterLedger = () => {
             return String(a.producerId || '').localeCompare(String(b.producerId || ''));
           })
           .map((r, i) => ({ ...r, sn: i + 1 }));
+        setPage(1);
         setRows(mapped);
         setDateConfirmed(true);
         const paidCount = mapped.filter(r => r.paid).length;
@@ -753,7 +759,7 @@ const PaymentRegisterLedger = () => {
         await paymentAPI.create({
           farmerId:        row.farmerId,
           farmerName:      row.producerName || '',
-          paymentDate:     new Date(),
+          paymentDate:     periodTo,          // last date of the generated cycle
           paymentPeriod:   { fromDate: periodFrom, toDate: periodTo, periodType: 'Custom' },
           milkAmount:      n(row.milkValue),
           previousBalance: n(row.prevBalance),
@@ -870,6 +876,8 @@ const PaymentRegisterLedger = () => {
   const lockedRows   = filledRows.filter(r => r.locked && !r.paid && !r.bankPending);
   const unlockedRows = filledRows.filter(r => !r.locked && !r.paid && !r.bankPending);
   const allLocked    = filledRows.length > 0 && filledRows.every(r => r.paid || r.locked || r.bankPending);
+  const totalPages   = Math.max(1, Math.ceil(rows.length / pageSize));
+  const pagedRows    = rows.slice((page - 1) * pageSize, page * pageSize);
 
   /* ════════════════ RENDER ════════════════ */
   return (
@@ -1036,11 +1044,11 @@ const PaymentRegisterLedger = () => {
               </thead>
 
               <tbody>
-                {rows.map((row, idx) => (
+                {pagedRows.map((row, idx) => (
                   <PaymentRow
                     key={row.farmerId || idx}
                     row={row}
-                    idx={idx}
+                    idx={(page - 1) * pageSize + idx}
                     quantityUnit={quantityUnit}
                     onUpdate={updateRow}
                     onToggleLock={toggleLock}
@@ -1091,6 +1099,31 @@ const PaymentRegisterLedger = () => {
               <Badge color="teal"   variant="filled" size="sm">Net Pay: ₹{fmtN(totals.netPay)}</Badge>
             </Group>
           </Group>
+          {rows.length > 0 && (
+            <Group justify="space-between" align="center" mt="xs">
+              <Group gap="xs" align="center">
+                <Text size="xs" c="dimmed">Rows per page:</Text>
+                <Select
+                  size="xs"
+                  value={String(pageSize)}
+                  onChange={v => { setPageSize(Number(v)); setPage(1); }}
+                  data={['10','20','30','50','100']}
+                  styles={{ input: { width: 64, fontSize: 12 } }}
+                />
+                <Text size="xs" c="dimmed">
+                  {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, rows.length)} of {rows.length}
+                </Text>
+              </Group>
+              <Pagination
+                value={page}
+                onChange={setPage}
+                total={totalPages}
+                size="xs"
+                radius="sm"
+                color="blue"
+              />
+            </Group>
+          )}
         </Box>
       </Paper>
     </Container>

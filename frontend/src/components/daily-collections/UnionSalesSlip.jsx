@@ -161,7 +161,11 @@ export default function UnionSalesSlip() {
       : entries.filter(e => e.date && isSameDate(e.date, form.date) && e.time === form.time);
 
   const sortedEntries = (() => {
-    if (!sortKey) return filteredEntries;
+    if (!sortKey) {
+      // In detailed search mode, default to ascending date order
+      if (showSearch) return [...filteredEntries].sort((a, b) => new Date(a.date||0) - new Date(b.date||0));
+      return filteredEntries;
+    }
     const d = sortDir === 'asc' ? 1 : -1;
     return [...filteredEntries].sort((a, b) => {
       const numFields = ['qty','fat','snf','rate','amount','unionSpoilage','transportationSpoilage'];

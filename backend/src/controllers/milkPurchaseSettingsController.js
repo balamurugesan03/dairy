@@ -250,16 +250,16 @@ export const getSettingsSummary = async (req, res) => {
       .findOne({ companyId: req.companyId })
       .select('quantityUnit manualEntryCombination activeRateChartType printSize machines milkAnalyzerConfig manualEntryMode whatsApp -_id');
 
-    const data = settings || {
-      quantityUnit           : DEFAULTS.quantityUnit,
-      manualEntryCombination : DEFAULTS.manualEntryCombination,
-      activeRateChartType    : DEFAULTS.activeRateChartType,
-      manualEntryMode        : DEFAULTS.manualEntryMode,
-      printSize              : DEFAULTS.printSize,
-      machines               : DEFAULTS.machines,
-      milkAnalyzerConfig     : DEFAULTS.milkAnalyzerConfig,
-      whatsApp               : DEFAULTS.whatsApp,
-    };
+    const data = settings ? {
+      quantityUnit           : settings.quantityUnit           ?? DEFAULTS.quantityUnit,
+      manualEntryCombination : settings.manualEntryCombination ?? DEFAULTS.manualEntryCombination,
+      activeRateChartType    : settings.activeRateChartType    ?? DEFAULTS.activeRateChartType,
+      manualEntryMode        : settings.manualEntryMode        ?? DEFAULTS.manualEntryMode,
+      printSize              : settings.printSize              ?? DEFAULTS.printSize,
+      machines               : settings.machines               ?? DEFAULTS.machines,
+      milkAnalyzerConfig     : settings.milkAnalyzerConfig     ?? DEFAULTS.milkAnalyzerConfig,
+      whatsApp               : settings.whatsApp               ?? DEFAULTS.whatsApp,
+    } : DEFAULTS;
 
     res.json({ success: true, data });
   } catch (err) {
