@@ -7,7 +7,7 @@ import {
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import dayjs from 'dayjs';
-import { bankTransferAPI } from '../../services/api';
+import { bankTransferAPI, producerPaymentAPI } from '../../services/api';
 import {
   IconBuildingBank, IconCash, IconCheck, IconX, IconEye,
   IconRefresh, IconPrinter, IconDotsVertical,
@@ -87,6 +87,12 @@ const BankTransferManagement = () => {
   const [applying,   setApplying]   = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
 
+  /* payment cycles (from PaymentRegister) */
+  const [paymentCycles,       setPaymentCycles]       = useState([]);
+  const [selectedPaymentCycle, setSelectedPaymentCycle] = useState(null); // { fromDate, toDate, label }
+  const [cashPaidIds,         setCashPaidIds]         = useState(new Set());
+  const [cashPaidRows,        setCashPaidRows]        = useState([]); // ProducerPayment rows for this cycle
+
   /* dropdown options */
   const [centers,        setCenters]        = useState([]);
   const [banks,          setBanks]          = useState([]);
@@ -117,15 +123,13 @@ const BankTransferManagement = () => {
 
   // ── init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const [f, t] = getCyclePeriod('15d', new Date());
-    setFromDate(f);
-    setToDate(t);
     loadDropdowns();
+    loadPaymentCycles();
   }, []);
 
-  // reload pending periods whenever transfer tab is opened
+  // reload cycles whenever transfer tab is opened
   useEffect(() => {
-    if (activeTab === 'transfer') loadPendingPeriods();
+    if (activeTab === 'transfer') loadPaymentCycles();
   }, [activeTab]);
 
   useEffect(() => {
@@ -214,6 +218,7 @@ const BankTransferManagement = () => {
         setRowsPage(1);
         setDataLoaded(true);
         notifications.show({ message: `Loaded ${newRows.length} producers`, color: 'green' });
+        await loadCashPaidForCycle(from, to);
       }
     } catch (err) {
       notifications.show({ title: 'Error', message: err.message || 'Failed to load', color: 'red' });
@@ -222,26 +227,52 @@ const BankTransferManagement = () => {
     }
   };
 
-  // ── load pending periods — auto-select & auto-load the latest one ─────────
+  // ── load PaymentRegister cycles ───────────────────────────────────────────
+  const loadPaymentCycles = async () => {
+    try {
+      const res = await producerPaymentAPI.getCycles();
+      if (res?.success) {
+        setPaymentCycles(res.data || []);
+        // If a cycle was already selected keep it; otherwise auto-select latest
+        if (!selectedPaymentCycle && res.data?.length > 0) {
+          const latest = res.data[0];
+          const f  = new Date(latest.fromDate);
+          const t  = new Date(latest.toDate);
+          const ap = dayjs(t).add(1, 'day').toDate();
+          setSelectedPaymentCycle({ fromDate: f, toDate: t, label: latest.label });
+          setFromDate(f);
+          setToDate(t);
+          setApplyDate(prev => (prev && prev >= ap ? prev : ap));
+          await performLoad(f, t, { applyDate: ap });
+        }
+      }
+    } catch { /* silent */ }
+  };
+
+  // ── load farmers already paid (cash) via Payment to Producer for this cycle
+  const loadCashPaidForCycle = async (from, to) => {
+    if (!from || !to) { setCashPaidIds(new Set()); setCashPaidRows([]); return; }
+    try {
+      const res = await producerPaymentAPI.getAll({
+        cycleFromDate: dayjs(from).format('YYYY-MM-DD'),
+        cycleToDate:   dayjs(to).format('YYYY-MM-DD'),
+        limit: 10000,
+      });
+      const rows = (res?.data || []).filter(p => p.status !== 'Cancelled');
+      const ids  = new Set(rows.map(p => p.farmerId?._id?.toString() || p.farmerId?.toString() || '').filter(Boolean));
+      setCashPaidIds(ids);
+      setCashPaidRows(rows);
+    } catch {
+      setCashPaidIds(new Set());
+      setCashPaidRows([]);
+    }
+  };
+
+  // ── load pending periods — kept for deleteTransfer refresh ────────────────
   const loadPendingPeriods = async () => {
     try {
       const res = await bankTransferAPI.getPendingPeriods();
-      if (res?.success && res.data?.length > 0) {
-        setPendingPeriods(res.data);
-        // Auto-select the most recent pending period
-        const p  = res.data[0];
-        const f  = new Date(p.fromDate);
-        const t  = new Date(p.toDate);
-        const ap = dayjs(t).add(1, 'day').toDate();
-        setFromDate(f);
-        setToDate(t);
-        setSelectedPeriod(`${p.fromDate}|${p.toDate}`);
-        setApplyDate(ap);
-        // Auto-load data immediately
-        await performLoad(f, t, { applyDate: ap, dueByList: false });
-      } else {
-        setPendingPeriods([]);
-      }
+      if (res?.success) setPendingPeriods(res.data || []);
     } catch { /* silent */ }
   };
 
@@ -364,7 +395,7 @@ const BankTransferManagement = () => {
       if (res?.success) {
         notifications.show({ title: 'Deleted', message: res.message, color: 'red' });
         loadLogs();
-        loadPendingPeriods();
+        loadPaymentCycles();
       }
     } catch (err) {
       notifications.show({ title: 'Error', message: err.message || 'Delete failed', color: 'red' });
@@ -481,27 +512,54 @@ const BankTransferManagement = () => {
               <Card withBorder p="md">
                 <Stack gap="sm">
 
-                  {/* Pending period dropdown from register-ledger */}
-                  {pendingPeriods.length > 0 && (
-                    <Group gap="xs" align="flex-end" wrap="wrap">
-                      <Select
-                        label="Pending Period (from Register-Ledger)"
-                        placeholder="Select cycle period…"
-                        value={selectedPeriod}
-                        onChange={selectPeriod}
-                        data={pendingPeriods.map(p => ({
-                          value: `${p.fromDate}|${p.toDate}`,
-                          label: `${dayjs(p.fromDate).format('DD/MM/YYYY')} – ${dayjs(p.toDate).format('DD/MM/YYYY')}  (${p.count} producers · ₹${(p.totalAmt || 0).toFixed(0)})`,
-                        }))}
-                        clearable
-                        style={{ minWidth: 380 }}
-                        size="sm"
-                      />
-                      <Badge color="orange" variant="light" size="lg" style={{ marginBottom: 4 }}>
-                        {pendingPeriods.length} pending cycle{pendingPeriods.length > 1 ? 's' : ''}
+                  {/* Payment Cycle dropdown (from saved PaymentRegister) */}
+                  <Group gap="xs" align="flex-end" wrap="wrap">
+                    <Select
+                      label="Payment Cycle"
+                      placeholder="Select cycle…"
+                      value={selectedPaymentCycle
+                        ? `${dayjs(selectedPaymentCycle.fromDate).format('YYYY-MM-DD')}|${dayjs(selectedPaymentCycle.toDate).format('YYYY-MM-DD')}`
+                        : null}
+                      onChange={async (val) => {
+                        if (!val) {
+                          setSelectedPaymentCycle(null);
+                          clearData();
+                          setCashPaidIds(new Set());
+                          setCashPaidRows([]);
+                          return;
+                        }
+                        const [fromStr, toStr] = val.split('|');
+                        const found = paymentCycles.find(c =>
+                          dayjs(c.fromDate).format('YYYY-MM-DD') === fromStr &&
+                          dayjs(c.toDate).format('YYYY-MM-DD') === toStr
+                        );
+                        if (!found) return;
+                        const f  = new Date(found.fromDate);
+                        const t  = new Date(found.toDate);
+                        const ap = dayjs(t).add(1, 'day').toDate();
+                        setSelectedPaymentCycle({ fromDate: f, toDate: t, label: found.label });
+                        setFromDate(f);
+                        setToDate(t);
+                        setApplyDate(prev => (prev && prev >= ap ? prev : ap));
+                        clearData(t);
+                        await performLoad(f, t, { applyDate: ap });
+                      }}
+                      data={paymentCycles.map(c => ({
+                        value: `${dayjs(c.fromDate).format('YYYY-MM-DD')}|${dayjs(c.toDate).format('YYYY-MM-DD')}`,
+                        label: c.label,
+                      }))}
+                      clearable
+                      searchable
+                      nothingFoundMessage="No saved cycles found"
+                      style={{ minWidth: 280 }}
+                      size="sm"
+                    />
+                    {selectedPaymentCycle && (
+                      <Badge color="teal" variant="light" size="lg" style={{ marginBottom: 4 }}>
+                        {selectedPaymentCycle.label}
                       </Badge>
-                    </Group>
-                  )}
+                    )}
+                  </Group>
 
                   {/* Cycle buttons + period nav */}
                   {/* <Group gap="xs" wrap="wrap" align="center">
@@ -831,6 +889,44 @@ const BankTransferManagement = () => {
                           );
                         })}
                       </Table.Tbody>
+
+                      {/* ── Cash-paid rows (from Payment to Producer) ──── */}
+                      {cashPaidRows.length > 0 && (
+                        <>
+                          <Table.Tbody>
+                            <Table.Tr style={{ background: 'var(--mantine-color-yellow-0)' }}>
+                              <Table.Td colSpan={10} py={4}>
+                                <Group gap="xs">
+                                  <IconCash size={13} color="var(--mantine-color-orange-6)" />
+                                  <Text size="xs" fw={700} c="orange.7">
+                                    Already Paid via Cash / Payment to Producer ({cashPaidRows.length} farmer{cashPaidRows.length > 1 ? 's' : ''})
+                                  </Text>
+                                </Group>
+                              </Table.Td>
+                            </Table.Tr>
+                            {cashPaidRows.map((row, idx) => (
+                              <Table.Tr key={row._id} style={{ background: 'var(--mantine-color-yellow-0)', color: '#666' }}>
+                                <Table.Td ta="center"><Text size="xs" c="dimmed">{idx + 1}</Text></Table.Td>
+                                <Table.Td><Text size="xs">{row.producerNumber || '-'}</Text></Table.Td>
+                                <Table.Td><Text size="xs">{row.producerName || '-'}</Text></Table.Td>
+                                <Table.Td><Text size="xs" c="dimmed">—</Text></Table.Td>
+                                <Table.Td><Text size="xs" c="dimmed">—</Text></Table.Td>
+                                <Table.Td><Text size="xs" c="dimmed">—</Text></Table.Td>
+                                <Table.Td ta="right"><Text size="xs" fw={500}>{fmt(row.amountPaid)}</Text></Table.Td>
+                                <Table.Td ta="right"><Text size="xs" c="dimmed">—</Text></Table.Td>
+                                <Table.Td>
+                                  <Badge size="xs" color="orange" variant="filled" leftSection={<IconCash size={9} />}>
+                                    Cash Paid
+                                  </Badge>
+                                </Table.Td>
+                                <Table.Td ta="center">
+                                  <Badge size="xs" color="green" variant="light">Paid</Badge>
+                                </Table.Td>
+                              </Table.Tr>
+                            ))}
+                          </Table.Tbody>
+                        </>
+                      )}
                     </Table>
                   </ScrollArea>
 
