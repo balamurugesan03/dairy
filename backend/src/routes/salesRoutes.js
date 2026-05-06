@@ -5,7 +5,8 @@ import {
   getSaleById,
   updateSale,
   deleteSale,
-  getCustomerHistory
+  getCustomerHistory,
+  getNextSaleBillNumber
 } from '../controllers/salesController.js';
 import { protect, addCompanyFilter } from '../middleware/auth.js';
 
@@ -17,6 +18,9 @@ router.post('/', createSale);
 
 // Get all sales
 router.get('/', getAllSales);
+
+// Static routes must come before /:id
+router.get('/next-bill-number', getNextSaleBillNumber);
 
 // Get sale by ID
 router.get('/:id', getSaleById);

@@ -173,7 +173,14 @@ export const stockAPI = {
   getBalance: (params) => api.get('/stock/balance', { params }).then(res => res.data).catch(handleError),
   getById: (id) => api.get(`/stock/transactions/${id}`).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/stock/transactions/${id}`, data).then(res => res.data).catch(handleError),
-  delete: (id) => api.delete(`/stock/transactions/${id}`).then(res => res.data).catch(handleError)
+  delete: (id) => api.delete(`/stock/transactions/${id}`).then(res => res.data).catch(handleError),
+  // Inventory sales billing
+  getNextSaleBillNumber: () => api.get('/stock/next-sale-bill').then(res => res.data).catch(handleError),
+  checkSaleDate: (date) => api.get('/stock/check-sale-date', { params: { date } }).then(res => res.data).catch(handleError),
+  getSales: (params) => api.get('/stock/sales', { params }).then(res => res.data).catch(handleError),
+  createSale: (data) => api.post('/stock/sales', data).then(res => res.data).catch(handleError),
+  updateSale: (billNumber, data) => api.put(`/stock/sales/${billNumber}`, data).then(res => res.data).catch(handleError),
+  deleteSale: (billNumber) => api.delete(`/stock/sales/${billNumber}`).then(res => res.data).catch(handleError)
 };
 
 // SALES APIs
@@ -183,7 +190,8 @@ export const salesAPI = {
   create: (data) => api.post('/sales', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/sales/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/sales/${id}`).then(res => res.data).catch(handleError),
-  getCustomerHistory: (customerId) => api.get(`/sales/customer/${customerId}`).then(res => res.data).catch(handleError)
+  getCustomerHistory: (customerId) => api.get(`/sales/customer/${customerId}`).then(res => res.data).catch(handleError),
+  getNextBillNumber: () => api.get('/sales/next-bill-number').then(res => res.data).catch(handleError)
 };
 
 // VOUCHER APIs

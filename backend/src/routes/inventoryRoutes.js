@@ -13,7 +13,13 @@ import {
   deleteStockTransaction,
   getStockBalance,
   updateOpeningBalance,
-  updateSalesPrice
+  updateSalesPrice,
+  getNextSaleBillNumber,
+  checkSaleDate,
+  getInventorySales,
+  createSale,
+  updateSale,
+  deleteSale
 } from '../controllers/inventoryController.js';
 import { protect, addCompanyFilter } from '../middleware/auth.js';
 
@@ -37,5 +43,13 @@ router.get('/stock/transactions/:id', getStockTransactionById);
 router.put('/stock/transactions/:id', updateStockTransaction);
 router.delete('/stock/transactions/:id', deleteStockTransaction);
 router.get('/stock/balance', getStockBalance);
+
+// Inventory sales routes (static before parameterized)
+router.get('/stock/next-sale-bill', getNextSaleBillNumber);
+router.get('/stock/check-sale-date', checkSaleDate);
+router.get('/stock/sales', getInventorySales);
+router.post('/stock/sales', createSale);
+router.put('/stock/sales/:billNumber', updateSale);
+router.delete('/stock/sales/:billNumber', deleteSale);
 
 export default router;

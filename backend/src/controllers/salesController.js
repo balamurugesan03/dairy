@@ -7,7 +7,8 @@ import mongoose from 'mongoose';
 import { createBulkStockTransactions } from '../utils/stockHelper.js';
 import { createSalesVoucher, reverseLedgerBalances } from '../utils/accountingHelper.js';
 import Voucher from '../models/Voucher.js';
-import { generateCode } from '../models/Counter.js';
+import Counter, { generateCode, getNextSequence } from '../models/Counter.js';
+import PaymentRegister from '../models/PaymentRegister.js';
 
 // Create new sale
 export const createSale = async (req, res) => {
@@ -15,8 +16,28 @@ export const createSale = async (req, res) => {
     const saleData = req.body;
 
     const companyId = req.companyId;
-    // Generate bill number
-    saleData.billNumber = await generateCode('BILL', companyId);
+
+    // Block if date falls within a saved payment cycle
+    if (saleData.billDate) {
+      const saleDateTime = new Date(saleData.billDate);
+      const conflict = await PaymentRegister.findOne({
+        companyId,
+        status: { $in: ['Saved', 'Printed'] },
+        fromDate: { $lte: saleDateTime },
+        toDate: { $gte: saleDateTime }
+      });
+      if (conflict) {
+        const fmt = d => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        return res.status(400).json({
+          success: false,
+          message: `Sales blocked: date falls within payment cycle (${fmt(conflict.fromDate)} – ${fmt(conflict.toDate)})`
+        });
+      }
+    }
+
+    // Generate sequential bill number (01, 02, 03 …)
+    const seq = await getNextSequence(`dairy-sale-${companyId}`, 0);
+    saleData.billNumber = seq.toString().padStart(2, '0');
     saleData.companyId = companyId;
 
     // Set customerModel based on customerType
@@ -89,7 +110,8 @@ export const createSale = async (req, res) => {
         if (saveErr.code === 11000 && saveErr.keyPattern?.billNumber && attempts < 4) {
           // Regenerate bill number and retry
           attempts++;
-          saleData.billNumber = await generateCode('BILL', companyId);
+          const retrySeq = await getNextSequence(`dairy-sale-${companyId}`, 0);
+          saleData.billNumber = retrySeq.toString().padStart(2, '0');
           continue;
         }
         throw saveErr; // non-duplicate or max retries reached
@@ -365,11 +387,24 @@ export const getCustomerHistory = async (req, res) => {
   }
 };
 
+// GET /sales/next-bill-number — preview next bill number without incrementing
+export const getNextSaleBillNumber = async (req, res) => {
+  try {
+    const key = `dairy-sale-${req.companyId}`;
+    const counter = await Counter.findById(key);
+    const nextNum = ((counter?.seq || 0) + 1).toString().padStart(2, '0');
+    res.json({ success: true, data: { billNumber: nextNum } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export default {
   createSale,
   getAllSales,
   getSaleById,
   updateSale,
   deleteSale,
-  getCustomerHistory
+  getCustomerHistory,
+  getNextSaleBillNumber
 };

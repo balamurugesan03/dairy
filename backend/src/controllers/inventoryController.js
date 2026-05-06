@@ -2,13 +2,15 @@ import Item from '../models/Item.js';
 import StockTransaction from '../models/StockTransaction.js';
 import Ledger from '../models/Ledger.js';
 import Supplier from '../models/Supplier.js';
+import Voucher from '../models/Voucher.js';
+import PaymentRegister from '../models/PaymentRegister.js';
+import Counter, { generateCode, getNextSequence } from '../models/Counter.js';
 import {
   createStockTransaction,
   getItemStockHistory,
   getStockReport
 } from '../utils/stockHelper.js';
-import { createPurchaseVoucher } from '../utils/accountingHelper.js';
-import { generateCode } from '../models/Counter.js';
+import { createPurchaseVoucher, createSalesVoucher } from '../utils/accountingHelper.js';
 
 // Helper function to find or create category-based ledger
 const findOrCreateCategoryLedger = async (category, ledgerType, companyId) => {
@@ -855,6 +857,322 @@ export const updateSalesPrice = async (req, res) => {
   }
 };
 
+// ── Inventory Sales ──────────────────────────────────────────────────────────
+
+const fmtDateIN = (d) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+const checkCycleConflict = async (date, companyId) => {
+  const d = new Date(date);
+  return PaymentRegister.findOne({
+    companyId,
+    status: { $in: ['Saved', 'Printed'] },
+    fromDate: { $lte: d },
+    toDate: { $gte: d }
+  });
+};
+
+// GET /stock/next-sale-bill — preview next bill number without incrementing
+export const getNextSaleBillNumber = async (req, res) => {
+  try {
+    const key = `sale-bill-${req.companyId}`;
+    const counter = await Counter.findById(key);
+    const nextNum = ((counter?.seq || 0) + 1).toString().padStart(2, '0');
+    res.json({ success: true, data: { billNumber: nextNum } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// GET /stock/check-sale-date?date= — check if date falls in a locked payment cycle
+export const checkSaleDate = async (req, res) => {
+  try {
+    const { date } = req.query;
+    if (!date) return res.json({ success: true, data: { blocked: false } });
+
+    const conflict = await checkCycleConflict(date, req.companyId);
+    if (conflict) {
+      return res.json({
+        success: true,
+        data: {
+          blocked: true,
+          message: `Sales blocked: date falls within payment cycle (${fmtDateIN(conflict.fromDate)} – ${fmtDateIN(conflict.toDate)})`
+        }
+      });
+    }
+    return res.json({ success: true, data: { blocked: false } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// GET /stock/sales — all sales bills grouped by bill number
+export const getInventorySales = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const companyId = req.companyId;
+
+    const query = { companyId, transactionType: 'Stock Out', referenceType: 'Sale' };
+    if (startDate || endDate) {
+      query.date = {};
+      if (startDate) query.date.$gte = new Date(startDate);
+      if (endDate) { const e = new Date(endDate); e.setHours(23, 59, 59, 999); query.date.$lte = e; }
+    }
+
+    const transactions = await StockTransaction.find(query)
+      .populate('itemId', 'itemCode itemName unit')
+      .populate('issueCentre', 'centerName')
+      .sort({ date: -1 });
+
+    const billsMap = new Map();
+    for (const txn of transactions) {
+      const bill = txn.invoiceNumber || 'UNKNOWN';
+      if (!billsMap.has(bill)) {
+        billsMap.set(bill, {
+          billNumber: bill,
+          date: txn.date,
+          centerId: txn.issueCentre?._id,
+          centerName: txn.issueCentre?.centerName || '-',
+          paymentMode: txn.paymentMode,
+          notes: txn.notes,
+          items: [],
+          totalAmount: 0,
+          transactionIds: []
+        });
+      }
+      const b = billsMap.get(bill);
+      b.items.push({
+        itemId: txn.itemId?._id,
+        itemName: txn.itemId?.itemName || 'N/A',
+        itemCode: txn.itemId?.itemCode || '',
+        unit: txn.itemId?.unit || '',
+        quantity: txn.quantity,
+        rate: txn.rate
+      });
+      b.totalAmount += (txn.quantity || 0) * (txn.rate || 0);
+      b.transactionIds.push(txn._id);
+    }
+
+    const bills = Array.from(billsMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
+    res.json({ success: true, data: bills });
+  } catch (error) {
+    console.error('Error fetching inventory sales:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// POST /stock/sales — create a new sale bill
+export const createSale = async (req, res) => {
+  try {
+    const { items, saleDate, collectionCenterId, paymentMode, customerName, notes } = req.body;
+    const companyId = req.companyId;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: 'At least one item is required' });
+    }
+    for (const item of items) {
+      if (!item.itemId || !item.quantity || item.quantity <= 0) {
+        return res.status(400).json({ success: false, message: 'Each item must have a valid itemId and quantity > 0' });
+      }
+    }
+
+    // Block if date is within a saved payment cycle
+    if (saleDate) {
+      const conflict = await checkCycleConflict(saleDate, companyId);
+      if (conflict) {
+        return res.status(400).json({
+          success: false,
+          message: `Sales blocked: date falls within payment cycle (${fmtDateIN(conflict.fromDate)} – ${fmtDateIN(conflict.toDate)})`
+        });
+      }
+    }
+
+    // Generate bill number (increments counter)
+    const seq = await getNextSequence(`sale-bill-${companyId}`, 0);
+    const billNumber = seq.toString().padStart(2, '0');
+
+    let totalAmount = 0;
+    const transactions = [];
+
+    for (const item of items) {
+      const qty = parseFloat(item.quantity);
+      const rate = parseFloat(item.rate || 0);
+      totalAmount += qty * rate;
+
+      const txn = await createStockTransaction({
+        itemId: item.itemId,
+        transactionType: 'Stock Out',
+        quantity: qty,
+        rate,
+        referenceType: 'Sale',
+        date: saleDate ? new Date(saleDate) : new Date(),
+        issueCentre: collectionCenterId || null,
+        invoiceNumber: billNumber,
+        paymentMode: paymentMode || 'Cash',
+        notes: notes || null,
+        companyId
+      });
+      transactions.push(txn);
+    }
+
+    // Auto-post accounting voucher
+    let voucher = null;
+    try {
+      const paidAmt = ['Cash', 'Bank', 'Cheque', 'UPI'].includes(paymentMode) ? totalAmount : 0;
+      voucher = await createSalesVoucher({
+        grandTotal: totalAmount,
+        paidAmount: paidAmt,
+        paymentMode: paymentMode || 'Cash',
+        billNumber,
+        billDate: saleDate ? new Date(saleDate) : new Date(),
+        companyId,
+        _id: transactions[0]?._id
+      });
+      if (voucher) {
+        for (const txn of transactions) { txn.voucherId = voucher._id; await txn.save(); }
+      }
+    } catch (vErr) {
+      console.error('Sales voucher creation failed:', vErr);
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Sale recorded successfully',
+      data: {
+        transactions,
+        billNumber,
+        voucher: voucher ? { _id: voucher._id, voucherNumber: voucher.voucherNumber } : null
+      }
+    });
+  } catch (error) {
+    console.error('Error creating sale:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error creating sale' });
+  }
+};
+
+// PUT /stock/sales/:billNumber — update an existing sale bill
+export const updateSale = async (req, res) => {
+  try {
+    const { billNumber } = req.params;
+    const { items, saleDate, collectionCenterId, paymentMode, notes } = req.body;
+    const companyId = req.companyId;
+
+    const existingTxns = await StockTransaction.find({
+      companyId, invoiceNumber: billNumber, transactionType: 'Stock Out', referenceType: 'Sale'
+    });
+    if (existingTxns.length === 0) {
+      return res.status(404).json({ success: false, message: 'Sale not found' });
+    }
+
+    if (saleDate) {
+      const conflict = await checkCycleConflict(saleDate, companyId);
+      if (conflict) {
+        return res.status(400).json({
+          success: false,
+          message: `Sales blocked: date falls within payment cycle (${fmtDateIN(conflict.fromDate)} – ${fmtDateIN(conflict.toDate)})`
+        });
+      }
+    }
+
+    // Delete old voucher
+    const oldVoucherId = existingTxns[0]?.voucherId;
+    if (oldVoucherId) {
+      await Voucher.findByIdAndDelete(oldVoucherId);
+    }
+
+    // Delete old transactions and restore stock
+    for (const txn of existingTxns) {
+      const item = await Item.findById(txn.itemId);
+      if (item) { item.currentBalance += txn.quantity; await item.save(); }
+      await StockTransaction.findByIdAndDelete(txn._id);
+    }
+
+    let totalAmount = 0;
+    const transactions = [];
+
+    for (const item of items) {
+      const qty = parseFloat(item.quantity);
+      const rate = parseFloat(item.rate || 0);
+      totalAmount += qty * rate;
+
+      const txn = await createStockTransaction({
+        itemId: item.itemId,
+        transactionType: 'Stock Out',
+        quantity: qty,
+        rate,
+        referenceType: 'Sale',
+        date: saleDate ? new Date(saleDate) : new Date(),
+        issueCentre: collectionCenterId || null,
+        invoiceNumber: billNumber,
+        paymentMode: paymentMode || 'Cash',
+        notes: notes || null,
+        companyId
+      });
+      transactions.push(txn);
+    }
+
+    let voucher = null;
+    try {
+      const paidAmt = ['Cash', 'Bank', 'Cheque', 'UPI'].includes(paymentMode) ? totalAmount : 0;
+      voucher = await createSalesVoucher({
+        grandTotal: totalAmount,
+        paidAmount: paidAmt,
+        paymentMode: paymentMode || 'Cash',
+        billNumber,
+        billDate: saleDate ? new Date(saleDate) : new Date(),
+        companyId,
+        _id: transactions[0]?._id
+      });
+      if (voucher) {
+        for (const txn of transactions) { txn.voucherId = voucher._id; await txn.save(); }
+      }
+    } catch (vErr) {
+      console.error('Sales voucher creation failed:', vErr);
+    }
+
+    res.json({
+      success: true,
+      message: 'Sale updated successfully',
+      data: { transactions, billNumber, voucher: voucher ? { _id: voucher._id, voucherNumber: voucher.voucherNumber } : null }
+    });
+  } catch (error) {
+    console.error('Error updating sale:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error updating sale' });
+  }
+};
+
+// DELETE /stock/sales/:billNumber — delete a sale bill
+export const deleteSale = async (req, res) => {
+  try {
+    const { billNumber } = req.params;
+    const companyId = req.companyId;
+
+    const transactions = await StockTransaction.find({
+      companyId, invoiceNumber: billNumber, transactionType: 'Stock Out', referenceType: 'Sale'
+    });
+    if (transactions.length === 0) {
+      return res.status(404).json({ success: false, message: 'Sale not found' });
+    }
+
+    // Delete voucher if exists
+    const voucherId = transactions[0]?.voucherId;
+    if (voucherId) {
+      await Voucher.findByIdAndDelete(voucherId);
+    }
+
+    // Restore stock and delete transactions
+    for (const txn of transactions) {
+      const item = await Item.findById(txn.itemId);
+      if (item) { item.currentBalance += txn.quantity; await item.save(); }
+      await StockTransaction.findByIdAndDelete(txn._id);
+    }
+
+    res.json({ success: true, message: 'Sale deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting sale:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error deleting sale' });
+  }
+};
+
 export default {
   createItem,
   getAllItems,
@@ -869,5 +1187,11 @@ export default {
   deleteStockTransaction,
   getStockBalance,
   updateOpeningBalance,
-  updateSalesPrice
+  updateSalesPrice,
+  getNextSaleBillNumber,
+  checkSaleDate,
+  getInventorySales,
+  createSale,
+  updateSale,
+  deleteSale
 };

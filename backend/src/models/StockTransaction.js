@@ -82,7 +82,7 @@ const stockTransactionSchema = new mongoose.Schema({
   },
   paymentMode: {
     type: String,
-    enum: ['Credit', 'Cash', 'Adjustment', 'N/A'],
+    enum: ['Credit', 'Cash', 'Adjustment', 'N/A', 'Bank', 'Cheque', 'UPI'],
     default: 'Credit'
   },
   paidAmount: {
