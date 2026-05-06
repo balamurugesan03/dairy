@@ -47,11 +47,11 @@ export const retrieveBalances = async (req, res) => {
       let paymentMode = 'Bank Transfer'; // default
 
       if (transferBasis === 'As on Date Balance') {
-        // Only 'BankTransfer' source = queued via Save Payment with no paidAmount.
+        // Query all pending BankTransfer payments — no paymentDate filter because the
+        // register save date is always today (after the period end), not the period end.
         const pendingPayments = await FarmerPayment.find({
           companyId: new mongoose.Types.ObjectId(companyId),
           farmerId: farmer._id,
-          paymentDate: { $lte: new Date(asOnDate) },
           status: { $in: ['Pending', 'Partial'] },
           paymentSource: 'BankTransfer'
         }).sort({ paymentDate: -1 });
@@ -272,13 +272,9 @@ const createProducerDuesVouchers = async (bankTransfer, transferDetails, company
     'PRODUCERS DUES', 'Other Payable', 'Cr', companyId
   );
 
-  // Separate cash vs bank transfers
-  const cashTransfers = transferDetails.filter(
-    d => d.paymentMode === 'Cash' || d.paymentMode === 'Cheque'
-  );
-  const bankTransfers = transferDetails.filter(
-    d => !d.paymentMode || d.paymentMode === 'Bank Transfer' || d.paymentMode === 'Bank'
-  );
+  const CASH_MODES = ['Cash', 'Cheque', 'All Cheque', 'Personal Cheque'];
+  const cashTransfers = transferDetails.filter(d => CASH_MODES.includes(d.paymentMode));
+  const bankTransfers = transferDetails.filter(d => !d.paymentMode || !CASH_MODES.includes(d.paymentMode));
 
   const cashTotal = cashTransfers.reduce((s, d) => s + (d.transferAmount || 0), 0);
   const bankTotal = bankTransfers.reduce((s, d) => s + (d.transferAmount || 0), 0);

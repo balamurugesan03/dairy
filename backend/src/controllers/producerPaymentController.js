@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import ProducerPayment from '../models/ProducerPayment.js';
 import Farmer from '../models/Farmer.js';
 import FarmerPayment from '../models/FarmerPayment.js';
+import PaymentRegister from '../models/PaymentRegister.js';
 
 // ─── Create Payment ────────────────────────────────────────────────────────────
 export const createPayment = async (req, res) => {
@@ -60,6 +61,34 @@ export const createPayment = async (req, res) => {
     });
 
     await payment.save();
+
+    // Update the corresponding FarmerPayment record to reflect this cash payment
+    try {
+      const farmerObjId  = new mongoose.Types.ObjectId(farmerId);
+      const companyObjId = new mongoose.Types.ObjectId(req.userCompany);
+      const periodFilter = {
+        companyId: companyObjId,
+        farmerId:  farmerObjId,
+        status:    { $in: ['Pending', 'Partial'] },
+      };
+      if (processingPeriod?.fromDate) periodFilter['paymentPeriod.fromDate'] = { $gte: new Date(processingPeriod.fromDate) };
+      if (processingPeriod?.toDate)   periodFilter['paymentPeriod.toDate']   = { $lte: new Date(new Date(processingPeriod.toDate).setHours(23, 59, 59, 999)) };
+
+      const pendingFP = await FarmerPayment.find(periodFilter).sort({ createdAt: -1 });
+      let remaining = amountPaid;
+      for (const fp of pendingFP) {
+        if (remaining <= 0) break;
+        const outstanding = fp.balanceAmount > 0 ? fp.balanceAmount : fp.netPayable;
+        const apply = Math.min(remaining, outstanding);
+        fp.paidAmount  = (fp.paidAmount || 0) + apply;
+        fp.paymentMode = paymentMode || fp.paymentMode;
+        // pre-save hook recomputes balanceAmount and status
+        await fp.save();
+        remaining -= apply;
+      }
+    } catch (fpErr) {
+      console.warn('FarmerPayment update skipped:', fpErr.message);
+    }
 
     return res.status(201).json({ success: true, data: payment });
   } catch (error) {
@@ -169,6 +198,7 @@ export const getPayments = async (req, res) => {
 export const getProducerBalance = async (req, res) => {
   try {
     const { farmerId } = req.params;
+    const { fromDate, toDate } = req.query;
     const companyId = req.userCompany;
 
     if (!farmerId || !mongoose.Types.ObjectId.isValid(farmerId)) {
@@ -187,24 +217,48 @@ export const getProducerBalance = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Farmer not found' });
     }
 
-    // Aggregate balance from FarmerPayment
+    // Build FarmerPayment match — filter by period if provided
+    const fpMatch = {
+      companyId: new mongoose.Types.ObjectId(companyId),
+      farmerId:  new mongoose.Types.ObjectId(farmerId),
+      status:    { $in: ['Pending', 'Partial'] },
+    };
+    if (fromDate) fpMatch['paymentPeriod.fromDate'] = { $gte: new Date(fromDate) };
+    if (toDate)   fpMatch['paymentPeriod.toDate']   = { $lte: new Date(new Date(toDate).setHours(23, 59, 59, 999)) };
+
     const balanceAgg = await FarmerPayment.aggregate([
-      {
-        $match: {
-          companyId: new mongoose.Types.ObjectId(companyId),
-          farmerId: new mongoose.Types.ObjectId(farmerId),
-          status: { $in: ['Pending', 'Partial'] }
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          totalBalance: { $sum: '$balanceAmount' }
-        }
-      }
+      { $match: fpMatch },
+      { $group: { _id: null, totalBalance: { $sum: '$balanceAmount' }, totalNetPayable: { $sum: '$netPayable' } } }
     ]);
 
-    const balance = balanceAgg[0]?.totalBalance || 0;
+    // Use netPayable (amount owed) if balanceAmount is 0 due to paidAmount tracking issues
+    let balance = balanceAgg[0]?.totalBalance || 0;
+    if (balance === 0 && balanceAgg[0]?.totalNetPayable > 0) {
+      balance = balanceAgg[0].totalNetPayable;
+    }
+
+    // Fallback: look up the latest saved PaymentRegister cycle for this farmer
+    if (balance === 0) {
+      const prMatch = {
+        companyId:    new mongoose.Types.ObjectId(companyId),
+        registerType: 'Ledger',
+        'entries.farmerId': new mongoose.Types.ObjectId(farmerId),
+      };
+      if (fromDate) prMatch.fromDate = { $gte: new Date(fromDate) };
+      if (toDate)   prMatch.toDate   = { $lte: new Date(new Date(toDate).setHours(23, 59, 59, 999)) };
+
+      const latestRegister = await PaymentRegister.findOne(prMatch)
+        .sort({ toDate: -1, createdAt: -1 })
+        .select('entries')
+        .lean();
+
+      if (latestRegister) {
+        const entry = latestRegister.entries.find(
+          e => e.farmerId?.toString() === farmerId
+        );
+        balance = entry?.netPay || 0;
+      }
+    }
 
     return res.json({
       success: true,

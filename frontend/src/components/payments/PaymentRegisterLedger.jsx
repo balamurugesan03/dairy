@@ -121,6 +121,179 @@ const recalc = (row) => {
 };
 
 /* ════════════════════════════════════════════════════════════
+   MEMOISED ROW — re-renders only when its own row data changes
+════════════════════════════════════════════════════════════ */
+const PaymentRow = React.memo(function PaymentRow({ row, idx, quantityUnit, onUpdate, onToggleLock }) {
+  const isPaid     = row.paid;
+  const isBankPend = row.bankPending;
+  const netClr = n(row.netPay) >= 0 ? '#00695c' : '#c53030';
+  const netBg  = n(row.netPay) >= 0
+    ? (idx % 2 === 0 ? '#e6fffa' : '#d4f5ee')
+    : (idx % 2 === 0 ? '#fff5f5' : '#fde8e8');
+  const rowBg = isBankPend ? '#ebf8ff' : isPaid ? '#f0fff4' : row.locked ? '#f0fff4' : (idx % 2 === 0 ? '#ffffff' : '#f9fafb');
+
+  return (
+    <tr style={{ background: rowBg }}>
+      <td style={td({ background: '#f7fafc', fontSize: 11, fontWeight: 600, color: '#718096' })}>{row.sn}</td>
+      <td style={td({ fontSize: 10, color: '#4a5568', padding: '0 4px' })}>{row.producerId}</td>
+      <td style={td({ textAlign: 'left', fontSize: 11, color: '#1a202c', padding: '0 5px', fontWeight: 500 })}>{row.producerName}</td>
+
+      {/* QTY */}
+      <td style={td()}>
+        <NumberInput {...numPropsRO({ decimalScale: quantityUnit === 'KG' ? 3 : 1 })} value={row.qty} placeholder="—"
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, width: '100%', cursor: 'default' } }} />
+      </td>
+      {/* Milk Value */}
+      <td style={td({ background: '#fffff0' })}>
+        <NumberInput {...numPropsRO()} value={row.milkValue} placeholder="—"
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 600, color: '#1a365d', width: '100%', cursor: 'default' } }} />
+      </td>
+      {/* Prev Balance */}
+      <td style={td({ background: '#ebf8ff' })}>
+        <NumberInput {...numPropsRO()} value={row.prevBalance} placeholder="—"
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#2b6cb0', width: '100%', cursor: 'default' } }} />
+      </td>
+      {/* Other Earnings */}
+      <td style={td({ background: '#f0fff4' })}>
+        {(isPaid || row.locked)
+          ? <NumberInput {...numPropsRO()} value={row.otherEarnings} placeholder="—"
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#276749', width: '100%', cursor: 'default' } }} />
+          : <NumberInput {...numProps()} value={row.otherEarnings} placeholder="0.00"
+              onChange={(v) => onUpdate(idx, 'otherEarnings', v)}
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#276749', width: '100%', ...EDIT_STYLE } }} />
+        }
+      </td>
+      {/* Total Earnings */}
+      <td style={td({ background: '#e6fffa' })}>
+        <NumberInput {...numPropsRO()} value={row.totalEarnings} placeholder="—"
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 700, color: '#276749', width: '100%', cursor: 'default' } }} />
+      </td>
+
+      {/* Welfare */}
+      <td style={td({ background: '#fff3cd' })}>
+        {(isPaid || row.locked)
+          ? <NumberInput {...numPropsRO()} value={row.welfare} placeholder="—"
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#92400e', width: '100%', cursor: 'default' } }} />
+          : <NumberInput {...numProps()} value={row.welfare} placeholder="0"
+              onChange={(v) => onUpdate(idx, 'welfare', v)}
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#92400e', width: '100%' } }} />
+        }
+      </td>
+      {/* CF Advance */}
+      <td style={td({ background: '#fffaf0' })}>
+        <NumberInput {...numPropsRO()} value={row.cfAdv} placeholder="—"
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#7b341e', width: '100%', cursor: 'default' } }} />
+      </td>
+      {/* CF Recovery */}
+      <td style={td({ background: '#fff9f0' })}>
+        {(isPaid || row.locked)
+          ? <NumberInput {...numPropsRO()} value={row.cfRec} placeholder="—"
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', cursor: 'default' } }} />
+          : <NumberInput {...numProps()} value={row.cfRec}
+              onChange={(v) => onUpdate(idx, 'cfRec', v)} placeholder="0.00"
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', ...EDIT_STYLE } }} />
+        }
+      </td>
+      {/* Cash Advance */}
+      <td style={td({ background: '#fffaf0' })}>
+        <NumberInput {...numPropsRO()} value={row.cashAdv} placeholder="—"
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#7b341e', width: '100%', cursor: 'default' } }} />
+      </td>
+      {/* Cash Recovery */}
+      <td style={td({ background: '#fff9f0' })}>
+        {(isPaid || row.locked)
+          ? <NumberInput {...numPropsRO()} value={row.cashRec} placeholder="—"
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', cursor: 'default' } }} />
+          : <NumberInput {...numProps()} value={row.cashRec}
+              onChange={(v) => onUpdate(idx, 'cashRec', v)} placeholder="0.00"
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', ...EDIT_STYLE } }} />
+        }
+      </td>
+      {/* Loan Advance */}
+      <td style={td({ background: '#fffaf0' })}>
+        <NumberInput {...numPropsRO()} value={row.loanAdv} placeholder="—"
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#7b341e', width: '100%', cursor: 'default' } }} />
+      </td>
+      {/* Loan Recovery */}
+      <td style={td({ background: '#fff9f0' })}>
+        {(isPaid || row.locked)
+          ? <NumberInput {...numPropsRO()} value={row.loanRec} placeholder="—"
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', cursor: 'default' } }} />
+          : <NumberInput {...numProps()} value={row.loanRec}
+              onChange={(v) => onUpdate(idx, 'loanRec', v)} placeholder="0.00"
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', ...EDIT_STYLE } }} />
+        }
+      </td>
+      {/* Other Deductions */}
+      <td style={td({ background: '#fffaf0' })}>
+        {(isPaid || row.locked)
+          ? <NumberInput {...numPropsRO()} value={row.otherDed} placeholder="—"
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, width: '100%', cursor: 'default' } }} />
+          : <NumberInput {...numProps()} value={row.otherDed} placeholder="0.00"
+              onChange={(v) => onUpdate(idx, 'otherDed', v)}
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, width: '100%', ...EDIT_STYLE } }} />
+        }
+      </td>
+      {/* Total Deductions */}
+      <td style={td({ background: '#ffe0b2' })}>
+        <NumberInput {...numPropsRO()} value={row.totalDed} placeholder="—"
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 700, color: '#7b341e', width: '100%', cursor: 'default' } }} />
+      </td>
+      {/* Net Pay */}
+      <td style={td({ background: netBg })}>
+        <NumberInput {...numPropsRO()} value={row.netPay} placeholder="—"
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 700, color: netClr, width: '100%', cursor: 'default' } }} />
+      </td>
+      {/* To Transfer */}
+      <td style={td({ background: '#f0f4ff' })}>
+        <NumberInput {...numPropsRO()} value={row.netPay} placeholder="—"
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 600, color: '#1a365d', width: '100%', cursor: 'default' } }} />
+      </td>
+      {/* Signature — print-only */}
+      <td style={{ ...td(), display: 'none' }} className="print-show">
+        <TextInput
+          variant="unstyled" size="xs"
+          value={row.signature}
+          onChange={(e) => !(isPaid || row.locked) && onUpdate(idx, 'signature', e.target.value)}
+          readOnly={isPaid || row.locked}
+          placeholder="Sign."
+          styles={{ input: { fontSize: 10, height: 26, padding: '0 4px', borderBottom: '1px dashed #cbd5e0', fontStyle: 'italic', width: '100%' } }}
+        />
+      </td>
+      {/* Lock checkbox */}
+      <td style={td({ padding: '0 4px', background: row.locked || isPaid ? '#f0fff4' : '#fff' })} className="no-print">
+        {row.producerName?.trim() ? (
+          isPaid ? (
+            isBankPend ? (
+              <Group justify="center" gap={2} wrap="nowrap">
+                <IconBuildingBank size={12} color="#2b6cb0" />
+                <Text size={9} c="blue" fw={600}>Bank</Text>
+              </Group>
+            ) : (
+              <Group justify="center" gap={2} wrap="nowrap">
+                <IconCheck size={12} color="#38a169" />
+                <Text size={9} c="green" fw={600}>Paid</Text>
+              </Group>
+            )
+          ) : (
+            <Group justify="center" align="center" style={{ height: 28 }} gap={0}>
+              <Checkbox
+                size="xs"
+                checked={row.locked}
+                onChange={() => onToggleLock(idx)}
+                color="teal"
+                title={row.locked ? 'Locked — click to unlock' : 'Lock this farmer\'s payment'}
+                styles={{ input: { cursor: 'pointer' } }}
+              />
+            </Group>
+          )
+        ) : null}
+      </td>
+    </tr>
+  );
+});
+
+/* ════════════════════════════════════════════════════════════
    COMPONENT
 ════════════════════════════════════════════════════════════ */
 const PaymentRegisterLedger = () => {
@@ -342,11 +515,13 @@ const PaymentRegisterLedger = () => {
         if (r.farmerId && r.balance > 0) cfAdvMap[r.farmerId] = r.balance;
       });
 
-      // Apply CF advance balance to row: set cfAdv = outstanding, cfRec = same (auto-deduct)
-      // mergePayment (called after) will override cfRec if already saved from a prior payment
+      // Apply CF advance balance. Skip if applyPrevCycle already set cfAdv (it already reflects
+      // the previous cycle's recovery). Only apply raw API balance on fresh load (no prev cycle).
       const applyCFAdvance = (row) => {
         const cfBal = cfAdvMap[row.farmerId];
         if (!cfBal) return row;
+        // If prev cycle data exists, applyPrevCycle already computed cfAdv = cfAdv - cfRec
+        if (prevCycleRef.current[row.farmerId]) return row;
         return recalc({ ...row, cfAdv: cfBal, cfRec: cfBal });
       };
       const entries  = res?.data?.entries || [];
@@ -414,17 +589,21 @@ const PaymentRegisterLedger = () => {
       };
 
       if (entries.length > 0) {
-        const mapped = entries.map((e, i) => {
-          let row = toRow(e, i);
-          // Apply welfare from PeriodicalRule if backend returned 0
-          if (!n(row.welfare) && welfareAmt > 0) row = recalc({ ...row, welfare: welfareAmt });
-          // Apply previous cycle carry-forward (prevBalance, cfAdv, cashAdv, loanAdv)
-          row = applyPrevCycle(row);
-          // Auto-fill cfAdv + cfRec from outstanding CF advance balance
-          row = applyCFAdvance(row);
-          // Merge existing individual payment data (overrides cfRec if already paid)
-          return mergePayment(row);
-        });
+        const mapped = entries
+          .map((e, i) => {
+            let row = toRow(e, i);
+            if (!n(row.welfare) && welfareAmt > 0) row = recalc({ ...row, welfare: welfareAmt });
+            row = applyPrevCycle(row);
+            row = applyCFAdvance(row);
+            return mergePayment(row);
+          })
+          .sort((a, b) => {
+            const na = parseInt(a.producerId, 10);
+            const nb = parseInt(b.producerId, 10);
+            if (!isNaN(na) && !isNaN(nb)) return na - nb;
+            return String(a.producerId || '').localeCompare(String(b.producerId || ''));
+          })
+          .map((r, i) => ({ ...r, sn: i + 1 }));
         setRows(mapped);
         setDateConfirmed(true);
         const paidCount = mapped.filter(r => r.paid).length;
@@ -438,13 +617,21 @@ const PaymentRegisterLedger = () => {
         const oRes     = await producerOpeningAPI.getAll({ limit: 500 });
         const openings = oRes?.data || [];
         if (openings.length > 0) {
-          const mapped = openings.map((o, i) => {
-            let row = openingToRow(o, i);
-            if (!n(row.welfare) && welfareAmt > 0) row = recalc({ ...row, welfare: welfareAmt });
-            row = applyPrevCycle(row);
-            row = applyCFAdvance(row);
-            return mergePayment(row);
-          });
+          const mapped = openings
+            .map((o, i) => {
+              let row = openingToRow(o, i);
+              if (!n(row.welfare) && welfareAmt > 0) row = recalc({ ...row, welfare: welfareAmt });
+              row = applyPrevCycle(row);
+              row = applyCFAdvance(row);
+              return mergePayment(row);
+            })
+            .sort((a, b) => {
+              const na = parseInt(a.producerId, 10);
+              const nb = parseInt(b.producerId, 10);
+              if (!isNaN(na) && !isNaN(nb)) return na - nb;
+              return String(a.producerId || '').localeCompare(String(b.producerId || ''));
+            })
+            .map((r, i) => ({ ...r, sn: i + 1 }));
           setRows(mapped);
           setDateConfirmed(true);
           if (!silent) notifications.show({
@@ -478,40 +665,31 @@ const PaymentRegisterLedger = () => {
     await loadData(fromDate, toDate, false);
   }, [fromDate, toDate]);
 
-  /* ─── Row update ─── */
-  const updateRow = (idx, field, value) => {
+  /* ─── Row update — stable reference (no deps, uses functional setRows) ─── */
+  const updateRow = useCallback((idx, field, value) => {
     setRows(prev => {
       const next = [...prev];
       next[idx]  = recalc({ ...next[idx], [field]: value });
       return next;
     });
-  };
+  }, []);
 
-  /* ─── Toggle lock state per row (UI-only — no API call) ─── */
-  const toggleLock = (idx) => {
+  /* ─── Toggle lock per row ─── */
+  const toggleLock = useCallback((idx) => {
     setRows(prev => {
       const next = [...prev];
-      if (next[idx].paid || next[idx].bankPending) return next; // already saved, cannot unlock
+      if (next[idx].paid || next[idx].bankPending) return next;
       next[idx] = { ...next[idx], locked: !next[idx].locked };
       return next;
     });
-  };
+  }, []);
 
-  /* Toggle pay mode (Bank/Cash — mutually exclusive checkbox) */
-  const togglePayMode = (idx, mode) => {
-    setRows(prev => {
-      const next = [...prev];
-      next[idx]  = { ...next[idx], payMode: next[idx].payMode === mode ? '' : mode };
-      return next;
-    });
-  };
-
-  /* Select ALL rows' pay mode at once */
-  const selectAllPayMode = (mode) => {
+  /* ─── Lock ALL unlocked rows at once ─── */
+  const lockAllRows = useCallback(() => {
     setRows(prev => prev.map(r =>
-      r.producerName?.trim() ? { ...r, payMode: r.payMode === mode ? '' : mode } : r
+      r.producerName?.trim() && !r.paid && !r.bankPending ? { ...r, locked: true } : r
     ));
-  };
+  }, []);
 
   /* ─── Advance period to next cycle ─── */
   const advanceCycle = () => {
@@ -538,7 +716,6 @@ const PaymentRegisterLedger = () => {
       return;
     }
 
-    // Rows not yet locked or individually paid
     const unlockedNow = filledRows.filter(r => !r.locked && !r.paid && !r.bankPending);
     if (unlockedNow.length > 0) {
       notifications.show({
@@ -550,6 +727,7 @@ const PaymentRegisterLedger = () => {
       return;
     }
 
+    const saveStart = Date.now();
     setSaving(true);
     const periodFrom = fromDate;
     const periodTo   = toDate;
@@ -645,10 +823,12 @@ const PaymentRegisterLedger = () => {
       return;
     }
 
+    const elapsed = ((Date.now() - saveStart) / 1000).toFixed(1);
+
     // Store carry-forward data for next cycle
     storeCycleData(filledRows);
 
-    // Advance to next cycle
+    // Advance to next cycle — clear rows; user must click Generate to load next cycle
     const nextFrom = dayjs(periodTo).add(1, 'day').toDate();
     const nextTo   = dayjs(nextFrom).add(settingsDays - 1, 'day').toDate();
     setFromDate(nextFrom);
@@ -658,13 +838,11 @@ const PaymentRegisterLedger = () => {
 
     notifications.show({
       title:   'Payment Saved',
-      message: `${done > 0 ? `${done} farmer(s) queued for Bank Transfer. ` : 'All individually paid. '}Next cycle: ${dayjs(nextFrom).format('DD/MM/YYYY')} – ${dayjs(nextTo).format('DD/MM/YYYY')}`,
+      message: `${done > 0 ? `${done} farmer(s) queued for Bank Transfer. ` : 'All individually paid. '}Next cycle: ${dayjs(nextFrom).format('DD/MM/YYYY')} – ${dayjs(nextTo).format('DD/MM/YYYY')} · Saved in ${elapsed}s`,
       color:   'teal',
       icon:    <IconCheck size={14} />,
-      autoClose: 6000,
+      autoClose: 8000,
     });
-
-    await loadData(nextFrom, nextTo, false);
   };
 
   /* ─── Reset ─── */
@@ -797,22 +975,16 @@ const PaymentRegisterLedger = () => {
                 {/* Welfare */}<col style={{ width: 60 }} />
                 {/* CF Adv */}<col style={{ width: 60 }} />
                 {/* CF Rec */}<col style={{ width: 60 }} />
-                {/* CF Out */}<col style={{ width: 60 }} />
                 {/* Cash Adv */}<col style={{ width: 60 }} />
                 {/* Cash Rec */}<col style={{ width: 60 }} />
-                {/* Cash Out */}<col style={{ width: 60 }} />
                 {/* Loan Adv */}<col style={{ width: 60 }} />
                 {/* Loan Rec */}<col style={{ width: 60 }} />
-                {/* Loan Out */}<col style={{ width: 60 }} />
                 {/* Other Ded */}<col style={{ width: 60 }} />
                 {/* Total Ded */}<col style={{ width: 68 }} />
                 {/* Net Pay */}<col style={{ width: 78 }} />
-                {/* Bank */}<col style={{ width: 38 }} />
-                {/* Cash */}<col style={{ width: 38 }} />
-                {/* Cheque */}<col style={{ width: 44 }} />
-                {/* Paid Amt */}<col style={{ width: 72 }} />
+                {/* To Transfer */}<col style={{ width: 72 }} />
                 {/* Signature */}<col style={{ width: 90 }} />
-                {/* Apply */}<col style={{ width: 48 }} />
+                {/* Lock */}<col style={{ width: 52 }} />
               </colgroup>
 
               <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
@@ -828,11 +1000,22 @@ const PaymentRegisterLedger = () => {
                   {/* NET PAY */}
                   <th style={thSection('#276749')} rowSpan={2}>NET PAY</th>
                   {/* PAYMENT */}
-                  <th style={thSection('#1a4731')} colSpan={4}>PAYMENT</th>
+                  <th style={thSection('#1a4731')} rowSpan={2}>To Transfer</th>
                   {/* Print-only */}
                   <th style={{ ...thSection('#2d3748'), display: 'none' }} className="print-show" rowSpan={2}>Signature</th>
-                  {/* Screen only */}
-                  <th style={thSection('#276749')} rowSpan={2} className="no-print">Lock</th>
+                  {/* Lock All — screen only */}
+                  <th style={thSection('#276749')} rowSpan={2} className="no-print">
+                    <Box ta="center">
+                      <Checkbox
+                        size="xs" color="teal"
+                        checked={filledRows.length > 0 && filledRows.every(r => r.paid || r.locked || r.bankPending)}
+                        onChange={lockAllRows}
+                        title="Lock all farmers"
+                        styles={{ input: { cursor: 'pointer' } }}
+                      />
+                      <Text size={9} fw={700} c="white" mt={2}>Lock All</Text>
+                    </Box>
+                  </th>
                 </tr>
                 <tr>
                   {/* Earnings sub */}
@@ -849,283 +1032,20 @@ const PaymentRegisterLedger = () => {
                   <th style={thCol('#975a16')}>Loan Rec</th>
                   <th style={thCol('#744210')}>Other Ded</th>
                   <th style={thCol('#7b341e')}>Total Ded</th>
-                  {/* Payment sub — header checkboxes select all rows */}
-                  <th style={thCol('#276749')}>
-                    <Group justify="center" gap={2} align="center">
-                      <Checkbox
-                        size="xs"
-                        color="blue"
-                        checked={filledRows.length > 0 && filledRows.every(r => r.payMode === 'Bank')}
-                        onChange={() => selectAllPayMode('Bank')}
-                        title="Select Bank for all"
-                        styles={{ input: { cursor: 'pointer' } }}
-                      />
-                      <Text size={9} fw={700} c="white">Bank</Text>
-                    </Group>
-                  </th>
-                  <th style={thCol('#276749')}>
-                    <Group justify="center" gap={2} align="center">
-                      <Checkbox
-                        size="xs"
-                        color="green"
-                        checked={filledRows.length > 0 && filledRows.every(r => r.payMode === 'Cash')}
-                        onChange={() => selectAllPayMode('Cash')}
-                        title="Select Cash for all"
-                        styles={{ input: { cursor: 'pointer' } }}
-                      />
-                      <Text size={9} fw={700} c="white">Cash</Text>
-                    </Group>
-                  </th>
-                  <th style={thCol('#276749')}>
-                    <Group justify="center" gap={2} align="center">
-                      <Checkbox
-                        size="xs"
-                        color="violet"
-                        checked={filledRows.length > 0 && filledRows.every(r => r.payMode === 'Cheque')}
-                        onChange={() => selectAllPayMode('Cheque')}
-                        title="Select Cheque for all"
-                        styles={{ input: { cursor: 'pointer' } }}
-                      />
-                      <Text size={9} fw={700} c="white">Cheque</Text>
-                    </Group>
-                  </th>
-                  <th style={thCol('#1a4731')}>To Transfer</th>
                 </tr>
               </thead>
 
               <tbody>
-                {rows.map((row, idx) => {
-                  const rowBg      = idx % 2 === 0 ? '#ffffff' : '#f9fafb';
-                  const isPaid     = row.paid;
-                  const isBankPend = row.bankPending;
-                  const netClr = n(row.netPay) >= 0 ? '#00695c' : '#c53030';
-                  const netBg  = n(row.netPay) >= 0
-                    ? (idx % 2 === 0 ? '#e6fffa' : '#d4f5ee')
-                    : (idx % 2 === 0 ? '#fff5f5' : '#fde8e8');
-
-                  return (
-                    <tr key={idx} style={{ background: isBankPend ? '#ebf8ff' : isPaid ? '#f0fff4' : row.locked ? '#f0fff4' : rowBg }}>
-
-                      {/* SN */}
-                      <td style={td({ background: '#f7fafc', fontSize: 11, fontWeight: 600, color: '#718096' })}>
-                        {row.sn}
-                      </td>
-
-                      {/* Producer ID */}
-                      <td style={td({ fontSize: 10, color: '#4a5568', padding: '0 4px' })}>
-                        {row.producerId}
-                      </td>
-
-                      {/* Producer Name */}
-                      <td style={td({ textAlign: 'left', fontSize: 11, color: '#1a202c', padding: '0 5px', fontWeight: 500 })}>
-                        {row.producerName}
-                      </td>
-
-                      {/* QTY */}
-                      <td style={td()}>
-                        <NumberInput {...numPropsRO({ decimalScale: quantityUnit === 'KG' ? 3 : 1 })} value={row.qty} placeholder="—"
-                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, width: '100%', cursor: 'default' } }} />
-                      </td>
-
-                      {/* Milk Value */}
-                      <td style={td({ background: '#fffff0' })}>
-                        <NumberInput {...numPropsRO()} value={row.milkValue} placeholder="—"
-                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 600, color: '#1a365d', width: '100%', cursor: 'default' } }} />
-                      </td>
-
-                      {/* Prev Balance */}
-                      <td style={td({ background: '#ebf8ff' })}>
-                        <NumberInput {...numPropsRO()} value={row.prevBalance} placeholder="—"
-                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#2b6cb0', width: '100%', cursor: 'default' } }} />
-                      </td>
-
-                      {/* Other Earnings — editable unless locked */}
-                      <td style={td({ background: '#f0fff4' })}>
-                        {(isPaid || row.locked)
-                          ? <NumberInput {...numPropsRO()} value={row.otherEarnings} placeholder="—"
-                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#276749', width: '100%', cursor: 'default' } }} />
-                          : <NumberInput {...numProps()} value={row.otherEarnings} placeholder="0.00"
-                              onChange={(v) => updateRow(idx, 'otherEarnings', v)}
-                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#276749', width: '100%', ...EDIT_STYLE } }} />
-                        }
-                      </td>
-
-                      {/* Total Earnings — auto */}
-                      <td style={td({ background: '#e6fffa' })}>
-                        <NumberInput {...numPropsRO()} value={row.totalEarnings} placeholder="—"
-                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 700, color: '#276749', width: '100%', cursor: 'default' } }} />
-                      </td>
-
-                      {/* Welfare — editable unless locked */}
-                      <td style={td({ background: '#fff3cd' })}>
-                        {(isPaid || row.locked)
-                          ? <NumberInput {...numPropsRO()} value={row.welfare} placeholder="—"
-                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#92400e', width: '100%', cursor: 'default' } }} />
-                          : <NumberInput {...numProps()} value={row.welfare} placeholder="0"
-                              onChange={(v) => updateRow(idx, 'welfare', v)}
-                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#92400e', width: '100%' } }} />
-                        }
-                      </td>
-
-                      {/* CF Advance — read-only */}
-                      <td style={td({ background: '#fffaf0' })}>
-                        <NumberInput {...numPropsRO()} value={row.cfAdv} placeholder="—"
-                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#7b341e', width: '100%', cursor: 'default' } }} />
-                      </td>
-
-                      {/* CF Recovery — EDITABLE (locked when paid or user-locked) */}
-                      <td style={td({ background: '#fff9f0' })}>
-                        {(isPaid || row.locked)
-                          ? <NumberInput {...numPropsRO()} value={row.cfRec} placeholder="—"
-                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', cursor: 'default' } }} />
-                          : <NumberInput {...numProps()} value={row.cfRec}
-                              onChange={(v) => updateRow(idx, 'cfRec', v)} placeholder="0.00"
-                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', ...EDIT_STYLE } }} />
-                        }
-                      </td>
-
-                      {/* Cash Advance — read-only */}
-                      <td style={td({ background: '#fffaf0' })}>
-                        <NumberInput {...numPropsRO()} value={row.cashAdv} placeholder="—"
-                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#7b341e', width: '100%', cursor: 'default' } }} />
-                      </td>
-
-                      {/* Cash Recovery — EDITABLE (locked when paid or user-locked) */}
-                      <td style={td({ background: '#fff9f0' })}>
-                        {(isPaid || row.locked)
-                          ? <NumberInput {...numPropsRO()} value={row.cashRec} placeholder="—"
-                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', cursor: 'default' } }} />
-                          : <NumberInput {...numProps()} value={row.cashRec}
-                              onChange={(v) => updateRow(idx, 'cashRec', v)} placeholder="0.00"
-                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', ...EDIT_STYLE } }} />
-                        }
-                      </td>
-
-                      {/* Loan Advance — read-only */}
-                      <td style={td({ background: '#fffaf0' })}>
-                        <NumberInput {...numPropsRO()} value={row.loanAdv} placeholder="—"
-                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#7b341e', width: '100%', cursor: 'default' } }} />
-                      </td>
-
-                      {/* Loan Recovery — EDITABLE (locked when paid or user-locked) */}
-                      <td style={td({ background: '#fff9f0' })}>
-                        {(isPaid || row.locked)
-                          ? <NumberInput {...numPropsRO()} value={row.loanRec} placeholder="—"
-                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', cursor: 'default' } }} />
-                          : <NumberInput {...numProps()} value={row.loanRec}
-                              onChange={(v) => updateRow(idx, 'loanRec', v)} placeholder="0.00"
-                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', ...EDIT_STYLE } }} />
-                        }
-                      </td>
-
-                      {/* Other Deductions — editable unless locked */}
-                      <td style={td({ background: '#fffaf0' })}>
-                        {(isPaid || row.locked)
-                          ? <NumberInput {...numPropsRO()} value={row.otherDed} placeholder="—"
-                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, width: '100%', cursor: 'default' } }} />
-                          : <NumberInput {...numProps()} value={row.otherDed} placeholder="0.00"
-                              onChange={(v) => updateRow(idx, 'otherDed', v)}
-                              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, width: '100%', ...EDIT_STYLE } }} />
-                        }
-                      </td>
-
-                      {/* Total Deductions — auto */}
-                      <td style={td({ background: '#ffe0b2' })}>
-                        <NumberInput {...numPropsRO()} value={row.totalDed} placeholder="—"
-                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 700, color: '#7b341e', width: '100%', cursor: 'default' } }} />
-                      </td>
-
-                      {/* Net Pay — auto */}
-                      <td style={td({ background: netBg })}>
-                        <NumberInput {...numPropsRO()} value={row.netPay} placeholder="—"
-                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 700, color: netClr, width: '100%', cursor: 'default' } }} />
-                      </td>
-
-                      {/* Bank checkbox */}
-                      <td style={td({ background: '#f0fff4', padding: '0 4px' })}>
-                        <Group justify="center" align="center" style={{ height: 28 }} gap={4}>
-                          <Checkbox
-                            size="xs"
-                            label={<Text size={9} fw={600}>Bk</Text>}
-                            checked={row.payMode === 'Bank'}
-                            onChange={() => !(isPaid || row.locked) && togglePayMode(idx, 'Bank')}
-                            color="blue"
-                            disabled={isPaid || row.locked}
-                          />
-                        </Group>
-                      </td>
-
-                      {/* Cash checkbox */}
-                      <td style={td({ background: '#f0fff4', padding: '0 2px' })}>
-                        <Group justify="center" align="center" style={{ height: 28 }} gap={2}>
-                          <Checkbox size="xs" label={<Text size={9} fw={600}>Ca</Text>}
-                            checked={row.payMode === 'Cash'}
-                            onChange={() => !(isPaid || row.locked) && togglePayMode(idx, 'Cash')}
-                            color="green" disabled={isPaid || row.locked} />
-                        </Group>
-                      </td>
-
-                      {/* Cheque checkbox */}
-                      <td style={td({ background: '#f0fff4', padding: '0 2px' })}>
-                        <Group justify="center" align="center" style={{ height: 28 }} gap={2}>
-                          <Checkbox size="xs" label={<Text size={9} fw={600}>Chq</Text>}
-                            checked={row.payMode === 'Cheque'}
-                            onChange={() => !(isPaid || row.locked) && togglePayMode(idx, 'Cheque')}
-                            color="violet" disabled={isPaid || row.locked} />
-                        </Group>
-                      </td>
-
-                      {/* Net Pay (reference — transfer amount going to Bank Transfer) */}
-                      <td style={td({ background: '#f0f4ff' })}>
-                        <NumberInput {...numPropsRO()} value={row.netPay} placeholder="—"
-                          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 600, color: '#1a365d', width: '100%', cursor: 'default' } }} />
-                      </td>
-
-                      {/* Signature — print-only */}
-                      <td style={{ ...td(), display: 'none' }} className="print-show">
-                        <TextInput
-                          variant="unstyled" size="xs"
-                          value={row.signature}
-                          onChange={(e) => !(isPaid || row.locked) && updateRow(idx, 'signature', e.target.value)}
-                          readOnly={isPaid || row.locked}
-                          placeholder="Sign."
-                          styles={{ input: { fontSize: 10, height: 26, padding: '0 4px', borderBottom: '1px dashed #cbd5e0', fontStyle: 'italic', width: '100%' } }}
-                        />
-                      </td>
-
-                      {/* Lock checkbox — screen only; replaces old Apply button */}
-                      <td style={td({ padding: '0 4px', background: row.locked || isPaid ? '#f0fff4' : '#fff' })} className="no-print">
-                        {row.producerName?.trim() ? (
-                          isPaid ? (
-                            isBankPend ? (
-                              <Group justify="center" gap={2} wrap="nowrap">
-                                <IconBuildingBank size={12} color="#2b6cb0" />
-                                <Text size={9} c="blue" fw={600}>Bank</Text>
-                              </Group>
-                            ) : (
-                              <Group justify="center" gap={2} wrap="nowrap">
-                                <IconCheck size={12} color="#38a169" />
-                                <Text size={9} c="green" fw={600}>Paid</Text>
-                              </Group>
-                            )
-                          ) : (
-                            <Group justify="center" align="center" style={{ height: 28 }} gap={0}>
-                              <Checkbox
-                                size="xs"
-                                checked={row.locked}
-                                onChange={() => toggleLock(idx)}
-                                color="teal"
-                                title={row.locked ? 'Locked — click to unlock' : 'Lock this farmer\'s payment'}
-                                styles={{ input: { cursor: 'pointer' } }}
-                              />
-                            </Group>
-                          )
-                        ) : null}
-                      </td>
-
-                    </tr>
-                  );
-                })}
+                {rows.map((row, idx) => (
+                  <PaymentRow
+                    key={row.farmerId || idx}
+                    row={row}
+                    idx={idx}
+                    quantityUnit={quantityUnit}
+                    onUpdate={updateRow}
+                    onToggleLock={toggleLock}
+                  />
+                ))}
 
                 {/* TOTAL ROW */}
                 <tr style={{ borderTop: '2px solid #2d3748' }}>
@@ -1147,7 +1067,6 @@ const PaymentRegisterLedger = () => {
                   <td style={{ ...tdTotal, background: '#fffaf0' }}>{fmtN(totals.otherDed)}</td>
                   <td style={{ ...tdTotal, background: '#ffe0b2', color: '#7b341e' }}>{fmtN(totals.totalDed)}</td>
                   <td style={{ ...tdBal, background: '#b2f5ea', fontSize: 12 }}>{fmtN(totals.netPay)}</td>
-                  <td colSpan={3} style={tdTotal} className="no-print" />
                   <td style={{ ...tdTotal, background: '#f0f4ff', color: '#1a365d' }}>{fmtN(totals.netPay)}</td>
                   <td style={tdTotal} className="print-show" />
                   <td style={tdTotal} className="no-print" />

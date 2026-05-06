@@ -1009,7 +1009,7 @@ export const financialYearAPI = {
 export const producerPaymentAPI = {
   getAll:             (params)   => api.get('/producer-payments', { params }).then(res => res.data).catch(handleError),
   create:             (data)     => api.post('/producer-payments', data).then(res => res.data).catch(handleError),
-  getProducerBalance: (farmerId) => api.get(`/producer-payments/balance/${farmerId}`).then(res => res.data).catch(handleError),
+  getProducerBalance: (farmerId, params) => api.get(`/producer-payments/balance/${farmerId}`, { params }).then(res => res.data).catch(handleError),
   update:             (id, data) => api.put(`/producer-payments/${id}`, data).then(res => res.data).catch(handleError),
   cancel:             (id)       => api.post(`/producer-payments/${id}/cancel`).then(res => res.data).catch(handleError),
 };

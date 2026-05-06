@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -20,7 +19,7 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { milkCollectionAPI, collectionCenterAPI } from '../../services/api';
+import { milkCollectionAPI, collectionCenterAPI, milkSalesAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 import dayjs from 'dayjs';
 
@@ -49,6 +48,12 @@ const DailyCollectionList = () => {
   const [records,    setRecords]    = useState([]);   // ALL records for current filters
   const [centers,    setCenters]    = useState([]);
   const [page,       setPage]       = useState(1);
+  const [salesSummary, setSalesSummary] = useState({
+    local:  { qty: 0, amt: 0 },
+    credit: { qty: 0, amt: 0 },
+    school: { qty: 0, amt: 0 },
+    sample: { qty: 0, amt: 0 },
+  });
 
   const [date,   setDate]   = useState(new Date());
   const [shift,  setShift]  = useState('');
@@ -67,13 +72,35 @@ const DailyCollectionList = () => {
   const fetchRecords = useCallback(async () => {
     setLoading(true);
     try {
-      const params = { limit: 2000 };
-      if (date)   params.date             = dayjs(date).format('YYYY-MM-DD');
+      const dateStr = date ? dayjs(date).format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD');
+      const params = { limit: 2000, date: dateStr };
       if (shift)  params.shift            = shift;
       if (center) params.collectionCenter = center;
 
-      const res  = await milkCollectionAPI.getAll(params);
-      setRecords(res?.data || []);
+      const salesParams = { limit: 1000, date: dateStr };
+      if (shift) salesParams.session = shift;
+
+      const [collRes, salesRes] = await Promise.all([
+        milkCollectionAPI.getAll(params),
+        milkSalesAPI.getAll(salesParams).catch(() => ({ data: [] })),
+      ]);
+
+      setRecords(collRes?.data || []);
+
+      const salesList = salesRes?.data || [];
+      const sm = {
+        local:  { qty: 0, amt: 0 },
+        credit: { qty: 0, amt: 0 },
+        school: { qty: 0, amt: 0 },
+        sample: { qty: 0, amt: 0 },
+      };
+      salesList.forEach(s => {
+        const mode = (s.saleMode || '').toUpperCase();
+        const key = mode === 'LOCAL' ? 'local' : mode === 'CREDIT' ? 'credit' : mode === 'SCHOOL' ? 'school' : mode === 'SAMPLE' ? 'sample' : null;
+        if (key) { sm[key].qty += (s.qty || 0); sm[key].amt += (s.amount || 0); }
+      });
+      setSalesSummary(sm);
+
       setPage(1);
     } catch (err) {
       notifications.show({ message: err?.message || 'Failed to load records', color: 'red' });
@@ -133,8 +160,10 @@ const DailyCollectionList = () => {
   const avgFat   = records.length ? records.reduce((s, r) => s + (r.fat || 0), 0) / records.length : 0;
   const avgClr   = records.length ? records.reduce((s, r) => s + (r.clr || 0), 0) / records.length : 0;
   const avgSnf   = records.length ? records.reduce((s, r) => s + (r.snf || 0), 0) / records.length : 0;
-  const amCount  = records.filter(r => r.shift === 'AM').length;
-  const pmCount  = records.filter(r => r.shift === 'PM').length;
+  const amCount     = records.filter(r => r.shift === 'AM').length;
+  const pmCount     = records.filter(r => r.shift === 'PM').length;
+  const memberCount    = records.filter(r => r.isMembership !== false).length;
+  const nonMemberCount = records.filter(r => r.isMembership === false).length;
 
   // ── Delete ─────────────────────────────────────────────────────────────────
   const handleDelete = (row) => {
@@ -337,10 +366,10 @@ const DailyCollectionList = () => {
 <title>Milk Purchase Report</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap');
-  @page { size: A4 landscape; margin: 6mm; }
+  @page { size: A4 portrait; margin: 8mm; }
   * { margin:0; padding:0; box-sizing:border-box; }
   body { background:#c8c8c8; display:flex; justify-content:center; align-items:flex-start; padding:20px; min-height:100vh; }
-  .paper { background:#f5f0e8; font-family:'Courier Prime','Courier New',monospace; font-size:9.5px; color:#1a1a1a; width:275mm; padding:10mm 11mm 14mm; position:relative; box-shadow:3px 4px 18px rgba(0,0,0,0.45); transform:rotate(-0.3deg); }
+  .paper { background:#f5f0e8; font-family:'Courier Prime','Courier New',monospace; font-size:9.5px; color:#1a1a1a; width:190mm; padding:8mm 9mm 12mm; position:relative; box-shadow:3px 4px 18px rgba(0,0,0,0.45); transform:rotate(-0.3deg); }
   .paper::before { content:''; position:absolute; inset:0; pointer-events:none; background:radial-gradient(ellipse at 50% 50%,transparent 60%,rgba(200,190,170,0.25) 100%); }
   .hdr { text-align:center; margin-bottom:3mm; }
   .hdr .society { font-size:13px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; }
@@ -353,7 +382,8 @@ const DailyCollectionList = () => {
   thead tr th { border-top:1.5px solid #333; border-bottom:1px solid #555; padding:2px 3px; font-weight:700; font-size:8px; letter-spacing:0.3px; text-transform:uppercase; }
   tbody tr td { padding:1.5px 3px; border-bottom:1px dotted #bbb; }
   tbody tr:nth-child(odd) td { background:rgba(0,0,0,0.025); }
-  .section-hdr td { font-weight:700; font-size:8px; letter-spacing:1px; text-transform:uppercase; padding:3px 3px 1px; border-bottom:1px solid #555; background:rgba(0,0,0,0.06); }
+  .section-hdr td { font-weight:700; font-size:8px; letter-spacing:1px; text-transform:uppercase; padding:3px 3px 1px; border-bottom:1px solid #555; background:rgba(30,80,160,0.10); color:#1a3c6e; }
+  .section-hdr.nm td { background:rgba(120,120,120,0.10); color:#444; }
   .sub td { border-top:1px solid #666; font-weight:700; font-size:8.5px; background:rgba(0,0,0,0.04); }
   .grand td { border-top:2px solid #333; border-bottom:1.5px solid #333; font-weight:700; font-size:9px; background:rgba(0,0,0,0.07); }
   .c { text-align:center; } .r { text-align:right; } .l { text-align:left; } .bold { font-weight:700; }
@@ -398,8 +428,8 @@ const DailyCollectionList = () => {
       </tr>
     </thead>
     <tbody>
-      ${members.length ? `<tr class="section-hdr"><td colspan="9">-- Member List --</td></tr>${buildRows(members)}${subTotal(members)}` : ''}
-      ${nonMembers.length ? `<tr class="section-hdr"><td colspan="9">-- Non-Member List --</td></tr>${buildRows(nonMembers)}${subTotal(nonMembers)}` : ''}
+      ${members.length ? `<tr class="section-hdr"><td colspan="9">MEMBER LIST (${members.length})</td></tr>${buildRows(members)}${subTotal(members)}` : ''}
+      ${nonMembers.length ? `<tr class="section-hdr nm"><td colspan="9">NON-MEMBER LIST (${nonMembers.length})</td></tr>${buildRows(nonMembers)}${subTotal(nonMembers)}` : ''}
       <tr class="grand">
         <td colspan="6" class="r">TOTAL PURCHASE</td>
         <td class="r">${totalLtr.toFixed(2)}</td>
@@ -415,15 +445,15 @@ const DailyCollectionList = () => {
       <span class="val">${totalLtr.toFixed(3)} L</span>
       <span class="val2">Rs. ${totalAmt_.toFixed(2)}</span>
     </div>
-    <div class="summary-row fade2"><span class="lbl">Milk Sales</span><span class="val">--</span><span class="val2">--</span></div>
-    <div class="summary-row fade2"><span class="lbl">Milk Sample Sales Local</span><span class="val">--</span><span class="val2">--</span></div>
-    <div class="summary-row fade2"><span class="lbl">School Milk Supply</span><span class="val">--</span><span class="val2">--</span></div>
-    <div class="summary-row fade2"><span class="lbl">Milk Credit Sales</span><span class="val">--</span><span class="val2">--</span></div>
+    <div class="summary-row fade2"><span class="lbl">Milk Sales (Local)</span><span class="val">${salesSummary.local.qty.toFixed(3)} L</span><span class="val2">Rs. ${salesSummary.local.amt.toFixed(2)}</span></div>
+    <div class="summary-row fade2"><span class="lbl">Milk Sample Sales</span><span class="val">${salesSummary.sample.qty.toFixed(3)} L</span><span class="val2">Rs. ${salesSummary.sample.amt.toFixed(2)}</span></div>
+    <div class="summary-row fade2"><span class="lbl">School Milk Supply</span><span class="val">${salesSummary.school.qty.toFixed(3)} L</span><span class="val2">Rs. ${salesSummary.school.amt.toFixed(2)}</span></div>
+    <div class="summary-row fade2"><span class="lbl">Milk Credit Sales</span><span class="val">${salesSummary.credit.qty.toFixed(3)} L</span><span class="val2">Rs. ${salesSummary.credit.amt.toFixed(2)}</span></div>
     <hr class="dash2"/>
     <div class="summary-row bold">
-      <span class="lbl">Send to Dairy</span>
-      <span class="val">${totalLtr.toFixed(3)} L</span>
-      <span class="val2">Rs. ${totalAmt_.toFixed(2)}</span>
+      <span class="lbl">Send to Dairy (Milma)</span>
+      <span class="val">${(totalLtr - salesSummary.local.qty - salesSummary.sample.qty - salesSummary.school.qty - salesSummary.credit.qty).toFixed(3)} L</span>
+      <span class="val2"></span>
     </div>
     <hr class="dash2"/>
     <div style="margin-top:2mm; font-size:8px; opacity:0.75;">
@@ -480,7 +510,7 @@ const DailyCollectionList = () => {
               <Menu.Divider />
               <Menu.Label>Print</Menu.Label>
               <Menu.Item leftSection={<IconPrinter size={14} />} onClick={handlePrint}>
-                Print (A4 Landscape)
+                Print (A4 Portrait)
               </Menu.Item>
             </Menu.Dropdown>
           </Menu>
@@ -589,7 +619,12 @@ const DailyCollectionList = () => {
               accessor: 'farmer', title: 'Farmer', sortable: true,
               render: r => (
                 <Box>
-                  <Badge size="xs" color="green" variant="filled" radius="sm">{r.farmerNumber}</Badge>
+                  <Group gap={4} wrap="nowrap">
+                    <Badge size="xs" color="green" variant="filled" radius="sm">{r.farmerNumber}</Badge>
+                    <Badge size="xs" color={r.isMembership !== false ? 'blue' : 'gray'} variant="light" radius="sm">
+                      {r.isMembership !== false ? 'Member' : 'Non-Member'}
+                    </Badge>
+                  </Group>
                   <Text size="xs" c="dimmed" mt={1}>{r.farmerName || '—'}</Text>
                 </Box>
               ),
@@ -668,6 +703,8 @@ const DailyCollectionList = () => {
               { label: 'Avg SNF %',     val: avgSnf.toFixed(2),                 c: 'green'  },
               { label: 'AM Entries',    val: amCount,                            c: 'yellow.7' },
               { label: 'PM Entries',    val: pmCount,                            c: 'indigo' },
+              { label: 'Members',       val: memberCount,                        c: 'blue'   },
+              { label: 'Non-Members',   val: nonMemberCount,                     c: 'gray'   },
             ].map(({ label, val, c }) => (
               <Box key={label} ta="center">
                 <Text size="9px" c="dimmed" tt="uppercase">{label}</Text>

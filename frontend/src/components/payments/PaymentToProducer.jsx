@@ -197,9 +197,13 @@ export default function PaymentToProducer() {
 
       const farmer = farmers[0];
 
-      // Now get balance + opening
+      // Now get balance + opening — pass period so backend can filter to the current cycle
+      const periodParams = {};
+      if (fromDate) periodParams.fromDate = dayjs(fromDate).format('YYYY-MM-DD');
+      if (toDate)   periodParams.toDate   = dayjs(toDate).format('YYYY-MM-DD');
+
       const [balanceRes, openingRes] = await Promise.all([
-        producerPaymentAPI.getProducerBalance(farmer._id),
+        producerPaymentAPI.getProducerBalance(farmer._id, periodParams),
         producerOpeningAPI.getByFarmer(farmer._id),
       ]);
       if (balanceRes?.success) {

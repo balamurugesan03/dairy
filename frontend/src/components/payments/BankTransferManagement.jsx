@@ -46,11 +46,14 @@ const fmtDate = (d) =>
 
 const STATUS_COLOR = { Draft: 'gray', Retrieved: 'blue', Applied: 'yellow', Completed: 'green', Cancelled: 'red' };
 
-const MODES = [
-  { value: 'Bank Transfer', label: 'Bank' },
-  { value: 'Cash',          label: 'Cash' },
-  { value: 'Cheque',        label: 'Cheque' },
+const PAYMENT_MODES = [
+  { value: 'Bank Transfer',   label: 'Bank',        short: 'Bk',  color: 'blue'   },
+  { value: 'Cash',            label: 'Cash',        short: 'Ca',  color: 'green'  },
+  { value: 'All Cheque',      label: 'All Chq',     short: 'AC',  color: 'violet' },
+  { value: 'Personal Cheque', label: 'Per Chq',     short: 'PC',  color: 'grape'  },
 ];
+// Keep for edit modal Select
+const MODES = PAYMENT_MODES.map(m => ({ value: m.value, label: m.label }));
 
 const CYCLES = [
   { value: '7d',  label: '7 Days'  },
@@ -76,7 +79,7 @@ const BankTransferManagement = () => {
   const [collectionCenter, setCollectionCenter] = useState('all');
   const [bankFilter,       setBankFilter]       = useState('all');
   const [roundDown,        setRoundDown]        = useState(0);
-  const [dueByList,        setDueByList]        = useState(true);
+  const [dueByList,        setDueByList]        = useState(false);
 
   /* data */
   const [rows,       setRows]       = useState([]);
@@ -177,12 +180,61 @@ const BankTransferManagement = () => {
     ? `${dayjs(fromDate).format('DD/MM/YY')} – ${dayjs(toDate).format('DD/MM/YY')}`
     : '';
 
-  // ── load pending periods from register-ledger ─────────────────────────────
+  // ── core load helper (takes explicit dates to avoid stale-state closures) ───
+  const performLoad = async (from, to, opts = {}) => {
+    if (!from || !to) return;
+    setLoading(true);
+    try {
+      const rd = opts.roundDown ?? roundDown;
+      const res = await bankTransferAPI.retrieve({
+        transferBasis:   'As on Date Balance',
+        asOnDate:        toISO(to),
+        applyDate:       toISO(opts.applyDate || applyDate || dayjs(to).add(1, 'day').toDate()),
+        collectionCenter: opts.collectionCenter ?? collectionCenter,
+        bank:            opts.bank ?? bankFilter,
+        roundDownAmount: rd,
+        dueByList:       opts.dueByList ?? dueByList,
+      });
+      if (res?.success) {
+        const newRows = res.data.map(d => {
+          const hasBank = d.bankDetails?.accountNumber && d.bankDetails.accountNumber !== '-';
+          return {
+            ...d,
+            paymentAmount: (rd > 0 && d.netPayable > 0)
+              ? Math.floor(d.netPayable / rd) * rd
+              : (d.netPayable > 0 ? d.netPayable : 0),
+            mode:     d.paymentMode || (hasBank ? 'Bank Transfer' : 'Cash'),
+            approved: false,
+          };
+        });
+        setRows(newRows);
+        setDataLoaded(true);
+        notifications.show({ message: `Loaded ${newRows.length} producers`, color: 'green' });
+      }
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message || 'Failed to load', color: 'red' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── load pending periods — auto-select & auto-load the latest one ─────────
   const loadPendingPeriods = async () => {
     try {
       const res = await bankTransferAPI.getPendingPeriods();
       if (res?.success && res.data?.length > 0) {
         setPendingPeriods(res.data);
+        // Auto-select the most recent pending period
+        const p  = res.data[0];
+        const f  = new Date(p.fromDate);
+        const t  = new Date(p.toDate);
+        const ap = dayjs(t).add(1, 'day').toDate();
+        setFromDate(f);
+        setToDate(t);
+        setSelectedPeriod(`${p.fromDate}|${p.toDate}`);
+        setApplyDate(ap);
+        // Auto-load data immediately
+        await performLoad(f, t, { applyDate: ap, dueByList: false });
       } else {
         setPendingPeriods([]);
       }
@@ -219,41 +271,7 @@ const BankTransferManagement = () => {
       notifications.show({ title: 'Select dates', message: 'Choose From and To dates first', color: 'orange' });
       return;
     }
-    setLoading(true);
-    try {
-      const res = await bankTransferAPI.retrieve({
-        transferBasis:    'As on Date Balance',
-        asOnDate:         toISO(toDate),
-        applyDate:        toISO(applyDate),
-        collectionCenter,
-        bank:             bankFilter,
-        roundDownAmount:  roundDown,
-        dueByList,
-      });
-      if (res?.success) {
-        const newRows = res.data.map(d => {
-          // Use paymentMode from FarmerPayment (set in Payment Register Detailed)
-          // Fall back to bank-account detection if not set
-          const hasBank = d.bankDetails?.accountNumber && d.bankDetails.accountNumber !== '-';
-          const modeFromRegister = d.paymentMode; // 'Cash', 'Bank Transfer', 'Cheque' or undefined
-          return {
-            ...d,
-            paymentAmount: (roundDown > 0 && d.netPayable > 0)
-              ? Math.floor(d.netPayable / roundDown) * roundDown
-              : (d.netPayable > 0 ? d.netPayable : 0),
-            mode:     modeFromRegister || (hasBank ? 'Bank Transfer' : 'Cash'),
-            approved: false,
-          };
-        });
-        setRows(newRows);
-        setDataLoaded(true);
-        notifications.show({ message: `Loaded ${newRows.length} producers`, color: 'green' });
-      }
-    } catch (err) {
-      notifications.show({ title: 'Error', message: err.message || 'Failed to load', color: 'red' });
-    } finally {
-      setLoading(false);
-    }
+    await performLoad(fromDate, toDate);
   };
 
   // ── row edits ─────────────────────────────────────────────────────────────
@@ -412,17 +430,19 @@ const BankTransferManagement = () => {
 
   // ── summary ───────────────────────────────────────────────────────────────
   const summ = {
-    total:         rows.length,
-    approved:      rows.filter(r => r.approved).length,
-    netPayable:    rows.reduce((s, r) => s + (r.netPayable || 0), 0),
-    bankAmt:       rows.filter(r => r.approved && r.mode === 'Bank Transfer').reduce((s, r) => s + r.paymentAmount, 0),
-    cashAmt:       rows.filter(r => r.approved && r.mode === 'Cash').reduce((s, r) => s + r.paymentAmount, 0),
-    chequeAmt:     rows.filter(r => r.approved && r.mode === 'Cheque').reduce((s, r) => s + r.paymentAmount, 0),
-    bankCount:     rows.filter(r => r.mode === 'Bank Transfer').length,
-    cashCount:     rows.filter(r => r.mode === 'Cash').length,
-    chequeCount:   rows.filter(r => r.mode === 'Cheque').length,
+    total:          rows.length,
+    approved:       rows.filter(r => r.approved).length,
+    netPayable:     rows.reduce((s, r) => s + (r.netPayable || 0), 0),
+    bankAmt:        rows.filter(r => r.approved && r.mode === 'Bank Transfer').reduce((s, r) => s + r.paymentAmount, 0),
+    cashAmt:        rows.filter(r => r.approved && r.mode === 'Cash').reduce((s, r) => s + r.paymentAmount, 0),
+    allChequeAmt:   rows.filter(r => r.approved && r.mode === 'All Cheque').reduce((s, r) => s + r.paymentAmount, 0),
+    perChequeAmt:   rows.filter(r => r.approved && r.mode === 'Personal Cheque').reduce((s, r) => s + r.paymentAmount, 0),
+    bankCount:      rows.filter(r => r.mode === 'Bank Transfer').length,
+    cashCount:      rows.filter(r => r.mode === 'Cash').length,
+    allChequeCount: rows.filter(r => r.mode === 'All Cheque').length,
+    perChequeCount: rows.filter(r => r.mode === 'Personal Cheque').length,
   };
-  summ.grandTotal = summ.bankAmt + summ.cashAmt + summ.chequeAmt;
+  summ.grandTotal = summ.bankAmt + summ.cashAmt + summ.allChequeAmt + summ.perChequeAmt;
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
@@ -631,14 +651,15 @@ const BankTransferManagement = () => {
               {dataLoaded && (
                 <Grid>
                   {[
-                    { label: 'Total Producers', value: summ.total,                         color: 'gray'   },
-                    { label: 'Net Payable',      value: fmt(summ.netPayable),               color: 'blue'   },
-                    { label: `Bank (${summ.bankCount})`,   value: fmt(summ.bankAmt),   color: 'indigo'  },
-                    { label: `Cash (${summ.cashCount})`,   value: fmt(summ.cashAmt),   color: 'orange'  },
-                    { label: `Cheque (${summ.chequeCount})`, value: fmt(summ.chequeAmt), color: 'violet' },
-                    { label: 'Grand Total',      value: fmt(summ.grandTotal),               color: 'green', bold: true },
+                    { label: 'Total Producers',             value: summ.total,             color: 'gray'   },
+                    { label: 'Net Payable',                 value: fmt(summ.netPayable),   color: 'blue'   },
+                    { label: `Bank (${summ.bankCount})`,    value: fmt(summ.bankAmt),      color: 'indigo' },
+                    { label: `Cash (${summ.cashCount})`,    value: fmt(summ.cashAmt),      color: 'orange' },
+                    { label: `All Chq (${summ.allChequeCount})`,  value: fmt(summ.allChequeAmt),  color: 'violet' },
+                    { label: `Per Chq (${summ.perChequeCount})`,  value: fmt(summ.perChequeAmt),  color: 'grape'  },
+                    { label: 'Grand Total',                 value: fmt(summ.grandTotal),   color: 'green', bold: true },
                   ].map((s, i) => (
-                    <Grid.Col key={i} span={{ base: 6, sm: 4, md: 2 }}>
+                    <Grid.Col key={i} span={{ base: 6, sm: 4, md: 'auto' }}>
                       <Paper withBorder p="sm" ta="center">
                         <Text size="xs" c="dimmed">{s.label}</Text>
                         <Text size={s.bold ? 'lg' : 'md'} fw={s.bold ? 700 : 600} c={s.color}>
@@ -712,8 +733,24 @@ const BankTransferManagement = () => {
                           <Table.Th style={{ width: 100 }}>IFSC</Table.Th>
                           <Table.Th style={{ width: 110 }}>Branch / Bank</Table.Th>
                           <Table.Th ta="right" style={{ width: 105 }}>Net Payable</Table.Th>
-                          <Table.Th style={{ width: 110 }}>Pay Amount</Table.Th>
-                          <Table.Th style={{ width: 115 }}>Mode</Table.Th>
+                          <Table.Th style={{ width: 105 }}>Pay Amount</Table.Th>
+                          <Table.Th style={{ width: 220 }}>
+                            <Group gap={6} wrap="nowrap" align="center">
+                              <Text size="xs" fw={600}>Mode</Text>
+                              {PAYMENT_MODES.map(m => (
+                                <Checkbox
+                                  key={m.value}
+                                  size="xs"
+                                  color={m.color}
+                                  label={<Text size={9} fw={700}>{m.short}</Text>}
+                                  checked={rows.length > 0 && rows.every(r => r.mode === m.value)}
+                                  onChange={() => setRows(prev => prev.map(r => ({ ...r, mode: m.value })))}
+                                  title={`Set all to ${m.label}`}
+                                  styles={{ input: { cursor: 'pointer' } }}
+                                />
+                              ))}
+                            </Group>
+                          </Table.Th>
                           <Table.Th ta="center" style={{ width: 50 }}>✓</Table.Th>
                         </Table.Tr>
                       </Table.Thead>
@@ -760,14 +797,19 @@ const BankTransferManagement = () => {
                               />
                             </Table.Td>
                             <Table.Td>
-                              <Select
-                                size="xs"
-                                data={MODES}
-                                value={row.mode}
-                                onChange={v => setRowField(idx, 'mode', v)}
-                                allowDeselect={false}
-                                styles={{ input: { fontSize: '11px', paddingLeft: 6 } }}
-                              />
+                              <Group gap={4} wrap="nowrap">
+                                {PAYMENT_MODES.map(m => (
+                                  <Checkbox
+                                    key={m.value}
+                                    size="xs"
+                                    color={m.color}
+                                    label={<Text size={9} fw={600}>{m.short}</Text>}
+                                    checked={row.mode === m.value}
+                                    onChange={() => setRowField(idx, 'mode', m.value)}
+                                    styles={{ input: { cursor: 'pointer' } }}
+                                  />
+                                ))}
+                              </Group>
                             </Table.Td>
                             <Table.Td ta="center">
                               <Checkbox
@@ -785,19 +827,27 @@ const BankTransferManagement = () => {
                   {/* Footer summary bar */}
                   <Box p="md" style={{ borderTop: '2px solid var(--mantine-color-gray-3)' }}>
                     <Grid>
-                      <Grid.Col span={{ base: 6, sm: 3 }}>
-                        <Text size="xs" c="dimmed">Total Net Payable</Text>
+                      <Grid.Col span={{ base: 6, sm: 2 }}>
+                        <Text size="xs" c="dimmed">Net Payable</Text>
                         <Text fw={600}>{fmt(summ.netPayable)}</Text>
                       </Grid.Col>
-                      <Grid.Col span={{ base: 6, sm: 3 }}>
-                        <Text size="xs" c="dimmed">Bank Transfer (approved)</Text>
+                      <Grid.Col span={{ base: 6, sm: 2 }}>
+                        <Text size="xs" c="dimmed">Bank (approved)</Text>
                         <Text fw={600} c="indigo">{fmt(summ.bankAmt)}</Text>
                       </Grid.Col>
-                      <Grid.Col span={{ base: 6, sm: 3 }}>
-                        <Text size="xs" c="dimmed">Cash + Cheque (approved)</Text>
-                        <Text fw={600} c="orange">{fmt(summ.cashAmt + summ.chequeAmt)}</Text>
+                      <Grid.Col span={{ base: 6, sm: 2 }}>
+                        <Text size="xs" c="dimmed">Cash (approved)</Text>
+                        <Text fw={600} c="orange">{fmt(summ.cashAmt)}</Text>
                       </Grid.Col>
-                      <Grid.Col span={{ base: 6, sm: 3 }}>
+                      <Grid.Col span={{ base: 6, sm: 2 }}>
+                        <Text size="xs" c="dimmed">All Chq (approved)</Text>
+                        <Text fw={600} c="violet">{fmt(summ.allChequeAmt)}</Text>
+                      </Grid.Col>
+                      <Grid.Col span={{ base: 6, sm: 2 }}>
+                        <Text size="xs" c="dimmed">Per Chq (approved)</Text>
+                        <Text fw={600} c="grape">{fmt(summ.perChequeAmt)}</Text>
+                      </Grid.Col>
+                      <Grid.Col span={{ base: 6, sm: 2 }}>
                         <Text size="xs" c="dimmed">Grand Total (approved)</Text>
                         <Text fw={700} c="green" size="lg">{fmt(summ.grandTotal)}</Text>
                       </Grid.Col>
