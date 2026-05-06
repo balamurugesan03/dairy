@@ -191,7 +191,8 @@ export const salesAPI = {
   update: (id, data) => api.put(`/sales/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/sales/${id}`).then(res => res.data).catch(handleError),
   getCustomerHistory: (customerId) => api.get(`/sales/customer/${customerId}`).then(res => res.data).catch(handleError),
-  getNextBillNumber: () => api.get('/sales/next-bill-number').then(res => res.data).catch(handleError)
+  getNextBillNumber: () => api.get('/sales/next-bill-number').then(res => res.data).catch(handleError),
+  checkDate: (date) => api.get('/sales/check-date', { params: { date } }).then(res => res.data).catch(handleError)
 };
 
 // VOUCHER APIs

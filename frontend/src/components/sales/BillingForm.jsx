@@ -64,7 +64,10 @@ import {
   IconUserCircle,
   IconCoin,
   IconTruck,
-  IconUsers
+  IconUsers,
+  IconAlertCircle,
+  IconLock,
+  IconCircleCheck
 } from '@tabler/icons-react';
 import { farmerAPI, itemAPI, salesAPI, customerAPI, collectionCenterAPI, subsidyAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
@@ -89,6 +92,9 @@ const BillingForm = () => {
   const [dateBills, setDateBills] = useState([]);
   const [loadingDateBills, setLoadingDateBills] = useState(false);
   const [billNumber, setBillNumber] = useState('01');
+  const [formReady, setFormReady] = useState(false);
+  const [dateError, setDateError] = useState('');
+  const [checkingDate, setCheckingDate] = useState(false);
 
   const form = useForm({
     initialValues: {
@@ -138,7 +144,6 @@ const BillingForm = () => {
     fetchCustomers();
     fetchCollectionCenters();
     fetchSubsidies();
-    fetchNextBillNumber();
   }, []);
 
   const fetchNextBillNumber = async () => {
@@ -152,15 +157,35 @@ const BillingForm = () => {
     }
   };
 
+  const handleDateChange = async (value) => {
+    form.setFieldValue('billDate', value);
+    setFormReady(false);
+    setDateError('');
+    if (!value) return;
+
+    setCheckingDate(true);
+    try {
+      const response = await salesAPI.checkDate(value.toISOString());
+      if (response?.data?.blocked) {
+        setDateError(response.data.message);
+      } else {
+        await fetchNextBillNumber();
+        fetchBillsByDate(value);
+        setFormReady(true);
+      }
+    } catch {
+      // Network error — allow entry, backend will block if needed
+      await fetchNextBillNumber();
+      setFormReady(true);
+    } finally {
+      setCheckingDate(false);
+    }
+  };
+
   useEffect(() => {
     calculateTotals();
   }, [billItems, form.values.discount, form.values.discountPercent]);
 
-  useEffect(() => {
-    if (form.values.billDate) {
-      fetchBillsByDate(form.values.billDate);
-    }
-  }, [form.values.billDate]);
 
   const fetchBillsByDate = async (date) => {
     try {
@@ -514,9 +539,7 @@ const BillingForm = () => {
       notifications.show({ title: 'Success', message: 'Bill created successfully', color: 'green' });
       setPrintModalOpened(true);
       fetchNextBillNumber();
-      if (form.values.billDate) {
-        fetchBillsByDate(form.values.billDate);
-      }
+      if (form.values.billDate) fetchBillsByDate(form.values.billDate);
     } catch (error) {
       notifications.show({
         title: 'Error',
@@ -544,6 +567,9 @@ const BillingForm = () => {
       totalDue: 0
     });
     setBarcodeInput('');
+    setFormReady(false);
+    setDateError('');
+    setDateBills([]);
   };
 
   const itemOptions = items.map(item => ({
@@ -581,16 +607,17 @@ const BillingForm = () => {
           <Group>
            <DateInput
   value={form.values.billDate}
-  onChange={(value) => form.setFieldValue("billDate", value)}
-  leftSection={<IconCalendar size={16} />}
-  placeholder="Bill date"
+  onChange={handleDateChange}
+  leftSection={checkingDate ? <Loader size={14} /> : <IconCalendar size={16} />}
+  placeholder="Select bill date first"
   size="xs"
-  w={160}
+  w={185}
   maxDate={new Date()}
-  styles={{
-    input: { justifyContent: "center" },
-  }}
+  error={!!dateError}
+  styles={{ input: { justifyContent: 'center', borderColor: dateError ? 'var(--mantine-color-red-6)' : formReady ? 'var(--mantine-color-green-6)' : undefined } }}
 />
+{formReady && <IconCircleCheck size={20} color="var(--mantine-color-green-6)" />}
+{dateError && <IconAlertCircle size={20} color="var(--mantine-color-red-6)" />}
 
             <Button
               variant="light"
@@ -613,8 +640,20 @@ const BillingForm = () => {
    
      
 
+      {/* ============ DATE STATUS ALERTS ============ */}
+      {!form.values.billDate && (
+        <Alert color="blue" icon={<IconCalendar size={16} />} mb="md" radius="md">
+          Select a bill date above to start billing
+        </Alert>
+      )}
+      {dateError && (
+        <Alert color="red" icon={<IconAlertCircle size={16} />} mb="md" radius="md" withCloseButton onClose={() => setDateError('')}>
+          {dateError}
+        </Alert>
+      )}
+
       {/* ============ TWO-COLUMN GRID ============ */}
-      <Grid gutter="md">
+      <Grid gutter="md" style={{ opacity: formReady ? 1 : 0.45, pointerEvents: formReady ? 'auto' : 'none' }}>
 
         {/* ======== LEFT PANEL (span 8) ======== */}
         <Grid.Col span={{ base: 12, md: 8 }}>

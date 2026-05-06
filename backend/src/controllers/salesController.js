@@ -399,6 +399,37 @@ export const getNextSaleBillNumber = async (req, res) => {
   }
 };
 
+// GET /sales/check-date?date= — check if a date falls within a locked payment cycle
+export const checkSaleDate = async (req, res) => {
+  try {
+    const { date } = req.query;
+    if (!date) return res.json({ success: true, data: { blocked: false } });
+
+    const d = new Date(date);
+    const conflict = await PaymentRegister.findOne({
+      companyId: req.companyId,
+      status: { $in: ['Saved', 'Printed'] },
+      fromDate: { $lte: d },
+      toDate:   { $gte: d }
+    });
+
+    if (conflict) {
+      const fmt = (dt) => new Date(dt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      return res.json({
+        success: true,
+        data: {
+          blocked: true,
+          message: `Blocked: date falls within a saved payment cycle (${fmt(conflict.fromDate)} – ${fmt(conflict.toDate)})`
+        }
+      });
+    }
+
+    return res.json({ success: true, data: { blocked: false } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export default {
   createSale,
   getAllSales,
@@ -406,5 +437,6 @@ export default {
   updateSale,
   deleteSale,
   getCustomerHistory,
-  getNextSaleBillNumber
+  getNextSaleBillNumber,
+  checkSaleDate
 };
