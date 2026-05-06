@@ -9,6 +9,7 @@ const VOUCHER_PREFIX_MAP = {
   'Journal':         'JV',
   'Contra':          'CT',
   'Purchase':        'PUR',
+  'Sales':           'SAL',
   'MilkPurchase':    'MKP',
   'MilkSales':       'MKS',
   'FarmerPayment':   'FPY',
@@ -128,16 +129,16 @@ export const createSalesVoucher = async (saleData, session = null) => {
   const totalDebit = entries.reduce((sum, e) => sum + e.debitAmount, 0);
   const totalCredit = entries.reduce((sum, e) => sum + e.creditAmount, 0);
 
-  const voucherNumber = await generateVoucherNumber('Journal', saleData.companyId);
+  const voucherNumber = await generateVoucherNumber('Sales', saleData.companyId);
 
   const voucher = new Voucher({
-    voucherType: 'Journal',
+    voucherType: 'Sales',
     voucherNumber,
     voucherDate: saleData.billDate,
     entries,
     totalDebit,
     totalCredit,
-    narration: `Sales — Bill No: ${saleData.billNumber}`,
+    narration: `Sales — Bill No: ${saleData.billNumber} | ${saleData.customerName || 'Walk-in'}`,
     referenceType: 'Sales',
     referenceId: saleData._id,
     companyId: saleData.companyId

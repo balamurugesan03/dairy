@@ -83,6 +83,8 @@ export const getDayBook = async (req, res) => {
 
       const isReceiptVoucher = voucher.voucherType === 'Receipt';
       const isPaymentVoucher = voucher.voucherType === 'Payment';
+      const isSalesVoucher   = voucher.voucherType === 'Sales';
+      const isPurchaseVoucher = voucher.voucherType === 'Purchase';
 
       for (const entry of voucher.entries) {
         const ledgerType = entry.ledgerId?.ledgerType;
@@ -117,6 +119,24 @@ export const getDayBook = async (req, res) => {
             const paymentEntry = { ...entryData, amount };
             dateMap[dateKey].paymentSide.push(paymentEntry);
             dateMap[dateKey].totalPayments += amount;
+            paymentSide.push(paymentEntry);
+          }
+        } else if (isSalesVoucher) {
+          // Sales voucher: only show the income (Cr) entry on receipt side.
+          // Customer/debtor Dr entries are receivables — not a "payment" in the day book.
+          if (entry.creditAmount > 0) {
+            const receiptEntry = { ...entryData, amount: entry.creditAmount };
+            dateMap[dateKey].receiptSide.push(receiptEntry);
+            dateMap[dateKey].totalReceipts += entry.creditAmount;
+            receiptSide.push(receiptEntry);
+          }
+        } else if (isPurchaseVoucher) {
+          // Purchase voucher: only show the expense (Dr) entry on payment side.
+          // Supplier/creditor Cr entries are payables — not a "receipt" in the day book.
+          if (entry.debitAmount > 0) {
+            const paymentEntry = { ...entryData, amount: entry.debitAmount };
+            dateMap[dateKey].paymentSide.push(paymentEntry);
+            dateMap[dateKey].totalPayments += entry.debitAmount;
             paymentSide.push(paymentEntry);
           }
         } else {
