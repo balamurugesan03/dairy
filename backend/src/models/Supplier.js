@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const supplierSchema = new mongoose.Schema({
   supplierId: { type: String, required: true },
   name: { type: String, required: true },
-  phone: { type: String, required: true },
+  phone: { type: String, default: '' },
   email: { type: String },
   gstNumber: { type: String },
   address: { type: String },
