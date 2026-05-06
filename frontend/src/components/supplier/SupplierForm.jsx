@@ -88,7 +88,9 @@ const SupplierForm = () => {
       newErrors.name = 'Name is required';
     }
 
-    if (formData.phone && !/^[0-9]{10}$/.test(formData.phone)) {
+    if (!formData.phone) {
+      newErrors.phone = 'Phone is required';
+    } else if (!/^[0-9]{10}$/.test(formData.phone)) {
       newErrors.phone = 'Please enter valid 10-digit phone number';
     }
 
@@ -184,7 +186,7 @@ const SupplierForm = () => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Phone</label>
+              <label className="form-label required">Phone</label>
               <input
                 type="text"
                 className={`form-input ${errors.phone ? 'error' : ''}`}
