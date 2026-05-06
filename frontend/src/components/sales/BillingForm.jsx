@@ -88,6 +88,7 @@ const BillingForm = () => {
   const [barcodeInput, setBarcodeInput] = useState('');
   const [dateBills, setDateBills] = useState([]);
   const [loadingDateBills, setLoadingDateBills] = useState(false);
+  const [billNumber, setBillNumber] = useState('01');
 
   const form = useForm({
     initialValues: {
@@ -137,7 +138,19 @@ const BillingForm = () => {
     fetchCustomers();
     fetchCollectionCenters();
     fetchSubsidies();
+    fetchNextBillNumber();
   }, []);
+
+  const fetchNextBillNumber = async () => {
+    try {
+      const response = await salesAPI.getNextBillNumber();
+      if (response?.data?.billNumber) {
+        setBillNumber(response.data.billNumber);
+      }
+    } catch (error) {
+      console.error('Failed to fetch bill number:', error);
+    }
+  };
 
   useEffect(() => {
     calculateTotals();
@@ -500,7 +513,7 @@ const BillingForm = () => {
 
       notifications.show({ title: 'Success', message: 'Bill created successfully', color: 'green' });
       setPrintModalOpened(true);
-      // Refresh date bills after saving
+      fetchNextBillNumber();
       if (form.values.billDate) {
         fetchBillsByDate(form.values.billDate);
       }
@@ -548,7 +561,6 @@ const BillingForm = () => {
     label: `${customer.customerId || ''} - ${customer.name} ${customer.phone ? `| ${customer.phone}` : ''}`
   }));
 
-  const billNumber = `BILL-${dayjs(form.values.billDate).format('YYYYMMDD-HHmm')}`;
   const paidAmount = parseFloat(form.values.paidAmount) || 0;
   const changeAmount = paidAmount - calculations.totalDue;
 
