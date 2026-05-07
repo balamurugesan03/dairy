@@ -49,25 +49,27 @@ async function createMilkSaleVoucher(sale, companyId) {
   }
 
   if (saleMode === 'CREDIT') {
-    // Journal: Dr Creditor ledger, Cr MILK CREDIT SALES / SCHOOL MILK SALES
+    // Adjustment (Journal) voucher — Day Book only:
+    //   Dr CUSTOMER       (expenditure / payment side)
+    //   Cr CREDIT SALES   (income / receipt side)
+    // No cash leg, so nothing shows in Cash Book.
     const customer = creditorId ? await Customer.findById(creditorId).lean() : null;
-    if (!customer) return null;
-    const isSchool = ['School', 'Anganwadi'].includes(customer.category);
-    const saleLedgerName = isSchool ? 'SCHOOL MILK SALES' : 'MILK CREDIT SALES';
-    const [creditorLedger, saleLedger] = await Promise.all([
-      customer.ledgerId ? Ledger.findById(customer.ledgerId) : null,
-      findOrCreateLedger(saleLedgerName, 'Income', 'Income', 'Cr', companyId)
+    const customerName = customer?.name || sale.creditorName || '';
+
+    const [customerLedger, saleLedger] = await Promise.all([
+      findOrCreateLedger('CUSTOMER',     'Other Receivable', 'Current Assets', 'Dr', companyId),
+      findOrCreateLedger('CREDIT SALES', 'Income',           'Income',         'Cr', companyId),
     ]);
-    if (!creditorLedger) return null;
+
     const entries = [
-      { ledgerId: creditorLedger._id, ledgerName: creditorLedger.ledgerName, debitAmount: amount, creditAmount: 0,      narration: shiftNote.trim() },
-      { ledgerId: saleLedger._id,     ledgerName: saleLedger.ledgerName,     debitAmount: 0,      creditAmount: amount, narration: shiftNote.trim() }
+      { ledgerId: customerLedger._id, ledgerName: customerLedger.ledgerName, debitAmount: amount, creditAmount: 0,      narration: customerName ? `${customerName}${shiftNote}`.trim() : shiftNote.trim() },
+      { ledgerId: saleLedger._id,     ledgerName: saleLedger.ledgerName,     debitAmount: 0,      creditAmount: amount, narration: customerName ? `${customerName}${shiftNote}`.trim() : shiftNote.trim() },
     ];
     const voucherNumber = await generateVoucherNumber('Journal', companyId);
     const voucher = new Voucher({
       voucherType: 'Journal', voucherNumber, voucherDate: date, entries,
       totalDebit: amount, totalCredit: amount,
-      narration: `Milk Sales (CREDIT) - ${billNo} - ${customer.name}${shiftNote}`,
+      narration: `Milk Sales (CREDIT) - ${billNo}${customerName ? ' - ' + customerName : ''}${shiftNote}`,
       referenceType: 'Sales', referenceId: sale._id, companyId
     });
     await voucher.save();

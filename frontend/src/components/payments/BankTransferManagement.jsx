@@ -846,6 +846,12 @@ const BankTransferManagement = () => {
                             </Table.Td>
                             <Table.Td>
                               <Text size="xs" c="dimmed">{row.bankDetails?.bankName || '—'}</Text>
+                              {row.bankDetails?.branch && row.bankDetails.branch !== '-' && (
+                                <Text size={9} c="dimmed">Br: {row.bankDetails.branch}</Text>
+                              )}
+                              {row.bankDetails?.micr && row.bankDetails.micr !== '-' && (
+                                <Text size={9} c="dimmed">MICR: {row.bankDetails.micr}</Text>
+                              )}
                             </Table.Td>
                             <Table.Td ta="right">
                               <Text size="xs" fw={500} c={row.netPayable < 0 ? 'red' : 'inherit'}>

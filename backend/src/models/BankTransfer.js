@@ -16,7 +16,10 @@ const transferDetailSchema = new mongoose.Schema({
   bankDetails: {
     accountNumber: String,
     bankName: String,
+    branch: String,
     ifscCode: String,
+    micr: String,
+    bankLedgerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ledger' },
     bankCode: String
   },
   paymentMode: {

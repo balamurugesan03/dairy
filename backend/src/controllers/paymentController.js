@@ -4,7 +4,8 @@ import ProducerLoan from '../models/ProducerLoan.js';
 import ProducerOpening from '../models/ProducerOpening.js';
 import ProducerPayment from '../models/ProducerPayment.js';
 import Farmer from '../models/Farmer.js';
-import { createPaymentVoucher, createRecoveryVoucher } from '../utils/accountingHelper.js';
+import Voucher from '../models/Voucher.js';
+import { createPaymentVoucher, createRecoveryVoucher, createProducerDuesPaymentVoucher } from '../utils/accountingHelper.js';
 import mongoose from 'mongoose';
 
 // ==================== FARMER PAYMENT FUNCTIONS ====================
@@ -133,9 +134,19 @@ export const createFarmerPayment = async (req, res) => {
     }
 
     // Create accounting voucher for cash/bank payment
+    // Auto-post: Dr PRODUCERS DUES / Cr Cash or Bank (Day Book / Cash Book)
     if (paymentData.paidAmount > 0) {
       try {
-        const voucher = await createPaymentVoucher(payment);
+        const voucher = await createProducerDuesPaymentVoucher({
+          amount:        paymentData.paidAmount,
+          paymentDate:   payment.paymentDate,
+          paymentMode:   payment.paymentMode,
+          companyId:     payment.companyId,
+          narration:     `Farmer Payment — ${payment.farmerName || ''} ${payment.paymentNumber || ''}`.trim(),
+          referenceType: 'FarmerPayment',
+          referenceId:   payment._id,
+          createdBy:     payment.createdBy,
+        });
         if (voucher) {
           payment.voucherId = voucher._id;
           await payment.save();
@@ -463,6 +474,15 @@ export const deletePayment = async (req, res) => {
       }
     }
 
+    // Remove the auto-posted Day Book / Cash Book voucher
+    if (payment.voucherId) {
+      try {
+        await Voucher.deleteOne({ _id: payment.voucherId });
+      } catch (vErr) {
+        console.warn('Voucher cleanup skipped on delete:', vErr.message);
+      }
+    }
+
     await FarmerPayment.findByIdAndDelete(req.params.id);
     res.json({ success: true, message: 'Payment deleted successfully' });
   } catch (error) {
@@ -509,6 +529,17 @@ export const cancelPayment = async (req, res) => {
     payment.cancelledAt = new Date();
     payment.cancelledBy = req.user?._id;
     payment.cancellationReason = cancellationReason;
+
+    // Remove the auto-posted Day Book / Cash Book voucher
+    if (payment.voucherId) {
+      try {
+        await Voucher.deleteOne({ _id: payment.voucherId });
+      } catch (vErr) {
+        console.warn('Voucher cleanup skipped on cancel:', vErr.message);
+      }
+      payment.voucherId = undefined;
+    }
+
     await payment.save();
     res.status(200).json({
       success: true,

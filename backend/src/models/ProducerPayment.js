@@ -24,6 +24,7 @@ const producerPaymentSchema = new mongoose.Schema({
   status: { type: String, enum: ['Active', 'Cancelled'], default: 'Active' },
   cancelledAt: Date,
   cancelledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  voucherId: { type: mongoose.Schema.Types.ObjectId, ref: 'Voucher' },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });
 

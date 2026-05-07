@@ -277,7 +277,8 @@ export const getFarmerById = async (req, res) => {
   try {
     const farmer = await Farmer.findOne({ _id: req.params.id, companyId: req.companyId })
       .populate('ledgerId', 'ledgerName currentBalance balanceType')
-      .populate('collectionCenter', 'centerName centerType');
+      .populate('collectionCenter', 'centerName centerType')
+      .populate('bankDetails.bankLedgerId', 'ledgerName');
 
     if (!farmer) {
       return res.status(404).json({

@@ -456,6 +456,71 @@ export const findOrCreateLedger = async (ledgerName, ledgerType, parentGroup, ba
   return ledger;
 };
 
+// Auto-post a "Producer Dues" payment voucher (Day Book / Cash Book).
+//   Cash mode  → Dr PRODUCERS DUES / Cr Cash in Hand
+//   Bank/Cheque/UPI/NEFT/RTGS → Dr PRODUCERS DUES / Cr Bank Account
+// Used by: Payment to Producer, Individual Milk Payment, Bank Transfer.
+export const createProducerDuesPaymentVoucher = async ({
+  amount,
+  paymentDate,
+  paymentMode,
+  companyId,
+  narration,
+  referenceType,
+  referenceId,
+  createdBy,
+  bankLedgerName,
+}, session = null) => {
+  if (!amount || amount <= 0 || !companyId) return null;
+
+  const producerDuesLedger = await findOrCreateLedger(
+    'PRODUCERS DUES', 'Other Payable', 'LIABILITY', 'Cr', companyId, session
+  );
+
+  const isCash = (paymentMode || 'Cash') === 'Cash';
+  let payLedger;
+  if (isCash) {
+    payLedger = await Ledger.findOne({ ledgerType: 'Cash', companyId });
+    if (!payLedger) {
+      payLedger = await findOrCreateLedger('Cash in Hand', 'Cash', 'Cash', 'Dr', companyId, session);
+    }
+  } else {
+    if (bankLedgerName && bankLedgerName !== 'All') {
+      payLedger = await findOrCreateLedger(bankLedgerName, 'Bank', 'Bank Accounts', 'Dr', companyId, session);
+    } else {
+      payLedger = await Ledger.findOne({ ledgerType: 'Bank', companyId });
+      if (!payLedger) {
+        payLedger = await findOrCreateLedger('Bank Account', 'Bank', 'Bank Accounts', 'Dr', companyId, session);
+      }
+    }
+  }
+
+  const entries = [
+    { ledgerId: producerDuesLedger._id, ledgerName: producerDuesLedger.ledgerName, debitAmount: amount, creditAmount: 0 },
+    { ledgerId: payLedger._id, ledgerName: payLedger.ledgerName, debitAmount: 0, creditAmount: amount },
+  ];
+
+  const voucher = new Voucher({
+    voucherType: 'Payment',
+    voucherNumber: await generateVoucherNumber('Payment', companyId),
+    voucherDate: paymentDate || new Date(),
+    companyId,
+    entries,
+    totalDebit: amount,
+    totalCredit: amount,
+    narration: narration || `Producers Dues Payment — ${paymentMode || 'Cash'}`,
+    referenceType,
+    referenceId,
+    createdBy,
+  });
+
+  if (session) await voucher.save({ session });
+  else await voucher.save();
+
+  await updateLedgerBalances(entries, session, companyId);
+  return voucher;
+};
+
 // Create share capital journal voucher (called from addShareToFarmer)
 export const createShareCapitalVoucher = async (data, session = null) => {
   const { farmerId, farmerLedgerName, totalValue, transactionType, resolutionNo, companyId, voucherDate } = data;
@@ -713,6 +778,7 @@ export default {
   updateLedgerBalances,
   reverseLedgerBalances,
   createPaymentVoucher,
+  createProducerDuesPaymentVoucher,
   createRecoveryVoucher,
   createPurchaseVoucher,
   createShareCapitalVoucher,

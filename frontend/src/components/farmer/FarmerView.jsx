@@ -272,6 +272,8 @@ const FarmerView = () => {
                   <InfoRow label="Bank Name" value={farmer.bankDetails?.bankName} />
                   <InfoRow label="Branch" value={farmer.bankDetails?.branch} />
                   <InfoRow label="IFSC Code" value={farmer.bankDetails?.ifsc} />
+                  <InfoRow label="MICR Code" value={farmer.bankDetails?.micr} />
+                  <InfoRow label="Bank Ledger" value={farmer.bankDetails?.bankLedgerId?.ledgerName || farmer.bankDetails?.bankLedgerId} />
                 </Stack>
               </Paper>
 

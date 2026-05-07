@@ -104,7 +104,10 @@ export const retrieveBalances = async (req, res) => {
         bankDetails: {
           accountNumber: bankDetails.accountNumber || '-',
           bankName: bankDetails.bankName || '-',
+          branch: bankDetails.branch || '-',
           ifscCode: bankDetails.ifsc || bankDetails.ifscCode || '-',
+          micr: bankDetails.micr || '-',
+          bankLedgerId: bankDetails.bankLedgerId || null,
           bankCode: bankDetails.branchCode || '-'
         }
       });
@@ -306,35 +309,61 @@ const createProducerDuesVouchers = async (bankTransfer, transferDetails, company
     vouchers.push(voucher);
   }
 
-  // ── Bank Payment voucher ──────────────────────────────────────────────────
+  // ── Bank Payment voucher(s) ───────────────────────────────────────────────
+  // Group bank transfers by the farmer's selected bank ledger (bankDetails.bankLedgerId).
+  // Each group posts a separate voucher Dr PRODUCERS DUES / Cr <that bank ledger>,
+  // so the Day Book reflects which physical bank account the money left from.
+  // Producers without a linked bank ledger fall back to the transfer-level bank ledger.
   if (bankTotal > 0) {
-    // Use the bank ledger attached to the BankTransfer record, or fallback to generic
-    let bankLedgerName = bankTransfer.bankName && bankTransfer.bankName !== 'All'
+    const groups = new Map(); // key: bankLedgerId | 'fallback'  →  { ledgerId, total, count }
+
+    for (const d of bankTransfers) {
+      const linkedId = d.bankDetails?.bankLedgerId;
+      const key = linkedId ? String(linkedId) : 'fallback';
+      if (!groups.has(key)) groups.set(key, { ledgerId: linkedId || null, total: 0, count: 0 });
+      const g = groups.get(key);
+      g.total += d.transferAmount || 0;
+      g.count += 1;
+    }
+
+    // Fallback ledger (used when farmer has no linked bank ledger)
+    const fallbackName = bankTransfer.bankName && bankTransfer.bankName !== 'All'
       ? bankTransfer.bankName
       : 'Bank Account';
-    const bankLedger = await ensureLedger(bankLedgerName, 'Bank', 'Dr', companyId);
-    const entries = [
-      // Dr PRODUCERS DUES (reducing liability to producers)
-      { ledgerId: producerDuesLedger._id, ledgerName: producerDuesLedger.ledgerName, debitAmount: bankTotal, creditAmount: 0 },
-      // Cr Bank Account (bank payment going out)
-      { ledgerId: bankLedger._id, ledgerName: bankLedger.ledgerName, debitAmount: 0, creditAmount: bankTotal },
-    ];
-    const voucher = new Voucher({
-      voucherType: 'Payment',
-      voucherNumber: await generateVoucherNumber('Payment', companyId),
-      voucherDate: applyDate,
-      companyId,
-      entries,
-      totalDebit: bankTotal,
-      totalCredit: bankTotal,
-      narration: `Producers Bank Transfer — ${bankTransfer.transferNumber} — ${bankTransfers.length} producer(s)`,
-      referenceType: 'BankTransfer',
-      referenceId: bankTransfer._id,
-      createdBy: bankTransfer.appliedBy,
-    });
-    await voucher.save();
-    await updateLedgerBalances(entries);
-    vouchers.push(voucher);
+    const fallbackLedger = await ensureLedger(fallbackName, 'Bank Accounts', 'Dr', companyId);
+
+    for (const [key, g] of groups) {
+      if (g.total <= 0) continue;
+
+      let bankLedger = null;
+      if (g.ledgerId) {
+        bankLedger = await Ledger.findOne({ _id: g.ledgerId, companyId });
+      }
+      if (!bankLedger) bankLedger = fallbackLedger;
+
+      const entries = [
+        // Dr PRODUCERS DUES (reducing liability to producers)
+        { ledgerId: producerDuesLedger._id, ledgerName: producerDuesLedger.ledgerName, debitAmount: g.total, creditAmount: 0 },
+        // Cr <farmer-linked bank ledger> (or fallback)
+        { ledgerId: bankLedger._id, ledgerName: bankLedger.ledgerName, debitAmount: 0, creditAmount: g.total },
+      ];
+      const voucher = new Voucher({
+        voucherType: 'Payment',
+        voucherNumber: await generateVoucherNumber('Payment', companyId),
+        voucherDate: applyDate,
+        companyId,
+        entries,
+        totalDebit: g.total,
+        totalCredit: g.total,
+        narration: `Producers Bank Transfer — ${bankTransfer.transferNumber} — ${g.count} producer(s) via ${bankLedger.ledgerName}`,
+        referenceType: 'BankTransfer',
+        referenceId: bankTransfer._id,
+        createdBy: bankTransfer.appliedBy,
+      });
+      await voucher.save();
+      await updateLedgerBalances(entries);
+      vouchers.push(voucher);
+    }
   }
 
   return vouchers;
@@ -687,7 +716,10 @@ export const createFromLedger = async (req, res) => {
         bankDetails: {
           accountNumber: bd.accountNumber || '-',
           bankName:      bd.bankName      || '-',
+          branch:        bd.branch        || '-',
           ifscCode:      bd.ifsc || bd.ifscCode || '-',
+          micr:          bd.micr          || '-',
+          bankLedgerId:  bd.bankLedgerId  || null,
           bankCode:      bd.branchCode    || '-',
         },
         transferStatus: 'Pending',

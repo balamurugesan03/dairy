@@ -5,6 +5,7 @@ import {
   getProducerBalance,
   updatePayment,
   cancelPayment,
+  deletePayment,
   getCycles,
   getBankTransferPaid,
 } from '../controllers/producerPaymentController.js';
@@ -19,5 +20,6 @@ router.post('/producer-payments',                   createPayment);
 router.get('/producer-payments/balance/:farmerId',  getProducerBalance);
 router.put('/producer-payments/:id',                updatePayment);
 router.post('/producer-payments/:id/cancel',        cancelPayment);
+router.delete('/producer-payments/:id',             deletePayment);
 
 export default router;

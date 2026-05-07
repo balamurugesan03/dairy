@@ -13,7 +13,7 @@ import {
 import { notifications } from '@mantine/notifications';
 import * as XLSX from 'xlsx';
 import dayjs from 'dayjs';
-import { reportAPI, itemAPI } from '../../services/api';
+import { reportAPI, itemAPI, supplierAPI } from '../../services/api';
 import { printReport } from '../../utils/printReport';
 
 const fmt = (n) => parseFloat(n || 0).toFixed(2);
@@ -80,12 +80,23 @@ const InventoryPurchaseRegister = () => {
   const [viewMode, setViewMode] = useState('dateWise');
   const [selectedItem, setSelectedItem] = useState(null);
   const [itemOptions, setItemOptions] = useState([]);
+  const [selectedSupplier, setSelectedSupplier] = useState(null);
+  const [supplierOptions, setSupplierOptions] = useState([]);
   const printRef = useRef(null);
 
   useEffect(() => {
     itemAPI.getAll({ status: 'Active', limit: 1000 }).then(res => {
       const list = res.data || [];
       setItemOptions(list.map(i => ({ value: i._id, label: `${i.itemCode} - ${i.itemName}` })));
+    }).catch(() => {});
+
+    supplierAPI.getAll({ status: 'Active', limit: 1000 }).then(res => {
+      const list = res.data || res || [];
+      const arr = Array.isArray(list) ? list : (list.suppliers || list.data || []);
+      setSupplierOptions(arr.map(s => ({
+        value: s._id,
+        label: s.supplierId ? `${s.supplierId} - ${s.name}` : s.name
+      })));
     }).catch(() => {});
   }, []);
 
@@ -107,6 +118,7 @@ const InventoryPurchaseRegister = () => {
         endDate: dayjs(end).format('YYYY-MM-DD')
       };
       if (selectedItem) params.itemId = selectedItem;
+      if (selectedSupplier) params.supplierId = selectedSupplier;
       const res = await reportAPI.inventoryPurchaseRegister(params);
       setReportData(res.data || res);
     } catch (err) {
@@ -130,12 +142,12 @@ const InventoryPurchaseRegister = () => {
         Qty: fmt(r.qty),
         'Free Qty': fmt(r.freeQty),
         'Total Qty': fmt(totalQty),
-        Rate: fmt(r.rate),
-        'Purch. Amount': fmt(r.purchAmount),
+        'Purchase Rate': fmt(r.rate),
+        'Sales Rate': fmt(r.salesRate),
+        'Purchase Amt': fmt(r.purchAmount),
         Earnings: fmt(r.earnings),
         Recovery: fmt(r.recovery),
-        'Net Amount': fmt(r.purchAmount - r.earnings - r.recovery),
-        Amount: fmt(totalQty * r.rate)
+        'Net Amount': fmt(r.purchAmount - r.earnings - r.recovery)
       };
     });
     const ws = XLSX.utils.json_to_sheet(data);
@@ -221,7 +233,7 @@ const InventoryPurchaseRegister = () => {
       // Date header row
       result.push(
         <Table.Tr key={`hdr-${key}`} style={{ background: '#dbeafe' }}>
-          <Table.Td colSpan={15} style={{ padding: '5px 12px', fontWeight: 800, color: '#1d4ed8', fontSize: 12 }}>
+          <Table.Td colSpan={16} style={{ padding: '5px 12px', fontWeight: 800, color: '#1d4ed8', fontSize: 12 }}>
             <Group gap="xs">
               <IconShoppingCart size={14} />
               <span>{key}</span>
@@ -257,6 +269,7 @@ const InventoryPurchaseRegister = () => {
             <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#92400e' }}>{fmt(row.freeQty)}</Table.Td>
             <Table.Td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{fmt(totalQty)}</Table.Td>
             <Table.Td style={{ ...tdStyle, textAlign: 'right' }}>₹{fmt(row.rate)}</Table.Td>
+            <Table.Td style={{ ...tdStyle, textAlign: 'right' }}>₹{fmt(row.salesRate)}</Table.Td>
             <Table.Td style={{ ...tdStyle, textAlign: 'right' }}>₹{fmt(row.purchAmount)}</Table.Td>
             <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#166534' }}>₹{fmt(row.earnings)}</Table.Td>
             <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#dc2626' }}>₹{fmt(row.recovery)}</Table.Td>
@@ -275,6 +288,7 @@ const InventoryPurchaseRegister = () => {
           <Table.Td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, fontSize: 12 }}>{fmt(sub.freeQty)}</Table.Td>
           <Table.Td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, fontSize: 12 }}>{fmt(sub.totalQty)}</Table.Td>
           <Table.Td style={{ padding: '6px 10px' }} />
+          <Table.Td style={{ padding: '6px 10px' }} />
           <Table.Td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, fontSize: 12 }}>₹{fmt(sub.purchAmount)}</Table.Td>
           <Table.Td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, fontSize: 12, color: '#166534' }}>₹{fmt(sub.earnings)}</Table.Td>
           <Table.Td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, fontSize: 12, color: '#dc2626' }}>₹{fmt(sub.recovery)}</Table.Td>
@@ -286,7 +300,7 @@ const InventoryPurchaseRegister = () => {
     return result;
   };
 
-  const COL_HEADERS = ['#', 'Date', 'Invoice No', 'Inv. Date', 'Supplier', 'Product', 'Unit', 'Qty', 'Free Qty', 'Total Qty', 'Rate', 'Purch. Amt', 'Earnings', 'Recovery', 'Net Amt'];
+  const COL_HEADERS = ['#', 'Date', 'Invoice No', 'Inv. Date', 'Supplier', 'Product', 'Unit', 'Qty', 'Free Qty', 'Total Qty', 'Purchase Rate', 'Sales Rate', 'Purchase Amt', 'Earnings', 'Recovery', 'Net Amt'];
 
   return (
     <Box p="md" ref={printRef}>
@@ -362,6 +376,17 @@ const InventoryPurchaseRegister = () => {
               data={itemOptions}
               value={selectedItem}
               onChange={setSelectedItem}
+              searchable
+              clearable
+              style={{ flex: '2 1 220px' }}
+              size="sm"
+            />
+            <Select
+              label="Supplier"
+              placeholder="All Suppliers"
+              data={supplierOptions}
+              value={selectedSupplier}
+              onChange={setSelectedSupplier}
               searchable
               clearable
               style={{ flex: '2 1 220px' }}
@@ -510,6 +535,7 @@ const InventoryPurchaseRegister = () => {
                     <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800 }}>{fmt(gt.qty)}</Table.Td>
                     <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800 }}>{fmt(gt.freeQty)}</Table.Td>
                     <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800 }}>{fmt(gt.totalQty)}</Table.Td>
+                    <Table.Td style={{ padding: '8px 10px' }} />
                     <Table.Td style={{ padding: '8px 10px' }} />
                     <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800 }}>₹{fmt(gt.purchAmount)}</Table.Td>
                     <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#166534' }}>₹{fmt(gt.earnings)}</Table.Td>

@@ -1,6 +1,63 @@
 import fs from 'fs';
 import XLSX from 'xlsx';
 import UnionSalesSlip from '../models/UnionSalesSlip.js';
+import Voucher from '../models/Voucher.js';
+import {
+  generateVoucherNumber,
+  updateLedgerBalances,
+  reverseLedgerBalances,
+  findOrCreateLedger,
+} from '../utils/accountingHelper.js';
+
+// ── Auto-post Union Sales adjustment voucher (Day Book only) ─────────────────
+//   Dr MILMA UNION   (expenditure side)
+//   Cr UNION SALES   (income side)
+// Both legs are non-cash, so nothing shows in Cash Book — Day Book picks the
+// Journal voucher's debit on the payment side and credit on the receipt side.
+async function createUnionSalesVoucher(slip, companyId) {
+  const amount = parseFloat(slip.amount) || 0;
+  if (amount <= 0) return null;
+
+  const [milmaUnion, unionSales] = await Promise.all([
+    findOrCreateLedger('MILMA UNION', 'Advance due to Society', 'ASSET',  'Dr', companyId),
+    findOrCreateLedger('UNION SALES', 'Sales',                  'INCOME', 'Cr', companyId),
+  ]);
+
+  const shiftNote = slip.time ? ` (${slip.time})` : '';
+  const entries = [
+    { ledgerId: milmaUnion._id, ledgerName: milmaUnion.ledgerName, debitAmount: amount, creditAmount: 0,      narration: `Union Sales${shiftNote}` },
+    { ledgerId: unionSales._id, ledgerName: unionSales.ledgerName, debitAmount: 0,      creditAmount: amount, narration: `Union Sales${shiftNote}` },
+  ];
+  const voucherNumber = await generateVoucherNumber('Journal', companyId);
+  const voucher = new Voucher({
+    voucherType:   'Journal',
+    voucherNumber,
+    voucherDate:   slip.date,
+    entries,
+    totalDebit:    amount,
+    totalCredit:   amount,
+    narration:     `Union Sales — ${slip.slipNo || ''}${shiftNote} | Qty: ${slip.qty} L | Rate: ${slip.rate}`,
+    referenceType: 'UnionSales',
+    referenceId:   slip._id,
+    companyId,
+  });
+  await voucher.save();
+  await updateLedgerBalances(entries);
+  return voucher;
+}
+
+async function reverseUnionSalesVoucher(slip) {
+  if (!slip?.voucherId) return;
+  try {
+    const voucher = await Voucher.findById(slip.voucherId);
+    if (voucher) {
+      await reverseLedgerBalances(voucher.entries);
+      await voucher.deleteOne();
+    }
+  } catch (err) {
+    console.warn('[UnionSales] Voucher reversal failed (non-fatal):', err.message);
+  }
+}
 
 // ── Auto-generate slip number: USS-YYMM-XXXXX ─────────────────────────────
 const generateSlipNo = async (companyId) => {
@@ -64,6 +121,18 @@ export const createSlip = async (req, res) => {
     });
 
     await slip.save();
+
+    // Auto-post Day Book adjustment: Dr MILMA UNION / Cr UNION SALES
+    try {
+      const voucher = await createUnionSalesVoucher(slip, req.companyId);
+      if (voucher) {
+        slip.voucherId = voucher._id;
+        await slip.save();
+      }
+    } catch (vErr) {
+      console.warn('[UnionSales] Voucher creation failed (non-fatal):', vErr.message);
+    }
+
     res.status(201).json({ success: true, data: slip });
   } catch (error) {
     if (error.code === 11000) {
@@ -221,6 +290,17 @@ export const updateSlip = async (req, res) => {
     );
 
     if (!slip) return res.status(404).json({ success: false, message: 'Record not found' });
+
+    // Re-post the Day Book voucher to reflect any qty/rate/date/time changes
+    try {
+      await reverseUnionSalesVoucher(slip);
+      const voucher = await createUnionSalesVoucher(slip, req.companyId);
+      slip.voucherId = voucher?._id;
+      await slip.save();
+    } catch (vErr) {
+      console.warn('[UnionSales] Voucher refresh failed (non-fatal):', vErr.message);
+    }
+
     res.json({ success: true, data: slip });
   } catch (error) {
     if (error.code === 11000) {
@@ -241,6 +321,10 @@ export const deleteSlip = async (req, res) => {
       companyId: req.companyId,
     });
     if (!slip) return res.status(404).json({ success: false, message: 'Record not found' });
+
+    // Reverse the Day Book voucher
+    await reverseUnionSalesVoucher(slip);
+
     res.json({ success: true, message: 'Record deleted successfully' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -375,8 +459,21 @@ const processImportSlips = async (rows, companyId, userId) => {
 
       if (existing) {
         // Update existing record with new aggregated values
-        await UnionSalesSlip.findByIdAndUpdate(existing._id, { $set: { qty, fat, snf, rate, amount } });
+        const updated = await UnionSalesSlip.findByIdAndUpdate(
+          existing._id,
+          { $set: { qty, fat, snf, rate, amount } },
+          { new: true }
+        );
         results.updated++;
+        // Refresh Day Book voucher
+        try {
+          await reverseUnionSalesVoucher(updated);
+          const voucher = await createUnionSalesVoucher(updated, companyId);
+          updated.voucherId = voucher?._id;
+          await updated.save();
+        } catch (vErr) {
+          console.warn('[UnionSales] Voucher refresh failed (non-fatal):', vErr.message);
+        }
       } else {
         // Insert new record
         const slipNo = await generateSlipNo(companyId);
@@ -390,6 +487,16 @@ const processImportSlips = async (rows, companyId, userId) => {
               companyId, createdBy: userId,
             });
             await slip.save();
+            // Auto-post Day Book voucher
+            try {
+              const voucher = await createUnionSalesVoucher(slip, companyId);
+              if (voucher) {
+                slip.voucherId = voucher._id;
+                await slip.save();
+              }
+            } catch (vErr) {
+              console.warn('[UnionSales] Voucher creation failed (non-fatal):', vErr.message);
+            }
             results.created++;
             break;
           } catch (dupErr) {

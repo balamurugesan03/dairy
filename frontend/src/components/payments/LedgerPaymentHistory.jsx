@@ -69,12 +69,10 @@ const CycleTable = ({ entries }) => (
         <th style={th}>Total Ded</th>
         <th style={th}>Net Pay</th>
         <th style={th}>Paid Amt</th>
-        <th style={th}>Mode</th>
       </tr>
     </thead>
     <tbody>
       {entries.map((e, i) => {
-        const mode = e.payMode || e.paymentMode || 'Cash';
         return (
           <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#f7fafc' }}>
             <td style={tdStyle()}>{e.slNo || i + 1}</td>
@@ -96,7 +94,6 @@ const CycleTable = ({ entries }) => (
             <td style={tdStyle()}>{fmt(e.totalDed)}</td>
             <td style={{ ...tdStyle(), fontWeight: 700, color: '#276749' }}>{fmt(e.netPay)}</td>
             <td style={{ ...tdStyle(), fontWeight: 700, color: '#2b6cb0' }}>{fmt(e.paidAmount)}</td>
-            <td style={tdStyle()}>{mode}</td>
           </tr>
         );
       })}
@@ -119,7 +116,6 @@ const CycleTable = ({ entries }) => (
         <td style={tdStyle()}>{fmt(entries.reduce((s,e)=>s+(parseFloat(e.totalDed)||0),0))}</td>
         <td style={{ ...tdStyle(), color: '#276749' }}>{fmt(entries.reduce((s,e)=>s+(parseFloat(e.netPay)||0),0))}</td>
         <td style={{ ...tdStyle(), color: '#2b6cb0' }}>{fmt(entries.reduce((s,e)=>s+(parseFloat(e.paidAmount)||0),0))}</td>
-        <td style={tdStyle()} />
       </tr>
     </tbody>
   </table>

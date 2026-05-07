@@ -23,7 +23,8 @@ import {
 import { DatePickerInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { IconX, IconDeviceFloppy, IconUpload, IconTrash, IconCamera } from '@tabler/icons-react';
-import { farmerAPI, collectionCenterAPI } from '../../services/api';
+import { farmerAPI, collectionCenterAPI, ledgerAPI } from '../../services/api';
+import { INDIAN_BANKS } from '../../utils/indianBanks';
 import { message } from '../../utils/toast';
 
 const FarmerForm = () => {
@@ -35,6 +36,7 @@ const FarmerForm = () => {
   const [additionalDocs, setAdditionalDocs] = useState([]);
   const [pincodeLoading, setPincodeLoading] = useState(false);
   const [pincodeOptions, setPincodeOptions] = useState([]);
+  const [bankLedgerOptions, setBankLedgerOptions] = useState([]);
 
   const isEditMode = Boolean(id);
 
@@ -77,7 +79,9 @@ const FarmerForm = () => {
         accountNumber: '',
         bankName: '',
         branch: '',
-        ifsc: ''
+        ifsc: '',
+        micr: '',
+        bankLedgerId: ''
       },
       financialDetails: {
         numberOfShares: 0,
@@ -128,10 +132,37 @@ const FarmerForm = () => {
 
   useEffect(() => {
     fetchCollectionCenters();
+    fetchBankLedgers();
     if (isEditMode) {
       fetchFarmer();
     }
   }, [id]);
+
+  const fetchBankLedgers = async () => {
+    try {
+      // Lists ledgers under the "Bank Accounts" group in Ledger Management.
+      // Also accepts legacy 'Bank' ledgerType for older companies.
+      const [primary, legacy] = await Promise.all([
+        ledgerAPI.getAll({ ledgerType: 'Bank Accounts', status: 'Active' }).catch(() => ({})),
+        ledgerAPI.getAll({ ledgerType: 'Bank',          status: 'Active' }).catch(() => ({})),
+      ]);
+      const flat = (r) => {
+        const list = r?.data || r || [];
+        return Array.isArray(list) ? list : (list.ledgers || list.data || []);
+      };
+      const merged = [...flat(primary), ...flat(legacy)];
+      const seen = new Set();
+      const opts = [];
+      merged.forEach(l => {
+        if (!l?._id || seen.has(l._id)) return;
+        seen.add(l._id);
+        opts.push({ value: l._id, label: l.ledgerName });
+      });
+      setBankLedgerOptions(opts);
+    } catch (err) {
+      console.error('Failed to fetch bank ledgers:', err);
+    }
+  };
 
   const fetchCollectionCenters = async () => {
     try {
@@ -186,7 +217,9 @@ const FarmerForm = () => {
           accountNumber: farmer.bankDetails?.accountNumber || '',
           bankName: farmer.bankDetails?.bankName || '',
           branch: farmer.bankDetails?.branch || '',
-          ifsc: farmer.bankDetails?.ifsc || ''
+          ifsc: farmer.bankDetails?.ifsc || '',
+          micr: farmer.bankDetails?.micr || '',
+          bankLedgerId: farmer.bankDetails?.bankLedgerId?._id || farmer.bankDetails?.bankLedgerId || ''
         },
         financialDetails: {
           numberOfShares: farmer.financialDetails?.numberOfShares || 0,
@@ -289,7 +322,9 @@ const FarmerForm = () => {
           accountNumber: values.bankDetails.accountNumber,
           bankName: values.bankDetails.bankName,
           branch: values.bankDetails.branch,
-          ifsc: values.bankDetails.ifsc
+          ifsc: values.bankDetails.ifsc,
+          micr: values.bankDetails.micr,
+          bankLedgerId: values.bankDetails.bankLedgerId || null
         },
         financialDetails: {
           numberOfShares: parseFloat(values.financialDetails.numberOfShares) || 0,
@@ -754,9 +789,12 @@ const FarmerForm = () => {
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
-                    <TextInput
+                    <Select
                       label="Bank Name"
-                      placeholder="Enter bank name"
+                      placeholder="Select bank"
+                      data={INDIAN_BANKS}
+                      searchable
+                      clearable
                       {...form.getInputProps('bankDetails.bankName')}
                       onKeyDown={focusNext}
                     />
@@ -777,6 +815,25 @@ const FarmerForm = () => {
                       {...form.getInputProps('bankDetails.ifsc')}
                       onChange={(e) => form.setFieldValue('bankDetails.ifsc', e.target.value.toUpperCase())}
                       onKeyDown={focusNext}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <TextInput
+                      label="MICR Code"
+                      placeholder="Enter MICR code"
+                      maxLength={9}
+                      {...form.getInputProps('bankDetails.micr')}
+                      onKeyDown={focusNext}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
+                    <Select
+                      label="Select Bank Ledger"
+                      placeholder="Choose bank ledger"
+                      data={bankLedgerOptions}
+                      searchable
+                      clearable
+                      {...form.getInputProps('bankDetails.bankLedgerId')}
                     />
                   </Grid.Col>
                 </Grid>

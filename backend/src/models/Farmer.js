@@ -139,6 +139,14 @@ const farmerSchema = new mongoose.Schema({
     ifsc: {
       type: String,
       trim: true
+    },
+    micr: {
+      type: String,
+      trim: true
+    },
+    bankLedgerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Ledger'
     }
   },
   financialDetails: {

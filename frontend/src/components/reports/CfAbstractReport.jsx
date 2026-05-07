@@ -1,8 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box, Paper, Group, Text, Title, Button, Table, ScrollArea,
-  Loader, Center, Stack, Select
+  Loader, Center, Stack, Select, SegmentedControl
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import {
@@ -11,7 +11,7 @@ import {
 import { notifications } from '@mantine/notifications';
 import * as XLSX from 'xlsx';
 import dayjs from 'dayjs';
-import { reportAPI, itemAPI } from '../../services/api';
+import { reportAPI, itemAPI, supplierAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 
 const fmt = (n, d = 2) => parseFloat(n || 0).toFixed(d);
@@ -41,9 +41,11 @@ const getPresetRange = (p) => {
 };
 
 /* ─── Print stylesheet injected into the print window ─────────────────────── */
-const buildPrintHtml = (rows, grandTotals, companyName, periodLabel, itemOptions) => {
-  const itemName = rows[0]?.product || '';
-  const rowsHtml = rows.map((r, i) => {
+const buildPrintHtml = (rows, grandTotals, companyName, periodLabel, mode = 'dateWise', supplierGroups = []) => {
+  const gt = grandTotals || {};
+  const isSupplierWise = mode === 'supplierWise';
+
+  const dateWiseRowsHtml = rows.map((r, i) => {
     const totalQty = parseFloat(r.qty || 0) + parseFloat(r.freeQty || 0);
     const netAmt = parseFloat(r.purchAmount || 0) - parseFloat(r.earnings || 0) - parseFloat(r.recovery || 0);
     const amount = totalQty * parseFloat(r.rate || 0);
@@ -53,6 +55,8 @@ const buildPrintHtml = (rows, grandTotals, companyName, periodLabel, itemOptions
       <td class="tc">${r.invoiceNo || ''}<br/><span class="sub">${fmtDate(r.invoiceDate)}</span></td>
       <td>${r.supplier || ''}</td>
       <td class="tr">${fmt(r.purchAmount)}</td>
+      <td class="tr">${fmt(r.cattleFeedCommission)}</td>
+      <td class="tr">${fmt(r.inspectionFee)}</td>
       <td class="tr">${fmt(r.earnings)}</td>
       <td class="tr">${fmt(r.recovery)}</td>
       <td class="tr fw">${fmt(netAmt)}</td>
@@ -65,7 +69,96 @@ const buildPrintHtml = (rows, grandTotals, companyName, periodLabel, itemOptions
     </tr>`;
   }).join('');
 
-  const gt = grandTotals || {};
+  const supplierWiseRowsHtml = supplierGroups.map((g, i) => {
+    const totalQty = g.qty + g.freeQty;
+    const bg = i % 2 === 0 ? '' : 'style="background:#f5f5f5"';
+    return `<tr ${bg}>
+      <td class="tc">${i + 1}</td>
+      <td>${g.supplier}</td>
+      <td class="tc">${g.invoices}</td>
+      <td class="tr">${fmt(totalQty)}</td>
+      <td class="tr">${fmt(g.purchAmount)}</td>
+      <td class="tr">${fmt(g.cattleFeedCommission)}</td>
+      <td class="tr">${fmt(g.inspectionFee)}</td>
+      <td class="tr">${fmt(g.earnings)}</td>
+      <td class="tr">${fmt(g.recovery)}</td>
+      <td class="tr fw">${fmt(g.netAmount)}</td>
+    </tr>`;
+  }).join('');
+
+  const dateWiseTable = `
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Inv. No. &amp; Date</th>
+        <th>Supplier</th>
+        <th>Purch. Amnt</th>
+        <th>CF Commission</th>
+        <th>Inspection Fee</th>
+        <th>Earnings</th>
+        <th>Recovery</th>
+        <th>Net Amnt</th>
+        <th>Product</th>
+        <th>Qty</th>
+        <th>Free Qty</th>
+        <th>Total Qty</th>
+        <th>Rate</th>
+        <th>Amount</th>
+      </tr>
+    </thead>
+    <tbody>${dateWiseRowsHtml}</tbody>
+    <tfoot>
+      <tr class="gtotal">
+        <td colspan="3" style="text-align:center">G TOTAL (${rows.length} invoices)</td>
+        <td class="tr">${fmt(gt.purchAmount)}</td>
+        <td class="tr">${fmt(gt.cattleFeedCommission)}</td>
+        <td class="tr">${fmt(gt.inspectionFee)}</td>
+        <td class="tr">${fmt(gt.earnings)}</td>
+        <td class="tr">${fmt(gt.recovery)}</td>
+        <td class="tr">${fmt(gt.netAmount)}</td>
+        <td></td>
+        <td class="tr">${fmt(gt.qty)}</td>
+        <td class="tr">${fmt(gt.freeQty)}</td>
+        <td class="tr">${fmt(gt.totalQty)}</td>
+        <td></td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>`;
+
+  const supplierWiseTable = `
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Supplier</th>
+        <th>Invoices</th>
+        <th>Total Qty</th>
+        <th>Purch. Amnt</th>
+        <th>CF Commission</th>
+        <th>Inspection Fee</th>
+        <th>Earnings</th>
+        <th>Recovery</th>
+        <th>Net Amnt</th>
+      </tr>
+    </thead>
+    <tbody>${supplierWiseRowsHtml}</tbody>
+    <tfoot>
+      <tr class="gtotal">
+        <td colspan="2" style="text-align:center">G TOTAL (${supplierGroups.length} suppliers)</td>
+        <td class="tc">${rows.length}</td>
+        <td class="tr">${fmt(gt.totalQty)}</td>
+        <td class="tr">${fmt(gt.purchAmount)}</td>
+        <td class="tr">${fmt(gt.cattleFeedCommission)}</td>
+        <td class="tr">${fmt(gt.inspectionFee)}</td>
+        <td class="tr">${fmt(gt.earnings)}</td>
+        <td class="tr">${fmt(gt.recovery)}</td>
+        <td class="tr">${fmt(gt.netAmount)}</td>
+      </tr>
+    </tfoot>
+  </table>`;
+
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"/>
 <title>Inventory Purchase Register – ${companyName}</title>
@@ -92,45 +185,9 @@ const buildPrintHtml = (rows, grandTotals, companyName, periodLabel, itemOptions
 <body>
 <div class="wrap">
   <div class="co-name">${companyName}</div>
-  <div class="co-sub">INVENTORY PURCHASE REGISTER CHECK LIST FOR THE PERIOD OF ${periodLabel}</div>
+  <div class="co-sub">INVENTORY PURCHASE REGISTER CHECK LIST FOR THE PERIOD OF ${periodLabel}${isSupplierWise ? ' — SUPPLIER WISE' : ''}</div>
 
-  <table>
-    <thead>
-      <tr>
-        <th>Date</th>
-        <th>Inv. No. &amp; Date</th>
-        <th>Supplier</th>
-        <th>Purch. Amnt</th>
-        <th>Earnings</th>
-        <th>Recovery</th>
-        <th>Net Amnt</th>
-        <th>Product</th>
-        <th>Qty</th>
-        <th>Free Qty</th>
-        <th>Total Qty</th>
-        <th>Rate</th>
-        <th>Amount</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${rowsHtml}
-    </tbody>
-    <tfoot>
-      <tr class="gtotal">
-        <td colspan="3" style="text-align:center">G TOTAL (${rows.length} invoices)</td>
-        <td class="tr">${fmt(gt.purchAmount)}</td>
-        <td class="tr">${fmt(gt.earnings)}</td>
-        <td class="tr">${fmt(gt.recovery)}</td>
-        <td class="tr">${fmt(gt.netAmount)}</td>
-        <td></td>
-        <td class="tr">${fmt(gt.qty)}</td>
-        <td class="tr">${fmt(gt.freeQty)}</td>
-        <td class="tr">${fmt(gt.totalQty)}</td>
-        <td></td>
-        <td class="tr">${fmt((parseFloat(gt.totalQty || 0)) * (rows.length ? rows.reduce((s, r) => s + parseFloat(r.rate || 0), 0) / rows.length : 0))}</td>
-      </tr>
-    </tfoot>
-  </table>
+  ${isSupplierWise ? supplierWiseTable : dateWiseTable}
 
   <div class="footer">
     <div><div class="sign-line">&nbsp;</div>President</div>
@@ -152,11 +209,23 @@ const CfAbstractReport = () => {
   const [dateRange, setDateRange] = useState(getFYRange());
   const [itemOptions, setItemOptions] = useState([]);
   const [selectedItem, setSelectedItem] = useState(null);
+  const [supplierOptions, setSupplierOptions] = useState([]);
+  const [selectedSupplier, setSelectedSupplier] = useState(null);
+  const [viewMode, setViewMode] = useState('dateWise'); // 'dateWise' | 'supplierWise'
 
-  useState(() => {
+  useEffect(() => {
     itemAPI.getAll({ status: 'Active', limit: 1000 }).then(res => {
       const list = res.data || [];
       setItemOptions(list.map(i => ({ value: i._id, label: `${i.itemCode} - ${i.itemName}` })));
+    }).catch(() => {});
+
+    supplierAPI.getAll({ status: 'Active', limit: 1000 }).then(res => {
+      const list = res.data || res || [];
+      const arr = Array.isArray(list) ? list : (list.suppliers || list.data || []);
+      setSupplierOptions(arr.map(s => ({
+        value: s._id,
+        label: s.supplierId ? `${s.supplierId} - ${s.name}` : s.name
+      })));
     }).catch(() => {});
   }, []);
 
@@ -172,6 +241,7 @@ const CfAbstractReport = () => {
         endDate: dayjs(dateRange[1]).format('YYYY-MM-DD')
       };
       if (selectedItem) params.itemId = selectedItem;
+      if (selectedSupplier) params.supplierId = selectedSupplier;
       const res = await reportAPI.inventoryPurchaseRegister(params);
       setReportData(res.data || res);
     } catch (err) {
@@ -184,13 +254,42 @@ const CfAbstractReport = () => {
   const rows = reportData?.rows || [];
   const gt = reportData?.grandTotals;
 
+  // Supplier-wise grouping
+  const supplierGroups = useMemo(() => {
+    const map = new Map();
+    rows.forEach(r => {
+      const key = r.supplier || '—';
+      if (!map.has(key)) {
+        map.set(key, {
+          supplier: key,
+          invoices: 0, qty: 0, freeQty: 0,
+          purchAmount: 0, cattleFeedCommission: 0, inspectionFee: 0, earnings: 0,
+          recovery: 0, netAmount: 0, amount: 0
+        });
+      }
+      const g = map.get(key);
+      const totalQty = parseFloat(r.qty || 0) + parseFloat(r.freeQty || 0);
+      g.invoices             += 1;
+      g.qty                  += parseFloat(r.qty || 0);
+      g.freeQty              += parseFloat(r.freeQty || 0);
+      g.purchAmount          += parseFloat(r.purchAmount || 0);
+      g.cattleFeedCommission += parseFloat(r.cattleFeedCommission || 0);
+      g.inspectionFee        += parseFloat(r.inspectionFee || 0);
+      g.earnings             += parseFloat(r.earnings || 0);
+      g.recovery             += parseFloat(r.recovery || 0);
+      g.netAmount            += parseFloat(r.purchAmount || 0) - parseFloat(r.earnings || 0) - parseFloat(r.recovery || 0);
+      g.amount               += totalQty * parseFloat(r.rate || 0);
+    });
+    return Array.from(map.values()).sort((a, b) => a.supplier.localeCompare(b.supplier));
+  }, [rows]);
+
   const periodLabel = dateRange[0] && dateRange[1]
     ? `${fmtDate(dateRange[0])} TO ${fmtDate(dateRange[1])}`
     : '';
 
   const handlePrint = () => {
     if (!rows.length) return;
-    const html = buildPrintHtml(rows, gt, companyName.toUpperCase(), periodLabel, itemOptions);
+    const html = buildPrintHtml(rows, gt, companyName.toUpperCase(), periodLabel, viewMode, supplierGroups);
     const w = window.open('', '_blank', 'width=1200,height=800');
     w.document.write(html);
     w.document.close();
@@ -200,45 +299,73 @@ const CfAbstractReport = () => {
 
   const handleExport = () => {
     if (!rows.length) return;
-    const data = rows.map((r, i) => {
-      const totalQty = parseFloat(r.qty || 0) + parseFloat(r.freeQty || 0);
-      const netAmt = parseFloat(r.purchAmount || 0) - parseFloat(r.earnings || 0) - parseFloat(r.recovery || 0);
-      return {
+
+    let data;
+    if (viewMode === 'supplierWise') {
+      data = supplierGroups.map((g, i) => ({
         '#': i + 1,
-        Date: fmtDate(r.date),
-        'Inv. No': r.invoiceNo || '',
-        'Inv. Date': fmtDate(r.invoiceDate),
-        Supplier: r.supplier || '',
-        'Purch. Amnt': fmt(r.purchAmount),
-        Earnings: fmt(r.earnings),
-        Recovery: fmt(r.recovery),
-        'Net Amnt': fmt(netAmt),
-        Product: r.product || '',
-        Qty: fmt(r.qty),
-        'Free Qty': fmt(r.freeQty),
-        'Total Qty': fmt(totalQty),
-        Rate: fmt(r.rate),
-        Amount: fmt(totalQty * parseFloat(r.rate || 0))
-      };
-    });
-    // Grand total row
-    if (gt) data.push({
-      '#': 'G TOTAL',
-      Date: '', 'Inv. No': '', 'Inv. Date': '', Supplier: '',
-      'Purch. Amnt': fmt(gt.purchAmount),
-      Earnings: fmt(gt.earnings),
-      Recovery: fmt(gt.recovery),
-      'Net Amnt': fmt(gt.netAmount),
-      Product: '',
-      Qty: fmt(gt.qty),
-      'Free Qty': fmt(gt.freeQty),
-      'Total Qty': fmt(gt.totalQty),
-      Rate: '', Amount: ''
-    });
+        Supplier:           g.supplier,
+        Invoices:           g.invoices,
+        'Total Qty':        fmt(g.qty + g.freeQty),
+        'Purch. Amnt':      fmt(g.purchAmount),
+        'CF Commission':    fmt(g.cattleFeedCommission),
+        'Inspection Fee':   fmt(g.inspectionFee),
+        Earnings:           fmt(g.earnings),
+        Recovery:           fmt(g.recovery),
+        'Net Amnt':         fmt(g.netAmount)
+      }));
+      if (gt) data.push({
+        '#': 'G TOTAL', Supplier: '', Invoices: rows.length,
+        'Total Qty':      fmt(gt.totalQty),
+        'Purch. Amnt':    fmt(gt.purchAmount),
+        'CF Commission':  fmt(gt.cattleFeedCommission),
+        'Inspection Fee': fmt(gt.inspectionFee),
+        Earnings:         fmt(gt.earnings),
+        Recovery:         fmt(gt.recovery),
+        'Net Amnt':       fmt(gt.netAmount)
+      });
+    } else {
+      data = rows.map((r, i) => {
+        const totalQty = parseFloat(r.qty || 0) + parseFloat(r.freeQty || 0);
+        const netAmt = parseFloat(r.purchAmount || 0) - parseFloat(r.earnings || 0) - parseFloat(r.recovery || 0);
+        return {
+          '#': i + 1,
+          Date: fmtDate(r.date),
+          'Inv. No': r.invoiceNo || '',
+          'Inv. Date': fmtDate(r.invoiceDate),
+          Supplier: r.supplier || '',
+          'Purch. Amnt':    fmt(r.purchAmount),
+          'CF Commission':  fmt(r.cattleFeedCommission),
+          'Inspection Fee': fmt(r.inspectionFee),
+          Earnings:         fmt(r.earnings),
+          Recovery:         fmt(r.recovery),
+          'Net Amnt':       fmt(netAmt),
+          Product: r.product || '',
+          Qty: fmt(r.qty),
+          'Free Qty': fmt(r.freeQty),
+          'Total Qty': fmt(totalQty),
+          Rate: fmt(r.rate),
+          Amount: fmt(totalQty * parseFloat(r.rate || 0))
+        };
+      });
+      if (gt) data.push({
+        '#': 'G TOTAL', Date: '', 'Inv. No': '', 'Inv. Date': '', Supplier: '',
+        'Purch. Amnt':    fmt(gt.purchAmount),
+        'CF Commission':  fmt(gt.cattleFeedCommission),
+        'Inspection Fee': fmt(gt.inspectionFee),
+        Earnings:         fmt(gt.earnings),
+        Recovery:         fmt(gt.recovery),
+        'Net Amnt':       fmt(gt.netAmount),
+        Product: '',
+        Qty: fmt(gt.qty), 'Free Qty': fmt(gt.freeQty), 'Total Qty': fmt(gt.totalQty),
+        Rate: '', Amount: ''
+      });
+    }
+
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Purchase Register');
-    XLSX.writeFile(wb, `inventory_purchase_register_${dayjs().format('YYYY-MM-DD')}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, viewMode === 'supplierWise' ? 'Supplier Wise' : 'Purchase Register');
+    XLSX.writeFile(wb, `inventory_purchase_register_${viewMode === 'supplierWise' ? 'supplier_wise_' : ''}${dayjs().format('YYYY-MM-DD')}.xlsx`);
     notifications.show({ title: 'Exported', message: 'Report exported to Excel', color: 'green' });
   };
 
@@ -276,6 +403,8 @@ const CfAbstractReport = () => {
                 { label: 'Invoices', value: rows.length },
                 { label: 'Total Qty', value: fmt(gt.qty) },
                 { label: 'Purch. Amount', value: `₹${fmt(gt.purchAmount)}` },
+                { label: 'CF Commission', value: `₹${fmt(gt.cattleFeedCommission)}` },
+                { label: 'Inspection Fee', value: `₹${fmt(gt.inspectionFee)}` },
                 { label: 'Earnings', value: `₹${fmt(gt.earnings)}` },
                 { label: 'Recovery', value: `₹${fmt(gt.recovery)}` },
                 { label: 'Net Amount', value: `₹${fmt(gt.netAmount)}` }
@@ -320,11 +449,30 @@ const CfAbstractReport = () => {
             style={{ flex: '2 1 220px' }}
             size="sm"
           />
+          <Select
+            label="Supplier"
+            placeholder="All Suppliers"
+            data={supplierOptions}
+            value={selectedSupplier}
+            onChange={setSelectedSupplier}
+            searchable clearable
+            style={{ flex: '2 1 220px' }}
+            size="sm"
+          />
           <Button leftSection={<IconRefresh size={16} />} onClick={fetchReport} loading={loading} color="dark" size="sm">
             Generate
           </Button>
           {rows.length > 0 && (
             <>
+              <SegmentedControl
+                value={viewMode}
+                onChange={setViewMode}
+                size="sm"
+                data={[
+                  { value: 'dateWise',     label: 'Date Wise' },
+                  { value: 'supplierWise', label: 'Supplier Wise' }
+                ]}
+              />
               <Button leftSection={<IconFileExport size={16} />} variant="light" color="gray" onClick={handleExport} size="sm">
                 Export Excel
               </Button>
@@ -367,77 +515,142 @@ const CfAbstractReport = () => {
           </Box>
 
           <ScrollArea>
-            <Table withColumnBorders style={{ fontSize: 11 }}>
-              <Table.Thead>
-                <Table.Tr>
-                  {[
-                    { label: '#', w: 30 },
-                    { label: 'Date', w: 70 },
-                    { label: 'Inv. No. & Date', w: 110 },
-                    { label: 'Supplier', w: 130 },
-                    { label: 'Purch. Amnt', w: 90 },
-                    { label: 'Earnings', w: 80 },
-                    { label: 'Recovery', w: 80 },
-                    { label: 'Net Amnt', w: 90 },
-                    { label: 'Product', w: 160 },
-                    { label: 'Qty', w: 65 },
-                    { label: 'Free Qty', w: 65 },
-                    { label: 'Total Qty', w: 70 },
-                    { label: 'Rate', w: 70 },
-                    { label: 'Amount', w: 90 }
-                  ].map(c => (
-                    <Table.Th key={c.label} style={{ ...TH, width: c.w, minWidth: c.w }}>{c.label}</Table.Th>
-                  ))}
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {rows.map((r, i) => {
-                  const totalQty = parseFloat(r.qty || 0) + parseFloat(r.freeQty || 0);
-                  const netAmt = parseFloat(r.purchAmount || 0) - parseFloat(r.earnings || 0) - parseFloat(r.recovery || 0);
-                  const amount = totalQty * parseFloat(r.rate || 0);
-                  return (
-                    <Table.Tr key={i} style={{ background: i % 2 === 0 ? '#ffffff' : '#fafafa' }}>
-                      <Table.Td style={{ ...TDc, color: '#757575', fontSize: 10 }}>{i + 1}</Table.Td>
-                      <Table.Td style={{ ...TDc, whiteSpace: 'nowrap' }}>{fmtDate(r.date)}</Table.Td>
-                      <Table.Td style={{ ...TDc }}>
-                        <Text size="xs" fw={600}>{r.invoiceNo || '—'}</Text>
-                        <Text size="10px" c="dimmed">{fmtDate(r.invoiceDate)}</Text>
-                      </Table.Td>
-                      <Table.Td style={{ ...TD, fontWeight: 600 }}>{r.supplier || '—'}</Table.Td>
-                      <Table.Td style={TDr}>{fmt(r.purchAmount)}</Table.Td>
-                      <Table.Td style={TDr}>{fmt(r.earnings)}</Table.Td>
-                      <Table.Td style={TDr}>{fmt(r.recovery)}</Table.Td>
-                      <Table.Td style={{ ...TDr, fontWeight: 700 }}>{fmt(netAmt)}</Table.Td>
-                      <Table.Td style={TD}>{r.product || '—'}</Table.Td>
-                      <Table.Td style={TDr}>{fmt(r.qty)}</Table.Td>
-                      <Table.Td style={TDr}>{fmt(r.freeQty)}</Table.Td>
-                      <Table.Td style={{ ...TDr, fontWeight: 700 }}>{fmt(totalQty)}</Table.Td>
-                      <Table.Td style={TDr}>{fmt(r.rate)}</Table.Td>
-                      <Table.Td style={{ ...TDr, fontWeight: 700 }}>{fmt(amount)}</Table.Td>
-                    </Table.Tr>
-                  );
-                })}
-              </Table.Tbody>
-              {gt && (
-                <Table.Tfoot>
-                  <Table.Tr style={{ background: '#e0e0e0' }}>
-                    <Table.Td colSpan={4} style={{ ...TD, fontWeight: 900, fontSize: 12, textAlign: 'center', background: '#d4d4d4', border: '1.5px solid #616161' }}>
-                      G TOTAL — {rows.length} invoice{rows.length !== 1 ? 's' : ''}
-                    </Table.Td>
-                    <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.purchAmount)}</Table.Td>
-                    <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.earnings)}</Table.Td>
-                    <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.recovery)}</Table.Td>
-                    <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.netAmount)}</Table.Td>
-                    <Table.Td style={{ ...TD, background: '#d4d4d4', border: '1.5px solid #616161' }} />
-                    <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.qty)}</Table.Td>
-                    <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.freeQty)}</Table.Td>
-                    <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.totalQty)}</Table.Td>
-                    <Table.Td style={{ ...TD, background: '#d4d4d4', border: '1.5px solid #616161' }} />
-                    <Table.Td style={{ ...TD, background: '#d4d4d4', border: '1.5px solid #616161' }} />
+            {viewMode === 'supplierWise' ? (
+              <Table withColumnBorders style={{ fontSize: 11 }}>
+                <Table.Thead>
+                  <Table.Tr>
+                    {[
+                      { label: '#', w: 30 },
+                      { label: 'Supplier', w: 220 },
+                      { label: 'Invoices', w: 70 },
+                      { label: 'Total Qty', w: 80 },
+                      { label: 'Purch. Amnt', w: 100 },
+                      { label: 'CF Commission', w: 100 },
+                      { label: 'Inspection Fee', w: 100 },
+                      { label: 'Earnings', w: 90 },
+                      { label: 'Recovery', w: 90 },
+                      { label: 'Net Amnt', w: 100 }
+                    ].map(c => (
+                      <Table.Th key={c.label} style={{ ...TH, width: c.w, minWidth: c.w }}>{c.label}</Table.Th>
+                    ))}
                   </Table.Tr>
-                </Table.Tfoot>
-              )}
-            </Table>
+                </Table.Thead>
+                <Table.Tbody>
+                  {supplierGroups.map((g, i) => {
+                    const totalQty = g.qty + g.freeQty;
+                    return (
+                      <Table.Tr key={g.supplier} style={{ background: i % 2 === 0 ? '#ffffff' : '#fafafa' }}>
+                        <Table.Td style={{ ...TDc, color: '#757575', fontSize: 10 }}>{i + 1}</Table.Td>
+                        <Table.Td style={{ ...TD, fontWeight: 600 }}>{g.supplier}</Table.Td>
+                        <Table.Td style={{ ...TDc }}>{g.invoices}</Table.Td>
+                        <Table.Td style={{ ...TDr, fontWeight: 700 }}>{fmt(totalQty)}</Table.Td>
+                        <Table.Td style={TDr}>{fmt(g.purchAmount)}</Table.Td>
+                        <Table.Td style={TDr}>{fmt(g.cattleFeedCommission)}</Table.Td>
+                        <Table.Td style={TDr}>{fmt(g.inspectionFee)}</Table.Td>
+                        <Table.Td style={{ ...TDr, fontWeight: 600 }}>{fmt(g.earnings)}</Table.Td>
+                        <Table.Td style={TDr}>{fmt(g.recovery)}</Table.Td>
+                        <Table.Td style={{ ...TDr, fontWeight: 700 }}>{fmt(g.netAmount)}</Table.Td>
+                      </Table.Tr>
+                    );
+                  })}
+                </Table.Tbody>
+                {gt && (
+                  <Table.Tfoot>
+                    <Table.Tr style={{ background: '#e0e0e0' }}>
+                      <Table.Td colSpan={2} style={{ ...TD, fontWeight: 900, fontSize: 12, textAlign: 'center', background: '#d4d4d4', border: '1.5px solid #616161' }}>
+                        G TOTAL — {supplierGroups.length} supplier{supplierGroups.length !== 1 ? 's' : ''}
+                      </Table.Td>
+                      <Table.Td style={{ ...TDc, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{rows.length}</Table.Td>
+                      <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.totalQty)}</Table.Td>
+                      <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.purchAmount)}</Table.Td>
+                      <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.cattleFeedCommission)}</Table.Td>
+                      <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.inspectionFee)}</Table.Td>
+                      <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.earnings)}</Table.Td>
+                      <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.recovery)}</Table.Td>
+                      <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.netAmount)}</Table.Td>
+                    </Table.Tr>
+                  </Table.Tfoot>
+                )}
+              </Table>
+            ) : (
+              <Table withColumnBorders style={{ fontSize: 11 }}>
+                <Table.Thead>
+                  <Table.Tr>
+                    {[
+                      { label: '#', w: 30 },
+                      { label: 'Date', w: 70 },
+                      { label: 'Inv. No. & Date', w: 110 },
+                      { label: 'Supplier', w: 130 },
+                      { label: 'Purch. Amnt', w: 90 },
+                      { label: 'CF Commission', w: 90 },
+                      { label: 'Inspection Fee', w: 90 },
+                      { label: 'Earnings', w: 80 },
+                      { label: 'Recovery', w: 80 },
+                      { label: 'Net Amnt', w: 90 },
+                      { label: 'Product', w: 160 },
+                      { label: 'Qty', w: 65 },
+                      { label: 'Free Qty', w: 65 },
+                      { label: 'Total Qty', w: 70 },
+                      { label: 'Rate', w: 70 },
+                      { label: 'Amount', w: 90 }
+                    ].map(c => (
+                      <Table.Th key={c.label} style={{ ...TH, width: c.w, minWidth: c.w }}>{c.label}</Table.Th>
+                    ))}
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {rows.map((r, i) => {
+                    const totalQty = parseFloat(r.qty || 0) + parseFloat(r.freeQty || 0);
+                    const netAmt = parseFloat(r.purchAmount || 0) - parseFloat(r.earnings || 0) - parseFloat(r.recovery || 0);
+                    const amount = totalQty * parseFloat(r.rate || 0);
+                    return (
+                      <Table.Tr key={i} style={{ background: i % 2 === 0 ? '#ffffff' : '#fafafa' }}>
+                        <Table.Td style={{ ...TDc, color: '#757575', fontSize: 10 }}>{i + 1}</Table.Td>
+                        <Table.Td style={{ ...TDc, whiteSpace: 'nowrap' }}>{fmtDate(r.date)}</Table.Td>
+                        <Table.Td style={{ ...TDc }}>
+                          <Text size="xs" fw={600}>{r.invoiceNo || '—'}</Text>
+                          <Text size="10px" c="dimmed">{fmtDate(r.invoiceDate)}</Text>
+                        </Table.Td>
+                        <Table.Td style={{ ...TD, fontWeight: 600 }}>{r.supplier || '—'}</Table.Td>
+                        <Table.Td style={TDr}>{fmt(r.purchAmount)}</Table.Td>
+                        <Table.Td style={TDr}>{fmt(r.cattleFeedCommission)}</Table.Td>
+                        <Table.Td style={TDr}>{fmt(r.inspectionFee)}</Table.Td>
+                        <Table.Td style={{ ...TDr, fontWeight: 600 }}>{fmt(r.earnings)}</Table.Td>
+                        <Table.Td style={TDr}>{fmt(r.recovery)}</Table.Td>
+                        <Table.Td style={{ ...TDr, fontWeight: 700 }}>{fmt(netAmt)}</Table.Td>
+                        <Table.Td style={TD}>{r.product || '—'}</Table.Td>
+                        <Table.Td style={TDr}>{fmt(r.qty)}</Table.Td>
+                        <Table.Td style={TDr}>{fmt(r.freeQty)}</Table.Td>
+                        <Table.Td style={{ ...TDr, fontWeight: 700 }}>{fmt(totalQty)}</Table.Td>
+                        <Table.Td style={TDr}>{fmt(r.rate)}</Table.Td>
+                        <Table.Td style={{ ...TDr, fontWeight: 700 }}>{fmt(amount)}</Table.Td>
+                      </Table.Tr>
+                    );
+                  })}
+                </Table.Tbody>
+                {gt && (
+                  <Table.Tfoot>
+                    <Table.Tr style={{ background: '#e0e0e0' }}>
+                      <Table.Td colSpan={4} style={{ ...TD, fontWeight: 900, fontSize: 12, textAlign: 'center', background: '#d4d4d4', border: '1.5px solid #616161' }}>
+                        G TOTAL — {rows.length} invoice{rows.length !== 1 ? 's' : ''}
+                      </Table.Td>
+                      <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.purchAmount)}</Table.Td>
+                      <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.cattleFeedCommission)}</Table.Td>
+                      <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.inspectionFee)}</Table.Td>
+                      <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.earnings)}</Table.Td>
+                      <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.recovery)}</Table.Td>
+                      <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.netAmount)}</Table.Td>
+                      <Table.Td style={{ ...TD, background: '#d4d4d4', border: '1.5px solid #616161' }} />
+                      <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.qty)}</Table.Td>
+                      <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.freeQty)}</Table.Td>
+                      <Table.Td style={{ ...TDr, fontWeight: 900, fontSize: 12, background: '#d4d4d4', border: '1.5px solid #616161' }}>{fmt(gt.totalQty)}</Table.Td>
+                      <Table.Td style={{ ...TD, background: '#d4d4d4', border: '1.5px solid #616161' }} />
+                      <Table.Td style={{ ...TD, background: '#d4d4d4', border: '1.5px solid #616161' }} />
+                    </Table.Tr>
+                  </Table.Tfoot>
+                )}
+              </Table>
+            )}
           </ScrollArea>
 
           {/* Footer signature block */}

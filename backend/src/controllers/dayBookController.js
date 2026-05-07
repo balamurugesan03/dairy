@@ -69,6 +69,12 @@ export const getDayBook = async (req, res) => {
     const cashBankTypes = new Set(['Cash', 'Bank']);
 
     for (const voucher of vouchers) {
+      // Skip milk-purchase vouchers — Day Book derives a single combined
+      // AM+PM adjustment line per day directly from MilkCollection below.
+      // Includes legacy per-collection 'Journal' vouchers tagged as Purchase.
+      if (voucher.voucherType === 'MilkPurchase') continue;
+      if (voucher.voucherType === 'Journal' && voucher.referenceType === 'Purchase') continue;
+
       const dateKey = voucher.voucherDate.toISOString().split('T')[0];
 
       if (!dateMap[dateKey]) {
@@ -157,8 +163,11 @@ export const getDayBook = async (req, res) => {
       }
     }
 
-    // --- Milk Purchase day totals — Payment side ---
-    const milkPurchaseDayTotals = await MilkCollection.aggregate([
+    // --- Milk Purchase — single adjustment entry per day (AM+PM combined) ---
+    // Receipt side : PRODUCERS DUES (with shift-wise narration)
+    // Payment side : MILK PURCHASE
+    // Amount       : day total (AM + PM)
+    const milkPurchaseShiftTotals = await MilkCollection.aggregate([
       {
         $match: {
           companyId,
@@ -167,17 +176,39 @@ export const getDayBook = async (req, res) => {
       },
       {
         $group: {
-          _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+          _id: {
+            day:   { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+            shift: '$shift'
+          },
           totalAmount: { $sum: '$amount' },
-          totalQty: { $sum: '$qty' },
-          farmerCount: { $addToSet: '$farmer' }
+          totalQty:    { $sum: '$qty' },
+          farmers:     { $addToSet: '$farmer' }
         }
       },
-      { $sort: { _id: 1 } }
+      { $sort: { '_id.day': 1, '_id.shift': 1 } }
     ]);
 
-    for (const day of milkPurchaseDayTotals) {
-      const dateKey = day._id;
+    // Re-group shift-wise rows into per-day buckets
+    const dayShiftMap = {};
+    for (const r of milkPurchaseShiftTotals) {
+      const dateKey = r._id.day;
+      const shift   = (r._id.shift || '').toUpperCase();
+      if (!dayShiftMap[dateKey]) dayShiftMap[dateKey] = {};
+      dayShiftMap[dateKey][shift] = {
+        farmerCount: r.farmers.length,
+        qty:         r.totalQty,
+        amount:      r.totalAmount,
+      };
+    }
+
+    for (const dateKey of Object.keys(dayShiftMap).sort()) {
+      const shifts = dayShiftMap[dateKey];
+      const am = shifts['AM'] || { farmerCount: 0, qty: 0, amount: 0 };
+      const pm = shifts['PM'] || { farmerCount: 0, qty: 0, amount: 0 };
+
+      const totalAmt = (am.amount || 0) + (pm.amount || 0);
+      if (totalAmt <= 0) continue;
+
       if (!dateMap[dateKey]) {
         dateMap[dateKey] = {
           date: dateKey,
@@ -188,30 +219,36 @@ export const getDayBook = async (req, res) => {
         };
       }
 
-      const farmerCount = day.farmerCount.length;
-      const totalQty = day.totalQty.toFixed(2);
-      const totalAmt = day.totalAmount;
+      // Build the shift-wise narration shown on the PRODUCERS DUES line
+      const fmt = (n) => Number(n || 0).toFixed(2);
+      const narrationLines = [
+        `AM, Total Farmer ${am.farmerCount}, QTY ${fmt(am.qty)}, AMOUNT ${fmt(am.amount)}`,
+        `PM, Total Farmer ${pm.farmerCount}, QTY ${fmt(pm.qty)}, AMOUNT ${fmt(pm.amount)}`,
+      ];
+      const narration = narrationLines.join('\n');
 
-      // Receipt side: Producers Dues (what is owed to producers)
+      const voucherNumber = `MKP-${dateKey.replace(/-/g, '')}`;
+
+      // Receipt side : PRODUCERS DUES
       const producerDueEntry = {
         date: new Date(dateKey),
-        voucherNumber: `MKP-${dateKey.replace(/-/g, '')}`,
-        voucherType: 'ProducersDue',
-        ledgerName: `Producers Dues — ${farmerCount} Farmers`,
-        narration: `Total Farmers: ${farmerCount} | Qty: ${totalQty} L`,
+        voucherNumber,
+        voucherType: 'MilkPurchase',
+        ledgerName: 'PRODUCERS DUES',
+        narration,
         amount: totalAmt
       };
       dateMap[dateKey].receiptSide.push(producerDueEntry);
       dateMap[dateKey].totalReceipts += totalAmt;
       receiptSide.push(producerDueEntry);
 
-      // Payment side: Milk Purchase (milk purchased from farmers)
+      // Payment side : MILK PURCHASE
       const milkPurchaseEntry = {
         date: new Date(dateKey),
-        voucherNumber: `MKP-${dateKey.replace(/-/g, '')}`,
+        voucherNumber,
         voucherType: 'MilkPurchase',
-        ledgerName: `Milk Purchase — ${farmerCount} Farmers`,
-        narration: `Qty: ${totalQty} L | Day Total: ₹${totalAmt.toFixed(2)}`,
+        ledgerName: 'MILK PURCHASE',
+        narration,
         amount: totalAmt
       };
       dateMap[dateKey].paymentSide.push(milkPurchaseEntry);

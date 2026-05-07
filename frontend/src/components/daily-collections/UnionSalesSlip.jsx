@@ -671,7 +671,7 @@ export default function UnionSalesSlip() {
               <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
 
               {/* Search — teal */}
-              <Button leftSection={<IconHistory size={12} />} onClick={() => { setShowSearch(s => !s); if (showSearch) setHistorySearch(''); }} size="compact-xs" radius="sm"
+              <Button leftSection={<IconHistory size={12} />} onClick={() => { if (showSearch) { setShowSearch(false); setHistorySearch(''); } else { setShowSearch(true); setSortKey('date'); setSortDir('asc'); } }} size="compact-xs" radius="sm"
                 style={{ background: showSearch ? '#0f766e' : '#0d9488', border: '1px solid #2dd4bf', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 {showSearch ? 'Hide' : 'Search'}
               </Button>

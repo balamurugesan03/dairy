@@ -7,47 +7,12 @@ import MilkSales from '../models/MilkSales.js';
 import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances, findOrCreateLedger } from '../utils/accountingHelper.js';
 
 // ── Auto-post bulk milk purchase to PRODUCERS DUES / MILK PURCHASE ────────────
-// Groups docs by date+shift, creates one Journal voucher per group
-const postBulkMilkPurchaseVouchers = async (docs, companyId) => {
-  try {
-    const groups = {};
-    for (const doc of docs) {
-      const d = doc.date instanceof Date ? doc.date : new Date(doc.date);
-      if (isNaN(d.getTime())) continue;
-      const dateKey = d.toISOString().slice(0, 10);
-      const key     = `${dateKey}-${doc.shift}`;
-      if (!groups[key]) groups[key] = { date: d, shift: doc.shift, total: 0 };
-      groups[key].total += Number(doc.amount) || 0;
-    }
-
-    const [producerDues, milkPurchase] = await Promise.all([
-      findOrCreateLedger('PRODUCERS DUES', 'Liability', 'Current Liabilities', 'Cr', companyId),
-      findOrCreateLedger('MILK PURCHASE',  'Expense',   'Purchase Accounts',   'Dr', companyId)
-    ]);
-
-    for (const g of Object.values(groups)) {
-      if (g.total <= 0) continue;
-      const entries = [
-        { ledgerId: producerDues._id, ledgerName: producerDues.ledgerName, debitAmount: g.total, creditAmount: 0 },
-        { ledgerId: milkPurchase._id, ledgerName: milkPurchase.ledgerName, debitAmount: 0, creditAmount: g.total }
-      ];
-      const vNo = await generateVoucherNumber('MilkPurchase', companyId);
-      await new Voucher({
-        voucherType:   'MilkPurchase',
-        voucherNumber: vNo,
-        voucherDate:   g.date,
-        entries,
-        totalDebit:    g.total,
-        totalCredit:   g.total,
-        narration:     `Milk Purchase Import — ${g.date.toISOString().slice(0, 10)} (${g.shift})`,
-        referenceType: 'MilkPurchase',
-        companyId
-      }).save();
-      await updateLedgerBalances(entries);
-    }
-  } catch (vErr) {
-    console.warn('[MilkCollection] Bulk voucher posting failed (non-fatal):', vErr.message);
-  }
+// Day Book derives the milk-purchase entry directly from MilkCollection
+// (one combined AM+PM line per day), so no per-collection or per-shift
+// vouchers are posted here — that previously produced 3 duplicate Day Book
+// entries per day. Kept as a no-op so existing call sites remain.
+const postBulkMilkPurchaseVouchers = async (/* docs, companyId */) => {
+  return;
 };
 
 // ── Auto-generate bill number: MC-YYMM-XXXXX ─────────────────────────────────
@@ -92,36 +57,10 @@ export const createCollection = async (req, res) => {
       }
     }
 
-    // ── Auto-create Journal voucher: Dr PRODUCERS DUES / Cr MILK PURCHASE ──
-    try {
-      const [debitLedger, creditLedger] = await Promise.all([
-        findOrCreateLedger('PRODUCERS DUES', 'Liability', 'Current Liabilities', 'Cr', req.companyId),
-        findOrCreateLedger('MILK PURCHASE',  'Expense',   'Purchase Accounts',   'Dr', req.companyId)
-      ]);
-      if (debitLedger && creditLedger) {
-        const vEntries = [
-          { ledgerId: debitLedger._id, ledgerName: debitLedger.ledgerName, debitAmount: entry.amount, creditAmount: 0,
-            narration: `${entry.shift} shift` },
-          { ledgerId: creditLedger._id, ledgerName: creditLedger.ledgerName, debitAmount: 0, creditAmount: entry.amount,
-            narration: `${entry.shift} shift` }
-        ];
-        const voucherNumber = await generateVoucherNumber('Journal', req.companyId);
-        const voucher = new Voucher({
-          voucherType: 'Journal', voucherNumber,
-          voucherDate: entry.date, entries: vEntries,
-          totalDebit: entry.amount, totalCredit: entry.amount,
-          narration: `Milk Purchase - ${entry.billNo} - ${entry.farmerName || ''} (${entry.shift})`,
-          referenceType: 'Purchase', referenceId: entry._id,
-          companyId: req.companyId
-        });
-        await voucher.save();
-        await updateLedgerBalances(vEntries);
-        entry.voucherId = voucher._id;
-        await entry.save();
-      }
-    } catch (vErr) {
-      console.warn('[MilkCollection] Voucher creation failed (non-fatal):', vErr.message);
-    }
+    // Note: Day Book auto-posts a single combined AM+PM line per day directly
+    // from the MilkCollection records, so no per-collection voucher is created
+    // here (previously this produced one extra duplicate Day Book entry per
+    // farmer-collection on top of the daily aggregation).
 
     const populated = await MilkCollection.findById(entry._id)
       .populate('collectionCenter', 'centerName')

@@ -3,6 +3,8 @@ import ProducerPayment from '../models/ProducerPayment.js';
 import Farmer from '../models/Farmer.js';
 import FarmerPayment from '../models/FarmerPayment.js';
 import PaymentRegister from '../models/PaymentRegister.js';
+import Voucher from '../models/Voucher.js';
+import { createProducerDuesPaymentVoucher } from '../utils/accountingHelper.js';
 
 function fmtDateDMY(d) {
   const dt = new Date(d);
@@ -172,6 +174,28 @@ export const createPayment = async (req, res) => {
       }
     } catch (fpErr) {
       console.warn('FarmerPayment update skipped:', fpErr.message);
+    }
+
+    // Auto-post to Day Book / Cash Book — Dr PRODUCERS DUES / Cr Cash or Bank
+    try {
+      if (payment.amountPaid > 0) {
+        const voucher = await createProducerDuesPaymentVoucher({
+          amount:        payment.amountPaid,
+          paymentDate:   payment.paymentDate,
+          paymentMode:   payment.paymentMode,
+          companyId:     payment.companyId,
+          narration:     `Payment to Producer — ${payment.producerName || ''} ${payment.producerNumber ? '(#' + payment.producerNumber + ')' : ''}`.trim(),
+          referenceType: 'ProducerPayment',
+          referenceId:   payment._id,
+          createdBy:     payment.createdBy,
+        });
+        if (voucher) {
+          payment.voucherId = voucher._id;
+          await payment.save();
+        }
+      }
+    } catch (voucherErr) {
+      console.warn('ProducerPayment voucher creation skipped:', voucherErr.message);
     }
 
     return res.status(201).json({ success: true, data: payment });
@@ -438,11 +462,83 @@ export const cancelPayment = async (req, res) => {
     payment.cancelledAt = new Date();
     payment.cancelledBy = req.user?._id;
 
+    // Remove the auto-posted voucher so the cancelled payment no longer affects Day Book / Cash Book
+    if (payment.voucherId) {
+      try {
+        await Voucher.deleteOne({ _id: payment.voucherId });
+      } catch (vErr) {
+        console.warn('Voucher cleanup skipped on cancel:', vErr.message);
+      }
+      payment.voucherId = undefined;
+    }
+
     await payment.save();
 
     return res.json({ success: true, data: payment });
   } catch (error) {
     console.error('Error cancelling producer payment:', error);
     return res.status(500).json({ success: false, message: error.message || 'Error cancelling payment' });
+  }
+};
+
+// ─── Delete Payment (permanent) ───────────────────────────────────────────────
+export const deletePayment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const companyId = req.userCompany;
+
+    const payment = await ProducerPayment.findOne({
+      _id: id,
+      companyId: new mongoose.Types.ObjectId(companyId)
+    });
+
+    if (!payment) {
+      return res.status(404).json({ success: false, message: 'Payment not found' });
+    }
+
+    // Reverse the FarmerPayment paidAmount that this producer payment had applied,
+    // unless the record was already cancelled (in which case nothing was applied).
+    if (payment.status !== 'Cancelled' && payment.amountPaid > 0) {
+      try {
+        const farmerObjId  = new mongoose.Types.ObjectId(payment.farmerId);
+        const companyObjId = new mongoose.Types.ObjectId(companyId);
+        const periodFilter = {
+          companyId: companyObjId,
+          farmerId:  farmerObjId,
+          paidAmount: { $gt: 0 },
+        };
+        if (payment.processingPeriod?.fromDate) periodFilter['paymentPeriod.fromDate'] = { $gte: new Date(payment.processingPeriod.fromDate) };
+        if (payment.processingPeriod?.toDate)   periodFilter['paymentPeriod.toDate']   = { $lte: new Date(new Date(payment.processingPeriod.toDate).setHours(23, 59, 59, 999)) };
+
+        const fps = await FarmerPayment.find(periodFilter).sort({ updatedAt: -1 });
+        let remaining = payment.amountPaid;
+        for (const fp of fps) {
+          if (remaining <= 0) break;
+          const reverse = Math.min(remaining, fp.paidAmount || 0);
+          fp.paidAmount = (fp.paidAmount || 0) - reverse;
+          // pre-save hook recomputes balanceAmount and status
+          await fp.save();
+          remaining -= reverse;
+        }
+      } catch (fpErr) {
+        console.warn('FarmerPayment reversal skipped:', fpErr.message);
+      }
+    }
+
+    // Remove the auto-posted voucher so Day Book / Cash Book no longer reflect this payment
+    if (payment.voucherId) {
+      try {
+        await Voucher.deleteOne({ _id: payment.voucherId });
+      } catch (vErr) {
+        console.warn('Voucher cleanup skipped on delete:', vErr.message);
+      }
+    }
+
+    await ProducerPayment.deleteOne({ _id: payment._id });
+
+    return res.json({ success: true, message: 'Payment deleted permanently' });
+  } catch (error) {
+    console.error('Error deleting producer payment:', error);
+    return res.status(500).json({ success: false, message: error.message || 'Error deleting payment' });
   }
 };

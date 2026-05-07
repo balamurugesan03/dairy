@@ -614,7 +614,7 @@ export const getSubsidyReport = async (req, res) => {
 // Inventory Purchase Register
 export const getInventoryPurchaseRegister = async (req, res) => {
   try {
-    const { startDate, endDate, itemId } = req.query;
+    const { startDate, endDate, itemId, supplierId } = req.query;
 
     if (!startDate || !endDate) {
       return res.status(400).json({ success: false, message: 'Start date and end date are required' });
@@ -632,31 +632,62 @@ export const getInventoryPurchaseRegister = async (req, res) => {
       date: { $gte: start, $lte: end }
     };
     if (itemId) query.itemId = itemId;
+    if (supplierId) query.supplierId = supplierId;
 
     const transactions = await StockTransaction.find(query)
       .populate('itemId', 'itemName unit')
+      .populate('ledgerEntries.ledgerId', 'ledgerName')
       .sort({ date: 1 });
 
-    const rows = transactions.map(t => ({
-      date: t.date,
-      invoiceNo: t.invoiceNumber || '-',
-      invoiceDate: t.invoiceDate || null,
-      supplier: t.supplierName || '-',
-      purchAmount: t.totalAmount || parseFloat((t.quantity * t.rate).toFixed(2)),
-      earnings: t.subsidyAmount || 0,
-      recovery: t.ledgerDeduction || 0,
-      product: t.itemId?.itemName || '-',
-      unit: t.itemId?.unit || '-',
-      qty: t.quantity || 0,
-      freeQty: t.freeQty || 0,
-      rate: t.rate || 0
-    }));
+    const rows = transactions.map(t => {
+      const qty       = t.quantity || 0;
+      const rate      = t.rate || 0;
+      const salesRate = t.salesRate || 0;
+      // Purchase Amount = Sales Rate × Qty
+      const purchAmount = parseFloat((salesRate * qty).toFixed(2));
+
+      // Split earnings into the two component ledgers (CF Commission + Inspection Fee)
+      let cattleFeedCommission = 0;
+      let inspectionFee = 0;
+      (t.ledgerEntries || []).forEach(le => {
+        const name = (le.ledgerId?.ledgerName || '').toLowerCase();
+        const amt  = le.amount || 0;
+        if (name.includes('cattle feed commission')) cattleFeedCommission += amt;
+        else if (name.includes('inspection fee'))    inspectionFee        += amt;
+      });
+
+      // Earnings total prefers the explicit ledger entries; falls back to ledgerDeduction field
+      const earningsFromLedger = cattleFeedCommission + inspectionFee;
+      const earnings = earningsFromLedger > 0 ? earningsFromLedger : (t.ledgerDeduction || 0);
+
+      return {
+        date: t.date,
+        invoiceNo: t.invoiceNumber || '-',
+        invoiceDate: t.invoiceDate || null,
+        supplier: t.supplierName || '-',
+        supplierId: t.supplierId || null,
+        purchAmount,
+        // Field-source corrected: earnings ← ledgerDeduction, recovery ← subsidyAmount
+        earnings,
+        cattleFeedCommission,
+        inspectionFee,
+        recovery: t.subsidyAmount || 0,
+        product: t.itemId?.itemName || '-',
+        unit: t.itemId?.unit || '-',
+        qty,
+        freeQty: t.freeQty || 0,
+        rate,
+        salesRate
+      };
+    });
 
     const grandTotals = rows.reduce((acc, r) => {
       const totalQty = r.qty + r.freeQty;
       return {
         purchAmount: acc.purchAmount + r.purchAmount,
         earnings: acc.earnings + r.earnings,
+        cattleFeedCommission: acc.cattleFeedCommission + r.cattleFeedCommission,
+        inspectionFee:        acc.inspectionFee        + r.inspectionFee,
         recovery: acc.recovery + r.recovery,
         netAmount: acc.netAmount + (r.purchAmount - r.earnings - r.recovery),
         qty: acc.qty + r.qty,
@@ -664,7 +695,7 @@ export const getInventoryPurchaseRegister = async (req, res) => {
         totalQty: acc.totalQty + totalQty,
         amount: acc.amount + (totalQty * r.rate)
       };
-    }, { purchAmount: 0, earnings: 0, recovery: 0, netAmount: 0, qty: 0, freeQty: 0, totalQty: 0, amount: 0 });
+    }, { purchAmount: 0, earnings: 0, cattleFeedCommission: 0, inspectionFee: 0, recovery: 0, netAmount: 0, qty: 0, freeQty: 0, totalQty: 0, amount: 0 });
 
     res.status(200).json({
       success: true,

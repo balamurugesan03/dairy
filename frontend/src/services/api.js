@@ -1021,6 +1021,7 @@ export const producerPaymentAPI = {
   getProducerBalance:  (farmerId, p)   => api.get(`/producer-payments/balance/${farmerId}`, { params: p }).then(res => res.data).catch(handleError),
   update:              (id, data)      => api.put(`/producer-payments/${id}`, data).then(res => res.data).catch(handleError),
   cancel:              (id)            => api.post(`/producer-payments/${id}/cancel`).then(res => res.data).catch(handleError),
+  delete:              (id)            => api.delete(`/producer-payments/${id}`).then(res => res.data).catch(handleError),
   getCycles:           ()              => api.get('/producer-payments/cycles').then(res => res.data).catch(handleError),
   getBankTransferPaid: (params)        => api.get('/producer-payments/bank-transfer-paid', { params }).then(res => res.data).catch(handleError),
 };

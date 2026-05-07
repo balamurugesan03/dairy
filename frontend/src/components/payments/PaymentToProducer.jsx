@@ -341,17 +341,17 @@ export default function PaymentToProducer() {
     setBankTransferPaid(false);
   };
 
-  // ─── Delete (cancel) ────────────────────────────────────────────────────────
+  // ─── Delete (permanent) ─────────────────────────────────────────────────────
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to cancel this payment?')) return;
+    if (!window.confirm('Are you sure you want to permanently delete this payment? This cannot be undone.')) return;
     try {
-      const res = await producerPaymentAPI.cancel(id);
+      const res = await producerPaymentAPI.delete(id);
       if (res?.success) {
-        notifications.show({ title: 'Cancelled', message: 'Payment has been cancelled', color: 'orange' });
+        notifications.show({ title: 'Deleted', message: 'Payment has been permanently deleted', color: 'red' });
         loadPayments();
       }
     } catch (err) {
-      notifications.show({ title: 'Error', message: err?.message || 'Failed to cancel payment', color: 'red' });
+      notifications.show({ title: 'Error', message: err?.message || 'Failed to delete payment', color: 'red' });
     }
   };
 
@@ -689,7 +689,7 @@ export default function PaymentToProducer() {
                               <ActionIcon size="sm" variant="subtle" color="blue" title="Edit" onClick={() => handleEdit(pmt)}>
                                 <IconEdit size={14} />
                               </ActionIcon>
-                              <ActionIcon size="sm" variant="subtle" color="red" title="Cancel" onClick={() => handleDelete(pmt._id)}>
+                              <ActionIcon size="sm" variant="subtle" color="red" title="Delete" onClick={() => handleDelete(pmt._id)}>
                                 <IconTrash size={14} />
                               </ActionIcon>
                             </Group>

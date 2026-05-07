@@ -95,11 +95,13 @@ export const getCashBook = async (req, res) => {
     }).sort({ billDate: 1 });
 
     // Direct cash payments — Farmer Payments (Cash)
+    // Skip rows that already have a Voucher posted (those are picked up by the voucher loop)
     const farmerPaymentsCash = await FarmerPayment.find({
       companyId: req.companyId,
       paymentDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
       paymentMode: 'Cash',
-      paidAmount: { $gt: 0 }
+      paidAmount: { $gt: 0 },
+      $or: [{ voucherId: { $exists: false } }, { voucherId: null }],
     }).sort({ paymentDate: 1 }).populate('farmerId', 'farmerName farmerNumber');
 
     // Direct cash payments — Advances to Farmers (Cash)
@@ -119,11 +121,13 @@ export const getCashBook = async (req, res) => {
     }).sort({ receiptDate: 1 }).populate('farmerId', 'farmerName farmerNumber');
 
     // Completed Bank Transfers — Payment side
+    // Skip transfers that already have a Voucher posted (avoid double-counting against the voucher loop)
     const completedBankTransfers = await BankTransfer.find({
       companyId: req.companyId,
       status: 'Completed',
       applyDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
-      totalTransferAmount: { $gt: 0 }
+      totalTransferAmount: { $gt: 0 },
+      $or: [{ voucherId: { $exists: false } }, { voucherId: null }],
     }).sort({ applyDate: 1 });
 
     // Milk Purchase day totals — Payment side (one entry per day)

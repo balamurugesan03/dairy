@@ -1,31 +1,66 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { message } from '../../utils/toast';
 import dayjs from 'dayjs';
 import { dayBookAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 import {
   Container, Paper, Text, Group, LoadingOverlay, Button,
-  Title, Divider, Menu, Badge
+  Title, Divider, Menu, Badge, Select
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import {
   IconBook, IconPrinter, IconFileTypePdf,
   IconFileSpreadsheet, IconCalendar,
   IconDownload, IconArrowDown, IconArrowUp,
-  IconSearch, IconRectangle, IconRectangleVertical
+  IconSearch, IconRectangle, IconRectangleVertical, IconX
 } from '@tabler/icons-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import './DayBook.css';
 
+const PRESETS = [
+  { value: 'today',         label: 'Today' },
+  { value: 'thisWeek',      label: 'This Week' },
+  { value: 'thisMonth',     label: 'This Month' },
+  { value: 'lastMonth',     label: 'Last Month' },
+  { value: 'thisQuarter',   label: 'This Quarter' },
+  { value: 'financialYear', label: 'Financial Year' },
+  { value: 'custom',        label: 'Custom' }
+];
+
+const getPresetRange = (preset) => {
+  const now = dayjs();
+  switch (preset) {
+    case 'today':       return [now.startOf('day').toDate(),   now.endOf('day').toDate()];
+    case 'thisWeek':    return [now.startOf('week').toDate(),  now.endOf('week').toDate()];
+    case 'thisMonth':   return [now.startOf('month').toDate(), now.endOf('month').toDate()];
+    case 'lastMonth':   return [now.subtract(1, 'month').startOf('month').toDate(), now.subtract(1, 'month').endOf('month').toDate()];
+    case 'thisQuarter': return [now.startOf('quarter').toDate(), now.endOf('quarter').toDate()];
+    case 'financialYear': {
+      const fyStart = now.month() >= 3 ? now.year() : now.year() - 1;
+      return [new Date(fyStart, 3, 1), new Date(fyStart + 1, 2, 31)];
+    }
+    default: return [null, null];
+  }
+};
+
 const DayBook = () => {
+  const navigate = useNavigate();
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
-  const [fromDate, setFromDate] = useState(new Date());
-  const [toDate, setToDate] = useState(new Date());
+  const [preset, setPreset] = useState('thisMonth');
+  const [dateRange, setDateRange] = useState(getPresetRange('thisMonth'));
   const [dayBookData, setDayBookData] = useState(null);
   const printRef = useRef();
+
+  const [fromDate, toDate] = dateRange;
+
+  const handlePresetChange = (val) => {
+    setPreset(val);
+    if (val !== 'custom') setDateRange(getPresetRange(val));
+  };
 
   const companyName = selectedCompany?.companyName || 'Dairy Co-operative Society';
 
@@ -45,10 +80,6 @@ const DayBook = () => {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchDayBook(fromDate, toDate);
-  }, []);
 
   const handleGenerate = () => {
     fetchDayBook(fromDate, toDate);
@@ -505,32 +536,34 @@ const DayBook = () => {
       {/* Toolbar */}
       <Paper className="db-toolbar" p="md" radius="md" withBorder mb="lg">
         <Group justify="space-between" align="center" wrap="wrap" gap="md">
-          <Group align="center" gap="sm" wrap="wrap">
-            <IconBook size={22} className="db-toolbar__icon" />
-            <Title order={4} className="db-toolbar__title">Day Book</Title>
-            <Divider orientation="vertical" className="db-toolbar__divider" />
+          <Group align="flex-end" gap="sm" wrap="wrap">
+            <Group gap="xs" align="center">
+              <IconBook size={22} className="db-toolbar__icon" />
+              <Title order={4} className="db-toolbar__title">Day Book</Title>
+              <Divider orientation="vertical" className="db-toolbar__divider" />
+            </Group>
+
+            <Select
+              label="Period"
+              value={preset}
+              onChange={handlePresetChange}
+              data={PRESETS}
+              size="xs"
+              radius="md"
+              w={150}
+            />
 
             <DatePickerInput
-              label="From Date"
-              value={fromDate}
-              onChange={setFromDate}
+              type="range"
+              label="Date Range"
+              value={dateRange}
+              onChange={(val) => { setDateRange(val); setPreset('custom'); }}
               valueFormat="DD/MM/YYYY"
               size="xs"
               leftSection={<IconCalendar size={14} />}
-              w={160}
-              clearable={false}
+              w={260}
               radius="md"
-            />
-            <DatePickerInput
-              label="To Date"
-              value={toDate}
-              onChange={setToDate}
-              valueFormat="DD/MM/YYYY"
-              size="xs"
-              leftSection={<IconCalendar size={14} />}
-              w={160}
               clearable={false}
-              radius="md"
             />
 
             <Button
@@ -539,7 +572,6 @@ const DayBook = () => {
               leftSection={<IconSearch size={14} />}
               onClick={handleGenerate}
               loading={loading}
-              mt={18}
             >
               Generate
             </Button>
@@ -615,6 +647,13 @@ const DayBook = () => {
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
+            <Button
+              variant="light" color="red" size="xs" radius="md"
+              leftSection={<IconX size={14} />}
+              onClick={() => navigate('/')}
+            >
+              Close
+            </Button>
           </Group>
         </Group>
       </Paper>
