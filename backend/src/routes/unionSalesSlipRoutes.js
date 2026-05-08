@@ -10,6 +10,7 @@ import {
   bulkImportSlips,
   fileUploadImportSlips,
   zibittRawImportSlips,
+  backfillVouchers,
 } from '../controllers/unionSalesSlipController.js';
 
 const router = express.Router();
@@ -20,6 +21,9 @@ const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 500 * 1024 * 1024
 router.post('/file-import',      upload.single('file'), fileUploadImportSlips);
 router.post('/bulk-import',      bulkImportSlips);
 router.post('/zibitt-raw-import', zibittRawImportSlips);
+
+// Backfill missing Day Book vouchers for legacy slips — before /:id
+router.post('/backfill-vouchers', backfillVouchers);
 
 // Main CRUD
 router.post('/',      createSlip);

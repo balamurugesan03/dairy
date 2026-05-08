@@ -14,7 +14,7 @@ import {
   IconPlus, IconEdit, IconX, IconSearch, IconRefresh,
   IconTrash, IconPrinter, IconMilk, IconFilter,
   IconDeviceFloppy, IconCheck, IconReceipt, IconDroplet,
-  IconAlertTriangle, IconHistory, IconBan, IconUpload,
+  IconAlertTriangle, IconHistory, IconBan, IconUpload, IconBook,
 } from '@tabler/icons-react';
 import { SegmentedControl } from '@mantine/core';
 import { unionSalesSlipAPI } from '../../services/api';
@@ -91,6 +91,7 @@ export default function UnionSalesSlip() {
   const [rawImportOpen, setRawImportOpen] = useState(false);
   const [importPct,    setImportPct]    = useState(0);
   const [importResult, setImportResult] = useState(null);
+  const [backfilling,  setBackfilling]  = useState(false);
 
   const qtyRef    = useRef(null);
   const fatRef    = useRef(null);
@@ -285,6 +286,26 @@ export default function UnionSalesSlip() {
       }
     }
     loadEntries(filterMonth, filterYear, true);
+  };
+
+  // ── Backfill Day Book vouchers for legacy slips that were saved before auto-post existed
+  const handleBackfillVouchers = async () => {
+    if (backfilling) return;
+    setBackfilling(true);
+    try {
+      const res = await unionSalesSlipAPI.backfillVouchers();
+      const r = res?.data || {};
+      notifications.show({
+        color: r.posted > 0 ? 'green' : 'blue',
+        title: 'Day Book Sync',
+        message: `${r.posted || 0} posted, ${r.skipped || 0} skipped (of ${r.total || 0} legacy slips)`,
+        autoClose: 4000,
+      });
+    } catch (err) {
+      notifications.show({ color: 'red', message: err?.message || 'Sync failed' });
+    } finally {
+      setBackfilling(false);
+    }
   };
 
   const handleEdit = (row) => {
@@ -713,6 +734,13 @@ export default function UnionSalesSlip() {
                 size="compact-xs" radius="sm"
                 style={{ background: '#a21caf', border: '1px solid #e879f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Import DB
+              </Button>
+              {/* Sync to Day Book — posts missing journal vouchers for legacy slips */}
+              <Button leftSection={backfilling ? <Loader size={10} color="white" /> : <IconBook size={12} />}
+                onClick={handleBackfillVouchers} disabled={backfilling}
+                size="compact-xs" radius="sm" title="Post Day Book vouchers for slips created before auto-post"
+                style={{ background: '#0369a1', border: '1px solid #38bdf8', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                Sync Day Book
               </Button>
             </Group>
           </Group>

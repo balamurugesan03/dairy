@@ -435,6 +435,7 @@ export const milkSalesAPI = {
   getNextBillNo:    ()       => api.get('/milk-sales/next-bill-no').then(res => res.data).catch(handleError),
   bulkImport:      (records) => api.post('/milk-sales/bulk-import',       { records }).then(res => res.data).catch(handleError),
   zibittRawImport: (records) => api.post('/milk-sales/zibitt-raw-import', { records }).then(res => res.data).catch(handleError),
+  backfillVouchers: ()       => api.post('/milk-sales/backfill-vouchers', {}, { timeout: 5 * 60 * 1000 }).then(res => res.data).catch(handleError),
 };
 
 // UNION SALES SLIP APIs
@@ -446,6 +447,7 @@ export const unionSalesSlipAPI = {
   delete:  (id)     => api.delete(`/union-sales-slips/${id}`).then(res => res.data).catch(handleError),
   bulkImport:      (records) => api.post('/union-sales-slips/bulk-import',       { records }).then(res => res.data).catch(handleError),
   zibittRawImport: (records) => api.post('/union-sales-slips/zibitt-raw-import', { records }).then(res => res.data).catch(handleError),
+  backfillVouchers: ()       => api.post('/union-sales-slips/backfill-vouchers', {}, { timeout: 5 * 60 * 1000 }).then(res => res.data).catch(handleError),
   fileImport: (file, onUploadProgress) => {
     const form = new FormData();
     form.append('file', file);

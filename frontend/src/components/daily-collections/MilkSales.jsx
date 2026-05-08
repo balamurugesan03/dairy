@@ -16,7 +16,7 @@ import {
   IconMilk, IconReceipt, IconUser, IconBuilding,
   IconDeviceFloppy, IconX, IconPlus, IconEdit, IconBan,
   IconTrash, IconPrinter, IconRefresh, IconSearch, IconHistory,
-  IconAlertCircle, IconCash, IconCreditCard, IconUpload, IconFilter,
+  IconAlertCircle, IconCash, IconCreditCard, IconUpload, IconFilter, IconBook,
 } from '@tabler/icons-react';
 import { customerAPI, collectionCenterAPI, milkSalesAPI, agentAPI, milkSalesRateAPI, thermalPrintAPI } from '../../services/api';
 import ImportModal from '../common/ImportModal';
@@ -173,6 +173,7 @@ export default function MilkSales() {
   const [showHistory,   setShowHistory]   = useState(false);
   const [importOpen,    setImportOpen]    = useState(false);
   const [rawImportOpen, setRawImportOpen] = useState(false);
+  const [backfilling,   setBackfilling]   = useState(false);
   const [filterMonth,   setFilterMonth]   = useState(String(new Date().getMonth() + 1));
   const [filterYear,    setFilterYear]    = useState(String(new Date().getFullYear()));
   const [monthMode,     setMonthMode]     = useState(false);
@@ -434,6 +435,26 @@ export default function MilkSales() {
     });
     loadEntries();
     fetchNextBillNo();
+  };
+
+  // ── Sync Day Book / Cash Book — back-post vouchers for any milk sale that lacks one
+  const handleBackfillVouchers = async () => {
+    if (backfilling) return;
+    setBackfilling(true);
+    try {
+      const res = await milkSalesAPI.backfillVouchers();
+      const r = res?.data || {};
+      notifications.show({
+        color: r.posted > 0 ? 'green' : 'blue',
+        title: 'Day Book Sync',
+        message: `${r.posted || 0} posted, ${r.skipped || 0} skipped (of ${r.total || 0} milk sales)`,
+        autoClose: 4000,
+      });
+    } catch (err) {
+      notifications.show({ color: 'red', message: err?.message || 'Sync failed' });
+    } finally {
+      setBackfilling(false);
+    }
   };
 
   // ── Keyboard handlers ─────────────────────────────────────────────────────
@@ -825,6 +846,13 @@ export default function MilkSales() {
               <Button leftSection={<IconUpload size={12} />} onClick={() => setRawImportOpen(true)} size="compact-xs" radius="sm"
                 style={{ background: '#a21caf', border: '1px solid #e879f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Import DB
+              </Button>
+              {/* Sync to Day Book — back-posts journal/receipt vouchers for legacy + imported sales */}
+              <Button leftSection={backfilling ? <Loader size={10} color="white" /> : <IconBook size={12} />}
+                onClick={handleBackfillVouchers} disabled={backfilling}
+                size="compact-xs" radius="sm" title="Post Day Book / Cash Book vouchers for sales saved before auto-post or via import"
+                style={{ background: '#0369a1', border: '1px solid #38bdf8', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                Sync Day Book
               </Button>
 
               <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />

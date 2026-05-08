@@ -4,9 +4,36 @@ import Customer  from '../models/Customer.js';
 import Ledger    from '../models/Ledger.js';
 import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances, findOrCreateLedger } from '../utils/accountingHelper.js';
 
+// Resolve a ledger from the user's Ledger Management, tolerating case + whitespace.
+// Falls back to creating one only if no matching ledger exists at all.
+async function resolveLedger(name, ledgerType, parentGroup, balanceType, companyId) {
+  const escaped = name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const existing = await Ledger.findOne({
+    companyId,
+    ledgerName: { $regex: `^\\s*${escaped}\\s*$`, $options: 'i' },
+  });
+  if (existing) return existing;
+  return findOrCreateLedger(name, ledgerType, parentGroup, balanceType, companyId);
+}
+
+// Reverse + delete an existing voucher linked to a sale.
+async function reverseMilkSaleVoucher(sale) {
+  if (!sale?.voucherId) return;
+  try {
+    const voucher = await Voucher.findById(sale.voucherId);
+    if (voucher) {
+      await reverseLedgerBalances(voucher.entries);
+      await voucher.deleteOne();
+    }
+  } catch (err) {
+    console.warn('[MilkSales] Voucher reversal failed (non-fatal):', err.message);
+  }
+}
+
 // ── Helper: create accounting voucher for a milk sale ────────────────────────
 async function createMilkSaleVoucher(sale, companyId) {
   const { saleMode, paymentType, creditorId, amount, date, billNo, session } = sale;
+  if (!amount || amount <= 0) return null;
   const shiftNote = session ? ` (${session})` : '';
 
   if (saleMode === 'LOCAL' || saleMode === 'SAMPLE') {
@@ -29,8 +56,8 @@ async function createMilkSaleVoucher(sale, companyId) {
       );
     }
 
-    const saleLedger = await findOrCreateLedger(
-      saleLedgerName, 'Income', 'Income', 'Cr', companyId
+    const saleLedger = await resolveLedger(
+      saleLedgerName, 'Sales', 'INCOME', 'Cr', companyId
     );
     const entries = [
       { ledgerId: payLedger._id,  ledgerName: payLedger.ledgerName,  debitAmount: amount, creditAmount: 0,      narration: shiftNote.trim() },
@@ -57,8 +84,8 @@ async function createMilkSaleVoucher(sale, companyId) {
     const customerName = customer?.name || sale.creditorName || '';
 
     const [customerLedger, saleLedger] = await Promise.all([
-      findOrCreateLedger('CUSTOMER',     'Other Receivable', 'Current Assets', 'Dr', companyId),
-      findOrCreateLedger('CREDIT SALES', 'Income',           'Income',         'Cr', companyId),
+      resolveLedger('CUSTOMER',     'Other Receivable', 'Current Assets', 'Dr', companyId),
+      resolveLedger('CREDIT SALES', 'Sales',            'INCOME',         'Cr', companyId),
     ]);
 
     const entries = [
@@ -226,6 +253,17 @@ export const updateMilkSale = async (req, res) => {
       { new: true, runValidators: true }
     );
     if (!sale) return res.status(404).json({ success: false, message: 'Record not found' });
+
+    // Refresh accounting voucher to reflect any changes (saleMode/amount/date/etc.)
+    try {
+      await reverseMilkSaleVoucher(sale);
+      const voucher = await createMilkSaleVoucher(sale, req.companyId);
+      sale.voucherId = voucher?._id || null;
+      await sale.save();
+    } catch (vErr) {
+      console.warn('[MilkSales] Voucher refresh failed (non-fatal):', vErr.message);
+    }
+
     res.json({ success: true, data: sale });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -343,23 +381,46 @@ export const zibittRawImport = async (req, res) => {
       docs.push(doc);
     }
 
-    let inserted = 0;
+    let insertedDocs = [];
     try {
-      const result = await MilkSales.insertMany(docs, { ordered: false });
-      inserted = result.length;
+      insertedDocs = await MilkSales.insertMany(docs, { ordered: false });
     } catch (err) {
       if (err.name === 'MongoBulkWriteError' || err.code === 11000) {
-        inserted = err.result?.nInserted ?? 0;
+        insertedDocs = err.insertedDocs || [];
       } else {
         throw err;
       }
     }
 
+    // Auto-post Day Book / Cash Book voucher for every imported sale
+    let posted = 0;
+    const voucherErrors = [];
+    for (const sale of insertedDocs) {
+      try {
+        const voucher = await createMilkSaleVoucher(sale, companyId);
+        if (voucher) {
+          sale.voucherId = voucher._id;
+          await sale.save();
+          posted++;
+        }
+      } catch (vErr) {
+        console.warn('[MilkSales] Voucher creation failed:', sale.billNo, vErr.message);
+        voucherErrors.push({ billNo: sale.billNo, message: vErr.message });
+      }
+    }
+
+    const inserted = insertedDocs.length;
     const totalSkipped = skipped.length + (docs.length - inserted);
     res.status(201).json({
       success: true,
-      data: { inserted, skipped: totalSkipped, skipReasons: skipped.slice(0, 20) },
-      message: `${inserted} inserted, ${totalSkipped} skipped`
+      data: {
+        inserted,
+        posted,
+        skipped: totalSkipped,
+        skipReasons: skipped.slice(0, 20),
+        voucherErrors: voucherErrors.slice(0, 20),
+      },
+      message: `${inserted} inserted, ${posted} posted to Day Book${voucherErrors.length ? ` (${voucherErrors.length} voucher errors)` : ''}, ${totalSkipped} skipped`
     });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -367,7 +428,7 @@ export const zibittRawImport = async (req, res) => {
 };
 
 // ────────────────────────────────────────────────────────────────
-//  BULK IMPORT  (Zibitt / CSV — no accounting vouchers)
+//  BULK IMPORT  (Zibitt / CSV)
 // ────────────────────────────────────────────────────────────────
 export const bulkImportMilkSales = async (req, res) => {
   try {
@@ -377,14 +438,85 @@ export const bulkImportMilkSales = async (req, res) => {
     }
 
     const docs = records.map(r => ({ ...r, companyId: req.companyId }));
-    const inserted = await MilkSales.insertMany(docs, { ordered: false });
-    res.status(201).json({ success: true, data: { inserted: inserted.length }, message: `${inserted.length} records imported` });
-  } catch (err) {
-    if (err.name === 'BulkWriteError' || err.code === 11000) {
-      const inserted = err.result?.nInserted ?? 0;
-      return res.status(207).json({ success: true, data: { inserted }, message: `${inserted} records imported (some skipped as duplicates)` });
+    let insertedDocs = [];
+    try {
+      insertedDocs = await MilkSales.insertMany(docs, { ordered: false });
+    } catch (err) {
+      if (err.name === 'BulkWriteError' || err.code === 11000) {
+        insertedDocs = err.insertedDocs || [];
+      } else {
+        throw err;
+      }
     }
+
+    // Auto-post Day Book / Cash Book voucher for every imported sale
+    let posted = 0;
+    const voucherErrors = [];
+    for (const sale of insertedDocs) {
+      try {
+        const voucher = await createMilkSaleVoucher(sale, req.companyId);
+        if (voucher) {
+          sale.voucherId = voucher._id;
+          await sale.save();
+          posted++;
+        }
+      } catch (vErr) {
+        console.warn('[MilkSales] Voucher creation failed:', sale.billNo, vErr.message);
+        voucherErrors.push({ billNo: sale.billNo, message: vErr.message });
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      data: {
+        inserted: insertedDocs.length,
+        posted,
+        voucherErrors: voucherErrors.slice(0, 20),
+      },
+      message: `${insertedDocs.length} records imported, ${posted} posted to Day Book${voucherErrors.length ? ` (${voucherErrors.length} voucher errors)` : ''}`
+    });
+  } catch (err) {
     res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────
+//  BACKFILL VOUCHERS — post Day Book/Cash Book vouchers for any
+//  existing milk sale that doesn't already have one. Safe to re-run.
+// ────────────────────────────────────────────────────────────────
+export const backfillMilkSaleVouchers = async (req, res) => {
+  try {
+    const sales = await MilkSales.find({
+      companyId: req.companyId,
+      $or: [{ voucherId: { $exists: false } }, { voucherId: null }],
+      amount: { $gt: 0 },
+    }).sort({ date: 1 });
+
+    const result = { total: sales.length, posted: 0, skipped: 0, errors: [] };
+    for (const sale of sales) {
+      try {
+        const voucher = await createMilkSaleVoucher(sale, req.companyId);
+        if (voucher) {
+          sale.voucherId = voucher._id;
+          await sale.save();
+          result.posted++;
+        } else {
+          result.skipped++;
+        }
+      } catch (err) {
+        result.errors.push({ billNo: sale.billNo, message: err.message });
+        result.skipped++;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Backfill complete: ${result.posted} posted, ${result.skipped} skipped`,
+      data: result,
+    });
+  } catch (err) {
+    console.error('Milk sales backfill error:', err);
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 

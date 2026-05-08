@@ -2,6 +2,7 @@ import fs from 'fs';
 import XLSX from 'xlsx';
 import UnionSalesSlip from '../models/UnionSalesSlip.js';
 import Voucher from '../models/Voucher.js';
+import Ledger from '../models/Ledger.js';
 import {
   generateVoucherNumber,
   updateLedgerBalances,
@@ -9,18 +10,32 @@ import {
   findOrCreateLedger,
 } from '../utils/accountingHelper.js';
 
+// Resolve a ledger by name from the user's Ledger Management, tolerating case
+// and whitespace differences. Falls back to creating one only if the user has
+// no matching ledger at all (e.g., on a fresh company before seeding).
+async function resolveLedger(name, ledgerType, parentGroup, balanceType, companyId) {
+  const escaped = name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const existing = await Ledger.findOne({
+    companyId,
+    ledgerName: { $regex: `^\\s*${escaped}\\s*$`, $options: 'i' },
+  });
+  if (existing) return existing;
+  return findOrCreateLedger(name, ledgerType, parentGroup, balanceType, companyId);
+}
+
 // ── Auto-post Union Sales adjustment voucher (Day Book only) ─────────────────
 //   Dr MILMA UNION   (expenditure side)
 //   Cr UNION SALES   (income side)
 // Both legs are non-cash, so nothing shows in Cash Book — Day Book picks the
 // Journal voucher's debit on the payment side and credit on the receipt side.
+// Ledgers are resolved from the user's Ledger Management (case-insensitive).
 async function createUnionSalesVoucher(slip, companyId) {
   const amount = parseFloat(slip.amount) || 0;
   if (amount <= 0) return null;
 
   const [milmaUnion, unionSales] = await Promise.all([
-    findOrCreateLedger('MILMA UNION', 'Advance due to Society', 'ASSET',  'Dr', companyId),
-    findOrCreateLedger('UNION SALES', 'Sales',                  'INCOME', 'Cr', companyId),
+    resolveLedger('MILMA UNION', 'Advance due to Society', 'ASSET',  'Dr', companyId),
+    resolveLedger('UNION SALES', 'Sales',                  'INCOME', 'Cr', companyId),
   ]);
 
   const shiftNote = slip.time ? ` (${slip.time})` : '';
@@ -327,6 +342,46 @@ export const deleteSlip = async (req, res) => {
 
     res.json({ success: true, message: 'Record deleted successfully' });
   } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ── BACKFILL VOUCHERS ─────────────────────────────────────────────────────
+// Posts the Day Book journal voucher (Dr MILMA UNION / Cr UNION SALES) for any
+// existing Union Sales slip that doesn't already have one. Safe to re-run.
+export const backfillVouchers = async (req, res) => {
+  try {
+    const slips = await UnionSalesSlip.find({
+      companyId: req.companyId,
+      $or: [{ voucherId: { $exists: false } }, { voucherId: null }],
+      amount: { $gt: 0 },
+    }).sort({ date: 1, time: 1 });
+
+    const result = { total: slips.length, posted: 0, skipped: 0, errors: [] };
+
+    for (const slip of slips) {
+      try {
+        const voucher = await createUnionSalesVoucher(slip, req.companyId);
+        if (voucher) {
+          slip.voucherId = voucher._id;
+          await slip.save();
+          result.posted++;
+        } else {
+          result.skipped++;
+        }
+      } catch (err) {
+        result.errors.push({ slipNo: slip.slipNo, message: err.message });
+        result.skipped++;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Backfill complete: ${result.posted} posted, ${result.skipped} skipped`,
+      data: result,
+    });
+  } catch (error) {
+    console.error('Union sales backfill error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };

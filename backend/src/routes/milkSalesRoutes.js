@@ -9,7 +9,8 @@ import {
   getBalanceReport,
   getNextBillNo,
   bulkImportMilkSales,
-  zibittRawImport
+  zibittRawImport,
+  backfillMilkSaleVouchers,
 } from '../controllers/milkSalesController.js';
 
 const router = express.Router();
@@ -21,6 +22,7 @@ router.get('/balance-report', getBalanceReport);
 router.get('/:id',            getMilkSaleById);
 router.post('/bulk-import',      bulkImportMilkSales);
 router.post('/zibitt-raw-import', zibittRawImport);
+router.post('/backfill-vouchers', backfillMilkSaleVouchers);
 router.post('/',              createMilkSale);
 router.put('/:id',            updateMilkSale);
 router.delete('/:id',         deleteMilkSale);
