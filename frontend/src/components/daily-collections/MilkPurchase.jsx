@@ -767,15 +767,16 @@ const MilkPurchase = () => {
         if (settingsRes?.data?.manualEntryCombination) setParamCombo(settingsRes.data.manualEntryCombination);
         if (settingsRes?.data?.quantityUnit)           setQtyUnit(settingsRes.data.quantityUnit);
 
-        // Apply manual entry mode from settings.
-        // MilmaChart always uses auto-chart mode so the looked-up rate is shown read-only.
-        if (chartType === 'MilmaChart') {
-          setEntryMode('chart');
-        } else {
+        // Apply manual entry mode from settings — ONLY when ManualEntry chart type is active.
+        // Other chart types (ApplyFormula, SlabRate, MilmaChart, etc.) use auto-chart mode
+        // so their grid/summary values are driven by the chart, not the manual rate/amount input.
+        if (chartType === 'ManualEntry') {
           const mem = settingsRes?.data?.manualEntryMode;
-          if (mem === 'litre-and-amount') setEntryMode('amount');
-          else if (mem === 'litre-x-rate') setEntryMode('rate');
-          else setEntryMode('rate'); // default: manual rate entry
+          if (mem === 'litre-and-amount') setEntryMode('amount');     // Amount ÷ Litre → Rate
+          else if (mem === 'litre-x-rate') setEntryMode('rate');      // Litre × Rate → Amount
+          else setEntryMode('rate');                                  // default: manual rate entry
+        } else {
+          setEntryMode('chart');                                      // chart-driven calculation
         }
 
         // Store WhatsApp settings for use during save; fill default template if empty
@@ -975,17 +976,21 @@ const MilkPurchase = () => {
   useEffect(() => {
     const grossLtr = parseFloat(ltr) || 0;
     const waterLtr = parseFloat(water) || 0;
-    const netLtr   = Math.max(0, grossLtr - waterLtr);
+    const netLtr   = grossLtr;
     const netKg    = parseFloat((netLtr * 1.03).toFixed(3));
     const base = calcValues(netKg, parseFloat(fat) || 0, parseFloat(clr) || 0, parseFloat(snf) || 0, activeChart, chartRows, milmaLookedUpRate);
+    const isManualEntry = entryMode === 'rate' || entryMode === 'amount';
     if (entryMode === 'rate' && manualRate !== '') {
       const rate = parseFloat(manualRate) || 0;
-      const amount = parseFloat((netKg * rate + base.incentive).toFixed(2));
+      const amount = parseFloat((netLtr * rate + base.incentive).toFixed(2));
       setCalcResult({ ...base, rate, amount });
     } else if (entryMode === 'amount' && manualAmount !== '') {
       const amount = parseFloat(manualAmount) || 0;
-      const rate = netKg > 0 ? parseFloat((amount / netKg).toFixed(2)) : 0;
+      const rate = netLtr > 0 ? parseFloat((amount / netLtr).toFixed(2)) : 0;
       setCalcResult({ ...base, rate, amount });
+    } else if (isManualEntry) {
+      // Manual entry: fat/snf are dummies — don't derive rate from chart lookup
+      setCalcResult({ ...base, rate: 0, amount: 0 });
     } else {
       setCalcResult(base);
     }
@@ -1069,14 +1074,14 @@ const MilkPurchase = () => {
     setSaving(true);
     const grossLtr = parseFloat(q) || 0;
     const waterLtr = parseFloat(w) || 0;
-    const netLtr   = Math.max(0, grossLtr - waterLtr);
+    const netLtr   = grossLtr;
     const netKg    = parseFloat((netLtr * 1.03).toFixed(3));
     // Always recalculate fresh to avoid stale calcResult (race condition on fast Enter)
     const fresh = calcValues(netKg, parseFloat(f) || 0, parseFloat(c) || 0, parseFloat(s) || 0, activeChart, chartRows, milmaRate);
     let freshRate   = fresh.rate;
     let freshAmount = fresh.amount;
-    if (em === 'rate' && mr !== '') { freshRate = parseFloat(mr) || 0; freshAmount = parseFloat((netKg * freshRate).toFixed(2)); }
-    if (em === 'amount' && ma !== '') { freshAmount = parseFloat(ma) || 0; freshRate = netKg > 0 ? parseFloat((freshAmount / netKg).toFixed(2)) : 0; }
+    if (em === 'rate' && mr !== '') { freshRate = parseFloat(mr) || 0; freshAmount = parseFloat((netLtr * freshRate).toFixed(2)); }
+    if (em === 'amount' && ma !== '') { freshAmount = parseFloat(ma) || 0; freshRate = netLtr > 0 ? parseFloat((freshAmount / netLtr).toFixed(2)) : 0; }
     // Add time incentive if active
     const timeIncRate   = ati?.rate || 0;
     const timeIncAmount = parseFloat((timeIncRate * netLtr).toFixed(2));
@@ -1651,7 +1656,7 @@ const MilkPurchase = () => {
             {(() => {
               const grossLtr = parseFloat(ltr) || 0;
               const waterLtr = parseFloat(water) || 0;
-              const netLtr = Math.max(0, grossLtr - waterLtr);
+              const netLtr = grossLtr;
               const netKg = parseFloat((netLtr * 1.03).toFixed(3));
               return (
                 <Group gap={8} wrap="nowrap">
@@ -1677,7 +1682,7 @@ const MilkPurchase = () => {
                   )}
                   {/* Rate — editable in 'rate' mode */}
                   <Box style={{ flex: 1, background: entryMode === 'rate' ? '#e0f2fe' : '#eff6ff', border: `2px solid ${entryMode === 'rate' ? '#0284c7' : '#bfdbfe'}`, borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
-                    <Text size="9px" fw={700} style={{ color: entryMode === 'rate' ? '#0284c7' : '#64748b' }} tt="uppercase">{entryMode === 'rate' ? '✏ Rate/KG' : 'Rate/KG'}</Text>
+                    <Text size="9px" fw={700} style={{ color: entryMode === 'rate' ? '#0284c7' : '#64748b' }} tt="uppercase">{entryMode === 'rate' ? '✏ Rate/L' : (entryMode === 'amount' ? 'Rate/L' : 'Rate/KG')}</Text>
                     {entryMode === 'rate' ? (
                       <NumberInput
                         ref={manualRateRef}
@@ -1701,7 +1706,7 @@ const MilkPurchase = () => {
                   {activeTimeIncentive && (() => {
                     const grossLtr = parseFloat(ltr) || 0;
                     const waterLtr = parseFloat(water) || 0;
-                    const netLtr   = Math.max(0, grossLtr - waterLtr);
+                    const netLtr   = grossLtr;
                     const tAmt     = parseFloat((activeTimeIncentive.rate * netLtr).toFixed(2));
                     return (
                       <Box style={{ flex: 1, background: '#f0fdf4', border: '2px solid #4ade80', borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
@@ -1714,7 +1719,7 @@ const MilkPurchase = () => {
                   {activeShiftIncentives.length > 0 && (() => {
                     const grossLtr = parseFloat(ltr) || 0;
                     const waterLtr = parseFloat(water) || 0;
-                    const netLtr   = Math.max(0, grossLtr - waterLtr);
+                    const netLtr   = grossLtr;
                     const netKg    = parseFloat((netLtr * 1.03).toFixed(3));
                     const sAmt     = calcShiftIncentiveAmt(activeShiftIncentives, netKg, netLtr, parseFloat(fat) || 0, parseFloat(snf) || 0, calcResult.amount);
                     return (
@@ -1740,7 +1745,7 @@ const MilkPurchase = () => {
                     ) : (() => {
                       const grossLtr  = parseFloat(ltr) || 0;
                       const waterLtr  = parseFloat(water) || 0;
-                      const netLtr    = Math.max(0, grossLtr - waterLtr);
+                      const netLtr    = grossLtr;
                       const tAmt  = activeTimeIncentive ? parseFloat((activeTimeIncentive.rate * netLtr).toFixed(2)) : 0;
                       const netKgD = parseFloat((netLtr * 1.03).toFixed(3));
                       const sAmt  = calcShiftIncentiveAmt(activeShiftIncentives, netKgD, netLtr, parseFloat(fat) || 0, parseFloat(snf) || 0, calcResult.amount);

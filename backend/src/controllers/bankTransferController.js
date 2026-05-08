@@ -17,7 +17,9 @@ export const retrieveBalances = async (req, res) => {
       collectionCenter,
       bank,
       roundDownAmount,
-      dueByList
+      dueByList,
+      cycleFromDate,
+      cycleToDate,
     } = req.body;
 
     const companyId = req.userCompany;
@@ -40,21 +42,42 @@ export const retrieveBalances = async (req, res) => {
     const balances = [];
     const roundDown = parseInt(roundDownAmount) || 10;
 
+    // Build cycle filter for FarmerPayment (±2 day window for IST/UTC offset).
+    // When a cycle is provided, only payments whose paymentPeriod matches that cycle count.
+    let cycleFpFilter = null;
+    if (cycleFromDate && cycleToDate) {
+      const dayMs    = 24 * 60 * 60 * 1000;
+      const fromMid  = new Date(cycleFromDate);
+      const toMid    = new Date(cycleToDate);
+      cycleFpFilter = {
+        'paymentPeriod.fromDate': {
+          $gte: new Date(fromMid.getTime() - 2 * dayMs),
+          $lte: new Date(fromMid.getTime() + 2 * dayMs),
+        },
+        'paymentPeriod.toDate': {
+          $gte: new Date(toMid.getTime() - 2 * dayMs),
+          $lte: new Date(toMid.getTime() + 2 * dayMs),
+        },
+      };
+    }
+
     for (const farmer of farmers) {
       // Calculate net payable based on transfer basis
       let netPayable = 0;
 
       let paymentMode = 'Bank Transfer'; // default
 
+      const baseFpQuery = {
+        companyId: new mongoose.Types.ObjectId(companyId),
+        farmerId: farmer._id,
+        status: { $in: ['Pending', 'Partial'] },
+        paymentSource: 'BankTransfer',
+        ...(cycleFpFilter || {}),
+      };
+
       if (transferBasis === 'As on Date Balance') {
-        // Query all pending BankTransfer payments — no paymentDate filter because the
-        // register save date is always today (after the period end), not the period end.
-        const pendingPayments = await FarmerPayment.find({
-          companyId: new mongoose.Types.ObjectId(companyId),
-          farmerId: farmer._id,
-          status: { $in: ['Pending', 'Partial'] },
-          paymentSource: 'BankTransfer'
-        }).sort({ paymentDate: -1 });
+        // Query pending BankTransfer payments restricted to the selected cycle (when provided)
+        const pendingPayments = await FarmerPayment.find(baseFpQuery).sort({ paymentDate: -1 });
 
         netPayable = pendingPayments.reduce((sum, p) => sum + (p.netPayable || 0), 0);
         // Use paymentMode from the most recent payment record
@@ -62,18 +85,18 @@ export const retrieveBalances = async (req, res) => {
           paymentMode = pendingPayments[0].paymentMode || 'Bank Transfer';
         }
       } else {
-        // Most recent BankTransfer-source pending payment
-        const lastPeriod = await FarmerPayment.findOne({
-          companyId: new mongoose.Types.ObjectId(companyId),
-          farmerId: farmer._id,
-          status: { $in: ['Pending', 'Partial'] },
-          paymentSource: 'BankTransfer'
-        }).sort({ paymentDate: -1 });
+        // Most recent BankTransfer-source pending payment in the cycle
+        const lastPeriod = await FarmerPayment.findOne(baseFpQuery).sort({ paymentDate: -1 });
 
         if (lastPeriod) {
           netPayable = lastPeriod.netPayable || 0;
           paymentMode = lastPeriod.paymentMode || 'Bank Transfer';
         }
+      }
+
+      // When a cycle is selected, only include farmers who have payments in that cycle
+      if (cycleFpFilter && netPayable === 0) {
+        continue;
       }
 
       // Filter by bank if specified

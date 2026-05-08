@@ -201,6 +201,8 @@ const BankTransferManagement = () => {
         bank:            opts.bank ?? bankFilter,
         roundDownAmount: rd,
         dueByList:       opts.dueByList ?? dueByList,
+        cycleFromDate:   toISO(from),
+        cycleToDate:     toISO(to),
       });
       if (res?.success) {
         const newRows = res.data.map(d => {
