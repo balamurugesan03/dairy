@@ -127,6 +127,10 @@ const bankTransferSchema = new mongoose.Schema({
     ref: 'Voucher'
   },
 
+  // Cheque details (captured in the Finalize Payment popup at apply time)
+  chequeNumber: { type: String, default: '' },
+  chequeDate:   { type: Date,   default: null },
+
   remarks: { type: String, maxlength: 500 }
 }, { timestamps: true });
 

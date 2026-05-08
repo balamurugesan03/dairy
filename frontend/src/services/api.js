@@ -627,6 +627,7 @@ export const bankTransferAPI = {
   getBanks: () => api.get('/bank-transfers/banks').then(res => res.data).catch(handleError),
   createFromLedger: (data) => api.post('/bank-transfers/from-ledger', data).then(res => res.data).catch(handleError),
   getPendingPeriods: () => api.get('/bank-transfers/pending-periods').then(res => res.data).catch(handleError),
+  checkCycle: (params) => api.get('/bank-transfers/check-cycle', { params }).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/bank-transfers/${id}`).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/bank-transfers/${id}`, data).then(res => res.data).catch(handleError),
 };

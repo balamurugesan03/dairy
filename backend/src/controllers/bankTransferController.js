@@ -205,8 +205,13 @@ export const retrieveBalances = async (req, res) => {
       });
     }
 
-    // Sort by producer ID
-    balances.sort((a, b) => a.producerId?.localeCompare(b.producerId));
+    // Sort by producer ID — numeric ascending (so "2" comes before "10")
+    balances.sort((a, b) => {
+      const na = parseInt(String(a.producerId || '').replace(/\D/g, ''), 10);
+      const nb = parseInt(String(b.producerId || '').replace(/\D/g, ''), 10);
+      if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
+      return String(a.producerId || '').localeCompare(String(b.producerId || ''));
+    });
 
     // Calculate summary
     const summary = {
@@ -246,10 +251,37 @@ export const applyBankTransfer = async (req, res) => {
       roundDownAmount,
       dueByList,
       transferDetails,
-      remarks
+      remarks,
+      chequeNumber,
+      chequeDate,
     } = req.body;
 
     const companyId = req.userCompany;
+
+    // ── Block re-applying a cycle that's already been applied ─────────────
+    // Match by asOnDate (which is the cycle's toDate) with ±2 day tolerance
+    // for IST/UTC offsets. Cancelled transfers don't block (they freed the
+    // cycle); a Deleted transfer is gone from the collection so won't match.
+    if (asOnDate) {
+      const dayMs = 24 * 60 * 60 * 1000;
+      const cycleEnd = new Date(asOnDate);
+      const existing = await BankTransfer.findOne({
+        companyId,
+        status: { $in: ['Applied', 'Completed'] },
+        asOnDate: {
+          $gte: new Date(cycleEnd.getTime() - 2 * dayMs),
+          $lte: new Date(cycleEnd.getTime() + 2 * dayMs),
+        },
+      }).sort({ createdAt: -1 });
+      if (existing) {
+        return res.status(409).json({
+          success: false,
+          alreadyApplied: true,
+          transferNumber: existing.transferNumber,
+          message: `ALREADY PAYMENT APPLIED — Transfer ${existing.transferNumber} on ${new Date(existing.applyDate).toLocaleDateString('en-IN')}. Delete it from the log to re-apply this cycle.`,
+        });
+      }
+    }
 
     // Filter only approved transfers
     const approvedTransfers = transferDetails.filter(d => d.approved && d.transferAmount > 0);
@@ -285,6 +317,8 @@ export const applyBankTransfer = async (req, res) => {
       createdBy: req.user?._id,
       appliedBy: req.user?._id,
       appliedAt: new Date(),
+      chequeNumber: chequeNumber || '',
+      chequeDate:   chequeDate ? new Date(chequeDate) : null,
       remarks
     });
 
@@ -356,8 +390,10 @@ const ensureLedger = async (ledgerName, ledgerType, balanceType, companyId) => {
 };
 
 // ─── Helper: create PRODUCERS DUES vouchers (cash + bank) on apply ───────────
-// Cash payments → Payment voucher in Cash Book  (Dr PRODUCERS DUES, Cr Cash in Hand)
-// Bank payments → Payment voucher in Day Book   (Dr PRODUCERS DUES, Cr Bank Ledger)
+// Cash payments              → Payment voucher in Cash Book (Dr PRODUCERS DUES, Cr Cash in Hand)
+// Bank Transfer + Cheque(s)  → Payment voucher in Day Book  (Dr PRODUCERS DUES, Cr Bank Ledger)
+// Cheques are issued from a bank account, so they post on the bank side just
+// like Bank Transfer — and surface in the Day Book adjustment column.
 const createProducerDuesVouchers = async (bankTransfer, transferDetails, companyId) => {
   const vouchers = [];
   const applyDate = bankTransfer.applyDate;
@@ -367,7 +403,8 @@ const createProducerDuesVouchers = async (bankTransfer, transferDetails, company
     'PRODUCERS DUES', 'Other Payable', 'Cr', companyId
   );
 
-  const CASH_MODES = ['Cash', 'Cheque', 'All Cheque', 'Personal Cheque'];
+  // Only physical cash payments go to Cash Book; cheques are bank-side.
+  const CASH_MODES = ['Cash'];
   const cashTransfers = transferDetails.filter(d => CASH_MODES.includes(d.paymentMode));
   const bankTransfers = transferDetails.filter(d => !d.paymentMode || !CASH_MODES.includes(d.paymentMode));
 
@@ -439,6 +476,9 @@ const createProducerDuesVouchers = async (bankTransfer, transferDetails, company
         // Cr <farmer-linked bank ledger> (or fallback)
         { ledgerId: bankLedger._id, ledgerName: bankLedger.ledgerName, debitAmount: 0, creditAmount: g.total },
       ];
+      const chequeSuffix = bankTransfer.chequeNumber
+        ? ` — Cheque #${bankTransfer.chequeNumber}${bankTransfer.chequeDate ? ` dt ${new Date(bankTransfer.chequeDate).toLocaleDateString('en-IN')}` : ''}`
+        : '';
       const voucher = new Voucher({
         voucherType: 'Payment',
         voucherNumber: await generateVoucherNumber('Payment', companyId),
@@ -447,7 +487,7 @@ const createProducerDuesVouchers = async (bankTransfer, transferDetails, company
         entries,
         totalDebit: g.total,
         totalCredit: g.total,
-        narration: `Producers Bank Transfer — ${bankTransfer.transferNumber} — ${g.count} producer(s) via ${bankLedger.ledgerName}`,
+        narration: `Producers Bank Transfer — ${bankTransfer.transferNumber} — ${g.count} producer(s) via ${bankLedger.ledgerName}${chequeSuffix}`,
         referenceType: 'BankTransfer',
         referenceId: bankTransfer._id,
         createdBy: bankTransfer.appliedBy,
@@ -459,6 +499,38 @@ const createProducerDuesVouchers = async (bankTransfer, transferDetails, company
   }
 
   return vouchers;
+};
+
+// ─── Helper: delete all auto-posted vouchers for a BankTransfer ──────────────
+// Apply can create multiple vouchers (one Cash voucher + one per bank-ledger
+// group), but only the first is stored on bankTransfer.voucherId. Find them
+// by their referenceType/referenceId, reverse the ledger-balance impact, and
+// delete the voucher docs so the Day Book / Cash Book entries disappear.
+const removeAutoPostedVouchers = async (bankTransferId, companyId) => {
+  const linked = await Voucher.find({
+    companyId,
+    referenceType: 'BankTransfer',
+    referenceId:   bankTransferId,
+  });
+
+  for (const v of linked) {
+    try {
+      // Reverse ledger balance: apply entries with debit/credit swapped
+      const reversedEntries = (v.entries || []).map(e => ({
+        ledgerId:     e.ledgerId,
+        ledgerName:   e.ledgerName,
+        debitAmount:  e.creditAmount || 0,
+        creditAmount: e.debitAmount  || 0,
+      }));
+      if (reversedEntries.length > 0) {
+        await updateLedgerBalances(reversedEntries, null, companyId);
+      }
+      await Voucher.deleteOne({ _id: v._id });
+    } catch (err) {
+      console.error('Failed to remove auto-posted voucher', v._id?.toString(), err.message);
+    }
+  }
+  return linked.length;
 };
 
 // Helper function to create ProducerDue voucher on completion
@@ -661,41 +733,39 @@ export const cancelBankTransfer = async (req, res) => {
       detail.transferStatus = 'Cancelled';
     });
 
-    await bankTransfer.save();
-
-    // Reverse voucher if exists
-    if (bankTransfer.voucherId) {
-      const voucher = await Voucher.findById(bankTransfer.voucherId);
-      if (voucher) {
-        // Create reversal entries
-        const reversalEntries = voucher.entries.map(entry => ({
-          ledgerId: entry.ledgerId,
-          ledgerName: entry.ledgerName,
-          debitAmount: entry.creditAmount,
-          creditAmount: entry.debitAmount
-        }));
-
-        const reversalVoucher = new Voucher({
-          voucherType: 'Journal',
-          voucherNumber: await generateVoucherNumber('Journal', req.userCompany),
-          voucherDate: new Date(),
-          companyId: req.userCompany,
-          entries: reversalEntries,
-          totalDebit: voucher.totalCredit,
-          totalCredit: voucher.totalDebit,
-          narration: `Reversal of ${bankTransfer.transferNumber}`,
-          referenceType: 'BankTransfer',
-          referenceId: bankTransfer._id,
-          createdBy: req.user?._id
-        });
-
-        await reversalVoucher.save();
-        await updateLedgerBalances(reversalEntries);
+    // Reverse FarmerPayment records back to Pending (so they re-appear for processing)
+    for (const d of bankTransfer.transferDetails) {
+      try {
+        await FarmerPayment.updateMany(
+          {
+            companyId:     req.userCompany,
+            farmerId:      d.farmerId,
+            paymentSource: 'BankTransfer',
+            status:        'Paid',
+          },
+          {
+            $set: {
+              paidAmount:    0,
+              balanceAmount: 0,
+              status:        'Pending',
+            },
+          }
+        );
+      } catch (reverseErr) {
+        console.error('Reverse FarmerPayment failed for farmer', d.farmerId, reverseErr.message);
       }
     }
+
+    // Remove the auto-posted Day Book / Cash Book vouchers (covers all bank
+    // groups + cash voucher, not just bankTransfer.voucherId).
+    const removed = await removeAutoPostedVouchers(bankTransfer._id, req.userCompany);
+    bankTransfer.voucherId = undefined;
+
+    await bankTransfer.save();
+
     res.json({
       success: true,
-      message: 'Bank transfer cancelled successfully',
+      message: `Bank transfer cancelled — ${removed} auto-posted voucher(s) removed`,
       data: bankTransfer
     });
   } catch (error) {
@@ -916,44 +986,58 @@ export const deleteBankTransfer = async (req, res) => {
       }
     }
 
-    // Reverse voucher if exists
-    if (bankTransfer.voucherId) {
-      try {
-        const voucher = await Voucher.findById(bankTransfer.voucherId);
-        if (voucher) {
-          const reversalEntries = voucher.entries.map(e => ({
-            ledgerId:     e.ledgerId,
-            ledgerName:   e.ledgerName,
-            debitAmount:  e.creditAmount,
-            creditAmount: e.debitAmount,
-          }));
-          const reversalVoucher = new Voucher({
-            voucherType:   'Journal',
-            voucherNumber: await generateVoucherNumber('Journal', req.userCompany),
-            voucherDate:   new Date(),
-            companyId:     req.userCompany,
-            entries:       reversalEntries,
-            totalDebit:    voucher.totalCredit,
-            totalCredit:   voucher.totalDebit,
-            narration:     `Reversal (Delete) of ${bankTransfer.transferNumber}`,
-            referenceType: 'BankTransfer',
-            referenceId:   bankTransfer._id,
-            createdBy:     req.user?._id,
-          });
-          await reversalVoucher.save();
-          await updateLedgerBalances(reversalEntries);
-        }
-      } catch (vErr) {
-        console.error('Voucher reversal failed:', vErr.message);
-      }
-    }
+    // Remove all auto-posted Day Book / Cash Book vouchers (one per bank-ledger
+    // group + cash voucher). bankTransfer.voucherId only points to the first;
+    // the helper finds them all via referenceType/referenceId.
+    const removed = await removeAutoPostedVouchers(bankTransfer._id, req.userCompany);
 
     await BankTransfer.deleteOne({ _id: bankTransfer._id });
 
-    res.json({ success: true, message: 'Bank transfer deleted and payments reversed successfully' });
+    res.json({
+      success: true,
+      message: `Bank transfer deleted — ${removed} auto-posted voucher(s) removed and payments reversed`,
+    });
   } catch (error) {
     console.error('Error deleting bank transfer:', error);
     res.status(500).json({ success: false, message: error.message || 'Error deleting bank transfer' });
+  }
+};
+
+// Check whether a cycle has already been applied (frontend pre-check).
+// Returns { alreadyApplied: bool, transferNumber, applyDate, asOnDate }.
+export const checkCycleApplied = async (req, res) => {
+  try {
+    const { asOnDate, cycleToDate } = req.query;
+    const companyId = req.userCompany;
+    const ref = asOnDate || cycleToDate;
+    if (!ref) {
+      return res.json({ success: true, data: { alreadyApplied: false } });
+    }
+    const dayMs = 24 * 60 * 60 * 1000;
+    const cycleEnd = new Date(ref);
+    const existing = await BankTransfer.findOne({
+      companyId,
+      status: { $in: ['Applied', 'Completed'] },
+      asOnDate: {
+        $gte: new Date(cycleEnd.getTime() - 2 * dayMs),
+        $lte: new Date(cycleEnd.getTime() + 2 * dayMs),
+      },
+    }).sort({ createdAt: -1 }).lean();
+
+    res.json({
+      success: true,
+      data: {
+        alreadyApplied: !!existing,
+        transferId:     existing?._id || null,
+        transferNumber: existing?.transferNumber || null,
+        applyDate:      existing?.applyDate || null,
+        asOnDate:       existing?.asOnDate || null,
+        status:         existing?.status || null,
+      },
+    });
+  } catch (error) {
+    console.error('Error checking cycle:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error checking cycle' });
   }
 };
 

@@ -68,6 +68,14 @@ export const createFarmerPayment = async (req, res) => {
     const farmerObjId  = new mongoose.Types.ObjectId(paymentData.farmerId);
     const companyObjId = new mongoose.Types.ObjectId(paymentData.companyId);
 
+    // Track leftover recovery per opening-balance bucket. After FIFO over real
+    // Advance / ProducerLoan records, anything still owed comes off the
+    // ProducerOpening row — that's how the Cash / Loan / CF modules see the
+    // recovery for farmers whose advances exist only as opening balances.
+    let leftoverCF   = 0;
+    let leftoverCash = 0;
+    let leftoverLoan = 0;
+
     for (const deduction of (paymentData.deductions || [])) {
       let remaining = deduction.amount || 0;
       if (remaining <= 0) continue;
@@ -102,6 +110,11 @@ export const createFarmerPayment = async (req, res) => {
           remaining -= apply;
         }
 
+        if (remaining > 0) {
+          if (advCategory === 'CF Advance')   leftoverCF   += remaining;
+          if (advCategory === 'Cash Advance') leftoverCash += remaining;
+        }
+
       } else if (deduction.type === 'Loan Advance' || deduction.type === 'Loan Recovery') {
         // Reduce ProducerLoan records FIFO (oldest first), scoped to this company
         const loans = await ProducerLoan.find({
@@ -123,6 +136,27 @@ export const createFarmerPayment = async (req, res) => {
           remaining -= apply;
         }
 
+        if (remaining > 0) leftoverLoan += remaining;
+      }
+    }
+
+    // Apply any leftover recoveries to the farmer's ProducerOpening row so
+    // opening-balance advances reflect the deduction in their respective
+    // module summaries (Cash Advance / Loan Advance / CF Advance).
+    if (leftoverCF > 0 || leftoverCash > 0 || leftoverLoan > 0) {
+      try {
+        const opening = await ProducerOpening.findOne({
+          companyId: companyObjId,
+          farmerId:  farmerObjId,
+        });
+        if (opening) {
+          if (leftoverCF   > 0) opening.cfAdvance   = Math.max(0, (opening.cfAdvance   || 0) - leftoverCF);
+          if (leftoverCash > 0) opening.cashAdvance = Math.max(0, (opening.cashAdvance || 0) - leftoverCash);
+          if (leftoverLoan > 0) opening.loanAdvance = Math.max(0, (opening.loanAdvance || 0) - leftoverLoan);
+          await opening.save();
+        }
+      } catch (openErr) {
+        console.error('ProducerOpening recovery update failed:', openErr.message);
       }
     }
 
@@ -438,6 +472,8 @@ export const deletePayment = async (req, res) => {
     }
 
     // Reverse advance adjustments — find advances that recorded this payment in their adjustments array
+    let reversedCF = 0;
+    let reversedCash = 0;
     const affectedAdvances = await Advance.find({
       'adjustments.referenceId': payment._id,
     });
@@ -450,11 +486,14 @@ export const deletePayment = async (req, res) => {
       adv.adjustments    = adv.adjustments.filter(a => String(a.referenceId) !== String(payment._id));
       adv.status = adv.balanceAmount > 0 ? (adv.adjustedAmount > 0 ? 'Partially Adjusted' : 'Active') : 'Adjusted';
       await adv.save();
+      if (adv.advanceCategory === 'CF Advance')   reversedCF   += totalReversed;
+      if (adv.advanceCategory === 'Cash Advance') reversedCash += totalReversed;
     }
 
-    // Reverse loan reductions for deductions of type 'Loan Advance'
+    // Reverse loan reductions for deductions of type 'Loan Advance' or 'Loan Recovery'
+    let reversedLoan = 0;
     for (const deduction of (payment.deductions || [])) {
-      if (deduction.type !== 'Loan Advance' || !deduction.amount) continue;
+      if (!['Loan Advance', 'Loan Recovery'].includes(deduction.type) || !deduction.amount) continue;
       let remaining = deduction.amount;
       const loans = await ProducerLoan.find({
         farmerId: payment.farmerId,
@@ -471,6 +510,36 @@ export const deletePayment = async (req, res) => {
         }
         await loan.save();
         remaining -= reverseAmt;
+        reversedLoan += reverseAmt;
+      }
+    }
+
+    // Restore any remaining recovery amount back to the farmer's ProducerOpening
+    // (mirrors the leftover-to-opening flow in createFarmerPayment).
+    let dedCF = 0, dedCash = 0, dedLoan = 0;
+    for (const d of (payment.deductions || [])) {
+      const amt = d.amount || 0;
+      if (d.type === 'CF Advance'   || d.type === 'CF Recovery')   dedCF   += amt;
+      if (d.type === 'Cash Advance' || d.type === 'Cash Recovery') dedCash += amt;
+      if (d.type === 'Loan Advance' || d.type === 'Loan Recovery') dedLoan += amt;
+    }
+    const restoreCF   = Math.max(0, dedCF   - reversedCF);
+    const restoreCash = Math.max(0, dedCash - reversedCash);
+    const restoreLoan = Math.max(0, dedLoan - reversedLoan);
+    if (restoreCF > 0 || restoreCash > 0 || restoreLoan > 0) {
+      try {
+        const opening = await ProducerOpening.findOne({
+          companyId: payment.companyId,
+          farmerId:  payment.farmerId,
+        });
+        if (opening) {
+          if (restoreCF   > 0) opening.cfAdvance   = (opening.cfAdvance   || 0) + restoreCF;
+          if (restoreCash > 0) opening.cashAdvance = (opening.cashAdvance || 0) + restoreCash;
+          if (restoreLoan > 0) opening.loanAdvance = (opening.loanAdvance || 0) + restoreLoan;
+          await opening.save();
+        }
+      } catch (openErr) {
+        console.error('ProducerOpening restore failed:', openErr.message);
       }
     }
 

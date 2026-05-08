@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Container, Card, Paper, Title, Text, Group, Stack, Grid, Box,
   Button, Select, Checkbox, Table, ScrollArea, Badge, NumberInput,
-  Loader, Center, Tabs, ActionIcon, Menu, Pagination, Modal
+  Loader, Center, Tabs, ActionIcon, Menu, Pagination, Modal, TextInput
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
@@ -121,6 +121,17 @@ const BankTransferManagement = () => {
   const [editDetails,  setEditDetails]  = useState([]);     // [{...detail, transferAmount, paymentMode}]
   const [editSaving,   setEditSaving]   = useState(false);
 
+  /* finalize-payment modal (cheque info captured at apply) */
+  const [finalizeModal,  setFinalizeModal]  = useState(false);
+  const [chequeNumber,   setChequeNumber]   = useState('');
+  const [chequeDate,     setChequeDate]     = useState(null);
+
+  /* cycle-already-applied guard (set after load / cycle select) */
+  const [cycleApplied,   setCycleApplied]   = useState(null); // { transferNumber, applyDate } | null
+
+  /* set of applied-cycle keys (YYYY-MM-DD of toDate) — for strikethrough in dropdown */
+  const [appliedCycleSet, setAppliedCycleSet] = useState(new Set());
+
   // ── init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     loadDropdowns();
@@ -160,6 +171,7 @@ const BankTransferManagement = () => {
     setRows([]);
     setRowsPage(1);
     setDataLoaded(false);
+    setCycleApplied(null);
     // auto-advance applyDate to day after new toDate if needed
     const refTo = newTo || toDate;
     if (refTo) {
@@ -221,6 +233,25 @@ const BankTransferManagement = () => {
         setDataLoaded(true);
         notifications.show({ message: `Loaded ${newRows.length} producers`, color: 'green' });
         await loadCashPaidForCycle(from, to);
+
+        // Cycle-already-applied check — block re-apply until the log entry is deleted
+        try {
+          const chk = await bankTransferAPI.checkCycle({ asOnDate: toISO(to) });
+          if (chk?.success && chk.data?.alreadyApplied) {
+            setCycleApplied({
+              transferNumber: chk.data.transferNumber,
+              applyDate:      chk.data.applyDate,
+            });
+            notifications.show({
+              title:   'ALREADY PAYMENT APPLIED',
+              message: `Transfer ${chk.data.transferNumber} on ${dayjs(chk.data.applyDate).format('DD/MM/YYYY')}. Delete it from the log to re-apply this cycle.`,
+              color:   'orange',
+              autoClose: 6000,
+            });
+          } else {
+            setCycleApplied(null);
+          }
+        } catch { setCycleApplied(null); }
       }
     } catch (err) {
       notifications.show({ title: 'Error', message: err.message || 'Failed to load', color: 'red' });
@@ -247,6 +278,24 @@ const BankTransferManagement = () => {
           setApplyDate(prev => (prev && prev >= ap ? prev : ap));
           await performLoad(f, t, { applyDate: ap });
         }
+      }
+    } catch { /* silent */ }
+    // Build the applied-cycle set so the dropdown can strike through cycles
+    // that already have an Applied / Completed BankTransfer.
+    await loadAppliedCycleSet();
+  };
+
+  const loadAppliedCycleSet = async () => {
+    try {
+      const res = await bankTransferAPI.getAll({ limit: 500 });
+      if (res?.success && Array.isArray(res.data)) {
+        const set = new Set();
+        for (const bt of res.data) {
+          if (!bt?.asOnDate) continue;
+          if (bt.status !== 'Applied' && bt.status !== 'Completed') continue;
+          set.add(dayjs(bt.asOnDate).format('YYYY-MM-DD'));
+        }
+        setAppliedCycleSet(set);
       }
     } catch { /* silent */ }
   };
@@ -334,10 +383,33 @@ const BankTransferManagement = () => {
   };
 
   // ── apply payment ─────────────────────────────────────────────────────────
-  const applyPayment = async () => {
+  // Step 1: validate approved rows, then open the Finalize Payment popup so
+  // the user can enter cheque number / date before the request fires.
+  const applyPayment = () => {
+    if (cycleApplied) {
+      notifications.show({
+        title:   'ALREADY PAYMENT APPLIED',
+        message: `Transfer ${cycleApplied.transferNumber} on ${dayjs(cycleApplied.applyDate).format('DD/MM/YYYY')}. Delete it from the log to re-apply.`,
+        color:   'red',
+      });
+      return;
+    }
     const approved = rows.filter(r => r.approved && r.paymentAmount > 0);
     if (!approved.length) {
       notifications.show({ message: 'No approved rows to apply', color: 'orange' });
+      return;
+    }
+    setChequeNumber('');
+    setChequeDate(null);
+    setFinalizeModal(true);
+  };
+
+  // Step 2: actually submit when Finalize Payment is clicked in the popup.
+  const finalizePayment = async () => {
+    const approved = rows.filter(r => r.approved && r.paymentAmount > 0);
+    if (!approved.length) {
+      notifications.show({ message: 'No approved rows to apply', color: 'orange' });
+      setFinalizeModal(false);
       return;
     }
     setApplying(true);
@@ -352,6 +424,8 @@ const BankTransferManagement = () => {
         bankName:              banks.find(b => b.value === bankFilter)?.label || 'All',
         roundDownAmount:       roundDown,
         dueByList,
+        chequeNumber:          chequeNumber || '',
+        chequeDate:            toISO(chequeDate),
         transferDetails:       approved.map(r => ({
           ...r,
           transferAmount: r.paymentAmount,
@@ -360,6 +434,7 @@ const BankTransferManagement = () => {
       });
       if (res?.success) {
         notifications.show({ title: 'Success', message: res.message, color: 'green' });
+        setFinalizeModal(false);
         clearData();
         setActiveTab('log');
       }
@@ -459,7 +534,7 @@ const BankTransferManagement = () => {
     const approved = rows.filter(r => r.approved && r.paymentAmount > 0);
     if (printMode === 'bank')   return approved.filter(r => r.mode === 'Bank Transfer');
     if (printMode === 'cash')   return approved.filter(r => r.mode === 'Cash');
-    if (printMode === 'cheque') return approved.filter(r => r.mode === 'Cheque');
+    if (printMode === 'cheque') return approved.filter(r => r.mode === 'All Cheque');
     return approved;
   })();
 
@@ -546,10 +621,27 @@ const BankTransferManagement = () => {
                         clearData(t);
                         await performLoad(f, t, { applyDate: ap });
                       }}
-                      data={paymentCycles.map(c => ({
-                        value: `${dayjs(c.fromDate).format('YYYY-MM-DD')}|${dayjs(c.toDate).format('YYYY-MM-DD')}`,
-                        label: c.label,
-                      }))}
+                      data={paymentCycles.map(c => {
+                        const toKey  = dayjs(c.toDate).format('YYYY-MM-DD');
+                        const applied = appliedCycleSet.has(toKey);
+                        return {
+                          value: `${dayjs(c.fromDate).format('YYYY-MM-DD')}|${toKey}`,
+                          label: applied ? `${c.label} (Applied)` : c.label,
+                        };
+                      })}
+                      renderOption={({ option }) => {
+                        const applied = option.label?.endsWith('(Applied)');
+                        return (
+                          <Text
+                            size="sm"
+                            style={applied
+                              ? { textDecoration: 'line-through', color: 'var(--mantine-color-red-7)' }
+                              : {}}
+                          >
+                            {option.label}
+                          </Text>
+                        );
+                      }}
                       clearable
                       searchable
                       nothingFoundMessage="No saved cycles found"
@@ -648,6 +740,19 @@ const BankTransferManagement = () => {
                     </Grid.Col>
                   </Grid>
 
+                  {/* Already-applied banner */}
+                  {cycleApplied && (
+                    <Paper withBorder p="sm" radius="md" bg="red.0" style={{ borderColor: 'var(--mantine-color-red-4)' }}>
+                      <Group gap="xs" align="center">
+                        <IconX size={18} color="var(--mantine-color-red-7)" />
+                        <Text fw={700} c="red.8">ALREADY PAYMENT APPLIED</Text>
+                        <Text size="sm" c="red.8">
+                          Transfer <b>{cycleApplied.transferNumber}</b> on <b>{dayjs(cycleApplied.applyDate).format('DD/MM/YYYY')}</b>. Delete it from the log to re-apply this cycle.
+                        </Text>
+                      </Group>
+                    </Paper>
+                  )}
+
                   {/* Action buttons */}
                   <Group gap="xs" wrap="wrap">
                     <Button
@@ -673,9 +778,13 @@ const BankTransferManagement = () => {
                           leftSection={<IconBuildingBank size={16} />}
                           onClick={applyPayment}
                           loading={applying}
-                          color="indigo"
+                          color={cycleApplied ? 'gray' : 'indigo'}
+                          disabled={!!cycleApplied}
+                          title={cycleApplied
+                            ? `ALREADY PAYMENT APPLIED — Transfer ${cycleApplied.transferNumber}. Delete it from the log to re-apply.`
+                            : ''}
                         >
-                          Apply Payment
+                          {cycleApplied ? 'Already Applied' : 'Apply Payment'}
                         </Button>
                         <Button
                           leftSection={<IconPrinter size={16} />}
@@ -803,7 +912,6 @@ const BankTransferManagement = () => {
                           <Table.Th style={{ width: 105 }}>Pay Amount</Table.Th>
                           <Table.Th style={{ width: 220 }}>
                             <Group gap={6} wrap="nowrap" align="center">
-                              <Text size="xs" fw={600}>Mode</Text>
                               {PAYMENT_MODES.map(m => (
                                 <Checkbox
                                   key={m.value}
@@ -1434,6 +1542,63 @@ const BankTransferManagement = () => {
                 Print
               </Button>
               <Button variant="outline" onClick={() => setPrintModal(false)}>Close</Button>
+            </Group>
+          </Stack>
+        </Modal>
+
+        {/* ═══════════════════ FINALIZE PAYMENT MODAL ═════════════════════ */}
+        <Modal
+          opened={finalizeModal}
+          onClose={() => (!applying && setFinalizeModal(false))}
+          title={
+            <Group gap="xs">
+              <IconBuildingBank size={18} />
+              <Text fw={600}>Finalize Payment</Text>
+            </Group>
+          }
+          size="md"
+          centered
+        >
+          <Stack gap="md">
+            <Text size="sm" c="dimmed">
+              Enter the cheque details (if applicable) and click Finalize Payment to
+              post the bank transfer and record entries in Day Book / Cash Book.
+            </Text>
+
+            <TextInput
+              label="Cheque Number"
+              placeholder="e.g. 123456"
+              value={chequeNumber}
+              onChange={(e) => setChequeNumber(e.currentTarget.value)}
+              disabled={applying}
+            />
+
+            <DatePickerInput
+              label="Cheque Date"
+              placeholder="Select cheque date"
+              value={chequeDate}
+              onChange={setChequeDate}
+              valueFormat="DD/MM/YYYY"
+              clearable
+              disabled={applying}
+            />
+
+            <Group justify="flex-end" mt="sm">
+              <Button
+                variant="outline"
+                onClick={() => setFinalizeModal(false)}
+                disabled={applying}
+              >
+                Cancel
+              </Button>
+              <Button
+                color="indigo"
+                leftSection={<IconCheck size={16} />}
+                onClick={finalizePayment}
+                loading={applying}
+              >
+                Finalize Payment
+              </Button>
             </Group>
           </Stack>
         </Modal>

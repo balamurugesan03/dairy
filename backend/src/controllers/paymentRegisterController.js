@@ -263,20 +263,34 @@ export const generateProducerPaymentRegister = async (req, res) => {
       active:    true,
     }).lean();
     const welfareFixed = welfareRule?.fixedRate || 0;
-    const welfareApplyPeriod = welfareRule?.applyPeriod || 'EACH_PERIOD';
 
-    // If ONCE_IN_MONTH: find farmers who already had welfare deducted this month
+    // Welfare is charged ONCE per farmer (lifetime). Build a set of farmers
+    // who already had welfare deducted in any prior cycle — those are skipped
+    // here. Only "new" farmers (no welfare history) get the welfare amount.
     let alreadyDeductedSet = new Set();
-    if (welfareFixed > 0 && welfareApplyPeriod === 'ONCE_IN_MONTH') {
-      const monthStart = new Date(start.getFullYear(), start.getMonth(), 1);
-      const monthEnd   = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
-      const existing   = await FarmerPayment.find({
-        companyId,
-        paymentDate: { $gte: monthStart, $lte: monthEnd },
-        status: { $ne: 'Cancelled' },
-        'deductions.type': 'Welfare Recovery',
-      }).select('farmerId').lean();
-      existing.forEach(p => alreadyDeductedSet.add(p.farmerId?.toString()));
+    if (welfareFixed > 0) {
+      const [pmtHits, regs] = await Promise.all([
+        FarmerPayment.find({
+          companyId,
+          status: { $ne: 'Cancelled' },
+          'deductions.type': 'Welfare Recovery',
+          'paymentPeriod.toDate': { $lt: start },
+        }).select('farmerId deductions').lean(),
+        PaymentRegister.find({
+          companyId,
+          registerType: 'Ledger',
+          fromDate: { $lt: start },
+        }).select('entries.farmerId entries.welfare').lean(),
+      ]);
+      pmtHits.forEach(p => {
+        const has = (p.deductions || []).some(d => d.type === 'Welfare Recovery' && (d.amount || 0) > 0);
+        if (has && p.farmerId) alreadyDeductedSet.add(p.farmerId.toString());
+      });
+      regs.forEach(r => {
+        (r.entries || []).forEach(e => {
+          if ((e.welfare || 0) > 0 && e.farmerId) alreadyDeductedSet.add(e.farmerId.toString());
+        });
+      });
     }
 
     const entries = [];
@@ -342,6 +356,10 @@ export const generateProducerPaymentRegister = async (req, res) => {
         loanAdv:         Math.round(loanAdv             * 100) / 100,
         netPay:          Math.round(netPayable          * 100) / 100,
         payStatus:       netPayable > 0 ? 'Payable' : netPayable < 0 ? 'Receivable' : '',
+        // Cycle 2+ marker: cf/cash/loan are authoritative carry values (already
+        // reduced by prior recoveries). Frontend uses this to skip the
+        // CattleFeedAdvance override that would otherwise restore the original.
+        hasPriorRegister: !!carry,
       });
     }
 

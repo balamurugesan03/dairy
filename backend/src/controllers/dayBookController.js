@@ -96,6 +96,47 @@ export const getDayBook = async (req, res) => {
         };
       }
 
+      // ── Bank Transfer / Cheque payment to producers ─────────────────────
+      // Voucher: Dr PRODUCERS DUES / Cr <bank ledger>
+      // Day Book treatment (adjustment column on both sides):
+      //   Receipt side : Bank ledger (with "Producer's Payment" narration)
+      //   Payment side : PRODUCERS DUES
+      if (voucher.voucherType === 'Payment' && voucher.referenceType === 'BankTransfer') {
+        for (const entry of voucher.entries) {
+          const baseEntry = {
+            date: voucher.voucherDate,
+            voucherNumber: voucher.voucherNumber,
+            voucherType: 'BankTransfer',                  // → Adjustment column
+            ledgerName: entry.ledgerName,
+            ledgerType: entry.ledgerId?.ledgerType,
+            voucherId: voucher._id,
+          };
+          if (entry.creditAmount > 0) {
+            // Bank ledger leg → Receipt side adjustment
+            const receiptEntry = {
+              ...baseEntry,
+              narration: `Producer's Payment — ${voucher.narration || ''}`.trim(),
+              amount: entry.creditAmount,
+            };
+            dateMap[dateKey].receiptSide.push(receiptEntry);
+            dateMap[dateKey].totalReceipts += entry.creditAmount;
+            receiptSide.push(receiptEntry);
+          }
+          if (entry.debitAmount > 0) {
+            // PRODUCERS DUES leg → Payment side adjustment
+            const paymentEntry = {
+              ...baseEntry,
+              narration: voucher.narration || '',
+              amount: entry.debitAmount,
+            };
+            dateMap[dateKey].paymentSide.push(paymentEntry);
+            dateMap[dateKey].totalPayments += entry.debitAmount;
+            paymentSide.push(paymentEntry);
+          }
+        }
+        continue;
+      }
+
       const isReceiptVoucher = voucher.voucherType === 'Receipt';
       const isPaymentVoucher = voucher.voucherType === 'Payment';
       const isSalesVoucher   = voucher.voucherType === 'Sales';

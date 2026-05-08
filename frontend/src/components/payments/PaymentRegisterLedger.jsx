@@ -321,6 +321,10 @@ const PaymentRegisterLedger = () => {
   const [toDate,        setToDate]        = useState(null);
   const [dateConfirmed, setDateConfirmed] = useState(false);
   const [settingsDays,  setSettingsDays]  = useState(15);
+  // Latest applied/saved cycle's toDate — used to lock date pickers so the
+  // user cannot pick a date inside an already-paid cycle.
+  const [latestPaidTo,  setLatestPaidTo]  = useState(null);
+  const minPickDate = latestPaidTo ? dayjs(latestPaidTo).add(1, 'day').toDate() : undefined;
 
   /* ─── data state ─── */
   const [rows,         setRows]         = useState([]);
@@ -394,6 +398,7 @@ const PaymentRegisterLedger = () => {
       setQuantityUnit(msRes?.data?.quantityUnit || 'Litre');
 
       const latestToDate = lpRes?.data?.latestToDate;
+      setLatestPaidTo(latestToDate || null);
 
       let from, to;
       if (latestToDate) {
@@ -447,6 +452,9 @@ const PaymentRegisterLedger = () => {
       locked:        false,
       paid:          false,
       bankPending:   false,
+      // Cycle 2+ marker — backend already carried (cfAdv - cfRec) from prior
+      // saved register. Stops applyCFAdvance from re-introducing the original.
+      _hasPriorRegister: !!e.hasPriorRegister,
     });
   };
 
@@ -519,13 +527,16 @@ const PaymentRegisterLedger = () => {
         if (r.farmerId && r.balance > 0) cfAdvMap[r.farmerId] = r.balance;
       });
 
-      // Apply CF advance balance. Skip if applyPrevCycle already set cfAdv (it already reflects
-      // the previous cycle's recovery). Only apply raw API balance on fresh load (no prev cycle).
+      // Apply CF advance balance. Skip when the backend already carried a
+      // value forward from a prior saved PaymentRegister (cycle 2+) — that
+      // carry equals (prev cycle's cfAdv − cfRec) and is authoritative.
+      // Otherwise, on a fresh first cycle, populate from the live CF Advance
+      // summary so the user sees the outstanding balance.
       const applyCFAdvance = (row) => {
+        if (row._hasPriorRegister) return row;             // backend carry wins
+        if (prevCycleRef.current[row.farmerId]) return row; // in-memory carry wins
         const cfBal = cfAdvMap[row.farmerId];
         if (!cfBal) return row;
-        // If prev cycle data exists, applyPrevCycle already computed cfAdv = cfAdv - cfRec
-        if (prevCycleRef.current[row.farmerId]) return row;
         return recalc({ ...row, cfAdv: cfBal, cfRec: cfBal });
       };
       const entries  = res?.data?.entries || [];
@@ -597,7 +608,11 @@ const PaymentRegisterLedger = () => {
         const mapped = entries
           .map((e, i) => {
             let row = toRow(e, i);
-            if (!n(row.welfare) && welfareAmt > 0) row = recalc({ ...row, welfare: welfareAmt });
+            // Welfare is once-per-farmer (lifetime). The backend already returns
+            // 0 for farmers who had welfare in any prior cycle — DON'T auto-fill
+            // here (would re-charge them). Only fill when the backend's entry
+            // omitted welfare entirely (legacy / first-cycle truly new farmers).
+            if (e.welfare == null && welfareAmt > 0) row = recalc({ ...row, welfare: welfareAmt });
             row = applyPrevCycle(row);
             row = applyCFAdvance(row);
             return mergePayment(row);
@@ -626,6 +641,8 @@ const PaymentRegisterLedger = () => {
           const mapped = openings
             .map((o, i) => {
               let row = openingToRow(o, i);
+              // Welfare auto-fill only when this farmer has never been welfare-
+              // deducted before. Re-uses the same lifetime check via mergePayment.
               if (!n(row.welfare) && welfareAmt > 0) row = recalc({ ...row, welfare: welfareAmt });
               row = applyPrevCycle(row);
               row = applyCFAdvance(row);
@@ -834,6 +851,13 @@ const PaymentRegisterLedger = () => {
     // Store carry-forward data for next cycle
     storeCycleData(filledRows);
 
+    // Lock the just-saved cycle: bump latestPaidTo so date pickers can't
+    // navigate back into this period without first deleting the saved register.
+    setLatestPaidTo(prev => {
+      const cur = prev ? new Date(prev) : null;
+      return (!cur || periodTo > cur) ? periodTo : prev;
+    });
+
     // Advance to next cycle — clear rows; user must click Generate to load next cycle
     const nextFrom = dayjs(periodTo).add(1, 'day').toDate();
     const nextTo   = dayjs(nextFrom).add(settingsDays - 1, 'day').toDate();
@@ -939,6 +963,10 @@ const PaymentRegisterLedger = () => {
               value={fromDate}
               onChange={handleFromDateChange}
               leftSection={<IconCalendar size={14} />}
+              minDate={minPickDate}
+              description={latestPaidTo
+                ? `Locked up to ${dayjs(latestPaidTo).format('DD/MM/YYYY')} (already paid)`
+                : undefined}
               size="sm"
             />
           </Grid.Col>
@@ -948,7 +976,7 @@ const PaymentRegisterLedger = () => {
               value={toDate}
               onChange={handleToDateChange}
               leftSection={<IconCalendar size={14} />}
-              minDate={fromDate || undefined}
+              minDate={fromDate || minPickDate}
               size="sm"
             />
           </Grid.Col>
