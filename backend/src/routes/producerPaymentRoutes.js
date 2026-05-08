@@ -8,6 +8,7 @@ import {
   deletePayment,
   getCycles,
   getBankTransferPaid,
+  getCyclePendingFarmers,
 } from '../controllers/producerPaymentController.js';
 
 const router = express.Router();
@@ -15,6 +16,7 @@ const router = express.Router();
 // Static routes must come before parameterised ones
 router.get('/producer-payments/cycles',             getCycles);
 router.get('/producer-payments/bank-transfer-paid', getBankTransferPaid);
+router.get('/producer-payments/pending-cycle',      getCyclePendingFarmers);
 router.get('/producer-payments',                    getPayments);
 router.post('/producer-payments',                   createPayment);
 router.get('/producer-payments/balance/:farmerId',  getProducerBalance);

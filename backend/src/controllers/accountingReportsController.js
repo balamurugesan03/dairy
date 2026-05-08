@@ -6,7 +6,6 @@ import FarmerPayment from '../models/FarmerPayment.js';
 import Advance from '../models/Advance.js';
 import ProducerReceipt from '../models/ProducerReceipt.js';
 import BankTransfer from '../models/BankTransfer.js';
-import MilkCollection from '../models/MilkCollection.js';
 import { getDateRange } from '../utils/dateFilters.js';
 import {
   calculateOpeningBalance,
@@ -79,11 +78,15 @@ export const getCashBook = async (req, res) => {
       .populate('entries.ledgerId', 'ledgerName ledgerType');
 
     // Direct cash receipts — Milk Sales (Cash)
+    // Skip rows that already have a Voucher posted (those are picked up by the
+    // voucher loop above via the Receipt voucher's Cash leg) — prevents the
+    // same LOCAL/SAMPLE sale from appearing twice in the Cash Book.
     const milkSalesCash = await MilkSales.find({
       companyId: req.companyId,
       date: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
       paymentType: 'Cash',
-      amount: { $gt: 0 }
+      amount: { $gt: 0 },
+      $or: [{ voucherId: { $exists: false } }, { voucherId: null }],
     }).sort({ date: 1 });
 
     // Direct cash receipts — Item Sales (Cash)
@@ -129,25 +132,6 @@ export const getCashBook = async (req, res) => {
       totalTransferAmount: { $gt: 0 },
       $or: [{ voucherId: { $exists: false } }, { voucherId: null }],
     }).sort({ applyDate: 1 });
-
-    // Milk Purchase day totals — Payment side (one entry per day)
-    const milkPurchaseDayTotals = await MilkCollection.aggregate([
-      {
-        $match: {
-          companyId: req.companyId,
-          date: { $gte: dateFilter.startDate, $lte: dateFilter.endDate }
-        }
-      },
-      {
-        $group: {
-          _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
-          totalAmount: { $sum: '$amount' },
-          totalQty: { $sum: '$qty' },
-          farmerCount: { $addToSet: '$farmer' }
-        }
-      },
-      { $sort: { _id: 1 } }
-    ]);
 
     // Collect raw transactions before sorting
     const rawTransactions = [];
@@ -258,18 +242,8 @@ export const getCashBook = async (req, res) => {
       });
     });
 
-    // Milk Purchase day totals — Payment side
-    milkPurchaseDayTotals.forEach(day => {
-      rawTransactions.push({
-        date: new Date(day._id),
-        voucherNumber: `MKP-${day._id.replace(/-/g, '')}`,
-        voucherType: 'MilkPurchase',
-        particulars: `Milk Purchase — ${day.farmerCount.length} farmers (${day.totalQty.toFixed(2)} L)`,
-        debit: 0,
-        credit: day.totalAmount,
-        narration: `Milk Purchase Day Total — ${day._id}`
-      });
-    });
+    // (Milk Purchase is a non-cash adjustment: Dr MILK PURCHASE / Cr PRODUCERS
+    // DUES. It never moves cash, so it must not appear in the Cash Book.)
 
     // Sort all by date
     rawTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));

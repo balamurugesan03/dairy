@@ -1,6 +1,8 @@
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
 import MilkCollection from '../models/MilkCollection.js';
+import UnionSalesSlip from '../models/UnionSalesSlip.js';
+import StockTransaction from '../models/StockTransaction.js';
 
 // Get Day Book report with date-wise grouping
 export const getDayBook = async (req, res) => {
@@ -74,6 +76,13 @@ export const getDayBook = async (req, res) => {
       // Includes legacy per-collection 'Journal' vouchers tagged as Purchase.
       if (voucher.voucherType === 'MilkPurchase') continue;
       if (voucher.voucherType === 'Journal' && voucher.referenceType === 'Purchase') continue;
+      // Same pattern for Union Sales: per-slip journal vouchers are replaced
+      // by a single combined AM+PM adjustment line per day (built below).
+      if (voucher.voucherType === 'Journal' && voucher.referenceType === 'UnionSales') continue;
+      // Inventory Purchase vouchers — handled separately below so the day-book
+      // shows the supplier / commission / inspection legs on the receipt side
+      // and a single combined purchase line on the payment side.
+      if (voucher.voucherType === 'Purchase') continue;
 
       const dateKey = voucher.voucherDate.toISOString().split('T')[0];
 
@@ -254,6 +263,189 @@ export const getDayBook = async (req, res) => {
       dateMap[dateKey].paymentSide.push(milkPurchaseEntry);
       dateMap[dateKey].totalPayments += totalAmt;
       paymentSide.push(milkPurchaseEntry);
+    }
+
+    // --- Union Sales — single adjustment entry per day (AM+PM combined) ---
+    // Receipt side : UNION SALES   (income leg)
+    // Payment side : MILMA UNION   (advance-due-to-society leg)
+    // Amount       : day total (AM + PM); narration shows AM and PM lines.
+    const unionSalesShiftRows = await UnionSalesSlip.aggregate([
+      {
+        $match: {
+          companyId,
+          date: { $gte: start, $lte: end },
+          amount: { $gt: 0 }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            day:  { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+            time: '$time'
+          },
+          totalQty:    { $sum: '$qty' },
+          totalAmount: { $sum: '$amount' }
+        }
+      },
+      { $sort: { '_id.day': 1, '_id.time': 1 } }
+    ]);
+
+    const unionDayMap = {};
+    for (const r of unionSalesShiftRows) {
+      const dateKey = r._id.day;
+      const time    = (r._id.time || '').toUpperCase();
+      if (!unionDayMap[dateKey]) unionDayMap[dateKey] = {};
+      unionDayMap[dateKey][time] = { qty: r.totalQty, amount: r.totalAmount };
+    }
+
+    for (const dateKey of Object.keys(unionDayMap).sort()) {
+      const shifts = unionDayMap[dateKey];
+      const am = shifts['AM'] || { qty: 0, amount: 0 };
+      const pm = shifts['PM'] || { qty: 0, amount: 0 };
+
+      const totalAmt = (am.amount || 0) + (pm.amount || 0);
+      if (totalAmt <= 0) continue;
+
+      if (!dateMap[dateKey]) {
+        dateMap[dateKey] = {
+          date: dateKey,
+          receiptSide: [],
+          paymentSide: [],
+          totalReceipts: 0,
+          totalPayments: 0
+        };
+      }
+
+      const fmt = (n) => Number(n || 0).toFixed(2);
+      const narration = [
+        `AM, QTY ${fmt(am.qty)}, AMOUNT ${fmt(am.amount)}`,
+        `PM, QTY ${fmt(pm.qty)}, AMOUNT ${fmt(pm.amount)}`,
+      ].join('\n');
+
+      const voucherNumber = `USS-${dateKey.replace(/-/g, '')}`;
+
+      // Receipt side : UNION SALES (Cr leg)
+      const unionSalesEntry = {
+        date: new Date(dateKey),
+        voucherNumber,
+        voucherType: 'UnionSales',
+        ledgerName: 'UNION SALES',
+        narration,
+        amount: totalAmt
+      };
+      dateMap[dateKey].receiptSide.push(unionSalesEntry);
+      dateMap[dateKey].totalReceipts += totalAmt;
+      receiptSide.push(unionSalesEntry);
+
+      // Payment side : MILMA UNION (Dr leg)
+      const milmaUnionEntry = {
+        date: new Date(dateKey),
+        voucherNumber,
+        voucherType: 'UnionSales',
+        ledgerName: 'MILMA UNION',
+        narration,
+        amount: totalAmt
+      };
+      dateMap[dateKey].paymentSide.push(milmaUnionEntry);
+      dateMap[dateKey].totalPayments += totalAmt;
+      paymentSide.push(milmaUnionEntry);
+    }
+
+    // --- Inventory Purchase — adjustment column (one row per voucher) ---
+    // Receipt side : the non-cash Cr legs (Supplier, Cattle Feed Commission,
+    //                Inspection Fee, …) shown individually
+    // Payment side : a single combined line — the purchase ledger total (e.g.
+    //                CATTLE FEED PURCHASE) with the bill's qty + sales rate
+    // Cash/Bank legs are intentionally skipped so both sides balance to the
+    // non-cash adjustment portion of the bill.
+    const purchaseVouchers = vouchers.filter(v => v.voucherType === 'Purchase');
+
+    const fmt2 = (n) => Number(n || 0).toFixed(2);
+
+    for (const voucher of purchaseVouchers) {
+      const dateKey = voucher.voucherDate.toISOString().split('T')[0];
+      if (!dateMap[dateKey]) {
+        dateMap[dateKey] = {
+          date: dateKey,
+          receiptSide: [],
+          paymentSide: [],
+          totalReceipts: 0,
+          totalPayments: 0
+        };
+      }
+
+      // Pull related stock transactions for qty / purchase-rate / sales-rate
+      const stockTxns = await StockTransaction.find({ voucherId: voucher._id }).lean();
+      const totalQty = stockTxns.reduce((s, t) => s + (t.quantity || 0), 0);
+      const purchaseRate = totalQty > 0
+        ? stockTxns.reduce((s, t) => s + (t.quantity || 0) * (t.rate || 0), 0) / totalQty
+        : 0;
+      const salesRate = totalQty > 0
+        ? stockTxns.reduce((s, t) => s + (t.quantity || 0) * (t.salesRate || 0), 0) / totalQty
+        : 0;
+
+      // ── Payment side: sum non-cash Dr legs into one combined purchase row ──
+      let totalDr = 0;
+      let purchaseLedgerName = '';
+      for (const entry of voucher.entries) {
+        if (!(entry.debitAmount > 0)) continue;
+        const ledgerType = entry.ledgerId?.ledgerType;
+        if (cashBankTypes.has(ledgerType)) continue;
+        totalDr += entry.debitAmount;
+        // First non-GST debit ledger becomes the row label
+        if (!purchaseLedgerName && !/gst/i.test(entry.ledgerName || '')) {
+          purchaseLedgerName = entry.ledgerName;
+        }
+      }
+      if (!purchaseLedgerName) purchaseLedgerName = 'CATTLE FEED PURCHASE';
+
+      if (totalDr > 0) {
+        const paymentEntry = {
+          date: voucher.voucherDate,
+          voucherNumber: voucher.voucherNumber,
+          voucherType: 'InventoryPurchase',
+          ledgerName: purchaseLedgerName,
+          narration: `${purchaseLedgerName} :- Qty ${fmt2(totalQty)}, Sales Rate ${fmt2(salesRate)}`,
+          amount: totalDr
+        };
+        dateMap[dateKey].paymentSide.push(paymentEntry);
+        dateMap[dateKey].totalPayments += totalDr;
+        paymentSide.push(paymentEntry);
+      }
+
+      // ── Receipt side: each non-cash Cr leg as a separate row ──────────────
+      for (const entry of voucher.entries) {
+        if (!(entry.creditAmount > 0)) continue;
+        const ledgerType = entry.ledgerId?.ledgerType;
+        if (cashBankTypes.has(ledgerType)) continue;
+
+        const ledgerName = entry.ledgerName || '';
+        const isSupplier =
+          /supplier|sundry creditor/i.test(ledgerName) ||
+          /sundry creditor/i.test(ledgerType || '');
+
+        let displayName, narration;
+        if (isSupplier) {
+          displayName = 'Supplier Purchased';
+          narration = `Supplier :- Qty ${fmt2(totalQty)}, Purchase Rate ${fmt2(purchaseRate)}`;
+        } else {
+          const ratePerUnit = totalQty > 0 ? entry.creditAmount / totalQty : 0;
+          displayName = ledgerName;
+          narration = `${ledgerName} :- Qty ${fmt2(totalQty)}, Rate ${fmt2(ratePerUnit)}`;
+        }
+
+        const receiptEntry = {
+          date: voucher.voucherDate,
+          voucherNumber: voucher.voucherNumber,
+          voucherType: 'InventoryPurchase',
+          ledgerName: displayName,
+          narration,
+          amount: entry.creditAmount
+        };
+        dateMap[dateKey].receiptSide.push(receiptEntry);
+        dateMap[dateKey].totalReceipts += entry.creditAmount;
+        receiptSide.push(receiptEntry);
+      }
     }
 
     // --- Build dayWiseData with chained opening/closing balances ---

@@ -1026,6 +1026,7 @@ export const producerPaymentAPI = {
   delete:              (id)            => api.delete(`/producer-payments/${id}`).then(res => res.data).catch(handleError),
   getCycles:           ()              => api.get('/producer-payments/cycles').then(res => res.data).catch(handleError),
   getBankTransferPaid: (params)        => api.get('/producer-payments/bank-transfer-paid', { params }).then(res => res.data).catch(handleError),
+  getPendingForCycle:  (params)        => api.get('/producer-payments/pending-cycle',      { params }).then(res => res.data).catch(handleError),
 };
 
 // ── Producer Opening API ───────────────────────────────────────────────────────

@@ -195,7 +195,9 @@ export const getItemStockHistory = async (itemId, startDate = null, endDate = nu
   return transactions;
 };
 
-// Get current stock report for all items
+// Get current stock report for all items.
+// `Item` does not store a purchaseRate field — derive it from each item's most
+// recent Stock In transaction so the Stock Report column actually populates.
 export const getStockReport = async (category = null, status = 'Active', companyId = null) => {
   const query = { status };
   if (category) {
@@ -207,19 +209,43 @@ export const getStockReport = async (category = null, status = 'Active', company
 
   const items = await Item.find(query)
     .sort({ itemName: 1 })
-    .select('itemCode itemName category unit currentBalance purchaseRate salesRate');
+    .select('itemCode itemName category unit currentBalance salesRate');
 
-  return items.map(item => ({
-    _id: item._id,
-    itemCode: item.itemCode,
-    itemName: item.itemName,
-    category: item.category,
-    unit: item.unit,
-    currentBalance: item.currentBalance,
-    purchaseRate: item.purchaseRate,
-    salesRate: item.salesRate,
-    stockValue: item.currentBalance * item.purchaseRate
-  }));
+  // Latest Stock In rate per item (most recent purchase price)
+  const itemIds = items.map(i => i._id);
+  const latestPurchases = itemIds.length
+    ? await StockTransaction.aggregate([
+        {
+          $match: {
+            ...(companyId && { companyId }),
+            itemId: { $in: itemIds },
+            transactionType: 'Stock In',
+            referenceType: 'Purchase',
+            rate: { $gt: 0 },
+          },
+        },
+        { $sort: { purchaseDate: -1, date: -1 } },
+        { $group: { _id: '$itemId', rate: { $first: '$rate' } } },
+      ])
+    : [];
+
+  const purchaseRateMap = {};
+  for (const p of latestPurchases) purchaseRateMap[p._id.toString()] = p.rate || 0;
+
+  return items.map(item => {
+    const purchaseRate = purchaseRateMap[item._id.toString()] || 0;
+    return {
+      _id: item._id,
+      itemCode: item.itemCode,
+      itemName: item.itemName,
+      category: item.category,
+      unit: item.unit,
+      currentBalance: item.currentBalance,
+      purchaseRate,
+      salesRate: item.salesRate,
+      stockValue: (item.currentBalance || 0) * purchaseRate,
+    };
+  });
 };
 
 export default {

@@ -625,11 +625,20 @@ export const getInventoryPurchaseRegister = async (req, res) => {
     const end = new Date(endDate);
     end.setHours(23, 59, 59, 999);
 
+    // Filter on the user-entered purchaseDate (falls back to the auto `date`
+    // for legacy transactions that pre-date the explicit field). This ensures
+    // purchases dated 5-4-26 are reported on 5-4-26, not on the day they were
+    // entered.
     const query = {
       companyId: req.companyId,
       transactionType: 'Stock In',
       referenceType: 'Purchase',
-      date: { $gte: start, $lte: end }
+      $expr: {
+        $and: [
+          { $gte: [{ $ifNull: ['$purchaseDate', '$date'] }, start] },
+          { $lte: [{ $ifNull: ['$purchaseDate', '$date'] }, end] }
+        ]
+      }
     };
     if (itemId) query.itemId = itemId;
     if (supplierId) query.supplierId = supplierId;
@@ -637,7 +646,7 @@ export const getInventoryPurchaseRegister = async (req, res) => {
     const transactions = await StockTransaction.find(query)
       .populate('itemId', 'itemName unit')
       .populate('ledgerEntries.ledgerId', 'ledgerName')
-      .sort({ date: 1 });
+      .sort({ purchaseDate: 1, date: 1 });
 
     const rows = transactions.map(t => {
       const qty       = t.quantity || 0;
@@ -646,12 +655,13 @@ export const getInventoryPurchaseRegister = async (req, res) => {
       // Purchase Amount = Sales Rate × Qty
       const purchAmount = parseFloat((salesRate * qty).toFixed(2));
 
-      // Split earnings into the two component ledgers (CF Commission + Inspection Fee)
+      // ledgerEntries[].amount is stored as the per-unit (per-bag) rate, so
+      // multiply by qty to get the total earnings booked for this bill.
       let cattleFeedCommission = 0;
       let inspectionFee = 0;
       (t.ledgerEntries || []).forEach(le => {
         const name = (le.ledgerId?.ledgerName || '').toLowerCase();
-        const amt  = le.amount || 0;
+        const amt  = (le.amount || 0) * qty;
         if (name.includes('cattle feed commission')) cattleFeedCommission += amt;
         else if (name.includes('inspection fee'))    inspectionFee        += amt;
       });
@@ -661,7 +671,8 @@ export const getInventoryPurchaseRegister = async (req, res) => {
       const earnings = earningsFromLedger > 0 ? earningsFromLedger : (t.ledgerDeduction || 0);
 
       return {
-        date: t.date,
+        // Reported date = user-entered purchaseDate (fallback to auto `date`)
+        date: t.purchaseDate || t.date,
         invoiceNo: t.invoiceNumber || '-',
         invoiceDate: t.invoiceDate || null,
         supplier: t.supplierName || '-',
@@ -806,9 +817,13 @@ export const getStockRegister = async (req, res) => {
     const initialOB = {};
     items.forEach(item => { initialOB[item._id.toString()] = item.openingBalance || 0; });
 
-    // Calculate OB at start of the period from pre-period transactions
-    const preTxns = await StockTransaction.find({ companyId: req.companyId, date: { $lt: start } })
-      .select('itemId transactionType quantity');
+    // Calculate OB at start of the period from pre-period transactions.
+    // Use the user-entered purchaseDate when present so legacy entries keyed
+    // by their auto `date` still fall back correctly.
+    const preTxns = await StockTransaction.find({
+      companyId: req.companyId,
+      $expr: { $lt: [{ $ifNull: ['$purchaseDate', '$date'] }, start] },
+    }).select('itemId transactionType quantity');
     const obMap = { ...initialOB };
     preTxns.forEach(txn => {
       const id = txn.itemId?.toString();
@@ -817,22 +832,59 @@ export const getStockRegister = async (req, res) => {
       else if (txn.transactionType === 'Stock Out') obMap[id] -= txn.quantity;
     });
 
-    // Fetch transactions within the period
-    const transactions = await StockTransaction.find({ companyId: req.companyId, date: { $gte: start, $lte: end } })
+    // Fetch transactions within the period (filter on purchaseDate fallback)
+    const transactions = await StockTransaction.find({
+      companyId: req.companyId,
+      $expr: {
+        $and: [
+          { $gte: [{ $ifNull: ['$purchaseDate', '$date'] }, start] },
+          { $lte: [{ $ifNull: ['$purchaseDate', '$date'] }, end] }
+        ]
+      }
+    })
       .populate('itemId', 'itemCode itemName measurement unit salesRate')
-      .sort({ date: 1 });
+      .populate('ledgerEntries.ledgerId', 'ledgerName')
+      .sort({ purchaseDate: 1, date: 1 });
 
     const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    // Sum qty × per-bag rate from ledgerEntries — total earnings booked for
+    // a Stock In bill, split into Cattle Feed Commission and Inspection Fee.
+    const computeEarnings = (txn) => {
+      const qty = txn.quantity || 0;
+      let commission = 0;
+      let inspection = 0;
+      (txn.ledgerEntries || []).forEach(le => {
+        const name = (le.ledgerId?.ledgerName || '').toLowerCase();
+        const total = (le.amount || 0) * qty;
+        if (name.includes('cattle feed commission')) commission += total;
+        else if (name.includes('inspection fee'))    inspection += total;
+      });
+      return { commission, inspection, total: commission + inspection };
+    };
 
     const applyTxn = (group, txn) => {
       if (txn.transactionType === 'Stock In') {
         if (txn.referenceType === 'Return') group.salesReturn += txn.quantity;
-        else group.purchase += txn.quantity;
+        else {
+          group.purchase += txn.quantity;
+          // Aggregate earnings only on actual purchases (not returns)
+          const e = computeEarnings(txn);
+          group.cattleFeedCommission += e.commission;
+          group.inspectionFee        += e.inspection;
+          group.totalEarnings        += e.total;
+        }
       } else if (txn.transactionType === 'Stock Out') {
         if (txn.referenceType === 'Return') group.purchaseReturn += txn.quantity;
         else group.sales += txn.quantity;
       }
     };
+
+    const newGroup = (base) => ({
+      ...base,
+      purchase: 0, salesReturn: 0, sales: 0, purchaseReturn: 0,
+      cattleFeedCommission: 0, inspectionFee: 0, totalEarnings: 0,
+    });
 
     const buildRow = (group, ob, extra = {}) => {
       const total = ob + group.purchase + group.salesReturn;
@@ -850,7 +902,11 @@ export const getStockRegister = async (req, res) => {
         sales: parseFloat(group.sales).toFixed(3),
         purchaseReturn: parseFloat(group.purchaseReturn).toFixed(3),
         closingStock: parseFloat(closing).toFixed(3),
-        stockValue: parseFloat(closing * rate).toFixed(2)
+        stockValue: parseFloat(closing * rate).toFixed(2),
+        // Earnings columns — totals (qty × per-bag rate) booked for the period
+        cattleFeedCommission: parseFloat(group.cattleFeedCommission || 0).toFixed(2),
+        inspectionFee:        parseFloat(group.inspectionFee        || 0).toFixed(2),
+        totalEarnings:        parseFloat(group.totalEarnings        || 0).toFixed(2),
       };
     };
 
@@ -863,14 +919,13 @@ export const getStockRegister = async (req, res) => {
         if (!txn.itemId) return;
         const id = txn.itemId._id.toString();
         if (!groups[id]) {
-          groups[id] = {
+          groups[id] = newGroup({
             itemId: id,
             itemName: txn.itemId.itemName,
             unit: txn.itemId.unit,
             measurement: txn.itemId.measurement,
             rate: txn.itemId.salesRate,
-            purchase: 0, salesReturn: 0, sales: 0, purchaseReturn: 0
-          };
+          });
         }
         applyTxn(groups[id], txn);
       });
@@ -881,13 +936,12 @@ export const getStockRegister = async (req, res) => {
         const ob = obMap[id] || 0;
         const g = groups[id];
         if (!g && ob === 0) return; // skip if no ob and no transactions
-        const group = g || {
+        const group = g || newGroup({
           itemName: item.itemName,
           unit: item.unit,
           measurement: item.measurement,
           rate: item.salesRate,
-          purchase: 0, salesReturn: 0, sales: 0, purchaseReturn: 0
-        };
+        });
         reportData.push(buildRow(group, ob));
       });
       reportData.sort((a, b) => a.itemName.localeCompare(b.itemName));
@@ -896,20 +950,20 @@ export const getStockRegister = async (req, res) => {
       const dayGroups = {};
       transactions.forEach(txn => {
         if (!txn.itemId) return;
-        const dateKey = txn.date.toISOString().split('T')[0];
+        const txnDate = txn.purchaseDate || txn.date;
+        const dateKey = txnDate.toISOString().split('T')[0];
         const id = txn.itemId._id.toString();
         const key = `${dateKey}__${id}`;
         if (!dayGroups[key]) {
-          dayGroups[key] = {
-            date: txn.date,
+          dayGroups[key] = newGroup({
+            date: txnDate,
             dateKey,
             itemId: id,
             itemName: txn.itemId.itemName,
             unit: txn.itemId.unit,
             measurement: txn.itemId.measurement,
             rate: txn.itemId.salesRate,
-            purchase: 0, salesReturn: 0, sales: 0, purchaseReturn: 0
-          };
+          });
         }
         applyTxn(dayGroups[key], txn);
       });
@@ -933,12 +987,12 @@ export const getStockRegister = async (req, res) => {
       const monthGroups = {};
       transactions.forEach(txn => {
         if (!txn.itemId) return;
-        const d = new Date(txn.date);
+        const d = new Date(txn.purchaseDate || txn.date);
         const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         const id = txn.itemId._id.toString();
         const key = `${monthKey}__${id}`;
         if (!monthGroups[key]) {
-          monthGroups[key] = {
+          monthGroups[key] = newGroup({
             monthKey,
             monthLabel: `${MONTH_NAMES[d.getMonth()]}-${d.getFullYear()}`,
             itemId: id,
@@ -946,8 +1000,7 @@ export const getStockRegister = async (req, res) => {
             unit: txn.itemId.unit,
             measurement: txn.itemId.measurement,
             rate: txn.itemId.salesRate,
-            purchase: 0, salesReturn: 0, sales: 0, purchaseReturn: 0
-          };
+          });
         }
         applyTxn(monthGroups[key], txn);
       });
@@ -975,7 +1028,10 @@ export const getStockRegister = async (req, res) => {
       sales: sumField('sales').toFixed(3),
       purchaseReturn: sumField('purchaseReturn').toFixed(3),
       closingStock: sumField('closingStock').toFixed(3),
-      stockValue: sumField('stockValue').toFixed(2)
+      stockValue: sumField('stockValue').toFixed(2),
+      cattleFeedCommission: sumField('cattleFeedCommission').toFixed(2),
+      inspectionFee:        sumField('inspectionFee').toFixed(2),
+      totalEarnings:        sumField('totalEarnings').toFixed(2),
     };
 
     res.status(200).json({

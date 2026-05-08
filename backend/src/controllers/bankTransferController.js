@@ -4,6 +4,8 @@ import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
 import CollectionCenter from '../models/CollectionCenter.js';
 import FarmerPayment from '../models/FarmerPayment.js';
+import PaymentRegister from '../models/PaymentRegister.js';
+import ProducerPayment from '../models/ProducerPayment.js';
 import mongoose from 'mongoose';
 import { generateVoucherNumber, updateLedgerBalances } from '../utils/accountingHelper.js';
 
@@ -45,23 +47,76 @@ export const retrieveBalances = async (req, res) => {
     // Build cycle filter for FarmerPayment (±2 day window for IST/UTC offset).
     // When a cycle is provided, only payments whose paymentPeriod matches that cycle count.
     let cycleFpFilter = null;
+    let cycleRegisterEntryByFarmer = null; // Map<farmerId, register entry>
+    let cycleRegisterFarmerIds = null;     // Set<farmerId> of farmers in the saved cycle
+    let alreadyPaidSet = new Set();        // farmerIds already paid (cash + bank) for the cycle
     if (cycleFromDate && cycleToDate) {
       const dayMs    = 24 * 60 * 60 * 1000;
       const fromMid  = new Date(cycleFromDate);
       const toMid    = new Date(cycleToDate);
+      const range = (mid) => ({
+        $gte: new Date(mid.getTime() - 2 * dayMs),
+        $lte: new Date(mid.getTime() + 2 * dayMs),
+      });
       cycleFpFilter = {
-        'paymentPeriod.fromDate': {
-          $gte: new Date(fromMid.getTime() - 2 * dayMs),
-          $lte: new Date(fromMid.getTime() + 2 * dayMs),
-        },
-        'paymentPeriod.toDate': {
-          $gte: new Date(toMid.getTime() - 2 * dayMs),
-          $lte: new Date(toMid.getTime() + 2 * dayMs),
-        },
+        'paymentPeriod.fromDate': range(fromMid),
+        'paymentPeriod.toDate':   range(toMid),
       };
+
+      // Source the farmer list from the saved PaymentRegister for this cycle —
+      // PaymentRegister.entries is the cycle's source of truth (e.g. all 95
+      // farmers), whereas FarmerPayment records may exist only for the subset
+      // that the user locked + saved (e.g. just 11 of 95).
+      const register = await PaymentRegister.findOne({
+        companyId:    new mongoose.Types.ObjectId(companyId),
+        registerType: { $in: ['Ledger', 'Producers'] },
+        fromDate:     range(fromMid),
+        toDate:       range(toMid),
+        status:       { $in: ['Saved', 'Printed'] },
+      })
+        .sort({ updatedAt: -1 })
+        .lean();
+
+      if (register?.entries?.length) {
+        cycleRegisterEntryByFarmer = {};
+        cycleRegisterFarmerIds     = new Set();
+        for (const e of register.entries) {
+          const fid = e.farmerId?.toString();
+          if (!fid) continue;
+          cycleRegisterFarmerIds.add(fid);
+          cycleRegisterEntryByFarmer[fid] = e;
+        }
+      }
+
+      // Build "already paid" set so those farmers are excluded from the queue:
+      //   • cash payments via Payment to Producer (ProducerPayment)
+      //   • bank transfers already applied (FarmerPayment status=Paid)
+      const cashPaid = await ProducerPayment.find({
+        companyId: new mongoose.Types.ObjectId(companyId),
+        'processingPeriod.fromDate': range(fromMid),
+        'processingPeriod.toDate':   range(toMid),
+      }).select('farmerId').lean();
+      cashPaid.forEach(p => p.farmerId && alreadyPaidSet.add(p.farmerId.toString()));
+
+      const bankPaid = await FarmerPayment.find({
+        companyId:     new mongoose.Types.ObjectId(companyId),
+        paymentSource: 'BankTransfer',
+        status:        'Paid',
+        'paymentPeriod.fromDate': range(fromMid),
+        'paymentPeriod.toDate':   range(toMid),
+      }).select('farmerId').lean();
+      bankPaid.forEach(p => p.farmerId && alreadyPaidSet.add(p.farmerId.toString()));
     }
 
     for (const farmer of farmers) {
+      const farmerIdStr = farmer._id.toString();
+
+      // Cycle selected & saved register found → restrict to the register's farmer list
+      // so all entries in the saved cycle (e.g. all 95) are eligible to appear.
+      if (cycleRegisterFarmerIds && !cycleRegisterFarmerIds.has(farmerIdStr)) continue;
+
+      // Skip farmers already paid (cash or bank) for this cycle
+      if (alreadyPaidSet.has(farmerIdStr)) continue;
       // Calculate net payable based on transfer basis
       let netPayable = 0;
 
@@ -94,7 +149,21 @@ export const retrieveBalances = async (req, res) => {
         }
       }
 
-      // When a cycle is selected, only include farmers who have payments in that cycle
+      // Fallback: if no FarmerPayment record exists for this farmer in the cycle,
+      // use the saved PaymentRegister entry's netPay so all farmers in the saved
+      // cycle appear (not only the ones that were locked + saved as BankTransfer).
+      const registerEntry = cycleRegisterEntryByFarmer?.[farmerIdStr];
+      if (netPayable === 0 && registerEntry) {
+        netPayable = registerEntry.netPay || 0;
+        const regMode = registerEntry.payMode || registerEntry.paymentMode;
+        if (regMode) {
+          paymentMode = regMode === 'Cash' ? 'Cash' : 'Bank Transfer';
+        }
+      }
+
+      // When a cycle is selected and we have no register fallback, only include
+      // farmers who have a non-zero balance in the cycle (legacy path — keeps
+      // old behaviour for cycles whose PaymentRegister was deleted).
       if (cycleFpFilter && netPayable === 0) {
         continue;
       }

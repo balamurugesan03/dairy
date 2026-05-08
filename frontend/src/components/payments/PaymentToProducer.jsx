@@ -95,6 +95,7 @@ export default function PaymentToProducer() {
   // ── Table state ─────────────────────────────────────────────────────────────
   const [payments, setPayments] = useState([]);
   const [bankTransferRows, setBankTransferRows] = useState([]);
+  const [pendingRows, setPendingRows] = useState([]);
   const [tableLoading, setTableLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
@@ -168,12 +169,27 @@ export default function PaymentToProducer() {
     }
   }, [periodConfirmed, selectedCycle]);
 
+  // ─── Load pending farmers from the saved cycle (not yet paid) ───────────────
+  const loadPendingRows = useCallback(async () => {
+    if (!periodConfirmed || !selectedCycle) { setPendingRows([]); return; }
+    try {
+      const res = await producerPaymentAPI.getPendingForCycle({
+        cycleFromDate: dayjs(selectedCycle.fromDate).format('YYYY-MM-DD'),
+        cycleToDate:   dayjs(selectedCycle.toDate).format('YYYY-MM-DD'),
+      });
+      setPendingRows(res?.data || []);
+    } catch {
+      setPendingRows([]);
+    }
+  }, [periodConfirmed, selectedCycle]);
+
   useEffect(() => {
     if (periodConfirmed) {
       loadPayments();
       loadBankTransferRows();
+      loadPendingRows();
     }
-  }, [loadPayments, loadBankTransferRows]);
+  }, [loadPayments, loadBankTransferRows, loadPendingRows]);
 
   // ─── Handle period OK / Cancel ──────────────────────────────────────────────
   const handleOK = () => {
@@ -645,7 +661,7 @@ export default function PaymentToProducer() {
 
               {tableLoading ? (
                 <Center py="xl"><Loader size="md" /></Center>
-              ) : payments.length === 0 && bankTransferRows.length === 0 ? (
+              ) : payments.length === 0 && bankTransferRows.length === 0 && pendingRows.length === 0 ? (
                 <Center py="xl">
                   <Text c="dimmed" size="sm">
                     {periodConfirmed
@@ -697,6 +713,48 @@ export default function PaymentToProducer() {
                           {pmt.status === 'Cancelled' && (
                             <Badge size="xs" color="red" variant="light">Cancelled</Badge>
                           )}
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+
+                    {/* ── Pending farmers from the saved cycle ───────────── */}
+                    {pendingRows.length > 0 && (
+                      <Table.Tr style={{ background: 'var(--mantine-color-yellow-0)' }}>
+                        <Table.Td colSpan={8} py={4}>
+                          <Group gap="xs">
+                            <IconAlertCircle size={13} color="var(--mantine-color-yellow-7)" />
+                            <Text size="xs" fw={700} c="yellow.8">
+                              Pending in this Cycle ({pendingRows.length} farmer{pendingRows.length > 1 ? 's' : ''}) — click <b>Pay</b> to fill the form
+                            </Text>
+                          </Group>
+                        </Table.Td>
+                      </Table.Tr>
+                    )}
+                    {pendingRows.map((row, idx) => (
+                      <Table.Tr key={`pending-${row.farmerId}`} style={{ background: 'var(--mantine-color-yellow-0)' }}>
+                        <Table.Td ta="center"><Text size="xs" c="dimmed">{idx + 1}</Text></Table.Td>
+                        <Table.Td><Text size="xs">{row.producerId || '-'}</Text></Table.Td>
+                        <Table.Td><Text size="xs">{row.producerName || '-'}</Text></Table.Td>
+                        <Table.Td><Text size="xs" c="dimmed">—</Text></Table.Td>
+                        <Table.Td ta="right"><Text size="xs">₹ {fmt(row.netPay)}</Text></Table.Td>
+                        <Table.Td>
+                          <Badge size="xs" color={row.paymentMode === 'Cash' ? 'green' : 'indigo'} variant="light">
+                            {row.paymentMode === 'Cash' ? 'Cash' : 'Bank'}
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td><Text size="xs" c="dimmed">—</Text></Table.Td>
+                        <Table.Td ta="center" className="no-print">
+                          <Button
+                            size="xs"
+                            variant="light"
+                            color="yellow"
+                            onClick={() => {
+                              setProducerIdInput(row.producerId || '');
+                              setTimeout(() => fetchProducerBalance(), 50);
+                            }}
+                          >
+                            Pay
+                          </Button>
                         </Table.Td>
                       </Table.Tr>
                     ))}

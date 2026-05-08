@@ -53,6 +53,74 @@ export const getCycles = async (req, res) => {
   }
 };
 
+// ─── Get Pending Farmers in a Saved Cycle ─────────────────────────────────────
+// Returns the saved PaymentRegister's farmer list for the cycle, minus any
+// farmer already paid via cash (ProducerPayment) or bank transfer
+// (FarmerPayment with paymentSource=BankTransfer + status=Paid). Lets the
+// Payment to Producer screen show the same farmer set as Bank Transfer.
+export const getCyclePendingFarmers = async (req, res) => {
+  try {
+    const { cycleFromDate, cycleToDate } = req.query;
+    const companyId = new mongoose.Types.ObjectId(req.userCompany);
+
+    if (!cycleFromDate || !cycleToDate) return res.json({ success: true, data: [] });
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    const fromMid = new Date(cycleFromDate);
+    const toMid   = new Date(cycleToDate);
+    const range = (mid) => ({
+      $gte: new Date(mid.getTime() - 2 * dayMs),
+      $lte: new Date(mid.getTime() + 2 * dayMs),
+    });
+
+    const register = await PaymentRegister.findOne({
+      companyId,
+      registerType: { $in: ['Ledger', 'Producers'] },
+      fromDate:     range(fromMid),
+      toDate:       range(toMid),
+      status:       { $in: ['Saved', 'Printed'] },
+    })
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    if (!register?.entries?.length) return res.json({ success: true, data: [] });
+
+    // Build the "already paid" set
+    const alreadyPaid = new Set();
+
+    const cashPaid = await ProducerPayment.find({
+      companyId,
+      'processingPeriod.fromDate': range(fromMid),
+      'processingPeriod.toDate':   range(toMid),
+    }).select('farmerId').lean();
+    cashPaid.forEach(p => p.farmerId && alreadyPaid.add(p.farmerId.toString()));
+
+    const bankPaid = await FarmerPayment.find({
+      companyId,
+      paymentSource: 'BankTransfer',
+      status:        'Paid',
+      'paymentPeriod.fromDate': range(fromMid),
+      'paymentPeriod.toDate':   range(toMid),
+    }).select('farmerId').lean();
+    bankPaid.forEach(p => p.farmerId && alreadyPaid.add(p.farmerId.toString()));
+
+    const data = register.entries
+      .filter(e => e.farmerId && !alreadyPaid.has(e.farmerId.toString()))
+      .map(e => ({
+        farmerId:     e.farmerId,
+        producerId:   e.producerId   || e.productId   || '',
+        producerName: e.producerName || e.productName || '',
+        netPay:       e.netPay || 0,
+        paymentMode:  e.payMode || e.paymentMode || 'Bank',
+      }));
+
+    res.json({ success: true, data });
+  } catch (err) {
+    console.error('getCyclePendingFarmers error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // ─── Get Bank-Transfer-Paid Farmers for a Cycle ────────────────────────────────
 export const getBankTransferPaid = async (req, res) => {
   try {
@@ -350,15 +418,33 @@ export const getProducerBalance = async (req, res) => {
       balance = balanceAgg[0].totalNetPayable;
     }
 
-    // Fallback: look up the latest saved PaymentRegister cycle for this farmer
+    // Fallback: look up the latest saved PaymentRegister cycle for this farmer.
+    // Use a ±2-day window on fromDate/toDate (matching the bank-transfer cycle
+    // filter) so timezone offsets don't drop the match. Include both Ledger
+    // and Producers register types.
     if (balance === 0) {
       const prMatch = {
-        companyId:    new mongoose.Types.ObjectId(companyId),
-        registerType: 'Ledger',
+        companyId:          new mongoose.Types.ObjectId(companyId),
+        registerType:       { $in: ['Ledger', 'Producers'] },
         'entries.farmerId': new mongoose.Types.ObjectId(farmerId),
       };
-      if (fromDate) prMatch.fromDate = { $gte: new Date(fromDate) };
-      if (toDate)   prMatch.toDate   = { $lte: new Date(new Date(toDate).setHours(23, 59, 59, 999)) };
+      if (fromDate || toDate) {
+        const dayMs = 24 * 60 * 60 * 1000;
+        if (fromDate) {
+          const mid = new Date(fromDate);
+          prMatch.fromDate = {
+            $gte: new Date(mid.getTime() - 2 * dayMs),
+            $lte: new Date(mid.getTime() + 2 * dayMs),
+          };
+        }
+        if (toDate) {
+          const mid = new Date(toDate);
+          prMatch.toDate = {
+            $gte: new Date(mid.getTime() - 2 * dayMs),
+            $lte: new Date(mid.getTime() + 2 * dayMs),
+          };
+        }
+      }
 
       const latestRegister = await PaymentRegister.findOne(prMatch)
         .sort({ toDate: -1, createdAt: -1 })

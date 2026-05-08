@@ -122,17 +122,25 @@ const DayBook = () => {
       const dayData = dayMap.get(dateKey);
 
       if (dayData) {
-        // Build receipt/payment entries
+        // Build receipt/payment entries.
+        // Cash column = transactions that actually moved cash (Receipt/Payment vouchers).
+        // Adjustment column = non-cash bookkeeping (Journal vouchers, credit sales,
+        // and synthetic aggregated rows like MilkPurchase / UnionSales).
         const mapEntry = (entry) => {
-          const isMilkEntry = entry.voucherType === 'MilkPurchase' || entry.voucherType === 'ProducersDue';
+          const isAdjustment =
+            entry.voucherType === 'Journal' ||
+            entry.voucherType === 'MilkPurchase' ||
+            entry.voucherType === 'ProducersDue' ||
+            entry.voucherType === 'UnionSales' ||
+            entry.voucherType === 'InventoryPurchase';
           return {
             description: entry.ledgerName || entry.narration || 'Miscellaneous',
             narration: entry.narration || '',
             voucherNumber: entry.voucherNumber || '',
-            cash: isMilkEntry ? 0 : entry.amount,
-            adjustment: isMilkEntry ? entry.amount : 0,
+            cash: isAdjustment ? 0 : entry.amount,
+            adjustment: isAdjustment ? entry.amount : 0,
             total: entry.amount,
-            isMilkEntry
+            isMilkEntry: isAdjustment
           };
         };
 
@@ -332,6 +340,7 @@ const DayBook = () => {
     .db-ledger thead th.db-col-desc { text-align: left; }
     .db-ledger tbody td { border: 1px solid #e0e0e0; padding: ${isPortrait ? '1.5px 3px' : '2px 5px'}; font-size: ${tdFontSize}; }
     .db-cell-desc { text-align: left; max-width: ${descMax}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .db-cell-narration { display: block; font-size: 0.85em; color: #666; font-weight: 400; white-space: pre-line; overflow: hidden; }
     .db-cell-vno { text-align: center; color: #666; font-size: ${isPortrait ? '7.5px' : '8.5px'}; }
     .db-cell-amt { text-align: right; font-variant-numeric: tabular-nums; }
     .db-cell-total { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }

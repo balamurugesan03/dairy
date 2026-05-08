@@ -256,9 +256,8 @@
   font-size: 0.75em;
   color: var(--mantine-color-dimmed);
   font-weight: 400;
-  white-space: nowrap;
+  white-space: pre-line;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .db-cell-vno {

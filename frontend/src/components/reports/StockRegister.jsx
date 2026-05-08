@@ -98,7 +98,10 @@ const StockRegister = () => {
       Item: r.itemName, Unit: r.unit, Rate: r.rate,
       Opening: r.ob, Purchase: r.purchase, 'Sale Return': r.salesReturn,
       Total: r.total, Sales: r.sales, 'Purch. Return': r.purchaseReturn,
-      Closing: r.closingStock, 'Stock Value': r.stockValue
+      Closing: r.closingStock, 'Stock Value': r.stockValue,
+      'Cattle Feed Comm.': r.cattleFeedCommission,
+      'Inspection Fee':    r.inspectionFee,
+      'Total Earnings':    r.totalEarnings,
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -135,7 +138,7 @@ const StockRegister = () => {
       // Group header
       result.push(
         <Table.Tr key={`hdr-${key}`} style={{ background: '#dbeafe' }}>
-          <Table.Td colSpan={12} style={{ padding: '5px 12px', fontWeight: 800, color: '#1d4ed8', fontSize: 12 }}>
+          <Table.Td colSpan={15} style={{ padding: '5px 12px', fontWeight: 800, color: '#1d4ed8', fontSize: 12 }}>
             <Group gap="xs">
               <IconBox size={14} />
               <span>{key}</span>
@@ -168,6 +171,9 @@ const StockRegister = () => {
             <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#be185d' }}>{fmt3(row.purchaseReturn)}</Table.Td>
             <Table.Td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: '#065f46' }}>{fmt3(row.closingStock)}</Table.Td>
             <Table.Td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>₹{fmt2(row.stockValue)}</Table.Td>
+            <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#166534' }}>₹{fmt2(row.cattleFeedCommission)}</Table.Td>
+            <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#166534' }}>₹{fmt2(row.inspectionFee)}</Table.Td>
+            <Table.Td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: '#166534' }}>₹{fmt2(row.totalEarnings)}</Table.Td>
           </Table.Tr>
         );
       });
@@ -192,22 +198,28 @@ const StockRegister = () => {
         <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#be185d' }}>{fmt3(row.purchaseReturn)}</Table.Td>
         <Table.Td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: '#065f46' }}>{fmt3(row.closingStock)}</Table.Td>
         <Table.Td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>₹{fmt2(row.stockValue)}</Table.Td>
+        <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#166534' }}>₹{fmt2(row.cattleFeedCommission)}</Table.Td>
+        <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#166534' }}>₹{fmt2(row.inspectionFee)}</Table.Td>
+        <Table.Td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: '#166534' }}>₹{fmt2(row.totalEarnings)}</Table.Td>
       </Table.Tr>
     ));
 
   const COL_HEADERS = [
-    { label: '#',            style: thStyle },
-    { label: 'Item Name',    style: thStyle },
-    { label: 'Unit',         style: { ...thStyle, textAlign: 'center' } },
-    { label: 'Rate',         style: thStyleR },
-    { label: 'Opening',      style: thStyleR },
-    { label: 'Purchase',     style: thStyleR },
-    { label: 'Sale Return',  style: thStyleR },
-    { label: 'Total',        style: thStyleR },
-    { label: 'Sales',        style: thStyleR },
-    { label: 'Purch. Return',style: thStyleR },
-    { label: 'Closing',      style: thStyleR },
-    { label: 'Stock Value',  style: thStyleR },
+    { label: '#',                  style: thStyle },
+    { label: 'Item Name',          style: thStyle },
+    { label: 'Unit',               style: { ...thStyle, textAlign: 'center' } },
+    { label: 'Rate',               style: thStyleR },
+    { label: 'Opening',            style: thStyleR },
+    { label: 'Purchase',           style: thStyleR },
+    { label: 'Sale Return',        style: thStyleR },
+    { label: 'Total',              style: thStyleR },
+    { label: 'Sales',              style: thStyleR },
+    { label: 'Purch. Return',      style: thStyleR },
+    { label: 'Closing',            style: thStyleR },
+    { label: 'Stock Value',        style: thStyleR },
+    { label: 'Cattle Feed Comm.',  style: thStyleR },
+    { label: 'Inspection Fee',     style: thStyleR },
+    { label: 'Total Earnings',     style: thStyleR },
   ];
 
   return (
@@ -373,6 +385,9 @@ const StockRegister = () => {
                     <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#be185d' }}>{fmt3(gt.purchaseReturn)}</Table.Td>
                     <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#065f46' }}>{fmt3(gt.closingStock)}</Table.Td>
                     <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800 }}>₹{fmt2(gt.stockValue)}</Table.Td>
+                    <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#166534' }}>₹{fmt2(gt.cattleFeedCommission)}</Table.Td>
+                    <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#166534' }}>₹{fmt2(gt.inspectionFee)}</Table.Td>
+                    <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#166534' }}>₹{fmt2(gt.totalEarnings)}</Table.Td>
                   </Table.Tr>
                 </Table.Tfoot>
               )}
