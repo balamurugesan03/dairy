@@ -16,7 +16,6 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import '../CashBook.css';
 
 const VyaparCashBook = () => {
   const { selectedCompany, selectedBusinessType } = useCompany();
