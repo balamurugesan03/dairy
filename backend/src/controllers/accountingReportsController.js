@@ -90,11 +90,18 @@ export const getCashBook = async (req, res) => {
     }).sort({ date: 1 });
 
     // Direct cash receipts — Item Sales (Cash)
+    // Skip rows that already have a Voucher posted (those are picked up by the
+    // voucher loop above via the Sales voucher's Cash leg) — prevents the same
+    // cash inventory sale from appearing twice in the Cash Book.
     const itemSalesCash = await Sales.find({
       companyId: req.companyId,
       billDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
       paymentMode: 'Cash',
-      paidAmount: { $gt: 0 }
+      paidAmount: { $gt: 0 },
+      $or: [
+        { ledgerEntries: { $exists: false } },
+        { ledgerEntries: { $size: 0 } }
+      ]
     }).sort({ billDate: 1 });
 
     // Direct cash payments — Farmer Payments (Cash)

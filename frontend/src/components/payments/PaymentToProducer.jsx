@@ -36,11 +36,10 @@ import {
   IconCheck,
   IconBuildingBank,
   IconUser,
-  IconAlertCircle,
 } from '@tabler/icons-react';
 import { useReactToPrint } from 'react-to-print';
 import dayjs from 'dayjs';
-import { collectionCenterAPI, farmerAPI, producerPaymentAPI, producerOpeningAPI } from '../../services/api';
+import { collectionCenterAPI, farmerAPI, producerPaymentAPI } from '../../services/api';
 
 /* ─── Formatters ─────────────────────────────────────────────────────────────── */
 const fmt = (v) =>
@@ -88,6 +87,8 @@ export default function PaymentToProducer() {
   const [printSlip, setPrintSlip] = useState(false);
   const [selectedFarmer, setSelectedFarmer] = useState(null);
   const [bankTransferPaid, setBankTransferPaid] = useState(false);
+  const [alreadyPaidCash, setAlreadyPaidCash] = useState(false);
+  const [cashPaymentInfo, setCashPaymentInfo] = useState(null);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
@@ -95,7 +96,6 @@ export default function PaymentToProducer() {
   // ── Table state ─────────────────────────────────────────────────────────────
   const [payments, setPayments] = useState([]);
   const [bankTransferRows, setBankTransferRows] = useState([]);
-  const [pendingRows, setPendingRows] = useState([]);
   const [tableLoading, setTableLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
@@ -169,27 +169,12 @@ export default function PaymentToProducer() {
     }
   }, [periodConfirmed, selectedCycle]);
 
-  // ─── Load pending farmers from the saved cycle (not yet paid) ───────────────
-  const loadPendingRows = useCallback(async () => {
-    if (!periodConfirmed || !selectedCycle) { setPendingRows([]); return; }
-    try {
-      const res = await producerPaymentAPI.getPendingForCycle({
-        cycleFromDate: dayjs(selectedCycle.fromDate).format('YYYY-MM-DD'),
-        cycleToDate:   dayjs(selectedCycle.toDate).format('YYYY-MM-DD'),
-      });
-      setPendingRows(res?.data || []);
-    } catch {
-      setPendingRows([]);
-    }
-  }, [periodConfirmed, selectedCycle]);
-
   useEffect(() => {
     if (periodConfirmed) {
       loadPayments();
       loadBankTransferRows();
-      loadPendingRows();
     }
-  }, [loadPayments, loadBankTransferRows, loadPendingRows]);
+  }, [loadPayments, loadBankTransferRows]);
 
   // ─── Handle period OK / Cancel ──────────────────────────────────────────────
   const handleOK = () => {
@@ -228,17 +213,17 @@ export default function PaymentToProducer() {
         periodParams.toDate   = dayjs(selectedCycle.toDate).format('YYYY-MM-DD');
       }
 
-      const [balanceRes, openingRes] = await Promise.all([
-        producerPaymentAPI.getProducerBalance(farmer._id, periodParams),
-        producerOpeningAPI.getByFarmer(farmer._id),
-      ]);
+      const balanceRes = await producerPaymentAPI.getProducerBalance(farmer._id, periodParams);
 
       if (balanceRes?.success) {
         const isBT = balanceRes.data?.bankTransferPaid || false;
-        const payBalance = balanceRes.data?.balance || 0;
-        const openingDue = Number(openingRes?.data?.dueAmount) || 0;
+        const isCashPaid = balanceRes.data?.alreadyPaidCash || false;
+        const cashInfo = balanceRes.data?.cashPayment || null;
+        // Last Abstract Balance = the saved cycle's NET PAY for this farmer.
+        // Do not add producer-opening dues — that inflates the figure.
+        const netPay = balanceRes.data?.balance || 0;
 
-        setAbstractBalance(payBalance + openingDue);
+        setAbstractBalance(netPay);
         setSelectedFarmer({
           _id: farmer._id,
           farmerNumber: farmer.farmerNumber,
@@ -247,6 +232,8 @@ export default function PaymentToProducer() {
           accountNumber: balanceRes.data?.farmer?.accountNumber || farmer.bankDetails?.accountNumber || '',
         });
         setBankTransferPaid(isBT);
+        setAlreadyPaidCash(isCashPaid);
+        setCashPaymentInfo(cashInfo);
 
         if (isBT) {
           notifications.show({
@@ -255,14 +242,23 @@ export default function PaymentToProducer() {
             color: 'orange',
             icon: <IconBuildingBank size={16} />,
           });
+        } else if (isCashPaid) {
+          notifications.show({
+            title: 'Already Paid',
+            message: `This producer was already paid in this cycle on ${cashInfo?.paymentDate ? dayjs(cashInfo.paymentDate).format('DD/MM/YYYY') : '-'} (₹${fmt(cashInfo?.amountPaid)}).`,
+            color: 'orange',
+            icon: <IconCash size={16} />,
+          });
         }
-        return { bankTransferPaid: isBT };
+        return { bankTransferPaid: isBT, alreadyPaidCash: isCashPaid };
       }
     } catch (err) {
       notifications.show({ title: 'Error', message: err?.message || 'Failed to fetch producer balance', color: 'red' });
       setSelectedFarmer(null);
       setAbstractBalance(0);
       setBankTransferPaid(false);
+      setAlreadyPaidCash(false);
+      setCashPaymentInfo(null);
     } finally {
       setBalanceLoading(false);
     }
@@ -274,7 +270,7 @@ export default function PaymentToProducer() {
     if (e.key === 'Enter') {
       e.preventDefault();
       const result = await fetchProducerBalance();
-      if (result && !result.bankTransferPaid) {
+      if (result && !result.bankTransferPaid && !result.alreadyPaidCash) {
         setTimeout(() => {
           amountPaidWrapRef.current?.querySelector('input')?.focus();
         }, 50);
@@ -290,6 +286,14 @@ export default function PaymentToProducer() {
     }
     if (bankTransferPaid) {
       notifications.show({ title: 'Blocked', message: 'This producer is already paid via Bank Transfer', color: 'orange' });
+      return;
+    }
+    if (alreadyPaidCash && !editingId) {
+      notifications.show({
+        title: 'Blocked',
+        message: 'This producer has already been paid in this cycle. Re-entry is not allowed.',
+        color: 'orange',
+      });
       return;
     }
     const paid = parseFloat(amountPaid);
@@ -382,6 +386,8 @@ export default function PaymentToProducer() {
     setSelectedFarmer(null);
     setEditingId(null);
     setBankTransferPaid(false);
+    setAlreadyPaidCash(false);
+    setCashPaymentInfo(null);
   };
 
   // ─── Print ──────────────────────────────────────────────────────────────────
@@ -539,6 +545,21 @@ export default function PaymentToProducer() {
                       <Text size="xs" fw={600}>Already paid by Bank Transfer for this cycle</Text>
                     </Alert>
                   )}
+                  {alreadyPaidCash && !bankTransferPaid && (
+                    <Alert
+                      mt={4}
+                      p="xs"
+                      color="orange"
+                      icon={<IconCash size={14} />}
+                    >
+                      <Text size="xs" fw={600}>
+                        Already paid in this cycle
+                        {cashPaymentInfo?.paymentDate && ` on ${dayjs(cashPaymentInfo.paymentDate).format('DD/MM/YYYY')}`}
+                        {cashPaymentInfo?.amountPaid != null && ` — ₹ ${fmt(cashPaymentInfo.amountPaid)}`}
+                        {cashPaymentInfo?.refNo && `, Ref ${cashPaymentInfo.refNo}`}
+                      </Text>
+                    </Alert>
+                  )}
                 </Box>
 
                 <TextInput
@@ -566,7 +587,7 @@ export default function PaymentToProducer() {
                     min={0}
                     decimalScale={2}
                     prefix="₹ "
-                    disabled={bankTransferPaid}
+                    disabled={bankTransferPaid || (alreadyPaidCash && !editingId)}
                   />
                 </Box>
 
@@ -575,7 +596,7 @@ export default function PaymentToProducer() {
                   data={['Cash', 'Bank', 'Cheque', 'UPI', 'NEFT', 'RTGS']}
                   value={paymentMode}
                   onChange={setPaymentMode}
-                  disabled={bankTransferPaid}
+                  disabled={bankTransferPaid || (alreadyPaidCash && !editingId)}
                 />
 
                 <Checkbox
@@ -585,7 +606,12 @@ export default function PaymentToProducer() {
                 />
 
                 <Group justify="flex-start" mt="xs">
-                  <Button color="blue" loading={saving} onClick={handleSave} disabled={bankTransferPaid}>
+                  <Button
+                    color="blue"
+                    loading={saving}
+                    onClick={handleSave}
+                    disabled={bankTransferPaid || (alreadyPaidCash && !editingId)}
+                  >
                     Save
                   </Button>
                   <Button variant="outline" onClick={resetDetailsForm}>
@@ -661,7 +687,7 @@ export default function PaymentToProducer() {
 
               {tableLoading ? (
                 <Center py="xl"><Loader size="md" /></Center>
-              ) : payments.length === 0 && bankTransferRows.length === 0 && pendingRows.length === 0 ? (
+              ) : payments.length === 0 && bankTransferRows.length === 0 ? (
                 <Center py="xl">
                   <Text c="dimmed" size="sm">
                     {periodConfirmed
@@ -713,48 +739,6 @@ export default function PaymentToProducer() {
                           {pmt.status === 'Cancelled' && (
                             <Badge size="xs" color="red" variant="light">Cancelled</Badge>
                           )}
-                        </Table.Td>
-                      </Table.Tr>
-                    ))}
-
-                    {/* ── Pending farmers from the saved cycle ───────────── */}
-                    {pendingRows.length > 0 && (
-                      <Table.Tr style={{ background: 'var(--mantine-color-yellow-0)' }}>
-                        <Table.Td colSpan={8} py={4}>
-                          <Group gap="xs">
-                            <IconAlertCircle size={13} color="var(--mantine-color-yellow-7)" />
-                            <Text size="xs" fw={700} c="yellow.8">
-                              Pending in this Cycle ({pendingRows.length} farmer{pendingRows.length > 1 ? 's' : ''}) — click <b>Pay</b> to fill the form
-                            </Text>
-                          </Group>
-                        </Table.Td>
-                      </Table.Tr>
-                    )}
-                    {pendingRows.map((row, idx) => (
-                      <Table.Tr key={`pending-${row.farmerId}`} style={{ background: 'var(--mantine-color-yellow-0)' }}>
-                        <Table.Td ta="center"><Text size="xs" c="dimmed">{idx + 1}</Text></Table.Td>
-                        <Table.Td><Text size="xs">{row.producerId || '-'}</Text></Table.Td>
-                        <Table.Td><Text size="xs">{row.producerName || '-'}</Text></Table.Td>
-                        <Table.Td><Text size="xs" c="dimmed">—</Text></Table.Td>
-                        <Table.Td ta="right"><Text size="xs">₹ {fmt(row.netPay)}</Text></Table.Td>
-                        <Table.Td>
-                          <Badge size="xs" color={row.paymentMode === 'Cash' ? 'green' : 'indigo'} variant="light">
-                            {row.paymentMode === 'Cash' ? 'Cash' : 'Bank'}
-                          </Badge>
-                        </Table.Td>
-                        <Table.Td><Text size="xs" c="dimmed">—</Text></Table.Td>
-                        <Table.Td ta="center" className="no-print">
-                          <Button
-                            size="xs"
-                            variant="light"
-                            color="yellow"
-                            onClick={() => {
-                              setProducerIdInput(row.producerId || '');
-                              setTimeout(() => fetchProducerBalance(), 50);
-                            }}
-                          >
-                            Pay
-                          </Button>
                         </Table.Td>
                       </Table.Tr>
                     ))}

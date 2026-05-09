@@ -67,8 +67,11 @@ import {
   IconUsers,
   IconAlertCircle,
   IconLock,
-  IconCircleCheck
+  IconCircleCheck,
+  IconEye,
+  IconEdit
 } from '@tabler/icons-react';
+import { modals } from '@mantine/modals';
 import { farmerAPI, itemAPI, salesAPI, customerAPI, collectionCenterAPI, subsidyAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 
@@ -95,6 +98,8 @@ const BillingForm = () => {
   const [formReady, setFormReady] = useState(false);
   const [dateError, setDateError] = useState('');
   const [checkingDate, setCheckingDate] = useState(false);
+  const [lastCycleEnd, setLastCycleEnd] = useState(null);
+  const [deletingBillId, setDeletingBillId] = useState(null);
 
   const form = useForm({
     initialValues: {
@@ -144,11 +149,22 @@ const BillingForm = () => {
     fetchCustomers();
     fetchCollectionCenters();
     fetchSubsidies();
+    fetchCycleBounds();
     // Auto-activate today's date so the form is usable immediately on open
     if (form.values.billDate) {
       handleDateChange(form.values.billDate);
     }
   }, []);
+
+  const fetchCycleBounds = async () => {
+    try {
+      const response = await salesAPI.getCycleBounds();
+      const end = response?.data?.lastCycleToDate;
+      setLastCycleEnd(end ? new Date(end) : null);
+    } catch (error) {
+      setLastCycleEnd(null);
+    }
+  };
 
   const fetchNextBillNumber = async () => {
     try {
@@ -244,7 +260,11 @@ const BillingForm = () => {
     try {
       const response = await collectionCenterAPI.getAll();
       const centersData = response?.data || response || [];
-      setCollectionCenters(Array.isArray(centersData) ? centersData.filter(c => c.status === 'Active') : []);
+      const active = Array.isArray(centersData) ? centersData.filter(c => c.status === 'Active') : [];
+      setCollectionCenters(active);
+      if (active.length && !form.values.collectionCenterId) {
+        form.setFieldValue('collectionCenterId', active[0]._id);
+      }
     } catch (error) {
       setCollectionCenters([]);
     }
@@ -433,6 +453,34 @@ const BillingForm = () => {
     setBillItems(billItems.filter((_, i) => i !== index));
   };
 
+  const handleDeleteBill = (bill) => {
+    modals.openConfirmModal({
+      title: 'Delete Bill',
+      centered: true,
+      children: (
+        <Text size="sm">
+          Delete bill <b>{bill.billNumber}</b> for <b>{bill.customerName || 'Walk-in'}</b>?
+          This will reverse stock and ledger entries and cannot be undone.
+        </Text>
+      ),
+      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          setDeletingBillId(bill._id);
+          await salesAPI.delete(bill._id);
+          notifications.show({ title: 'Deleted', message: `Bill ${bill.billNumber} removed`, color: 'green' });
+          if (form.values.billDate) await fetchBillsByDate(form.values.billDate);
+          await fetchNextBillNumber();
+        } catch (error) {
+          notifications.show({ title: 'Error', message: error.message || 'Failed to delete bill', color: 'red' });
+        } finally {
+          setDeletingBillId(null);
+        }
+      }
+    });
+  };
+
   const handleItemQuantityChange = (index, newQty) => {
     const updatedItems = [...billItems];
     const item = updatedItems[index];
@@ -512,6 +560,10 @@ const BillingForm = () => {
 
     setSaving(true);
     try {
+      const paid = parseFloat(form.values.paidAmount) || 0;
+      // If the user saves without entering any paid amount, treat the bill
+      // as a credit/debt sale regardless of which payment-mode chip is on.
+      const effectivePaymentMode = paid > 0 ? form.values.paymentMode : 'Credit';
       const payload = {
         billDate: form.values.billDate ? new Date(form.values.billDate).toISOString() : new Date().toISOString(),
         customerType: form.values.customerType,
@@ -533,9 +585,9 @@ const BillingForm = () => {
         totalDue: calculations.totalDue,
         collectionCenterId: form.values.collectionCenterId || null,
         subsidyId: form.values.subsidyId || null,
-        paymentMode: form.values.paymentMode,
-        paidAmount: parseFloat(form.values.paidAmount) || 0,
-        balanceAmount: calculations.totalDue - (parseFloat(form.values.paidAmount) || 0)
+        paymentMode: effectivePaymentMode,
+        paidAmount: paid,
+        balanceAmount: Math.max(0, calculations.grandTotal - paid)
       };
 
       await salesAPI.create(payload);
@@ -630,7 +682,7 @@ const BillingForm = () => {
   placeholder="Select bill date first"
   size="xs"
   w={185}
-  minDate={new Date(new Date().setHours(0, 0, 0, 0))}
+  minDate={lastCycleEnd ? dayjs(lastCycleEnd).add(1, 'day').startOf('day').toDate() : undefined}
   maxDate={new Date(new Date().setHours(23, 59, 59, 999))}
   error={!!dateError}
   styles={{
@@ -1068,6 +1120,7 @@ const BillingForm = () => {
                         <Table.Th style={{ textAlign: 'right' }}>Balance</Table.Th>
                         <Table.Th>Status</Table.Th>
                         <Table.Th>Payment</Table.Th>
+                        <Table.Th style={{ textAlign: 'center', width: 90 }}>Actions</Table.Th>
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
@@ -1104,6 +1157,31 @@ const BillingForm = () => {
                           </Table.Td>
                           <Table.Td>
                             <Text size="xs" c="dimmed">{bill.paymentMode || '-'}</Text>
+                          </Table.Td>
+                          <Table.Td>
+                            <Group gap={4} justify="center" wrap="nowrap">
+                              <Tooltip label="View / Edit" withArrow>
+                                <ActionIcon
+                                  size="sm"
+                                  variant="light"
+                                  color="blue"
+                                  onClick={() => navigate(`/sales/view/${bill._id}`)}
+                                >
+                                  <IconEdit size={14} />
+                                </ActionIcon>
+                              </Tooltip>
+                              <Tooltip label="Delete" withArrow>
+                                <ActionIcon
+                                  size="sm"
+                                  variant="light"
+                                  color="red"
+                                  loading={deletingBillId === bill._id}
+                                  onClick={() => handleDeleteBill(bill)}
+                                >
+                                  <IconTrash size={14} />
+                                </ActionIcon>
+                              </Tooltip>
+                            </Group>
                           </Table.Td>
                         </Table.Tr>
                       ))}

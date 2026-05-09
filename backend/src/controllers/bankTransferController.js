@@ -6,6 +6,7 @@ import CollectionCenter from '../models/CollectionCenter.js';
 import FarmerPayment from '../models/FarmerPayment.js';
 import PaymentRegister from '../models/PaymentRegister.js';
 import ProducerPayment from '../models/ProducerPayment.js';
+import { saveWithUniqueNumber } from '../models/Counter.js';
 import mongoose from 'mongoose';
 import { generateVoucherNumber, updateLedgerBalances } from '../utils/accountingHelper.js';
 
@@ -290,39 +291,43 @@ export const applyBankTransfer = async (req, res) => {
       throw new Error('No approved transfers to process');
     }
 
-    // Create bank transfer record
-    const bankTransfer = new BankTransfer({
+    // Create bank transfer record (with retry on transferNumber collisions)
+    const bankTransfer = await saveWithUniqueNumber({
+      Model:       BankTransfer,
       companyId,
-      transferBasis,
-      asOnDate: new Date(asOnDate),
-      applyDate: new Date(applyDate),
-      collectionCenter: collectionCenter && collectionCenter !== 'all' ? collectionCenter : null,
-      collectionCenterName: collectionCenterName || 'All',
-      bank: bank && bank !== 'all' ? bank : null,
-      bankName: bankName || 'All',
-      roundDownAmount: parseInt(roundDownAmount) || 10,
-      dueByList,
-      transferDetails: approvedTransfers.map(d => ({
-        farmerId: d.farmerId,
-        producerId: d.producerId,
-        producerName: d.producerName,
-        netPayable: d.netPayable,
-        transferAmount: d.transferAmount,
-        paymentMode: d.paymentMode || d.mode || 'Bank Transfer',
-        approved: true,
-        bankDetails: d.bankDetails,
-        transferStatus: 'Pending'
-      })),
-      status: 'Applied',
-      createdBy: req.user?._id,
-      appliedBy: req.user?._id,
-      appliedAt: new Date(),
-      chequeNumber: chequeNumber || '',
-      chequeDate:   chequeDate ? new Date(chequeDate) : null,
-      remarks
+      prefix:      'BT',
+      numberField: 'transferNumber',
+      build: () => new BankTransfer({
+        companyId,
+        transferBasis,
+        asOnDate: new Date(asOnDate),
+        applyDate: new Date(applyDate),
+        collectionCenter: collectionCenter && collectionCenter !== 'all' ? collectionCenter : null,
+        collectionCenterName: collectionCenterName || 'All',
+        bank: bank && bank !== 'all' ? bank : null,
+        bankName: bankName || 'All',
+        roundDownAmount: parseInt(roundDownAmount) || 10,
+        dueByList,
+        transferDetails: approvedTransfers.map(d => ({
+          farmerId: d.farmerId,
+          producerId: d.producerId,
+          producerName: d.producerName,
+          netPayable: d.netPayable,
+          transferAmount: d.transferAmount,
+          paymentMode: d.paymentMode || d.mode || 'Bank Transfer',
+          approved: true,
+          bankDetails: d.bankDetails,
+          transferStatus: 'Pending'
+        })),
+        status: 'Applied',
+        createdBy: req.user?._id,
+        appliedBy: req.user?._id,
+        appliedAt: new Date(),
+        chequeNumber: chequeNumber || '',
+        chequeDate:   chequeDate ? new Date(chequeDate) : null,
+        remarks
+      }),
     });
-
-    await bankTransfer.save();
 
     // Mark each farmer's pending BankTransfer-source FarmerPayment as Paid
     for (const d of approvedTransfers) {

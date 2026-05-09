@@ -136,7 +136,7 @@ const SalesList = () => {
   };
 
   const exportCSV = () => {
-    const headers = ['Bill No', 'Date', 'Customer', 'Type', 'Subtotal', 'GST', 'Discount', 'Grand Total', 'Paid', 'Balance', 'Status', 'Payment Mode'];
+    const headers = ['Bill No', 'Date', 'Customer', 'Type', 'Subtotal', 'GST', 'Discount', 'Subsidy', 'Round Off', 'Grand Total', 'Old Balance', 'Total Due', 'Paid', 'Balance', 'Status', 'Payment Mode'];
     const rows = filteredSales.map(s => [
       s.billNumber,
       dayjs(s.billDate).format('DD-MM-YYYY'),
@@ -145,7 +145,11 @@ const SalesList = () => {
       (s.subtotal || 0).toFixed(2),
       (s.totalGst || 0).toFixed(2),
       (s.discount || 0).toFixed(2),
+      (s.totalSubsidy || 0).toFixed(2),
+      (s.roundOff || 0).toFixed(2),
       (s.grandTotal || 0).toFixed(2),
+      (s.oldBalance || 0).toFixed(2),
+      (s.totalDue || 0).toFixed(2),
       (s.paidAmount || 0).toFixed(2),
       (s.balanceAmount || 0).toFixed(2),
       s.status || '',
@@ -370,9 +374,12 @@ const SalesList = () => {
                         <Table.Tr>
                           <Table.Th>#</Table.Th>
                           <Table.Th>Item Name</Table.Th>
+                          <Table.Th>HSN</Table.Th>
                           <Table.Th ta="right">Qty</Table.Th>
+                          <Table.Th>Unit</Table.Th>
                           <Table.Th ta="right">Rate (₹)</Table.Th>
                           <Table.Th ta="right">GST Amt (₹)</Table.Th>
+                          <Table.Th ta="right">Subsidy (₹)</Table.Th>
                           <Table.Th ta="right">Amount (₹)</Table.Th>
                         </Table.Tr>
                       </Table.Thead>
@@ -381,9 +388,14 @@ const SalesList = () => {
                           <Table.Tr key={idx}>
                             <Table.Td>{idx + 1}</Table.Td>
                             <Table.Td fw={500}>{item.itemName || '-'}</Table.Td>
+                            <Table.Td>{item.hsnCode || '-'}</Table.Td>
                             <Table.Td ta="right">{item.quantity ?? 0}</Table.Td>
+                            <Table.Td>{item.unit || '-'}</Table.Td>
                             <Table.Td ta="right">{(item.rate || 0).toFixed(2)}</Table.Td>
                             <Table.Td ta="right">{(item.gstAmount || 0).toFixed(2)}</Table.Td>
+                            <Table.Td ta="right" c={item.subsidyAmount > 0 ? 'green' : 'dimmed'}>
+                              {(item.subsidyAmount || 0).toFixed(2)}
+                            </Table.Td>
                             <Table.Td ta="right" fw={500}>{(item.amount || 0).toFixed(2)}</Table.Td>
                           </Table.Tr>
                         ))}
@@ -441,11 +453,69 @@ const SalesList = () => {
                 )
               },
               {
+                accessor: 'subtotal',
+                title: 'Subtotal',
+                textAlign: 'right',
+                render: (row) => (
+                  <Text size="sm">₹{(row.subtotal || 0).toFixed(2)}</Text>
+                )
+              },
+              {
+                accessor: 'totalGst',
+                title: 'GST',
+                textAlign: 'right',
+                render: (row) => (
+                  <Text size="sm" c={(row.totalGst || 0) > 0 ? 'orange' : 'dimmed'}>
+                    ₹{(row.totalGst || 0).toFixed(2)}
+                  </Text>
+                )
+              },
+              {
+                accessor: 'discount',
+                title: 'Discount',
+                textAlign: 'right',
+                render: (row) => (
+                  <Text size="sm" c={(row.discount || 0) > 0 ? 'red' : 'dimmed'}>
+                    ₹{(row.discount || 0).toFixed(2)}
+                  </Text>
+                )
+              },
+              {
+                accessor: 'totalSubsidy',
+                title: 'Subsidy',
+                textAlign: 'right',
+                render: (row) => (
+                  <Text size="sm" c={(row.totalSubsidy || 0) > 0 ? 'green' : 'dimmed'}>
+                    ₹{(row.totalSubsidy || 0).toFixed(2)}
+                  </Text>
+                )
+              },
+              {
                 accessor: 'grandTotal',
                 title: 'Grand Total',
                 textAlign: 'right',
                 render: (row) => (
                   <Text size="sm" fw={600}>₹{(row.grandTotal || 0).toFixed(2)}</Text>
+                )
+              },
+              {
+                accessor: 'oldBalance',
+                title: 'Old Bal',
+                textAlign: 'right',
+                render: (row) => (
+                  <Text size="sm" c={(row.oldBalance || 0) > 0 ? 'orange' : 'dimmed'}>
+                    ₹{(row.oldBalance || 0).toFixed(2)}
+                  </Text>
+                )
+              },
+              {
+                accessor: 'totalDue',
+                title: 'Total Due',
+                textAlign: 'right',
+                render: (row) => (
+                  <Text size="sm" fw={600} c={(row.totalDue || 0) > 0 ? 'red' : 'dimmed'}>
+                    ₹{(row.totalDue || 0).toFixed(2)}
+                  </Text>
                 )
               },
               {

@@ -4,6 +4,7 @@ import Farmer from '../models/Farmer.js';
 import FarmerPayment from '../models/FarmerPayment.js';
 import PaymentRegister from '../models/PaymentRegister.js';
 import Voucher from '../models/Voucher.js';
+import { saveWithUniqueNumber } from '../models/Counter.js';
 import { createProducerDuesPaymentVoucher } from '../utils/accountingHelper.js';
 
 function fmtDateDMY(d) {
@@ -192,7 +193,42 @@ export const createPayment = async (req, res) => {
       return res.status(400).json({ success: false, message: 'paymentDate is required' });
     }
 
-    const payment = new ProducerPayment({
+    // Block duplicate cash payment for the same farmer + cycle so the operator
+    // cannot re-enter a producer who has already been paid in this applied cycle.
+    const dupCash = await ProducerPayment.findOne({
+      companyId:                   new mongoose.Types.ObjectId(req.userCompany),
+      farmerId:                    new mongoose.Types.ObjectId(farmerId),
+      status:                      { $ne: 'Cancelled' },
+      'processingPeriod.fromDate': cycleDateRange(processingPeriod.fromDate),
+      'processingPeriod.toDate':   cycleDateRange(processingPeriod.toDate),
+    }).select('_id amountPaid paymentDate refNo').lean();
+
+    if (dupCash) {
+      return res.status(409).json({
+        success: false,
+        message: `Already paid in this cycle on ${fmtDateDMY(dupCash.paymentDate)} (₹${(dupCash.amountPaid || 0).toFixed(2)}${dupCash.refNo ? `, Ref ${dupCash.refNo}` : ''}).`,
+        data: { alreadyPaidCash: true, cashPayment: dupCash },
+      });
+    }
+
+    // Also block if a Bank Transfer is already applied for this cycle.
+    const btDup = await FarmerPayment.exists({
+      companyId:                  new mongoose.Types.ObjectId(req.userCompany),
+      farmerId:                   new mongoose.Types.ObjectId(farmerId),
+      paymentSource:              'BankTransfer',
+      status:                     'Paid',
+      'paymentPeriod.fromDate':   cycleDateRange(processingPeriod.fromDate),
+      'paymentPeriod.toDate':     cycleDateRange(processingPeriod.toDate),
+    });
+    if (btDup) {
+      return res.status(409).json({
+        success: false,
+        message: 'This producer has already been paid via Bank Transfer for this cycle.',
+        data: { bankTransferPaid: true },
+      });
+    }
+
+    const buildPayment = () => new ProducerPayment({
       companyId: req.userCompany,
       farmerId,
       amountPaid,
@@ -214,7 +250,16 @@ export const createPayment = async (req, res) => {
       createdBy: req.user?._id
     });
 
-    await payment.save();
+    // Save with retry on duplicate paymentNumber + counter resync on the 3rd
+    // attempt. Handles cases where the counter lags behind existing records
+    // (DB restore / seed / out-of-band insert).
+    const payment = await saveWithUniqueNumber({
+      Model:       ProducerPayment,
+      companyId:   req.userCompany,
+      prefix:      'PTP',
+      numberField: 'paymentNumber',
+      build:       buildPayment,
+    });
 
     // Update the corresponding FarmerPayment record to reflect this cash payment
     try {
@@ -398,65 +443,66 @@ export const getProducerBalance = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Farmer not found' });
     }
 
-    // Build FarmerPayment match — filter by period if provided
-    const fpMatch = {
-      companyId: new mongoose.Types.ObjectId(companyId),
-      farmerId:  new mongoose.Types.ObjectId(farmerId),
-      status:    { $in: ['Pending', 'Partial'] },
+    // ── Last Abstract Balance = the saved cycle's NET PAY for this farmer ──
+    // Look up the PaymentRegister entry for this farmer in the selected cycle
+    // and return entry.netPay as the abstract balance. This is the gross amount
+    // the society owes the farmer at cycle close (after deductions but before
+    // any cash/bank payment). FarmerPayment.balanceAmount is "deductions
+    // unrecovered" and is no longer used here.
+    let balance = 0;
+    const prMatch = {
+      companyId:          new mongoose.Types.ObjectId(companyId),
+      registerType:       { $in: ['Ledger', 'Producers'] },
+      'entries.farmerId': new mongoose.Types.ObjectId(farmerId),
+      status:             { $in: ['Saved', 'Printed'] },
     };
-    if (fromDate) fpMatch['paymentPeriod.fromDate'] = { $gte: new Date(fromDate) };
-    if (toDate)   fpMatch['paymentPeriod.toDate']   = { $lte: new Date(new Date(toDate).setHours(23, 59, 59, 999)) };
-
-    const balanceAgg = await FarmerPayment.aggregate([
-      { $match: fpMatch },
-      { $group: { _id: null, totalBalance: { $sum: '$balanceAmount' }, totalNetPayable: { $sum: '$netPayable' } } }
-    ]);
-
-    // Use netPayable (amount owed) if balanceAmount is 0 due to paidAmount tracking issues
-    let balance = balanceAgg[0]?.totalBalance || 0;
-    if (balance === 0 && balanceAgg[0]?.totalNetPayable > 0) {
-      balance = balanceAgg[0].totalNetPayable;
+    if (fromDate || toDate) {
+      const dayMs = 24 * 60 * 60 * 1000;
+      if (fromDate) {
+        const mid = new Date(fromDate);
+        prMatch.fromDate = {
+          $gte: new Date(mid.getTime() - 2 * dayMs),
+          $lte: new Date(mid.getTime() + 2 * dayMs),
+        };
+      }
+      if (toDate) {
+        const mid = new Date(toDate);
+        prMatch.toDate = {
+          $gte: new Date(mid.getTime() - 2 * dayMs),
+          $lte: new Date(mid.getTime() + 2 * dayMs),
+        };
+      }
     }
 
-    // Fallback: look up the latest saved PaymentRegister cycle for this farmer.
-    // Use a ±2-day window on fromDate/toDate (matching the bank-transfer cycle
-    // filter) so timezone offsets don't drop the match. Include both Ledger
-    // and Producers register types.
-    if (balance === 0) {
-      const prMatch = {
-        companyId:          new mongoose.Types.ObjectId(companyId),
-        registerType:       { $in: ['Ledger', 'Producers'] },
-        'entries.farmerId': new mongoose.Types.ObjectId(farmerId),
+    const latestRegister = await PaymentRegister.findOne(prMatch)
+      .sort({ toDate: -1, createdAt: -1 })
+      .select('entries')
+      .lean();
+
+    if (latestRegister) {
+      const entry = latestRegister.entries.find(
+        e => e.farmerId?.toString() === farmerId
+      );
+      balance = entry?.netPay || 0;
+    }
+
+    // Fallback (no register entry — cycle not saved for this farmer): fall
+    // back to FarmerPayment.netPayable so the form still shows something
+    // sensible instead of zero.
+    if (!balance) {
+      const fpMatch = {
+        companyId: new mongoose.Types.ObjectId(companyId),
+        farmerId:  new mongoose.Types.ObjectId(farmerId),
+        status:    { $in: ['Pending', 'Partial'] },
       };
-      if (fromDate || toDate) {
-        const dayMs = 24 * 60 * 60 * 1000;
-        if (fromDate) {
-          const mid = new Date(fromDate);
-          prMatch.fromDate = {
-            $gte: new Date(mid.getTime() - 2 * dayMs),
-            $lte: new Date(mid.getTime() + 2 * dayMs),
-          };
-        }
-        if (toDate) {
-          const mid = new Date(toDate);
-          prMatch.toDate = {
-            $gte: new Date(mid.getTime() - 2 * dayMs),
-            $lte: new Date(mid.getTime() + 2 * dayMs),
-          };
-        }
-      }
+      if (fromDate) fpMatch['paymentPeriod.fromDate'] = { $gte: new Date(fromDate) };
+      if (toDate)   fpMatch['paymentPeriod.toDate']   = { $lte: new Date(new Date(toDate).setHours(23, 59, 59, 999)) };
 
-      const latestRegister = await PaymentRegister.findOne(prMatch)
-        .sort({ toDate: -1, createdAt: -1 })
-        .select('entries')
-        .lean();
-
-      if (latestRegister) {
-        const entry = latestRegister.entries.find(
-          e => e.farmerId?.toString() === farmerId
-        );
-        balance = entry?.netPay || 0;
-      }
+      const balanceAgg = await FarmerPayment.aggregate([
+        { $match: fpMatch },
+        { $group: { _id: null, totalBalance: { $sum: '$balanceAmount' }, totalNetPayable: { $sum: '$netPayable' } } }
+      ]);
+      balance = balanceAgg[0]?.totalNetPayable || balanceAgg[0]?.totalBalance || 0;
     }
 
     // Check if already paid via Bank Transfer for this cycle
@@ -470,11 +516,28 @@ export const getProducerBalance = async (req, res) => {
     if (toDate)   btFilter['paymentPeriod.toDate']   = cycleDateRange(toDate);
     const btPaid = await FarmerPayment.exists(btFilter);
 
+    // Check if already paid via Cash (ProducerPayment) for this cycle so the
+    // form can warn the operator and block re-entry.
+    let cashPaid = null;
+    if (fromDate && toDate) {
+      cashPaid = await ProducerPayment.findOne({
+        companyId:                  new mongoose.Types.ObjectId(companyId),
+        farmerId:                   new mongoose.Types.ObjectId(farmerId),
+        status:                     { $ne: 'Cancelled' },
+        'processingPeriod.fromDate': cycleDateRange(fromDate),
+        'processingPeriod.toDate':   cycleDateRange(toDate),
+      })
+        .select('amountPaid paymentDate paymentMode refNo')
+        .lean();
+    }
+
     return res.json({
       success: true,
       data: {
         balance,
         bankTransferPaid: !!btPaid,
+        alreadyPaidCash: !!cashPaid,
+        cashPayment: cashPaid || null,
         farmer: {
           _id: farmer._id,
           number: farmer.farmerNumber,

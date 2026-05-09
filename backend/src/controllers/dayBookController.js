@@ -96,12 +96,18 @@ export const getDayBook = async (req, res) => {
         };
       }
 
-      // ── Bank Transfer / Cheque payment to producers ─────────────────────
+      // ── Producer Dues payment (Bank Transfer / Cheque / UPI / NEFT / RTGS / Cash) ─
       // Voucher: Dr PRODUCERS DUES / Cr <bank ledger or Cash in Hand>
-      // Bank / Cheque variant → adjustment column on both sides
-      // Cash variant          → falls through to normal Payment logic so it
-      //                         posts under the cash column on the payment side
-      if (voucher.voucherType === 'Payment' && voucher.referenceType === 'BankTransfer') {
+      // Non-cash variant → adjustment column on both sides:
+      //   • Receipt side : Bank ledger leg with "Producer's Payment" narration
+      //   • Payment side : PRODUCERS DUES leg
+      // Cash variant     → falls through to normal Payment logic so it
+      //                    posts under the cash column on the payment side.
+      const isProducerDuesPayment =
+        voucher.voucherType === 'Payment' &&
+        (voucher.referenceType === 'BankTransfer' || voucher.referenceType === 'ProducerPayment');
+
+      if (isProducerDuesPayment) {
         const hasCashLeg = (voucher.entries || []).some(
           (e) => e.ledgerId?.ledgerType === 'Cash'
         );
@@ -141,9 +147,9 @@ export const getDayBook = async (req, res) => {
           continue;
         }
         // Cash variant — fall through to the standard Payment voucher logic
-        // below. The Cash leg gets skipped there (line ~150) and the
-        // PRODUCERS DUES debit lands on the payment side with voucherType
-        // = 'Payment', which the frontend maps to the cash column.
+        // below. The Cash leg gets skipped there and the PRODUCERS DUES debit
+        // lands on the payment side with voucherType = 'Payment', which the
+        // frontend maps to the cash column.
       }
 
       const isReceiptVoucher = voucher.voucherType === 'Receipt';
@@ -187,13 +193,23 @@ export const getDayBook = async (req, res) => {
             paymentSide.push(paymentEntry);
           }
         } else if (isSalesVoucher) {
-          // Sales voucher: only show the income (Cr) entry on receipt side.
-          // Customer/debtor Dr entries are receivables — not a "payment" in the day book.
+          // Sales voucher:
+          //   • Cr (income) leg → receipt side (e.g. CATTLE FEED SALES)
+          //   • Dr (debtor / advance receivable) leg → payment side as an
+          //     adjustment (e.g. CATTLE FEED ADVANCE for credit sales).
+          // Cash legs are already filtered out above, so the Dr leg here only
+          // includes the credit-portion receivable.
           if (entry.creditAmount > 0) {
             const receiptEntry = { ...entryData, amount: entry.creditAmount };
             dateMap[dateKey].receiptSide.push(receiptEntry);
             dateMap[dateKey].totalReceipts += entry.creditAmount;
             receiptSide.push(receiptEntry);
+          }
+          if (entry.debitAmount > 0) {
+            const paymentEntry = { ...entryData, amount: entry.debitAmount };
+            dateMap[dateKey].paymentSide.push(paymentEntry);
+            dateMap[dateKey].totalPayments += entry.debitAmount;
+            paymentSide.push(paymentEntry);
           }
         } else if (isPurchaseVoucher) {
           // Purchase voucher: only show the expense (Dr) entry on payment side.

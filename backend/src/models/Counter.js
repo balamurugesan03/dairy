@@ -54,4 +54,65 @@ export const generateCode = async (prefix, companyId, { monthly = true, pad = 4 
   return monthly ? `${prefix}${datePart}${num}` : `${prefix}-${num}`;
 };
 
+/**
+ * Save a Mongoose doc that auto-generates a unique sequential code (via the
+ * pre-save hook calling `generateCode`). Retries on duplicate-key collisions
+ * — the atomic counter increments on each retry, so the next attempt always
+ * gets a strictly higher seq. On the 3rd attempt, force-resync the counter to
+ * MAX(existing) for the current month so a stale counter (post DB restore /
+ * manual seed / out-of-band insert) catches up in one shot.
+ *
+ *   Model       — the Mongoose model (e.g. BankTransfer, ProducerPayment)
+ *   companyId   — used to scope the counter key
+ *   prefix      — code prefix (e.g. 'BT', 'PTP'); must match the prefix passed
+ *                 to generateCode in the model's pre-save hook
+ *   numberField — the unique field on the model (e.g. 'transferNumber')
+ *   build       — factory that returns a fresh model instance with the unique
+ *                 number field LEFT UNSET so the pre-save hook fills it on
+ *                 every retry
+ */
+export const saveWithUniqueNumber = async ({ Model, companyId, prefix, numberField, build }) => {
+  let lastErr;
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      const doc = build();
+      await doc.save();
+      return doc;
+    } catch (err) {
+      lastErr = err;
+      const isDup = err?.code === 11000 && (
+        err?.keyPattern?.[numberField] ||
+        new RegExp(numberField, 'i').test(err?.message || '')
+      );
+      if (!isDup) throw err;
+      if (attempt === 3) {
+        try {
+          const now = new Date();
+          const yy = now.getFullYear().toString().slice(-2);
+          const mm = (now.getMonth() + 1).toString().padStart(2, '0');
+          const codePrefix = `${prefix}${yy}${mm}`;
+          const latest = await Model.findOne({
+            [numberField]: { $regex: `^${codePrefix}` },
+            companyId,
+          })
+            .sort({ [numberField]: -1 })
+            .select(numberField)
+            .lean();
+          if (latest?.[numberField]) {
+            const maxSeq = parseInt(latest[numberField].replace(codePrefix, ''), 10) || 0;
+            await Counter.updateOne(
+              { _id: `code-${prefix}-${yy}${mm}-${companyId}` },
+              { $set: { seq: maxSeq } },
+              { upsert: true }
+            );
+          }
+        } catch (resyncErr) {
+          console.warn(`${prefix} counter resync failed:`, resyncErr.message);
+        }
+      }
+    }
+  }
+  throw lastErr;
+};
+
 export default Counter;

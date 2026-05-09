@@ -1,6 +1,7 @@
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
 import Item from '../models/Item.js';
+import Subsidy from '../models/Subsidy.js';
 import { getNextSequence } from '../models/Counter.js';
 
 const VOUCHER_PREFIX_MAP = {
@@ -43,87 +44,194 @@ export const getFinancialYear = (date) => {
 // Create accounting voucher for dairy sales transaction
 export const createSalesVoucher = async (saleData, session = null) => {
   const entries = [];
+  const companyId = saleData.companyId;
   const grandTotal  = parseFloat(saleData.grandTotal)  || 0;
   const paidAmount  = parseFloat(saleData.paidAmount)  || 0;
   const balanceAmount = Math.max(0, grandTotal - paidAmount);
 
-  // ── Helper: find customer/farmer ledger ──────────────────────────────────
-  const findCustomerLedger = async () => {
-    if (!saleData.customerId) return null;
-    // Try farmer-linked first, then customer-linked
-    const linked = await Ledger.findOne({
-      'linkedEntity.entityId': saleData.customerId,
-      ...(saleData.companyId && { companyId: saleData.companyId })
+  const saveLedger = async (l) => {
+    if (session) await l.save({ session }); else await l.save();
+    return l;
+  };
+
+  // ── Helper: get/create generic "Sales" income ledger (used for any leftover) ─
+  const getDefaultSalesLedger = async () => {
+    let l = await Ledger.findOne({
+      ledgerName: 'Sales',
+      ledgerType: 'Income',
+      ...(companyId && { companyId })
     });
-    if (linked) return linked;
-    // Fall back to generic trade debtors ledger (auto-create)
-    let debtors = await Ledger.findOne({
-      ledgerName: 'Trade Debtors',
-      ...(saleData.companyId && { companyId: saleData.companyId })
+    if (!l) {
+      l = await saveLedger(new Ledger({
+        ledgerName: 'Sales',
+        ledgerType: 'Income',
+        openingBalance: 0,
+        currentBalance: 0,
+        balanceType: 'Cr',
+        companyId
+      }));
+    }
+    return l;
+  };
+
+  // ── Helper: get/create CATTLE FEED ADVANCE ledger (debit side for credit sales) ─
+  const getAdvanceLedger = async () => {
+    let l = await Ledger.findOne({
+      ledgerName: { $regex: /^cattle\s*feed\s*advance$/i },
+      ...(companyId && { companyId })
     });
-    if (!debtors) {
-      debtors = new Ledger({
-        ledgerName: 'Trade Debtors',
-        ledgerType: 'Party',
+    if (!l) {
+      l = await saveLedger(new Ledger({
+        ledgerName: 'CATTLE FEED ADVANCE',
+        ledgerType: 'Other Receivable',
         openingBalance: 0,
         currentBalance: 0,
         balanceType: 'Dr',
-        companyId: saleData.companyId
-      });
-      if (session) await debtors.save({ session }); else await debtors.save();
+        companyId
+      }));
     }
-    return debtors;
+    return l;
   };
 
-  // ── Credit: Sales ledger (always) ────────────────────────────────────────
-  let salesLedger = await Ledger.findOne({
-    ledgerName: 'Sales',
-    ledgerType: 'Income',
-    ...(saleData.companyId && { companyId: saleData.companyId })
-  });
-  if (!salesLedger) {
-    salesLedger = new Ledger({
-      ledgerName: 'Sales',
-      ledgerType: 'Income',
-      openingBalance: 0,
-      currentBalance: 0,
-      balanceType: 'Cr',
-      companyId: saleData.companyId
-    });
-    if (session) await salesLedger.save({ session }); else await salesLedger.save();
+  // ── Credit: per-item salesLedger (groups items by their linked sales ledger) ─
+  // Each item contributes its full pre-subsidy amount (qty*rate + gst). The
+  // subsidy is posted separately on the debit side as an expenditure of the
+  // society (see Subsidy block below). Discount / round-off residual goes
+  // into the generic "Sales" ledger so the voucher always balances.
+  const ledgerGroups = {}; // ledgerId -> { ledgerId, ledgerName, amount }
+  let unmappedAmount = 0;
+
+  const itemIds = (saleData.items || []).map(i => i.itemId).filter(Boolean);
+  const itemDocs = itemIds.length
+    ? await Item.find({ _id: { $in: itemIds } }).populate('salesLedger').lean()
+    : [];
+  const itemDocById = new Map(itemDocs.map(d => [d._id.toString(), d]));
+
+  for (const lineItem of (saleData.items || [])) {
+    const lineAmount = (parseFloat(lineItem.quantity) || 0) * (parseFloat(lineItem.rate) || 0);
+    const gst        = parseFloat(lineItem.gstAmount)     || 0;
+    const contribution = lineAmount + gst;
+    if (contribution <= 0) continue;
+
+    const doc = itemDocById.get(String(lineItem.itemId));
+    const linkedLedger = doc?.salesLedger;
+    if (linkedLedger?._id) {
+      const key = linkedLedger._id.toString();
+      if (!ledgerGroups[key]) {
+        ledgerGroups[key] = {
+          ledgerId: linkedLedger._id,
+          ledgerName: linkedLedger.ledgerName,
+          amount: 0
+        };
+      }
+      ledgerGroups[key].amount += contribution;
+    } else {
+      unmappedAmount += contribution;
+    }
   }
-  entries.push({ ledgerId: salesLedger._id, ledgerName: salesLedger.ledgerName, debitAmount: 0, creditAmount: grandTotal });
+
+  // ── Debit: Subsidy expenditure (per subsidy ledger) ─────────────────────
+  // Each item.subsidyAmount is recorded as society's expenditure under the
+  // subsidy's own ledger (looked up by subsidyName, auto-created if missing).
+  const subsidyGroups = {}; // key -> { ledgerId, ledgerName, amount }
+  const subsidyIds = (saleData.items || [])
+    .map(i => i.subsidyId)
+    .filter(Boolean);
+  const subsidyDocs = subsidyIds.length
+    ? await Subsidy.find({ _id: { $in: subsidyIds } }).lean()
+    : [];
+  const subsidyDocById = new Map(subsidyDocs.map(d => [d._id.toString(), d]));
+
+  for (const lineItem of (saleData.items || [])) {
+    const sub = parseFloat(lineItem.subsidyAmount) || 0;
+    if (sub <= 0) continue;
+    const subDoc = lineItem.subsidyId ? subsidyDocById.get(String(lineItem.subsidyId)) : null;
+    const subName = subDoc?.subsidyName || 'Subsidy';
+    const subLedgerType = subDoc?.ledgerGroup || 'Trade Expenses';
+    const key = subDoc?._id?.toString() || subName.toLowerCase();
+    if (!subsidyGroups[key]) {
+      let l = await Ledger.findOne({
+        ledgerName: subName,
+        ...(companyId && { companyId })
+      });
+      if (!l) {
+        l = await saveLedger(new Ledger({
+          ledgerName: subName,
+          ledgerType: subLedgerType,
+          openingBalance: 0,
+          currentBalance: 0,
+          balanceType: 'Dr',
+          companyId
+        }));
+      }
+      subsidyGroups[key] = { ledgerId: l._id, ledgerName: l.ledgerName, amount: 0 };
+    }
+    subsidyGroups[key].amount += sub;
+  }
+
+  const totalSubsidyAmount = Object.values(subsidyGroups).reduce((s, g) => s + g.amount, 0);
+
+  // Residual: balance the voucher. Cr side will be allocated + residual;
+  // Dr side will be (paidAmount + balanceAmount + totalSubsidyAmount) = grandTotal + totalSubsidyAmount.
+  // So required Cr total = grandTotal + totalSubsidyAmount.
+  const allocated = Object.values(ledgerGroups).reduce((s, g) => s + g.amount, 0) + unmappedAmount;
+  const residual  = (grandTotal + totalSubsidyAmount) - allocated; // covers discount/roundOff
+
+  if (unmappedAmount > 0 || residual !== 0) {
+    const fallback = await getDefaultSalesLedger();
+    const key = fallback._id.toString();
+    if (!ledgerGroups[key]) {
+      ledgerGroups[key] = { ledgerId: fallback._id, ledgerName: fallback.ledgerName, amount: 0 };
+    }
+    ledgerGroups[key].amount += unmappedAmount + residual;
+  }
+
+  // Push Cr (income) entries
+  for (const g of Object.values(ledgerGroups)) {
+    if (g.amount > 0) {
+      entries.push({ ledgerId: g.ledgerId, ledgerName: g.ledgerName, debitAmount: 0, creditAmount: g.amount });
+    } else if (g.amount < 0) {
+      // Negative residual (e.g., heavy discount) — record as debit to keep voucher balanced
+      entries.push({ ledgerId: g.ledgerId, ledgerName: g.ledgerName, debitAmount: -g.amount, creditAmount: 0 });
+    }
+  }
+
+  // Push Dr (subsidy expenditure) entries
+  for (const g of Object.values(subsidyGroups)) {
+    if (g.amount > 0) {
+      entries.push({ ledgerId: g.ledgerId, ledgerName: g.ledgerName, debitAmount: g.amount, creditAmount: 0 });
+    }
+  }
 
   // ── Debit: Cash/Bank for the paid portion ────────────────────────────────
   if (paidAmount > 0) {
     const paymentLedgerType = saleData.paymentMode === 'Cash' ? 'Cash' : 'Bank';
     let paymentLedger = await Ledger.findOne({
       ledgerType: paymentLedgerType,
-      ...(saleData.companyId && { companyId: saleData.companyId })
+      ...(companyId && { companyId })
     });
     if (!paymentLedger) {
-      paymentLedger = new Ledger({
+      paymentLedger = await saveLedger(new Ledger({
         ledgerName: paymentLedgerType === 'Cash' ? 'Cash in Hand' : 'Bank Account',
         ledgerType: paymentLedgerType,
         openingBalance: 0,
         currentBalance: 0,
         balanceType: 'Dr',
-        companyId: saleData.companyId
-      });
-      if (session) await paymentLedger.save({ session }); else await paymentLedger.save();
+        companyId
+      }));
     }
     entries.push({ ledgerId: paymentLedger._id, ledgerName: paymentLedger.ledgerName, debitAmount: paidAmount, creditAmount: 0 });
   }
 
-  // ── Debit: Customer ledger for the unpaid balance ────────────────────────
+  // ── Debit: CATTLE FEED ADVANCE for the unpaid balance (credit / debt sale) ─
   if (balanceAmount > 0) {
-    const customerLedger = await findCustomerLedger();
-    if (customerLedger) {
-      entries.push({ ledgerId: customerLedger._id, ledgerName: customerLedger.ledgerName, debitAmount: balanceAmount, creditAmount: 0 });
-    } else {
-      // No customer ledger at all — put entire balance to cash to keep voucher balanced
-      entries[entries.length - 1].debitAmount += balanceAmount;
-    }
+    const advanceLedger = await getAdvanceLedger();
+    entries.push({
+      ledgerId: advanceLedger._id,
+      ledgerName: advanceLedger.ledgerName,
+      debitAmount: balanceAmount,
+      creditAmount: 0
+    });
   }
 
   const totalDebit = entries.reduce((sum, e) => sum + e.debitAmount, 0);
@@ -696,19 +804,21 @@ export const applyProducerOpeningLedgers = async (newData, oldData, companyId, s
   }
 };
 
-// Create journal voucher for advance recovery deductions (CF/Cash/Loan)
-// Dr PRODUCERS DUES (farmer ledger)  /  Cr Advance Ledger
+// Create journal voucher for advance recovery deductions (CF/Cash/Loan/Welfare)
+// Dr PRODUCERS DUES  /  Cr Recovery Ledger (Cattle Feed / Cash / Loan / Welfare)
 export const createRecoveryVoucher = async (paymentData, session = null) => {
   const farmerId  = paymentData.farmerId;
   const companyId = paymentData.companyId;
 
   const RECOVERY_LEDGER_MAP = {
-    'CF Recovery':   { name: 'Cattle Feed Advance',  type: 'Other Receivable' },
-    'CF Advance':    { name: 'Cattle Feed Advance',  type: 'Other Receivable' },
-    'Cash Recovery': { name: 'Farmers Cash Advance', type: 'Other Receivable' },
-    'Cash Advance':  { name: 'Farmers Cash Advance', type: 'Other Receivable' },
-    'Loan Recovery': { name: 'Farmers Loan A/c',     type: 'Other Receivable' },
-    'Loan Advance':  { name: 'Farmers Loan A/c',     type: 'Other Receivable' },
+    'CF Recovery':      { name: 'Cattle Feed Advance',  type: 'Other Receivable',         group: 'Assets',      bal: 'Dr' },
+    'CF Advance':       { name: 'Cattle Feed Advance',  type: 'Other Receivable',         group: 'Assets',      bal: 'Dr' },
+    'Cash Recovery':    { name: 'Farmers Cash Advance', type: 'Other Receivable',         group: 'Assets',      bal: 'Dr' },
+    'Cash Advance':     { name: 'Farmers Cash Advance', type: 'Other Receivable',         group: 'Assets',      bal: 'Dr' },
+    'Loan Recovery':    { name: 'Farmers Loan A/c',     type: 'Other Receivable',         group: 'Assets',      bal: 'Dr' },
+    'Loan Advance':     { name: 'Farmers Loan A/c',     type: 'Other Receivable',         group: 'Assets',      bal: 'Dr' },
+    'Welfare Recovery': { name: 'KDF WELFARE FUND',     type: 'Other Liabilities',        group: 'Liabilities', bal: 'Cr' },
+    'Welfare':          { name: 'KDF WELFARE FUND',     type: 'Other Liabilities',        group: 'Liabilities', bal: 'Cr' },
   };
 
   const recoveries = (paymentData.deductions || []).filter(
@@ -716,16 +826,37 @@ export const createRecoveryVoucher = async (paymentData, session = null) => {
   );
   if (recoveries.length === 0) return null;
 
-  // Farmer's PRODUCERS DUES ledger
-  const farmerLedger = await Ledger.findOne({
+  // Producer-side ledger for the Dr leg. Prefer the farmer-linked ledger so
+  // per-farmer balances stay accurate, but fall back to the generic
+  // "PRODUCERS DUES" ledger when the farmer has no linked ledger yet — that
+  // way the voucher always posts and shows up in the Day Book.
+  let producerDuesLedger = await Ledger.findOne({
     'linkedEntity.entityType': 'Farmer',
     'linkedEntity.entityId':   farmerId,
     ...(companyId && { companyId }),
   });
-  if (!farmerLedger) {
-    console.warn(`createRecoveryVoucher: no farmer ledger for farmerId=${farmerId}`);
-    return null;
+  if (!producerDuesLedger) {
+    producerDuesLedger = await findOrCreateLedger(
+      'PRODUCERS DUES', 'Other Payable', 'LIABILITY', 'Cr', companyId, session
+    );
   }
+
+  // For Welfare, prefer an existing ledger that matches "KDF WELFARE FUND"
+  // (or any "WELFARE" name) — that's the ledger seeded automatically from
+  // the deduction/earning master.
+  const findWelfareLedger = async () => {
+    let l = await Ledger.findOne({
+      ledgerName: { $regex: /^kdf\s*welfare\s*fund$/i },
+      ...(companyId && { companyId }),
+    });
+    if (!l) {
+      l = await Ledger.findOne({
+        ledgerName: { $regex: /welfare/i },
+        ...(companyId && { companyId }),
+      });
+    }
+    return l;
+  };
 
   // Accumulate per-ledger debit/credit
   const ledgerTotals = {}; // key: ledgerId string → { ledgerId, ledgerName, debitAmount, creditAmount }
@@ -738,14 +869,19 @@ export const createRecoveryVoucher = async (paymentData, session = null) => {
   };
 
   for (const ded of recoveries) {
-    const linfo    = RECOVERY_LEDGER_MAP[ded.type];
-    const advLedger = await findOrCreateLedger(linfo.name, linfo.type, 'Assets', 'Dr', companyId, session);
-    // Dr PRODUCERS DUES (generic display name — keeps per-farmer ledger ID for
-    // balance tracking, but shows as "PRODUCERS DUES" in Day Book / reports
-    // instead of leaking the per-farmer ledger name).
-    // Cr advance receivable (Cattle Feed / Cash / Loan)
-    accum(farmerLedger._id, 'PRODUCERS DUES',         ded.amount, 0);
-    accum(advLedger._id,    advLedger.ledgerName,    0,          ded.amount);
+    const linfo = RECOVERY_LEDGER_MAP[ded.type];
+    let crLedger = null;
+    if (ded.type === 'Welfare Recovery' || ded.type === 'Welfare') {
+      crLedger = await findWelfareLedger();
+    }
+    if (!crLedger) {
+      crLedger = await findOrCreateLedger(linfo.name, linfo.type, linfo.group, linfo.bal, companyId, session);
+    }
+    // Dr PRODUCERS DUES (generic display name regardless of which underlying
+    // ledger backs it — keeps balance tracking but reads cleanly in reports).
+    // Cr recovery ledger (Cattle Feed / Cash / Loan / KDF WELFARE FUND).
+    accum(producerDuesLedger._id, 'PRODUCERS DUES',     ded.amount, 0);
+    accum(crLedger._id,           crLedger.ledgerName,  0,          ded.amount);
   }
 
   const entries     = Object.values(ledgerTotals);

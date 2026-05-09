@@ -86,13 +86,26 @@ export const createSale = async (req, res) => {
     saleData.totalSubsidy = totalSubsidy;
     saleData.grandTotal = subtotal - discount + totalGst - totalSubsidy + (parseFloat(saleData.roundOff) || 0);
     saleData.totalDue = (saleData.oldBalance || 0) + saleData.grandTotal;
-    const rawBalance = saleData.totalDue - (saleData.paidAmount || 0);
-    saleData.balanceAmount = Math.max(0, rawBalance);
 
-    // Determine payment status
-    if (rawBalance <= 0) {
+    // Auto-default payment mode to "Credit" when nothing is paid up-front,
+    // even if the user left the segmented control on Cash. A bill saved with
+    // paidAmount = 0 is by definition a debt sale.
+    const paid = parseFloat(saleData.paidAmount) || 0;
+    if (paid <= 0) {
+      saleData.paymentMode = 'Credit';
+    }
+    saleData.paidAmount = paid;
+
+    // Bill-level outstanding — purely this bill's unpaid portion. Old balance
+    // is reported separately via totalDue and must not cascade into the per-bill
+    // balanceAmount (which previously caused exponential carry-over when summed
+    // across a customer's history).
+    saleData.balanceAmount = Math.max(0, saleData.grandTotal - paid);
+
+    // Determine payment status — based on this bill alone, not prior dues
+    if (saleData.grandTotal > 0 && paid >= saleData.grandTotal) {
       saleData.status = 'Paid';
-    } else if (saleData.paidAmount > 0) {
+    } else if (paid > 0) {
       saleData.status = 'Partial';
     } else {
       saleData.status = 'Pending';
@@ -399,6 +412,30 @@ export const getNextSaleBillNumber = async (req, res) => {
   }
 };
 
+// GET /sales/cycle-bounds — return the most-recent saved/printed cycle's toDate
+// so the form can allow billing on any date AFTER that cycle (up to today).
+export const getSalesCycleBounds = async (req, res) => {
+  try {
+    const lastCycle = await PaymentRegister.findOne({
+      companyId: req.companyId,
+      status: { $in: ['Saved', 'Printed'] },
+    })
+      .sort({ toDate: -1 })
+      .select('toDate fromDate')
+      .lean();
+
+    return res.json({
+      success: true,
+      data: {
+        lastCycleToDate: lastCycle?.toDate || null,
+        lastCycleFromDate: lastCycle?.fromDate || null,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // GET /sales/check-date?date= — check if a date falls within a locked payment cycle
 export const checkSaleDate = async (req, res) => {
   try {
@@ -438,5 +475,6 @@ export default {
   deleteSale,
   getCustomerHistory,
   getNextSaleBillNumber,
-  checkSaleDate
+  checkSaleDate,
+  getSalesCycleBounds
 };

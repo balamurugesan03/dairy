@@ -6,6 +6,7 @@ import ProducerPayment from '../models/ProducerPayment.js';
 import Farmer from '../models/Farmer.js';
 import Voucher from '../models/Voucher.js';
 import { createPaymentVoucher, createRecoveryVoucher, createProducerDuesPaymentVoucher } from '../utils/accountingHelper.js';
+import { saveWithUniqueNumber } from '../models/Counter.js';
 import mongoose from 'mongoose';
 
 // ==================== FARMER PAYMENT FUNCTIONS ====================
@@ -57,10 +58,15 @@ export const createFarmerPayment = async (req, res) => {
       }
     }
 
-    // Auto-reduce advance/loan balances FIFO based on deduction types
-    const advanceDeductionTypes = {
-      'CF Advance':    'CF Advance',
-      'Cash Advance':  'Cash Advance',
+    // Split deduction handling into ADVANCE (new disbursement → create record)
+    // vs RECOVERY (reduce existing balances FIFO).
+    //   • 'CF Advance' / 'Cash Advance'  → new Advance row in the CF / Cash
+    //     module so it shows up immediately as outstanding for the farmer.
+    //   • 'Loan Advance'                 → new ProducerLoan row in the Loans
+    //     module.
+    //   • 'CF Recovery' / 'Cash Recovery' → reduce existing Advance balances.
+    //   • 'Loan Recovery'                → reduce existing ProducerLoan.
+    const recoveryDeductionTypes = {
       'CF Recovery':   'CF Advance',
       'Cash Recovery': 'Cash Advance',
     };
@@ -77,13 +83,57 @@ export const createFarmerPayment = async (req, res) => {
     let leftoverLoan = 0;
 
     for (const deduction of (paymentData.deductions || [])) {
-      let remaining = deduction.amount || 0;
-      if (remaining <= 0) continue;
+      const amount = deduction.amount || 0;
+      if (amount <= 0) continue;
 
-      if (advanceDeductionTypes[deduction.type]) {
-        const advCategory = advanceDeductionTypes[deduction.type];
+      // ── New CF / Cash advance disbursed during cycle → create Advance row ─
+      if (deduction.type === 'CF Advance' || deduction.type === 'Cash Advance') {
+        try {
+          const adv = new Advance({
+            companyId:       companyObjId,
+            farmerId:        farmerObjId,
+            advanceDate:     payment.paymentDate || new Date(),
+            advanceCategory: deduction.type,
+            advanceAmount:   amount,
+            balanceAmount:   amount,
+            paymentMode:     'Cash',
+            remarks: `From Payment ${payment.paymentNumber || ''}${deduction.description ? ' — ' + deduction.description : ''}`.trim(),
+            createdBy:       req.user?._id,
+          });
+          await adv.save();
+        } catch (advErr) {
+          console.warn(`Advance create skipped (${deduction.type}):`, advErr.message);
+        }
+        continue;
+      }
 
-        // Reduce Advance records FIFO (oldest first), scoped to this company
+      // ── New loan disbursed during cycle → create ProducerLoan row ────────
+      if (deduction.type === 'Loan Advance') {
+        try {
+          const loan = new ProducerLoan({
+            companyId:         companyObjId,
+            farmerId:          farmerObjId,
+            loanDate:          payment.paymentDate || new Date(),
+            loanType:          'Loan Advance',
+            principalAmount:   amount,
+            interestAmount:    0,
+            totalLoanAmount:   amount,
+            recoveredAmount:   0,
+            outstandingAmount: amount,
+            remarks: `From Payment ${payment.paymentNumber || ''}${deduction.description ? ' — ' + deduction.description : ''}`.trim(),
+            createdBy:         req.user?._id,
+          });
+          await loan.save();
+        } catch (loanErr) {
+          console.warn('ProducerLoan create skipped:', loanErr.message);
+        }
+        continue;
+      }
+
+      // ── CF / Cash recovery → reduce existing Advance FIFO ────────────────
+      if (recoveryDeductionTypes[deduction.type]) {
+        const advCategory = recoveryDeductionTypes[deduction.type];
+        let remaining = amount;
         const advances = await Advance.find({
           companyId:       companyObjId,
           farmerId:        farmerObjId,
@@ -114,9 +164,12 @@ export const createFarmerPayment = async (req, res) => {
           if (advCategory === 'CF Advance')   leftoverCF   += remaining;
           if (advCategory === 'Cash Advance') leftoverCash += remaining;
         }
+        continue;
+      }
 
-      } else if (deduction.type === 'Loan Advance' || deduction.type === 'Loan Recovery') {
-        // Reduce ProducerLoan records FIFO (oldest first), scoped to this company
+      // ── Loan recovery → reduce existing ProducerLoan FIFO ────────────────
+      if (deduction.type === 'Loan Recovery') {
+        let remaining = amount;
         const loans = await ProducerLoan.find({
           companyId: companyObjId,
           farmerId:  farmerObjId,
@@ -203,16 +256,16 @@ export const createFarmerPayment = async (req, res) => {
         remarks:              `Auto — ${payment.paymentNumber || ''}`,
         createdBy:            payment.createdBy,
       };
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          const pp = new ProducerPayment(ppData);
-          await pp.save();
-          break;
-        } catch (ppSaveErr) {
-          if (ppSaveErr.code === 11000 && ppSaveErr.keyPattern?.paymentNumber && attempt < 3) continue;
-          console.warn('ProducerPayment auto-create skipped:', ppSaveErr.message);
-          break;
-        }
+      try {
+        await saveWithUniqueNumber({
+          Model:       ProducerPayment,
+          companyId:   payment.companyId,
+          prefix:      'PTP',
+          numberField: 'paymentNumber',
+          build:       () => new ProducerPayment(ppData),
+        });
+      } catch (ppSaveErr) {
+        console.warn('ProducerPayment auto-create skipped:', ppSaveErr.message);
       }
     } catch (ppErr) {
       console.warn('ProducerPayment auto-create skipped:', ppErr.message);
