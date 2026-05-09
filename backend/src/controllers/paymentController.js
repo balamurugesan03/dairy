@@ -140,25 +140,16 @@ export const createFarmerPayment = async (req, res) => {
       }
     }
 
-    // Apply any leftover recoveries to the farmer's ProducerOpening row so
-    // opening-balance advances reflect the deduction in their respective
-    // module summaries (Cash Advance / Loan Advance / CF Advance).
-    if (leftoverCF > 0 || leftoverCash > 0 || leftoverLoan > 0) {
-      try {
-        const opening = await ProducerOpening.findOne({
-          companyId: companyObjId,
-          farmerId:  farmerObjId,
-        });
-        if (opening) {
-          if (leftoverCF   > 0) opening.cfAdvance   = Math.max(0, (opening.cfAdvance   || 0) - leftoverCF);
-          if (leftoverCash > 0) opening.cashAdvance = Math.max(0, (opening.cashAdvance || 0) - leftoverCash);
-          if (leftoverLoan > 0) opening.loanAdvance = Math.max(0, (opening.loanAdvance || 0) - leftoverLoan);
-          await opening.save();
-        }
-      } catch (openErr) {
-        console.error('ProducerOpening recovery update failed:', openErr.message);
-      }
-    }
+    // ProducerOpening is intentionally NOT mutated here. The opening balance
+    // entered on /daily-collections/producer-openings is the immutable starting
+    // point; recoveries surface on the advance summary pages
+    // (/payments/cash-advance, /payments/cattle-feed-advance, /payments/loans)
+    // because those pages compute closing balance as
+    //   opening + advanced − recovery
+    // where `recovery` is aggregated from FarmerPayment.deductions of type
+    // 'Cash Recovery' / 'CF Recovery' / 'Loan Recovery'. Reducing the opening
+    // here would cause double-counting on those summaries.
+    void leftoverCF; void leftoverCash; void leftoverLoan;
 
     // Create recovery journal voucher for CF/Cash/Loan recovery deductions (always, even when paidAmount=0)
     try {

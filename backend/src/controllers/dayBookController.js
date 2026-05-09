@@ -448,6 +448,12 @@ export const getDayBook = async (req, res) => {
         }
       }
       if (!purchaseLedgerName) purchaseLedgerName = 'CATTLE FEED PURCHASE';
+      // Normalise variations of the cattle-feed purchase ledger so the Day Book
+      // matches the manually-named "CATTLE FEED PURCHASE" in ledger master,
+      // regardless of the item-linked ledger's casing ("Cattle Feed Purchase" etc.)
+      if (/cattle.?feed.?purchase/i.test(purchaseLedgerName)) {
+        purchaseLedgerName = 'CATTLE FEED PURCHASE';
+      }
 
       if (totalDr > 0) {
         const paymentEntry = {
@@ -476,8 +482,10 @@ export const getDayBook = async (req, res) => {
 
         let displayName, narration;
         if (isSupplier) {
-          displayName = 'Supplier Purchased';
-          narration = `Supplier :- Qty ${fmt2(totalQty)}, Purchase Rate ${fmt2(purchaseRate)}`;
+          // Show the actual supplier ledger name (e.g. "ABC Cattle Feed Suppliers"),
+          // not a generic "Supplier Purchased" tag.
+          displayName = ledgerName || 'Supplier';
+          narration = `${displayName} :- Qty ${fmt2(totalQty)}, Purchase Rate ${fmt2(purchaseRate)}`;
         } else {
           const ratePerUnit = totalQty > 0 ? entry.creditAmount / totalQty : 0;
           displayName = ledgerName;

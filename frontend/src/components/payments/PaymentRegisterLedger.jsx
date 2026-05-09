@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Container, Paper, Grid, Group, Text, Title, Box,
   TextInput, NumberInput, Checkbox, ScrollArea, Badge,
-  Divider, Button, Loader, Pagination, Select,
+  Divider, Button, Loader, Pagination, Select, Progress, Modal, Stack, RingProgress, Center,
 } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
@@ -123,7 +123,7 @@ const recalc = (row) => {
 /* ════════════════════════════════════════════════════════════
    MEMOISED ROW — re-renders only when its own row data changes
 ════════════════════════════════════════════════════════════ */
-const PaymentRow = React.memo(function PaymentRow({ row, idx, quantityUnit, onUpdate, onToggleLock }) {
+const PaymentRow = React.memo(function PaymentRow({ row, idx, quantityUnit, onUpdate, onToggleLock, isPrinting = false }) {
   const isPaid     = row.paid;
   const isBankPend = row.bankPending;
   const netClr = n(row.netPay) >= 0 ? '#00695c' : '#c53030';
@@ -131,6 +131,40 @@ const PaymentRow = React.memo(function PaymentRow({ row, idx, quantityUnit, onUp
     ? (idx % 2 === 0 ? '#e6fffa' : '#d4f5ee')
     : (idx % 2 === 0 ? '#fff5f5' : '#fde8e8');
   const rowBg = isBankPend ? '#ebf8ff' : isPaid ? '#f0fff4' : row.locked ? '#f0fff4' : (idx % 2 === 0 ? '#ffffff' : '#f9fafb');
+
+  // Print-only compact row: plain-text cells so inputs/values render reliably on paper.
+  if (isPrinting) {
+    const fmt2 = (v) => (v == null || v === '' || isNaN(Number(v))) ? '—' : Number(v).toFixed(2);
+    const fmtQ = (v) => (v == null || v === '' || isNaN(Number(v))) ? '—' : Number(v).toFixed(quantityUnit === 'KG' ? 3 : 1);
+    const ptd = (extra = {}) => ({
+      border: '1px solid #999', padding: '2px 3px', fontSize: 8,
+      textAlign: 'center', fontVariantNumeric: 'tabular-nums', ...extra,
+    });
+    return (
+      <tr>
+        <td style={ptd({ fontWeight: 600 })}>{row.sn}</td>
+        <td style={ptd()}>{row.producerId}</td>
+        <td style={ptd({ textAlign: 'left', fontWeight: 600 })}>{row.producerName}</td>
+        <td style={ptd()}>{fmtQ(row.qty)}</td>
+        <td style={ptd()}>{fmt2(row.milkValue)}</td>
+        <td style={ptd()}>{fmt2(row.prevBalance)}</td>
+        <td style={ptd()}>{fmt2(row.otherEarnings)}</td>
+        <td style={ptd({ fontWeight: 700 })}>{fmt2(row.totalEarnings)}</td>
+        <td style={ptd()}>{fmt2(row.welfare)}</td>
+        <td style={ptd()}>{fmt2(row.cfAdv)}</td>
+        <td style={ptd()}>{fmt2(row.cfRec)}</td>
+        <td style={ptd()}>{fmt2(row.cashAdv)}</td>
+        <td style={ptd()}>{fmt2(row.cashRec)}</td>
+        <td style={ptd()}>{fmt2(row.loanAdv)}</td>
+        <td style={ptd()}>{fmt2(row.loanRec)}</td>
+        <td style={ptd()}>{fmt2(row.otherDed)}</td>
+        <td style={ptd({ fontWeight: 700 })}>{fmt2(row.totalDed)}</td>
+        <td style={ptd({ fontWeight: 700, color: netClr })}>{fmt2(row.netPay)}</td>
+        <td style={ptd({ fontWeight: 600 })}>{fmt2(row.netPay)}</td>
+        <td style={ptd({ height: 22 })} />
+      </tr>
+    );
+  }
 
   return (
     <tr style={{ background: rowBg }}>
@@ -249,17 +283,12 @@ const PaymentRow = React.memo(function PaymentRow({ row, idx, quantityUnit, onUp
         <NumberInput {...numPropsRO()} value={row.netPay} placeholder="—"
           styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 600, color: '#1a365d', width: '100%', cursor: 'default' } }} />
       </td>
-      {/* Signature — print-only */}
-      <td style={{ ...td(), display: 'none' }} className="print-show">
-        <TextInput
-          variant="unstyled" size="xs"
-          value={row.signature}
-          onChange={(e) => !(isPaid || row.locked) && onUpdate(idx, 'signature', e.target.value)}
-          readOnly={isPaid || row.locked}
-          placeholder="Sign."
-          styles={{ input: { fontSize: 10, height: 26, padding: '0 4px', borderBottom: '1px dashed #cbd5e0', fontStyle: 'italic', width: '100%' } }}
-        />
-      </td>
+      {/* Signature — only rendered while printing */}
+      {isPrinting && (
+        <td style={{ ...td(), height: 28, borderBottom: '1px solid #999' }}>
+          {/* Empty cell for handwritten sign on the printout */}
+        </td>
+      )}
       {/* Lock checkbox */}
       <td style={td({ padding: '0 4px', background: row.locked || isPaid ? '#f0fff4' : '#fff' })} className="no-print">
         {row.producerName?.trim() ? (
@@ -301,18 +330,35 @@ const PaymentRegisterLedger = () => {
   const printRef = useRef();
   const [searchParams] = useSearchParams();
 
+  // Render-all-rows flag: pagination shows only the current page on screen,
+  // but the print needs every row of the loaded cycle. Toggled before/after
+  // print via react-to-print callbacks.
+  const [isPrinting, setIsPrinting] = useState(false);
+
+  // react-to-print v3 uses `contentRef` (was `content` callback in v2).
   const handlePrint = useReactToPrint({
-    content: () => printRef.current,
-    documentTitle: 'Payment Register Ledger',
+    contentRef: printRef,
+    documentTitle: 'Payment Register Detailed',
+    onBeforePrint: () => new Promise((resolve) => {
+      setIsPrinting(true);
+      // Wait one paint so the de-paginated DOM is committed before printing.
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    }),
+    onAfterPrint: () => setIsPrinting(false),
     pageStyle: `
-      @page { size: A3 landscape; margin: 8mm; }
-      body { font-size: 10px; }
-      * { overflow: visible !important; max-height: none !important; }
+      @page { size: A4 landscape; margin: 5mm; }
+      html, body { background: #fff !important; }
+      body { font-size: 8px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      * { overflow: visible !important; max-height: none !important; box-shadow: none !important; }
       .no-print { display: none !important; }
       .print-show { display: table-cell !important; }
       .print-header { display: block !important; }
-      table { border-collapse: collapse; width: 100%; }
-      th, td { border: 1px solid #999; padding: 3px 4px; font-size: 9px; }
+      /* Drop scroll-area and minWidth wrappers so the table can shrink to the page */
+      [class*="ScrollArea"], [class*="scrollarea"] { overflow: visible !important; }
+      .print-fit-wrap { min-width: 0 !important; width: 100% !important; }
+      table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+      th, td { border: 1px solid #999; padding: 1.5px 2px; font-size: 7px; word-wrap: break-word; line-height: 1.15; }
+      thead th { background: #e2e8f0 !important; color: #1a202c !important; font-weight: 700; }
     `,
   });
 
@@ -324,7 +370,20 @@ const PaymentRegisterLedger = () => {
   // Latest applied/saved cycle's toDate — used to lock date pickers so the
   // user cannot pick a date inside an already-paid cycle.
   const [latestPaidTo,  setLatestPaidTo]  = useState(null);
+  // Cycle anchor — the first valid cycle-start date. All valid cycle starts are
+  // anchor + N*settingsDays, so date pickers can disable everything in between.
+  const [cycleAnchor,   setCycleAnchor]   = useState(null);
   const minPickDate = latestPaidTo ? dayjs(latestPaidTo).add(1, 'day').toDate() : undefined;
+
+  // Returns true when `d` is NOT a valid cycle boundary (used by DateInput.excludeDate).
+  // role = 'from' → enforce that d is a cycle-start; 'to' → enforce that d is a cycle-end.
+  const isOutsideCycleBoundary = (d, role) => {
+    if (!cycleAnchor || !settingsDays) return false;
+    const target = role === 'to' ? dayjs(d).add(1, 'day') : dayjs(d);
+    const diff   = target.startOf('day').diff(dayjs(cycleAnchor).startOf('day'), 'day');
+    if (diff < 0) return true;
+    return diff % settingsDays !== 0;
+  };
 
   /* ─── data state ─── */
   const [rows,         setRows]         = useState([]);
@@ -380,9 +439,11 @@ const PaymentRegisterLedger = () => {
         setQuantityUnit(msRes?.data?.quantityUnit || 'Litre');
         setFromDate(dayjs(paramFrom).toDate());
         setToDate(dayjs(paramTo).toDate());
+        setCycleAnchor(dayjs(paramFrom).toDate());
       }).catch(() => {
         setFromDate(dayjs(paramFrom).toDate());
         setToDate(dayjs(paramTo).toDate());
+        setCycleAnchor(dayjs(paramFrom).toDate());
       });
       return;
     }
@@ -401,6 +462,13 @@ const PaymentRegisterLedger = () => {
       setLatestPaidTo(latestToDate || null);
 
       let from, to;
+      // Anchor for cycle-boundary lock: prefer the configured paymentFromDate
+      // (the original first cycle start) so subsequent cycles always align.
+      const anchor = s.paymentFromDate
+        ? dayjs(s.paymentFromDate).toDate()
+        : (latestToDate ? dayjs(latestToDate).add(1, 'day').toDate() : dayjs().startOf('month').toDate());
+      setCycleAnchor(anchor);
+
       if (latestToDate) {
         // Next cycle starts the day after the last applied period ended
         from = dayjs(latestToDate).add(1, 'day').toDate();
@@ -417,8 +485,10 @@ const PaymentRegisterLedger = () => {
       setToDate(to);
       // No auto-load — user must click Generate
     }).catch(() => {
-      setFromDate(dayjs().startOf('month').toDate());
-      setToDate(dayjs().startOf('month').add(14, 'day').toDate());
+      const fallbackFrom = dayjs().startOf('month').toDate();
+      setFromDate(fallbackFrom);
+      setToDate(dayjs(fallbackFrom).add(14, 'day').toDate());
+      setCycleAnchor(fallbackFrom);
     });
   }, []); // eslint-disable-line
 
@@ -732,6 +802,7 @@ const PaymentRegisterLedger = () => {
 
   /* ─── Save Payment — locks all farmers & queues for Bank Transfer ─── */
   const [saving, setSaving] = useState(false);
+  const [saveProgress, setSaveProgress] = useState({ current: 0, total: 0, name: '' });
 
   const savePayment = async () => {
     if (filledRows.length === 0) {
@@ -758,10 +829,17 @@ const PaymentRegisterLedger = () => {
     // Rows to create FarmerPayment for: locked by user, not yet individually paid or bank-pending
     const toSave = filledRows.filter(r => r.locked && !r.paid && !r.bankPending);
 
-    let done = 0;
-    const savedFarmerIds = new Set();
+    setSaveProgress({ current: 0, total: toSave.length, name: '' });
 
-    for (const row of toSave) {
+    let done = 0;
+    let totalCashRec = 0;
+    let totalCfRec   = 0;
+    let totalLoanRec = 0;
+    const savedFarmerIds = new Set();
+    const failedRows = [];
+
+    for (const [idx, row] of toSave.entries()) {
+      setSaveProgress({ current: idx, total: toSave.length, name: row.producerName || '' });
       try {
         const deductions = [];
         if (n(row.welfare)  > 0) deductions.push({ type: 'Welfare Recovery', amount: n(row.welfare),  description: 'Welfare' });
@@ -773,7 +851,7 @@ const PaymentRegisterLedger = () => {
           ? [{ type: 'Other', amount: n(row.otherEarnings), description: 'Other Earnings' }]
           : [];
 
-        await paymentAPI.create({
+        const res = await paymentAPI.create({
           farmerId:        row.farmerId,
           farmerName:      row.producerName || '',
           paymentDate:     periodTo,          // last date of the generated cycle
@@ -787,11 +865,44 @@ const PaymentRegisterLedger = () => {
           paymentSource:   'BankTransfer',           // all locked rows go to Bank Transfer module
           remarks:         `Payment Register — ${dayjs(periodFrom).format('DD/MM')}–${dayjs(periodTo).format('DD/MM/YYYY')}`,
         });
+        if (res && res.success === false) {
+          failedRows.push({ name: row.producerName, msg: res.message || 'Unknown error' });
+          continue;
+        }
         savedFarmerIds.add(row.farmerId);
+        totalCashRec += n(row.cashRec);
+        totalCfRec   += n(row.cfRec);
+        totalLoanRec += n(row.loanRec);
         done++;
       } catch (err) {
         console.error('FarmerPayment create failed:', row.producerName, err.message);
+        failedRows.push({ name: row.producerName, msg: err.message || 'request failed' });
       }
+    }
+
+    // Surface any failures so the user knows recoveries didn't post
+    if (failedRows.length > 0) {
+      notifications.show({
+        title:   `${failedRows.length} farmer payment(s) failed to save`,
+        message: failedRows.slice(0, 5).map(f => `${f.name}: ${f.msg}`).join(' | ')
+                 + (failedRows.length > 5 ? ` … +${failedRows.length - 5} more` : ''),
+        color:   'red',
+        autoClose: 8000,
+      });
+    }
+
+    // Confirm what was posted to advance modules so the user can verify on their pages
+    if (done > 0 && (totalCashRec > 0 || totalCfRec > 0 || totalLoanRec > 0)) {
+      const parts = [];
+      if (totalCashRec > 0) parts.push(`Cash ₹${totalCashRec.toFixed(2)}`);
+      if (totalCfRec   > 0) parts.push(`CF ₹${totalCfRec.toFixed(2)}`);
+      if (totalLoanRec > 0) parts.push(`Loan ₹${totalLoanRec.toFixed(2)}`);
+      notifications.show({
+        title:   `Recoveries posted (${done} farmer${done > 1 ? 's' : ''})`,
+        message: parts.join(' · ') + ' — balances reduced on Cash Advance / CF Advance / Loans pages.',
+        color:   'teal',
+        autoClose: 6000,
+      });
     }
 
     // Mark saved rows as bankPending in UI
@@ -839,7 +950,11 @@ const PaymentRegisterLedger = () => {
       notifications.show({ title: 'History Log Failed', message: err.message, color: 'orange' });
     }
 
+    // Mark progress complete before unhiding the modal
+    setSaveProgress({ current: toSave.length, total: toSave.length, name: '' });
     setSaving(false);
+    // Reset progress shortly after so the modal doesn't flash old numbers next time
+    setTimeout(() => setSaveProgress({ current: 0, total: 0, name: '' }), 400);
 
     if (done === 0 && toSave.length > 0) {
       notifications.show({ title: 'Save Failed', message: 'Could not queue payments for bank transfer', color: 'red' });
@@ -904,9 +1019,53 @@ const PaymentRegisterLedger = () => {
   const pagedRows    = rows.slice((page - 1) * pageSize, page * pageSize);
 
   /* ════════════════ RENDER ════════════════ */
+  const savePct = saveProgress.total > 0
+    ? Math.round((saveProgress.current / saveProgress.total) * 100)
+    : 0;
+
   return (
     <Container fluid p="md" style={{ background: '#f0f2f5', minHeight: '100vh' }}>
       <style>{`@media print { .no-print { display: none !important; } .print-show { display: table-cell !important; } .print-header { display: block !important; } }`}</style>
+
+      {/* ── SAVE PROGRESS MODAL ── */}
+      <Modal
+        opened={saving && saveProgress.total > 0}
+        onClose={() => {}}
+        withCloseButton={false}
+        closeOnClickOutside={false}
+        closeOnEscape={false}
+        centered
+        size="sm"
+        title={
+          <Group gap="xs">
+            <IconDeviceFloppy size={18} color="#2c5282" />
+            <Text fw={700}>Saving Payment Register…</Text>
+          </Group>
+        }
+      >
+        <Stack gap="md" align="center">
+          <RingProgress
+            size={140}
+            thickness={12}
+            roundCaps
+            sections={[{ value: savePct, color: 'indigo' }]}
+            label={
+              <Center>
+                <Stack gap={2} align="center">
+                  <Text size="lg" fw={700} c="indigo">{savePct}%</Text>
+                  <Text size="xs" c="dimmed">{saveProgress.current} / {saveProgress.total}</Text>
+                </Stack>
+              </Center>
+            }
+          />
+          <Progress value={savePct} size="sm" radius="xl" color="indigo" w="100%" animated />
+          <Text size="sm" c="dimmed" lineClamp={1} ta="center" w="100%">
+            {saveProgress.name
+              ? `Posting: ${saveProgress.name}`
+              : (savePct === 100 ? 'Finalising…' : 'Preparing…')}
+          </Text>
+        </Stack>
+      </Modal>
 
       {/* ── HEADER ── */}
       <Paper withBorder shadow="sm" p="md" mb="md" style={{ background: '#fff' }} className="no-print">
@@ -915,7 +1074,7 @@ const PaymentRegisterLedger = () => {
             <Group gap="xs" align="center">
               <IconFileSpreadsheet size={22} color="#2c5282" />
               <Title order={3} style={{ color: '#1a365d', letterSpacing: 0.3 }}>
-                Payment Register — Detailed Ledger
+                Payment Register Detailed 
               </Title>
             </Group>
             <Text size="xs" c="dimmed" mt={2}>
@@ -964,9 +1123,10 @@ const PaymentRegisterLedger = () => {
               onChange={handleFromDateChange}
               leftSection={<IconCalendar size={14} />}
               minDate={minPickDate}
+              excludeDate={(d) => isOutsideCycleBoundary(d, 'from')}
               description={latestPaidTo
                 ? `Locked up to ${dayjs(latestPaidTo).format('DD/MM/YYYY')} (already paid)`
-                : undefined}
+                : `Only cycle starts (${settingsDays}-day) are selectable`}
               size="sm"
             />
           </Grid.Col>
@@ -977,6 +1137,8 @@ const PaymentRegisterLedger = () => {
               onChange={handleToDateChange}
               leftSection={<IconCalendar size={14} />}
               minDate={fromDate || minPickDate}
+              excludeDate={(d) => isOutsideCycleBoundary(d, 'to')}
+              description={`Only cycle ends (${settingsDays}-day) are selectable`}
               size="sm"
             />
           </Grid.Col>
@@ -997,7 +1159,7 @@ const PaymentRegisterLedger = () => {
         </Box>
 
         <ScrollArea type="scroll" scrollbarSize={8} scrollHideDelay={0}>
-          <Box style={{ minWidth: 2180 }}>
+          <Box className="print-fit-wrap" style={{ minWidth: isPrinting ? 0 : 2180 }}>
             <table style={{ borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed' }}>
               <colgroup>
                 {/* SN */}<col style={{ width: 34 }} />
@@ -1019,7 +1181,8 @@ const PaymentRegisterLedger = () => {
                 {/* Total Ded */}<col style={{ width: 68 }} />
                 {/* Net Pay */}<col style={{ width: 78 }} />
                 {/* To Transfer */}<col style={{ width: 72 }} />
-                {/* Signature */}<col style={{ width: 90 }} />
+                {/* Signature — only when printing */}
+                {isPrinting && <col style={{ width: 90 }} />}
                 {/* Lock */}<col style={{ width: 52 }} />
               </colgroup>
 
@@ -1037,8 +1200,8 @@ const PaymentRegisterLedger = () => {
                   <th style={thSection('#276749')} rowSpan={2}>NET PAY</th>
                   {/* PAYMENT */}
                   <th style={thSection('#1a4731')} rowSpan={2}>To Transfer</th>
-                  {/* Print-only */}
-                  <th style={{ ...thSection('#2d3748'), display: 'none' }} className="print-show" rowSpan={2}>Signature</th>
+                  {/* Signature — print only (driven by isPrinting flag) */}
+                  {isPrinting && <th style={thSection('#2d3748')} rowSpan={2}>Signature</th>}
                   {/* Lock All — screen only */}
                   <th style={thSection('#276749')} rowSpan={2} className="no-print">
                     <Box ta="center">
@@ -1072,14 +1235,15 @@ const PaymentRegisterLedger = () => {
               </thead>
 
               <tbody>
-                {pagedRows.map((row, idx) => (
+                {(isPrinting ? rows : pagedRows).map((row, idx) => (
                   <PaymentRow
                     key={row.farmerId || idx}
                     row={row}
-                    idx={(page - 1) * pageSize + idx}
+                    idx={isPrinting ? idx : (page - 1) * pageSize + idx}
                     quantityUnit={quantityUnit}
                     onUpdate={updateRow}
                     onToggleLock={toggleLock}
+                    isPrinting={isPrinting}
                   />
                 ))}
 
@@ -1104,7 +1268,7 @@ const PaymentRegisterLedger = () => {
                   <td style={{ ...tdTotal, background: '#ffe0b2', color: '#7b341e' }}>{fmtN(totals.totalDed)}</td>
                   <td style={{ ...tdBal, background: '#b2f5ea', fontSize: 12 }}>{fmtN(totals.netPay)}</td>
                   <td style={{ ...tdTotal, background: '#f0f4ff', color: '#1a365d' }}>{fmtN(totals.netPay)}</td>
-                  <td style={tdTotal} className="print-show" />
+                  {isPrinting && <td style={tdTotal} />}
                   <td style={tdTotal} className="no-print" />
                 </tr>
               </tbody>

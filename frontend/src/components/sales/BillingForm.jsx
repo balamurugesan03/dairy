@@ -144,6 +144,10 @@ const BillingForm = () => {
     fetchCustomers();
     fetchCollectionCenters();
     fetchSubsidies();
+    // Auto-activate today's date so the form is usable immediately on open
+    if (form.values.billDate) {
+      handleDateChange(form.values.billDate);
+    }
   }, []);
 
   const fetchNextBillNumber = async () => {
@@ -509,7 +513,7 @@ const BillingForm = () => {
     setSaving(true);
     try {
       const payload = {
-        billDate: form.values.billDate ? form.values.billDate.toISOString() : new Date().toISOString(),
+        billDate: form.values.billDate ? new Date(form.values.billDate).toISOString() : new Date().toISOString(),
         customerType: form.values.customerType,
         customerId: (form.values.customerType === 'Farmer' || form.values.customerType === 'Customer') ? form.values.customerId : null,
         customerName: form.values.customerName,
@@ -603,8 +607,22 @@ const BillingForm = () => {
               <Title order={3}>Inventory Sales</Title>
               <Text size="sm" c="dimmed">{billNumber}</Text>
             </div>
-          </Group>
-          <Group>
+            <Group>
+               
+          
+                  <Select
+                    label="Collection Center"
+                    placeholder="Select center..."
+                    value={form.values.collectionCenterId}
+                    onChange={(value) => form.setFieldValue('collectionCenterId', value)}
+                    data={collectionCenters.map(c => ({ value: c._id, label: c.centerName || 'Unnamed Center' }))}
+                    clearable
+                    leftSection={<IconBuilding size={16} />}
+                  />
+                
+               
+   
+            
            <DateInput
   value={form.values.billDate}
   onChange={handleDateChange}
@@ -612,30 +630,43 @@ const BillingForm = () => {
   placeholder="Select bill date first"
   size="xs"
   w={185}
-  maxDate={new Date()}
+  minDate={new Date(new Date().setHours(0, 0, 0, 0))}
+  maxDate={new Date(new Date().setHours(23, 59, 59, 999))}
   error={!!dateError}
-  styles={{ input: { justifyContent: 'center', borderColor: dateError ? 'var(--mantine-color-red-6)' : formReady ? 'var(--mantine-color-green-6)' : undefined } }}
+  styles={{
+    input: {
+      textAlign: 'center',
+      paddingLeft: 32,
+      paddingRight: 8,
+      borderColor: dateError
+        ? 'var(--mantine-color-red-6)'
+        : formReady ? 'var(--mantine-color-green-6)' : undefined,
+    },
+  }}
 />
 {formReady && <IconCircleCheck size={20} color="var(--mantine-color-green-6)" />}
 {dateError && <IconAlertCircle size={20} color="var(--mantine-color-red-6)" />}
 
-            <Button
+            {/* <Button
               variant="light"
               leftSection={<IconReceipt2 size={16} />}
               onClick={resetForm}
             >
               New Bill
-            </Button>
-            <Button
-              variant="default"
-              leftSection={<IconX size={16} />}
-              onClick={() => navigate('/')}
-            >
-              Close
-            </Button>
+            </Button> */}
+           
           </Group>
+          </Group>
+          <Button
+            variant="default"
+            leftSection={<IconX size={16} />}
+            onClick={() => navigate('/')}
+          >
+            Close
+          </Button>
         </Group>
       </Paper>
+
 
    
      
@@ -773,7 +804,7 @@ const BillingForm = () => {
                 )}
 
                 {/* Collection Center & Subsidy */}
-                <Grid.Col span={6}>
+                {/* <Grid.Col span={6}>
                   <Select
                     label="Collection Center"
                     placeholder="Select center..."
@@ -783,7 +814,7 @@ const BillingForm = () => {
                     clearable
                     leftSection={<IconBuilding size={16} />}
                   />
-                </Grid.Col>
+                </Grid.Col> */}
                 {/* <Grid.Col span={6}>
                   <Select
                     label="Subsidy"

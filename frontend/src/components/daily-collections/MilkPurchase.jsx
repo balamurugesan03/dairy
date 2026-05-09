@@ -1405,19 +1405,65 @@ const MilkPurchase = () => {
       {/* ══ CARD ROW ════════════════════════════════════════════════════════ */}
       <Box style={{ flexShrink: 0, padding: '6px 14px 0' }}>
 
-        {/* Duplicate inline alert */}
+        {/* Duplicate alert — centered overlay */}
         {dupBlocked && dupInfo && (
-          <Box style={{ background: '#fff7ed', border: '2px solid #f97316', borderRadius: 8, padding: '8px 14px', marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <Group gap={10} wrap="nowrap">
-              <Text size="20px">⚠️</Text>
-              <Box>
-                <Text size="12px" fw={800} c="#92400e">Already Entered Today</Text>
-                <Text size="11px" c="#78350f">
-                  <b>{dupInfo.name}</b> — {dupInfo.center} &nbsp;|&nbsp; Bill: {dupInfo.billNo} &nbsp;|&nbsp; ₹{dupInfo.amount.toFixed(2)}
-                </Text>
-              </Box>
-            </Group>
-            <Button size="compact-sm" color="orange" variant="filled" onClick={() => { setDupBlocked(false); setDupInfo(null); }}>OK</Button>
+          <Box
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(15, 23, 42, 0.45)',
+              backdropFilter: 'blur(2px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 9999,
+            }}
+            onClick={() => { setDupBlocked(false); setDupInfo(null); }}
+          >
+            <Box
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: '#fff7ed',
+                border: '2px solid #f97316',
+                borderRadius: 14,
+                padding: '22px 28px',
+                minWidth: 360,
+                maxWidth: '92vw',
+                boxShadow: '0 20px 50px rgba(0,0,0,0.25)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 14,
+              }}
+            >
+              <Text size="48px">⚠️</Text>
+              <Text size="18px" fw={900} c="#92400e" ta="center">Already Entered Today</Text>
+              <Text size="13px" c="#78350f" ta="center">
+                <b>{dupInfo.name}</b> — {dupInfo.center}
+              </Text>
+              <Text size="13px" c="#78350f" ta="center">
+                Bill: <b>{dupInfo.billNo}</b> &nbsp;|&nbsp; ₹<b>{dupInfo.amount.toFixed(2)}</b>
+              </Text>
+              <Button
+                fullWidth
+                size="md"
+                color="orange"
+                variant="filled"
+                mt={4}
+                onClick={() => { setDupBlocked(false); setDupInfo(null); }}
+              >
+                OK
+              </Button> <Button
+                fullWidth
+                size="md"
+                color="orange"
+                variant="filled"
+                mt={4}
+                onClick={() => { setDupBlocked(false); setDupInfo(null); }}
+              >
+                cancel
+              </Button>
+            </Box>
           </Box>
         )}
 

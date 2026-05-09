@@ -740,8 +740,11 @@ export const createRecoveryVoucher = async (paymentData, session = null) => {
   for (const ded of recoveries) {
     const linfo    = RECOVERY_LEDGER_MAP[ded.type];
     const advLedger = await findOrCreateLedger(linfo.name, linfo.type, 'Assets', 'Dr', companyId, session);
-    // Dr PRODUCERS DUES, Cr advance ledger
-    accum(farmerLedger._id, farmerLedger.ledgerName, ded.amount, 0);
+    // Dr PRODUCERS DUES (generic display name — keeps per-farmer ledger ID for
+    // balance tracking, but shows as "PRODUCERS DUES" in Day Book / reports
+    // instead of leaking the per-farmer ledger name).
+    // Cr advance receivable (Cattle Feed / Cash / Loan)
+    accum(farmerLedger._id, 'PRODUCERS DUES',         ded.amount, 0);
     accum(advLedger._id,    advLedger.ledgerName,    0,          ded.amount);
   }
 
@@ -758,7 +761,7 @@ export const createRecoveryVoucher = async (paymentData, session = null) => {
     entries,
     totalDebit,
     totalCredit,
-    narration:     `Advance Recovery — ${farmerLedger.ledgerName} | ${paymentData.paymentNumber || ''}`,
+    narration:     `Advance Recovery${paymentData.paymentNumber ? ` | ${paymentData.paymentNumber}` : ''}`,
     referenceType: 'FarmerPayment',
     referenceId:   paymentData._id,
     ...(companyId && { companyId }),
