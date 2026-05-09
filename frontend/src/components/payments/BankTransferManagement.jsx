@@ -7,10 +7,12 @@ import {
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import dayjs from 'dayjs';
+import * as XLSX from 'xlsx';
 import { bankTransferAPI, producerPaymentAPI } from '../../services/api';
+import { useCompany } from '../../context/CompanyContext';
 import {
   IconBuildingBank, IconCash, IconCheck, IconX, IconEye,
-  IconRefresh, IconPrinter, IconDotsVertical,
+  IconRefresh, IconPrinter, IconDotsVertical, IconFileExport, IconMail,
   IconChevronLeft, IconChevronRight, IconCoins, IconTrash, IconEdit, IconDeviceFloppy
 } from '@tabler/icons-react';
 
@@ -47,10 +49,8 @@ const fmtDate = (d) =>
 const STATUS_COLOR = { Draft: 'gray', Retrieved: 'blue', Applied: 'yellow', Completed: 'green', Cancelled: 'red' };
 
 const PAYMENT_MODES = [
-  { value: 'Bank Transfer',   label: 'Bank',        short: 'Bk',  color: 'blue'   },
-  { value: 'Cash',            label: 'Cash',        short: 'Ca',  color: 'green'  },
-  { value: 'All Cheque',      label: 'All Chq',     short: 'AC',  color: 'violet' },
-  { value: 'Personal Cheque', label: 'Per Chq',     short: 'PC',  color: 'grape'  },
+  { value: 'Bank Transfer',   label: 'Bank',        short: 'Bank',  color: 'blue'   },
+  { value: 'Cash',            label: 'Cash',        short: 'Cash',  color: 'green'  },
 ];
 // Keep for edit modal Select
 const MODES = PAYMENT_MODES.map(m => ({ value: m.value, label: m.label }));
@@ -64,6 +64,8 @@ const CYCLES = [
 
 // ─── component ──────────────────────────────────────────────────────────────
 const BankTransferManagement = () => {
+  const { selectedCompany } = useCompany();
+  const societyName = selectedCompany?.companyName || 'Dairy Society';
   const [activeTab, setActiveTab] = useState('transfer');
 
   /* date / cycle */
@@ -111,8 +113,9 @@ const BankTransferManagement = () => {
   /* modals */
   const [viewModal,   setViewModal]   = useState(false);
   const [selectedLog, setSelectedLog] = useState(null);
-  const [printModal,  setPrintModal]  = useState(false);
-  const [printMode,   setPrintMode]   = useState('all');
+  const [printModal,     setPrintModal]     = useState(false);
+  const [printMode,      setPrintMode]      = useState('all');
+  const [printBankFilter, setPrintBankFilter] = useState('all'); // bank-name filter inside the print modal
 
   /* edit modal */
   const [editModal,    setEditModal]    = useState(false);
@@ -127,7 +130,8 @@ const BankTransferManagement = () => {
   const [chequeDate,     setChequeDate]     = useState(null);
 
   /* cycle-already-applied guard (set after load / cycle select) */
-  const [cycleApplied,   setCycleApplied]   = useState(null); // { transferNumber, applyDate } | null
+  const [cycleApplied,   setCycleApplied]   = useState(null); // { transferId, transferNumber, applyDate } | null
+  const [appliedRows,    setAppliedRows]    = useState([]);   // rows fetched from the saved transfer (for print)
 
   /* set of applied-cycle keys (YYYY-MM-DD of toDate) — for strikethrough in dropdown */
   const [appliedCycleSet, setAppliedCycleSet] = useState(new Set());
@@ -172,6 +176,7 @@ const BankTransferManagement = () => {
     setRowsPage(1);
     setDataLoaded(false);
     setCycleApplied(null);
+    setAppliedRows([]);
     // auto-advance applyDate to day after new toDate if needed
     const refTo = newTo || toDate;
     if (refTo) {
@@ -239,9 +244,25 @@ const BankTransferManagement = () => {
           const chk = await bankTransferAPI.checkCycle({ asOnDate: toISO(to) });
           if (chk?.success && chk.data?.alreadyApplied) {
             setCycleApplied({
+              transferId:     chk.data.transferId,
               transferNumber: chk.data.transferNumber,
               applyDate:      chk.data.applyDate,
             });
+            // Fetch saved transfer details so Print buttons can show them
+            try {
+              const full = await bankTransferAPI.getById(chk.data.transferId);
+              const dets = full?.data?.transferDetails || [];
+              setAppliedRows(dets.map(d => ({
+                farmerId:      d.farmerId?._id || d.farmerId,
+                producerId:    d.producerId,
+                producerName:  d.producerName,
+                netPayable:    d.netPayable,
+                paymentAmount: d.transferAmount,
+                bankDetails:   d.bankDetails || {},
+                mode:          d.paymentMode || 'Bank Transfer',
+                approved:      d.approved !== false,
+              })));
+            } catch { setAppliedRows([]); }
             notifications.show({
               title:   'ALREADY PAYMENT APPLIED',
               message: `Transfer ${chk.data.transferNumber} on ${dayjs(chk.data.applyDate).format('DD/MM/YYYY')}. Delete it from the log to re-apply this cycle.`,
@@ -250,8 +271,9 @@ const BankTransferManagement = () => {
             });
           } else {
             setCycleApplied(null);
+            setAppliedRows([]);
           }
-        } catch { setCycleApplied(null); }
+        } catch { setCycleApplied(null); setAppliedRows([]); }
       }
     } catch (err) {
       notifications.show({ title: 'Error', message: err.message || 'Failed to load', color: 'red' });
@@ -528,17 +550,252 @@ const BankTransferManagement = () => {
   };
 
   // ── print ─────────────────────────────────────────────────────────────────
-  const openPrint = (mode) => { setPrintMode(mode); setPrintModal(true); };
+  const openPrint = (mode) => { setPrintMode(mode); setPrintBankFilter('all'); setPrintModal(true); };
 
   const printRows = (() => {
-    const approved = rows.filter(r => r.approved && r.paymentAmount > 0);
-    if (printMode === 'bank')   return approved.filter(r => r.mode === 'Bank Transfer');
-    if (printMode === 'cash')   return approved.filter(r => r.mode === 'Cash');
-    if (printMode === 'cheque') return approved.filter(r => r.mode === 'All Cheque');
-    return approved;
+    const source = cycleApplied
+      ? appliedRows.filter(r => r.paymentAmount > 0)
+      : rows.filter(r => r.approved && r.paymentAmount > 0);
+    let scoped = source;
+    if (printMode === 'bank') scoped = source.filter(r => r.mode === 'Bank Transfer');
+    else if (printMode === 'cash') scoped = source.filter(r => r.mode === 'Cash');
+    // Bank-name filter applies only when printing the bank list
+    if (printMode === 'bank' && printBankFilter !== 'all') {
+      scoped = scoped.filter(r => (r.bankDetails?.bankName || '') === printBankFilter);
+    }
+    return scoped;
+  })();
+
+  // Distinct bank names available for the bank-filter Select inside the print modal
+  const printBankOptions = (() => {
+    const src = cycleApplied
+      ? appliedRows.filter(r => r.paymentAmount > 0)
+      : rows.filter(r => r.approved && r.paymentAmount > 0);
+    const names = Array.from(new Set(
+      src.filter(r => r.mode === 'Bank Transfer')
+         .map(r => r.bankDetails?.bankName)
+         .filter(Boolean)
+    )).sort();
+    return [{ value: 'all', label: 'All Banks' }, ...names.map(n => ({ value: n, label: n }))];
   })();
 
   const showBankCols = printMode === 'bank' || printMode === 'all';
+
+  // Build and print a clean printable document in a hidden iframe (no UI chrome)
+  const doPrint = () => {
+    const title =
+      printMode === 'bank'   ? 'Bank Transfer List' :
+      printMode === 'cash'   ? 'Cash Payment List'  :
+      printMode === 'cheque' ? 'Cheque Payment List' :
+                               'All Payments';
+    const total = printRows.reduce((s, r) => s + (r.paymentAmount || 0), 0);
+    const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+    const headCols = [
+      '<th style="width:40px">SN</th>',
+      '<th style="width:90px">Prod ID</th>',
+      '<th>Producer Name</th>',
+      ...(showBankCols ? ['<th>Account No</th>', '<th>IFSC</th>', '<th>Bank</th>', '<th>Branch</th>'] : []),
+      '<th style="text-align:right;width:110px">Amount</th>',
+      ...(printMode === 'all' ? ['<th style="width:100px">Mode</th>'] : []),
+      '<th style="width:90px">Sign</th>',
+    ].join('');
+    const bodyRows = printRows.map((r, i) => {
+      const cells = [
+        `<td>${i + 1}</td>`,
+        `<td>${esc(r.producerId)}</td>`,
+        `<td>${esc(r.producerName)}</td>`,
+        ...(showBankCols ? [
+          `<td>${esc(r.bankDetails?.accountNumber || '—')}</td>`,
+          `<td>${esc(r.bankDetails?.ifscCode || '—')}</td>`,
+          `<td>${esc(r.bankDetails?.bankName || '—')}</td>`,
+          `<td>${esc(r.bankDetails?.branch && r.bankDetails.branch !== '-' ? r.bankDetails.branch : '—')}</td>`,
+        ] : []),
+        `<td style="text-align:right;font-weight:600">${esc(fmt(r.paymentAmount))}</td>`,
+        ...(printMode === 'all' ? [`<td>${esc(r.mode)}</td>`] : []),
+        '<td></td>',
+      ].join('');
+      return `<tr>${cells}</tr>`;
+    }).join('');
+    const totalColSpan = 3 + (showBankCols ? 4 : 0) + (printMode === 'all' ? 1 : 0);
+
+    const html = `<!doctype html>
+<html><head><meta charset="utf-8"><title>${esc(title)}</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:Arial,sans-serif;margin:18px;color:#000}
+  h2{margin:0 0 4px}
+  .meta{font-size:12px;color:#444;margin-bottom:10px;display:flex;gap:18px;flex-wrap:wrap}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{border:1px solid #888;padding:5px 6px;text-align:left;vertical-align:top}
+  thead th{background:#eee}
+  tfoot th{background:#f3f3f3}
+  @page{size:A4;margin:12mm}
+</style></head>
+<body>
+  <div style="text-align:center;font-size:18px;font-weight:700;letter-spacing:0.5px;margin-bottom:2px">${esc(societyName)}</div>
+  <h2 style="text-align:center;font-size:14px;margin:0 0 8px">${esc(title)}</h2>
+  <div class="meta">
+    <span>Period: <strong>${esc(periodLabel)}</strong></span>
+    <span>Producers: <strong>${printRows.length}</strong></span>
+    <span>Total: <strong>${esc(fmt(total))}</strong></span>
+    ${printMode === 'bank' && printBankFilter !== 'all' ? `<span>Bank: <strong>${esc(printBankFilter)}</strong></span>` : ''}
+  </div>
+  <table>
+    <thead><tr>${headCols}</tr></thead>
+    <tbody>${bodyRows || `<tr><td colspan="${totalColSpan + 2}" style="text-align:center;color:#666">No data</td></tr>`}</tbody>
+    <tfoot><tr><th colspan="${totalColSpan}">Total (${printRows.length} Producers)</th><th style="text-align:right">${esc(fmt(total))}</th><th></th></tr></tfoot>
+  </table>
+</body></html>`;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+    const cleanup = () => { setTimeout(() => iframe.remove(), 500); };
+    iframe.onload = () => {
+      try {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+      } finally { cleanup(); }
+    };
+    // Fallback if onload doesn't fire (some browsers when doc is ready synchronously)
+    setTimeout(() => {
+      if (document.body.contains(iframe)) {
+        try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } catch {}
+        cleanup();
+      }
+    }, 300);
+  };
+
+  // Export current print view to .xlsx — society name on top, same content as print
+  const doExport = () => {
+    const title =
+      printMode === 'bank'   ? 'Bank Transfer List' :
+      printMode === 'cash'   ? 'Cash Payment List'  :
+      printMode === 'cheque' ? 'Cheque Payment List' :
+                               'All Payments';
+    const total = printRows.reduce((s, r) => s + (r.paymentAmount || 0), 0);
+
+    const headerCols = [
+      'SN', 'Prod ID', 'Producer Name',
+      ...(showBankCols ? ['Account No', 'IFSC', 'Bank', 'Branch'] : []),
+      'Amount',
+      ...(printMode === 'all' ? ['Mode'] : []),
+      'Sign',
+    ];
+
+    const aoa = [];
+    aoa.push([societyName]);
+    aoa.push([title]);
+    aoa.push(['From Date', fromDate ? dayjs(fromDate).format('DD/MM/YYYY') : '-']);
+    aoa.push(['To Date',   toDate   ? dayjs(toDate).format('DD/MM/YYYY')   : '-']);
+    aoa.push(['Producers', printRows.length]);
+    aoa.push(['Total',     total]);
+    if (printMode === 'bank' && printBankFilter !== 'all') {
+      aoa.push(['Bank Filter', printBankFilter]);
+    }
+    aoa.push([]);
+    aoa.push(headerCols);
+
+    printRows.forEach((r, i) => {
+      const row = [
+        i + 1,
+        r.producerId || '',
+        r.producerName || '',
+        ...(showBankCols ? [
+          r.bankDetails?.accountNumber || '—',
+          r.bankDetails?.ifscCode || '—',
+          r.bankDetails?.bankName || '—',
+          (r.bankDetails?.branch && r.bankDetails.branch !== '-') ? r.bankDetails.branch : '—',
+        ] : []),
+        r.paymentAmount || 0,
+        ...(printMode === 'all' ? [r.mode || ''] : []),
+        '',
+      ];
+      aoa.push(row);
+    });
+
+    // Total row
+    const totalCols = 3 + (showBankCols ? 4 : 0);
+    const totalRow = Array(totalCols).fill('');
+    totalRow[0] = `Total (${printRows.length} Producers)`;
+    totalRow.push(total);
+    if (printMode === 'all') totalRow.push('');
+    totalRow.push('');
+    aoa.push(totalRow);
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    // Column widths
+    ws['!cols'] = [
+      { wch: 5 }, { wch: 12 }, { wch: 26 },
+      ...(showBankCols ? [{ wch: 18 }, { wch: 14 }, { wch: 22 }, { wch: 18 }] : []),
+      { wch: 14 },
+      ...(printMode === 'all' ? [{ wch: 14 }] : []),
+      { wch: 14 },
+    ];
+    // Merge society + title across all columns
+    const totalSheetCols = headerCols.length;
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: totalSheetCols - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: totalSheetCols - 1 } },
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, title.slice(0, 28));
+    const fname = `${title.replace(/\s+/g, '_').toLowerCase()}_${dayjs().format('YYYYMMDD_HHmm')}.xlsx`;
+    XLSX.writeFile(wb, fname);
+    return fname;
+  };
+
+  // Share the current print view via the user's default mail client.
+  // First triggers the XLSX download (so the file is on disk), then opens mailto:
+  // with a pre-filled subject and body. The user can then attach the downloaded file.
+  const doShareEmail = () => {
+    const title =
+      printMode === 'bank'   ? 'Bank Transfer List' :
+      printMode === 'cash'   ? 'Cash Payment List'  :
+      printMode === 'cheque' ? 'Cheque Payment List' :
+                               'All Payments';
+    const total = printRows.reduce((s, r) => s + (r.paymentAmount || 0), 0);
+    const fname = doExport();
+
+    const subject = `${societyName} — ${title} (${periodLabel || dayjs().format('DD/MM/YYYY')})`;
+    const lines = [
+      societyName,
+      title,
+      '',
+      `From Date : ${fromDate ? dayjs(fromDate).format('DD/MM/YYYY') : '-'}`,
+      `To Date   : ${toDate   ? dayjs(toDate).format('DD/MM/YYYY')   : '-'}`,
+      `Producers : ${printRows.length}`,
+      `Total     : ${fmt(total)}`,
+    ];
+    if (printMode === 'bank' && printBankFilter !== 'all') {
+      lines.push(`Bank      : ${printBankFilter}`);
+    }
+    lines.push('');
+    lines.push(`Please find attached: ${fname}`);
+    lines.push('(The file has been downloaded to your computer — please attach it to this email.)');
+
+    const mailto = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join('\n'))}`;
+    window.location.href = mailto;
+
+    notifications.show({
+      title: 'File downloaded',
+      message: `${fname} — attach this file to the email that just opened.`,
+      color: 'teal',
+      autoClose: 6000,
+    });
+  };
 
   // ── summary ───────────────────────────────────────────────────────────────
   const summ = {
@@ -547,14 +804,10 @@ const BankTransferManagement = () => {
     netPayable:     rows.reduce((s, r) => s + (r.netPayable || 0), 0),
     bankAmt:        rows.filter(r => r.approved && r.mode === 'Bank Transfer').reduce((s, r) => s + r.paymentAmount, 0),
     cashAmt:        rows.filter(r => r.approved && r.mode === 'Cash').reduce((s, r) => s + r.paymentAmount, 0),
-    allChequeAmt:   rows.filter(r => r.approved && r.mode === 'All Cheque').reduce((s, r) => s + r.paymentAmount, 0),
-    perChequeAmt:   rows.filter(r => r.approved && r.mode === 'Personal Cheque').reduce((s, r) => s + r.paymentAmount, 0),
     bankCount:      rows.filter(r => r.mode === 'Bank Transfer').length,
     cashCount:      rows.filter(r => r.mode === 'Cash').length,
-    allChequeCount: rows.filter(r => r.mode === 'All Cheque').length,
-    perChequeCount: rows.filter(r => r.mode === 'Personal Cheque').length,
   };
-  summ.grandTotal = summ.bankAmt + summ.cashAmt + summ.allChequeAmt + summ.perChequeAmt;
+  summ.grandTotal = summ.bankAmt + summ.cashAmt;
 
   const rowsTotalPages = Math.max(1, Math.ceil(rows.length / rowsPageSize));
   const pagedRows = rows.slice((rowsPage - 1) * rowsPageSize, rowsPage * rowsPageSize);
@@ -731,13 +984,6 @@ const BankTransferManagement = () => {
                         max={1000}
                       />
                     </Grid.Col>
-                    <Grid.Col span={{ base: 12, sm: 6, md: 3 }} style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 4 }}>
-                      <Checkbox
-                        label="Due By List Only"
-                        checked={dueByList}
-                        onChange={e => setDueByList(e.currentTarget.checked)}
-                      />
-                    </Grid.Col>
                   </Grid>
 
                   {/* Already-applied banner */}
@@ -772,7 +1018,7 @@ const BankTransferManagement = () => {
                           variant="light"
                           color="blue"
                         >
-                          Auto Pay
+                          Select All Rows
                         </Button>
                         <Button
                           leftSection={<IconBuildingBank size={16} />}
@@ -824,15 +1070,13 @@ const BankTransferManagement = () => {
               </Card>
 
               {/* Summary Cards */}
-              {dataLoaded && (
+              {dataLoaded && !cycleApplied && (
                 <Grid>
                   {[
                     { label: 'Total Producers',             value: summ.total,             color: 'gray'   },
                     { label: 'Net Payable',                 value: fmt(summ.netPayable),   color: 'blue'   },
                     { label: `Bank (${summ.bankCount})`,    value: fmt(summ.bankAmt),      color: 'indigo' },
                     { label: `Cash (${summ.cashCount})`,    value: fmt(summ.cashAmt),      color: 'orange' },
-                    { label: `All Chq (${summ.allChequeCount})`,  value: fmt(summ.allChequeAmt),  color: 'violet' },
-                    { label: `Per Chq (${summ.perChequeCount})`,  value: fmt(summ.perChequeAmt),  color: 'grape'  },
                     { label: 'Grand Total',                 value: fmt(summ.grandTotal),   color: 'green', bold: true },
                   ].map((s, i) => (
                     <Grid.Col key={i} span={{ base: 6, sm: 4, md: 'auto' }}>
@@ -851,14 +1095,14 @@ const BankTransferManagement = () => {
               {loading && <Center p="xl"><Loader /></Center>}
 
               {/* Empty after load */}
-              {!loading && dataLoaded && rows.length === 0 && (
+              {!loading && dataLoaded && !cycleApplied && rows.length === 0 && (
                 <Card withBorder p="xl">
                   <Center><Text c="dimmed">No producers found for the selected criteria</Text></Center>
                 </Card>
               )}
 
               {/* Table */}
-              {!loading && rows.length > 0 && (
+              {!loading && !cycleApplied && rows.length > 0 && (
                 <Card withBorder p={0}>
                   {/* Table header bar */}
                   <Box
@@ -907,23 +1151,36 @@ const BankTransferManagement = () => {
                           <Table.Th>Producer Name</Table.Th>
                           <Table.Th style={{ width: 140 }}>Account No</Table.Th>
                           <Table.Th style={{ width: 100 }}>IFSC</Table.Th>
-                          <Table.Th style={{ width: 110 }}>Branch / Bank</Table.Th>
+                          <Table.Th style={{ width: 120 }}>Bank</Table.Th>
+                          <Table.Th style={{ width: 110 }}>Branch</Table.Th>
                           <Table.Th ta="right" style={{ width: 105 }}>Net Payable</Table.Th>
                           <Table.Th style={{ width: 105 }}>Pay Amount</Table.Th>
-                          <Table.Th style={{ width: 220 }}>
-                            <Group gap={6} wrap="nowrap" align="center">
-                              {PAYMENT_MODES.map(m => (
-                                <Checkbox
-                                  key={m.value}
-                                  size="xs"
-                                  color={m.color}
-                                  label={<Text size={9} fw={700}>{m.short}</Text>}
-                                  checked={rows.length > 0 && rows.every(r => r.mode === m.value)}
-                                  onChange={() => setRows(prev => prev.map(r => ({ ...r, mode: m.value })))}
-                                  title={`Set all to ${m.label}`}
-                                  styles={{ input: { cursor: 'pointer' } }}
-                                />
-                              ))}
+                          <Table.Th style={{ width: 160 }}>
+                            <Group gap="md" wrap="nowrap" align="center">
+                              {PAYMENT_MODES.map(m => {
+                                // Bank: only rows with bank details are eligible. Cash: every row is eligible.
+                                const eligible = m.value === 'Bank Transfer'
+                                  ? rows.filter(r => r.bankDetails?.accountNumber && r.bankDetails.accountNumber !== '-')
+                                  : rows;
+                                const allChecked = eligible.length > 0 && eligible.every(r => r.mode === m.value);
+                                return (
+                                  <Checkbox
+                                    key={m.value}
+                                    size="xs"
+                                    color={m.color}
+                                    label={<Text size="xs" fw={700}>{m.short}</Text>}
+                                    checked={allChecked}
+                                    disabled={eligible.length === 0}
+                                    onChange={() => setRows(prev => prev.map(r => {
+                                      const hb = r.bankDetails?.accountNumber && r.bankDetails.accountNumber !== '-';
+                                      const ok = m.value === 'Bank Transfer' ? hb : true;
+                                      return ok ? { ...r, mode: m.value } : r;
+                                    }))}
+                                    title={`Set all eligible to ${m.label}`}
+                                    styles={{ input: { cursor: eligible.length === 0 ? 'not-allowed' : 'pointer' } }}
+                                  />
+                                );
+                              })}
                             </Group>
                           </Table.Th>
                           <Table.Th ta="center" style={{ width: 50 }}>✓</Table.Th>
@@ -956,12 +1213,11 @@ const BankTransferManagement = () => {
                             </Table.Td>
                             <Table.Td>
                               <Text size="xs" c="dimmed">{row.bankDetails?.bankName || '—'}</Text>
-                              {row.bankDetails?.branch && row.bankDetails.branch !== '-' && (
-                                <Text size={9} c="dimmed">Br: {row.bankDetails.branch}</Text>
-                              )}
-                              {row.bankDetails?.micr && row.bankDetails.micr !== '-' && (
-                                <Text size={9} c="dimmed">MICR: {row.bankDetails.micr}</Text>
-                              )}
+                            </Table.Td>
+                            <Table.Td>
+                              <Text size="xs" c="dimmed">
+                                {row.bankDetails?.branch && row.bankDetails.branch !== '-' ? row.bankDetails.branch : '—'}
+                              </Text>
                             </Table.Td>
                             <Table.Td ta="right">
                               <Text size="xs" fw={500} c={row.netPayable < 0 ? 'red' : 'inherit'}>
@@ -980,18 +1236,25 @@ const BankTransferManagement = () => {
                               />
                             </Table.Td>
                             <Table.Td>
-                              <Group gap={4} wrap="nowrap">
-                                {PAYMENT_MODES.map(m => (
-                                  <Checkbox
-                                    key={m.value}
-                                    size="xs"
-                                    color={m.color}
-                                    label={<Text size={9} fw={600}>{m.short}</Text>}
-                                    checked={row.mode === m.value}
-                                    onChange={() => setRowField(absIdx, 'mode', m.value)}
-                                    styles={{ input: { cursor: 'pointer' } }}
-                                  />
-                                ))}
+                              <Group gap="md" wrap="nowrap" align="center">
+                                {PAYMENT_MODES.map(m => {
+                                  const hasBank = row.bankDetails?.accountNumber && row.bankDetails.accountNumber !== '-';
+                                  // Only disable Bank when the producer has no bank details. Cash is always allowed.
+                                  const disabled = m.value === 'Bank Transfer' && !hasBank;
+                                  return (
+                                    <Checkbox
+                                      key={m.value}
+                                      size="xs"
+                                      color={m.color}
+                                      label={<Text size="xs" fw={600} c={disabled ? 'dimmed' : 'inherit'}>{m.short}</Text>}
+                                      checked={row.mode === m.value}
+                                      disabled={disabled}
+                                      onChange={() => setRowField(absIdx, 'mode', m.value)}
+                                      title={disabled ? 'No bank details — only Cash allowed' : `Set to ${m.label}`}
+                                      styles={{ input: { cursor: disabled ? 'not-allowed' : 'pointer' } }}
+                                    />
+                                  );
+                                })}
                               </Group>
                             </Table.Td>
                             <Table.Td ta="center">
@@ -1011,7 +1274,7 @@ const BankTransferManagement = () => {
                         <>
                           <Table.Tbody>
                             <Table.Tr style={{ background: 'var(--mantine-color-yellow-0)' }}>
-                              <Table.Td colSpan={10} py={4}>
+                              <Table.Td colSpan={11} py={4}>
                                 <Group gap="xs">
                                   <IconCash size={13} color="var(--mantine-color-orange-6)" />
                                   <Text size="xs" fw={700} c="orange.7">
@@ -1025,6 +1288,7 @@ const BankTransferManagement = () => {
                                 <Table.Td ta="center"><Text size="xs" c="dimmed">{idx + 1}</Text></Table.Td>
                                 <Table.Td><Text size="xs">{row.producerNumber || '-'}</Text></Table.Td>
                                 <Table.Td><Text size="xs">{row.producerName || '-'}</Text></Table.Td>
+                                <Table.Td><Text size="xs" c="dimmed">—</Text></Table.Td>
                                 <Table.Td><Text size="xs" c="dimmed">—</Text></Table.Td>
                                 <Table.Td><Text size="xs" c="dimmed">—</Text></Table.Td>
                                 <Table.Td><Text size="xs" c="dimmed">—</Text></Table.Td>
@@ -1466,6 +1730,26 @@ const BankTransferManagement = () => {
           size="xl"
         >
           <Stack gap="md">
+            {/* Bank-name filter (only on Print Bank List) */}
+            {printMode === 'bank' && (
+              <Group gap="sm" wrap="wrap" align="end">
+                <Select
+                  label="Filter by Bank"
+                  size="xs"
+                  w={260}
+                  value={printBankFilter}
+                  onChange={(v) => setPrintBankFilter(v || 'all')}
+                  data={printBankOptions}
+                  searchable
+                />
+                {printBankFilter !== 'all' && (
+                  <Button size="xs" variant="subtle" onClick={() => setPrintBankFilter('all')}>
+                    Clear
+                  </Button>
+                )}
+              </Group>
+            )}
+
             {/* Print header info */}
             <Group gap="md">
               <Text size="sm" c="dimmed">Period: <strong>{periodLabel}</strong></Text>
@@ -1473,6 +1757,9 @@ const BankTransferManagement = () => {
               <Text size="sm" c="dimmed">
                 Total: <strong>{fmt(printRows.reduce((s, r) => s + r.paymentAmount, 0))}</strong>
               </Text>
+              {printMode === 'bank' && printBankFilter !== 'all' && (
+                <Text size="sm" c="dimmed">Bank: <strong>{printBankFilter}</strong></Text>
+              )}
             </Group>
 
             <ScrollArea h={420}>
@@ -1486,6 +1773,7 @@ const BankTransferManagement = () => {
                       <>
                         <Table.Th>Account No</Table.Th>
                         <Table.Th>IFSC</Table.Th>
+                        <Table.Th>Bank</Table.Th>
                         <Table.Th>Branch</Table.Th>
                       </>
                     )}
@@ -1505,6 +1793,9 @@ const BankTransferManagement = () => {
                           <Table.Td><Text size="xs">{r.bankDetails?.accountNumber || '—'}</Text></Table.Td>
                           <Table.Td><Text size="xs">{r.bankDetails?.ifscCode || '—'}</Text></Table.Td>
                           <Table.Td><Text size="xs">{r.bankDetails?.bankName || '—'}</Text></Table.Td>
+                          <Table.Td>
+                            <Text size="xs">{r.bankDetails?.branch && r.bankDetails.branch !== '-' ? r.bankDetails.branch : '—'}</Text>
+                          </Table.Td>
                         </>
                       )}
                       <Table.Td ta="right">
@@ -1522,7 +1813,7 @@ const BankTransferManagement = () => {
                     <Table.Th
                       colSpan={
                         3 +
-                        (showBankCols ? 3 : 0) +
+                        (showBankCols ? 4 : 0) +
                         (printMode === 'all' ? 1 : 0)
                       }
                     >
@@ -1538,7 +1829,13 @@ const BankTransferManagement = () => {
             </ScrollArea>
 
             <Group justify="flex-end">
-              <Button leftSection={<IconPrinter size={16} />} onClick={() => window.print()} color="blue">
+              <Button leftSection={<IconMail size={16} />} onClick={doShareEmail} color="grape" variant="light">
+                Share via Mail
+              </Button>
+              <Button leftSection={<IconFileExport size={16} />} onClick={doExport} color="teal" variant="light">
+                Export
+              </Button>
+              <Button leftSection={<IconPrinter size={16} />} onClick={doPrint} color="blue">
                 Print
               </Button>
               <Button variant="outline" onClick={() => setPrintModal(false)}>Close</Button>

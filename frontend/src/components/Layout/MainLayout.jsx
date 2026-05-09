@@ -24,7 +24,7 @@ import {
   IconCash, IconFileReport, IconShield, IconTool, IconSearch,
   IconSpeakerphone, IconBriefcase, IconChevronDown, IconChevronRight, IconMenu2, IconLogout, IconUser,
   IconUserCog, IconBuildingStore, IconSettings, IconMilk, IconArrowLeft, IconBuildingCommunity,
-  IconCalendarEvent, IconAdjustments, IconReportAnalytics
+  IconCalendarEvent, IconAdjustments, IconReportAnalytics, IconX
 } from '@tabler/icons-react';
 import { useCompany } from '../../context/CompanyContext';
 import { useAuth } from '../../context/AuthContext';
@@ -91,6 +91,7 @@ const MainLayout = () => {
   };
 
   const isOnDashboard = location.pathname === '/';
+  const isBankTransferPage = location.pathname === '/payments/bank-transfer';
   const hideBackButton = isOnDashboard || location.pathname === '/daily-collections/milk-purchase' || location.pathname === '/farmers' || location.pathname === '/collection-centers' || location.pathname === '/agents' || location.pathname === '/customers' || location.pathname === '/daily-collections/union-sales-slip' || location.pathname === '/daily-collections/milk-sales' || location.pathname === '/daily-collections/list' || location.pathname === '/reports/salesman-balance' || location.pathname === '/daily-collections/rate-chart-settings' || location.pathname === '/reports/cash-book' || location.pathname === '/reports/daybook';
 
   // ── Global hotkeys ──────────────────────────────────────────────────────
@@ -1027,11 +1028,13 @@ const MainLayout = () => {
           <Box px="md" pt="sm" pb={0}>
             <Button
               variant="gradient"
-              gradient={{ from: 'violet', to: 'indigo', deg: 135 }}
+              gradient={isBankTransferPage
+                ? { from: 'red', to: 'pink', deg: 135 }
+                : { from: 'violet', to: 'indigo', deg: 135 }}
               size="sm"
               radius="xl"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={handleBack}
+              leftSection={isBankTransferPage ? <IconX size={16} /> : <IconArrowLeft size={16} />}
+              onClick={isBankTransferPage ? () => navigate('/') : handleBack}
               styles={{
                 root: {
                   fontWeight: 700,
@@ -1045,7 +1048,7 @@ const MainLayout = () => {
                 },
               }}
             >
-              Back
+              {isBankTransferPage ? 'Close' : 'Back'}
             </Button>
           </Box>
         )}
