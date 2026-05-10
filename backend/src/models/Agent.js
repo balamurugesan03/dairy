@@ -4,8 +4,7 @@ const agentSchema = new mongoose.Schema({
   agentCode: {
     type: String,
     required: [true, 'Agent code is required'],
-    trim: true,
-    unique: true
+    trim: true
   },
   agentName: {
     type: String,
@@ -44,13 +43,14 @@ const agentSchema = new mongoose.Schema({
   },
   companyId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Company'
+    ref: 'Company',
+    required: true
   }
 }, {
   timestamps: true
 });
 
-agentSchema.index({ agentCode: 1 });
+agentSchema.index({ agentCode: 1, companyId: 1 }, { unique: true });
 agentSchema.index({ collectionCenterId: 1 });
 agentSchema.index({ status: 1 });
 agentSchema.index({ companyId: 1 });

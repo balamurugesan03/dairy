@@ -66,6 +66,7 @@ mongoose.connect(process.env.MONGODB_URI)
       { collection: 'purchasereturns',          index: 'returnNumber_1' }, // replaced by compound {returnNumber,companyId}
       { collection: 'machines',                 index: 'machineId_1' },    // old field removed
       { collection: 'machines',                 index: 'machineCode_1' },  // replaced by sparse index
+      { collection: 'agents',                   index: 'agentCode_1' },    // replaced by compound {agentCode,companyId}
     ];
     for (const { collection, index } of oldIndexes) {
       try {
