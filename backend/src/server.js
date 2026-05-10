@@ -76,6 +76,43 @@ mongoose.connect(process.env.MONGODB_URI)
         if (e.codeName !== 'IndexNotFound') console.warn(`Index drop warning (${collection}.${index}):`, e.message);
       }
     }
+
+    // One-time dedupe: PaymentRegister had no uniqueness on {companyId, registerType, fromDate, toDate}
+    // so duplicate cycles accumulated. Keep the most recent per (company, type, from, to) day.
+    try {
+      const coll = mongoose.connection.collection('paymentregisters');
+      const dups = await coll.aggregate([
+        {
+          $group: {
+            _id: {
+              companyId: '$companyId',
+              registerType: '$registerType',
+              fromDay: { $dateToString: { format: '%Y-%m-%d', date: '$fromDate' } },
+              toDay:   { $dateToString: { format: '%Y-%m-%d', date: '$toDate' } },
+            },
+            ids: { $push: { id: '$_id', updatedAt: '$updatedAt', createdAt: '$createdAt' } },
+            count: { $sum: 1 },
+          },
+        },
+        { $match: { count: { $gt: 1 } } },
+      ]).toArray();
+      let removed = 0;
+      for (const g of dups) {
+        const sorted = g.ids.sort((a, b) => {
+          const ax = new Date(a.updatedAt || a.createdAt || 0).getTime();
+          const bx = new Date(b.updatedAt || b.createdAt || 0).getTime();
+          return bx - ax;
+        });
+        const losers = sorted.slice(1).map(x => x.id);
+        if (losers.length) {
+          const r = await coll.deleteMany({ _id: { $in: losers } });
+          removed += r.deletedCount || 0;
+        }
+      }
+      if (removed > 0) console.log(`PaymentRegister dedupe: removed ${removed} duplicate rows`);
+    } catch (e) {
+      console.warn('PaymentRegister dedupe skipped:', e.message);
+    }
   })
   .catch((err) => console.error('MongoDB connection error:', err));
 

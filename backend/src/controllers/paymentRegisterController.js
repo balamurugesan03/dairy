@@ -376,21 +376,49 @@ export const generateProducerPaymentRegister = async (req, res) => {
 };
 
 // ─── CREATE / SAVE register ───────────────────────────────────────────────────
+// Upsert by {companyId, registerType, fromDate, toDate} so re-saves replace the
+// existing log instead of inserting a duplicate row for the same cycle.
 export const createPaymentRegister = async (req, res) => {
   try {
-    const { fromDate, toDate, entries, remarks, status } = req.body;
+    const { fromDate, toDate, entries, remarks, status, registerType } = req.body;
     const companyId = req.companyId;
 
     if (!fromDate || !toDate) {
       return res.status(400).json({ success: false, message: 'fromDate and toDate are required' });
     }
 
-    const { registerType } = req.body;
-    const reg = new PaymentRegister({
+    const fd = new Date(fromDate);
+    const td = new Date(toDate);
+    const type = registerType || 'Creditor';
+
+    // Match an existing register for the same period (±2 day window for IST/UTC drift).
+    const fdLow  = new Date(fd); fdLow.setDate(fdLow.getDate()  - 2);
+    const fdHigh = new Date(fd); fdHigh.setDate(fdHigh.getDate() + 2);
+    const tdLow  = new Date(td); tdLow.setDate(tdLow.getDate()  - 2);
+    const tdHigh = new Date(td); tdHigh.setDate(tdHigh.getDate() + 2);
+
+    let reg = await PaymentRegister.findOne({
       companyId,
-      fromDate:     new Date(fromDate),
-      toDate:       new Date(toDate),
-      registerType: registerType || 'Creditor',
+      registerType: type,
+      fromDate: { $gte: fdLow, $lte: fdHigh },
+      toDate:   { $gte: tdLow, $lte: tdHigh },
+    });
+
+    if (reg) {
+      reg.fromDate = fd;
+      reg.toDate   = td;
+      reg.entries  = entries || [];
+      if (remarks !== undefined) reg.remarks = remarks;
+      reg.status   = status || 'Saved';
+      await reg.save();
+      return res.json({ success: true, data: reg, replaced: true });
+    }
+
+    reg = new PaymentRegister({
+      companyId,
+      fromDate:     fd,
+      toDate:       td,
+      registerType: type,
       entries:      entries || [],
       remarks,
       status:       status || 'Saved',

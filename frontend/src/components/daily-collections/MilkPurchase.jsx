@@ -1003,6 +1003,32 @@ const MilkPurchase = () => {
     return () => document.removeEventListener('mousedown', h);
   }, []);
 
+  // Global Enter — when focus is on the page (no input/button/etc.):
+  //   • form not yet loaded → trigger OK (load today's entries)
+  //   • form ready          → jump to Member No
+  useEffect(() => {
+    const onEnter = async (e) => {
+      if (e.key !== 'Enter') return;
+      if (formRef.current.dupBlocked) return;
+      const ae = document.activeElement;
+      const tag = ae?.tagName;
+      const isFormEl = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || ae?.isContentEditable;
+      if (isFormEl) return;
+      e.preventDefault();
+      if (!formEnabled) {
+        setMonthMode(false);
+        setFormEnabled(false);
+        await loadTodayEntries(date, shift, center);
+        setFormEnabled(true);
+        setTimeout(() => memberRef.current?.focus(), 60);
+      } else {
+        memberRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', onEnter);
+    return () => document.removeEventListener('keydown', onEnter);
+  }, [formEnabled, date, shift, center]);
+
   // Block all keyboard input while duplicate warning is active
   useEffect(() => {
     if (!dupBlocked) return;

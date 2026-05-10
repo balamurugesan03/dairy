@@ -179,9 +179,11 @@ const MilkPaymentRegister = () => {
         const days = dsRes.data.paymentDays || 15;
         setPaymentDays(days);
 
+        // Settings → first cycle only. paymentFromDate + paymentDays seed the
+        // very first payment cycle for a company. After that, subsequent cycles
+        // auto-advance from the last applied period (latestToDate + 1).
         const latestToDate = lpRes?.data?.latestToDate;
         if (latestToDate) {
-          // Next cycle starts the day after the last applied period ended
           const fd = dayjs(latestToDate).add(1, 'day').startOf('day').toDate();
           const td = dayjs(fd).add(days - 1, 'day').toDate();
           setFormData(prev => ({ ...prev, fromDate: fd, toDate: td }));

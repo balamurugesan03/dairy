@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import {
   Container, Box, Group, Text, Title, Button, TextInput,
   Paper, Badge, Divider, ActionIcon, Tooltip,
@@ -14,7 +14,7 @@ import {
 import { useReactToPrint } from 'react-to-print';
 import * as XLSX from 'xlsx';
 import dayjs from 'dayjs';
-import { paymentRegisterAPI, farmerAPI } from '../../services/api';
+import { paymentRegisterAPI, farmerAPI, dairySettingsAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
@@ -68,6 +68,29 @@ const PaymentRegisterProducers = () => {
 
   const [fromDate,    setFromDate]    = useState(dayjs().startOf('month').toDate());
   const [toDate,      setToDate]      = useState(dayjs().endOf('month').toDate());
+  const [paymentDays, setPaymentDays] = useState(15);
+
+  // Seed cycle from Payment Settings (first cycle) or auto-advance from the
+  // last saved Producers register (subsequent cycles).
+  useEffect(() => {
+    Promise.all([
+      dairySettingsAPI.get(),
+      paymentRegisterAPI.getLatestProducers(),
+    ]).then(([dsRes, lpRes]) => {
+      const days = dsRes?.data?.paymentDays || 15;
+      setPaymentDays(days);
+      const latestToDate = lpRes?.data?.toDate;
+      if (latestToDate) {
+        const fd = dayjs(latestToDate).add(1, 'day').startOf('day').toDate();
+        const td = dayjs(fd).add(days - 1, 'day').toDate();
+        setFromDate(fd); setToDate(td);
+      } else if (dsRes?.data?.paymentFromDate) {
+        const fd = dayjs(dsRes.data.paymentFromDate).startOf('day').toDate();
+        const td = dayjs(fd).add(days - 1, 'day').toDate();
+        setFromDate(fd); setToDate(td);
+      }
+    }).catch(() => {});
+  }, []);
   const [search,      setSearch]      = useState('');
   const [rows,        setRows]        = useState([emptyRow(1)]);
   const [saving,      setSaving]      = useState(false);
@@ -449,7 +472,11 @@ const PaymentRegisterProducers = () => {
           <DatePickerInput
             label="From Date"
             value={fromDate}
-            onChange={setFromDate}
+            onChange={(v) => {
+              if (!v) return;
+              setFromDate(v);
+              setToDate(dayjs(v).add(paymentDays - 1, 'day').toDate());
+            }}
             leftSection={<IconCalendar size={15} />}
             valueFormat="DD/MM/YYYY"
             style={{ minWidth: 140 }}
