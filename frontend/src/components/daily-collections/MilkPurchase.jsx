@@ -204,6 +204,32 @@ const MilkPurchase = () => {
   const [agentsData,  setAgentsData]  = useState([]);
   const [date,   setDate]   = useState(new Date());
   const navigate = useNavigate();
+
+  // Keyboard swap:
+  //   • Ctrl/⌘ + S | plain S → Milk Sales
+  //   • Ctrl/⌘ + P | plain P → Milk Purchase (this page)
+  // Plain-letter shortcuts only fire when focus is NOT in an input/textarea/
+  // select/contenteditable element, so typing the letter in a field doesn't
+  // hijack the page.
+  useEffect(() => {
+    const onKey = (e) => {
+      const k = e.key?.toLowerCase();
+      if (k !== 's' && k !== 'p') return;
+
+      const ae  = document.activeElement;
+      const tag = ae?.tagName;
+      const isFormEl = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ae?.isContentEditable;
+      const withMod  = e.ctrlKey || e.metaKey;
+      if (!withMod && isFormEl) return;     // typing letters in a field
+
+      e.preventDefault();
+      if (k === 's') navigate('/daily-collections/milk-sales');
+      else           navigate('/daily-collections/milk-purchase');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [navigate]);
+
   const [shift,  setShift]  = useState('AM');
   const [center, setCenter] = useState('');
   const [agent,  setAgent]  = useState('');
@@ -826,9 +852,18 @@ const MilkPurchase = () => {
 
   useEffect(() => {
     if (center) {
-      loadTodayEntries(date, shift, center);
+      (async () => {
+        await loadTodayEntries(date, shift, center);
+        // Auto-activate the entry form so swapping back to this page (or
+        // first-time landing with a default center) doesn't make the user
+        // re-click OK. The "Select date & shift … click OK" prompt only
+        // appears when no center is selected yet.
+        setFormEnabled(true);
+      })();
       const found = centersData.find(c => c.value === center);
       if (found) centerNameRef.current = found.label;
+    } else {
+      setFormEnabled(false);
     }
   }, [date, shift, center]); // eslint-disable-line
 
@@ -1017,7 +1052,6 @@ const MilkPurchase = () => {
       e.preventDefault();
       if (!formEnabled) {
         setMonthMode(false);
-        setFormEnabled(false);
         await loadTodayEntries(date, shift, center);
         setFormEnabled(true);
         setTimeout(() => memberRef.current?.focus(), 60);
@@ -1402,7 +1436,6 @@ const MilkPurchase = () => {
           <Button
             onClick={async () => {
               setMonthMode(false);
-              setFormEnabled(false);
               await loadTodayEntries(date, shift, center);
               setFormEnabled(true);
             }}
@@ -1875,7 +1908,7 @@ const MilkPurchase = () => {
                 {monthMode && (
                   <Button
                     size="xs" radius="md"
-                    onClick={async () => { setMonthMode(false); setFormEnabled(false); await loadTodayEntries(date, shift, center); setFormEnabled(true); }}
+                    onClick={async () => { setMonthMode(false); await loadTodayEntries(date, shift, center); setFormEnabled(true); }}
                     style={{ height: 24, padding: '0 8px', fontSize: 10, fontWeight: 700, background: 'rgba(255,255,255,0.08)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}
                   >
                     Today
@@ -1949,7 +1982,7 @@ const MilkPurchase = () => {
               </Button>
 
               {/* REFRESH */}
-              <Button leftSection={<IconRefresh size={12} />} onClick={async () => { setFormEnabled(false); await loadTodayEntries(date, shift, center); setFormEnabled(true); }}
+              <Button leftSection={<IconRefresh size={12} />} onClick={async () => { await loadTodayEntries(date, shift, center); setFormEnabled(true); }}
                 size="compact-xs" radius="sm"
                 style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Refresh

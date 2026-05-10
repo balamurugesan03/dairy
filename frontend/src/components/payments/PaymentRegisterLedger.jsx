@@ -620,23 +620,29 @@ const PaymentRegisterLedger = () => {
       const cycleFromStr = dayjs(from).format('YYYY-MM-DD');
       const cycleToStr   = dayjs(to).format('YYYY-MM-DD');
 
-      // Build farmerId → FarmerPayment map filtered to the current displayed period.
-      // Prefer Ledger-paid over BankTransfer-pending when a farmer has both.
+      // Build farmerId → FarmerPayment map for THIS exact cycle. We only merge
+      // a prior payment when its period matches the displayed cycle within
+      // ±2 days (IST/UTC drift tolerance). Overlap-only matching pulled in
+      // payments from neighbouring cycles (e.g. May 1–15 vs the new May 1–10),
+      // marking the new rows as already-paid and silently skipping the new
+      // FarmerPayment creation on save.
+      const cycleFromDjs = dayjs(cycleFromStr);
+      const cycleToDjs   = dayjs(cycleToStr);
+      const sameCycle = (pmtFrom, pmtTo) => {
+        if (!pmtFrom || !pmtTo) return false;
+        return Math.abs(pmtFrom.diff(cycleFromDjs, 'day')) <= 2
+            && Math.abs(pmtTo.diff(cycleToDjs,   'day')) <= 2;
+      };
+
       const pmtMap = {};
       payments.forEach(pmt => {
         const fid = pmt.farmerId?._id?.toString() || pmt.farmerId?.toString() || '';
         if (!fid) return;
         if (pmt.status === 'Cancelled') return; // skip reversed/cancelled payments
 
-        // Skip payments whose period does not overlap with the displayed cycle
         const pmtFrom = pmt.paymentPeriod?.fromDate ? dayjs(pmt.paymentPeriod.fromDate) : null;
         const pmtTo   = pmt.paymentPeriod?.toDate   ? dayjs(pmt.paymentPeriod.toDate)   : null;
-        if (pmtFrom && pmtTo) {
-          const pmtFromStr = pmtFrom.format('YYYY-MM-DD');
-          const pmtToStr   = pmtTo.format('YYYY-MM-DD');
-          // no overlap: payment ended before cycle starts OR payment started after cycle ends
-          if (pmtToStr < cycleFromStr || pmtFromStr > cycleToStr) return;
-        }
+        if (!sameCycle(pmtFrom, pmtTo)) return;
 
         const existing = pmtMap[fid];
         if (!existing) {
@@ -854,6 +860,13 @@ const PaymentRegisterLedger = () => {
           ? [{ type: 'Other', amount: n(row.otherEarnings), description: 'Other Earnings' }]
           : [];
 
+        // Only rows with a positive Net Pay are queued for Bank Transfer.
+        // Recovery-only rows (net pay ≤ 0) save the deductions in the date-
+        // based ledger but stay on Payment Register Detailed only — no Bank
+        // Transfer entry is needed when there's nothing to disburse.
+        const netPay = n(row.netPay);
+        const isBankPayable = netPay > 0;
+
         const res = await paymentAPI.create({
           farmerId:        row.farmerId,
           farmerName:      row.producerName || '',
@@ -863,9 +876,9 @@ const PaymentRegisterLedger = () => {
           previousBalance: n(row.prevBalance),
           bonuses,
           deductions,
-          paidAmount:      0,                        // no amount paid yet — goes to Bank Transfer
-          paymentMode:     row.payMode || 'Cash',    // cash/bank stored for Bank Transfer sorting
-          paymentSource:   'BankTransfer',           // all locked rows go to Bank Transfer module
+          paidAmount:      0,                              // no amount paid yet
+          paymentMode:     row.payMode || 'Cash',          // cash/bank stored for Bank Transfer sorting
+          paymentSource:   isBankPayable ? 'BankTransfer' : 'PaymentRegister',
           remarks:         `Payment Register — ${dayjs(periodFrom).format('DD/MM')}–${dayjs(periodTo).format('DD/MM/YYYY')}`,
         });
         if (res && res.success === false) {

@@ -8,13 +8,14 @@ import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import {
   IconCalendar, IconRefresh, IconPrinter, IconFileSpreadsheet,
-  IconSearch, IconCheck, IconArrowLeft,
+  IconSearch, IconCheck, IconArrowLeft, IconPlus,
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { useReactToPrint } from 'react-to-print';
 import * as XLSX from 'xlsx';
 import { cashAdvanceAPI, cattleFeedAdvanceAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
+import CashAdvanceFormModal from './CashAdvanceFormModal';
 
 /* ─── helpers ─── */
 const n   = (v) => parseFloat(v) || 0;
@@ -71,6 +72,7 @@ const CashAdvanceSummary = () => {
   const [summaryRows,   setSummaryRows]   = useState([]);
   const [summaryTotals, setSummaryTotals] = useState(null);
   const [ledgerData,    setLedgerData]    = useState(null);
+  const [newOpen,       setNewOpen]       = useState(false);
 
   useEffect(() => {
     cattleFeedAdvanceAPI.getFarmers().then(res => {
@@ -216,9 +218,22 @@ const CashAdvanceSummary = () => {
           <Box style={{ flex: 1 }} />
 
           <Button
+            leftSection={<IconPlus size={15} />} size="sm"
+            onClick={() => setNewOpen(true)}
+            styles={{
+              root: {
+                background: '#1D4ED8',
+                fontWeight: 600,
+                boxShadow:  '0 1px 2px rgba(29, 78, 216, 0.18)',
+              },
+            }}
+          >
+            New Cash Advance
+          </Button>
+          <Button
             leftSection={<IconSearch size={15} />} size="sm"
             onClick={activeTab === 'summary' ? fetchSummary : fetchLedger}
-            loading={loading} color="blue"
+            loading={loading} color="blue" variant="light"
           >
             Generate
           </Button>
@@ -245,6 +260,12 @@ const CashAdvanceSummary = () => {
           </Tooltip>
         </Group>
       </Paper>
+
+      <CashAdvanceFormModal
+        opened={newOpen}
+        onClose={() => setNewOpen(false)}
+        onSaved={() => { setNewOpen(false); fetchSummary(); }}
+      />
 
       <Paper withBorder shadow="sm" radius="md" style={{ position: 'relative' }}>
         <LoadingOverlay visible={loading} />

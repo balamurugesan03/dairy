@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box, Group, Text, TextInput, NumberInput, Select, Button,
   Table, ScrollArea, ActionIcon, Badge, Divider, Center,
@@ -144,6 +145,33 @@ const toDate = (d) => {
 
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 export default function MilkSales() {
+  const navigate = useNavigate();
+
+  // Keyboard swap:
+  //   • Ctrl/⌘ + S | plain S → Milk Sales (this page)
+  //   • Ctrl/⌘ + P | plain P → Milk Purchase
+  // Plain-letter shortcuts only fire when focus is NOT in an input/textarea/
+  // select/contenteditable element, so typing the letter in a field doesn't
+  // hijack the page.
+  useEffect(() => {
+    const onKey = (e) => {
+      const k = e.key?.toLowerCase();
+      if (k !== 's' && k !== 'p') return;
+
+      const ae  = document.activeElement;
+      const tag = ae?.tagName;
+      const isFormEl = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ae?.isContentEditable;
+      const withMod  = e.ctrlKey || e.metaKey;
+      if (!withMod && isFormEl) return;     // typing letters in a field
+
+      e.preventDefault();
+      if (k === 's') navigate('/daily-collections/milk-sales');
+      else           navigate('/daily-collections/milk-purchase');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [navigate]);
+
   const [mode,    setMode]    = useState('LOCAL');
   const [session, setSession] = useState('AM');
   const [date,    setDate]    = useState(new Date());

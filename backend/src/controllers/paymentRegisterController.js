@@ -296,13 +296,22 @@ export const generateProducerPaymentRegister = async (req, res) => {
     //   (i)  Pending/Partial payments → balanceAmount still owed (0 after bank transfer applies)
     //   (ii) ANY prior-cycle payment (any status) → tells us it's NOT the first cycle
     //        so we use 0 (fully paid) instead of dueAmount when cycle 1 is already Paid.
+    // Previous-cycle window: paymentPeriod.toDate is stored at end-of-day on
+    // the cycle's last date, while `start` is the new cycle's midnight. Using
+    // `$lt: start` lets through any payment whose toDate sits in the last
+    // millisecond before midnight (legitimate prior cycles), but also misses
+    // payments stored exactly at the prev-cycle's UTC end-of-day. Switch to
+    // `$lte: prevCycleEnd` (start − 1ms) so every prior-cycle payment is
+    // correctly counted as "previous".
+    const prevCycleEnd = new Date(start.getTime() - 1);
+
     const [pendingPayAgg, anyPriorAgg] = await Promise.all([
       FarmerPayment.aggregate([
         {
           $match: {
             companyId,
             status:                 { $in: ['Pending', 'Partial'] },
-            'paymentPeriod.toDate': { $lt: start },
+            'paymentPeriod.toDate': { $lte: prevCycleEnd },
           },
         },
         { $group: { _id: '$farmerId', total: { $sum: '$balanceAmount' } } },
@@ -312,7 +321,7 @@ export const generateProducerPaymentRegister = async (req, res) => {
           $match: {
             companyId,
             status:                 { $ne: 'Cancelled' },
-            'paymentPeriod.toDate': { $lt: start },
+            'paymentPeriod.toDate': { $lte: prevCycleEnd },
           },
         },
         { $group: { _id: '$farmerId', count: { $sum: 1 } } },
@@ -734,19 +743,26 @@ export const applyEntryPayment = async (req, res) => {
     if ((cashRec       || 0)    > 0) deductions.push({ type: 'Cash Recovery',     amount: cashRec,          description: 'Cash Recovery' });
     if ((otherDed      || 0)    > 0) deductions.push({ type: 'Other',             amount: otherDed,         description: 'Other' });
 
-    // Create FarmerPayment
+    // Create FarmerPayment.
+    // Bank Transfer mode → queue as Pending so retrieveBalances picks it up
+    // (filter requires paymentSource='BankTransfer' AND status in Pending/Partial).
+    // Cash/Cheque/Direct → mark Paid immediately.
+    const isBankMode = mode === 'Bank Transfer' || mode === 'Bank';
     const fp = new FarmerPayment({
       companyId,
       farmerId:        entry.farmerId,
       farmerName:      entry.productName,
-      paymentDate:     new Date(),
+      paymentDate:     reg.toDate || new Date(),
       paymentPeriod:   { fromDate: reg.fromDate, toDate: reg.toDate, periodType: 'Custom' },
       milkAmount:      entry.milkValue,
       previousBalance: entry.previousBalance,
       deductions,
-      paidAmount:      netAmount,
+      netPayable:      entry.netPay,
+      paidAmount:      isBankMode ? 0 : netAmount,
+      balanceAmount:   isBankMode ? entry.netPay : 0,
       paymentMode:     mode,
-      status:          'Paid',
+      paymentSource:   isBankMode ? 'BankTransfer' : 'PaymentRegister',
+      status:          isBankMode ? 'Pending' : 'Paid',
       remarks:         `Ledger — ${reg.fromDate.toLocaleDateString('en-IN')}–${reg.toDate.toLocaleDateString('en-IN')}`,
     });
     await fp.save();

@@ -24,7 +24,7 @@ const advanceSchema = new mongoose.Schema({
   // Advance type categorization
   advanceType: {
     type: String,
-    enum: ['Regular', 'Emergency', 'Festival', 'Medical', 'Agriculture', 'Cattle Purchase', 'Feed', 'Other'],
+    enum: ['Regular', 'Emergency', 'Festival', 'Medical', 'Agriculture', 'Cattle Purchase', 'Feed', 'Cash', 'Other'],
     default: 'Regular'
   },
   // Advance category for deduction priority

@@ -236,39 +236,44 @@ export const createFarmerPayment = async (req, res) => {
     // Populate farmer details for response
     await payment.populate('farmerId', 'farmerNumber personalDetails');
 
-    // Auto-create ProducerPayment so net pay appears in /payments/payment-to-producer
-    try {
-      const farmer = payment.farmerId; // already populated
-      const ppData = {
-        companyId:         payment.companyId,
-        farmerId:          farmer._id || payment.farmerId,
-        amountPaid:        payment.netPayable,
-        processingPeriod:  {
-          fromDate: payment.paymentPeriod?.fromDate || payment.paymentDate,
-          toDate:   payment.paymentPeriod?.toDate   || payment.paymentDate,
-        },
-        paymentDate:          payment.paymentDate,
-        isPartialPayment:     payment.status === 'Partial',
-        producerNumber:       farmer.farmerNumber || '',
-        producerName:         farmer.personalDetails?.name || '',
-        paymentMode:          payment.paymentMode || 'Cash',
-        lastAbstractBalance:  payment.netPayable,
-        remarks:              `Auto — ${payment.paymentNumber || ''}`,
-        createdBy:            payment.createdBy,
-      };
+    // Auto-create ProducerPayment ONLY when the payment was actually paid out
+    // (cash/cheque, paidAmount > 0). Pending Bank-Transfer rows must not mirror
+    // here, otherwise retrieveBalances treats the farmer as already-paid and
+    // hides them from the Bank Transfer queue.
+    if ((paymentData.paidAmount || 0) > 0) {
       try {
-        await saveWithUniqueNumber({
-          Model:       ProducerPayment,
-          companyId:   payment.companyId,
-          prefix:      'PTP',
-          numberField: 'paymentNumber',
-          build:       () => new ProducerPayment(ppData),
-        });
-      } catch (ppSaveErr) {
-        console.warn('ProducerPayment auto-create skipped:', ppSaveErr.message);
+        const farmer = payment.farmerId; // already populated
+        const ppData = {
+          companyId:         payment.companyId,
+          farmerId:          farmer._id || payment.farmerId,
+          amountPaid:        payment.paidAmount,
+          processingPeriod:  {
+            fromDate: payment.paymentPeriod?.fromDate || payment.paymentDate,
+            toDate:   payment.paymentPeriod?.toDate   || payment.paymentDate,
+          },
+          paymentDate:          payment.paymentDate,
+          isPartialPayment:     payment.status === 'Partial',
+          producerNumber:       farmer.farmerNumber || '',
+          producerName:         farmer.personalDetails?.name || '',
+          paymentMode:          payment.paymentMode || 'Cash',
+          lastAbstractBalance:  payment.netPayable,
+          remarks:              `Auto — ${payment.paymentNumber || ''}`,
+          createdBy:            payment.createdBy,
+        };
+        try {
+          await saveWithUniqueNumber({
+            Model:       ProducerPayment,
+            companyId:   payment.companyId,
+            prefix:      'PTP',
+            numberField: 'paymentNumber',
+            build:       () => new ProducerPayment(ppData),
+          });
+        } catch (ppSaveErr) {
+          console.warn('ProducerPayment auto-create skipped:', ppSaveErr.message);
+        }
+      } catch (ppErr) {
+        console.warn('ProducerPayment auto-create skipped:', ppErr.message);
       }
-    } catch (ppErr) {
-      console.warn('ProducerPayment auto-create skipped:', ppErr.message);
     }
 
     res.status(201).json({
@@ -508,21 +513,21 @@ export const updatePayment = async (req, res) => {
 };
 
 // Reverse every side-effect of a saved FarmerPayment so the farmer's CF / Cash
-// / Loan ledgers, ProducerOpening, Day Book vouchers, and ProducerPayment row
-// all return to their pre-save state. Called by both the per-payment delete
-// endpoint and the reverse-register flow on payment-register-detailed.
+// / Loan ledgers, Day Book vouchers, and ProducerPayment row all return to
+// their pre-save state. ProducerOpening is intentionally NEVER mutated —
+// createFarmerPayment doesn't touch it (the advance summary pages compute
+// closing as opening + advanced − recovery and recoveries are sourced from
+// FarmerPayment.deductions), so neither should the reverse.
 //
 // Reverses, in order:
 //   1. Advance recovery FIFO — restore balances on Advance rows we adjusted.
 //   2. ProducerLoan recovery FIFO — restore loan outstanding & status.
-//   3. ProducerOpening leftover — add back what didn't fit on Advance/Loan rows.
-//   4. Auto-created Advance rows (CF/Cash advances disbursed by this payment).
-//   5. Auto-created ProducerLoan rows (Loan Advances disbursed by this payment).
-//   6. Auto-posted Vouchers (recovery journal + producers-dues payment).
-//   7. Auto-created ProducerPayment row (the /payment-to-producer mirror).
+//   3. Auto-created Advance rows (CF/Cash advances disbursed by this payment).
+//   4. Auto-created ProducerLoan rows (Loan Advances disbursed by this payment).
+//   5. Auto-posted Vouchers (recovery journal + producers-dues payment).
+//   6. Auto-created ProducerPayment row (the /payment-to-producer mirror).
 export const purgeFarmerPaymentSideEffects = async (payment) => {
   // 1. Reverse Advance adjustments that referenced this payment
-  let reversedCF = 0, reversedCash = 0;
   const affectedAdvances = await Advance.find({ 'adjustments.referenceId': payment._id });
   for (const adv of affectedAdvances) {
     const totalReversed = adv.adjustments
@@ -533,12 +538,9 @@ export const purgeFarmerPaymentSideEffects = async (payment) => {
     adv.adjustments    = adv.adjustments.filter(a => String(a.referenceId) !== String(payment._id));
     adv.status = adv.balanceAmount > 0 ? (adv.adjustedAmount > 0 ? 'Partially Adjusted' : 'Active') : 'Adjusted';
     await adv.save();
-    if (adv.advanceCategory === 'CF Advance')   reversedCF   += totalReversed;
-    if (adv.advanceCategory === 'Cash Advance') reversedCash += totalReversed;
   }
 
   // 2. Reverse ProducerLoan recoveries for Loan Advance / Loan Recovery deductions
-  let reversedLoan = 0;
   for (const deduction of (payment.deductions || [])) {
     if (!['Loan Advance', 'Loan Recovery'].includes(deduction.type) || !deduction.amount) continue;
     let remaining = deduction.amount;
@@ -557,39 +559,10 @@ export const purgeFarmerPaymentSideEffects = async (payment) => {
       }
       await loan.save();
       remaining -= reverseAmt;
-      reversedLoan += reverseAmt;
     }
   }
 
-  // 3. Restore any unallocated recovery to ProducerOpening
-  let dedCF = 0, dedCash = 0, dedLoan = 0;
-  for (const d of (payment.deductions || [])) {
-    const amt = d.amount || 0;
-    if (d.type === 'CF Advance'   || d.type === 'CF Recovery')   dedCF   += amt;
-    if (d.type === 'Cash Advance' || d.type === 'Cash Recovery') dedCash += amt;
-    if (d.type === 'Loan Advance' || d.type === 'Loan Recovery') dedLoan += amt;
-  }
-  const restoreCF   = Math.max(0, dedCF   - reversedCF);
-  const restoreCash = Math.max(0, dedCash - reversedCash);
-  const restoreLoan = Math.max(0, dedLoan - reversedLoan);
-  if (restoreCF > 0 || restoreCash > 0 || restoreLoan > 0) {
-    try {
-      const opening = await ProducerOpening.findOne({
-        companyId: payment.companyId,
-        farmerId:  payment.farmerId,
-      });
-      if (opening) {
-        if (restoreCF   > 0) opening.cfAdvance   = (opening.cfAdvance   || 0) + restoreCF;
-        if (restoreCash > 0) opening.cashAdvance = (opening.cashAdvance || 0) + restoreCash;
-        if (restoreLoan > 0) opening.loanAdvance = (opening.loanAdvance || 0) + restoreLoan;
-        await opening.save();
-      }
-    } catch (openErr) {
-      console.error('ProducerOpening restore failed:', openErr.message);
-    }
-  }
-
-  // 4 & 5. Delete Advance / ProducerLoan rows AUTO-CREATED by this payment.
+  // 3 & 4. Delete Advance / ProducerLoan rows AUTO-CREATED by this payment.
   // createFarmerPayment stamps `remarks: \`From Payment <paymentNumber>...\``
   // on every advance/loan it disburses, so we can remove them by remarks match.
   if (payment.paymentNumber) {
@@ -600,7 +573,7 @@ export const purgeFarmerPaymentSideEffects = async (payment) => {
     catch (e) { console.warn('ProducerLoan auto-create cleanup skipped:', e.message); }
   }
 
-  // 6. Delete every Voucher tied to this FarmerPayment (recovery journal +
+  // 5. Delete every Voucher tied to this FarmerPayment (recovery journal +
   // producers-dues payment + any future ones — all use referenceType=FarmerPayment).
   try {
     await Voucher.deleteMany({ referenceType: 'FarmerPayment', referenceId: payment._id });
@@ -612,7 +585,7 @@ export const purgeFarmerPaymentSideEffects = async (payment) => {
     }
   }
 
-  // 7. Delete the auto-mirrored ProducerPayment (`Auto — <paymentNumber>` remarks)
+  // 6. Delete the auto-mirrored ProducerPayment (`Auto — <paymentNumber>` remarks)
   if (payment.paymentNumber) {
     try {
       await ProducerPayment.deleteMany({

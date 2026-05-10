@@ -132,20 +132,23 @@ export const retrieveBalances = async (req, res) => {
       };
 
       if (transferBasis === 'As on Date Balance') {
-        // Query pending BankTransfer payments restricted to the selected cycle (when provided)
+        // Query pending BankTransfer payments restricted to the selected cycle (when provided).
+        // Sum balanceAmount (not netPayable) so a partial transfer leaves only
+        // the remaining balance in the queue, not the original full amount.
         const pendingPayments = await FarmerPayment.find(baseFpQuery).sort({ paymentDate: -1 });
 
-        netPayable = pendingPayments.reduce((sum, p) => sum + (p.netPayable || 0), 0);
-        // Use paymentMode from the most recent payment record
+        netPayable = pendingPayments.reduce((sum, p) => sum + (p.balanceAmount || 0), 0);
         if (pendingPayments.length > 0) {
           paymentMode = pendingPayments[0].paymentMode || 'Bank Transfer';
         }
       } else {
-        // Most recent BankTransfer-source pending payment in the cycle
+        // Most recent BankTransfer-source pending payment in the cycle.
+        // balanceAmount reflects what's actually left to disburse after any
+        // partial apply; netPayable is the original gross amount.
         const lastPeriod = await FarmerPayment.findOne(baseFpQuery).sort({ paymentDate: -1 });
 
         if (lastPeriod) {
-          netPayable = lastPeriod.netPayable || 0;
+          netPayable = lastPeriod.balanceAmount || 0;
           paymentMode = lastPeriod.paymentMode || 'Bank Transfer';
         }
       }
@@ -162,10 +165,10 @@ export const retrieveBalances = async (req, res) => {
         }
       }
 
-      // When a cycle is selected and we have no register fallback, only include
-      // farmers who have a non-zero balance in the cycle (legacy path — keeps
-      // old behaviour for cycles whose PaymentRegister was deleted).
-      if (cycleFpFilter && netPayable === 0) {
+      // Bank Transfer queues only farmers with a positive net pay. Recovery-
+      // only rows (net pay ≤ 0) are recorded in Payment Register Detailed but
+      // have nothing to disburse, so they're skipped here.
+      if (cycleFpFilter && netPayable <= 0) {
         continue;
       }
 
@@ -329,9 +332,17 @@ export const applyBankTransfer = async (req, res) => {
       }),
     });
 
-    // Mark each farmer's pending BankTransfer-source FarmerPayment as Paid
+    // Mark each farmer's pending BankTransfer FarmerPayment.
+    // balanceAmount = max(0, netPayable − transferAmount). When the transfer
+    // is short of the full netPayable (round-down or partial), the row stays
+    // Partial with the remaining balance — the next cycle's previousBalance
+    // aggregation picks it up automatically via $sum: '$balanceAmount'.
     for (const d of approvedTransfers) {
       try {
+        const netPayable    = d.netPayable     || 0;
+        const transferAmt   = d.transferAmount || 0;
+        const balanceAmount = Math.max(0, netPayable - transferAmt);
+        const newStatus     = transferAmt >= netPayable ? 'Paid' : 'Partial';
         await FarmerPayment.updateMany(
           {
             companyId,
@@ -341,9 +352,9 @@ export const applyBankTransfer = async (req, res) => {
           },
           {
             $set: {
-              paidAmount:    d.transferAmount,
-              balanceAmount: 0,
-              status:        'Paid',
+              paidAmount:    transferAmt,
+              balanceAmount,
+              status:        newStatus,
             },
           }
         );
@@ -738,7 +749,9 @@ export const cancelBankTransfer = async (req, res) => {
       detail.transferStatus = 'Cancelled';
     });
 
-    // Reverse FarmerPayment records back to Pending (so they re-appear for processing)
+    // Reverse FarmerPayment records back to Pending. balanceAmount must be
+    // restored to the full netPayable so the next-cycle prevBalance carry
+    // picks the amount up via $sum: '$balanceAmount'.
     for (const d of bankTransfer.transferDetails) {
       try {
         await FarmerPayment.updateMany(
@@ -746,12 +759,12 @@ export const cancelBankTransfer = async (req, res) => {
             companyId:     req.userCompany,
             farmerId:      d.farmerId,
             paymentSource: 'BankTransfer',
-            status:        'Paid',
+            status:        { $in: ['Paid', 'Partial'] },
           },
           {
             $set: {
               paidAmount:    0,
-              balanceAmount: 0,
+              balanceAmount: d.netPayable || 0,
               status:        'Pending',
             },
           }
@@ -968,7 +981,8 @@ export const deleteBankTransfer = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Bank transfer not found' });
     }
 
-    // Reverse each farmer's FarmerPayment back to BankTransfer-pending (Pending, paidAmount=0)
+    // Reverse each farmer's FarmerPayment back to BankTransfer-pending so the
+    // balance carries forward into the next cycle's previousBalance.
     for (const d of bankTransfer.transferDetails) {
       try {
         await FarmerPayment.updateMany(
@@ -976,12 +990,12 @@ export const deleteBankTransfer = async (req, res) => {
             companyId:     req.userCompany,
             farmerId:      d.farmerId,
             paymentSource: 'BankTransfer',
-            status:        'Paid',
+            status:        { $in: ['Paid', 'Partial'] },
           },
           {
             $set: {
               paidAmount:    0,
-              balanceAmount: 0,
+              balanceAmount: d.netPayable || 0,
               status:        'Pending',
             },
           }
@@ -1057,6 +1071,7 @@ export const getPendingPeriods = async (req, res) => {
           companyId: new mongoose.Types.ObjectId(companyId),
           paymentSource: 'BankTransfer',
           status: { $in: ['Pending', 'Partial'] },
+          balanceAmount: { $gt: 0 },                         // remaining to disburse
           'paymentPeriod.fromDate': { $exists: true },
           'paymentPeriod.toDate':   { $exists: true },
         }
@@ -1068,7 +1083,7 @@ export const getPendingPeriods = async (req, res) => {
             toDate:   '$paymentPeriod.toDate',
           },
           count:    { $sum: 1 },
-          totalAmt: { $sum: '$netPayable' },
+          totalAmt: { $sum: '$balanceAmount' },
         }
       },
       { $sort: { '_id.fromDate': -1 } },
