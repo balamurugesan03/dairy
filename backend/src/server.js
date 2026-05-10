@@ -67,6 +67,7 @@ mongoose.connect(process.env.MONGODB_URI)
       { collection: 'machines',                 index: 'machineId_1' },    // old field removed
       { collection: 'machines',                 index: 'machineCode_1' },  // replaced by sparse index
       { collection: 'agents',                   index: 'agentCode_1' },    // replaced by compound {agentCode,companyId}
+      { collection: 'producerpayments',         index: 'paymentNumber_1' }, // replaced by compound {companyId,paymentNumber}
     ];
     for (const { collection, index } of oldIndexes) {
       try {
@@ -112,6 +113,63 @@ mongoose.connect(process.env.MONGODB_URI)
       if (removed > 0) console.log(`PaymentRegister dedupe: removed ${removed} duplicate rows`);
     } catch (e) {
       console.warn('PaymentRegister dedupe skipped:', e.message);
+    }
+
+    // One-time fix: Ledger registers saved before the cf/cash/loan-opening
+    // safeguard could have stale opening balances copied from ProducerOpening
+    // (live CF Advance summary) instead of the prior cycle's remaining balance.
+    // For each Ledger register past cycle 1 of its company, recompute the
+    // openings from the immediately-prior Ledger register's entries.
+    try {
+      const coll = mongoose.connection.collection('paymentregisters');
+      const ledgers = await coll.find({ registerType: 'Ledger' }).sort({ companyId: 1, fromDate: 1 }).toArray();
+      const byCo = new Map();
+      for (const r of ledgers) {
+        const k = String(r.companyId);
+        if (!byCo.has(k)) byCo.set(k, []);
+        byCo.get(k).push(r);
+      }
+      let fixed = 0;
+      for (const regs of byCo.values()) {
+        for (let i = 1; i < regs.length; i++) {
+          const prev = regs[i - 1];
+          const curr = regs[i];
+          const carryMap = {};
+          (prev.entries || []).forEach(e => {
+            const fid = e.farmerId?.toString();
+            if (!fid) return;
+            carryMap[fid] = {
+              cfAdv:   Math.max(0, (e.cfAdv   || 0) - (e.cfRec   || 0)),
+              cashAdv: Math.max(0, (e.cashAdv || 0) - (e.cashRec || 0)),
+              loanAdv: Math.max(0, (e.loanAdv || 0) - (e.loanRec || 0)),
+            };
+          });
+          let changed = false;
+          const newEntries = (curr.entries || []).map(e => {
+            const fid = e.farmerId?.toString();
+            const carry = fid ? carryMap[fid] : null;
+            if (carry) {
+              if ((e.cfAdv ?? 0) !== carry.cfAdv || (e.cashAdv ?? 0) !== carry.cashAdv || (e.loanAdv ?? 0) !== carry.loanAdv) {
+                changed = true;
+                return { ...e, cfAdv: carry.cfAdv, cashAdv: carry.cashAdv, loanAdv: carry.loanAdv };
+              }
+            } else {
+              if ((e.cfAdv || 0) !== 0 || (e.cashAdv || 0) !== 0 || (e.loanAdv || 0) !== 0) {
+                changed = true;
+                return { ...e, cfAdv: 0, cashAdv: 0, loanAdv: 0 };
+              }
+            }
+            return e;
+          });
+          if (changed) {
+            await coll.updateOne({ _id: curr._id }, { $set: { entries: newEntries } });
+            fixed++;
+          }
+        }
+      }
+      if (fixed > 0) console.log(`PaymentRegister opening-balance fix: corrected ${fixed} Ledger register(s)`);
+    } catch (e) {
+      console.warn('PaymentRegister opening-balance fix skipped:', e.message);
     }
   })
   .catch((err) => console.error('MongoDB connection error:', err));

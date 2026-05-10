@@ -20,7 +20,10 @@ import {
   adjustAdvance,
   cancelAdvance,
   getAdvanceStats,
-  getCashAdvanceSummary
+  getCashAdvanceSummary,
+  getLoanAdvanceSummary,
+  getLoanAdvanceLedger,
+  getCashAdvanceLedger,
 } from '../controllers/paymentController.js';
 
 import {
@@ -93,6 +96,15 @@ router.get('/advances/stats', getAdvanceStats);
 
 // Cash advance summary report (producer-wise)
 router.get('/advances/cash-summary', getCashAdvanceSummary);
+
+// Cash advance ledger for a single farmer
+router.get('/advances/cash-ledger', getCashAdvanceLedger);
+
+// Loan advance summary report (producer-wise) — same shape as cash-summary
+router.get('/advances/loan-summary', getLoanAdvanceSummary);
+
+// Loan advance ledger for a single farmer
+router.get('/advances/loan-ledger', getLoanAdvanceLedger);
 
 // Get farmer advances (must be before :id route)
 router.get('/advances/farmer/:farmerId', getFarmerAdvances);

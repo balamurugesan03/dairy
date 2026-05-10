@@ -597,13 +597,16 @@ const PaymentRegisterLedger = () => {
         if (r.farmerId && r.balance > 0) cfAdvMap[r.farmerId] = r.balance;
       });
 
-      // Apply CF advance balance. Skip when the backend already carried a
-      // value forward from a prior saved PaymentRegister (cycle 2+) — that
-      // carry equals (prev cycle's cfAdv − cfRec) and is authoritative.
-      // Otherwise, on a fresh first cycle, populate from the live CF Advance
-      // summary so the user sees the outstanding balance.
+      // Apply CF advance balance. Only on the very FIRST cycle for this
+      // company — once any prior cycle has been paid, the backend's carry
+      // forward value (= prev cycle's cfAdv − cfRec) is authoritative and the
+      // live CF Advance summary must not overwrite it back to the original
+      // ProducerOpening figure. Cash and Loan have no equivalent override and
+      // already carry correctly from the backend.
+      const isFirstCycleForCompany = !latestPaidTo;
       const applyCFAdvance = (row) => {
-        if (row._hasPriorRegister) return row;             // backend carry wins
+        if (!isFirstCycleForCompany) return row;            // cycle 2+ → trust backend carry
+        if (row._hasPriorRegister) return row;              // backend carry wins
         if (prevCycleRef.current[row.farmerId]) return row; // in-memory carry wins
         const cfBal = cfAdvMap[row.farmerId];
         if (!cfBal) return row;

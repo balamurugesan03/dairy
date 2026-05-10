@@ -9,6 +9,10 @@ import Advance         from '../models/Advance.js';
 const r2 = (v) => Math.round((v || 0) * 100) / 100;
 
 // ─── Helper: build ledger entries array from all sources ─────────────────────
+// Date filter is applied at the CYCLE level (paymentPeriod.toDate for register-
+// driven payments) rather than the post-date so that each cycle's recovery
+// flows into the running balance only when its cycle ends. The entry's display
+// date uses paymentPeriod.toDate when available so the ledger reads cycle-by-cycle.
 async function buildLedgerEntries(farmerId, companyId, start, end) {
   const fObjId = new mongoose.Types.ObjectId(farmerId);
   const cObjId = new mongoose.Types.ObjectId(companyId);
@@ -36,14 +40,15 @@ async function buildLedgerEntries(farmerId, companyId, start, end) {
     });
   }
 
-  // 2. Debit entries — CF Advance deductions in FarmerPayment
-  //    Includes both 'CF Advance' (old style) and 'CF Recovery' (new Payment Register style)
+  // 2. Debit entries — CF Advance deductions in FarmerPayment.
+  //    Filter and display by paymentDate (when the recovery was actually
+  //    posted) so the ledger shows transactions on their real date.
   const payments = await FarmerPayment.find({
     farmerId:    fObjId,
     companyId:   cObjId,
-    paymentDate: { $gte: start, $lte: end },
     status:      { $ne: 'Cancelled' },
     'deductions.type': { $in: ['CF Advance', 'Cattle Feed', 'CF Recovery'] },
+    paymentDate: { $gte: start, $lte: end },
   }).lean();
 
   for (const pmt of payments) {
@@ -68,9 +73,9 @@ async function buildLedgerEntries(farmerId, companyId, start, end) {
   const paymentsAdj = await FarmerPayment.find({
     farmerId:    fObjId,
     companyId:   cObjId,
-    paymentDate: { $gte: start, $lte: end },
     status:      { $ne: 'Cancelled' },
     'advancesAdjusted.0': { $exists: true },
+    paymentDate: { $gte: start, $lte: end },
   }).lean();
 
   // Get all CF Advance IDs for this farmer
@@ -159,7 +164,15 @@ export const getCFAdvanceLedger = async (req, res) => {
     ]);
     const advOpeningAmt = r2(advanceOpening[0]?.total || 0);
 
-    const effectiveOpening = openingBalance || advOpeningAmt;
+    const lifetimeOpening = openingBalance || advOpeningAmt;
+
+    // Effective opening = lifetime opening + sales (credits) − recoveries (debits)
+    // for everything BEFORE `start`. So when the user filters to a specific
+    // period, the opening row already reflects all earlier cycles' carry.
+    const priorEntries = await buildLedgerEntries(farmerId, companyId, new Date('2000-01-01'), new Date(start.getTime() - 1));
+    const priorCredit = r2(priorEntries.reduce((s, e) => s + e.credit, 0));
+    const priorDebit  = r2(priorEntries.reduce((s, e) => s + e.debit,  0));
+    const effectiveOpening = r2(lifetimeOpening + priorCredit - priorDebit);
 
     const entries = await buildLedgerEntries(farmerId, companyId, start, end);
 
@@ -206,7 +219,15 @@ export const getCFAdvanceSummary = async (req, res) => {
       .populate('farmerId', 'farmerNumber personalDetails')
       .lean();
 
-    // 2. Credit per farmer — Sales to farmers in period
+    // Each farmer's row shows the [start,end] period activity, with the
+    // Opening column = ProducerOpening + (all credits before start) − (all
+    // debits before start). So April closing carries into May opening.
+    // Six bulk aggregations (3 prior + 3 in-period) — no per-farmer N+1.
+
+    const cfDedTypes = ['CF Advance', 'Cattle Feed', 'CF Recovery'];
+
+    // ── Period (current) totals ─────────────────────────────────────────────
+    // 2a. Credit per farmer — Sales to farmers in [start, end]
     const salesAgg = await Sales.aggregate([
       {
         $match: {
@@ -231,24 +252,28 @@ export const getCFAdvanceSummary = async (req, res) => {
       };
     });
 
-    // 3. Debit per farmer — FarmerPayment CF deductions in period
+    // 3a. Debit per farmer — FarmerPayment CF deductions whose CYCLE ends in [start, end]
     const payDedAgg = await FarmerPayment.aggregate([
       {
         $match: {
           companyId:         cObjId,
-          paymentDate:       { $gte: start, $lte: end },
           status:            { $ne: 'Cancelled' },
-          'deductions.type': { $in: ['CF Advance', 'Cattle Feed', 'CF Recovery'] },
+          'deductions.type': { $in: cfDedTypes },
+          $or: [
+            { 'paymentPeriod.toDate': { $gte: start, $lte: end } },
+            { 'paymentPeriod.toDate': { $exists: false }, paymentDate: { $gte: start, $lte: end } },
+            { 'paymentPeriod.toDate': null,                paymentDate: { $gte: start, $lte: end } },
+          ],
         },
       },
       { $unwind: '$deductions' },
-      { $match: { 'deductions.type': { $in: ['CF Advance', 'Cattle Feed', 'CF Recovery'] } } },
+      { $match: { 'deductions.type': { $in: cfDedTypes } } },
       { $group: { _id: '$farmerId', totalDebit: { $sum: '$deductions.amount' } } },
     ]);
     const debitMap = {};
     payDedAgg.forEach(d => { debitMap[d._id?.toString()] = r2(d.totalDebit); });
 
-    // 4. Debit per farmer — ProducerReceipt CF Advance in period
+    // 4a. Debit per farmer — ProducerReceipt CF Advance in [start, end]
     const receiptAgg = await ProducerReceipt.aggregate([
       {
         $match: {
@@ -265,12 +290,71 @@ export const getCFAdvanceSummary = async (req, res) => {
       debitMap[fid] = r2((debitMap[fid] || 0) + r.totalDebit);
     });
 
+    // ── Prior totals (everything BEFORE start) for opening-carry computation ─
+    // 2b. Prior credit per farmer
+    const priorSalesAgg = await Sales.aggregate([
+      {
+        $match: {
+          companyId:    cObjId,
+          customerType: 'Farmer',
+          billDate:     { $lt: start },
+        },
+      },
+      { $group: { _id: '$customerId', total: { $sum: '$grandTotal' } } },
+    ]);
+    const priorCreditMap = {};
+    priorSalesAgg.forEach(s => { priorCreditMap[s._id?.toString()] = r2(s.total); });
+
+    // 3b. Prior debit (FarmerPayment CF deductions whose cycle ended before start)
+    const priorPayDedAgg = await FarmerPayment.aggregate([
+      {
+        $match: {
+          companyId:         cObjId,
+          status:            { $ne: 'Cancelled' },
+          'deductions.type': { $in: cfDedTypes },
+          $or: [
+            { 'paymentPeriod.toDate': { $lt: start } },
+            { 'paymentPeriod.toDate': { $exists: false }, paymentDate: { $lt: start } },
+            { 'paymentPeriod.toDate': null,                paymentDate: { $lt: start } },
+          ],
+        },
+      },
+      { $unwind: '$deductions' },
+      { $match: { 'deductions.type': { $in: cfDedTypes } } },
+      { $group: { _id: '$farmerId', total: { $sum: '$deductions.amount' } } },
+    ]);
+    const priorDebitMap = {};
+    priorPayDedAgg.forEach(d => { priorDebitMap[d._id?.toString()] = r2(d.total); });
+
+    // 4b. Prior debit (CF Advance receipts before start)
+    const priorReceiptAgg = await ProducerReceipt.aggregate([
+      {
+        $match: {
+          companyId:   cObjId,
+          receiptType: 'CF Advance',
+          receiptDate: { $lt: start },
+          status:      { $ne: 'Cancelled' },
+        },
+      },
+      { $group: { _id: '$farmerId', total: { $sum: '$amount' } } },
+    ]);
+    priorReceiptAgg.forEach(r => {
+      const fid = r._id?.toString();
+      priorDebitMap[fid] = r2((priorDebitMap[fid] || 0) + r.total);
+    });
+
     // 5. Build summary rows
+    const computeOpening = (fid, baseOpening) => {
+      const prevCredit = priorCreditMap[fid] || 0;
+      const prevDebit  = priorDebitMap[fid]  || 0;
+      return r2(baseOpening + prevCredit - prevDebit);
+    };
+
     const rows = openings
       .filter(o => o.farmerId)
       .map((o, i) => {
         const fid          = o.farmerId._id?.toString() || o.farmerId?.toString();
-        const openingBal   = r2(o.cfAdvance || 0);
+        const openingBal   = computeOpening(fid, r2(o.cfAdvance || 0));
         const creditAmt    = r2(creditMap[fid]?.total  || 0);
         const debitAmt     = r2(debitMap[fid]          || 0);
         const closingBal   = r2(openingBal + creditAmt - debitAmt);
@@ -297,6 +381,7 @@ export const getCFAdvanceSummary = async (req, res) => {
       if (openingFarmerIds.has(fid)) continue;
       const farmer = await Farmer.findById(fid).select('farmerNumber personalDetails').lean();
       if (!farmer) continue;
+      const openingBal = computeOpening(fid, 0);
       const creditAmt  = salesData.total;
       const debitAmt   = r2(debitMap[fid] || 0);
       rows.push({
@@ -305,10 +390,10 @@ export const getCFAdvanceSummary = async (req, res) => {
         producerId:     farmer.farmerNumber || '',
         producerName:   farmer.personalDetails?.name || '',
         itemName:       salesData.items,
-        openingBalance: 0,
+        openingBalance: openingBal,
         debit:          debitAmt,
         credit:         creditAmt,
-        balance:        r2(creditAmt - debitAmt),
+        balance:        r2(openingBal + creditAmt - debitAmt),
       });
     }
 

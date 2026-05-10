@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { generateCode } from './Counter.js';
 
 const producerPaymentSchema = new mongoose.Schema({
-  paymentNumber: { type: String, unique: true },
+  paymentNumber: { type: String },
   companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
   isPartialPayment: { type: Boolean, default: false },
   processingPeriod: {
@@ -30,7 +30,7 @@ const producerPaymentSchema = new mongoose.Schema({
 
 producerPaymentSchema.index({ companyId: 1, paymentDate: -1 });
 producerPaymentSchema.index({ companyId: 1, farmerId: 1 });
-producerPaymentSchema.index({ paymentNumber: 1 });
+producerPaymentSchema.index({ companyId: 1, paymentNumber: 1 }, { unique: true });
 
 producerPaymentSchema.pre('save', async function () {
   if (!this.paymentNumber) {

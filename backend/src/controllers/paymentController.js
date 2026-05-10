@@ -507,6 +507,125 @@ export const updatePayment = async (req, res) => {
   }
 };
 
+// Reverse every side-effect of a saved FarmerPayment so the farmer's CF / Cash
+// / Loan ledgers, ProducerOpening, Day Book vouchers, and ProducerPayment row
+// all return to their pre-save state. Called by both the per-payment delete
+// endpoint and the reverse-register flow on payment-register-detailed.
+//
+// Reverses, in order:
+//   1. Advance recovery FIFO — restore balances on Advance rows we adjusted.
+//   2. ProducerLoan recovery FIFO — restore loan outstanding & status.
+//   3. ProducerOpening leftover — add back what didn't fit on Advance/Loan rows.
+//   4. Auto-created Advance rows (CF/Cash advances disbursed by this payment).
+//   5. Auto-created ProducerLoan rows (Loan Advances disbursed by this payment).
+//   6. Auto-posted Vouchers (recovery journal + producers-dues payment).
+//   7. Auto-created ProducerPayment row (the /payment-to-producer mirror).
+export const purgeFarmerPaymentSideEffects = async (payment) => {
+  // 1. Reverse Advance adjustments that referenced this payment
+  let reversedCF = 0, reversedCash = 0;
+  const affectedAdvances = await Advance.find({ 'adjustments.referenceId': payment._id });
+  for (const adv of affectedAdvances) {
+    const totalReversed = adv.adjustments
+      .filter(a => String(a.referenceId) === String(payment._id))
+      .reduce((s, a) => s + (a.amount || 0), 0);
+    adv.adjustedAmount = Math.max(0, (adv.adjustedAmount || 0) - totalReversed);
+    adv.balanceAmount  = (adv.balanceAmount || 0) + totalReversed;
+    adv.adjustments    = adv.adjustments.filter(a => String(a.referenceId) !== String(payment._id));
+    adv.status = adv.balanceAmount > 0 ? (adv.adjustedAmount > 0 ? 'Partially Adjusted' : 'Active') : 'Adjusted';
+    await adv.save();
+    if (adv.advanceCategory === 'CF Advance')   reversedCF   += totalReversed;
+    if (adv.advanceCategory === 'Cash Advance') reversedCash += totalReversed;
+  }
+
+  // 2. Reverse ProducerLoan recoveries for Loan Advance / Loan Recovery deductions
+  let reversedLoan = 0;
+  for (const deduction of (payment.deductions || [])) {
+    if (!['Loan Advance', 'Loan Recovery'].includes(deduction.type) || !deduction.amount) continue;
+    let remaining = deduction.amount;
+    const loans = await ProducerLoan.find({
+      farmerId: payment.farmerId,
+      status: { $in: ['Active', 'Defaulted', 'Closed'] },
+    }).sort({ loanDate: -1 });
+    for (const loan of loans) {
+      if (remaining <= 0) break;
+      const reverseAmt = Math.min(remaining, (loan.recoveredAmount || 0));
+      loan.recoveredAmount  -= reverseAmt;
+      loan.outstandingAmount = loan.totalLoanAmount - loan.recoveredAmount;
+      if (loan.status === 'Closed' && loan.outstandingAmount > 0) {
+        loan.status   = 'Active';
+        loan.closedAt = undefined;
+      }
+      await loan.save();
+      remaining -= reverseAmt;
+      reversedLoan += reverseAmt;
+    }
+  }
+
+  // 3. Restore any unallocated recovery to ProducerOpening
+  let dedCF = 0, dedCash = 0, dedLoan = 0;
+  for (const d of (payment.deductions || [])) {
+    const amt = d.amount || 0;
+    if (d.type === 'CF Advance'   || d.type === 'CF Recovery')   dedCF   += amt;
+    if (d.type === 'Cash Advance' || d.type === 'Cash Recovery') dedCash += amt;
+    if (d.type === 'Loan Advance' || d.type === 'Loan Recovery') dedLoan += amt;
+  }
+  const restoreCF   = Math.max(0, dedCF   - reversedCF);
+  const restoreCash = Math.max(0, dedCash - reversedCash);
+  const restoreLoan = Math.max(0, dedLoan - reversedLoan);
+  if (restoreCF > 0 || restoreCash > 0 || restoreLoan > 0) {
+    try {
+      const opening = await ProducerOpening.findOne({
+        companyId: payment.companyId,
+        farmerId:  payment.farmerId,
+      });
+      if (opening) {
+        if (restoreCF   > 0) opening.cfAdvance   = (opening.cfAdvance   || 0) + restoreCF;
+        if (restoreCash > 0) opening.cashAdvance = (opening.cashAdvance || 0) + restoreCash;
+        if (restoreLoan > 0) opening.loanAdvance = (opening.loanAdvance || 0) + restoreLoan;
+        await opening.save();
+      }
+    } catch (openErr) {
+      console.error('ProducerOpening restore failed:', openErr.message);
+    }
+  }
+
+  // 4 & 5. Delete Advance / ProducerLoan rows AUTO-CREATED by this payment.
+  // createFarmerPayment stamps `remarks: \`From Payment <paymentNumber>...\``
+  // on every advance/loan it disburses, so we can remove them by remarks match.
+  if (payment.paymentNumber) {
+    const remarksRe = new RegExp(`^From Payment ${payment.paymentNumber}\\b`);
+    try { await Advance.deleteMany({ companyId: payment.companyId, farmerId: payment.farmerId, remarks: remarksRe }); }
+    catch (e) { console.warn('Advance auto-create cleanup skipped:', e.message); }
+    try { await ProducerLoan.deleteMany({ companyId: payment.companyId, farmerId: payment.farmerId, remarks: remarksRe }); }
+    catch (e) { console.warn('ProducerLoan auto-create cleanup skipped:', e.message); }
+  }
+
+  // 6. Delete every Voucher tied to this FarmerPayment (recovery journal +
+  // producers-dues payment + any future ones — all use referenceType=FarmerPayment).
+  try {
+    await Voucher.deleteMany({ referenceType: 'FarmerPayment', referenceId: payment._id });
+  } catch (vErr) {
+    console.warn('Voucher cleanup skipped:', vErr.message);
+    // Fallback: at least clean up the directly-referenced voucher
+    if (payment.voucherId) {
+      try { await Voucher.deleteOne({ _id: payment.voucherId }); } catch {}
+    }
+  }
+
+  // 7. Delete the auto-mirrored ProducerPayment (`Auto — <paymentNumber>` remarks)
+  if (payment.paymentNumber) {
+    try {
+      await ProducerPayment.deleteMany({
+        companyId: payment.companyId,
+        farmerId:  payment.farmerId,
+        remarks:   new RegExp(`^Auto — ${payment.paymentNumber}\\b`),
+      });
+    } catch (ppErr) {
+      console.warn('ProducerPayment auto-create cleanup skipped:', ppErr.message);
+    }
+  }
+};
+
 // Cancel payment
 export const deletePayment = async (req, res) => {
   try {
@@ -515,88 +634,9 @@ export const deletePayment = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Payment not found' });
     }
 
-    // Reverse advance adjustments — find advances that recorded this payment in their adjustments array
-    let reversedCF = 0;
-    let reversedCash = 0;
-    const affectedAdvances = await Advance.find({
-      'adjustments.referenceId': payment._id,
-    });
-    for (const adv of affectedAdvances) {
-      const totalReversed = adv.adjustments
-        .filter(a => String(a.referenceId) === String(payment._id))
-        .reduce((s, a) => s + (a.amount || 0), 0);
-      adv.adjustedAmount = Math.max(0, (adv.adjustedAmount || 0) - totalReversed);
-      adv.balanceAmount  = (adv.balanceAmount || 0) + totalReversed;
-      adv.adjustments    = adv.adjustments.filter(a => String(a.referenceId) !== String(payment._id));
-      adv.status = adv.balanceAmount > 0 ? (adv.adjustedAmount > 0 ? 'Partially Adjusted' : 'Active') : 'Adjusted';
-      await adv.save();
-      if (adv.advanceCategory === 'CF Advance')   reversedCF   += totalReversed;
-      if (adv.advanceCategory === 'Cash Advance') reversedCash += totalReversed;
-    }
-
-    // Reverse loan reductions for deductions of type 'Loan Advance' or 'Loan Recovery'
-    let reversedLoan = 0;
-    for (const deduction of (payment.deductions || [])) {
-      if (!['Loan Advance', 'Loan Recovery'].includes(deduction.type) || !deduction.amount) continue;
-      let remaining = deduction.amount;
-      const loans = await ProducerLoan.find({
-        farmerId: payment.farmerId,
-        status: { $in: ['Active', 'Defaulted', 'Closed'] },
-      }).sort({ loanDate: -1 }); // reverse: most recently closed first
-      for (const loan of loans) {
-        if (remaining <= 0) break;
-        const reverseAmt = Math.min(remaining, (loan.recoveredAmount || 0));
-        loan.recoveredAmount  -= reverseAmt;
-        loan.outstandingAmount = loan.totalLoanAmount - loan.recoveredAmount;
-        if (loan.status === 'Closed' && loan.outstandingAmount > 0) {
-          loan.status   = 'Active';
-          loan.closedAt = undefined;
-        }
-        await loan.save();
-        remaining -= reverseAmt;
-        reversedLoan += reverseAmt;
-      }
-    }
-
-    // Restore any remaining recovery amount back to the farmer's ProducerOpening
-    // (mirrors the leftover-to-opening flow in createFarmerPayment).
-    let dedCF = 0, dedCash = 0, dedLoan = 0;
-    for (const d of (payment.deductions || [])) {
-      const amt = d.amount || 0;
-      if (d.type === 'CF Advance'   || d.type === 'CF Recovery')   dedCF   += amt;
-      if (d.type === 'Cash Advance' || d.type === 'Cash Recovery') dedCash += amt;
-      if (d.type === 'Loan Advance' || d.type === 'Loan Recovery') dedLoan += amt;
-    }
-    const restoreCF   = Math.max(0, dedCF   - reversedCF);
-    const restoreCash = Math.max(0, dedCash - reversedCash);
-    const restoreLoan = Math.max(0, dedLoan - reversedLoan);
-    if (restoreCF > 0 || restoreCash > 0 || restoreLoan > 0) {
-      try {
-        const opening = await ProducerOpening.findOne({
-          companyId: payment.companyId,
-          farmerId:  payment.farmerId,
-        });
-        if (opening) {
-          if (restoreCF   > 0) opening.cfAdvance   = (opening.cfAdvance   || 0) + restoreCF;
-          if (restoreCash > 0) opening.cashAdvance = (opening.cashAdvance || 0) + restoreCash;
-          if (restoreLoan > 0) opening.loanAdvance = (opening.loanAdvance || 0) + restoreLoan;
-          await opening.save();
-        }
-      } catch (openErr) {
-        console.error('ProducerOpening restore failed:', openErr.message);
-      }
-    }
-
-    // Remove the auto-posted Day Book / Cash Book voucher
-    if (payment.voucherId) {
-      try {
-        await Voucher.deleteOne({ _id: payment.voucherId });
-      } catch (vErr) {
-        console.warn('Voucher cleanup skipped on delete:', vErr.message);
-      }
-    }
-
+    await purgeFarmerPaymentSideEffects(payment);
     await FarmerPayment.findByIdAndDelete(req.params.id);
+
     res.json({ success: true, message: 'Payment deleted successfully' });
   } catch (error) {
     console.error('Error deleting payment:', error);
@@ -1227,7 +1267,15 @@ export const getCashAdvanceSummary = async (req, res) => {
       .populate('farmerId', 'farmerNumber personalDetails')
       .lean();
 
-    // 2. Advances given in period (Cash Advance category)
+    // Each row shows the [start,end] period activity, with the Opening column =
+    // ProducerOpening.cashAdvance + (advances given before start) − (recoveries
+    // before start). Previous month's closing carries into next month's opening.
+    // 4 bulk aggregations (2 prior + 2 in-period) — no per-farmer N+1.
+
+    const cashDedTypes = ['Cash Advance', 'Cash Recovery'];
+
+    // ── Period (current) totals ─────────────────────────────────────────────
+    // 2a. Advances given in [start, end]
     const advMatchStage = {
       companyId:       cObjId,
       advanceCategory: 'Cash Advance',
@@ -1243,30 +1291,79 @@ export const getCashAdvanceSummary = async (req, res) => {
     const advancedMap = {};
     advancesAgg.forEach(a => { advancedMap[a._id?.toString()] = r2(a.totalAdvanced); });
 
-    // 3. Recovery in period from FarmerPayment deductions (type = 'Cash Advance' or 'Cash Recovery')
+    // 3a. Recovery whose CYCLE ends in [start, end]
     const pmtMatchStage = {
       companyId:         cObjId,
-      paymentDate:       { $gte: start, $lte: end },
       status:            { $ne: 'Cancelled' },
-      'deductions.type': { $in: ['Cash Advance', 'Cash Recovery'] },
+      'deductions.type': { $in: cashDedTypes },
+      $or: [
+        { 'paymentPeriod.toDate': { $gte: start, $lte: end } },
+        { 'paymentPeriod.toDate': { $exists: false }, paymentDate: { $gte: start, $lte: end } },
+        { 'paymentPeriod.toDate': null,                paymentDate: { $gte: start, $lte: end } },
+      ],
     };
     if (farmerObjId) pmtMatchStage.farmerId = farmerObjId;
 
     const recoveryAgg = await FarmerPayment.aggregate([
       { $match: pmtMatchStage },
       { $unwind: '$deductions' },
-      { $match: { 'deductions.type': { $in: ['Cash Advance', 'Cash Recovery'] } } },
+      { $match: { 'deductions.type': { $in: cashDedTypes } } },
       { $group: { _id: '$farmerId', totalRecovery: { $sum: '$deductions.amount' } } },
     ]);
     const recoveryMap = {};
     recoveryAgg.forEach(r => { recoveryMap[r._id?.toString()] = r2(r.totalRecovery); });
 
+    // ── Prior totals (everything BEFORE start) for opening-carry computation ─
+    // 2b. Prior advances given before start
+    const priorAdvMatch = {
+      companyId:       cObjId,
+      advanceCategory: 'Cash Advance',
+      advanceDate:     { $lt: start },
+      status:          { $ne: 'Cancelled' },
+    };
+    if (farmerObjId) priorAdvMatch.farmerId = farmerObjId;
+
+    const priorAdvAgg = await Advance.aggregate([
+      { $match: priorAdvMatch },
+      { $group: { _id: '$farmerId', total: { $sum: '$advanceAmount' } } },
+    ]);
+    const priorAdvancedMap = {};
+    priorAdvAgg.forEach(a => { priorAdvancedMap[a._id?.toString()] = r2(a.total); });
+
+    // 3b. Prior recovery whose CYCLE ended before start
+    const priorPmtMatch = {
+      companyId:         cObjId,
+      status:            { $ne: 'Cancelled' },
+      'deductions.type': { $in: cashDedTypes },
+      $or: [
+        { 'paymentPeriod.toDate': { $lt: start } },
+        { 'paymentPeriod.toDate': { $exists: false }, paymentDate: { $lt: start } },
+        { 'paymentPeriod.toDate': null,                paymentDate: { $lt: start } },
+      ],
+    };
+    if (farmerObjId) priorPmtMatch.farmerId = farmerObjId;
+
+    const priorRecoveryAgg = await FarmerPayment.aggregate([
+      { $match: priorPmtMatch },
+      { $unwind: '$deductions' },
+      { $match: { 'deductions.type': { $in: cashDedTypes } } },
+      { $group: { _id: '$farmerId', total: { $sum: '$deductions.amount' } } },
+    ]);
+    const priorRecoveryMap = {};
+    priorRecoveryAgg.forEach(r => { priorRecoveryMap[r._id?.toString()] = r2(r.total); });
+
     // 4. Build rows from openings
+    const computeOpening = (fid, baseOpening) => {
+      const prevAdv = priorAdvancedMap[fid] || 0;
+      const prevRec = priorRecoveryMap[fid] || 0;
+      return r2(baseOpening + prevAdv - prevRec);
+    };
+
     const rows = openings
       .filter(o => o.farmerId)
       .map((o, i) => {
         const fid      = o.farmerId._id?.toString() || o.farmerId?.toString();
-        const opening  = r2(o.cashAdvance || 0);
+        const opening  = computeOpening(fid, r2(o.cashAdvance || 0));
         const advanced = r2(advancedMap[fid] || 0);
         const recovery = r2(recoveryMap[fid] || 0);
         const balance  = r2(opening + advanced - recovery);
@@ -1290,16 +1387,17 @@ export const getCashAdvanceSummary = async (req, res) => {
       if (openingFarmerIds.has(fid)) continue;
       const farmer = await Farmer.findById(fid).select('farmerNumber personalDetails').lean();
       if (!farmer) continue;
+      const opening  = computeOpening(fid, 0);
       const recovery = r2(recoveryMap[fid] || 0);
       rows.push({
         slNo:         rows.length + 1,
         farmerId:     fid,
         farmerNumber: farmer.farmerNumber || '',
         farmerName:   farmer.personalDetails?.name || '',
-        opening:      0,
+        opening,
         advanced:     advAmt,
         recovery,
-        balance:      r2(advAmt - recovery),
+        balance:      r2(opening + advAmt - recovery),
       });
     }
 
@@ -1315,6 +1413,392 @@ export const getCashAdvanceSummary = async (req, res) => {
     res.json({ success: true, data: { rows, grandTotals } });
   } catch (err) {
     console.error('getCashAdvanceSummary error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── GET Cash Advance Ledger (single farmer) ─────────────────────────────────
+// Same shape as getLoanAdvanceLedger / getCFAdvanceLedger. Opening carries from
+// before `start`. Period entries are cash disbursals (Advance category
+// 'Cash Advance', credits) and cash recoveries (FarmerPayment deductions of
+// type 'Cash Advance' / 'Cash Recovery', debits).
+export const getCashAdvanceLedger = async (req, res) => {
+  try {
+    const { farmerId, fromDate, toDate } = req.query;
+    const companyId = req.userCompany;
+    if (!farmerId) {
+      return res.status(400).json({ success: false, message: 'farmerId is required' });
+    }
+
+    const cObjId = new mongoose.Types.ObjectId(companyId);
+    const fObjId = new mongoose.Types.ObjectId(farmerId);
+    const r2 = (v) => Math.round((v || 0) * 100) / 100;
+
+    const start = fromDate ? new Date(fromDate) : new Date('2000-01-01');
+    const end   = toDate   ? new Date(toDate)   : new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const opening = await ProducerOpening.findOne({ companyId: cObjId, farmerId: fObjId }).lean();
+    const baseOpening = r2(opening?.cashAdvance || 0);
+
+    const cashDedTypes = ['Cash Advance', 'Cash Recovery'];
+
+    const buildEntries = async (s, e) => {
+      const entries = [];
+
+      const advs = await Advance.find({
+        companyId:       cObjId,
+        farmerId:        fObjId,
+        advanceCategory: 'Cash Advance',
+        advanceDate:     { $gte: s, $lte: e },
+        status:          { $ne: 'Cancelled' },
+      }).lean();
+      for (const a of advs) {
+        entries.push({
+          date:        a.advanceDate,
+          type:        'ADVANCE',
+          refNo:       a.advanceNumber || '',
+          description: `Cash Advance${a.purpose ? ' — ' + a.purpose : ''}`,
+          debit:       0,
+          credit:      r2(a.advanceAmount || 0),
+        });
+      }
+
+      const pmts = await FarmerPayment.find({
+        companyId:         cObjId,
+        farmerId:          fObjId,
+        status:            { $ne: 'Cancelled' },
+        'deductions.type': { $in: cashDedTypes },
+        paymentDate:       { $gte: s, $lte: e },
+      }).lean();
+      for (const p of pmts) {
+        for (const d of (p.deductions || [])) {
+          if (!cashDedTypes.includes(d.type) || !d.amount) continue;
+          entries.push({
+            date:        p.paymentDate,
+            type:        'RECOVERY',
+            refNo:       p.paymentNumber,
+            description: `Cash Recovery — ${d.description || d.type}`,
+            debit:       r2(d.amount),
+            credit:      0,
+          });
+        }
+      }
+
+      entries.sort((a, b) => new Date(a.date) - new Date(b.date));
+      return entries;
+    };
+
+    const priorEntries = await buildEntries(new Date('2000-01-01'), new Date(start.getTime() - 1));
+    const priorCredit  = r2(priorEntries.reduce((s, e) => s + e.credit, 0));
+    const priorDebit   = r2(priorEntries.reduce((s, e) => s + e.debit,  0));
+    const effectiveOpening = r2(baseOpening + priorCredit - priorDebit);
+
+    const entries = await buildEntries(start, end);
+
+    let balance = effectiveOpening;
+    const ledgerRows = entries.map(e => {
+      balance = r2(balance + e.credit - e.debit);
+      return { ...e, balance };
+    });
+
+    const totalCredit = r2(entries.reduce((s, e) => s + e.credit, 0));
+    const totalDebit  = r2(entries.reduce((s, e) => s + e.debit,  0));
+    const closingBalance = r2(effectiveOpening + totalCredit - totalDebit);
+
+    res.json({
+      success: true,
+      data: {
+        openingBalance: effectiveOpening,
+        entries:        ledgerRows,
+        totalDebit,
+        totalCredit,
+        closingBalance,
+      },
+    });
+  } catch (err) {
+    console.error('getCashAdvanceLedger error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── GET Loan Advance Ledger (single farmer) ─────────────────────────────────
+// Mirrors getCFAdvanceLedger: opening = baseOpening + (advances disbursed before
+// start) − (recoveries before start). Period entries are loan disbursals
+// (Advance category 'Loan Advance') as DEBITS and Loan Recoveries from
+// FarmerPayment / loan-only ProducerLoan EMIs as CREDITS. Wait — loans are an
+// "owed to society" balance, so disbursals INCREASE outstanding (debit-style)
+// and recoveries DECREASE it. We use advanced/recovery columns directly.
+export const getLoanAdvanceLedger = async (req, res) => {
+  try {
+    const { farmerId, fromDate, toDate } = req.query;
+    const companyId = req.userCompany;
+    if (!farmerId) {
+      return res.status(400).json({ success: false, message: 'farmerId is required' });
+    }
+
+    const cObjId = new mongoose.Types.ObjectId(companyId);
+    const fObjId = new mongoose.Types.ObjectId(farmerId);
+    const r2 = (v) => Math.round((v || 0) * 100) / 100;
+
+    const start = fromDate ? new Date(fromDate) : new Date('2000-01-01');
+    const end   = toDate   ? new Date(toDate)   : new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const opening = await ProducerOpening.findOne({ companyId: cObjId, farmerId: fObjId }).lean();
+    const baseOpening = r2(opening?.loanAdvance || 0);
+
+    const loanDedTypes = ['Loan Advance', 'Loan Recovery', 'Loan EMI'];
+
+    const buildEntries = async (s, e) => {
+      const entries = [];
+
+      // Loan disbursals → CREDIT (increases outstanding)
+      const advs = await Advance.find({
+        companyId:       cObjId,
+        farmerId:        fObjId,
+        advanceCategory: 'Loan Advance',
+        advanceDate:     { $gte: s, $lte: e },
+        status:          { $ne: 'Cancelled' },
+      }).lean();
+      for (const a of advs) {
+        entries.push({
+          date:        a.advanceDate,
+          type:        'ADVANCE',
+          refNo:       a.advanceNumber || '',
+          description: `Loan Disbursement${a.purpose ? ' — ' + a.purpose : ''}`,
+          debit:       0,
+          credit:      r2(a.advanceAmount || 0),
+        });
+      }
+
+      // Loan recoveries (FarmerPayment deductions) → DEBIT (reduces outstanding)
+      const pmts = await FarmerPayment.find({
+        companyId:         cObjId,
+        farmerId:          fObjId,
+        status:            { $ne: 'Cancelled' },
+        'deductions.type': { $in: loanDedTypes },
+        paymentDate:       { $gte: s, $lte: e },
+      }).lean();
+      for (const p of pmts) {
+        for (const d of (p.deductions || [])) {
+          if (!loanDedTypes.includes(d.type) || !d.amount) continue;
+          entries.push({
+            date:        p.paymentDate,
+            type:        'RECOVERY',
+            refNo:       p.paymentNumber,
+            description: `Loan Recovery — ${d.description || d.type}`,
+            debit:       r2(d.amount),
+            credit:      0,
+          });
+        }
+      }
+
+      entries.sort((a, b) => new Date(a.date) - new Date(b.date));
+      return entries;
+    };
+
+    // Carry from before `start`: lifetimeOpening + priorCredit (disbursals) − priorDebit (recoveries)
+    const priorEntries = await buildEntries(new Date('2000-01-01'), new Date(start.getTime() - 1));
+    const priorCredit  = r2(priorEntries.reduce((s, e) => s + e.credit, 0));
+    const priorDebit   = r2(priorEntries.reduce((s, e) => s + e.debit,  0));
+    const effectiveOpening = r2(baseOpening + priorCredit - priorDebit);
+
+    const entries = await buildEntries(start, end);
+
+    let balance = effectiveOpening;
+    const ledgerRows = entries.map(e => {
+      balance = r2(balance + e.credit - e.debit);
+      return { ...e, balance };
+    });
+
+    const totalCredit = r2(entries.reduce((s, e) => s + e.credit, 0));
+    const totalDebit  = r2(entries.reduce((s, e) => s + e.debit,  0));
+    const closingBalance = r2(effectiveOpening + totalCredit - totalDebit);
+
+    res.json({
+      success: true,
+      data: {
+        openingBalance: effectiveOpening,
+        entries:        ledgerRows,
+        totalDebit,
+        totalCredit,
+        closingBalance,
+      },
+    });
+  } catch (err) {
+    console.error('getLoanAdvanceLedger error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── GET Loan Advance Summary ─────────────────────────────────────────────────
+// Same shape and carry-forward semantics as getCashAdvanceSummary, scoped to
+// the 'Loan Advance' advance category and 'Loan Advance' / 'Loan Recovery'
+// deduction types. Opening = ProducerOpening.loanAdvance + (advances disbursed
+// before start) − (recoveries before start). Period columns show in-window
+// activity. Six bulk aggregations, no per-farmer N+1.
+export const getLoanAdvanceSummary = async (req, res) => {
+  try {
+    const { fromDate, toDate, farmerId } = req.query;
+    const companyId = req.userCompany;
+    const cObjId    = new mongoose.Types.ObjectId(companyId);
+    const r2 = (v) => Math.round((v || 0) * 100) / 100;
+
+    const start = fromDate ? new Date(fromDate) : new Date('2000-01-01');
+    const end   = toDate   ? new Date(toDate)   : new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const farmerObjId = farmerId ? new mongoose.Types.ObjectId(farmerId) : null;
+
+    // 1. Opening balances from ProducerOpening (loanAdvance field)
+    const openingFilter = { companyId: cObjId };
+    if (farmerObjId) openingFilter.farmerId = farmerObjId;
+    const openings = await ProducerOpening.find(openingFilter)
+      .populate('farmerId', 'farmerNumber personalDetails')
+      .lean();
+
+    const loanDedTypes = ['Loan Advance', 'Loan Recovery', 'Loan EMI'];
+
+    // ── Period (current) totals ─────────────────────────────────────────────
+    // 2a. Loan Advances disbursed in [start, end]
+    const advMatchStage = {
+      companyId:       cObjId,
+      advanceCategory: 'Loan Advance',
+      advanceDate:     { $gte: start, $lte: end },
+      status:          { $ne: 'Cancelled' },
+    };
+    if (farmerObjId) advMatchStage.farmerId = farmerObjId;
+
+    const advancesAgg = await Advance.aggregate([
+      { $match: advMatchStage },
+      { $group: { _id: '$farmerId', totalAdvanced: { $sum: '$advanceAmount' } } },
+    ]);
+    const advancedMap = {};
+    advancesAgg.forEach(a => { advancedMap[a._id?.toString()] = r2(a.totalAdvanced); });
+
+    // 3a. Recovery whose CYCLE ends in [start, end]
+    const pmtMatchStage = {
+      companyId:         cObjId,
+      status:            { $ne: 'Cancelled' },
+      'deductions.type': { $in: loanDedTypes },
+      $or: [
+        { 'paymentPeriod.toDate': { $gte: start, $lte: end } },
+        { 'paymentPeriod.toDate': { $exists: false }, paymentDate: { $gte: start, $lte: end } },
+        { 'paymentPeriod.toDate': null,                paymentDate: { $gte: start, $lte: end } },
+      ],
+    };
+    if (farmerObjId) pmtMatchStage.farmerId = farmerObjId;
+
+    const recoveryAgg = await FarmerPayment.aggregate([
+      { $match: pmtMatchStage },
+      { $unwind: '$deductions' },
+      { $match: { 'deductions.type': { $in: loanDedTypes } } },
+      { $group: { _id: '$farmerId', totalRecovery: { $sum: '$deductions.amount' } } },
+    ]);
+    const recoveryMap = {};
+    recoveryAgg.forEach(r => { recoveryMap[r._id?.toString()] = r2(r.totalRecovery); });
+
+    // ── Prior totals (everything BEFORE start) for opening-carry ────────────
+    // 2b. Prior loan advances disbursed before start
+    const priorAdvMatch = {
+      companyId:       cObjId,
+      advanceCategory: 'Loan Advance',
+      advanceDate:     { $lt: start },
+      status:          { $ne: 'Cancelled' },
+    };
+    if (farmerObjId) priorAdvMatch.farmerId = farmerObjId;
+
+    const priorAdvAgg = await Advance.aggregate([
+      { $match: priorAdvMatch },
+      { $group: { _id: '$farmerId', total: { $sum: '$advanceAmount' } } },
+    ]);
+    const priorAdvancedMap = {};
+    priorAdvAgg.forEach(a => { priorAdvancedMap[a._id?.toString()] = r2(a.total); });
+
+    // 3b. Prior recoveries whose CYCLE ended before start
+    const priorPmtMatch = {
+      companyId:         cObjId,
+      status:            { $ne: 'Cancelled' },
+      'deductions.type': { $in: loanDedTypes },
+      $or: [
+        { 'paymentPeriod.toDate': { $lt: start } },
+        { 'paymentPeriod.toDate': { $exists: false }, paymentDate: { $lt: start } },
+        { 'paymentPeriod.toDate': null,                paymentDate: { $lt: start } },
+      ],
+    };
+    if (farmerObjId) priorPmtMatch.farmerId = farmerObjId;
+
+    const priorRecoveryAgg = await FarmerPayment.aggregate([
+      { $match: priorPmtMatch },
+      { $unwind: '$deductions' },
+      { $match: { 'deductions.type': { $in: loanDedTypes } } },
+      { $group: { _id: '$farmerId', total: { $sum: '$deductions.amount' } } },
+    ]);
+    const priorRecoveryMap = {};
+    priorRecoveryAgg.forEach(r => { priorRecoveryMap[r._id?.toString()] = r2(r.total); });
+
+    // 4. Build rows from openings
+    const computeOpening = (fid, baseOpening) => {
+      const prevAdv = priorAdvancedMap[fid] || 0;
+      const prevRec = priorRecoveryMap[fid] || 0;
+      return r2(baseOpening + prevAdv - prevRec);
+    };
+
+    const rows = openings
+      .filter(o => o.farmerId)
+      .map((o, i) => {
+        const fid      = o.farmerId._id?.toString() || o.farmerId?.toString();
+        const opening  = computeOpening(fid, r2(o.loanAdvance || 0));
+        const advanced = r2(advancedMap[fid] || 0);
+        const recovery = r2(recoveryMap[fid] || 0);
+        const balance  = r2(opening + advanced - recovery);
+        const farmer   = typeof o.farmerId === 'object' ? o.farmerId : {};
+        return {
+          slNo:         i + 1,
+          farmerId:     fid,
+          farmerNumber: farmer.farmerNumber || o.producerNumber || '',
+          farmerName:   farmer.personalDetails?.name || o.producerName || '',
+          opening,
+          advanced,
+          recovery,
+          balance,
+        };
+      })
+      .filter(r => r.opening !== 0 || r.advanced !== 0 || r.recovery !== 0);
+
+    // 5. Include farmers with loan advances but no opening record
+    const openingFarmerIds = new Set(rows.map(r => r.farmerId));
+    for (const [fid, advAmt] of Object.entries(advancedMap)) {
+      if (openingFarmerIds.has(fid)) continue;
+      const farmer = await Farmer.findById(fid).select('farmerNumber personalDetails').lean();
+      if (!farmer) continue;
+      const opening  = computeOpening(fid, 0);
+      const recovery = r2(recoveryMap[fid] || 0);
+      rows.push({
+        slNo:         rows.length + 1,
+        farmerId:     fid,
+        farmerNumber: farmer.farmerNumber || '',
+        farmerName:   farmer.personalDetails?.name || '',
+        opening,
+        advanced:     advAmt,
+        recovery,
+        balance:      r2(opening + advAmt - recovery),
+      });
+    }
+
+    rows.forEach((r, i) => { r.slNo = i + 1; });
+
+    const grandTotals = {
+      opening:  r2(rows.reduce((s, r) => s + r.opening,  0)),
+      advanced: r2(rows.reduce((s, r) => s + r.advanced, 0)),
+      recovery: r2(rows.reduce((s, r) => s + r.recovery, 0)),
+      balance:  r2(rows.reduce((s, r) => s + r.balance,  0)),
+    };
+
+    res.json({ success: true, data: { rows, grandTotals } });
+  } catch (err) {
+    console.error('getLoanAdvanceSummary error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
@@ -1338,5 +1822,8 @@ export default {
   adjustAdvance,
   cancelAdvance,
   getAdvanceStats,
-  getCashAdvanceSummary
+  getCashAdvanceSummary,
+  getLoanAdvanceSummary,
+  getLoanAdvanceLedger,
+  getCashAdvanceLedger,
 };
