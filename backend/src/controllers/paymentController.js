@@ -44,19 +44,15 @@ export const createFarmerPayment = async (req, res) => {
       paymentData.status = 'Partial';
     }
 
-    // Save with retry on duplicate paymentNumber (counter desync)
-    let payment;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        delete paymentData.paymentNumber; // force pre-save hook to regenerate each attempt
-        payment = new FarmerPayment(paymentData);
-        await payment.save();
-        break;
-      } catch (saveErr) {
-        if (saveErr.code === 11000 && saveErr.keyPattern?.paymentNumber && attempt < 3) continue;
-        throw saveErr;
-      }
-    }
+    // Save with retry + counter resync on duplicate paymentNumber
+    delete paymentData.paymentNumber;
+    const payment = await saveWithUniqueNumber({
+      Model:       FarmerPayment,
+      companyId:   paymentData.companyId,
+      prefix:      'PAY',
+      numberField: 'paymentNumber',
+      build: () => new FarmerPayment({ ...paymentData, paymentNumber: undefined }),
+    });
 
     // Split deduction handling into ADVANCE (new disbursement → create record)
     // vs RECOVERY (reduce existing balances FIFO).
@@ -1180,9 +1176,15 @@ export const bulkCreatePayments = async (req, res) => {
       try {
         paymentData.companyId = req.userCompany;
         paymentData.createdBy = req.user?._id;
+        delete paymentData.paymentNumber;
 
-        const payment = new FarmerPayment(paymentData);
-        await payment.save();
+        const payment = await saveWithUniqueNumber({
+          Model:       FarmerPayment,
+          companyId:   paymentData.companyId,
+          prefix:      'PAY',
+          numberField: 'paymentNumber',
+          build: () => new FarmerPayment({ ...paymentData, paymentNumber: undefined }),
+        });
         results.push({ success: true, data: payment });
       } catch (err) {
         errors.push({ farmerId: paymentData.farmerId, error: err.message });

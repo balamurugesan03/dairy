@@ -3,6 +3,7 @@ import FarmerPayment from '../models/FarmerPayment.js';
 import Advance from '../models/Advance.js';
 import ProducerLoan from '../models/ProducerLoan.js';
 import ProducerReceipt from '../models/ProducerReceipt.js';
+import { saveWithUniqueNumber } from '../models/Counter.js';
 import mongoose from 'mongoose';
 
 /**
@@ -310,29 +311,33 @@ export const saveProducerRegister = async (req, res) => {
               deductions.push({ type: 'Other Deduction', amount: parseFloat(entry.otherDeduction) });
             }
 
-            const newPayment = new FarmerPayment({
+            await saveWithUniqueNumber({
+              Model:       FarmerPayment,
               companyId,
-              farmerId,
-              paymentDate: entryDate,
-              milkDetails: {
-                morningQuantity: parseFloat(entry.morningQty) || 0,
-                eveningQuantity: parseFloat(entry.eveningQty) || 0,
-                totalQuantity: parseFloat(entry.totalMilk) || 0,
-                avgRate: parseFloat(entry.rate) || 0
-              },
-              milkAmount: parseFloat(entry.totalAmount) || 0,
-              grossAmount: parseFloat(entry.totalAmount) || 0,
-              deductions,
-              totalDeduction: parseFloat(entry.totalDeduction) || 0,
-              netPayable: (parseFloat(entry.totalAmount) || 0) - (parseFloat(entry.totalDeduction) || 0),
-              paidAmount: parseFloat(entry.paidAmount) || 0,
-              paymentMode: entry.paymentMode || 'Cash',
-              status: 'Paid',
-              approvalStatus: 'Approved',
-              createdBy: userId
+              prefix:      'PAY',
+              numberField: 'paymentNumber',
+              build: () => new FarmerPayment({
+                companyId,
+                farmerId,
+                paymentDate: entryDate,
+                milkDetails: {
+                  morningQuantity: parseFloat(entry.morningQty) || 0,
+                  eveningQuantity: parseFloat(entry.eveningQty) || 0,
+                  totalQuantity: parseFloat(entry.totalMilk) || 0,
+                  avgRate: parseFloat(entry.rate) || 0
+                },
+                milkAmount: parseFloat(entry.totalAmount) || 0,
+                grossAmount: parseFloat(entry.totalAmount) || 0,
+                deductions,
+                totalDeduction: parseFloat(entry.totalDeduction) || 0,
+                netPayable: (parseFloat(entry.totalAmount) || 0) - (parseFloat(entry.totalDeduction) || 0),
+                paidAmount: parseFloat(entry.paidAmount) || 0,
+                paymentMode: entry.paymentMode || 'Cash',
+                status: 'Paid',
+                approvalStatus: 'Approved',
+                createdBy: userId
+              }),
             });
-
-            await newPayment.save();
             processedEntries.push({
               date: entryDate,
               type: 'Payment',

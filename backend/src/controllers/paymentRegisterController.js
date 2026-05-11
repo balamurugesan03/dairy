@@ -9,6 +9,7 @@ import Sales from '../models/Sales.js';
 import IndividualDeductionEarning from '../models/IndividualDeductionEarning.js';
 import PeriodicalRule from '../models/PeriodicalRule.js';
 import { purgeFarmerPaymentSideEffects } from './paymentController.js';
+import { saveWithUniqueNumber } from '../models/Counter.js';
 
 // ─── GET all registers (paginated, date filter) ───────────────────────────────
 export const getPaymentRegisters = async (req, res) => {
@@ -748,24 +749,29 @@ export const applyEntryPayment = async (req, res) => {
     // (filter requires paymentSource='BankTransfer' AND status in Pending/Partial).
     // Cash/Cheque/Direct → mark Paid immediately.
     const isBankMode = mode === 'Bank Transfer' || mode === 'Bank';
-    const fp = new FarmerPayment({
+    const fp = await saveWithUniqueNumber({
+      Model:       FarmerPayment,
       companyId,
-      farmerId:        entry.farmerId,
-      farmerName:      entry.productName,
-      paymentDate:     reg.toDate || new Date(),
-      paymentPeriod:   { fromDate: reg.fromDate, toDate: reg.toDate, periodType: 'Custom' },
-      milkAmount:      entry.milkValue,
-      previousBalance: entry.previousBalance,
-      deductions,
-      netPayable:      entry.netPay,
-      paidAmount:      isBankMode ? 0 : netAmount,
-      balanceAmount:   isBankMode ? entry.netPay : 0,
-      paymentMode:     mode,
-      paymentSource:   isBankMode ? 'BankTransfer' : 'PaymentRegister',
-      status:          isBankMode ? 'Pending' : 'Paid',
-      remarks:         `Ledger — ${reg.fromDate.toLocaleDateString('en-IN')}–${reg.toDate.toLocaleDateString('en-IN')}`,
+      prefix:      'PAY',
+      numberField: 'paymentNumber',
+      build: () => new FarmerPayment({
+        companyId,
+        farmerId:        entry.farmerId,
+        farmerName:      entry.productName,
+        paymentDate:     reg.toDate || new Date(),
+        paymentPeriod:   { fromDate: reg.fromDate, toDate: reg.toDate, periodType: 'Custom' },
+        milkAmount:      entry.milkValue,
+        previousBalance: entry.previousBalance,
+        deductions,
+        netPayable:      entry.netPay,
+        paidAmount:      isBankMode ? 0 : netAmount,
+        balanceAmount:   isBankMode ? entry.netPay : 0,
+        paymentMode:     mode,
+        paymentSource:   isBankMode ? 'BankTransfer' : 'PaymentRegister',
+        status:          isBankMode ? 'Pending' : 'Paid',
+        remarks:         `Ledger — ${reg.fromDate.toLocaleDateString('en-IN')}–${reg.toDate.toLocaleDateString('en-IN')}`,
+      }),
     });
-    await fp.save();
 
     // Mark entry paid
     entry.paid            = true;
