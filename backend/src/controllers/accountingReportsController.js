@@ -105,12 +105,15 @@ export const getCashBook = async (req, res) => {
     }).sort({ billDate: 1 });
 
     // Direct cash payments — Farmer Payments (Cash)
-    // Skip rows that already have a Voucher posted (those are picked up by the voucher loop)
+    // Skip rows that already have a Voucher posted (those are picked up by the voucher loop).
+    // Also skip paymentSource:'BankTransfer' rows — those are always covered by either the
+    // BankTransfer's Payment voucher (cash leg) or the BankTransfer summary entry above.
     const farmerPaymentsCash = await FarmerPayment.find({
       companyId: req.companyId,
       paymentDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
       paymentMode: 'Cash',
       paidAmount: { $gt: 0 },
+      paymentSource: { $ne: 'BankTransfer' },
       $or: [{ voucherId: { $exists: false } }, { voucherId: null }],
     }).sort({ paymentDate: 1 }).populate('farmerId', 'farmerName farmerNumber');
 
@@ -152,13 +155,17 @@ export const getCashBook = async (req, res) => {
           const contraEntry = voucher.entries.find(
             e => e.ledgerId._id.toString() !== cashLedger._id.toString()
           );
+          // For Sales vouchers show the income ledger name directly (no "From/To" prefix)
+          const isSalesVoucher = voucher.voucherType === 'Sales';
           rawTransactions.push({
             date: voucher.voucherDate,
             voucherNumber: voucher.voucherNumber,
             voucherType: voucher.voucherType,
-            particulars: isReceipt
-              ? `From ${contraEntry?.ledgerId?.ledgerName || 'Various'}`
-              : `To ${contraEntry?.ledgerId?.ledgerName || 'Various'}`,
+            particulars: isSalesVoucher
+              ? (contraEntry?.ledgerId?.ledgerName || 'CATTLE FEED SALES')
+              : isReceipt
+                ? `From ${contraEntry?.ledgerId?.ledgerName || 'Various'}`
+                : `To ${contraEntry?.ledgerId?.ledgerName || 'Various'}`,
             voucherId: voucher._id,
             debit: isReceipt ? amount : 0,
             credit: isReceipt ? 0 : amount,
@@ -181,16 +188,19 @@ export const getCashBook = async (req, res) => {
       });
     });
 
-    // Item Sales — Cash Receipts
+    // Item Sales — Cash Receipts (fallback for sales without an auto-posted voucher)
     itemSalesCash.forEach(sale => {
+      const itemDetail = (sale.items || [])
+        .map(i => `${i.itemName} Qty:${parseFloat(i.quantity) || 0} @ Rs.${parseFloat(i.rate) || 0}`)
+        .join('; ');
       rawTransactions.push({
         date: sale.billDate,
-        voucherNumber: sale.billNumber || sale.invoiceNumber || `SAL-${sale._id.toString().slice(-6)}`,
+        voucherNumber: sale.billNumber || `SAL-${sale._id.toString().slice(-6)}`,
         voucherType: 'Sale',
-        particulars: `Sales — ${sale.customerName || 'Cash Customer'}`,
+        particulars: 'CATTLE FEED SALES',
         debit: sale.paidAmount,
         credit: 0,
-        narration: sale.narration || 'Item Sales (Cash)'
+        narration: itemDetail ? `${itemDetail} | Bill No: ${sale.billNumber}` : `Item Sales (Cash) | Bill No: ${sale.billNumber}`
       });
     });
 

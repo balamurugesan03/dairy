@@ -22,7 +22,6 @@ import {
   ActionIcon,
   Grid,
   Alert,
-  Switch,
   Modal,
   ScrollArea,
 } from '@mantine/core';
@@ -55,10 +54,9 @@ const IndividualMilkPayment = () => {
     paymentDate: new Date(),
     milkAmount: '',
     welfareRecovery: 0,
-    welfareRecoveryEnabled: false,
-    cfAdvanceDeduction: '',
-    loanAdvanceDeduction: '',
-    cashAdvanceDeduction: '',
+    cfAdvanceDeduction: 0,
+    loanAdvanceDeduction: 0,
+    cashAdvanceDeduction: 0,
     paymentMode: 'Cash',
     paidAmount: '',
     remarks: ''
@@ -129,12 +127,19 @@ const IndividualMilkPayment = () => {
         const response = await farmerLedgerAPI.getOutstandingByType(farmerId);
         const outstanding = response.data || {};
 
-        // Priority order: Loan Advance > CF Advance > Cash Advance
-        setFarmerAdvances({
-          loanAdvance: outstanding['Loan Advance']?.amount || 0,
-          cfAdvance: outstanding['CF Advance']?.amount || 0,
-          cashAdvance: outstanding['Cash Advance']?.amount || 0
-        });
+        const loanAdv = outstanding['Loan Advance']?.amount || 0;
+        const cfAdv   = outstanding['CF Advance']?.amount   || 0;
+        const cashAdv = outstanding['Cash Advance']?.amount || 0;
+
+        setFarmerAdvances({ loanAdvance: loanAdv, cfAdvance: cfAdv, cashAdvance: cashAdv });
+
+        // Auto-fill deduction fields with outstanding balances (same as Payment Register)
+        setFormData(prev => ({
+          ...prev,
+          loanAdvanceDeduction: loanAdv,
+          cfAdvanceDeduction:   cfAdv,
+          cashAdvanceDeduction: cashAdv,
+        }));
       } catch (error) {
         console.error('Failed to fetch outstanding:', error);
         setFarmerAdvances({ cfAdvance: 0, loanAdvance: 0, cashAdvance: 0 });
@@ -144,24 +149,13 @@ const IndividualMilkPayment = () => {
       try {
         setWelfareCheckLoading(true);
         const welfareResponse = await farmerLedgerAPI.checkWelfare(farmerId, new Date().toISOString());
-        setWelfareEligible(welfareResponse.data?.eligibleForDeduction || false);
-        // Auto-enable welfare if eligible
-        if (welfareResponse.data?.eligibleForDeduction) {
-          setFormData(prev => ({
-            ...prev,
-            welfareRecoveryEnabled: true,
-            welfareRecovery: 20
-          }));
-        } else {
-          setFormData(prev => ({
-            ...prev,
-            welfareRecoveryEnabled: false,
-            welfareRecovery: 0
-          }));
-        }
+        const eligible = welfareResponse.data?.eligibleForDeduction || false;
+        setWelfareEligible(eligible);
+        // Auto-fill welfare amount directly (same concept as register auto-population)
+        setFormData(prev => ({ ...prev, welfareRecovery: eligible ? 20 : 0 }));
       } catch (error) {
         console.error('Failed to check welfare eligibility:', error);
-        setWelfareEligible(true); // Default to eligible if check fails
+        setWelfareEligible(true);
       } finally {
         setWelfareCheckLoading(false);
       }
@@ -212,29 +206,17 @@ const IndividualMilkPayment = () => {
     setDeductionForm(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleWelfareToggle = (checked) => {
-    if (checked && !welfareEligible) {
-      message.warning('Welfare recovery already deducted this month');
-      return;
-    }
-    setFormData(prev => ({
-      ...prev,
-      welfareRecoveryEnabled: checked,
-      welfareRecovery: checked ? 20 : 0
-    }));
-  };
-
-  // Calculate totals
+  // Calculate totals — formula matches Payment Register: milkAmount − welfare − cfAdv − loanAdv − cashAdv + previousBalance
   useEffect(() => {
-    const milkAmount = parseFloat(formData.milkAmount) || 0;
-    const welfareRecovery = formData.welfareRecoveryEnabled ? 20 : 0;
-    const cfAdvanceDeduction = parseFloat(formData.cfAdvanceDeduction) || 0;
+    const milkAmount           = parseFloat(formData.milkAmount) || 0;
+    const welfareRecovery      = parseFloat(formData.welfareRecovery) || 0;
+    const cfAdvanceDeduction   = parseFloat(formData.cfAdvanceDeduction) || 0;
     const loanAdvanceDeduction = parseFloat(formData.loanAdvanceDeduction) || 0;
     const cashAdvanceDeduction = parseFloat(formData.cashAdvanceDeduction) || 0;
     const totalAdvanceDeduction = cfAdvanceDeduction + loanAdvanceDeduction + cashAdvanceDeduction;
     const otherDeductions = deductions.reduce((sum, d) => sum + d.amount, 0);
-    const totalDeduction = welfareRecovery + totalAdvanceDeduction + otherDeductions;
-    const netPayable = milkAmount - totalDeduction - previousBalance;
+    const totalDeduction  = welfareRecovery + totalAdvanceDeduction + otherDeductions;
+    const netPayable      = milkAmount - welfareRecovery - cfAdvanceDeduction - loanAdvanceDeduction - cashAdvanceDeduction - otherDeductions + previousBalance;
 
     setCalculations({
       milkAmount,
@@ -256,10 +238,9 @@ const IndividualMilkPayment = () => {
       paymentDate: new Date(),
       milkAmount: '',
       welfareRecovery: 0,
-      welfareRecoveryEnabled: false,
-      cfAdvanceDeduction: '',
-      loanAdvanceDeduction: '',
-      cashAdvanceDeduction: '',
+      cfAdvanceDeduction: 0,
+      loanAdvanceDeduction: 0,
+      cashAdvanceDeduction: 0,
       paymentMode: 'Cash',
       paidAmount: '',
       remarks: ''
@@ -320,8 +301,8 @@ const IndividualMilkPayment = () => {
       // Build deductions array with all deduction types
       const allDeductions = [...deductions];
 
-      if (formData.welfareRecoveryEnabled) {
-        allDeductions.push({ type: 'Welfare Recovery', amount: 20, description: 'Monthly welfare recovery' });
+      if (parseFloat(formData.welfareRecovery) > 0) {
+        allDeductions.push({ type: 'Welfare Recovery', amount: parseFloat(formData.welfareRecovery), description: 'Monthly welfare recovery' });
       }
       if (parseFloat(formData.cfAdvanceDeduction) > 0) {
         allDeductions.push({ type: 'CF Advance', amount: parseFloat(formData.cfAdvanceDeduction), description: 'CF/Cattle Feed advance recovery' });
@@ -582,21 +563,25 @@ const IndividualMilkPayment = () => {
 
               {/* Welfare Recovery */}
               <Paper withBorder p="sm" radius="md">
-                <Group position="apart">
+                <Group position="apart" align="flex-end">
                   <Box>
                     <Text size="sm" fw={600}>Welfare Recovery</Text>
                     <Text size="xs" color="dimmed">
                       {welfareCheckLoading ? 'Checking eligibility...' :
-                       welfareEligible ? 'Monthly welfare contribution - ₹20 per month' :
+                       welfareEligible ? 'Monthly welfare contribution' :
                        'Already deducted this month'}
                     </Text>
                   </Box>
-                  <Switch
-                    checked={formData.welfareRecoveryEnabled}
-                    onChange={(e) => handleWelfareToggle(e.currentTarget.checked)}
-                    label={formData.welfareRecoveryEnabled ? "₹20.00" : "Disabled"}
-                    color="teal"
+                  <NumberInput
+                    value={formData.welfareRecovery}
+                    onChange={(value) => handleInputChange('welfareRecovery', value)}
+                    placeholder="0.00"
+                    min={0}
+                    step={0.01}
+                    decimalScale={2}
                     disabled={!welfareEligible || welfareCheckLoading}
+                    leftSection={<IconCurrencyRupee size={16} />}
+                    w={130}
                   />
                 </Group>
               </Paper>
@@ -630,6 +615,7 @@ const IndividualMilkPayment = () => {
                       step={0.01}
                       decimalScale={2}
                       size="xs"
+                      disabled={farmerAdvances.loanAdvance === 0}
                       styles={farmerAdvances.loanAdvance > 0 ? { input: { borderColor: 'var(--mantine-color-red-4)' } } : {}}
                     />
                   </Grid.Col>
@@ -644,6 +630,7 @@ const IndividualMilkPayment = () => {
                       step={0.01}
                       decimalScale={2}
                       size="xs"
+                      disabled={farmerAdvances.cfAdvance === 0}
                       styles={farmerAdvances.cfAdvance > 0 ? { input: { borderColor: 'var(--mantine-color-orange-4)' } } : {}}
                     />
                   </Grid.Col>
@@ -658,6 +645,7 @@ const IndividualMilkPayment = () => {
                       step={0.01}
                       decimalScale={2}
                       size="xs"
+                      disabled={farmerAdvances.cashAdvance === 0}
                     />
                   </Grid.Col>
                 </Grid>

@@ -133,6 +133,7 @@ const DayBook = () => {
             entry.voucherType === 'ProducersDue' ||
             entry.voucherType === 'UnionSales' ||
             entry.voucherType === 'InventoryPurchase' ||
+            entry.voucherType === 'InventorySale' ||
             entry.voucherType === 'BankTransfer';
           return {
             description: entry.ledgerName || entry.narration || 'Miscellaneous',

@@ -54,16 +54,24 @@ export const createSalesVoucher = async (saleData, session = null) => {
     return l;
   };
 
-  // ── Helper: get/create generic "Sales" income ledger (used for any leftover) ─
+  // ── Helper: get/create sales income ledger — prefers "CATTLE FEED SALES" ──
   const getDefaultSalesLedger = async () => {
+    // Try the named ledger from accounts management first
     let l = await Ledger.findOne({
-      ledgerName: 'Sales',
-      ledgerType: 'Income',
+      ledgerName: { $regex: /^cattle\s*feed\s*sales$/i },
       ...(companyId && { companyId })
     });
     if (!l) {
-      l = await saveLedger(new Ledger({
+      // Fall back to generic "Sales" ledger if it already exists
+      l = await Ledger.findOne({
         ledgerName: 'Sales',
+        ledgerType: 'Income',
+        ...(companyId && { companyId })
+      });
+    }
+    if (!l) {
+      l = await saveLedger(new Ledger({
+        ledgerName: 'CATTLE FEED SALES',
         ledgerType: 'Income',
         openingBalance: 0,
         currentBalance: 0,
@@ -239,6 +247,14 @@ export const createSalesVoucher = async (saleData, session = null) => {
 
   const voucherNumber = await generateVoucherNumber('Sales', saleData.companyId);
 
+  // Build narration: item name, qty, rate, bill number (as the user requires)
+  const itemSummary = (saleData.items || [])
+    .map(i => `${i.itemName} Qty:${parseFloat(i.quantity) || 0} @ Rs.${parseFloat(i.rate) || 0}`)
+    .join('; ');
+  const saleNarration = itemSummary
+    ? `${itemSummary} | Bill No: ${saleData.billNumber}`
+    : `Sales | Bill No: ${saleData.billNumber} | ${saleData.customerName || 'Walk-in'}`;
+
   const voucher = new Voucher({
     voucherType: 'Sales',
     voucherNumber,
@@ -246,7 +262,7 @@ export const createSalesVoucher = async (saleData, session = null) => {
     entries,
     totalDebit,
     totalCredit,
-    narration: `Sales — Bill No: ${saleData.billNumber} | ${saleData.customerName || 'Walk-in'}`,
+    narration: saleNarration,
     referenceType: 'Sales',
     referenceId: saleData._id,
     companyId: saleData.companyId

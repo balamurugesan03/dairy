@@ -83,6 +83,9 @@ export const getDayBook = async (req, res) => {
       // shows the supplier / commission / inspection legs on the receipt side
       // and a single combined purchase line on the payment side.
       if (voucher.voucherType === 'Purchase') continue;
+      // Inventory Sales vouchers — handled separately below so cash sales go to
+      // the cash column and credit sales (+ subsidy) go to the adjustment column.
+      if (voucher.voucherType === 'Sales') continue;
 
       const dateKey = voucher.voucherDate.toISOString().split('T')[0];
 
@@ -152,9 +155,8 @@ export const getDayBook = async (req, res) => {
         // frontend maps to the cash column.
       }
 
-      const isReceiptVoucher = voucher.voucherType === 'Receipt';
-      const isPaymentVoucher = voucher.voucherType === 'Payment';
-      const isSalesVoucher   = voucher.voucherType === 'Sales';
+      const isReceiptVoucher  = voucher.voucherType === 'Receipt';
+      const isPaymentVoucher  = voucher.voucherType === 'Payment';
       const isPurchaseVoucher = voucher.voucherType === 'Purchase';
 
       for (const entry of voucher.entries) {
@@ -190,25 +192,6 @@ export const getDayBook = async (req, res) => {
             const paymentEntry = { ...entryData, amount };
             dateMap[dateKey].paymentSide.push(paymentEntry);
             dateMap[dateKey].totalPayments += amount;
-            paymentSide.push(paymentEntry);
-          }
-        } else if (isSalesVoucher) {
-          // Sales voucher:
-          //   • Cr (income) leg → receipt side (e.g. CATTLE FEED SALES)
-          //   • Dr (debtor / advance receivable) leg → payment side as an
-          //     adjustment (e.g. CATTLE FEED ADVANCE for credit sales).
-          // Cash legs are already filtered out above, so the Dr leg here only
-          // includes the credit-portion receivable.
-          if (entry.creditAmount > 0) {
-            const receiptEntry = { ...entryData, amount: entry.creditAmount };
-            dateMap[dateKey].receiptSide.push(receiptEntry);
-            dateMap[dateKey].totalReceipts += entry.creditAmount;
-            receiptSide.push(receiptEntry);
-          }
-          if (entry.debitAmount > 0) {
-            const paymentEntry = { ...entryData, amount: entry.debitAmount };
-            dateMap[dateKey].paymentSide.push(paymentEntry);
-            dateMap[dateKey].totalPayments += entry.debitAmount;
             paymentSide.push(paymentEntry);
           }
         } else if (isPurchaseVoucher) {
@@ -519,6 +502,103 @@ export const getDayBook = async (req, res) => {
         dateMap[dateKey].receiptSide.push(receiptEntry);
         dateMap[dateKey].totalReceipts += entry.creditAmount;
         receiptSide.push(receiptEntry);
+      }
+    }
+
+    // --- Inventory Sales — route to cash vs adjustment column ----------------
+    // Cash sale  : income (CATTLE FEED SALES) in cash column receipt side.
+    //              Subsidy portion only → adjustment column on both sides.
+    // Credit sale: income + advance/subsidy all in adjustment column only.
+    const salesVouchers = vouchers.filter(v => v.voucherType === 'Sales');
+
+    for (const voucher of salesVouchers) {
+      const dateKey = voucher.voucherDate.toISOString().split('T')[0];
+      if (!dateMap[dateKey]) {
+        dateMap[dateKey] = {
+          date: dateKey,
+          receiptSide: [],
+          paymentSide: [],
+          totalReceipts: 0,
+          totalPayments: 0
+        };
+      }
+
+      const hasCashLeg = voucher.entries.some(
+        e => cashBankTypes.has(e.ledgerId?.ledgerType) && (e.debitAmount || 0) > 0
+      );
+
+      const incomeEntries = [];
+      const advanceEntries = [];
+      const subsidyEntries = [];
+
+      for (const entry of voucher.entries) {
+        if (cashBankTypes.has(entry.ledgerId?.ledgerType)) continue;
+        if ((entry.creditAmount || 0) > 0) {
+          incomeEntries.push(entry);
+        } else if ((entry.debitAmount || 0) > 0) {
+          if (/cattle\s*feed\s*advance/i.test(entry.ledgerName || '')) {
+            advanceEntries.push(entry);
+          } else {
+            subsidyEntries.push(entry);
+          }
+        }
+      }
+
+      const totalSubsidy = subsidyEntries.reduce((s, e) => s + (e.debitAmount || 0), 0);
+
+      const base = {
+        date: voucher.voucherDate,
+        voucherNumber: voucher.voucherNumber,
+        narration: voucher.narration || '',
+        voucherId: voucher._id,
+      };
+
+      if (hasCashLeg) {
+        // Cash sale: income in cash column; subsidy split to adjustment column
+        for (const entry of incomeEntries) {
+          const totalCr  = entry.creditAmount || 0;
+          const cashAmt    = Math.max(0, totalCr - totalSubsidy);
+          const subsidyAmt = Math.min(totalSubsidy, totalCr);
+
+          if (cashAmt > 0) {
+            const e = { ...base, voucherType: 'Sales', ledgerName: entry.ledgerName || 'CATTLE FEED SALES', ledgerType: entry.ledgerId?.ledgerType, amount: cashAmt };
+            dateMap[dateKey].receiptSide.push(e);
+            dateMap[dateKey].totalReceipts += cashAmt;
+            receiptSide.push(e);
+          }
+          if (subsidyAmt > 0) {
+            const e = { ...base, voucherType: 'InventorySale', ledgerName: entry.ledgerName || 'CATTLE FEED SALES', ledgerType: entry.ledgerId?.ledgerType, amount: subsidyAmt };
+            dateMap[dateKey].receiptSide.push(e);
+            dateMap[dateKey].totalReceipts += subsidyAmt;
+            receiptSide.push(e);
+          }
+        }
+        for (const entry of subsidyEntries) {
+          const amt = entry.debitAmount || 0;
+          if (amt <= 0) continue;
+          const e = { ...base, voucherType: 'InventorySale', ledgerName: entry.ledgerName || 'Subsidy', ledgerType: entry.ledgerId?.ledgerType, amount: amt };
+          dateMap[dateKey].paymentSide.push(e);
+          dateMap[dateKey].totalPayments += amt;
+          paymentSide.push(e);
+        }
+      } else {
+        // Credit sale: all in adjustment column
+        for (const entry of incomeEntries) {
+          const amt = entry.creditAmount || 0;
+          if (amt <= 0) continue;
+          const e = { ...base, voucherType: 'InventorySale', ledgerName: entry.ledgerName || 'CATTLE FEED SALES', ledgerType: entry.ledgerId?.ledgerType, amount: amt };
+          dateMap[dateKey].receiptSide.push(e);
+          dateMap[dateKey].totalReceipts += amt;
+          receiptSide.push(e);
+        }
+        for (const entry of [...advanceEntries, ...subsidyEntries]) {
+          const amt = entry.debitAmount || 0;
+          if (amt <= 0) continue;
+          const e = { ...base, voucherType: 'InventorySale', ledgerName: entry.ledgerName || 'Expense', ledgerType: entry.ledgerId?.ledgerType, amount: amt };
+          dateMap[dateKey].paymentSide.push(e);
+          dateMap[dateKey].totalPayments += amt;
+          paymentSide.push(e);
+        }
       }
     }
 
