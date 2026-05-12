@@ -188,13 +188,14 @@ export const generateProducerPaymentRegister = async (req, res) => {
       return m;
     };
 
-    // CF advances given (Sales to farmer) before start — used as CF "credit"
+    // CF advances given (Sales to farmer) up to cycle end — balances must reflect
+    // all advances disbursed within this cycle, not just before it started.
     const priorCFCredits = sumByFarmer(await Sales.aggregate([
       {
         $match: {
           companyId,
           customerType: 'Farmer',
-          billDate:     { $lt: start },
+          billDate:     { $lte: end },
         },
       },
       { $group: { _id: '$customerId', total: { $sum: '$grandTotal' } } },
@@ -215,27 +216,27 @@ export const generateProducerPaymentRegister = async (req, res) => {
       { $group: { _id: '$farmerId', total: { $sum: '$deductions.amount' } } },
     ]));
 
-    // ProducerReceipt CF Advance receipts before start (also reduces outstanding)
+    // ProducerReceipt CF Advance receipts up to cycle end (also reduces outstanding)
     const priorCFReceipts = sumByFarmer(await ProducerReceipt.aggregate([
       {
         $match: {
           companyId,
           receiptType: 'CF Advance',
           status:      { $ne: 'Cancelled' },
-          receiptDate: { $lt: start },
+          receiptDate: { $lte: end },
         },
       },
       { $group: { _id: '$farmerId', total: { $sum: '$amount' } } },
     ]));
 
-    // Cash advances disbursed before start
+    // Cash advances disbursed up to cycle end
     const priorCashCredits = sumByFarmer(await Advance.aggregate([
       {
         $match: {
           companyId,
           advanceCategory: 'Cash Advance',
           status:          { $ne: 'Cancelled' },
-          advanceDate:     { $lt: start },
+          advanceDate:     { $lte: end },
         },
       },
       { $group: { _id: '$farmerId', total: { $sum: '$advanceAmount' } } },
@@ -256,14 +257,14 @@ export const generateProducerPaymentRegister = async (req, res) => {
       { $group: { _id: '$farmerId', total: { $sum: '$deductions.amount' } } },
     ]));
 
-    // Loan advances disbursed before start
+    // Loan advances disbursed up to cycle end
     const priorLoanCredits = sumByFarmer(await Advance.aggregate([
       {
         $match: {
           companyId,
           advanceCategory: 'Loan Advance',
           status:          { $ne: 'Cancelled' },
-          advanceDate:     { $lt: start },
+          advanceDate:     { $lte: end },
         },
       },
       { $group: { _id: '$farmerId', total: { $sum: '$advanceAmount' } } },
