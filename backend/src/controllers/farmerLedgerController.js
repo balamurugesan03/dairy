@@ -2,6 +2,8 @@ import FarmerPayment from '../models/FarmerPayment.js';
 import Advance from '../models/Advance.js';
 import ProducerLoan from '../models/ProducerLoan.js';
 import ProducerReceipt from '../models/ProducerReceipt.js';
+import ProducerOpening from '../models/ProducerOpening.js';
+import Sales from '../models/Sales.js';
 import Farmer from '../models/Farmer.js';
 import PeriodicalRule from '../models/PeriodicalRule.js';
 import mongoose from 'mongoose';
@@ -430,104 +432,103 @@ export const checkWelfareRecovery = async (req, res) => {
   }
 };
 
-// Get farmer's outstanding by advance type (for priority deduction)
+// Get farmer's outstanding by advance type — recovery-ledger based calculation.
+// Matches the same logic used by CF/Cash/Loan Advance summary pages:
+//   outstanding = opening + given − recovered(FarmerPayment.deductions) − returned(ProducerReceipt)
+// This handles historical wrong Individual Payment data (which sent 'CF Advance' /
+// 'Cash Advance' / 'Loan Advance' as deduction types, creating bogus disbursement
+// rows) because those bogus rows appear in both the "given" and "recovered" totals
+// and cancel out.
 export const getFarmerOutstandingByType = async (req, res) => {
   try {
-    const farmerId = req.params.farmerId;
+    const farmerId  = req.params.farmerId;
+    const companyId = req.companyId;
+    const fObjId    = new mongoose.Types.ObjectId(farmerId);
+    const cObjId    = new mongoose.Types.ObjectId(companyId);
 
-    // Get advance outstanding by category
-    const advancesByCategory = await Advance.aggregate([
-      {
-        $match: {
-          farmerId: new mongoose.Types.ObjectId(farmerId),
-          status: { $in: ['Active', 'Partially Adjusted', 'Overdue'] }
-        }
-      },
-      {
-        $group: {
-          _id: '$advanceCategory',
-          outstanding: { $sum: '$balanceAmount' },
-          advances: {
-            $push: {
-              id: '$_id',
-              number: '$advanceNumber',
-              amount: '$advanceAmount',
-              balance: '$balanceAmount',
-              date: '$advanceDate'
-            }
-          }
-        }
-      }
+    const r2 = (v) => Math.round((v || 0) * 100) / 100;
+
+    // Opening balances from ProducerOpening
+    const opening = await ProducerOpening.findOne({ farmerId: fObjId, companyId: cObjId }).lean();
+    const cfOpen   = r2(opening?.cfAdvance   || 0);
+    const cashOpen = r2(opening?.cashAdvance || 0);
+    const loanOpen = r2(opening?.loanAdvance || 0);
+
+    // ── CF Advance ────────────────────────────────────────────────────────────
+    // Given: inventory credit sales to this farmer + direct CF advance rows
+    const [cfSalesAgg, cfAdvAgg, cfPayAgg, cfReceiptAgg] = await Promise.all([
+      Sales.aggregate([
+        { $match: { companyId: cObjId, customerId: fObjId, customerType: 'Farmer' } },
+        { $group: { _id: null, total: { $sum: '$grandTotal' } } }
+      ]),
+      Advance.aggregate([
+        { $match: { companyId: cObjId, farmerId: fObjId, advanceCategory: 'CF Advance' } },
+        { $group: { _id: null, total: { $sum: '$advanceAmount' } } }
+      ]),
+      FarmerPayment.aggregate([
+        { $match: { companyId: cObjId, farmerId: fObjId, status: { $ne: 'Cancelled' }, 'deductions.type': { $in: ['CF Advance', 'Cattle Feed', 'CF Recovery'] } } },
+        { $unwind: '$deductions' },
+        { $match: { 'deductions.type': { $in: ['CF Advance', 'Cattle Feed', 'CF Recovery'] } } },
+        { $group: { _id: null, total: { $sum: '$deductions.amount' } } }
+      ]),
+      ProducerReceipt.aggregate([
+        { $match: { companyId: cObjId, farmerId: fObjId, receiptType: 'CF Advance', status: { $ne: 'Cancelled' } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ])
     ]);
+    const cfGiven    = r2((cfSalesAgg[0]?.total || 0) + (cfAdvAgg[0]?.total || 0));
+    const cfRec      = r2((cfPayAgg[0]?.total || 0) + (cfReceiptAgg[0]?.total || 0));
+    const cfOutstanding = Math.max(0, r2(cfOpen + cfGiven - cfRec));
 
-    // Get loan outstanding by type
-    const loansByType = await ProducerLoan.aggregate([
-      {
-        $match: {
-          farmerId: new mongoose.Types.ObjectId(farmerId),
-          status: { $in: ['Active', 'Defaulted'] }
-        }
-      },
-      {
-        $group: {
-          _id: '$loanType',
-          outstanding: { $sum: '$outstandingAmount' },
-          loans: {
-            $push: {
-              id: '$_id',
-              number: '$loanNumber',
-              principal: '$principalAmount',
-              outstanding: '$outstandingAmount',
-              emiAmount: '$emiAmount',
-              date: '$loanDate'
-            }
-          }
-        }
-      }
+    // ── Cash Advance ──────────────────────────────────────────────────────────
+    const [cashAdvAgg, cashPayAgg, cashReceiptAgg] = await Promise.all([
+      Advance.aggregate([
+        { $match: { companyId: cObjId, farmerId: fObjId, advanceCategory: 'Cash Advance' } },
+        { $group: { _id: null, total: { $sum: '$advanceAmount' } } }
+      ]),
+      FarmerPayment.aggregate([
+        { $match: { companyId: cObjId, farmerId: fObjId, status: { $ne: 'Cancelled' }, 'deductions.type': { $in: ['Cash Advance', 'Cash Recovery'] } } },
+        { $unwind: '$deductions' },
+        { $match: { 'deductions.type': { $in: ['Cash Advance', 'Cash Recovery'] } } },
+        { $group: { _id: null, total: { $sum: '$deductions.amount' } } }
+      ]),
+      ProducerReceipt.aggregate([
+        { $match: { companyId: cObjId, farmerId: fObjId, receiptType: 'Cash Advance', status: { $ne: 'Cancelled' } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ])
     ]);
+    const cashGiven       = r2(cashAdvAgg[0]?.total || 0);
+    const cashRec         = r2((cashPayAgg[0]?.total || 0) + (cashReceiptAgg[0]?.total || 0));
+    const cashOutstanding = Math.max(0, r2(cashOpen + cashGiven - cashRec));
 
-    // Merge and format response
-    const outstanding = {
-      'Loan Advance': { amount: 0, items: [] },
-      'CF Advance': { amount: 0, items: [] },
-      'Cash Advance': { amount: 0, items: [] }
-    };
-
-    // Add advances
-    advancesByCategory.forEach(a => {
-      if (outstanding[a._id]) {
-        outstanding[a._id].amount += a.outstanding;
-        outstanding[a._id].items.push(...a.advances.map(adv => ({
-          ...adv,
-          source: 'advance'
-        })));
-      }
-    });
-
-    // Add loans
-    loansByType.forEach(l => {
-      if (outstanding[l._id]) {
-        outstanding[l._id].amount += l.outstanding;
-        outstanding[l._id].items.push(...l.loans.map(loan => ({
-          id: loan.id,
-          number: loan.number,
-          amount: loan.principal,
-          balance: loan.outstanding,
-          emiAmount: loan.emiAmount,
-          date: loan.date,
-          source: 'loan'
-        })));
-      }
-    });
-
-    // Sort items within each category by date (oldest first for FIFO)
-    Object.keys(outstanding).forEach(key => {
-      outstanding[key].items.sort((a, b) => new Date(a.date) - new Date(b.date));
-    });
+    // ── Loan Advance ──────────────────────────────────────────────────────────
+    const [loanLoanAgg, loanAdvAgg, loanPayAgg] = await Promise.all([
+      ProducerLoan.aggregate([
+        { $match: { companyId: cObjId, farmerId: fObjId } },
+        { $group: { _id: null, total: { $sum: '$totalLoanAmount' } } }
+      ]),
+      Advance.aggregate([
+        { $match: { companyId: cObjId, farmerId: fObjId, advanceCategory: 'Loan Advance' } },
+        { $group: { _id: null, total: { $sum: '$advanceAmount' } } }
+      ]),
+      FarmerPayment.aggregate([
+        { $match: { companyId: cObjId, farmerId: fObjId, status: { $ne: 'Cancelled' }, 'deductions.type': { $in: ['Loan Advance', 'Loan Recovery', 'Loan EMI'] } } },
+        { $unwind: '$deductions' },
+        { $match: { 'deductions.type': { $in: ['Loan Advance', 'Loan Recovery', 'Loan EMI'] } } },
+        { $group: { _id: null, total: { $sum: '$deductions.amount' } } }
+      ])
+    ]);
+    const loanGiven       = r2((loanLoanAgg[0]?.total || 0) + (loanAdvAgg[0]?.total || 0));
+    const loanRec         = r2(loanPayAgg[0]?.total || 0);
+    const loanOutstanding = Math.max(0, r2(loanOpen + loanGiven - loanRec));
 
     res.status(200).json({
       success: true,
-      data: outstanding
+      data: {
+        'CF Advance':   { amount: cfOutstanding,   items: [] },
+        'Cash Advance': { amount: cashOutstanding, items: [] },
+        'Loan Advance': { amount: loanOutstanding, items: [] }
+      }
     });
   } catch (error) {
     console.error('Error fetching outstanding by type:', error);

@@ -305,13 +305,13 @@ const IndividualMilkPayment = () => {
         allDeductions.push({ type: 'Welfare Recovery', amount: parseFloat(formData.welfareRecovery), description: 'Monthly welfare recovery' });
       }
       if (parseFloat(formData.cfAdvanceDeduction) > 0) {
-        allDeductions.push({ type: 'CF Advance', amount: parseFloat(formData.cfAdvanceDeduction), description: 'CF/Cattle Feed advance recovery' });
+        allDeductions.push({ type: 'CF Recovery', amount: parseFloat(formData.cfAdvanceDeduction), description: 'CF Recovery' });
       }
       if (parseFloat(formData.loanAdvanceDeduction) > 0) {
-        allDeductions.push({ type: 'Loan Advance', amount: parseFloat(formData.loanAdvanceDeduction), description: 'Loan advance recovery' });
+        allDeductions.push({ type: 'Loan Recovery', amount: parseFloat(formData.loanAdvanceDeduction), description: 'Loan Recovery' });
       }
       if (parseFloat(formData.cashAdvanceDeduction) > 0) {
-        allDeductions.push({ type: 'Cash Advance', amount: parseFloat(formData.cashAdvanceDeduction), description: 'Cash advance recovery' });
+        allDeductions.push({ type: 'Cash Recovery', amount: parseFloat(formData.cashAdvanceDeduction), description: 'Cash Recovery' });
       }
 
       const payload = {
@@ -593,7 +593,7 @@ const IndividualMilkPayment = () => {
                 {selectedFarmer && (
                   <Alert color="blue" variant="light" mb="sm" py="xs">
                     <Group position="apart">
-                      <Text size="xs">Outstanding (Priority: Loan → CF → Cash):</Text>
+                      <Text size="xs">Outstanding Balance:</Text>
                       <Group spacing="md">
                         <Text size="xs" c={farmerAdvances.loanAdvance > 0 ? 'red' : 'dimmed'}>Loan: <Text span fw={600}>₹{farmerAdvances.loanAdvance.toFixed(2)}</Text></Text>
                         <Text size="xs" c={farmerAdvances.cfAdvance > 0 ? 'orange' : 'dimmed'}>CF: <Text span fw={600}>₹{farmerAdvances.cfAdvance.toFixed(2)}</Text></Text>
@@ -606,7 +606,7 @@ const IndividualMilkPayment = () => {
                 <Grid gutter="sm">
                   <Grid.Col span={4}>
                     <NumberInput
-                      label="Loan Advance (₹) - Priority 1"
+                      label="Loan Recovery (₹)"
                       value={formData.loanAdvanceDeduction}
                       onChange={(value) => handleInputChange('loanAdvanceDeduction', value)}
                       placeholder="0.00"
@@ -621,7 +621,7 @@ const IndividualMilkPayment = () => {
                   </Grid.Col>
                   <Grid.Col span={4}>
                     <NumberInput
-                      label="CF Advance (₹) - Priority 2"
+                      label="CF Recovery (₹)"
                       value={formData.cfAdvanceDeduction}
                       onChange={(value) => handleInputChange('cfAdvanceDeduction', value)}
                       placeholder="0.00"
@@ -636,7 +636,7 @@ const IndividualMilkPayment = () => {
                   </Grid.Col>
                   <Grid.Col span={4}>
                     <NumberInput
-                      label="Cash Advance (₹) - Priority 3"
+                      label="Cash Recovery (₹)"
                       value={formData.cashAdvanceDeduction}
                       onChange={(value) => handleInputChange('cashAdvanceDeduction', value)}
                       placeholder="0.00"
