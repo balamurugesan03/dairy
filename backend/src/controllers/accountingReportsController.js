@@ -42,6 +42,13 @@ export const getCashBook = async (req, res) => {
       });
     }
 
+    // Resolve CATTLE FEED SALES ledger name from Ledger management
+    const cfSalesLedgerDoc = await Ledger.findOne({
+      companyId: req.companyId,
+      ledgerName: { $regex: /^cattle\s*feed\s*sales$/i }
+    }).lean();
+    const cfSalesLedgerName = cfSalesLedgerDoc?.ledgerName || 'CATTLE FEED SALES';
+
     // Find cash ledger — auto-create if missing
     let cashLedger = await Ledger.findOne({ ledgerType: 'Cash', status: 'Active', companyId: req.companyId });
     if (!cashLedger) {
@@ -197,10 +204,10 @@ export const getCashBook = async (req, res) => {
         date: sale.billDate,
         voucherNumber: sale.billNumber || `SAL-${sale._id.toString().slice(-6)}`,
         voucherType: 'Sale',
-        particulars: 'CATTLE FEED SALES',
+        particulars: cfSalesLedgerName,
         debit: sale.paidAmount,
         credit: 0,
-        narration: itemDetail ? `${itemDetail} | Bill No: ${sale.billNumber}` : `Item Sales (Cash) | Bill No: ${sale.billNumber}`
+        narration: itemDetail ? `${itemDetail} | Bill No: ${sale.billNumber}` : `Bill No: ${sale.billNumber}`
       });
     });
 

@@ -5,6 +5,7 @@ import UnionSalesSlip from '../models/UnionSalesSlip.js';
 import StockTransaction from '../models/StockTransaction.js';
 import Advance from '../models/Advance.js';
 import ProducerReceipt from '../models/ProducerReceipt.js';
+import Sales from '../models/Sales.js';
 
 // Get Day Book report with date-wise grouping
 export const getDayBook = async (req, res) => {
@@ -507,99 +508,108 @@ export const getDayBook = async (req, res) => {
       }
     }
 
-    // --- Inventory Sales — route to cash vs adjustment column ----------------
-    // Cash sale  : income (CATTLE FEED SALES) in cash column receipt side.
-    //              Subsidy portion only → adjustment column on both sides.
-    // Credit sale: income + advance/subsidy all in adjustment column only.
-    const salesVouchers = vouchers.filter(v => v.voucherType === 'Sales');
+    // --- Inventory Sales — direct query from Sales model ---
+    // Sales vouchers are always excluded from the voucher loop above (voucherType='Sales' skip)
+    // so there is no double-count risk from this direct query.
+    //
+    // Cash sale  : receipt side CASH column  → CATTLE FEED SALES (grandTotal)
+    //              subsidy portion (if any)  → receipt side ADJUSTMENT (CATTLE FEED SALES)
+    //                                          + payment side ADJUSTMENT (per subsidy ledger)
+    // Credit sale: receipt side ADJUSTMENT   → CATTLE FEED SALES (grandTotal + totalSubsidy)
+    //              payment side ADJUSTMENT   → CATTLE FEED ADVANCE (grandTotal)
+    //              subsidy (if any)          → payment side ADJUSTMENT (per subsidy ledger)
+    // Narration  : product name, qty, selling price, bill number
 
-    for (const voucher of salesVouchers) {
-      const dateKey = voucher.voucherDate.toISOString().split('T')[0];
+    // Resolve ledger names from Ledger management (fallback to standard names)
+    const [cfSalesLedger, cfAdvanceLedger] = await Promise.all([
+      Ledger.findOne({ companyId, ledgerName: { $regex: /^cattle\s*feed\s*sales$/i } }).lean(),
+      Ledger.findOne({ companyId, ledgerName: { $regex: /^cattle\s*feed\s*advance$/i } }).lean()
+    ]);
+    const cfSalesName   = cfSalesLedger?.ledgerName   || 'CATTLE FEED SALES';
+    const cfAdvanceName = cfAdvanceLedger?.ledgerName || 'CATTLE FEED ADVANCE';
+
+    const salesRecords = await Sales.find({
+      companyId,
+      billDate: { $gte: start, $lte: end }
+    }).populate('items.subsidyId', 'subsidyName').lean();
+
+    for (const sale of salesRecords) {
+      const dateKey = sale.billDate.toISOString().split('T')[0];
       if (!dateMap[dateKey]) {
-        dateMap[dateKey] = {
-          date: dateKey,
-          receiptSide: [],
-          paymentSide: [],
-          totalReceipts: 0,
-          totalPayments: 0
-        };
+        dateMap[dateKey] = { date: dateKey, receiptSide: [], paymentSide: [], totalReceipts: 0, totalPayments: 0 };
       }
 
-      const hasCashLeg = voucher.entries.some(
-        e => cashBankTypes.has(e.ledgerId?.ledgerType) && (e.debitAmount || 0) > 0
-      );
+      const isCash     = sale.paymentMode === 'Cash';
+      const grandTotal = sale.grandTotal  || 0;
+      const totalSub   = sale.totalSubsidy || 0;
 
-      const incomeEntries = [];
-      const advanceEntries = [];
-      const subsidyEntries = [];
+      const itemNarration = (sale.items || [])
+        .map(i => `${i.itemName} Qty:${i.quantity || 0} @ Rs.${i.rate || 0}`)
+        .join('; ');
+      const narration = itemNarration
+        ? `${itemNarration} | Bill No: ${sale.billNumber}`
+        : `Bill No: ${sale.billNumber}`;
 
-      for (const entry of voucher.entries) {
-        if (cashBankTypes.has(entry.ledgerId?.ledgerType)) continue;
-        if ((entry.creditAmount || 0) > 0) {
-          incomeEntries.push(entry);
-        } else if ((entry.debitAmount || 0) > 0) {
-          if (/cattle\s*feed\s*advance/i.test(entry.ledgerName || '')) {
-            advanceEntries.push(entry);
-          } else {
-            subsidyEntries.push(entry);
-          }
+      const base = { date: sale.billDate, voucherNumber: sale.billNumber, narration };
+
+      // Helper: group subsidy amounts by ledger name
+      const buildSubsidyMap = () => {
+        const m = {};
+        for (const item of (sale.items || [])) {
+          const amt = item.subsidyAmount || 0;
+          if (amt <= 0) continue;
+          const name = item.subsidyId?.subsidyName || 'Subsidy';
+          m[name] = (m[name] || 0) + amt;
         }
-      }
-
-      const totalSubsidy = subsidyEntries.reduce((s, e) => s + (e.debitAmount || 0), 0);
-
-      const base = {
-        date: voucher.voucherDate,
-        voucherNumber: voucher.voucherNumber,
-        narration: voucher.narration || '',
-        voucherId: voucher._id,
+        return m;
       };
 
-      if (hasCashLeg) {
-        // Cash sale: income in cash column; subsidy split to adjustment column
-        for (const entry of incomeEntries) {
-          const totalCr  = entry.creditAmount || 0;
-          const cashAmt    = Math.max(0, totalCr - totalSubsidy);
-          const subsidyAmt = Math.min(totalSubsidy, totalCr);
-
-          if (cashAmt > 0) {
-            const e = { ...base, voucherType: 'Sales', ledgerName: entry.ledgerName || 'CATTLE FEED SALES', ledgerType: entry.ledgerId?.ledgerType, amount: cashAmt };
-            dateMap[dateKey].receiptSide.push(e);
-            dateMap[dateKey].totalReceipts += cashAmt;
-            receiptSide.push(e);
-          }
-          if (subsidyAmt > 0) {
-            const e = { ...base, voucherType: 'InventorySale', ledgerName: entry.ledgerName || 'CATTLE FEED SALES', ledgerType: entry.ledgerId?.ledgerType, amount: subsidyAmt };
-            dateMap[dateKey].receiptSide.push(e);
-            dateMap[dateKey].totalReceipts += subsidyAmt;
-            receiptSide.push(e);
-          }
-        }
-        for (const entry of subsidyEntries) {
-          const amt = entry.debitAmount || 0;
-          if (amt <= 0) continue;
-          const e = { ...base, voucherType: 'InventorySale', ledgerName: entry.ledgerName || 'Subsidy', ledgerType: entry.ledgerId?.ledgerType, amount: amt };
-          dateMap[dateKey].paymentSide.push(e);
-          dateMap[dateKey].totalPayments += amt;
-          paymentSide.push(e);
-        }
-      } else {
-        // Credit sale: all in adjustment column
-        for (const entry of incomeEntries) {
-          const amt = entry.creditAmount || 0;
-          if (amt <= 0) continue;
-          const e = { ...base, voucherType: 'InventorySale', ledgerName: entry.ledgerName || 'CATTLE FEED SALES', ledgerType: entry.ledgerId?.ledgerType, amount: amt };
+      if (isCash) {
+        // ── Cash sale: income in CASH column ──────────────────────────────
+        if (grandTotal > 0) {
+          const e = { ...base, voucherType: 'Sales', ledgerName: cfSalesName, amount: grandTotal };
           dateMap[dateKey].receiptSide.push(e);
-          dateMap[dateKey].totalReceipts += amt;
+          dateMap[dateKey].totalReceipts += grandTotal;
           receiptSide.push(e);
         }
-        for (const entry of [...advanceEntries, ...subsidyEntries]) {
-          const amt = entry.debitAmount || 0;
-          if (amt <= 0) continue;
-          const e = { ...base, voucherType: 'InventorySale', ledgerName: entry.ledgerName || 'Expense', ledgerType: entry.ledgerId?.ledgerType, amount: amt };
+        // Subsidy portion → ADJUSTMENT column in Day Book only
+        if (totalSub > 0) {
+          const subIncome = { ...base, voucherType: 'InventorySale', ledgerName: cfSalesName, amount: totalSub };
+          dateMap[dateKey].receiptSide.push(subIncome);
+          dateMap[dateKey].totalReceipts += totalSub;
+          receiptSide.push(subIncome);
+
+          for (const [subName, subAmt] of Object.entries(buildSubsidyMap())) {
+            const subExp = { ...base, voucherType: 'InventorySale', ledgerName: subName, amount: subAmt };
+            dateMap[dateKey].paymentSide.push(subExp);
+            dateMap[dateKey].totalPayments += subAmt;
+            paymentSide.push(subExp);
+          }
+        }
+      } else {
+        // ── Credit sale: all in ADJUSTMENT column ─────────────────────────
+        const incomeAmt = grandTotal + totalSub; // full item value
+        if (incomeAmt > 0) {
+          const e = { ...base, voucherType: 'InventorySale', ledgerName: cfSalesName, amount: incomeAmt };
+          dateMap[dateKey].receiptSide.push(e);
+          dateMap[dateKey].totalReceipts += incomeAmt;
+          receiptSide.push(e);
+        }
+        // Customer owes → CATTLE FEED ADVANCE
+        if (grandTotal > 0) {
+          const e = { ...base, voucherType: 'InventorySale', ledgerName: cfAdvanceName, amount: grandTotal };
           dateMap[dateKey].paymentSide.push(e);
-          dateMap[dateKey].totalPayments += amt;
+          dateMap[dateKey].totalPayments += grandTotal;
           paymentSide.push(e);
+        }
+        // Subsidy portion → per-subsidy ledger on expense side
+        if (totalSub > 0) {
+          for (const [subName, subAmt] of Object.entries(buildSubsidyMap())) {
+            const subExp = { ...base, voucherType: 'InventorySale', ledgerName: subName, amount: subAmt };
+            dateMap[dateKey].paymentSide.push(subExp);
+            dateMap[dateKey].totalPayments += subAmt;
+            paymentSide.push(subExp);
+          }
         }
       }
     }
