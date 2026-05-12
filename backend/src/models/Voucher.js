@@ -7,7 +7,7 @@ const voucherSchema = new mongoose.Schema({
       // Standard dairy vouchers
       'Receipt', 'Payment', 'Journal', 'Contra',
       // Inventory
-      'Purchase',
+      'Purchase', 'Sales',
       // Dairy-specific
       'MilkPurchase', 'MilkSales', 'FarmerPayment',
       'LoanDisbursal', 'AdvancePayment', 'OpeningBalance',
