@@ -225,24 +225,27 @@ export const getCashBook = async (req, res) => {
         date: adv.advanceDate,
         voucherNumber: adv.advanceNumber || `ADV-${adv._id.toString().slice(-6)}`,
         voucherType: 'Advance',
-        particulars: `Advance — ${farmerName}`,
+        particulars: 'Farmers Cash Advance',
         debit: 0,
         credit: adv.advanceAmount,
-        narration: adv.narration || 'Advance to Farmer (Cash)'
+        narration: `Cash Advance to ${farmerName}`
       });
     });
 
     // Producer Receipts/Loans — Cash Payments
     producerReceiptsCash.forEach(pr => {
       const farmerName = pr.farmerId?.farmerName || pr.farmerId?.farmerNumber || 'Producer';
+      const isCashAdvanceReturn = pr.receiptType === 'Cash Advance';
       rawTransactions.push({
         date: pr.receiptDate,
         voucherNumber: pr.receiptNumber || `PR-${pr._id.toString().slice(-6)}`,
         voucherType: 'ProducerLoan',
-        particulars: `${pr.receiptType || 'Loan'} — ${farmerName}`,
+        particulars: isCashAdvanceReturn ? 'Farmers Cash Advance' : `${pr.receiptType || 'Loan'} — ${farmerName}`,
         debit: 0,
         credit: pr.amount,
-        narration: pr.narration || `${pr.receiptType || 'Producer Loan'} (Cash)`
+        narration: isCashAdvanceReturn
+          ? `Cash Advance Return — ${farmerName}`
+          : (pr.narration || `${pr.receiptType || 'Producer Loan'} (Cash)`)
       });
     });
 

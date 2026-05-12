@@ -3,6 +3,8 @@ import Ledger from '../models/Ledger.js';
 import MilkCollection from '../models/MilkCollection.js';
 import UnionSalesSlip from '../models/UnionSalesSlip.js';
 import StockTransaction from '../models/StockTransaction.js';
+import Advance from '../models/Advance.js';
+import ProducerReceipt from '../models/ProducerReceipt.js';
 
 // Get Day Book report with date-wise grouping
 export const getDayBook = async (req, res) => {
@@ -600,6 +602,64 @@ export const getDayBook = async (req, res) => {
           paymentSide.push(e);
         }
       }
+    }
+
+    // --- Cash Advances Given (Farmers Cash Advance ledger) ---
+    const cashAdvancesGiven = await Advance.find({
+      companyId,
+      advanceDate: { $gte: start, $lte: end },
+      advanceCategory: 'Cash Advance',
+      paymentMode: 'Cash',
+      advanceAmount: { $gt: 0 },
+      status: { $ne: 'Cancelled' }
+    }).populate('farmerId', 'farmerNumber personalDetails').lean();
+
+    for (const adv of cashAdvancesGiven) {
+      const dateKey = adv.advanceDate.toISOString().split('T')[0];
+      if (!dateMap[dateKey]) {
+        dateMap[dateKey] = { date: dateKey, receiptSide: [], paymentSide: [], totalReceipts: 0, totalPayments: 0 };
+      }
+      const farmerName = adv.farmerId?.personalDetails?.name || adv.farmerId?.farmerNumber || 'Farmer';
+      const entry = {
+        date: adv.advanceDate,
+        voucherNumber: adv.advanceNumber || `ADV-${String(adv._id).slice(-6)}`,
+        voucherType: 'Advance',
+        ledgerName: 'Farmers Cash Advance',
+        narration: `Cash Advance to ${farmerName}`,
+        amount: adv.advanceAmount
+      };
+      dateMap[dateKey].paymentSide.push(entry);
+      dateMap[dateKey].totalPayments += adv.advanceAmount;
+      paymentSide.push(entry);
+    }
+
+    // --- Cash Advance Returns (Farmers Cash Advance ledger) ---
+    const cashAdvanceReturns = await ProducerReceipt.find({
+      companyId,
+      receiptDate: { $gte: start, $lte: end },
+      receiptType: 'Cash Advance',
+      paymentMode: 'Cash',
+      amount: { $gt: 0 },
+      status: { $ne: 'Cancelled' }
+    }).populate('farmerId', 'farmerNumber personalDetails').lean();
+
+    for (const ret of cashAdvanceReturns) {
+      const dateKey = ret.receiptDate.toISOString().split('T')[0];
+      if (!dateMap[dateKey]) {
+        dateMap[dateKey] = { date: dateKey, receiptSide: [], paymentSide: [], totalReceipts: 0, totalPayments: 0 };
+      }
+      const farmerName = ret.farmerId?.personalDetails?.name || ret.farmerId?.farmerNumber || 'Farmer';
+      const entry = {
+        date: ret.receiptDate,
+        voucherNumber: ret.receiptNumber || `RET-${String(ret._id).slice(-6)}`,
+        voucherType: 'Advance',
+        ledgerName: 'Farmers Cash Advance',
+        narration: `Cash Advance Return — ${farmerName}`,
+        amount: ret.amount
+      };
+      dateMap[dateKey].receiptSide.push(entry);
+      dateMap[dateKey].totalReceipts += ret.amount;
+      receiptSide.push(entry);
     }
 
     // --- Build dayWiseData with chained opening/closing balances ---
