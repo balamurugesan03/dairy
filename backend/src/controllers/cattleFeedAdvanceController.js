@@ -19,12 +19,14 @@ async function buildLedgerEntries(farmerId, companyId, start, end) {
 
   const entries = [];
 
-  // 1. Credit entries — Inventory Sales to farmer (Credit side = farmer owes society)
+  // 1. Credit entries — Inventory Credit Sales to farmer (farmer owes society)
+  // Cash sales are excluded: farmer paid at point of sale, no advance created.
   const sales = await Sales.find({
     companyId:    cObjId,
     customerId:   fObjId,
     customerType: 'Farmer',
     billDate:     { $gte: start, $lte: end },
+    paymentMode:  { $ne: 'Cash' },
   }).lean();
 
   for (const sale of sales) {
@@ -227,13 +229,15 @@ export const getCFAdvanceSummary = async (req, res) => {
     const cfDedTypes = ['CF Advance', 'Cattle Feed', 'CF Recovery'];
 
     // ── Period (current) totals ─────────────────────────────────────────────
-    // 2a. Credit per farmer — Sales to farmers in [start, end]
+    // 2a. Credit per farmer — Credit Sales to farmers in [start, end]
+    // Cash sales excluded: farmer paid immediately, no CF advance created.
     const salesAgg = await Sales.aggregate([
       {
         $match: {
           companyId:    cObjId,
           customerType: 'Farmer',
           billDate:     { $gte: start, $lte: end },
+          paymentMode:  { $ne: 'Cash' },
         },
       },
       {
@@ -291,13 +295,14 @@ export const getCFAdvanceSummary = async (req, res) => {
     });
 
     // ── Prior totals (everything BEFORE start) for opening-carry computation ─
-    // 2b. Prior credit per farmer
+    // 2b. Prior credit per farmer — credit sales only
     const priorSalesAgg = await Sales.aggregate([
       {
         $match: {
           companyId:    cObjId,
           customerType: 'Farmer',
           billDate:     { $lt: start },
+          paymentMode:  { $ne: 'Cash' },
         },
       },
       { $group: { _id: '$customerId', total: { $sum: '$grandTotal' } } },

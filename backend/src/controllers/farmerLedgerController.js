@@ -455,10 +455,11 @@ export const getFarmerOutstandingByType = async (req, res) => {
     const loanOpen = r2(opening?.loanAdvance || 0);
 
     // ── CF Advance ────────────────────────────────────────────────────────────
-    // Given: inventory credit sales to this farmer + direct CF advance rows
+    // Given: inventory CREDIT sales to this farmer (cash sales excluded — paid at point of sale)
+    //        + direct CF advance rows
     const [cfSalesAgg, cfAdvAgg, cfPayAgg, cfReceiptAgg] = await Promise.all([
       Sales.aggregate([
-        { $match: { companyId: cObjId, customerId: fObjId, customerType: 'Farmer' } },
+        { $match: { companyId: cObjId, customerId: fObjId, customerType: 'Farmer', paymentMode: { $ne: 'Cash' } } },
         { $group: { _id: null, total: { $sum: '$grandTotal' } } }
       ]),
       Advance.aggregate([
