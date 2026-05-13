@@ -608,7 +608,7 @@ export const farmerLedgerAPI = {
   getLedger: (farmerId, params) => api.get(`/farmer-payments/farmer/${farmerId}/ledger`, { params }).then(res => res.data).catch(handleError),
   getSummary: (farmerId) => api.get(`/farmer-payments/farmer/${farmerId}/summary`).then(res => res.data).catch(handleError),
   checkWelfare: (farmerId, date, fromDate, toDate) => api.get(`/farmer-payments/farmer/${farmerId}/welfare-check`, { params: { date, fromDate, toDate } }).then(res => res.data).catch(handleError),
-  getOutstandingByType: (farmerId) => api.get(`/farmer-payments/farmer/${farmerId}/outstanding-by-type`).then(res => res.data).catch(handleError)
+  getOutstandingByType: (farmerId, params) => api.get(`/farmer-payments/farmer/${farmerId}/outstanding-by-type`, { params }).then(res => res.data).catch(handleError)
 };
 
 // PRODUCER REGISTER APIs (Detailed Ledger)

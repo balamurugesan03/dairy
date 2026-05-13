@@ -443,37 +443,41 @@ export const getFarmerOutstandingByType = async (req, res) => {
   try {
     const farmerId  = req.params.farmerId;
     const companyId = req.companyId;
-    const fObjId    = new mongoose.Types.ObjectId(farmerId);
-    const cObjId    = new mongoose.Types.ObjectId(companyId);
+    const { asOfDate } = req.query;
+
+    const fObjId = new mongoose.Types.ObjectId(farmerId);
+    const cObjId = new mongoose.Types.ObjectId(companyId);
+    const dateLte = asOfDate ? new Date(asOfDate) : null;
 
     const r2 = (v) => Math.round((v || 0) * 100) / 100;
 
-    // Opening balances from ProducerOpening
+    // Opening balances from ProducerOpening (not date-filtered — it's the base)
     const opening = await ProducerOpening.findOne({ farmerId: fObjId, companyId: cObjId }).lean();
     const cfOpen   = r2(opening?.cfAdvance   || 0);
     const cashOpen = r2(opening?.cashAdvance || 0);
     const loanOpen = r2(opening?.loanAdvance || 0);
 
+    // Helper: build date condition for a field
+    const dc = (field) => dateLte ? { [field]: { $lte: dateLte } } : {};
+
     // ── CF Advance ────────────────────────────────────────────────────────────
-    // Given: inventory CREDIT sales to this farmer (cash sales excluded — paid at point of sale)
-    //        + direct CF advance rows
     const [cfSalesAgg, cfAdvAgg, cfPayAgg, cfReceiptAgg] = await Promise.all([
       Sales.aggregate([
-        { $match: { companyId: cObjId, customerId: fObjId, customerType: 'Farmer', paymentMode: { $ne: 'Cash' } } },
+        { $match: { companyId: cObjId, customerId: fObjId, customerType: 'Farmer', paymentMode: { $ne: 'Cash' }, ...dc('billDate') } },
         { $group: { _id: null, total: { $sum: '$grandTotal' } } }
       ]),
       Advance.aggregate([
-        { $match: { companyId: cObjId, farmerId: fObjId, advanceCategory: 'CF Advance' } },
+        { $match: { companyId: cObjId, farmerId: fObjId, advanceCategory: 'CF Advance', ...dc('advanceDate') } },
         { $group: { _id: null, total: { $sum: '$advanceAmount' } } }
       ]),
       FarmerPayment.aggregate([
-        { $match: { companyId: cObjId, farmerId: fObjId, status: { $ne: 'Cancelled' }, 'deductions.type': { $in: ['CF Advance', 'Cattle Feed', 'CF Recovery'] } } },
+        { $match: { companyId: cObjId, farmerId: fObjId, status: { $ne: 'Cancelled' }, 'deductions.type': { $in: ['CF Advance', 'Cattle Feed', 'CF Recovery'] }, ...dc('paymentDate') } },
         { $unwind: '$deductions' },
         { $match: { 'deductions.type': { $in: ['CF Advance', 'Cattle Feed', 'CF Recovery'] } } },
         { $group: { _id: null, total: { $sum: '$deductions.amount' } } }
       ]),
       ProducerReceipt.aggregate([
-        { $match: { companyId: cObjId, farmerId: fObjId, receiptType: 'CF Advance', status: { $ne: 'Cancelled' } } },
+        { $match: { companyId: cObjId, farmerId: fObjId, receiptType: 'CF Advance', status: { $ne: 'Cancelled' }, ...dc('receiptDate') } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ])
     ]);
@@ -484,17 +488,17 @@ export const getFarmerOutstandingByType = async (req, res) => {
     // ── Cash Advance ──────────────────────────────────────────────────────────
     const [cashAdvAgg, cashPayAgg, cashReceiptAgg] = await Promise.all([
       Advance.aggregate([
-        { $match: { companyId: cObjId, farmerId: fObjId, advanceCategory: 'Cash Advance' } },
+        { $match: { companyId: cObjId, farmerId: fObjId, advanceCategory: 'Cash Advance', ...dc('advanceDate') } },
         { $group: { _id: null, total: { $sum: '$advanceAmount' } } }
       ]),
       FarmerPayment.aggregate([
-        { $match: { companyId: cObjId, farmerId: fObjId, status: { $ne: 'Cancelled' }, 'deductions.type': { $in: ['Cash Advance', 'Cash Recovery'] } } },
+        { $match: { companyId: cObjId, farmerId: fObjId, status: { $ne: 'Cancelled' }, 'deductions.type': { $in: ['Cash Advance', 'Cash Recovery'] }, ...dc('paymentDate') } },
         { $unwind: '$deductions' },
         { $match: { 'deductions.type': { $in: ['Cash Advance', 'Cash Recovery'] } } },
         { $group: { _id: null, total: { $sum: '$deductions.amount' } } }
       ]),
       ProducerReceipt.aggregate([
-        { $match: { companyId: cObjId, farmerId: fObjId, receiptType: 'Cash Advance', status: { $ne: 'Cancelled' } } },
+        { $match: { companyId: cObjId, farmerId: fObjId, receiptType: 'Cash Advance', status: { $ne: 'Cancelled' }, ...dc('receiptDate') } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ])
     ]);
@@ -505,15 +509,15 @@ export const getFarmerOutstandingByType = async (req, res) => {
     // ── Loan Advance ──────────────────────────────────────────────────────────
     const [loanLoanAgg, loanAdvAgg, loanPayAgg] = await Promise.all([
       ProducerLoan.aggregate([
-        { $match: { companyId: cObjId, farmerId: fObjId } },
+        { $match: { companyId: cObjId, farmerId: fObjId, ...dc('loanDate') } },
         { $group: { _id: null, total: { $sum: '$totalLoanAmount' } } }
       ]),
       Advance.aggregate([
-        { $match: { companyId: cObjId, farmerId: fObjId, advanceCategory: 'Loan Advance' } },
+        { $match: { companyId: cObjId, farmerId: fObjId, advanceCategory: 'Loan Advance', ...dc('advanceDate') } },
         { $group: { _id: null, total: { $sum: '$advanceAmount' } } }
       ]),
       FarmerPayment.aggregate([
-        { $match: { companyId: cObjId, farmerId: fObjId, status: { $ne: 'Cancelled' }, 'deductions.type': { $in: ['Loan Advance', 'Loan Recovery', 'Loan EMI'] } } },
+        { $match: { companyId: cObjId, farmerId: fObjId, status: { $ne: 'Cancelled' }, 'deductions.type': { $in: ['Loan Advance', 'Loan Recovery', 'Loan EMI'] }, ...dc('paymentDate') } },
         { $unwind: '$deductions' },
         { $match: { 'deductions.type': { $in: ['Loan Advance', 'Loan Recovery', 'Loan EMI'] } } },
         { $group: { _id: null, total: { $sum: '$deductions.amount' } } }

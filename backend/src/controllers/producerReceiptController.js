@@ -14,103 +14,12 @@ export const createReceipt = async (req, res) => {
     receiptData.companyId = req.userCompany;
     receiptData.createdBy = req.user?._id;
 
-    // Get the reference (Advance or Loan)
-    let reference;
-    let previousBalance = 0;
-
-    if (receiptData.referenceType === 'Loan') {
-      reference = await ProducerLoan.findById(receiptData.referenceId);
-      if (!reference) {
-        return res.status(404).json({
-          success: false,
-          message: 'Loan not found'
-        });
-      }
-      previousBalance = reference.outstandingAmount;
-      receiptData.referenceNumber = reference.loanNumber;
-    } else {
-      reference = await Advance.findById(receiptData.referenceId);
-      if (!reference) {
-        return res.status(404).json({
-          success: false,
-          message: 'Advance not found'
-        });
-      }
-      previousBalance = reference.balanceAmount;
-      receiptData.referenceNumber = reference.advanceNumber;
-    }
-
-    // Validate amount doesn't exceed balance
-    if (receiptData.amount > previousBalance) {
-      return res.status(400).json({
-        success: false,
-        message: `Receipt amount (${receiptData.amount}) exceeds outstanding balance (${previousBalance})`
-      });
-    }
-
-    // Set balance tracking
-    receiptData.previousBalance = previousBalance;
-    receiptData.newBalance = previousBalance - receiptData.amount;
-
     const receipt = new ProducerReceipt(receiptData);
     await receipt.save();
 
-    // Update the reference balance
-    if (receiptData.referenceType === 'Loan') {
-      reference.recoveredAmount += receiptData.amount;
-      reference.outstandingAmount -= receiptData.amount;
-
-      // Update individual EMI statuses (earliest pending first)
-      let remaining = receiptData.amount;
-      for (const emi of reference.emiSchedule) {
-        if (remaining <= 0) break;
-        if (emi.status === 'Paid') continue;
-        const needed = emi.amount - emi.paidAmount;
-        const pay = Math.min(needed, remaining);
-        emi.paidAmount += pay;
-        remaining -= pay;
-        if (emi.paidAmount >= emi.amount) {
-          emi.status = 'Paid';
-          emi.paidDate = new Date();
-        } else {
-          emi.status = 'Partial';
-          emi.paidDate = new Date();
-        }
-      }
-
-      if (reference.outstandingAmount <= 0) {
-        reference.status = 'Closed';
-        reference.closedAt = new Date();
-      }
-
-      await reference.save();
-    } else {
-      // Advance
-      reference.adjustedAmount += receiptData.amount;
-      reference.balanceAmount -= receiptData.amount;
-
-      // Add adjustment record
-      reference.adjustments.push({
-        date: new Date(),
-        amount: receiptData.amount,
-        referenceType: 'Payment',
-        referenceId: receipt._id,
-        remarks: `Receipt: ${receipt.receiptNumber}`,
-        adjustedBy: req.user?._id
-      });
-
-      if (reference.balanceAmount <= 0) {
-        reference.status = 'Adjusted';
-      } else {
-        reference.status = 'Partially Adjusted';
-      }
-
-      await reference.save();
-    }
-
-    // Create receipt voucher
+    // Create receipt voucher (handles Cash Book + Day Book posting)
     try {
-      const voucher = await createReceiptVoucher(receipt, receiptData.receiptType, req.userCompany);
+      const voucher = await createReceiptVoucher(receipt, receiptData.receiptType, req.userCompany, receiptData.bankLedgerId);
       if (voucher) {
         receipt.voucherId = voucher._id;
         await receipt.save();
@@ -118,7 +27,7 @@ export const createReceipt = async (req, res) => {
     } catch (voucherError) {
       console.error('Voucher creation failed:', voucherError);
     }
-    // Populate farmer details
+
     await receipt.populate('farmerId', 'farmerNumber personalDetails');
 
     res.status(201).json({
@@ -132,24 +41,63 @@ export const createReceipt = async (req, res) => {
       success: false,
       message: error.message || 'Error creating receipt'
     });
-  } finally {
   }
 };
 
+// Regex map to find the correct advance ledger from Ledger management
+const ADVANCE_LEDGER_REGEX = {
+  'CF Advance':   /^cattle\s*feed\s*advance$/i,
+  'Cash Advance': /^farmers?\s*cash\s*advance$/i,
+  'Loan Advance': /^farmers?\s*loan/i,
+};
+
 // Create receipt voucher
-const createReceiptVoucher = async (receipt, receiptType, companyId) => {
+// Cash:     Dr Cash,        Cr Advance Ledger  → voucherType 'Receipt' (cash column in Day Book + Cash Book)
+// Bank/UPI: Dr Bank Ledger, Cr Advance Ledger  → voucherType 'Journal' (adjustment column in Day Book via direct query)
+const createReceiptVoucher = async (receipt, receiptType, companyId, bankLedgerId) => {
   const entries = [];
+  const isCash  = receipt.paymentMode === 'Cash';
 
-  // Get ledger name based on receipt type
-  const advanceLedgerName = receiptType;
+  // ── Resolve advance ledger ──
+  const regex = ADVANCE_LEDGER_REGEX[receiptType];
+  let advanceLedger = regex
+    ? await Ledger.findOne({ companyId, ledgerName: { $regex: regex } })
+    : null;
 
-  // Entry 1: Debit Cash/Bank
-  const paymentLedgerName = receipt.paymentMode === 'Cash' ? 'Cash' : 'Bank';
-  const paymentLedger = await Ledger.findOne({
-    ledgerName: paymentLedgerName,
-    ledgerType: receipt.paymentMode === 'Cash' ? 'Cash' : 'Bank',
-    companyId
-  });
+  if (!advanceLedger) {
+    // Fallback names
+    const fallbackNames = {
+      'CF Advance':   'CATTLE FEED ADVANCE',
+      'Cash Advance': 'Farmers Cash Advance',
+      'Loan Advance': 'Farmers Loan A/C',
+    };
+    const fallbackName = fallbackNames[receiptType] || receiptType;
+    advanceLedger = await Ledger.findOne({ companyId, ledgerName: fallbackName });
+    if (!advanceLedger) {
+      advanceLedger = new Ledger({
+        ledgerName: fallbackName,
+        ledgerType: 'Other Receivable',
+        companyId,
+        openingBalance: 0,
+        currentBalance: 0,
+        balanceType: 'Dr'
+      });
+      await advanceLedger.save();
+    }
+  }
+
+  // ── Resolve payment ledger (Cash or Bank) ──
+  let paymentLedger;
+  if (isCash) {
+    paymentLedger = await Ledger.findOne({ companyId, ledgerType: 'Cash' });
+  } else if (bankLedgerId) {
+    paymentLedger = await Ledger.findById(bankLedgerId);
+  }
+
+  // Store bank ledger name on receipt for Day Book direct query
+  if (!isCash && paymentLedger) {
+    await ProducerReceipt.findByIdAndUpdate(receipt._id, { bankLedgerName: paymentLedger.ledgerName });
+  }
 
   if (paymentLedger) {
     entries.push({
@@ -160,24 +108,6 @@ const createReceiptVoucher = async (receipt, receiptType, companyId) => {
     });
   }
 
-  // Entry 2: Credit Advance/Loan Ledger
-  let advanceLedger = await Ledger.findOne({
-    ledgerName: advanceLedgerName,
-    companyId
-  });
-
-  if (!advanceLedger) {
-    advanceLedger = new Ledger({
-      ledgerName: advanceLedgerName,
-      ledgerType: 'Other Receivable',
-      companyId,
-      openingBalance: 0,
-      currentBalance: 0,
-      balanceType: 'Dr'
-    });
-    await advanceLedger.save();
-  }
-
   entries.push({
     ledgerId: advanceLedger._id,
     ledgerName: advanceLedger.ledgerName,
@@ -185,21 +115,22 @@ const createReceiptVoucher = async (receipt, receiptType, companyId) => {
     creditAmount: receipt.amount
   });
 
-  const totalDebit = entries.reduce((sum, e) => sum + e.debitAmount, 0);
+  const totalDebit  = entries.reduce((sum, e) => sum + e.debitAmount,  0);
   const totalCredit = entries.reduce((sum, e) => sum + e.creditAmount, 0);
 
-  const voucherNumber = await generateVoucherNumber('Receipt');
+  const farmerName = receipt.farmerId?.personalDetails?.name || '';
+  const voucherNumber = await generateVoucherNumber('Receipt', companyId);
 
   const voucher = new Voucher({
-    voucherType: 'Receipt',
+    voucherType: isCash ? 'Receipt' : 'Journal',
     voucherNumber,
     voucherDate: receipt.receiptDate,
     companyId,
     entries,
     totalDebit,
     totalCredit,
-    narration: `${receiptType} receipt - ${receipt.receiptNumber}`,
-    referenceType: 'Receipt',
+    narration: `${receiptType} Return — ${farmerName} (${receipt.receiptNumber})`,
+    referenceType: 'ProducerReceipt',
     referenceId: receipt._id
   });
 
@@ -370,8 +301,8 @@ export const cancelReceipt = async (req, res) => {
       });
     }
 
-    // Reverse the balance update on the reference
-    if (receipt.referenceType === 'Loan') {
+    // Reverse the balance update on the reference (only if one was linked)
+    if (receipt.referenceId && receipt.referenceType === 'Loan') {
       const loan = await ProducerLoan.findById(receipt.referenceId);
       if (loan) {
         loan.recoveredAmount -= receipt.amount;
@@ -397,7 +328,7 @@ export const cancelReceipt = async (req, res) => {
         }
         await loan.save();
       }
-    } else {
+    } else if (receipt.referenceId) {
       const advance = await Advance.findById(receipt.referenceId);
       if (advance) {
         advance.adjustedAmount -= receipt.amount;

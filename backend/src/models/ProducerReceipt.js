@@ -48,11 +48,12 @@ const producerReceiptSchema = new mongoose.Schema({
     required: [true, 'Amount is required'],
     min: [1, 'Amount must be greater than 0']
   },
-  // Reference to the original advance/loan
+  // Bank ledger name (for Bank/UPI payments — used by Day Book direct query)
+  bankLedgerName: { type: String },
+  // Reference to the original advance/loan (optional — legacy field)
   referenceType: {
     type: String,
-    enum: ['Advance', 'Loan'],
-    required: true
+    enum: ['Advance', 'Loan']
   },
   referenceId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -128,7 +129,6 @@ producerReceiptSchema.pre('save', async function() {
     this.receiptNumber = await generateCode('PREC', this.companyId, { pad: 5 });
   }
 
-  // Set reference model based on reference type
   if (this.referenceType === 'Advance') {
     this.referenceModel = 'Advance';
   } else if (this.referenceType === 'Loan') {

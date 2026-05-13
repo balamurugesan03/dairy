@@ -42,12 +42,13 @@ export const getCashBook = async (req, res) => {
       });
     }
 
-    // Resolve CATTLE FEED SALES ledger name from Ledger management
-    const cfSalesLedgerDoc = await Ledger.findOne({
-      companyId: req.companyId,
-      ledgerName: { $regex: /^cattle\s*feed\s*sales$/i }
-    }).lean();
-    const cfSalesLedgerName = cfSalesLedgerDoc?.ledgerName || 'CATTLE FEED SALES';
+    // Resolve CATTLE FEED SALES / ADVANCE ledger names from Ledger management
+    const [cfSalesLedgerDoc, cfAdvLedgerDoc] = await Promise.all([
+      Ledger.findOne({ companyId: req.companyId, ledgerName: { $regex: /^cattle\s*feed\s*sales$/i } }).lean(),
+      Ledger.findOne({ companyId: req.companyId, ledgerName: { $regex: /^cattle\s*feed\s*advance$/i } }).lean()
+    ]);
+    const cfSalesLedgerName  = cfSalesLedgerDoc?.ledgerName  || 'CATTLE FEED SALES';
+    const cfAdvanceLedgerName = cfAdvLedgerDoc?.ledgerName   || 'CATTLE FEED ADVANCE';
 
     // Find cash ledger — auto-create if missing
     let cashLedger = await Ledger.findOne({ ledgerType: 'Cash', status: 'Active', companyId: req.companyId });
@@ -154,7 +155,9 @@ export const getCashBook = async (req, res) => {
     const rawTransactions = [];
 
     // From vouchers (existing accounting entries)
+    // Skip ProducerReceipt vouchers — those are covered by the direct producerReceiptsCash query.
     vouchers.forEach(voucher => {
+      if (voucher.referenceType === 'ProducerReceipt') return;
       voucher.entries.forEach(entry => {
         if (entry.ledgerId._id.toString() === cashLedger._id.toString()) {
           const isReceipt = entry.debitAmount > 0;
@@ -239,20 +242,23 @@ export const getCashBook = async (req, res) => {
       });
     });
 
-    // Producer Receipts/Loans — Cash Payments
+    // Producer Receipts — Cash returns (CF Advance, Cash Advance, Loan Advance)
+    const cashBookLedgerMap = {
+      'CF Advance':   cfAdvanceLedgerName,
+      'Cash Advance': 'Farmers Cash Advance',
+      'Loan Advance': 'Farmers Loan A/C',
+    };
     producerReceiptsCash.forEach(pr => {
-      const farmerName = pr.farmerId?.farmerName || pr.farmerId?.farmerNumber || 'Producer';
-      const isCashAdvanceReturn = pr.receiptType === 'Cash Advance';
+      const farmerName  = pr.farmerId?.farmerName || pr.farmerId?.farmerNumber || 'Producer';
+      const particulars = cashBookLedgerMap[pr.receiptType] || pr.receiptType || 'Producer';
       rawTransactions.push({
         date: pr.receiptDate,
         voucherNumber: pr.receiptNumber || `PR-${pr._id.toString().slice(-6)}`,
         voucherType: 'ProducerLoan',
-        particulars: isCashAdvanceReturn ? 'Farmers Cash Advance' : `${pr.receiptType || 'Loan'} — ${farmerName}`,
-        debit: 0,
-        credit: pr.amount,
-        narration: isCashAdvanceReturn
-          ? `Cash Advance Return — ${farmerName}`
-          : (pr.narration || `${pr.receiptType || 'Producer Loan'} (Cash)`)
+        particulars,
+        debit: pr.amount,   // cash received from farmer
+        credit: 0,
+        narration: `${pr.receiptType} Return — ${farmerName}`
       });
     });
 

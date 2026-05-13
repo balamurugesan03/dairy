@@ -89,6 +89,9 @@ export const getDayBook = async (req, res) => {
       // Inventory Sales vouchers — handled separately below so cash sales go to
       // the cash column and credit sales (+ subsidy) go to the adjustment column.
       if (voucher.voucherType === 'Sales') continue;
+      // Producer Receipts (advance returns) — handled by direct ProducerReceipt
+      // query below; skip the voucher to avoid double-counting.
+      if (voucher.referenceType === 'ProducerReceipt') continue;
 
       const dateKey = voucher.voucherDate.toISOString().split('T')[0];
 
@@ -643,33 +646,87 @@ export const getDayBook = async (req, res) => {
       paymentSide.push(entry);
     }
 
-    // --- Cash Advance Returns (Farmers Cash Advance ledger) ---
-    const cashAdvanceReturns = await ProducerReceipt.find({
+    // --- Producer Receipts (returns from farmers) ---
+    // Ledger names for each receipt type
+    const [cashAdvLedger, loanLedger] = await Promise.all([
+      Ledger.findOne({ companyId, ledgerName: { $regex: /^farmers?\s*cash\s*advance$/i } }).lean(),
+      Ledger.findOne({ companyId, ledgerName: { $regex: /^farmers?\s*loan/i } }).lean()
+    ]);
+    const cashAdvLedgerName = cashAdvLedger?.ledgerName || 'Farmers Cash Advance';
+    const loanLedgerName    = loanLedger?.ledgerName    || 'Farmers Loan A/C';
+
+    const advanceLedgerNameMap = {
+      'CF Advance':   cfAdvanceName,
+      'Cash Advance': cashAdvLedgerName,
+      'Loan Advance': loanLedgerName
+    };
+
+    // Cash receipts → receipt side (Cash column via voucherType 'Advance')
+    const cashReceipts = await ProducerReceipt.find({
       companyId,
       receiptDate: { $gte: start, $lte: end },
-      receiptType: 'Cash Advance',
       paymentMode: 'Cash',
       amount: { $gt: 0 },
       status: { $ne: 'Cancelled' }
     }).populate('farmerId', 'farmerNumber personalDetails').lean();
 
-    for (const ret of cashAdvanceReturns) {
+    for (const ret of cashReceipts) {
       const dateKey = ret.receiptDate.toISOString().split('T')[0];
       if (!dateMap[dateKey]) {
         dateMap[dateKey] = { date: dateKey, receiptSide: [], paymentSide: [], totalReceipts: 0, totalPayments: 0 };
       }
-      const farmerName = ret.farmerId?.personalDetails?.name || ret.farmerId?.farmerNumber || 'Farmer';
+      const farmerName  = ret.farmerId?.personalDetails?.name || ret.farmerId?.farmerNumber || 'Farmer';
+      const ledgerLabel = advanceLedgerNameMap[ret.receiptType] || ret.receiptType;
       const entry = {
-        date: ret.receiptDate,
+        date:          ret.receiptDate,
         voucherNumber: ret.receiptNumber || `RET-${String(ret._id).slice(-6)}`,
-        voucherType: 'Advance',
-        ledgerName: 'Farmers Cash Advance',
-        narration: `Cash Advance Return — ${farmerName}`,
-        amount: ret.amount
+        voucherType:   'Advance',
+        ledgerName:    ledgerLabel,
+        narration:     `${ret.receiptType} Return — ${farmerName}`,
+        amount:        ret.amount
       };
       dateMap[dateKey].receiptSide.push(entry);
       dateMap[dateKey].totalReceipts += ret.amount;
       receiptSide.push(entry);
+    }
+
+    // Bank/UPI receipts → adjustment column (both sides)
+    const bankReceipts = await ProducerReceipt.find({
+      companyId,
+      receiptDate: { $gte: start, $lte: end },
+      paymentMode: { $in: ['Bank', 'UPI', 'Cheque'] },
+      amount: { $gt: 0 },
+      status: { $ne: 'Cancelled' }
+    }).populate('farmerId', 'farmerNumber personalDetails').lean();
+
+    for (const ret of bankReceipts) {
+      const dateKey = ret.receiptDate.toISOString().split('T')[0];
+      if (!dateMap[dateKey]) {
+        dateMap[dateKey] = { date: dateKey, receiptSide: [], paymentSide: [], totalReceipts: 0, totalPayments: 0 };
+      }
+      const farmerName   = ret.farmerId?.personalDetails?.name || ret.farmerId?.farmerNumber || 'Farmer';
+      const advLedger    = advanceLedgerNameMap[ret.receiptType] || ret.receiptType;
+      const bankLedger   = ret.bankLedgerName || 'Bank';
+      const voucherNum   = ret.receiptNumber || `RET-${String(ret._id).slice(-6)}`;
+      const narration    = `${ret.receiptType} Return — ${farmerName}`;
+
+      // Income/receipt side: advance ledger being recovered
+      const incomeEntry = {
+        date: ret.receiptDate, voucherNumber: voucherNum,
+        voucherType: 'BankTransfer', ledgerName: advLedger, narration, amount: ret.amount
+      };
+      dateMap[dateKey].receiptSide.push(incomeEntry);
+      dateMap[dateKey].totalReceipts += ret.amount;
+      receiptSide.push(incomeEntry);
+
+      // Expense/payment side: bank account that received the money
+      const expenseEntry = {
+        date: ret.receiptDate, voucherNumber: voucherNum,
+        voucherType: 'BankTransfer', ledgerName: bankLedger, narration, amount: ret.amount
+      };
+      dateMap[dateKey].paymentSide.push(expenseEntry);
+      dateMap[dateKey].totalPayments += ret.amount;
+      paymentSide.push(expenseEntry);
     }
 
     // --- Build dayWiseData with chained opening/closing balances ---

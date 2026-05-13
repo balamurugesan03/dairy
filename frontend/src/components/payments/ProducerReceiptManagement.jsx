@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { message } from '../../utils/toast';
-import { farmerAPI, producerReceiptAPI, producerLoanAPI, advanceAPI, farmerLedgerAPI } from '../../services/api';
+import { farmerAPI, producerReceiptAPI, farmerLedgerAPI, ledgerAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import {
   Container,
@@ -25,7 +25,6 @@ import {
   ScrollArea,
   Pagination,
   Menu,
-  Divider,
   Alert,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
@@ -33,7 +32,6 @@ import {
   IconPlus,
   IconSearch,
   IconPrinter,
-  IconEye,
   IconX,
   IconDotsVertical,
   IconCurrencyRupee,
@@ -43,241 +41,225 @@ import {
   IconAlertCircle,
 } from '@tabler/icons-react';
 
+const RECEIPT_TYPE_OPTIONS = [
+  { value: 'CF Advance',   label: 'CF Advance' },
+  { value: 'Cash Advance', label: 'Cash Advance' },
+  { value: 'Loan Advance', label: 'Loan Advance' },
+];
+
+const PAYMENT_MODE_OPTIONS = [
+  { value: 'Cash', label: 'Cash' },
+  { value: 'Bank', label: 'Bank Transfer' },
+  { value: 'UPI',  label: 'UPI' },
+];
+
+const RECEIPT_TYPE_COLORS = {
+  'CF Advance':   'orange',
+  'Cash Advance': 'cyan',
+  'Loan Advance': 'violet',
+};
+
+const FILTER_TYPE_OPTIONS = [
+  { value: '',             label: 'All Types' },
+  { value: 'CF Advance',   label: 'CF Advance' },
+  { value: 'Cash Advance', label: 'Cash Advance' },
+  { value: 'Loan Advance', label: 'Loan Advance' },
+];
+
+const emptyForm = () => ({
+  receiptDate:  new Date(),
+  farmerId:     '',
+  receiptType:  'CF Advance',
+  amount:       '',
+  paymentMode:  'Cash',
+  bankLedgerId: '',
+  remarks:      '',
+});
+
 const ProducerReceiptManagement = () => {
   const { canWrite } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [receipts, setReceipts] = useState([]);
-  const [summary, setSummary] = useState([]);
-  const [pagination, setPagination] = useState({
-    page: 1,
-    pages: 1,
-    total: 0,
-    limit: 10
-  });
 
-  // Filters
-  const [filters, setFilters] = useState({
-    receiptType: '',
-    fromDate: null,
-    toDate: null
-  });
+  // ── List state ──────────────────────────────────────────────────────────────
+  const [loading, setLoading]       = useState(false);
+  const [receipts, setReceipts]     = useState([]);
+  const [summary, setSummary]       = useState([]);
+  const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0, limit: 10 });
+  const [filters, setFilters]       = useState({ receiptType: '', fromDate: null, toDate: null });
 
-  // Modal states
-  const [modalOpen, setModalOpen] = useState(false);
-  const [viewModalOpen, setViewModalOpen] = useState(false);
+  // ── Modal state ──────────────────────────────────────────────────────────────
+  const [modalOpen,       setModalOpen]       = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState(null);
-  const [cancelReason, setCancelReason] = useState('');
+  const [cancelReason,    setCancelReason]    = useState('');
 
-  // Form state
-  const [formLoading, setFormLoading] = useState(false);
-  const [farmers, setFarmers] = useState([]);
-  const [searchLoading, setSearchLoading] = useState(false);
+  // ── Form state ───────────────────────────────────────────────────────────────
+  const [formData,       setFormData]       = useState(emptyForm());
+  const [formLoading,    setFormLoading]    = useState(false);
+  const [farmers,        setFarmers]        = useState([]);
+  const [searchLoading,  setSearchLoading]  = useState(false);
   const [selectedFarmer, setSelectedFarmer] = useState(null);
-  const [references, setReferences] = useState([]);
-  const [referencesLoading, setReferencesLoading] = useState(false);
+  const [dueAmount,      setDueAmount]      = useState(null);   // null = not fetched yet
+  const [dueLoading,     setDueLoading]     = useState(false);
+  const [bankLedgers,    setBankLedgers]    = useState([]);
 
-  const [formData, setFormData] = useState({
-    farmerId: '',
-    receiptDate: new Date(),
-    receiptType: 'Cash Advance',
-    referenceType: 'Advance',
-    referenceId: '',
-    paymentMode: 'Cash',
-    amount: '',
-    remarks: ''
-  });
+  // ── Refs for Enter-key navigation ────────────────────────────────────────────
+  const farmerRef      = useRef(null);
+  const receiptTypeRef = useRef(null);
+  const amountRef      = useRef(null);
+  const paymentModeRef = useRef(null);
+  const bankLedgerRef  = useRef(null);
+  const remarksRef     = useRef(null);
+  const submitRef      = useRef(null);
 
-  const [currentBalance, setCurrentBalance] = useState(0);
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+  const formatDate = (date) => {
+    if (!date) return '-';
+    return new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
 
-  useEffect(() => {
-    fetchReceipts();
-  }, [pagination.page, filters]);
+  const formatCurrency = (amount) =>
+    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(amount || 0);
 
-  const fetchReceipts = async () => {
+  const focusRef = (ref) => {
+    setTimeout(() => {
+      const el = ref?.current;
+      if (!el) return;
+      const input = el.querySelector ? (el.querySelector('input') || el.querySelector('button') || el) : el;
+      input?.focus();
+    }, 50);
+  };
+
+  const advanceKey = (ref) => (e) => {
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      if (e.key === 'Enter') e.preventDefault();
+      focusRef(ref);
+    }
+  };
+
+  // ── Data fetchers ────────────────────────────────────────────────────────────
+  const fetchReceipts = useCallback(async () => {
     try {
       setLoading(true);
-      const params = {
-        page: pagination.page,
-        limit: pagination.limit,
-        sortBy: 'receiptDate',
-        sortOrder: 'desc'
-      };
-
+      const params = { page: pagination.page, limit: pagination.limit, sortBy: 'receiptDate', sortOrder: 'desc' };
       if (filters.receiptType) params.receiptType = filters.receiptType;
-      if (filters.fromDate) params.fromDate = filters.fromDate.toISOString();
-      if (filters.toDate) params.toDate = filters.toDate.toISOString();
+      if (filters.fromDate)    params.fromDate    = filters.fromDate.toISOString();
+      if (filters.toDate)      params.toDate      = filters.toDate.toISOString();
 
       const response = await producerReceiptAPI.getAll(params);
       setReceipts(response.data || []);
       setSummary(response.summary || []);
-      setPagination(prev => ({
-        ...prev,
-        ...response.pagination
-      }));
+      setPagination(prev => ({ ...prev, ...response.pagination }));
     } catch (error) {
       message.error(error.message || 'Failed to fetch receipts');
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.page, filters]);  // eslint-disable-line
+
+  useEffect(() => { fetchReceipts(); }, [pagination.page, filters]);  // eslint-disable-line
 
   const searchFarmers = async (query) => {
     try {
       setSearchLoading(true);
-      let response;
-      if (query && query.trim().length > 0) {
-        response = await farmerAPI.search(query.trim());
-      } else {
-        response = await farmerAPI.getAll({ status: 'Active', limit: 50 });
-      }
+      const response = (query && query.trim())
+        ? await farmerAPI.search(query.trim())
+        : await farmerAPI.getAll({ status: 'Active', limit: 50 });
       setFarmers(response.data || []);
-    } catch (error) {
-      console.error('Failed to search farmers:', error);
+    } catch (err) {
+      console.error('Failed to search farmers:', err);
     } finally {
       setSearchLoading(false);
     }
   };
 
-  const handleFarmerSelect = async (farmerId) => {
-    const farmer = farmers.find(f => f._id === farmerId);
-    setSelectedFarmer(farmer);
-    setFormData(prev => ({ ...prev, farmerId, referenceId: '' }));
-
-    if (farmer) {
-      // Fetch farmer's outstanding advances/loans
-      await fetchReferences(farmerId, formData.receiptType);
-    }
-  };
-
-  const fetchReferences = async (farmerId, receiptType) => {
-    if (!farmerId) return;
-
-    setReferencesLoading(true);
+  const fetchBankLedgers = async () => {
     try {
-      let refs = [];
+      const res = await ledgerAPI.getAll({ ledgerType: 'Bank', status: 'Active' });
+      setBankLedgers((res.data || []).map(l => ({ value: l._id, label: l.ledgerName })));
+    } catch (err) {
+      console.error('Failed to fetch bank ledgers:', err);
+    }
+  };
 
-      // Map receipt type to advance category
-      const advanceCategory = receiptType;
-
-      // Fetch advances with matching category
-      const advancesResponse = await advanceAPI.getFarmerAdvances(farmerId);
-      const matchingAdvances = (advancesResponse.data || []).filter(
-        adv => adv.advanceCategory === advanceCategory ||
-               (!adv.advanceCategory && advanceCategory === 'Cash Advance')
-      );
-
-      refs.push(...matchingAdvances.map(adv => ({
-        value: `advance_${adv._id}`,
-        label: `${adv.advanceNumber} - Balance: ₹${adv.balanceAmount?.toFixed(2)}`,
-        type: 'Advance',
-        id: adv._id,
-        balance: adv.balanceAmount,
-        number: adv.advanceNumber
-      })));
-
-      // Fetch loans with matching type
-      const loansResponse = await producerLoanAPI.getFarmerLoans(farmerId);
-      const matchingLoans = (loansResponse.data || []).filter(
-        loan => loan.loanType === receiptType
-      );
-
-      refs.push(...matchingLoans.map(loan => ({
-        value: `loan_${loan._id}`,
-        label: `${loan.loanNumber} - Outstanding: ₹${loan.outstandingAmount?.toFixed(2)}`,
-        type: 'Loan',
-        id: loan._id,
-        balance: loan.outstandingAmount,
-        number: loan.loanNumber
-      })));
-
-      setReferences(refs);
-    } catch (error) {
-      console.error('Failed to fetch references:', error);
-      setReferences([]);
+  const fetchDueAmount = async (farmerId, receiptType, date) => {
+    if (!farmerId) return;
+    setDueLoading(true);
+    try {
+      const params = {};
+      if (date) params.asOfDate = new Date(date).toISOString();
+      const res = await farmerLedgerAPI.getOutstandingByType(farmerId, params);
+      const outstanding = res.data?.[receiptType]?.amount ?? 0;
+      setDueAmount(outstanding);
+    } catch (err) {
+      console.error('Failed to fetch due amount:', err);
+      setDueAmount(0);
     } finally {
-      setReferencesLoading(false);
+      setDueLoading(false);
     }
   };
 
-  const handleReceiptTypeChange = async (value) => {
-    setFormData(prev => ({ ...prev, receiptType: value, referenceId: '' }));
-    setCurrentBalance(0);
-
-    if (selectedFarmer) {
-      await fetchReferences(selectedFarmer._id, value);
+  // ── Form handlers ────────────────────────────────────────────────────────────
+  const handleFarmerSelect = (farmerId) => {
+    const farmer = farmers.find(f => f._id === farmerId);
+    setSelectedFarmer(farmer || null);
+    setFormData(prev => ({ ...prev, farmerId: farmerId || '' }));
+    setDueAmount(null);
+    if (farmerId) {
+      fetchDueAmount(farmerId, formData.receiptType, formData.receiptDate);
+      focusRef(receiptTypeRef);
     }
   };
 
-  const handleReferenceSelect = (value) => {
-    const ref = references.find(r => r.value === value);
-    if (ref) {
-      setFormData(prev => ({
-        ...prev,
-        referenceId: value,
-        referenceType: ref.type
-      }));
-      setCurrentBalance(ref.balance || 0);
+  const handleDateChange = (value) => {
+    setFormData(prev => ({ ...prev, receiptDate: value }));
+    if (formData.farmerId) {
+      fetchDueAmount(formData.farmerId, formData.receiptType, value);
     }
   };
 
-  const handleInputChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  const handleReceiptTypeChange = (value) => {
+    setFormData(prev => ({ ...prev, receiptType: value }));
+    setDueAmount(null);
+    if (formData.farmerId) {
+      fetchDueAmount(formData.farmerId, value, formData.receiptDate);
+    }
+  };
+
+  const handlePaymentModeChange = (value) => {
+    setFormData(prev => ({ ...prev, paymentMode: value, bankLedgerId: '' }));
+    if (value !== 'Cash' && bankLedgers.length === 0) {
+      fetchBankLedgers();
+    }
   };
 
   const resetForm = () => {
-    setFormData({
-      farmerId: '',
-      receiptDate: new Date(),
-      receiptType: 'Cash Advance',
-      referenceType: 'Advance',
-      referenceId: '',
-      paymentMode: 'Cash',
-      amount: '',
-      remarks: ''
-    });
+    setFormData(emptyForm());
     setSelectedFarmer(null);
-    setReferences([]);
-    setCurrentBalance(0);
+    setDueAmount(null);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.farmerId) {
-      message.error('Please select a farmer');
-      return;
-    }
-
-    if (!formData.referenceId) {
-      message.error('Please select an advance/loan reference');
-      return;
-    }
-
-    if (!formData.amount || formData.amount <= 0) {
-      message.error('Please enter a valid amount');
-      return;
-    }
-
-    if (formData.amount > currentBalance) {
-      message.error(`Amount cannot exceed outstanding balance of ₹${currentBalance.toFixed(2)}`);
-      return;
+    if (!formData.farmerId) return message.error('Please select a farmer');
+    if (!formData.amount || formData.amount <= 0) return message.error('Please enter a valid amount');
+    if (formData.paymentMode !== 'Cash' && !formData.bankLedgerId) {
+      return message.error('Please select a bank ledger for Bank/UPI payment');
     }
 
     setFormLoading(true);
     try {
-      const ref = references.find(r => r.value === formData.referenceId);
-
       const payload = {
-        farmerId: formData.farmerId,
-        receiptDate: formData.receiptDate,
-        receiptType: formData.receiptType,
-        referenceType: ref.type,
-        referenceId: ref.id,
-        paymentMode: formData.paymentMode,
-        amount: parseFloat(formData.amount),
-        remarks: formData.remarks
+        farmerId:     formData.farmerId,
+        receiptDate:  formData.receiptDate,
+        receiptType:  formData.receiptType,
+        paymentMode:  formData.paymentMode,
+        amount:       parseFloat(formData.amount),
+        remarks:      formData.remarks,
       };
+      if (formData.paymentMode !== 'Cash') {
+        payload.bankLedgerId = formData.bankLedgerId;
+      }
 
       await producerReceiptAPI.create(payload);
       message.success('Receipt created successfully');
@@ -296,7 +278,6 @@ const ProducerReceiptManagement = () => {
       message.error('Please provide a cancellation reason');
       return;
     }
-
     try {
       await producerReceiptAPI.cancel(selectedReceipt._id, cancelReason);
       message.success('Receipt cancelled successfully');
@@ -313,138 +294,52 @@ const ProducerReceiptManagement = () => {
     try {
       const response = await producerReceiptAPI.getPrintData(receipt._id);
       const printData = response.data;
-
       const printWindow = window.open('', '_blank');
       printWindow.document.write(`
-        <html>
-          <head>
-            <title>Receipt - ${printData.receiptNumber}</title>
-            <style>
-              body {
-                font-family: Arial, sans-serif;
-                padding: 20px;
-                max-width: 400px;
-                margin: 0 auto;
-              }
-              .header {
-                text-align: center;
-                border-bottom: 2px solid #333;
-                padding-bottom: 10px;
-                margin-bottom: 15px;
-              }
-              .title { font-size: 18px; font-weight: bold; margin: 0; }
-              .subtitle { font-size: 14px; color: #666; margin: 5px 0 0 0; }
-              .row {
-                display: flex;
-                justify-content: space-between;
-                padding: 5px 0;
-                border-bottom: 1px dotted #ccc;
-              }
-              .label { color: #666; font-size: 12px; }
-              .value { font-weight: 500; }
-              .amount-box {
-                background: #f5f5f5;
-                padding: 15px;
-                text-align: center;
-                margin: 15px 0;
-                border-radius: 5px;
-              }
-              .amount { font-size: 24px; font-weight: bold; color: #2196f3; }
-              @media print { body { padding: 10px; } }
-            </style>
-          </head>
-          <body>
-            <div class="header">
-              <p class="title">Dairy Society</p>
-              <p class="subtitle">${printData.receiptType} Receipt</p>
-              <p style="font-size: 12px;">No: ${printData.receiptNumber}</p>
-            </div>
-            <div class="row">
-              <span class="label">Date:</span>
-              <span class="value">${new Date(printData.receiptDate).toLocaleDateString('en-IN')}</span>
-            </div>
-            <div class="row">
-              <span class="label">Farmer:</span>
-              <span class="value">${printData.farmer.number} - ${printData.farmer.name}</span>
-            </div>
-            <div class="row">
-              <span class="label">Reference:</span>
-              <span class="value">${printData.referenceNumber}</span>
-            </div>
-            <div class="row">
-              <span class="label">Payment Mode:</span>
-              <span class="value">${printData.paymentMode}</span>
-            </div>
-            <div class="amount-box">
-              <p style="margin: 0; color: #666;">Amount Received</p>
-              <p class="amount">₹${printData.amount.toFixed(2)}</p>
-            </div>
-            <div class="row">
-              <span class="label">Previous Balance:</span>
-              <span class="value">₹${printData.previousBalance.toFixed(2)}</span>
-            </div>
-            <div class="row">
-              <span class="label">New Balance:</span>
-              <span class="value" style="color: ${printData.newBalance > 0 ? 'orange' : 'green'};">₹${printData.newBalance.toFixed(2)}</span>
-            </div>
-          </body>
-        </html>
+        <html><head><title>Receipt - ${printData.receiptNumber}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; max-width: 400px; margin: 0 auto; }
+          .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 15px; }
+          .row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px dotted #ccc; }
+          .label { color: #666; font-size: 12px; }
+          .value { font-weight: 500; }
+          .amount-box { background: #f5f5f5; padding: 15px; text-align: center; margin: 15px 0; border-radius: 5px; }
+          .amount { font-size: 24px; font-weight: bold; color: #2196f3; }
+          @media print { body { padding: 10px; } }
+        </style></head>
+        <body>
+          <div class="header">
+            <p style="font-size:18px;font-weight:bold;margin:0">Dairy Society</p>
+            <p style="font-size:14px;color:#666;margin:5px 0 0">${printData.receiptType} Receipt</p>
+            <p style="font-size:12px">No: ${printData.receiptNumber}</p>
+          </div>
+          <div class="row"><span class="label">Date:</span><span class="value">${new Date(printData.receiptDate).toLocaleDateString('en-IN')}</span></div>
+          <div class="row"><span class="label">Farmer:</span><span class="value">${printData.farmer.number} - ${printData.farmer.name}</span></div>
+          <div class="row"><span class="label">Payment Mode:</span><span class="value">${printData.paymentMode}</span></div>
+          <div class="amount-box">
+            <p style="margin:0;color:#666">Amount Received</p>
+            <p class="amount">₹${printData.amount.toFixed(2)}</p>
+          </div>
+        </body></html>
       `);
       printWindow.document.close();
       printWindow.focus();
-      setTimeout(() => {
-        printWindow.print();
-        printWindow.close();
-      }, 250);
+      setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
     } catch (error) {
       message.error('Failed to get print data');
     }
   };
 
-  const formatDate = (date) => {
-    if (!date) return '-';
-    return new Date(date).toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
-  };
-
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 2
-    }).format(amount || 0);
-  };
-
-  const receiptTypeOptions = [
-    { value: '', label: 'All Types' },
-    { value: 'Cash Advance', label: 'Cash Advance' },
-    { value: 'CF Advance', label: 'CF Advance' },
-    { value: 'Loan Advance', label: 'Loan Advance' }
-  ];
-
-  const receiptTypeColors = {
-    'Cash Advance': 'cyan',
-    'CF Advance': 'orange',
-    'Loan Advance': 'violet'
-  };
-
-  const farmerOptions = farmers.filter(f => f && f._id).map(farmer => ({
-    value: String(farmer._id),
-    label: `${farmer.farmerNumber || ''} - ${farmer.personalDetails?.name || 'Unknown'}`
+  // ── Derived ──────────────────────────────────────────────────────────────────
+  const totalReceived   = summary.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
+  const farmerOptions   = farmers.filter(f => f && f._id).map(f => ({
+    value: String(f._id),
+    label: `${f.farmerNumber || ''} - ${f.personalDetails?.name || 'Unknown'}`
   }));
+  const isBankMode      = formData.paymentMode !== 'Cash';
+  const balance         = dueAmount !== null ? dueAmount - (parseFloat(formData.amount) || 0) : null;
 
-  const paymentModeOptions = [
-    { value: 'Cash', label: 'Cash' },
-    { value: 'Bank', label: 'Bank Transfer' },
-    { value: 'UPI', label: 'UPI' }
-  ];
-
-  // Calculate totals from summary
-  const totalReceived = summary.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
-
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <Container size="xl" py="xl">
       <Stack gap="lg">
@@ -456,11 +351,7 @@ const ProducerReceiptManagement = () => {
           </Box>
           <Button
             leftSection={<IconPlus size={18} />}
-            onClick={() => {
-              resetForm();
-              searchFarmers('');
-              setModalOpen(true);
-            }}
+            onClick={() => { resetForm(); searchFarmers(''); setModalOpen(true); }}
             disabled={!canWrite('payments')}
           >
             New Receipt
@@ -475,12 +366,12 @@ const ProducerReceiptManagement = () => {
                 <Group justify="space-between">
                   <Box>
                     <Text size="xs" c="dimmed" tt="uppercase" fw={700}>{s._id}</Text>
-                    <Text size="xl" fw={700} c={receiptTypeColors[s._id]}>
+                    <Text size="xl" fw={700} c={RECEIPT_TYPE_COLORS[s._id]}>
                       {formatCurrency(s.totalAmount)}
                     </Text>
                     <Text size="xs" c="dimmed">{s.count} receipts</Text>
                   </Box>
-                  <IconCurrencyRupee size={32} stroke={1.5} color={`var(--mantine-color-${receiptTypeColors[s._id]}-6)`} />
+                  <IconCurrencyRupee size={32} stroke={1.5} color={`var(--mantine-color-${RECEIPT_TYPE_COLORS[s._id]}-6)`} />
                 </Group>
               </Card>
             </Grid.Col>
@@ -515,7 +406,7 @@ const ProducerReceiptManagement = () => {
                 placeholder="Receipt Type"
                 value={filters.receiptType}
                 onChange={(value) => setFilters(prev => ({ ...prev, receiptType: value }))}
-                data={receiptTypeOptions}
+                data={FILTER_TYPE_OPTIONS}
                 clearable
                 size="sm"
               />
@@ -544,9 +435,7 @@ const ProducerReceiptManagement = () => {
         {/* Receipts Table */}
         <Card withBorder shadow="sm" radius="md">
           {loading ? (
-            <Box py="xl" style={{ textAlign: 'center' }}>
-              <Loader size="md" />
-            </Box>
+            <Box py="xl" style={{ textAlign: 'center' }}><Loader size="md" /></Box>
           ) : receipts.length === 0 ? (
             <Text c="dimmed" ta="center" py="xl">No receipts found</Text>
           ) : (
@@ -559,7 +448,6 @@ const ProducerReceiptManagement = () => {
                       <Table.Th>Receipt No</Table.Th>
                       <Table.Th>Farmer</Table.Th>
                       <Table.Th>Type</Table.Th>
-                      <Table.Th>Reference</Table.Th>
                       <Table.Th>Amount</Table.Th>
                       <Table.Th>Mode</Table.Th>
                       <Table.Th></Table.Th>
@@ -569,24 +457,15 @@ const ProducerReceiptManagement = () => {
                     {receipts.map((receipt) => (
                       <Table.Tr key={receipt._id}>
                         <Table.Td>{formatDate(receipt.receiptDate)}</Table.Td>
+                        <Table.Td><Text size="sm" fw={500}>{receipt.receiptNumber}</Text></Table.Td>
                         <Table.Td>
-                          <Text size="sm" fw={500}>{receipt.receiptNumber}</Text>
+                          <Text size="sm" fw={500}>{receipt.farmerId?.farmerNumber || '-'}</Text>
+                          <Text size="xs" c="dimmed">{receipt.farmerId?.personalDetails?.name || '-'}</Text>
                         </Table.Td>
                         <Table.Td>
-                          <Text size="sm" fw={500}>
-                            {receipt.farmerId?.farmerNumber || '-'}
-                          </Text>
-                          <Text size="xs" c="dimmed">
-                            {receipt.farmerId?.personalDetails?.name || '-'}
-                          </Text>
-                        </Table.Td>
-                        <Table.Td>
-                          <Badge color={receiptTypeColors[receipt.receiptType]} variant="light" size="sm">
+                          <Badge color={RECEIPT_TYPE_COLORS[receipt.receiptType]} variant="light" size="sm">
                             {receipt.receiptType}
                           </Badge>
-                        </Table.Td>
-                        <Table.Td>
-                          <Text size="sm">{receipt.referenceNumber || '-'}</Text>
                         </Table.Td>
                         <Table.Td>
                           <Text size="sm" fw={600} c="green">{formatCurrency(receipt.amount)}</Text>
@@ -597,25 +476,17 @@ const ProducerReceiptManagement = () => {
                         <Table.Td>
                           <Menu position="bottom-end" withinPortal>
                             <Menu.Target>
-                              <ActionIcon variant="subtle">
-                                <IconDotsVertical size={16} />
-                              </ActionIcon>
+                              <ActionIcon variant="subtle"><IconDotsVertical size={16} /></ActionIcon>
                             </Menu.Target>
                             <Menu.Dropdown>
-                              <Menu.Item
-                                leftSection={<IconPrinter size={14} />}
-                                onClick={() => handlePrint(receipt)}
-                              >
+                              <Menu.Item leftSection={<IconPrinter size={14} />} onClick={() => handlePrint(receipt)}>
                                 Print
                               </Menu.Item>
                               {receipt.status === 'Active' && canWrite('payments') && (
                                 <Menu.Item
                                   leftSection={<IconX size={14} />}
                                   color="red"
-                                  onClick={() => {
-                                    setSelectedReceipt(receipt);
-                                    setCancelModalOpen(true);
-                                  }}
+                                  onClick={() => { setSelectedReceipt(receipt); setCancelModalOpen(true); }}
                                 >
                                   Cancel
                                 </Menu.Item>
@@ -628,7 +499,6 @@ const ProducerReceiptManagement = () => {
                   </Table.Tbody>
                 </Table>
               </ScrollArea>
-
               {pagination.pages > 1 && (
                 <Group justify="center" mt="md">
                   <Pagination
@@ -645,130 +515,172 @@ const ProducerReceiptManagement = () => {
         {/* New Receipt Modal */}
         <Modal
           opened={modalOpen}
-          onClose={() => {
-            setModalOpen(false);
-            resetForm();
-          }}
+          onClose={() => { setModalOpen(false); resetForm(); }}
           title={<Text fw={600} size="lg">Create Receipt</Text>}
           size="lg"
           centered
         >
           <form onSubmit={handleSubmit}>
             <Stack gap="md">
+              {/* Row 1: Date + Farmer */}
               <Grid>
-                <Grid.Col span={6}>
+                <Grid.Col span={5}>
                   <DatePickerInput
                     label="Receipt Date"
                     value={formData.receiptDate}
-                    onChange={(value) => handleInputChange('receiptDate', value)}
+                    onChange={handleDateChange}
+                    onKeyDown={advanceKey(farmerRef)}
                     leftSection={<IconCalendar size={16} />}
                     required
                     clearable={false}
                   />
                 </Grid.Col>
-                <Grid.Col span={6}>
-                  <Select
-                    label="Receipt Type"
-                    value={formData.receiptType}
-                    onChange={handleReceiptTypeChange}
-                    data={[
-                      { value: 'Cash Advance', label: 'Cash Advance' },
-                      { value: 'CF Advance', label: 'CF Advance' },
-                      { value: 'Loan Advance', label: 'Loan Advance' }
-                    ]}
-                    required
-                  />
+                <Grid.Col span={7}>
+                  <div ref={farmerRef}>
+                    <Select
+                      label="Farmer"
+                      placeholder="Search farmer"
+                      value={formData.farmerId}
+                      onChange={handleFarmerSelect}
+                      data={farmerOptions}
+                      searchable
+                      clearable
+                      onSearchChange={searchFarmers}
+                      nothingFoundMessage={searchLoading ? 'Searching…' : 'No farmers found'}
+                      required
+                      leftSection={<IconSearch size={16} />}
+                      rightSection={searchLoading ? <Loader size="xs" /> : null}
+                    />
+                  </div>
                 </Grid.Col>
               </Grid>
 
-              <Select
-                label="Select Farmer"
-                placeholder="Search farmer"
-                value={formData.farmerId}
-                onChange={handleFarmerSelect}
-                data={farmerOptions}
-                searchable
-                clearable
-                onSearchChange={searchFarmers}
-                nothingFoundMessage={searchLoading ? "Searching..." : "No farmers found"}
-                required
-                leftSection={<IconSearch size={16} />}
-                rightSection={searchLoading ? <Loader size="xs" /> : null}
-              />
-
+              {/* Farmer info strip */}
               {selectedFarmer && (
                 <Paper withBorder p="sm" radius="md" bg="gray.0">
-                  <Grid>
-                    <Grid.Col span={6}>
+                  <Group justify="space-between">
+                    <Box>
                       <Text size="xs" c="dimmed">Farmer</Text>
                       <Text size="sm" fw={500}>{selectedFarmer.personalDetails?.name}</Text>
-                    </Grid.Col>
-                    <Grid.Col span={6}>
+                    </Box>
+                    <Box>
                       <Text size="xs" c="dimmed">Village</Text>
                       <Text size="sm">{selectedFarmer.address?.village || '-'}</Text>
-                    </Grid.Col>
-                  </Grid>
+                    </Box>
+                  </Group>
                 </Paper>
               )}
 
-              <Select
-                label="Select Advance/Loan Reference"
-                placeholder={referencesLoading ? "Loading..." : "Select reference"}
-                value={formData.referenceId}
-                onChange={handleReferenceSelect}
-                data={references}
-                disabled={!selectedFarmer || referencesLoading}
-                required
-                rightSection={referencesLoading ? <Loader size="xs" /> : null}
-              />
+              {/* Row 2: Receipt Type */}
+              <div ref={receiptTypeRef}>
+                <Select
+                  label="Receipt Type"
+                  value={formData.receiptType}
+                  onChange={handleReceiptTypeChange}
+                  data={RECEIPT_TYPE_OPTIONS}
+                  required
+                  onKeyDown={advanceKey(amountRef)}
+                />
+              </div>
 
-              {currentBalance > 0 && (
-                <Alert color="blue" icon={<IconAlertCircle />}>
-                  <Text size="sm">Outstanding Balance: <Text span fw={700}>{formatCurrency(currentBalance)}</Text></Text>
+              {/* Due Amount display */}
+              {dueLoading && (
+                <Group gap="xs"><Loader size="xs" /><Text size="sm" c="dimmed">Fetching outstanding…</Text></Group>
+              )}
+              {!dueLoading && dueAmount !== null && (
+                <Alert
+                  color={dueAmount > 0 ? 'blue' : 'green'}
+                  icon={<IconAlertCircle size={16} />}
+                  p="xs"
+                >
+                  <Group justify="space-between">
+                    <Text size="sm">
+                      Outstanding ({formData.receiptType}):&nbsp;
+                      <Text span fw={700}>{formatCurrency(dueAmount)}</Text>
+                    </Text>
+                    {balance !== null && parseFloat(formData.amount) > 0 && (
+                      <Text size="sm" c={balance < 0 ? 'red' : 'green'}>
+                        Balance after:&nbsp;
+                        <Text span fw={700}>{formatCurrency(balance)}</Text>
+                      </Text>
+                    )}
+                  </Group>
                 </Alert>
               )}
 
+              {/* Row 3: Amount + Payment Mode */}
               <Grid>
                 <Grid.Col span={6}>
-                  <NumberInput
-                    label="Amount"
-                    value={formData.amount}
-                    onChange={(value) => handleInputChange('amount', value)}
-                    placeholder="Enter amount"
-                    min={1}
-                    max={currentBalance}
-                    required
-                    leftSection={<IconCurrencyRupee size={16} />}
-                    thousandSeparator=","
-                  />
+                  <div ref={amountRef}>
+                    <NumberInput
+                      label="Amount Received"
+                      value={formData.amount}
+                      onChange={(value) => setFormData(prev => ({ ...prev, amount: value }))}
+                      onKeyDown={advanceKey(paymentModeRef)}
+                      placeholder="Enter amount"
+                      min={1}
+                      required
+                      leftSection={<IconCurrencyRupee size={16} />}
+                      thousandSeparator=","
+                    />
+                  </div>
                 </Grid.Col>
                 <Grid.Col span={6}>
-                  <Select
-                    label="Payment Mode"
-                    value={formData.paymentMode}
-                    onChange={(value) => handleInputChange('paymentMode', value)}
-                    data={paymentModeOptions}
-                    required
-                  />
+                  <div ref={paymentModeRef}>
+                    <Select
+                      label="Payment Mode"
+                      value={formData.paymentMode}
+                      onChange={handlePaymentModeChange}
+                      data={PAYMENT_MODE_OPTIONS}
+                      required
+                      onKeyDown={advanceKey(isBankMode ? bankLedgerRef : remarksRef)}
+                    />
+                  </div>
                 </Grid.Col>
               </Grid>
 
-              <Textarea
-                label="Remarks"
-                value={formData.remarks}
-                onChange={(e) => handleInputChange('remarks', e.target.value)}
-                placeholder="Optional notes"
-                rows={2}
-              />
+              {/* Bank Ledger (shown only for Bank/UPI) */}
+              {isBankMode && (
+                <div ref={bankLedgerRef}>
+                  <Select
+                    label="Bank Ledger"
+                    placeholder="Select bank account"
+                    value={formData.bankLedgerId}
+                    onChange={(value) => setFormData(prev => ({ ...prev, bankLedgerId: value }))}
+                    data={bankLedgers}
+                    required
+                    searchable
+                    onKeyDown={advanceKey(remarksRef)}
+                    rightSection={bankLedgers.length === 0 ? <Loader size="xs" /> : null}
+                  />
+                </div>
+              )}
 
-              <Group justify="flex-end" mt="md">
-                <Button variant="light" onClick={() => setModalOpen(false)}>
-                  Cancel
-                </Button>
+              {/* Remarks */}
+              <div ref={remarksRef}>
+                <Textarea
+                  label="Remarks"
+                  value={formData.remarks}
+                  onChange={(e) => setFormData(prev => ({ ...prev, remarks: e.target.value }))}
+                  placeholder="Optional notes"
+                  rows={2}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitRef.current?.click(); }
+                  }}
+                />
+              </div>
+
+              <Group justify="flex-end" mt="sm">
+                <Button variant="light" onClick={() => setModalOpen(false)}>Cancel</Button>
                 <Button
+                  ref={submitRef}
                   type="submit"
                   loading={formLoading}
-                  disabled={!formData.farmerId || !formData.referenceId || !formData.amount}
+                  disabled={
+                    !formData.farmerId ||
+                    !formData.amount ||
+                    (isBankMode && !formData.bankLedgerId)
+                  }
                 >
                   Create Receipt
                 </Button>
@@ -777,21 +689,16 @@ const ProducerReceiptManagement = () => {
           </form>
         </Modal>
 
-        {/* Cancel Confirmation Modal */}
+        {/* Cancel Modal */}
         <Modal
           opened={cancelModalOpen}
-          onClose={() => {
-            setCancelModalOpen(false);
-            setSelectedReceipt(null);
-            setCancelReason('');
-          }}
+          onClose={() => { setCancelModalOpen(false); setSelectedReceipt(null); setCancelReason(''); }}
           title="Cancel Receipt"
           centered
         >
           <Stack>
             <Text size="sm">
-              Are you sure you want to cancel receipt <strong>{selectedReceipt?.receiptNumber}</strong>?
-              This will reverse the balance update.
+              Cancel receipt <strong>{selectedReceipt?.receiptNumber}</strong>? This will reverse accounting entries.
             </Text>
             <TextInput
               label="Cancellation Reason"
@@ -801,12 +708,8 @@ const ProducerReceiptManagement = () => {
               required
             />
             <Group justify="flex-end" mt="md">
-              <Button variant="light" onClick={() => setCancelModalOpen(false)}>
-                No, Keep It
-              </Button>
-              <Button color="red" onClick={handleCancelReceipt}>
-                Yes, Cancel Receipt
-              </Button>
+              <Button variant="light" onClick={() => setCancelModalOpen(false)}>No, Keep It</Button>
+              <Button color="red" onClick={handleCancelReceipt}>Yes, Cancel</Button>
             </Group>
           </Stack>
         </Modal>
