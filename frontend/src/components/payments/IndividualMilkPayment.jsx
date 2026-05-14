@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { message } from '../../utils/toast';
 import {
-  farmerAPI, paymentAPI, farmerLedgerAPI, ledgerAPI, paymentRegisterAPI,
+  farmerAPI, paymentAPI, farmerLedgerAPI, ledgerAPI, paymentRegisterAPI, dairySettingsAPI,
 } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -142,14 +142,36 @@ const IndividualMilkPayment = () => {
   const loadActiveCycle = async () => {
     setCycleLoading(true);
     try {
-      const res   = await paymentRegisterAPI.getLatestProducers();
-      const cycle = res?.data || null;
-      setActiveCycle(cycle);
-      if (cycle?.fromDate) setCycleFrom(new Date(cycle.fromDate));
-      if (cycle?.toDate)   setCycleTo(new Date(cycle.toDate));
-      // fetchPayments will auto-trigger via the cycleFrom/cycleTo useEffect above
+      const [dsRes, lpRes] = await Promise.all([
+        dairySettingsAPI.get(),
+        paymentAPI.getLatestPeriod(),
+      ]);
+      const s    = dsRes?.data || dsRes || {};
+      const days = s.paymentDays || 15;
+
+      const latestToDate = lpRes?.data?.latestToDate || null;
+
+      let from, to;
+      if (latestToDate) {
+        from = dayjs(latestToDate).add(1, 'day').toDate();
+        to   = dayjs(from).add(days - 1, 'day').toDate();
+      } else if (s.paymentFromDate) {
+        from = dayjs(s.paymentFromDate).toDate();
+        to   = dayjs(s.paymentFromDate).add(days - 1, 'day').toDate();
+      } else {
+        from = dayjs().startOf('month').toDate();
+        to   = dayjs().startOf('month').add(days - 1, 'day').toDate();
+      }
+
+      // Show a synthetic "active cycle" badge for display
+      setActiveCycle(latestToDate ? { fromDate: from, toDate: to } : null);
+      setCycleFrom(from);
+      setCycleTo(to);
     } catch (err) {
       console.error('Failed to load active cycle:', err);
+      const fallback = dayjs().startOf('month').toDate();
+      setCycleFrom(fallback);
+      setCycleTo(dayjs(fallback).add(14, 'day').toDate());
     } finally {
       setCycleLoading(false);
     }
