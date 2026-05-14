@@ -1,4 +1,4 @@
-  import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { message } from '../../utils/toast';
 import {
   farmerAPI, paymentAPI, farmerLedgerAPI, ledgerAPI, paymentRegisterAPI,
@@ -8,11 +8,12 @@ import {
   Container, Card, Paper, Title, Text, Group, Stack,
   Select, NumberInput, TextInput, Button, Table, Badge,
   Loader, Box, Grid, Alert, ScrollArea, ActionIcon, Pagination,
+  Checkbox,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import {
   IconCurrencyRupee, IconCalendar, IconAlertCircle,
-  IconRefresh, IconDeviceFloppy, IconSearch, IconX,
+  IconRefresh, IconDeviceFloppy, IconSearch, IconX, IconPrinter,
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 
@@ -25,7 +26,6 @@ const PAYMENT_MODES = [
 const fmt = (v) =>
   (parseFloat(v) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// Default cycle: 1st → last day of current month
 const defaultFrom = () => dayjs().startOf('month').toDate();
 const defaultTo   = () => dayjs().endOf('month').toDate();
 
@@ -36,7 +36,7 @@ const IndividualMilkPayment = () => {
   const [activeCycle,    setActiveCycle]    = useState(null);
   const [cycleLoading,   setCycleLoading]   = useState(true);
 
-  // ── Cycle date range (used for milk auto-fetch) ──────────────────────────────
+  // ── Cycle date range ─────────────────────────────────────────────────────────
   const [cycleFrom, setCycleFrom] = useState(defaultFrom());
   const [cycleTo,   setCycleTo]   = useState(defaultTo());
 
@@ -48,7 +48,7 @@ const IndividualMilkPayment = () => {
   const [balancesLoading,setBalancesLoading]= useState(false);
   const [milkLoading,    setMilkLoading]    = useState(false);
 
-  // Outstanding balances (from cycle end date)
+  // Outstanding balances
   const [outstanding,    setOutstanding]    = useState({ cfAdvance: 0, loanAdvance: 0, cashAdvance: 0 });
   const [previousBalance,setPreviousBalance]= useState(0);
 
@@ -56,16 +56,19 @@ const IndividualMilkPayment = () => {
   const [welfareEligible,setWelfareEligible]= useState(false);
   const [welfareMax,     setWelfareMax]     = useState(0);
 
-  // Deductions / payment
-  const [milkAmount,     setMilkAmount]     = useState('');
-  const [welfareAmt,     setWelfareAmt]     = useState(0);
-  const [cfAmt,          setCfAmt]          = useState(0);
-  const [loanAmt,        setLoanAmt]        = useState(0);
-  const [cashAmt,        setCashAmt]        = useState(0);
-  const [paymentMode,    setPaymentMode]    = useState('Cash');
-  const [bankLedgerId,   setBankLedgerId]   = useState('');
-  const [paidAmount,     setPaidAmount]     = useState('');
-  const [remarks,        setRemarks]        = useState('');
+  // Earnings / Deductions / Payment
+  const [milkAmount,      setMilkAmount]      = useState('');
+  const [otherEarnings,   setOtherEarnings]   = useState('');
+  const [welfareAmt,      setWelfareAmt]      = useState(0);
+  const [cfAmt,           setCfAmt]           = useState(0);
+  const [loanAmt,         setLoanAmt]         = useState(0);
+  const [cashAmt,         setCashAmt]         = useState(0);
+  const [otherDeductions, setOtherDeductions] = useState('');
+  const [paymentMode,     setPaymentMode]     = useState('Cash');
+  const [bankLedgerId,    setBankLedgerId]    = useState('');
+  const [paidAmount,      setPaidAmount]      = useState('');
+  const [remarks,         setRemarks]         = useState('');
+  const [printVoucher,    setPrintVoucher]    = useState(false);
 
   // Bank ledgers + save
   const [bankLedgers,    setBankLedgers]    = useState([]);
@@ -78,29 +81,34 @@ const IndividualMilkPayment = () => {
   const [totalPages,     setTotalPages]     = useState(1);
 
   // ── Refs for keyboard navigation ────────────────────────────────────────────
-  const dateRef        = useRef(null);
-  const farmerRef      = useRef(null);
-  const milkRef        = useRef(null);
-  const welfareRef     = useRef(null);
-  const cfRef          = useRef(null);
-  const loanRef        = useRef(null);
-  const cashRef        = useRef(null);
-  const payModeRef     = useRef(null);
-  const bankRef        = useRef(null);
-  const paidRef        = useRef(null);
-  const remarksRef     = useRef(null);
-  const saveRef        = useRef(null);
+  const dateRef           = useRef(null);
+  const farmerRef         = useRef(null);
+  const milkRef           = useRef(null);
+  const otherEarningsRef  = useRef(null);
+  const welfareRef        = useRef(null);
+  const cfRef             = useRef(null);
+  const loanRef           = useRef(null);
+  const cashRef           = useRef(null);
+  const otherDedRef       = useRef(null);
+  const prevBalRef        = useRef(null);
+  const payModeRef        = useRef(null);
+  const bankRef           = useRef(null);
+  const paidRef           = useRef(null);
+  const remarksRef        = useRef(null);
+  const saveRef           = useRef(null);
 
   // ── Derived ─────────────────────────────────────────────────────────────────
   const totalDeductions =
-    (parseFloat(welfareAmt) || 0) +
-    (parseFloat(cfAmt)      || 0) +
-    (parseFloat(loanAmt)    || 0) +
-    (parseFloat(cashAmt)    || 0);
+    (parseFloat(welfareAmt)      || 0) +
+    (parseFloat(cfAmt)           || 0) +
+    (parseFloat(loanAmt)         || 0) +
+    (parseFloat(cashAmt)         || 0) +
+    (parseFloat(otherDeductions) || 0);
 
-  const balance = (parseFloat(milkAmount) || 0) - totalDeductions + (previousBalance || 0);
-  const isBankMode = paymentMode !== 'Cash';
-  const canSave = selectedFarmer && (parseFloat(milkAmount) || 0) > 0 && balance >= 0 && (!isBankMode || bankLedgerId);
+  const totalEarnings = (parseFloat(milkAmount) || 0) + (parseFloat(otherEarnings) || 0);
+  const balance       = totalEarnings - totalDeductions + (previousBalance || 0);
+  const isBankMode    = paymentMode !== 'Cash';
+  const canSave       = selectedFarmer && (parseFloat(milkAmount) || 0) > 0 && balance >= 0 && (!isBankMode || bankLedgerId);
 
   // ── Focus helper ─────────────────────────────────────────────────────────────
   const focusInput = (ref) => {
@@ -130,7 +138,7 @@ const IndividualMilkPayment = () => {
   const loadActiveCycle = async () => {
     setCycleLoading(true);
     try {
-      const res = await paymentRegisterAPI.getLatestProducers();
+      const res   = await paymentRegisterAPI.getLatestProducers();
       const cycle = res?.data || null;
       setActiveCycle(cycle);
       if (cycle?.fromDate) setCycleFrom(new Date(cycle.fromDate));
@@ -161,7 +169,7 @@ const IndividualMilkPayment = () => {
     finally { setPaymentsLoading(false); }
   };
 
-  // ── Auto-fetch milk amount from MilkCollection for cycle dates ───────────────
+  // ── Auto-fetch milk amount from MilkCollection ───────────────────────────────
   const fetchMilkAmount = useCallback(async (farmerId) => {
     if (!farmerId || !cycleFrom || !cycleTo) return;
     setMilkLoading(true);
@@ -180,7 +188,7 @@ const IndividualMilkPayment = () => {
     }
   }, [cycleFrom, cycleTo]);
 
-  // ── Farmer lookup by number ──────────────────────────────────────────────────
+  // ── Farmer lookup ────────────────────────────────────────────────────────────
   const handleFarmerKeyDown = async (e) => {
     if (e.key !== 'Enter' && e.key !== 'Tab') return;
     if (e.key === 'Enter') e.preventDefault();
@@ -189,17 +197,14 @@ const IndividualMilkPayment = () => {
 
     setFarmerLoading(true);
     try {
-      const res = await farmerAPI.search(num);
+      const res  = await farmerAPI.search(num);
       const list = res?.data || [];
       const match =
         list.find(f => f.farmerNumber?.toLowerCase() === num.toLowerCase()) ||
         list.find(f => f.farmerNumber?.toLowerCase().includes(num.toLowerCase())) ||
         list[0];
 
-      if (!match) {
-        message.error(`Farmer "${num}" not found`);
-        return;
-      }
+      if (!match) { message.error(`Farmer "${num}" not found`); return; }
       setSelectedFarmer(match);
       await Promise.all([
         loadFarmerBalances(match._id),
@@ -212,11 +217,10 @@ const IndividualMilkPayment = () => {
     }
   };
 
-  // ── Load farmer outstanding amounts as of cycle end date ─────────────────────
+  // ── Load farmer outstanding balances ─────────────────────────────────────────
   const loadFarmerBalances = useCallback(async (farmerId) => {
     setBalancesLoading(true);
     const cycleEnd = cycleTo ? new Date(cycleTo) : new Date();
-
     try {
       const [outRes, welfRes, histRes] = await Promise.allSettled([
         farmerLedgerAPI.getOutstandingByType(farmerId, { asOfDate: cycleEnd.toISOString() }),
@@ -229,7 +233,6 @@ const IndividualMilkPayment = () => {
         paymentAPI.getFarmerHistory(farmerId, { limit: 1 }),
       ]);
 
-      // Outstanding
       const out  = outRes.status === 'fulfilled' ? outRes.value?.data || {} : {};
       const cf   = out['CF Advance']?.amount   || 0;
       const loan = out['Loan Advance']?.amount || 0;
@@ -239,9 +242,7 @@ const IndividualMilkPayment = () => {
       setLoanAmt(loan);
       setCashAmt(cash);
 
-      // Welfare
-      let welMax = 0;
-      let welEligible = false;
+      let welMax = 0, welEligible = false;
       if (welfRes.status === 'fulfilled') {
         const wd = welfRes.value?.data;
         welEligible = wd?.eligibleForDeduction || false;
@@ -251,14 +252,12 @@ const IndividualMilkPayment = () => {
       setWelfareMax(welMax);
       setWelfareAmt(welMax);
 
-      // Previous balance (last unpaid amount)
       let prevBal = 0;
       if (histRes.status === 'fulfilled') {
         const hist = histRes.value?.data || [];
         prevBal = Math.max(0, hist[0]?.balanceAmount || 0);
       }
       setPreviousBalance(prevBal);
-
       focusInput(milkRef);
     } catch (err) {
       console.error('Failed to load farmer balances:', err);
@@ -267,49 +266,45 @@ const IndividualMilkPayment = () => {
     }
   }, [cycleFrom, cycleTo]); // eslint-disable-line
 
-  // After milk amount entered, navigate based on outstanding
+  // ── Keyboard navigation handlers ─────────────────────────────────────────────
   const handleMilkKeyDown = (e) => {
     if (e.key !== 'Enter' && e.key !== 'Tab') return;
     if (e.key === 'Enter') e.preventDefault();
+    focusInput(otherEarningsRef);
+  };
 
-    const hasOutstanding =
-      (welfareEligible && welfareMax > 0) ||
-      outstanding.cfAdvance > 0 ||
-      outstanding.loanAdvance > 0 ||
-      outstanding.cashAdvance > 0;
-
-    if (hasOutstanding) {
-      if (welfareEligible && welfareMax > 0) focusInput(welfareRef);
-      else if (outstanding.cfAdvance > 0)    focusInput(cfRef);
-      else if (outstanding.loanAdvance > 0)  focusInput(loanRef);
-      else                                   focusInput(cashRef);
-    } else {
-      focusInput(payModeRef);
-    }
+  const handleOtherEarningsKeyDown = (e) => {
+    if (e.key !== 'Enter' && e.key !== 'Tab') return;
+    if (e.key === 'Enter') e.preventDefault();
+    if (welfareEligible && welfareMax > 0)  focusInput(welfareRef);
+    else if (outstanding.cfAdvance > 0)     focusInput(cfRef);
+    else if (outstanding.loanAdvance > 0)   focusInput(loanRef);
+    else if (outstanding.cashAdvance > 0)   focusInput(cashRef);
+    else                                    focusInput(otherDedRef);
   };
 
   const handleWelfareKeyDown = (e) => {
     if (e.key !== 'Enter' && e.key !== 'Tab') return;
     if (e.key === 'Enter') e.preventDefault();
-    if (outstanding.cfAdvance > 0)    focusInput(cfRef);
+    if (outstanding.cfAdvance > 0)        focusInput(cfRef);
     else if (outstanding.loanAdvance > 0) focusInput(loanRef);
     else if (outstanding.cashAdvance > 0) focusInput(cashRef);
-    else focusInput(payModeRef);
+    else                                  focusInput(otherDedRef);
   };
 
   const handleCfKeyDown = (e) => {
     if (e.key !== 'Enter' && e.key !== 'Tab') return;
     if (e.key === 'Enter') e.preventDefault();
-    if (outstanding.loanAdvance > 0) focusInput(loanRef);
+    if (outstanding.loanAdvance > 0)      focusInput(loanRef);
     else if (outstanding.cashAdvance > 0) focusInput(cashRef);
-    else focusInput(payModeRef);
+    else                                  focusInput(otherDedRef);
   };
 
   const handleLoanKeyDown = (e) => {
     if (e.key !== 'Enter' && e.key !== 'Tab') return;
     if (e.key === 'Enter') e.preventDefault();
     if (outstanding.cashAdvance > 0) focusInput(cashRef);
-    else focusInput(payModeRef);
+    else                             focusInput(otherDedRef);
   };
 
   // ── Reset ────────────────────────────────────────────────────────────────────
@@ -321,29 +316,89 @@ const IndividualMilkPayment = () => {
     setWelfareEligible(false);
     setWelfareMax(0);
     setMilkAmount('');
+    setOtherEarnings('');
     setWelfareAmt(0);
     setCfAmt(0);
     setLoanAmt(0);
     setCashAmt(0);
+    setOtherDeductions('');
     setPaymentMode('Cash');
     setBankLedgerId('');
     setPaidAmount('');
     setRemarks('');
+    setPrintVoucher(false);
     focusInput(farmerRef);
+  };
+
+  // ── Print voucher ─────────────────────────────────────────────────────────────
+  const printPaymentVoucher = (payment) => {
+    const farmer  = payment.farmerId || selectedFarmer || {};
+    const name    = farmer.personalDetails?.name || payment.farmerName || '';
+    const num     = farmer.farmerNumber || '';
+    const date    = dayjs(payment.paymentDate || paymentDate).format('DD/MM/YYYY');
+    const pNum    = payment.paymentNumber || '';
+
+    const rows = [
+      ['Milk Amount',        fmt(payment.milkAmount)],
+      ...(payment.totalBonus > 0 ? [['Other Earnings', fmt(payment.totalBonus)]] : []),
+    ];
+    const dedRows = (payment.deductions || []).map(d => [d.type, fmt(d.amount)]);
+
+    const w = window.open('', '_blank');
+    w.document.write(`<!DOCTYPE html><html><head><title>Payment Voucher${pNum ? ' - ' + pNum : ''}</title>
+<style>
+  body{font-family:Arial,sans-serif;padding:16px;max-width:380px;margin:0 auto;font-size:12px}
+  h2{text-align:center;margin:0 0 4px;font-size:15px}
+  .sub{text-align:center;color:#555;margin:0 0 8px;font-size:11px}
+  hr{border:none;border-top:1px solid #333;margin:6px 0}
+  .row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dotted #ddd}
+  .label{color:#444}.value{font-weight:600}
+  .total{display:flex;justify-content:space-between;padding:5px 0;font-size:13px;font-weight:700}
+  .ded{color:#c00}
+  @media print{body{padding:6px}}
+</style></head><body>
+<h2>Individual Milk Payment</h2>
+<p class="sub">Voucher No: ${pNum}&nbsp;&nbsp;Date: ${date}</p>
+<hr>
+<div class="row"><span class="label">Farmer No</span><span class="value">${num}</span></div>
+<div class="row"><span class="label">Name</span><span class="value">${name}</span></div>
+<hr>
+${rows.map(([l, v]) => `<div class="row"><span class="label">${l}</span><span class="value">₹ ${v}</span></div>`).join('')}
+<hr>
+${dedRows.map(([l, v]) => `<div class="row ded"><span class="label">(-) ${l}</span><span class="value">₹ ${v}</span></div>`).join('')}
+${(payment.previousBalance || 0) > 0 ? `<div class="row"><span class="label">(+) Previous Balance</span><span class="value">₹ ${fmt(payment.previousBalance)}</span></div>` : ''}
+<hr>
+<div class="total"><span>Net Payable</span><span>₹ ${fmt(payment.netPayable)}</span></div>
+<div class="total"><span>Paid Amount</span><span>₹ ${fmt(payment.paidAmount)}</span></div>
+${(payment.balanceAmount || 0) > 0 ? `<div class="total"><span>Balance</span><span>₹ ${fmt(payment.balanceAmount)}</span></div>` : ''}
+<hr>
+<div class="row"><span class="label">Payment Mode</span><span class="value">${payment.paymentMode || ''}</span></div>
+<hr style="border-top:2px solid #333;margin-top:24px">
+<p style="text-align:center;font-size:10px;color:#888">Authorised Signatory</p>
+</body></html>`);
+    w.document.close();
+    w.focus();
+    setTimeout(() => { w.print(); }, 300);
   };
 
   // ── Save ─────────────────────────────────────────────────────────────────────
   const handleSave = async () => {
-    if (!selectedFarmer)                        return message.error('Please select a farmer');
-    if (!(parseFloat(milkAmount) > 0))          return message.error('Please enter milk amount');
-    if (balance < 0)                            return message.error('Balance is negative. Reduce deductions before saving.');
-    if (isBankMode && !bankLedgerId)            return message.error('Please select a bank ledger');
+    if (!selectedFarmer)               return message.error('Please select a farmer');
+    if (!(parseFloat(milkAmount) > 0)) return message.error('Please enter milk amount');
+    if (balance < 0)                   return message.error('Balance is negative. Reduce deductions before saving.');
+    if (isBankMode && !bankLedgerId)   return message.error('Please select a bank ledger');
     if ((parseFloat(cfAmt)   || 0) > outstanding.cfAdvance   + 0.005) return message.error('CF deduction exceeds outstanding');
     if ((parseFloat(loanAmt) || 0) > outstanding.loanAdvance + 0.005) return message.error('Loan deduction exceeds outstanding');
     if ((parseFloat(cashAmt) || 0) > outstanding.cashAdvance + 0.005) return message.error('Cash deduction exceeds outstanding');
 
     const paidAmt = parseFloat(paidAmount) > 0 ? parseFloat(paidAmount) : balance;
 
+    // Build bonuses (Other Earnings)
+    const bonuses = [];
+    if ((parseFloat(otherEarnings) || 0) > 0)
+      bonuses.push({ type: 'Other', amount: parseFloat(otherEarnings), description: 'Other Earnings' });
+
+    // Build deductions
     const deductions = [];
     if ((parseFloat(welfareAmt) || 0) > 0)
       deductions.push({ type: 'Welfare Recovery', amount: parseFloat(welfareAmt), description: 'Monthly welfare recovery' });
@@ -353,11 +408,15 @@ const IndividualMilkPayment = () => {
       deductions.push({ type: 'Loan Recovery',    amount: parseFloat(loanAmt),    description: 'Loan Advance recovery' });
     if ((parseFloat(cashAmt) || 0) > 0)
       deductions.push({ type: 'Cash Recovery',    amount: parseFloat(cashAmt),    description: 'Cash Advance recovery' });
+    if ((parseFloat(otherDeductions) || 0) > 0)
+      deductions.push({ type: 'Other',            amount: parseFloat(otherDeductions), description: 'Other Deductions' });
 
     const payload = {
       farmerId:        selectedFarmer._id,
+      farmerName:      selectedFarmer.personalDetails?.name || '',
       paymentDate,
       milkAmount:      parseFloat(milkAmount),
+      bonuses,
       advanceAmount:   (parseFloat(cfAmt) || 0) + (parseFloat(loanAmt) || 0) + (parseFloat(cashAmt) || 0),
       deductions,
       totalDeduction:  totalDeductions,
@@ -369,13 +428,20 @@ const IndividualMilkPayment = () => {
       remarks,
       paymentSource:   'Individual',
       paymentPeriod:   { fromDate: cycleFrom, toDate: cycleTo },
-      ...(isBankMode  ? { bankLedgerId } : {}),
+      ...(isBankMode ? { bankLedgerId } : {}),
     };
 
     setSaving(true);
     try {
-      await paymentAPI.create(payload);
+      const res = await paymentAPI.create(payload);
       message.success('Payment saved and ledgers auto-posted');
+      if (printVoucher && res?.data) {
+        printPaymentVoucher({
+          ...res.data,
+          farmerId:    selectedFarmer,
+          paymentDate: paymentDate,
+        });
+      }
       resetForm();
       fetchPayments(1);
     } catch (err) {
@@ -418,7 +484,7 @@ const IndividualMilkPayment = () => {
         <Card withBorder radius="md" p="md">
           <Stack gap="sm">
 
-            {/* Row 1: Payment Date + Cycle Range + Farmer Number */}
+            {/* Row 1: Date + Cycle Range + Farmer */}
             <Grid align="flex-end" gutter="sm">
               <Grid.Col span={{ base: 12, sm: 4, md: 2 }}>
                 <div ref={dateRef}>
@@ -433,7 +499,7 @@ const IndividualMilkPayment = () => {
                 </div>
               </Grid.Col>
 
-              <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
+              <Grid.Col span={{ base: 6, sm: 3, md: 2 }}>
                 <DatePickerInput
                   label="Cycle From"
                   value={cycleFrom}
@@ -444,7 +510,7 @@ const IndividualMilkPayment = () => {
                 />
               </Grid.Col>
 
-              <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
+              <Grid.Col span={{ base: 6, sm: 3, md: 2 }}>
                 <DatePickerInput
                   label="Cycle To"
                   value={cycleTo}
@@ -496,6 +562,7 @@ const IndividualMilkPayment = () => {
             {/* ── After farmer selected ────────────────────────────────── */}
             {selectedFarmer && (
               <>
+                {/* Outstanding balances strip */}
                 {(balancesLoading || milkLoading) ? (
                   <Group gap="xs">
                     <Loader size="xs" />
@@ -524,12 +591,6 @@ const IndividualMilkPayment = () => {
                           ₹{fmt(outstanding.cashAdvance)}
                         </Text>
                       </Box>
-                      {previousBalance > 0 && (
-                        <Box>
-                          <Text size="xs" c="dimmed">Prev. Balance</Text>
-                          <Text size="sm" fw={600} c="grape.7">₹{fmt(previousBalance)}</Text>
-                        </Box>
-                      )}
                       {welfareEligible && (
                         <Badge color="grape" size="sm" variant="light">Welfare eligible ₹{welfareMax}</Badge>
                       )}
@@ -537,9 +598,8 @@ const IndividualMilkPayment = () => {
                   </Paper>
                 )}
 
-                {/* Milk Amount + Deductions */}
+                {/* ── Row 2: Earnings ───────────────────────────────────── */}
                 <Grid align="flex-end" gutter="xs">
-                  {/* Milk Amount — auto-filled, still editable */}
                   <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
                     <div ref={milkRef}>
                       <NumberInput
@@ -557,6 +617,26 @@ const IndividualMilkPayment = () => {
                     </div>
                   </Grid.Col>
 
+                  <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
+                    <div ref={otherEarningsRef}>
+                      <NumberInput
+                        label="Other Earnings (₹)"
+                        value={otherEarnings}
+                        onChange={setOtherEarnings}
+                        onKeyDown={handleOtherEarningsKeyDown}
+                        placeholder="0.00"
+                        min={0}
+                        decimalScale={2}
+                        thousandSeparator=","
+                        leftSection={<IconCurrencyRupee size={14} />}
+                        styles={(parseFloat(otherEarnings) || 0) > 0 ? { input: { borderColor: 'var(--mantine-color-green-5)' } } : {}}
+                      />
+                    </div>
+                  </Grid.Col>
+                </Grid>
+
+                {/* ── Row 3: Deductions ─────────────────────────────────── */}
+                <Grid align="flex-end" gutter="xs">
                   {/* Welfare */}
                   <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
                     <div ref={welfareRef}>
@@ -618,7 +698,7 @@ const IndividualMilkPayment = () => {
                         label={`Cash Rec. (max ₹${fmt(outstanding.cashAdvance)})`}
                         value={cashAmt}
                         onChange={setCashAmt}
-                        onKeyDown={advance(payModeRef)}
+                        onKeyDown={advance(otherDedRef)}
                         placeholder="0.00"
                         min={0}
                         max={outstanding.cashAdvance}
@@ -627,9 +707,45 @@ const IndividualMilkPayment = () => {
                       />
                     </div>
                   </Grid.Col>
+
+                  {/* Other Deductions */}
+                  <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
+                    <div ref={otherDedRef}>
+                      <NumberInput
+                        label="Other Deductions (₹)"
+                        value={otherDeductions}
+                        onChange={setOtherDeductions}
+                        onKeyDown={advance(prevBalRef)}
+                        placeholder="0.00"
+                        min={0}
+                        decimalScale={2}
+                        thousandSeparator=","
+                        leftSection={<IconCurrencyRupee size={14} />}
+                        styles={(parseFloat(otherDeductions) || 0) > 0 ? { input: { borderColor: 'var(--mantine-color-red-5)' } } : {}}
+                      />
+                    </div>
+                  </Grid.Col>
+
+                  {/* Previous Balance (editable) */}
+                  <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
+                    <div ref={prevBalRef}>
+                      <NumberInput
+                        label="Prev. Balance (₹)"
+                        value={previousBalance}
+                        onChange={setPreviousBalance}
+                        onKeyDown={advance(payModeRef)}
+                        placeholder="0.00"
+                        min={0}
+                        decimalScale={2}
+                        thousandSeparator=","
+                        leftSection={<IconCurrencyRupee size={14} />}
+                        styles={(previousBalance || 0) > 0 ? { input: { borderColor: 'var(--mantine-color-grape-5)' } } : {}}
+                      />
+                    </div>
+                  </Grid.Col>
                 </Grid>
 
-                {/* Balance Summary Bar */}
+                {/* ── Balance Summary Bar ───────────────────────────────── */}
                 <Paper
                   withBorder p="sm" radius="md"
                   bg={balance < 0 ? 'red.0' : balance === 0 ? 'yellow.0' : 'green.0'}
@@ -639,6 +755,15 @@ const IndividualMilkPayment = () => {
                       <Text size="xs" c="dimmed">Milk Amount</Text>
                       <Text size="sm" fw={600}>₹{fmt(milkAmount)}</Text>
                     </Box>
+                    {(parseFloat(otherEarnings) || 0) > 0 && (
+                      <>
+                        <Text c="dimmed" fw={600}>+</Text>
+                        <Box ta="center">
+                          <Text size="xs" c="dimmed">Other Earnings</Text>
+                          <Text size="sm" fw={600} c="green">₹{fmt(otherEarnings)}</Text>
+                        </Box>
+                      </>
+                    )}
                     <Text c="dimmed" fw={600}>−</Text>
                     <Box ta="center">
                       <Text size="xs" c="dimmed">Total Deductions</Text>
@@ -668,7 +793,7 @@ const IndividualMilkPayment = () => {
                   )}
                 </Paper>
 
-                {/* Payment Mode + Paid Amount + Remarks + Save */}
+                {/* ── Payment Mode + Paid Amount + Remarks + Save ───────── */}
                 <Grid align="flex-end" gutter="xs">
                   <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
                     <div ref={payModeRef}>
@@ -730,8 +855,14 @@ const IndividualMilkPayment = () => {
                     </div>
                   </Grid.Col>
 
-                  <Grid.Col span={{ base: 12, sm: 4, md: 2 }}>
-                    <Group gap="xs" grow>
+                  <Grid.Col span={{ base: 12, sm: 4, md: 3 }}>
+                    <Group gap="xs" align="flex-end">
+                      <Checkbox
+                        label="Print Voucher"
+                        checked={printVoucher}
+                        onChange={(e) => setPrintVoucher(e.currentTarget.checked)}
+                        mb={6}
+                      />
                       <Button variant="light" color="gray" onClick={resetForm}>
                         Reset
                       </Button>
@@ -780,6 +911,7 @@ const IndividualMilkPayment = () => {
                       <Table.Th>Paid</Table.Th>
                       <Table.Th>Mode</Table.Th>
                       <Table.Th>Status</Table.Th>
+                      <Table.Th></Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
@@ -813,6 +945,15 @@ const IndividualMilkPayment = () => {
                           >
                             {p.status}
                           </Badge>
+                        </Table.Td>
+                        <Table.Td>
+                          <ActionIcon
+                            size="sm" variant="subtle" color="blue"
+                            title="Print Voucher"
+                            onClick={() => printPaymentVoucher(p)}
+                          >
+                            <IconPrinter size={14} />
+                          </ActionIcon>
                         </Table.Td>
                       </Table.Tr>
                     ))}
