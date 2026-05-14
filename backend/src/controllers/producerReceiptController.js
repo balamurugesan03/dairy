@@ -28,6 +28,14 @@ export const createReceipt = async (req, res) => {
       console.error('Voucher creation failed:', voucherError);
     }
 
+    // Update Advance / ProducerLoan module records
+    try {
+      await applyReceiptToRecords(receipt, req.userCompany);
+      await receipt.save();
+    } catch (applyError) {
+      console.error('Advance/Loan record update failed:', applyError);
+    }
+
     await receipt.populate('farmerId', 'farmerNumber personalDetails');
 
     res.status(201).json({
@@ -41,6 +49,93 @@ export const createReceipt = async (req, res) => {
       success: false,
       message: error.message || 'Error creating receipt'
     });
+  }
+};
+
+// Apply a receipt's amount to the farmer's Advance / ProducerLoan records (FIFO)
+const applyReceiptToRecords = async (receipt, companyId) => {
+  const { receiptType, farmerId, amount, receiptDate, _id: receiptId, receiptNumber } = receipt;
+  let remaining = amount;
+
+  if (receiptType === 'CF Advance' || receiptType === 'Cash Advance') {
+    const advances = await Advance.find({
+      companyId,
+      farmerId,
+      advanceCategory: receiptType,
+      status: { $in: ['Active', 'Partially Adjusted', 'Overdue'] },
+      balanceAmount: { $gt: 0 },
+    }).sort({ advanceDate: 1 });
+
+    for (const adv of advances) {
+      if (remaining <= 0) break;
+      const deduct = Math.min(remaining, adv.balanceAmount);
+      adv.adjustedAmount += deduct;
+      adv.balanceAmount  -= deduct;
+      adv.adjustments.push({
+        date:          receiptDate || new Date(),
+        amount:        deduct,
+        referenceType: 'Manual',
+        referenceId:   receiptId,
+        paymentNumber: receiptNumber,
+        remarks:       `Receipt ${receiptNumber}`,
+      });
+      await adv.save();
+      remaining -= deduct;
+
+      if (!receipt.referenceId) {
+        receipt.referenceId    = adv._id;
+        receipt.referenceType  = 'Advance';
+        receipt.referenceModel = 'Advance';
+        receipt.referenceNumber = adv.advanceNumber;
+      }
+    }
+
+  } else if (receiptType === 'Loan Advance') {
+    const loans = await ProducerLoan.find({
+      companyId,
+      farmerId,
+      status: { $in: ['Active', 'Defaulted'] },
+      outstandingAmount: { $gt: 0 },
+    }).sort({ loanDate: 1 });
+
+    for (const loan of loans) {
+      if (remaining <= 0) break;
+      const deduct = Math.min(remaining, loan.outstandingAmount);
+      loan.recoveredAmount   += deduct;
+      loan.outstandingAmount -= deduct;
+
+      // Apply to EMI schedule oldest-pending first
+      let toApply = deduct;
+      for (const emi of loan.emiSchedule) {
+        if (toApply <= 0) break;
+        if (emi.status === 'Paid') continue;
+        const pending = emi.amount - (emi.paidAmount || 0);
+        if (pending <= 0) continue;
+        const apply    = Math.min(toApply, pending);
+        emi.paidAmount = (emi.paidAmount || 0) + apply;
+        toApply       -= apply;
+        if (emi.paidAmount >= emi.amount) {
+          emi.status   = 'Paid';
+          emi.paidDate = receiptDate || new Date();
+        } else {
+          emi.status = 'Partial';
+        }
+      }
+
+      if (loan.outstandingAmount <= 0) {
+        loan.status   = 'Closed';
+        loan.closedAt = new Date();
+      }
+      await loan.save();
+      remaining -= deduct;
+
+      if (!receipt.referenceId) {
+        receipt.referenceId    = loan._id;
+        receipt.referenceType  = 'Loan';
+        receipt.referenceModel = 'ProducerLoan';
+        receipt.referenceNumber = loan.loanNumber;
+      }
+    }
   }
 };
 

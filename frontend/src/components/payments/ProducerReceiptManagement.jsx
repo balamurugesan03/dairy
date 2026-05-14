@@ -351,7 +351,7 @@ const ProducerReceiptManagement = () => {
           </Box>
           <Button
             leftSection={<IconPlus size={18} />}
-            onClick={() => { resetForm(); searchFarmers(''); setModalOpen(true); }}
+            onClick={() => { resetForm(); searchFarmers(''); fetchBankLedgers(); setModalOpen(true); }}
             disabled={!canWrite('payments')}
           >
             New Receipt

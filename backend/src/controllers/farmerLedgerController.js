@@ -507,7 +507,7 @@ export const getFarmerOutstandingByType = async (req, res) => {
     const cashOutstanding = Math.max(0, r2(cashOpen + cashGiven - cashRec));
 
     // ── Loan Advance ──────────────────────────────────────────────────────────
-    const [loanLoanAgg, loanAdvAgg, loanPayAgg] = await Promise.all([
+    const [loanLoanAgg, loanAdvAgg, loanPayAgg, loanReceiptAgg] = await Promise.all([
       ProducerLoan.aggregate([
         { $match: { companyId: cObjId, farmerId: fObjId, ...dc('loanDate') } },
         { $group: { _id: null, total: { $sum: '$totalLoanAmount' } } }
@@ -521,10 +521,14 @@ export const getFarmerOutstandingByType = async (req, res) => {
         { $unwind: '$deductions' },
         { $match: { 'deductions.type': { $in: ['Loan Advance', 'Loan Recovery', 'Loan EMI'] } } },
         { $group: { _id: null, total: { $sum: '$deductions.amount' } } }
+      ]),
+      ProducerReceipt.aggregate([
+        { $match: { companyId: cObjId, farmerId: fObjId, receiptType: 'Loan Advance', status: { $ne: 'Cancelled' }, ...dc('receiptDate') } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
       ])
     ]);
     const loanGiven       = r2((loanLoanAgg[0]?.total || 0) + (loanAdvAgg[0]?.total || 0));
-    const loanRec         = r2(loanPayAgg[0]?.total || 0);
+    const loanRec         = r2((loanPayAgg[0]?.total || 0) + (loanReceiptAgg[0]?.total || 0));
     const loanOutstanding = Math.max(0, r2(loanOpen + loanGiven - loanRec));
 
     res.status(200).json({
