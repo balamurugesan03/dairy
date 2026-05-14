@@ -426,7 +426,7 @@ ${(payment.balanceAmount || 0) > 0 ? `<div class="total"><span>Balance</span><sp
       paidAmount:      paidAmt,
       balanceAmount:   Math.max(0, balance - paidAmt),
       remarks,
-      paymentSource:   'Individual',
+      paymentSource:   'Ledger',
       paymentPeriod:   { fromDate: cycleFrom, toDate: cycleTo },
       ...(isBankMode ? { bankLedgerId } : {}),
     };

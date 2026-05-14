@@ -423,7 +423,7 @@ export const getFarmerPaymentHistory = async (req, res) => {
   try {
     const { fromDate, toDate, status, limit = 50 } = req.query;
 
-    const query = { farmerId: req.params.farmerId };
+    const query = { companyId: req.companyId, farmerId: req.params.farmerId };
     if (status) query.status = status;
     if (fromDate || toDate) {
       query.paymentDate = {};
