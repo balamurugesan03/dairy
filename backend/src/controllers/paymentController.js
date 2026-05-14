@@ -678,6 +678,28 @@ export const cancelPayment = async (req, res) => {
   }
 };
 
+// Sum of balanceAmount from all Pending/Partial payments for a farmer (same logic as generateProducers)
+export const getFarmerPreviousBalance = async (req, res) => {
+  try {
+    const companyId = req.userCompany;
+    const farmerId  = req.params.farmerId;
+    const result = await FarmerPayment.aggregate([
+      {
+        $match: {
+          companyId: new mongoose.Types.ObjectId(companyId),
+          farmerId:  new mongoose.Types.ObjectId(farmerId),
+          status:    { $in: ['Pending', 'Partial'] },
+        },
+      },
+      { $group: { _id: null, total: { $sum: '$balanceAmount' } } },
+    ]);
+    const previousBalance = Math.round((result[0]?.total || 0) * 100) / 100;
+    res.json({ success: true, data: { previousBalance } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // Get the latest applied payment period's toDate (used by register-ledger to auto-advance to next cycle)
 export const getLatestPaymentPeriod = async (req, res) => {
   try {

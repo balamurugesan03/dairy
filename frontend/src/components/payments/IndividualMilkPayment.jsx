@@ -252,7 +252,7 @@ const IndividualMilkPayment = () => {
     setBalancesLoading(true);
     const cycleEnd = cycleTo ? new Date(cycleTo) : new Date();
     try {
-      const [outRes, welfRes, histRes] = await Promise.allSettled([
+      const [outRes, welfRes, prevBalRes] = await Promise.allSettled([
         farmerLedgerAPI.getOutstandingByType(farmerId, { asOfDate: cycleEnd.toISOString() }),
         farmerLedgerAPI.checkWelfare(
           farmerId,
@@ -260,7 +260,7 @@ const IndividualMilkPayment = () => {
           cycleFrom ? new Date(cycleFrom).toISOString() : undefined,
           cycleEnd.toISOString(),
         ),
-        paymentAPI.getFarmerHistory(farmerId, { limit: 1 }),
+        paymentAPI.getFarmerPreviousBalance(farmerId),
       ]);
 
       const out  = outRes.status === 'fulfilled' ? outRes.value?.data || {} : {};
@@ -282,11 +282,9 @@ const IndividualMilkPayment = () => {
       setWelfareMax(welMax);
       setWelfareAmt(welMax);
 
-      let prevBal = 0;
-      if (histRes.status === 'fulfilled') {
-        const hist = histRes.value?.data || [];
-        prevBal = Math.max(0, hist[0]?.balanceAmount || 0);
-      }
+      const prevBal = prevBalRes.status === 'fulfilled'
+        ? (prevBalRes.value?.data?.previousBalance || 0)
+        : 0;
       setPreviousBalance(prevBal);
       focusInput(milkRef);
     } catch (err) {

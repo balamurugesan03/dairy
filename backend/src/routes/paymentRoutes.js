@@ -11,6 +11,7 @@ import {
   getPaymentStats,
   bulkCreatePayments,
   getLatestPaymentPeriod,
+  getFarmerPreviousBalance,
   // Advance functions
   createAdvance,
   getAllAdvances,
@@ -65,6 +66,9 @@ router.get('/farmer-payments/farmer/:farmerId/welfare-check', checkWelfareRecove
 
 // Get farmer outstanding by type (for priority deduction)
 router.get('/farmer-payments/farmer/:farmerId/outstanding-by-type', getFarmerOutstandingByType);
+
+// Get farmer's previous balance (sum of pending/partial balanceAmounts)
+router.get('/farmer-payments/farmer/:farmerId/previous-balance', getFarmerPreviousBalance);
 
 // ==================== FARMER PAYMENT DETAIL ROUTES ====================
 

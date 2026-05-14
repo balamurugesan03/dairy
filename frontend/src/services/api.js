@@ -228,6 +228,7 @@ export const paymentAPI = {
   getFarmerHistory: (farmerId, params) => api.get(`/farmer-payments/farmer/${farmerId}`, { params }).then(res => res.data).catch(handleError),
   getStats: (params) => api.get('/farmer-payments/stats', { params }).then(res => res.data).catch(handleError),
   getLatestPeriod: () => api.get('/farmer-payments/latest-period').then(res => res.data).catch(handleError),
+  getFarmerPreviousBalance: (farmerId) => api.get(`/farmer-payments/farmer/${farmerId}/previous-balance`).then(res => res.data).catch(handleError),
 };
 
 // ADVANCE APIs
