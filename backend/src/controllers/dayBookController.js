@@ -5,6 +5,7 @@ import UnionSalesSlip from '../models/UnionSalesSlip.js';
 import StockTransaction from '../models/StockTransaction.js';
 import Advance from '../models/Advance.js';
 import ProducerReceipt from '../models/ProducerReceipt.js';
+import ProducerPayment from '../models/ProducerPayment.js';
 import Sales from '../models/Sales.js';
 
 // Get Day Book report with date-wise grouping
@@ -92,6 +93,9 @@ export const getDayBook = async (req, res) => {
       // Producer Receipts (advance returns) — handled by direct ProducerReceipt
       // query below; skip the voucher to avoid double-counting.
       if (voucher.referenceType === 'ProducerReceipt') continue;
+      // Producer Payments (payment-to-producer) — handled by direct ProducerPayment
+      // query below; skip the voucher to avoid double-counting.
+      if (voucher.referenceType === 'ProducerPayment') continue;
 
       const dateKey = voucher.voucherDate.toISOString().split('T')[0];
 
@@ -727,6 +731,74 @@ export const getDayBook = async (req, res) => {
       dateMap[dateKey].paymentSide.push(expenseEntry);
       dateMap[dateKey].totalPayments += ret.amount;
       paymentSide.push(expenseEntry);
+    }
+
+    // --- Producer Payments (Payment-to-Producer) ---
+    // Cash: payment side cash column → PRODUCERS DUES
+    // Bank/UPI/Cheque/NEFT/RTGS: both sides adjustment → PRODUCERS DUES + bank ledger
+
+    const bankLedgerForPay = await Ledger.findOne({ companyId, ledgerType: 'Bank' }).lean();
+    const bankLedgerPayName = bankLedgerForPay?.ledgerName || 'Bank Account';
+
+    const cashProducerPayments = await ProducerPayment.find({
+      companyId,
+      paymentDate: { $gte: start, $lte: end },
+      paymentMode: 'Cash',
+      amountPaid: { $gt: 0 },
+      status: { $ne: 'Cancelled' }
+    }).lean();
+
+    for (const pp of cashProducerPayments) {
+      const dateKey = pp.paymentDate.toISOString().split('T')[0];
+      if (!dateMap[dateKey]) {
+        dateMap[dateKey] = { date: dateKey, receiptSide: [], paymentSide: [], totalReceipts: 0, totalPayments: 0 };
+      }
+      const entry = {
+        date: pp.paymentDate,
+        voucherNumber: pp.paymentNumber || `PTP-${String(pp._id).slice(-6)}`,
+        voucherType: 'Payment',
+        ledgerName: 'PRODUCERS DUES',
+        narration: `Payment to Producer — ${pp.producerName || ''}`.trim(),
+        amount: pp.amountPaid
+      };
+      dateMap[dateKey].paymentSide.push(entry);
+      dateMap[dateKey].totalPayments += pp.amountPaid;
+      paymentSide.push(entry);
+    }
+
+    const bankProducerPayments = await ProducerPayment.find({
+      companyId,
+      paymentDate: { $gte: start, $lte: end },
+      paymentMode: { $in: ['Bank', 'UPI', 'Cheque', 'NEFT', 'RTGS'] },
+      amountPaid: { $gt: 0 },
+      status: { $ne: 'Cancelled' }
+    }).lean();
+
+    for (const pp of bankProducerPayments) {
+      const dateKey = pp.paymentDate.toISOString().split('T')[0];
+      if (!dateMap[dateKey]) {
+        dateMap[dateKey] = { date: dateKey, receiptSide: [], paymentSide: [], totalReceipts: 0, totalPayments: 0 };
+      }
+      const voucherNum = pp.paymentNumber || `PTP-${String(pp._id).slice(-6)}`;
+      const narration  = `Payment to Producer — ${pp.producerName || ''}`.trim();
+
+      const receiptEntry = {
+        date: pp.paymentDate, voucherNumber: voucherNum,
+        voucherType: 'BankTransfer', ledgerName: bankLedgerPayName,
+        narration, amount: pp.amountPaid
+      };
+      dateMap[dateKey].receiptSide.push(receiptEntry);
+      dateMap[dateKey].totalReceipts += pp.amountPaid;
+      receiptSide.push(receiptEntry);
+
+      const paymentEntry = {
+        date: pp.paymentDate, voucherNumber: voucherNum,
+        voucherType: 'BankTransfer', ledgerName: 'PRODUCERS DUES',
+        narration, amount: pp.amountPaid
+      };
+      dateMap[dateKey].paymentSide.push(paymentEntry);
+      dateMap[dateKey].totalPayments += pp.amountPaid;
+      paymentSide.push(paymentEntry);
     }
 
     // --- Build dayWiseData with chained opening/closing balances ---

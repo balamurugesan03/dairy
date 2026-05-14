@@ -1023,7 +1023,6 @@ const MilkPaymentRegister = () => {
                   <Grid.Col span={{ base: 12, sm: 4 }}>
                     {/* Period nav */}
                     <Group gap="xs" justify="flex-end">
-                      <Button size="xs" variant="subtle" color="gray" onClick={() => shiftPeriod('prev')}>‹ Prev</Button>
                       <Badge color="teal" variant="light" size="sm">
                         {getPeriodLabel(paymentDays, formData.fromDate)}
                       </Badge>

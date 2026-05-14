@@ -301,7 +301,7 @@ const MainLayout = () => {
             { key: '/payments/register-ledger', label: 'Payment Register Detailed' },
             { key: '/payments/bank-transfer', label: 'Bank Transfer' },
             { key: '/payments/ledger-history',  label: 'Ledger Payment History' },
-            // { key: '/payments/individual', label: 'Individual Payment' },
+            { key: '/payments/individual', label: 'Individual Payment' },
             { key: '/payments/creditor-bill', label: 'Payment Register (Creditor Bill)' },
             { key: '/payments/producer-payment', label: 'Payment Register (Producers)' },
             { key: '/payments/payment-to-producer', label: 'Payment to Producer' },

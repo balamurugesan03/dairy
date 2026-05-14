@@ -142,8 +142,8 @@ const ProducerReceiptManagement = () => {
       setLoading(true);
       const params = { page: pagination.page, limit: pagination.limit, sortBy: 'receiptDate', sortOrder: 'desc' };
       if (filters.receiptType) params.receiptType = filters.receiptType;
-      if (filters.fromDate)    params.fromDate    = filters.fromDate.toISOString();
-      if (filters.toDate)      params.toDate      = filters.toDate.toISOString();
+      if (filters.fromDate)    params.fromDate    = new Date(filters.fromDate).toISOString();
+      if (filters.toDate)      params.toDate      = new Date(filters.toDate).toISOString();
 
       const response = await producerReceiptAPI.getAll(params);
       setReceipts(response.data || []);

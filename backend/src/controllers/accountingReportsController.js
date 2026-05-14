@@ -5,6 +5,7 @@ import Sales from '../models/Sales.js';
 import FarmerPayment from '../models/FarmerPayment.js';
 import Advance from '../models/Advance.js';
 import ProducerReceipt from '../models/ProducerReceipt.js';
+import ProducerPayment from '../models/ProducerPayment.js';
 import BankTransfer from '../models/BankTransfer.js';
 import { getDateRange } from '../utils/dateFilters.js';
 import {
@@ -141,6 +142,15 @@ export const getCashBook = async (req, res) => {
       amount: { $gt: 0 }
     }).sort({ receiptDate: 1 }).populate('farmerId', 'farmerName farmerNumber');
 
+    // Direct cash payments — Producer Payments (Payment-to-Producer, Cash mode)
+    const producerPaymentsCash = await ProducerPayment.find({
+      companyId: req.companyId,
+      paymentDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
+      paymentMode: 'Cash',
+      amountPaid: { $gt: 0 },
+      status: { $ne: 'Cancelled' }
+    }).sort({ paymentDate: 1 });
+
     // Completed Bank Transfers — Payment side
     // Skip transfers that already have a Voucher posted (avoid double-counting against the voucher loop)
     const completedBankTransfers = await BankTransfer.find({
@@ -155,9 +165,10 @@ export const getCashBook = async (req, res) => {
     const rawTransactions = [];
 
     // From vouchers (existing accounting entries)
-    // Skip ProducerReceipt vouchers — those are covered by the direct producerReceiptsCash query.
+    // Skip ProducerReceipt/ProducerPayment vouchers — covered by direct queries below.
     vouchers.forEach(voucher => {
       if (voucher.referenceType === 'ProducerReceipt') return;
+      if (voucher.referenceType === 'ProducerPayment') return;
       voucher.entries.forEach(entry => {
         if (entry.ledgerId._id.toString() === cashLedger._id.toString()) {
           const isReceipt = entry.debitAmount > 0;
@@ -259,6 +270,19 @@ export const getCashBook = async (req, res) => {
         debit: pr.amount,   // cash received from farmer
         credit: 0,
         narration: `${pr.receiptType} Return — ${farmerName}`
+      });
+    });
+
+    // Producer Payments — Cash (Payment-to-Producer)
+    producerPaymentsCash.forEach(pp => {
+      rawTransactions.push({
+        date: pp.paymentDate,
+        voucherNumber: pp.paymentNumber || `PTP-${pp._id.toString().slice(-6)}`,
+        voucherType: 'Payment',
+        particulars: 'PRODUCERS DUES',
+        debit: 0,
+        credit: pp.amountPaid,
+        narration: `Payment to Producer — ${pp.producerName || ''}`.trim()
       });
     });
 

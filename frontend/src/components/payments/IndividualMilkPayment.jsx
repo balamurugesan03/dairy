@@ -1,803 +1,785 @@
-import { useState, useEffect } from 'react';
+  import { useState, useEffect, useRef, useCallback } from 'react';
 import { message } from '../../utils/toast';
-import { farmerAPI, paymentAPI, advanceAPI, farmerLedgerAPI, producerLoanAPI } from '../../services/api';
+import {
+  farmerAPI, paymentAPI, farmerLedgerAPI, ledgerAPI, paymentRegisterAPI,
+} from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import {
-  Container,
-  Card,
-  Paper,
-  Title,
-  Text,
-  Group,
-  Stack,
-  Select,
-  TextInput,
-  NumberInput,
-  Button,
-  Table,
-  Badge,
-  Divider,
-  Loader,
-  Box,
-  ActionIcon,
-  Grid,
-  Alert,
-  Modal,
-  ScrollArea,
+  Container, Card, Paper, Title, Text, Group, Stack,
+  Select, NumberInput, TextInput, Button, Table, Badge,
+  Loader, Box, Grid, Alert, ScrollArea, ActionIcon, Pagination,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
-import { IconTrash, IconPlus, IconSearch, IconCurrencyRupee, IconCalendar, IconAlertCircle, IconEye } from '@tabler/icons-react';
+import {
+  IconCurrencyRupee, IconCalendar, IconAlertCircle,
+  IconRefresh, IconDeviceFloppy, IconSearch, IconX,
+} from '@tabler/icons-react';
+import dayjs from 'dayjs';
+
+const PAYMENT_MODES = [
+  { value: 'Cash',  label: 'Cash' },
+  { value: 'Bank',  label: 'Bank Transfer' },
+  { value: 'UPI',   label: 'UPI' },
+];
+
+const fmt = (v) =>
+  (parseFloat(v) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const IndividualMilkPayment = () => {
   const { canWrite } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [farmers, setFarmers] = useState([]);
+
+  // ── Active cycle ────────────────────────────────────────────────────────────
+  const [activeCycle,    setActiveCycle]    = useState(null);
+  const [cycleLoading,   setCycleLoading]   = useState(true);
+
+  // ── Entry form ──────────────────────────────────────────────────────────────
+  const [paymentDate,    setPaymentDate]    = useState(new Date());
+  const [farmerNumber,   setFarmerNumber]   = useState('');
+  const [farmerLoading,  setFarmerLoading]  = useState(false);
   const [selectedFarmer, setSelectedFarmer] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [deductions, setDeductions] = useState([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [payments, setPayments] = useState([]);
-  const [paymentsLoading, setPaymentsLoading] = useState(false);
-  const [farmerAdvances, setFarmerAdvances] = useState({
-    cfAdvance: 0,
-    loanAdvance: 0,
-    cashAdvance: 0
-  });
-  const [previousBalance, setPreviousBalance] = useState(0);
-  const [welfareEligible, setWelfareEligible] = useState(true);
-  const [welfareCheckLoading, setWelfareCheckLoading] = useState(false);
+  const [balancesLoading,setBalancesLoading]= useState(false);
 
-  // Form fields
-  const [formData, setFormData] = useState({
-    farmerId: '',
-    paymentDate: new Date(),
-    milkAmount: '',
-    welfareRecovery: 0,
-    cfAdvanceDeduction: 0,
-    loanAdvanceDeduction: 0,
-    cashAdvanceDeduction: 0,
-    paymentMode: 'Cash',
-    paidAmount: '',
-    remarks: ''
-  });
+  // Outstanding balances (from cycle end date)
+  const [outstanding,    setOutstanding]    = useState({ cfAdvance: 0, loanAdvance: 0, cashAdvance: 0 });
+  const [previousBalance,setPreviousBalance]= useState(0);
 
-  // Deduction form fields
-  const [deductionForm, setDeductionForm] = useState({
-    type: '',
-    amount: '',
-    description: ''
-  });
+  // Welfare
+  const [welfareEligible,setWelfareEligible]= useState(false);
+  const [welfareMax,     setWelfareMax]     = useState(0);
 
-  const [calculations, setCalculations] = useState({
-    milkAmount: 0,
-    welfareRecovery: 0,
-    cfAdvanceDeduction: 0,
-    loanAdvanceDeduction: 0,
-    cashAdvanceDeduction: 0,
-    totalAdvanceDeduction: 0,
-    otherDeductions: 0,
-    previousBalance: 0,
-    totalDeduction: 0,
-    netPayable: 0
-  });
+  // Deductions / payment
+  const [milkAmount,     setMilkAmount]     = useState('');
+  const [welfareAmt,     setWelfareAmt]     = useState(0);
+  const [cfAmt,          setCfAmt]          = useState(0);
+  const [loanAmt,        setLoanAmt]        = useState(0);
+  const [cashAmt,        setCashAmt]        = useState(0);
+  const [paymentMode,    setPaymentMode]    = useState('Cash');
+  const [bankLedgerId,   setBankLedgerId]   = useState('');
+  const [paidAmount,     setPaidAmount]     = useState('');
+  const [remarks,        setRemarks]        = useState('');
 
+  // Bank ledgers + save
+  const [bankLedgers,    setBankLedgers]    = useState([]);
+  const [saving,         setSaving]         = useState(false);
+
+  // ── List ────────────────────────────────────────────────────────────────────
+  const [payments,       setPayments]       = useState([]);
+  const [paymentsLoading,setPaymentsLoading]= useState(false);
+  const [page,           setPage]           = useState(1);
+  const [totalPages,     setTotalPages]     = useState(1);
+
+  // ── Refs for keyboard navigation ────────────────────────────────────────────
+  const dateRef        = useRef(null);
+  const farmerRef      = useRef(null);
+  const milkRef        = useRef(null);
+  const welfareRef     = useRef(null);
+  const cfRef          = useRef(null);
+  const loanRef        = useRef(null);
+  const cashRef        = useRef(null);
+  const payModeRef     = useRef(null);
+  const bankRef        = useRef(null);
+  const paidRef        = useRef(null);
+  const remarksRef     = useRef(null);
+  const saveRef        = useRef(null);
+
+  // ── Derived ─────────────────────────────────────────────────────────────────
+  const totalDeductions =
+    (parseFloat(welfareAmt) || 0) +
+    (parseFloat(cfAmt)      || 0) +
+    (parseFloat(loanAmt)    || 0) +
+    (parseFloat(cashAmt)    || 0);
+
+  const balance = (parseFloat(milkAmount) || 0) - totalDeductions + (previousBalance || 0);
+  const isBankMode = paymentMode !== 'Cash';
+  const canSave = selectedFarmer && (parseFloat(milkAmount) || 0) > 0 && balance >= 0 && (!isBankMode || bankLedgerId);
+
+  // ── Focus helper ─────────────────────────────────────────────────────────────
+  const focusInput = (ref) => {
+    setTimeout(() => {
+      const el = ref?.current;
+      if (!el) return;
+      const inp = el.querySelector?.('input') || el;
+      inp?.focus?.();
+      inp?.select?.();
+    }, 60);
+  };
+
+  const advance = (ref) => (e) => {
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      if (e.key === 'Enter') e.preventDefault();
+      focusInput(ref);
+    }
+  };
+
+  // ── On mount ─────────────────────────────────────────────────────────────────
   useEffect(() => {
-    searchFarmer('');
-    fetchPayments();
-  }, []);
+    loadActiveCycle();
+    fetchPayments(1);
+    fetchBankLedgers();
+  }, []); // eslint-disable-line
 
-  const fetchPayments = async () => {
+  const loadActiveCycle = async () => {
+    setCycleLoading(true);
     try {
-      setPaymentsLoading(true);
-      const response = await paymentAPI.getAll({ limit: 50, sortBy: 'paymentDate', sortOrder: 'desc' });
-      setPayments(response.data || []);
-    } catch (error) {
-      console.error('Failed to fetch payments:', error);
+      const res = await paymentRegisterAPI.getLatestProducers();
+      setActiveCycle(res?.data || null);
+    } catch (err) {
+      console.error('Failed to load active cycle:', err);
     } finally {
-      setPaymentsLoading(false);
+      setCycleLoading(false);
     }
   };
 
-  const searchFarmer = async (value) => {
+  const fetchBankLedgers = async () => {
     try {
-      setSearchLoading(true);
-      let response;
-      if (value && value.trim().length > 0) {
-        response = await farmerAPI.search(value.trim());
-      } else {
-        response = await farmerAPI.getAll({ status: 'Active' });
+      const res = await ledgerAPI.getAll({ ledgerType: 'Bank', status: 'Active' });
+      setBankLedgers((res?.data || []).map(l => ({ value: l._id, label: l.ledgerName })));
+    } catch {}
+  };
+
+  const fetchPayments = async (p = 1) => {
+    setPaymentsLoading(true);
+    try {
+      const res = await paymentAPI.getAll({
+        page: p, limit: 15, sortBy: 'paymentDate', sortOrder: 'desc',
+      });
+      setPayments(res?.data || []);
+      setTotalPages(res?.pagination?.pages || 1);
+    } catch {}
+    finally { setPaymentsLoading(false); }
+  };
+
+  // ── Farmer lookup by number ──────────────────────────────────────────────────
+  const handleFarmerKeyDown = async (e) => {
+    if (e.key !== 'Enter' && e.key !== 'Tab') return;
+    if (e.key === 'Enter') e.preventDefault();
+    const num = farmerNumber.trim();
+    if (!num) return;
+
+    setFarmerLoading(true);
+    try {
+      const res = await farmerAPI.search(num);
+      const list = res?.data || [];
+      const match =
+        list.find(f => f.farmerNumber?.toLowerCase() === num.toLowerCase()) ||
+        list.find(f => f.farmerNumber?.toLowerCase().includes(num.toLowerCase())) ||
+        list[0];
+
+      if (!match) {
+        message.error(`Farmer "${num}" not found`);
+        return;
       }
-      setFarmers(response.data);
-    } catch (error) {
-      message.error(error.message || 'Failed to search farmers');
+      setSelectedFarmer(match);
+      await loadFarmerBalances(match._id);
+    } catch {
+      message.error('Failed to find farmer');
     } finally {
-      setSearchLoading(false);
+      setFarmerLoading(false);
     }
   };
 
-  const handleFarmerSelect = async (farmerId) => {
-    const farmer = farmers.find(f => f._id === farmerId);
-    if (farmer) {
-      setSelectedFarmer(farmer);
-      setFormData(prev => ({ ...prev, farmerId }));
+  // ── Load farmer outstanding amounts as of cycle end date ─────────────────────
+  const loadFarmerBalances = useCallback(async (farmerId) => {
+    setBalancesLoading(true);
+    // Use cycle toDate for outstanding; fallback to today
+    const cycleEnd = activeCycle?.toDate ? new Date(activeCycle.toDate) : new Date();
 
-      // Fetch farmer's outstanding by type (includes both advances and loans)
-      try {
-        const response = await farmerLedgerAPI.getOutstandingByType(farmerId);
-        const outstanding = response.data || {};
+    try {
+      const [outRes, welfRes, histRes] = await Promise.allSettled([
+        farmerLedgerAPI.getOutstandingByType(farmerId, { asOfDate: cycleEnd.toISOString() }),
+        farmerLedgerAPI.checkWelfare(
+          farmerId,
+          new Date().toISOString(),
+          activeCycle?.fromDate ? new Date(activeCycle.fromDate).toISOString() : undefined,
+          activeCycle?.toDate   ? new Date(activeCycle.toDate).toISOString()   : undefined,
+        ),
+        paymentAPI.getFarmerHistory(farmerId, { limit: 1 }),
+      ]);
 
-        const loanAdv = outstanding['Loan Advance']?.amount || 0;
-        const cfAdv   = outstanding['CF Advance']?.amount   || 0;
-        const cashAdv = outstanding['Cash Advance']?.amount || 0;
+      // Outstanding
+      const out  = outRes.status === 'fulfilled' ? outRes.value?.data || {} : {};
+      const cf   = out['CF Advance']?.amount   || 0;
+      const loan = out['Loan Advance']?.amount || 0;
+      const cash = out['Cash Advance']?.amount || 0;
+      setOutstanding({ cfAdvance: cf, loanAdvance: loan, cashAdvance: cash });
+      setCfAmt(cf);
+      setLoanAmt(loan);
+      setCashAmt(cash);
 
-        setFarmerAdvances({ loanAdvance: loanAdv, cfAdvance: cfAdv, cashAdvance: cashAdv });
-
-        // Auto-fill deduction fields with outstanding balances (same as Payment Register)
-        setFormData(prev => ({
-          ...prev,
-          loanAdvanceDeduction: loanAdv,
-          cfAdvanceDeduction:   cfAdv,
-          cashAdvanceDeduction: cashAdv,
-        }));
-      } catch (error) {
-        console.error('Failed to fetch outstanding:', error);
-        setFarmerAdvances({ cfAdvance: 0, loanAdvance: 0, cashAdvance: 0 });
+      // Welfare
+      let welMax = 0;
+      let welEligible = false;
+      if (welfRes.status === 'fulfilled') {
+        const wd = welfRes.value?.data;
+        welEligible = wd?.eligibleForDeduction || false;
+        welMax = welEligible ? (wd?.amount || 0) : 0;
       }
+      setWelfareEligible(welEligible);
+      setWelfareMax(welMax);
+      setWelfareAmt(welMax);
 
-      // Check welfare recovery eligibility for current month
-      try {
-        setWelfareCheckLoading(true);
-        const welfareResponse = await farmerLedgerAPI.checkWelfare(farmerId, new Date().toISOString());
-        const eligible = welfareResponse.data?.eligibleForDeduction || false;
-        setWelfareEligible(eligible);
-        // Auto-fill welfare amount directly (same concept as register auto-population)
-        setFormData(prev => ({ ...prev, welfareRecovery: eligible ? 20 : 0 }));
-      } catch (error) {
-        console.error('Failed to check welfare eligibility:', error);
-        setWelfareEligible(true);
-      } finally {
-        setWelfareCheckLoading(false);
+      // Previous balance (last unpaid amount)
+      let prevBal = 0;
+      if (histRes.status === 'fulfilled') {
+        const hist = histRes.value?.data || [];
+        prevBal = Math.max(0, hist[0]?.balanceAmount || 0);
       }
+      setPreviousBalance(prevBal);
 
-      // Fetch previous balance from payment history
-      try {
-        const paymentHistory = await paymentAPI.getFarmerHistory(farmerId, { limit: 1 });
-        if (paymentHistory.data && paymentHistory.data.length > 0) {
-          const lastPayment = paymentHistory.data[0];
-          setPreviousBalance(lastPayment.balanceAmount || 0);
-        } else {
-          setPreviousBalance(0);
-        }
-      } catch (error) {
-        console.error('Failed to fetch payment history:', error);
-        setPreviousBalance(0);
-      }
+      // Smart cursor: milkAmount first, then deductions if any
+      focusInput(milkRef);
+    } catch (err) {
+      console.error('Failed to load farmer balances:', err);
+    } finally {
+      setBalancesLoading(false);
+    }
+  }, [activeCycle]); // eslint-disable-line
+
+  // After milk amount entered, navigate based on outstanding
+  const handleMilkKeyDown = (e) => {
+    if (e.key !== 'Enter' && e.key !== 'Tab') return;
+    if (e.key === 'Enter') e.preventDefault();
+
+    const hasOutstanding =
+      (welfareEligible && welfareMax > 0) ||
+      outstanding.cfAdvance > 0 ||
+      outstanding.loanAdvance > 0 ||
+      outstanding.cashAdvance > 0;
+
+    if (hasOutstanding) {
+      if (welfareEligible && welfareMax > 0) focusInput(welfareRef);
+      else if (outstanding.cfAdvance > 0)    focusInput(cfRef);
+      else if (outstanding.loanAdvance > 0)  focusInput(loanRef);
+      else                                   focusInput(cashRef);
+    } else {
+      focusInput(payModeRef);
     }
   };
 
-  const handleAddDeduction = () => {
-    const { type, amount, description } = deductionForm;
-
-    if (!type || !amount) {
-      message.error('Please enter deduction type and amount');
-      return;
-    }
-
-    const newDeduction = { type, amount: parseFloat(amount), description: description || '' };
-    setDeductions([...deductions, newDeduction]);
-
-    setDeductionForm({
-      type: '',
-      amount: '',
-      description: ''
-    });
+  // Navigate from welfare → next available deduction or payment mode
+  const handleWelfareKeyDown = (e) => {
+    if (e.key !== 'Enter' && e.key !== 'Tab') return;
+    if (e.key === 'Enter') e.preventDefault();
+    if (outstanding.cfAdvance > 0)    focusInput(cfRef);
+    else if (outstanding.loanAdvance > 0) focusInput(loanRef);
+    else if (outstanding.cashAdvance > 0) focusInput(cashRef);
+    else focusInput(payModeRef);
   };
 
-  const handleRemoveDeduction = (index) => {
-    setDeductions(deductions.filter((_, i) => i !== index));
+  const handleCfKeyDown = (e) => {
+    if (e.key !== 'Enter' && e.key !== 'Tab') return;
+    if (e.key === 'Enter') e.preventDefault();
+    if (outstanding.loanAdvance > 0) focusInput(loanRef);
+    else if (outstanding.cashAdvance > 0) focusInput(cashRef);
+    else focusInput(payModeRef);
   };
 
-  const handleInputChange = (name, value) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
+  const handleLoanKeyDown = (e) => {
+    if (e.key !== 'Enter' && e.key !== 'Tab') return;
+    if (e.key === 'Enter') e.preventDefault();
+    if (outstanding.cashAdvance > 0) focusInput(cashRef);
+    else focusInput(payModeRef);
   };
 
-  const handleDeductionInputChange = (name, value) => {
-    setDeductionForm(prev => ({ ...prev, [name]: value }));
-  };
-
-  // Calculate totals — formula matches Payment Register: milkAmount − welfare − cfAdv − loanAdv − cashAdv + previousBalance
-  useEffect(() => {
-    const milkAmount           = parseFloat(formData.milkAmount) || 0;
-    const welfareRecovery      = parseFloat(formData.welfareRecovery) || 0;
-    const cfAdvanceDeduction   = parseFloat(formData.cfAdvanceDeduction) || 0;
-    const loanAdvanceDeduction = parseFloat(formData.loanAdvanceDeduction) || 0;
-    const cashAdvanceDeduction = parseFloat(formData.cashAdvanceDeduction) || 0;
-    const totalAdvanceDeduction = cfAdvanceDeduction + loanAdvanceDeduction + cashAdvanceDeduction;
-    const otherDeductions = deductions.reduce((sum, d) => sum + d.amount, 0);
-    const totalDeduction  = welfareRecovery + totalAdvanceDeduction + otherDeductions;
-    const netPayable      = milkAmount - welfareRecovery - cfAdvanceDeduction - loanAdvanceDeduction - cashAdvanceDeduction - otherDeductions + previousBalance;
-
-    setCalculations({
-      milkAmount,
-      welfareRecovery,
-      cfAdvanceDeduction,
-      loanAdvanceDeduction,
-      cashAdvanceDeduction,
-      totalAdvanceDeduction,
-      otherDeductions,
-      previousBalance,
-      totalDeduction,
-      netPayable
-    });
-  }, [formData, deductions, previousBalance]);
-
+  // ── Reset ────────────────────────────────────────────────────────────────────
   const resetForm = () => {
-    setFormData({
-      farmerId: '',
-      paymentDate: new Date(),
-      milkAmount: '',
-      welfareRecovery: 0,
-      cfAdvanceDeduction: 0,
-      loanAdvanceDeduction: 0,
-      cashAdvanceDeduction: 0,
-      paymentMode: 'Cash',
-      paidAmount: '',
-      remarks: ''
-    });
+    setFarmerNumber('');
     setSelectedFarmer(null);
-    setDeductions([]);
-    setFarmerAdvances({ cfAdvance: 0, loanAdvance: 0, cashAdvance: 0 });
+    setOutstanding({ cfAdvance: 0, loanAdvance: 0, cashAdvance: 0 });
     setPreviousBalance(0);
-    setWelfareEligible(true);
+    setWelfareEligible(false);
+    setWelfareMax(0);
+    setMilkAmount('');
+    setWelfareAmt(0);
+    setCfAmt(0);
+    setLoanAmt(0);
+    setCashAmt(0);
+    setPaymentMode('Cash');
+    setBankLedgerId('');
+    setPaidAmount('');
+    setRemarks('');
+    focusInput(farmerRef);
   };
 
-  const handleOpenModal = () => {
-    resetForm();
-    setModalOpen(true);
-  };
+  // ── Save ─────────────────────────────────────────────────────────────────────
+  const handleSave = async () => {
+    if (!selectedFarmer)                        return message.error('Please select a farmer');
+    if (!(parseFloat(milkAmount) > 0))          return message.error('Please enter milk amount');
+    if (balance < 0)                            return message.error('Balance is negative. Reduce deductions before saving.');
+    if (isBankMode && !bankLedgerId)            return message.error('Please select a bank ledger');
+    if ((parseFloat(cfAmt)   || 0) > outstanding.cfAdvance   + 0.005) return message.error('CF deduction exceeds outstanding');
+    if ((parseFloat(loanAmt) || 0) > outstanding.loanAdvance + 0.005) return message.error('Loan deduction exceeds outstanding');
+    if ((parseFloat(cashAmt) || 0) > outstanding.cashAdvance + 0.005) return message.error('Cash deduction exceeds outstanding');
 
-  const handleCloseModal = () => {
-    setModalOpen(false);
-    resetForm();
-  };
+    const paidAmt = parseFloat(paidAmount) > 0 ? parseFloat(paidAmount) : balance;
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+    // Build deductions array
+    const deductions = [];
+    if ((parseFloat(welfareAmt) || 0) > 0)
+      deductions.push({ type: 'Welfare Recovery', amount: parseFloat(welfareAmt), description: 'Monthly welfare recovery' });
+    if ((parseFloat(cfAmt) || 0) > 0)
+      deductions.push({ type: 'CF Recovery',      amount: parseFloat(cfAmt),      description: 'CF Advance recovery' });
+    if ((parseFloat(loanAmt) || 0) > 0)
+      deductions.push({ type: 'Loan Recovery',    amount: parseFloat(loanAmt),    description: 'Loan Advance recovery' });
+    if ((parseFloat(cashAmt) || 0) > 0)
+      deductions.push({ type: 'Cash Recovery',    amount: parseFloat(cashAmt),    description: 'Cash Advance recovery' });
 
-    if (!selectedFarmer) {
-      message.error('Please select a farmer');
-      return;
-    }
+    const payload = {
+      farmerId:        selectedFarmer._id,
+      paymentDate,
+      milkAmount:      parseFloat(milkAmount),
+      advanceAmount:   (parseFloat(cfAmt) || 0) + (parseFloat(loanAmt) || 0) + (parseFloat(cashAmt) || 0),
+      deductions,
+      totalDeduction:  totalDeductions,
+      previousBalance: previousBalance || 0,
+      netPayable:      balance,
+      paymentMode,
+      paidAmount:      paidAmt,
+      balanceAmount:   Math.max(0, balance - paidAmt),
+      remarks,
+      paymentSource:   'Individual',
+      ...(activeCycle ? { paymentPeriod: { fromDate: activeCycle.fromDate, toDate: activeCycle.toDate } } : {}),
+      ...(isBankMode  ? { bankLedgerId } : {}),
+    };
 
-    if (!formData.milkAmount) {
-      message.error('Please enter milk amount');
-      return;
-    }
-
-    if (!formData.paymentMode) {
-      message.error('Please select payment mode');
-      return;
-    }
-
-    // Validate advance deductions don't exceed available amounts
-    if (parseFloat(formData.cfAdvanceDeduction) > farmerAdvances.cfAdvance) {
-      message.error('CF Advance deduction exceeds available balance');
-      return;
-    }
-    if (parseFloat(formData.loanAdvanceDeduction) > farmerAdvances.loanAdvance) {
-      message.error('Loan Advance deduction exceeds available balance');
-      return;
-    }
-    if (parseFloat(formData.cashAdvanceDeduction) > farmerAdvances.cashAdvance) {
-      message.error('Cash Advance deduction exceeds available balance');
-      return;
-    }
-
-    setLoading(true);
+    setSaving(true);
     try {
-      const paidAmount = parseFloat(formData.paidAmount) || calculations.netPayable;
-
-      // Build deductions array with all deduction types
-      const allDeductions = [...deductions];
-
-      if (parseFloat(formData.welfareRecovery) > 0) {
-        allDeductions.push({ type: 'Welfare Recovery', amount: parseFloat(formData.welfareRecovery), description: 'Monthly welfare recovery' });
-      }
-      if (parseFloat(formData.cfAdvanceDeduction) > 0) {
-        allDeductions.push({ type: 'CF Recovery', amount: parseFloat(formData.cfAdvanceDeduction), description: 'CF Recovery' });
-      }
-      if (parseFloat(formData.loanAdvanceDeduction) > 0) {
-        allDeductions.push({ type: 'Loan Recovery', amount: parseFloat(formData.loanAdvanceDeduction), description: 'Loan Recovery' });
-      }
-      if (parseFloat(formData.cashAdvanceDeduction) > 0) {
-        allDeductions.push({ type: 'Cash Recovery', amount: parseFloat(formData.cashAdvanceDeduction), description: 'Cash Recovery' });
-      }
-
-      const payload = {
-        farmerId: selectedFarmer._id,
-        paymentDate: formData.paymentDate,
-        milkAmount: parseFloat(formData.milkAmount),
-        advanceAmount: calculations.totalAdvanceDeduction,
-        deductions: allDeductions,
-        totalDeduction: calculations.totalDeduction,
-        previousBalance: previousBalance,
-        netPayable: calculations.netPayable,
-        paymentMode: formData.paymentMode,
-        paidAmount: paidAmount,
-        balanceAmount: calculations.netPayable - paidAmount,
-        remarks: formData.remarks
-      };
-
       await paymentAPI.create(payload);
-      message.success('Payment created successfully');
-      handleCloseModal();
-      fetchPayments();
-    } catch (error) {
-      message.error(error.message || 'Failed to create payment');
+      message.success('Payment saved and ledgers auto-posted');
+      resetForm();
+      fetchPayments(1);
+    } catch (err) {
+      message.error(err.message || 'Failed to save payment');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  const filteredFarmers = farmers.filter(farmer => {
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      farmer.farmerNumber?.toLowerCase().includes(searchLower) ||
-      farmer.personalDetails?.name?.toLowerCase().includes(searchLower) ||
-      farmer.personalDetails?.phone?.toLowerCase().includes(searchLower)
-    );
-  });
+  const fmtDate = (d) => (d ? dayjs(d).format('DD/MM/YYYY') : '-');
 
-  const farmerOptions = filteredFarmers.filter(f => f && f._id).map(farmer => ({
-    value: String(farmer._id),
-    label: `${farmer.farmerNumber || ''} - ${farmer.personalDetails?.name || 'Unknown'} (${farmer.personalDetails?.phone || ''})`
-  }));
-
-  const deductionTypes = [
-    { value: 'Feed', label: 'Feed' },
-    { value: 'Medicine', label: 'Medicine' },
-    { value: 'Insurance', label: 'Insurance' },
-    { value: 'Share', label: 'Share' },
-    { value: 'Other', label: 'Other' },
-  ];
-
-  const paymentModes = [
-    { value: 'Cash', label: 'Cash' },
-    { value: 'Bank', label: 'Bank' },
-    { value: 'UPI', label: 'UPI' },
-  ];
-
-  const formatDate = (date) => {
-    if (!date) return '-';
-    return new Date(date).toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
-  };
-
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <Container size="xl" py="xl">
-      <Stack spacing="xl">
-        {/* Header */}
-        <Group position="apart">
+    <Container size="xl" py="md">
+      <Stack gap="md">
+
+        {/* ── Header ──────────────────────────────────────────────────────── */}
+        <Group justify="space-between" align="flex-start">
           <Box>
             <Title order={2}>Individual Milk Payment</Title>
-            <Text color="dimmed" size="sm">Process individual farmer milk payment with deductions</Text>
+            {cycleLoading ? (
+              <Loader size="xs" mt={4} />
+            ) : activeCycle ? (
+              <Group gap="xs" mt={4}>
+                <Text size="sm" c="dimmed">Active Cycle:</Text>
+                <Badge color="teal" size="md" variant="light">
+                  {fmtDate(activeCycle.fromDate)} – {fmtDate(activeCycle.toDate)}
+                </Badge>
+                {activeCycle.status && (
+                  <Badge color="blue" size="sm" variant="outline">{activeCycle.status}</Badge>
+                )}
+              </Group>
+            ) : (
+              <Text size="sm" c="orange" mt={4}>No active payment cycle found</Text>
+            )}
           </Box>
-          <Button
-            leftSection={<IconPlus size={18} />}
-            onClick={handleOpenModal}
-            disabled={!canWrite('payments')}
-          >
-            New Payment
-          </Button>
         </Group>
 
-        {/* Payments List */}
-        <Card withBorder shadow="sm" radius="md">
-          <Title order={4} mb="md">Recent Payments</Title>
+        {/* ── Entry Card ──────────────────────────────────────────────────── */}
+        <Card withBorder radius="md" p="md">
+          <Stack gap="sm">
+
+            {/* Row 1: Date + Farmer Number */}
+            <Grid align="flex-end" gutter="sm">
+              <Grid.Col span={{ base: 12, sm: 4, md: 3 }}>
+                <div ref={dateRef}>
+                  <DatePickerInput
+                    label="Payment Date"
+                    value={paymentDate}
+                    onChange={setPaymentDate}
+                    clearable={false}
+                    leftSection={<IconCalendar size={16} />}
+                    onKeyDown={advance(farmerRef)}
+                  />
+                </div>
+              </Grid.Col>
+
+              <Grid.Col span={{ base: 12, sm: 4, md: 3 }}>
+                <div ref={farmerRef}>
+                  <TextInput
+                    label="Farmer Number"
+                    placeholder="Enter number → press Enter"
+                    value={farmerNumber}
+                    onChange={(e) => setFarmerNumber(e.target.value)}
+                    onKeyDown={handleFarmerKeyDown}
+                    rightSection={farmerLoading ? <Loader size="xs" /> : <IconSearch size={16} />}
+                  />
+                </div>
+              </Grid.Col>
+
+              {selectedFarmer && (
+                <Grid.Col span={{ base: 12, sm: 4, md: 6 }}>
+                  <Paper withBorder p="xs" radius="md" bg="gray.0">
+                    <Group gap="lg" wrap="nowrap">
+                      <Box>
+                        <Text size="xs" c="dimmed">Name</Text>
+                        <Text size="sm" fw={600}>{selectedFarmer.personalDetails?.name}</Text>
+                      </Box>
+                      <Box>
+                        <Text size="xs" c="dimmed">Village</Text>
+                        <Text size="sm">{selectedFarmer.address?.village || '—'}</Text>
+                      </Box>
+                      <Box>
+                        <Text size="xs" c="dimmed">Phone</Text>
+                        <Text size="sm">{selectedFarmer.personalDetails?.phone || '—'}</Text>
+                      </Box>
+                      <ActionIcon variant="subtle" color="red" size="sm" ml="auto" onClick={resetForm}>
+                        <IconX size={14} />
+                      </ActionIcon>
+                    </Group>
+                  </Paper>
+                </Grid.Col>
+              )}
+            </Grid>
+
+            {/* ── After farmer selected ────────────────────────────────── */}
+            {selectedFarmer && (
+              <>
+                {balancesLoading ? (
+                  <Group gap="xs">
+                    <Loader size="xs" />
+                    <Text size="sm" c="dimmed">Loading outstanding balances…</Text>
+                  </Group>
+                ) : (
+                  /* Outstanding balances info strip */
+                  <Paper withBorder p="xs" radius="md" bg="blue.0">
+                    <Group gap="xl">
+                      <Box>
+                        <Text size="xs" c="dimmed">CF Outstanding</Text>
+                        <Text size="sm" fw={600} c={outstanding.cfAdvance > 0 ? 'orange.8' : 'dimmed'}>
+                          ₹{fmt(outstanding.cfAdvance)}
+                        </Text>
+                      </Box>
+                      <Box>
+                        <Text size="xs" c="dimmed">Loan Outstanding</Text>
+                        <Text size="sm" fw={600} c={outstanding.loanAdvance > 0 ? 'red.7' : 'dimmed'}>
+                          ₹{fmt(outstanding.loanAdvance)}
+                        </Text>
+                      </Box>
+                      <Box>
+                        <Text size="xs" c="dimmed">Cash Outstanding</Text>
+                        <Text size="sm" fw={600} c={outstanding.cashAdvance > 0 ? 'blue.7' : 'dimmed'}>
+                          ₹{fmt(outstanding.cashAdvance)}
+                        </Text>
+                      </Box>
+                      {previousBalance > 0 && (
+                        <Box>
+                          <Text size="xs" c="dimmed">Prev. Balance</Text>
+                          <Text size="sm" fw={600} c="grape.7">₹{fmt(previousBalance)}</Text>
+                        </Box>
+                      )}
+                      {welfareEligible && (
+                        <Badge color="grape" size="sm" variant="light">Welfare eligible ₹{welfareMax}</Badge>
+                      )}
+                    </Group>
+                  </Paper>
+                )}
+
+                {/* Milk Amount + Deductions */}
+                <Grid align="flex-end" gutter="xs">
+                  {/* Milk Amount */}
+                  <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
+                    <div ref={milkRef}>
+                      <NumberInput
+                        label="Milk Amount (₹)"
+                        value={milkAmount}
+                        onChange={setMilkAmount}
+                        onKeyDown={handleMilkKeyDown}
+                        placeholder="0.00"
+                        min={0}
+                        decimalScale={2}
+                        thousandSeparator=","
+                        leftSection={<IconCurrencyRupee size={14} />}
+                        required
+                      />
+                    </div>
+                  </Grid.Col>
+
+                  {/* Welfare */}
+                  <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
+                    <div ref={welfareRef}>
+                      <NumberInput
+                        label={welfareEligible ? `Welfare (₹${welfareMax})` : 'Welfare (done)'}
+                        value={welfareAmt}
+                        onChange={setWelfareAmt}
+                        onKeyDown={handleWelfareKeyDown}
+                        placeholder="0.00"
+                        min={0}
+                        max={welfareMax}
+                        decimalScale={2}
+                        disabled={!welfareEligible}
+                        styles={welfareAmt > 0 ? { input: { borderColor: 'var(--mantine-color-grape-5)' } } : {}}
+                      />
+                    </div>
+                  </Grid.Col>
+
+                  {/* CF Recovery */}
+                  <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
+                    <div ref={cfRef}>
+                      <NumberInput
+                        label={`CF Rec. (max ₹${fmt(outstanding.cfAdvance)})`}
+                        value={cfAmt}
+                        onChange={setCfAmt}
+                        onKeyDown={handleCfKeyDown}
+                        placeholder="0.00"
+                        min={0}
+                        max={outstanding.cfAdvance}
+                        decimalScale={2}
+                        disabled={outstanding.cfAdvance === 0}
+                        styles={cfAmt > 0 ? { input: { borderColor: 'var(--mantine-color-orange-5)' } } : {}}
+                      />
+                    </div>
+                  </Grid.Col>
+
+                  {/* Loan Recovery */}
+                  <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
+                    <div ref={loanRef}>
+                      <NumberInput
+                        label={`Loan Rec. (max ₹${fmt(outstanding.loanAdvance)})`}
+                        value={loanAmt}
+                        onChange={setLoanAmt}
+                        onKeyDown={handleLoanKeyDown}
+                        placeholder="0.00"
+                        min={0}
+                        max={outstanding.loanAdvance}
+                        decimalScale={2}
+                        disabled={outstanding.loanAdvance === 0}
+                        styles={loanAmt > 0 ? { input: { borderColor: 'var(--mantine-color-red-5)' } } : {}}
+                      />
+                    </div>
+                  </Grid.Col>
+
+                  {/* Cash Recovery */}
+                  <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
+                    <div ref={cashRef}>
+                      <NumberInput
+                        label={`Cash Rec. (max ₹${fmt(outstanding.cashAdvance)})`}
+                        value={cashAmt}
+                        onChange={setCashAmt}
+                        onKeyDown={advance(payModeRef)}
+                        placeholder="0.00"
+                        min={0}
+                        max={outstanding.cashAdvance}
+                        decimalScale={2}
+                        disabled={outstanding.cashAdvance === 0}
+                      />
+                    </div>
+                  </Grid.Col>
+                </Grid>
+
+                {/* Balance Summary Bar */}
+                <Paper
+                  withBorder p="sm" radius="md"
+                  bg={balance < 0 ? 'red.0' : balance === 0 ? 'yellow.0' : 'green.0'}
+                >
+                  <Group gap="lg" justify="center" wrap="wrap">
+                    <Box ta="center">
+                      <Text size="xs" c="dimmed">Milk Amount</Text>
+                      <Text size="sm" fw={600}>₹{fmt(milkAmount)}</Text>
+                    </Box>
+                    <Text c="dimmed" fw={600}>−</Text>
+                    <Box ta="center">
+                      <Text size="xs" c="dimmed">Total Deductions</Text>
+                      <Text size="sm" fw={600} c="red">₹{fmt(totalDeductions)}</Text>
+                    </Box>
+                    {(previousBalance || 0) > 0 && (
+                      <>
+                        <Text c="dimmed" fw={600}>+</Text>
+                        <Box ta="center">
+                          <Text size="xs" c="dimmed">Prev. Balance</Text>
+                          <Text size="sm" fw={600} c="grape">₹{fmt(previousBalance)}</Text>
+                        </Box>
+                      </>
+                    )}
+                    <Text c="dimmed" fw={600}>=</Text>
+                    <Box ta="center">
+                      <Text size="xs" c="dimmed">Balance</Text>
+                      <Text size="lg" fw={700} c={balance < 0 ? 'red' : balance === 0 ? 'orange' : 'green'}>
+                        ₹{fmt(balance)}
+                      </Text>
+                    </Box>
+                  </Group>
+                  {balance < 0 && (
+                    <Alert color="red" mt="xs" p="xs" icon={<IconAlertCircle size={14} />}>
+                      Balance is negative — reduce deductions before saving.
+                    </Alert>
+                  )}
+                </Paper>
+
+                {/* Payment Mode + Paid Amount + Remarks + Save */}
+                <Grid align="flex-end" gutter="xs">
+                  <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
+                    <div ref={payModeRef}>
+                      <Select
+                        label="Payment Mode"
+                        value={paymentMode}
+                        onChange={(v) => { setPaymentMode(v); setBankLedgerId(''); }}
+                        data={PAYMENT_MODES}
+                        onKeyDown={advance(isBankMode ? bankRef : paidRef)}
+                      />
+                    </div>
+                  </Grid.Col>
+
+                  {isBankMode && (
+                    <Grid.Col span={{ base: 12, sm: 4, md: 3 }}>
+                      <div ref={bankRef}>
+                        <Select
+                          label="Bank Ledger"
+                          placeholder="Select bank account"
+                          value={bankLedgerId}
+                          onChange={setBankLedgerId}
+                          data={bankLedgers}
+                          searchable
+                          required
+                          onKeyDown={advance(paidRef)}
+                          rightSection={bankLedgers.length === 0 ? <Loader size="xs" /> : null}
+                        />
+                      </div>
+                    </Grid.Col>
+                  )}
+
+                  <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
+                    <div ref={paidRef}>
+                      <NumberInput
+                        label="Paid Amount (₹)"
+                        value={paidAmount}
+                        onChange={setPaidAmount}
+                        placeholder={balance > 0 ? fmt(balance) : '0.00'}
+                        min={0}
+                        decimalScale={2}
+                        thousandSeparator=","
+                        leftSection={<IconCurrencyRupee size={14} />}
+                        onKeyDown={advance(remarksRef)}
+                      />
+                    </div>
+                  </Grid.Col>
+
+                  <Grid.Col span={{ base: 12, sm: 4, md: 3 }}>
+                    <div ref={remarksRef}>
+                      <TextInput
+                        label="Remarks"
+                        value={remarks}
+                        onChange={(e) => setRemarks(e.target.value)}
+                        placeholder="Optional"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); saveRef.current?.click(); }
+                        }}
+                      />
+                    </div>
+                  </Grid.Col>
+
+                  <Grid.Col span={{ base: 12, sm: 4, md: 2 }}>
+                    <Group gap="xs" grow>
+                      <Button variant="light" color="gray" onClick={resetForm}>
+                        Reset
+                      </Button>
+                      <Button
+                        ref={saveRef}
+                        leftSection={<IconDeviceFloppy size={16} />}
+                        onClick={handleSave}
+                        loading={saving}
+                        disabled={!canSave || !canWrite('payments')}
+                        color={balance < 0 ? 'red' : 'blue'}
+                      >
+                        Save
+                      </Button>
+                    </Group>
+                  </Grid.Col>
+                </Grid>
+              </>
+            )}
+          </Stack>
+        </Card>
+
+        {/* ── Recent Payments ──────────────────────────────────────────────── */}
+        <Card withBorder shadow="sm" radius="md" p="md">
+          <Group justify="space-between" mb="sm">
+            <Title order={4}>Recent Individual Payments</Title>
+            <ActionIcon variant="subtle" onClick={() => fetchPayments(page)} title="Refresh">
+              <IconRefresh size={16} />
+            </ActionIcon>
+          </Group>
+
           {paymentsLoading ? (
-            <Box py="xl" style={{ textAlign: 'center' }}>
-              <Loader size="md" />
-            </Box>
+            <Box py="xl" ta="center"><Loader size="md" /></Box>
           ) : payments.length === 0 ? (
-            <Text color="dimmed" align="center" py="xl">No payments found</Text>
+            <Text c="dimmed" ta="center" py="xl">No payments recorded yet</Text>
           ) : (
-            <ScrollArea>
-              <Table striped highlightOnHover>
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Farmer</th>
-                    <th>Milk Amount</th>
-                    <th>Deductions</th>
-                    <th>Net Payable</th>
-                    <th>Paid</th>
-                    <th>Balance</th>
-                    <th>Mode</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {payments.map((payment) => (
-                    <tr key={payment._id}>
-                      <td>{formatDate(payment.paymentDate)}</td>
-                      <td>
-                        <Text size="sm" fw={500}>
-                          {payment.farmerId?.farmerNumber || '-'}
-                        </Text>
-                        <Text size="xs" color="dimmed">
-                          {payment.farmerId?.personalDetails?.name || '-'}
-                        </Text>
-                      </td>
-                      <td>₹{(payment.milkAmount || 0).toFixed(2)}</td>
-                      <td>
-                        <Text color="red" size="sm">
-                          -₹{(payment.totalDeduction || 0).toFixed(2)}
-                        </Text>
-                      </td>
-                      <td>
-                        <Text fw={600} color={payment.netPayable >= 0 ? 'green' : 'red'}>
-                          ₹{(payment.netPayable || 0).toFixed(2)}
-                        </Text>
-                      </td>
-                      <td>₹{(payment.paidAmount || 0).toFixed(2)}</td>
-                      <td>
-                        {(payment.balanceAmount || 0) > 0 ? (
-                          <Text color="orange" fw={500}>₹{payment.balanceAmount.toFixed(2)}</Text>
-                        ) : (
-                          <Text color="green">₹0.00</Text>
-                        )}
-                      </td>
-                      <td>
-                        <Badge variant="light" color="blue">{payment.paymentMode}</Badge>
-                      </td>
-                      <td>
-                        <Badge
-                          variant="light"
-                          color={(payment.balanceAmount || 0) > 0 ? 'orange' : 'green'}
-                        >
-                          {(payment.balanceAmount || 0) > 0 ? 'Partial' : 'Paid'}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
-            </ScrollArea>
+            <>
+              <ScrollArea>
+                <Table striped highlightOnHover>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Date</Table.Th>
+                      <Table.Th>Farmer</Table.Th>
+                      <Table.Th>Milk Amt</Table.Th>
+                      <Table.Th>Deductions</Table.Th>
+                      <Table.Th>Balance</Table.Th>
+                      <Table.Th>Paid</Table.Th>
+                      <Table.Th>Mode</Table.Th>
+                      <Table.Th>Status</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {payments.map((p) => (
+                      <Table.Tr key={p._id}>
+                        <Table.Td>{fmtDate(p.paymentDate)}</Table.Td>
+                        <Table.Td>
+                          <Text size="sm" fw={500}>{p.farmerId?.farmerNumber || '—'}</Text>
+                          <Text size="xs" c="dimmed">{p.farmerId?.personalDetails?.name || '—'}</Text>
+                        </Table.Td>
+                        <Table.Td>₹{fmt(p.milkAmount)}</Table.Td>
+                        <Table.Td>
+                          <Text c="red" size="sm">−₹{fmt(p.totalDeduction)}</Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Text fw={600} c={(p.netPayable || 0) >= 0 ? 'green' : 'red'}>
+                            ₹{fmt(p.netPayable)}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>₹{fmt(p.paidAmount)}</Table.Td>
+                        <Table.Td>
+                          <Badge variant="light" size="sm">{p.paymentMode}</Badge>
+                        </Table.Td>
+                        <Table.Td>
+                          <Badge
+                            variant="light" size="sm"
+                            color={
+                              p.status === 'Paid'    ? 'green' :
+                              p.status === 'Partial' ? 'orange' : 'gray'
+                            }
+                          >
+                            {p.status}
+                          </Badge>
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </ScrollArea>
+
+              {totalPages > 1 && (
+                <Group justify="center" mt="md">
+                  <Pagination
+                    total={totalPages}
+                    value={page}
+                    onChange={(p) => { setPage(p); fetchPayments(p); }}
+                  />
+                </Group>
+              )}
+            </>
           )}
         </Card>
 
-        {/* Payment Modal */}
-        <Modal
-          opened={modalOpen}
-          onClose={handleCloseModal}
-          title={<Text fw={600} size="lg">New Milk Payment</Text>}
-          size="xl"
-          centered
-        >
-          <form onSubmit={handleSubmit}>
-            <Stack spacing="md">
-              {/* Date and Farmer Selection */}
-              <Grid>
-                <Grid.Col span={6}>
-                  <DatePickerInput
-                    label="Payment Date"
-                    placeholder="Select date"
-                    value={formData.paymentDate}
-                    onChange={(value) => handleInputChange('paymentDate', value)}
-                    leftSection={<IconCalendar size={16} />}
-                    required
-                    clearable={false}
-                  />
-                </Grid.Col>
-                <Grid.Col span={6}>
-                  <Select
-                    label="Select Farmer"
-                    placeholder="Search by farmer number, name, or phone"
-                    value={formData.farmerId}
-                    onChange={handleFarmerSelect}
-                    data={farmerOptions}
-                    searchable
-                    clearable
-                    onSearchChange={(value) => {
-                      setSearchTerm(value);
-                      searchFarmer(value);
-                    }}
-                    nothingFoundMessage={searchLoading ? "Searching..." : "No farmers found"}
-                    required
-                    leftSection={<IconSearch size={16} />}
-                    rightSection={searchLoading ? <Loader size="xs" /> : null}
-                  />
-                </Grid.Col>
-              </Grid>
-
-              {selectedFarmer && (
-                <Paper withBorder p="sm" radius="md" bg="gray.0">
-                  <Grid>
-                    <Grid.Col span={3}>
-                      <Text size="xs" fw={500} color="dimmed">Farmer Name</Text>
-                      <Text size="sm" fw={600}>{selectedFarmer.personalDetails?.name}</Text>
-                    </Grid.Col>
-                    <Grid.Col span={3}>
-                      <Text size="xs" fw={500} color="dimmed">Farmer Number</Text>
-                      <Text size="sm" fw={600}>{selectedFarmer.farmerNumber}</Text>
-                    </Grid.Col>
-                    <Grid.Col span={3}>
-                      <Text size="xs" fw={500} color="dimmed">Phone</Text>
-                      <Text size="sm">{selectedFarmer.personalDetails?.phone}</Text>
-                    </Grid.Col>
-                    <Grid.Col span={3}>
-                      <Text size="xs" fw={500} color="dimmed">Village</Text>
-                      <Text size="sm">{selectedFarmer.address?.village}</Text>
-                    </Grid.Col>
-                  </Grid>
-                </Paper>
-              )}
-
-              {/* Milk Amount */}
-              <Grid>
-                <Grid.Col span={6}>
-                  <NumberInput
-                    label="Milk Amount (₹)"
-                    value={formData.milkAmount}
-                    onChange={(value) => handleInputChange('milkAmount', value)}
-                    placeholder="Enter milk amount"
-                    min={0}
-                    step={0.01}
-                    decimalScale={2}
-                    required
-                    leftSection={<IconCurrencyRupee size={16} />}
-                  />
-                </Grid.Col>
-                <Grid.Col span={6}>
-                  {previousBalance > 0 && (
-                    <Alert icon={<IconAlertCircle size={16} />} color="yellow" variant="light" py="xs">
-                      <Text size="sm">Previous Balance: <Text span fw={700} color="red">₹{previousBalance.toFixed(2)}</Text></Text>
-                    </Alert>
-                  )}
-                </Grid.Col>
-              </Grid>
-
-              {/* Welfare Recovery */}
-              <Paper withBorder p="sm" radius="md">
-                <Group position="apart" align="flex-end">
-                  <Box>
-                    <Text size="sm" fw={600}>Welfare Recovery</Text>
-                    <Text size="xs" color="dimmed">
-                      {welfareCheckLoading ? 'Checking eligibility...' :
-                       welfareEligible ? 'Monthly welfare contribution' :
-                       'Already deducted this month'}
-                    </Text>
-                  </Box>
-                  <NumberInput
-                    value={formData.welfareRecovery}
-                    onChange={(value) => handleInputChange('welfareRecovery', value)}
-                    placeholder="0.00"
-                    min={0}
-                    step={0.01}
-                    decimalScale={2}
-                    disabled={!welfareEligible || welfareCheckLoading}
-                    leftSection={<IconCurrencyRupee size={16} />}
-                    w={130}
-                  />
-                </Group>
-              </Paper>
-
-              {/* Advance Deductions */}
-              <Paper withBorder p="sm" radius="md">
-                <Text size="sm" fw={600} mb="sm">Advance Deductions</Text>
-
-                {selectedFarmer && (
-                  <Alert color="blue" variant="light" mb="sm" py="xs">
-                    <Group position="apart">
-                      <Text size="xs">Outstanding Balance:</Text>
-                      <Group spacing="md">
-                        <Text size="xs" c={farmerAdvances.loanAdvance > 0 ? 'red' : 'dimmed'}>Loan: <Text span fw={600}>₹{farmerAdvances.loanAdvance.toFixed(2)}</Text></Text>
-                        <Text size="xs" c={farmerAdvances.cfAdvance > 0 ? 'orange' : 'dimmed'}>CF: <Text span fw={600}>₹{farmerAdvances.cfAdvance.toFixed(2)}</Text></Text>
-                        <Text size="xs" c={farmerAdvances.cashAdvance > 0 ? 'blue' : 'dimmed'}>Cash: <Text span fw={600}>₹{farmerAdvances.cashAdvance.toFixed(2)}</Text></Text>
-                      </Group>
-                    </Group>
-                  </Alert>
-                )}
-
-                <Grid gutter="sm">
-                  <Grid.Col span={4}>
-                    <NumberInput
-                      label="Loan Recovery (₹)"
-                      value={formData.loanAdvanceDeduction}
-                      onChange={(value) => handleInputChange('loanAdvanceDeduction', value)}
-                      placeholder="0.00"
-                      min={0}
-                      max={farmerAdvances.loanAdvance}
-                      step={0.01}
-                      decimalScale={2}
-                      size="xs"
-                      disabled={farmerAdvances.loanAdvance === 0}
-                      styles={farmerAdvances.loanAdvance > 0 ? { input: { borderColor: 'var(--mantine-color-red-4)' } } : {}}
-                    />
-                  </Grid.Col>
-                  <Grid.Col span={4}>
-                    <NumberInput
-                      label="CF Recovery (₹)"
-                      value={formData.cfAdvanceDeduction}
-                      onChange={(value) => handleInputChange('cfAdvanceDeduction', value)}
-                      placeholder="0.00"
-                      min={0}
-                      max={farmerAdvances.cfAdvance}
-                      step={0.01}
-                      decimalScale={2}
-                      size="xs"
-                      disabled={farmerAdvances.cfAdvance === 0}
-                      styles={farmerAdvances.cfAdvance > 0 ? { input: { borderColor: 'var(--mantine-color-orange-4)' } } : {}}
-                    />
-                  </Grid.Col>
-                  <Grid.Col span={4}>
-                    <NumberInput
-                      label="Cash Recovery (₹)"
-                      value={formData.cashAdvanceDeduction}
-                      onChange={(value) => handleInputChange('cashAdvanceDeduction', value)}
-                      placeholder="0.00"
-                      min={0}
-                      max={farmerAdvances.cashAdvance}
-                      step={0.01}
-                      decimalScale={2}
-                      size="xs"
-                      disabled={farmerAdvances.cashAdvance === 0}
-                    />
-                  </Grid.Col>
-                </Grid>
-              </Paper>
-
-              {/* Other Deductions */}
-              <Paper withBorder p="sm" radius="md">
-                <Text size="sm" fw={600} mb="sm">Other Deductions</Text>
-                <Grid gutter="xs" align="flex-end">
-                  <Grid.Col span={3}>
-                    <Select
-                      label="Type"
-                      placeholder="Select"
-                      value={deductionForm.type}
-                      onChange={(value) => handleDeductionInputChange('type', value)}
-                      data={deductionTypes}
-                      size="xs"
-                    />
-                  </Grid.Col>
-                  <Grid.Col span={3}>
-                    <NumberInput
-                      label="Amount (₹)"
-                      value={deductionForm.amount}
-                      onChange={(value) => handleDeductionInputChange('amount', value)}
-                      placeholder="0.00"
-                      min={0}
-                      size="xs"
-                    />
-                  </Grid.Col>
-                  <Grid.Col span={4}>
-                    <TextInput
-                      label="Description"
-                      value={deductionForm.description}
-                      onChange={(e) => handleDeductionInputChange('description', e.target.value)}
-                      placeholder="Description"
-                      size="xs"
-                    />
-                  </Grid.Col>
-                  <Grid.Col span={2}>
-                    <Button onClick={handleAddDeduction} size="xs" variant="light" fullWidth>
-                      Add
-                    </Button>
-                  </Grid.Col>
-                </Grid>
-
-                {deductions.length > 0 && (
-                  <Box mt="sm">
-                    <Table fontSize="xs">
-                      <thead>
-                        <tr>
-                          <th>Type</th>
-                          <th>Amount</th>
-                          <th>Description</th>
-                          <th></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {deductions.map((deduction, index) => (
-                          <tr key={index}>
-                            <td><Badge size="xs">{deduction.type}</Badge></td>
-                            <td>₹{deduction.amount.toFixed(2)}</td>
-                            <td>{deduction.description}</td>
-                            <td>
-                              <ActionIcon size="xs" color="red" onClick={() => handleRemoveDeduction(index)}>
-                                <IconTrash size={12} />
-                              </ActionIcon>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </Table>
-                  </Box>
-                )}
-              </Paper>
-
-              {/* Payment Summary */}
-              <Paper withBorder p="sm" radius="md" bg="gray.0">
-                <Text size="sm" fw={600} mb="xs">Payment Summary</Text>
-                <Grid>
-                  <Grid.Col span={6}>
-                    <Stack spacing={4}>
-                      <Group position="apart">
-                        <Text size="xs">Milk Amount:</Text>
-                        <Text size="xs" fw={500}>₹{calculations.milkAmount.toFixed(2)}</Text>
-                      </Group>
-                      <Group position="apart">
-                        <Text size="xs" color="dimmed">Total Deductions:</Text>
-                        <Text size="xs" fw={500} color="red">-₹{(calculations.totalDeduction + previousBalance).toFixed(2)}</Text>
-                      </Group>
-                    </Stack>
-                  </Grid.Col>
-                  <Grid.Col span={6}>
-                    <Paper p="sm" bg={calculations.netPayable >= 0 ? 'green.0' : 'red.0'} radius="md">
-                      <Text size="xs" color="dimmed" align="center">Net Payable</Text>
-                      <Text size="lg" fw={700} align="center" color={calculations.netPayable >= 0 ? 'green' : 'red'}>
-                        ₹{calculations.netPayable.toFixed(2)}
-                      </Text>
-                    </Paper>
-                  </Grid.Col>
-                </Grid>
-              </Paper>
-
-              {/* Payment Details */}
-              <Grid>
-                <Grid.Col span={4}>
-                  <Select
-                    label="Payment Mode"
-                    value={formData.paymentMode}
-                    onChange={(value) => handleInputChange('paymentMode', value)}
-                    data={paymentModes}
-                    required
-                    size="sm"
-                  />
-                </Grid.Col>
-                <Grid.Col span={4}>
-                  <NumberInput
-                    label="Paid Amount (₹)"
-                    value={formData.paidAmount}
-                    onChange={(value) => handleInputChange('paidAmount', value)}
-                    placeholder={calculations.netPayable.toFixed(2)}
-                    min={0}
-                    decimalScale={2}
-                    size="sm"
-                  />
-                </Grid.Col>
-                <Grid.Col span={4}>
-                  <TextInput
-                    label="Remarks"
-                    value={formData.remarks}
-                    onChange={(e) => handleInputChange('remarks', e.target.value)}
-                    placeholder="Optional"
-                    size="sm"
-                  />
-                </Grid.Col>
-              </Grid>
-
-              {/* Form Actions */}
-              <Group position="right" mt="md">
-                <Button variant="light" color="gray" onClick={handleCloseModal}>
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  loading={loading}
-                  disabled={!selectedFarmer || !formData.milkAmount}
-                >
-                  Save Payment
-                </Button>
-              </Group>
-            </Stack>
-          </form>
-        </Modal>
       </Stack>
     </Container>
   );
