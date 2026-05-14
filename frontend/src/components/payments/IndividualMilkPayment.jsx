@@ -131,9 +131,13 @@ const IndividualMilkPayment = () => {
   // ── On mount ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     loadActiveCycle();
-    fetchPayments(1);
     fetchBankLedgers();
   }, []); // eslint-disable-line
+
+  // Re-fetch payments whenever cycle dates change
+  useEffect(() => {
+    fetchPayments(1, cycleFrom, cycleTo);
+  }, [cycleFrom, cycleTo]); // eslint-disable-line
 
   const loadActiveCycle = async () => {
     setCycleLoading(true);
@@ -143,6 +147,7 @@ const IndividualMilkPayment = () => {
       setActiveCycle(cycle);
       if (cycle?.fromDate) setCycleFrom(new Date(cycle.fromDate));
       if (cycle?.toDate)   setCycleTo(new Date(cycle.toDate));
+      // fetchPayments will auto-trigger via the cycleFrom/cycleTo useEffect above
     } catch (err) {
       console.error('Failed to load active cycle:', err);
     } finally {
@@ -157,12 +162,15 @@ const IndividualMilkPayment = () => {
     } catch {}
   };
 
-  const fetchPayments = async (p = 1) => {
+  const fetchPayments = async (p = 1, from = cycleFrom, to = cycleTo) => {
     setPaymentsLoading(true);
     try {
-      const res = await paymentAPI.getAll({
+      const params = {
         page: p, limit: 15, sortBy: 'paymentDate', sortOrder: 'desc',
-      });
+      };
+      if (from) params.periodFrom = dayjs(from).format('YYYY-MM-DD');
+      if (to)   params.periodTo   = dayjs(to).format('YYYY-MM-DD');
+      const res = await paymentAPI.getAll(params);
       setPayments(res?.data || []);
       setTotalPages(res?.pagination?.pages || 1);
     } catch {}
@@ -443,7 +451,7 @@ ${(payment.balanceAmount || 0) > 0 ? `<div class="total"><span>Balance</span><sp
         });
       }
       resetForm();
-      fetchPayments(1);
+      fetchPayments(1, cycleFrom, cycleTo);
     } catch (err) {
       message.error(err.message || 'Failed to save payment');
     } finally {
@@ -887,8 +895,15 @@ ${(payment.balanceAmount || 0) > 0 ? `<div class="total"><span>Balance</span><sp
         {/* ── Recent Payments ──────────────────────────────────────────────── */}
         <Card withBorder shadow="sm" radius="md" p="md">
           <Group justify="space-between" mb="sm">
-            <Title order={4}>Recent Individual Payments</Title>
-            <ActionIcon variant="subtle" onClick={() => fetchPayments(page)} title="Refresh">
+            <Group gap="xs" align="center">
+              <Title order={4}>Individual Payments</Title>
+              {cycleFrom && cycleTo && (
+                <Badge color="teal" size="sm" variant="light">
+                  {fmtDate(cycleFrom)} – {fmtDate(cycleTo)}
+                </Badge>
+              )}
+            </Group>
+            <ActionIcon variant="subtle" onClick={() => fetchPayments(page, cycleFrom, cycleTo)} title="Refresh">
               <IconRefresh size={16} />
             </ActionIcon>
           </Group>
@@ -966,7 +981,7 @@ ${(payment.balanceAmount || 0) > 0 ? `<div class="total"><span>Balance</span><sp
                   <Pagination
                     total={totalPages}
                     value={page}
-                    onChange={(p) => { setPage(p); fetchPayments(p); }}
+                    onChange={(p) => { setPage(p); fetchPayments(p, cycleFrom, cycleTo); }}
                   />
                 </Group>
               )}
