@@ -10,6 +10,7 @@ import {
   reversePaymentRegister,
   getProducersForPeriod,
   getLatestProducers,
+  getFarmerMilkValue,
   applyEntryPayment,
 } from '../controllers/paymentRegisterController.js';
 
@@ -18,6 +19,7 @@ const router = express.Router();
 // Static GET routes first
 router.get('/producers-for-period',  getProducersForPeriod);
 router.get('/producers-latest',      getLatestProducers);
+router.get('/farmer-milk-value',     getFarmerMilkValue);
 router.get('/',                      getPaymentRegisters);
 router.get('/:id',                   getPaymentRegister);
 

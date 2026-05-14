@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import PaymentRegister from '../models/PaymentRegister.js';
 import MilkCollection from '../models/MilkCollection.js';
 import FarmerPayment from '../models/FarmerPayment.js';
@@ -712,6 +713,30 @@ export const getLatestProducers = async (req, res) => {
 
     if (!reg) return res.json({ success: true, data: null });
     res.json({ success: true, data: reg });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── GET milk value for a single farmer from MilkCollection ──────────────────
+export const getFarmerMilkValue = async (req, res) => {
+  try {
+    const { farmerId, fromDate, toDate } = req.query;
+    const companyId = req.companyId;
+
+    if (!farmerId || !fromDate || !toDate)
+      return res.status(400).json({ success: false, message: 'farmerId, fromDate, toDate required' });
+
+    const start = new Date(fromDate);
+    const end   = new Date(toDate);
+    end.setHours(23, 59, 59, 999);
+
+    const [milkAgg] = await MilkCollection.aggregate([
+      { $match: { farmer: new mongoose.Types.ObjectId(farmerId), companyId, date: { $gte: start, $lte: end } } },
+      { $group: { _id: null, totalQty: { $sum: '$qty' }, totalAmount: { $sum: '$amount' } } },
+    ]);
+
+    res.json({ success: true, data: milkAgg || { totalQty: 0, totalAmount: 0 } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

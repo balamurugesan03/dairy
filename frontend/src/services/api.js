@@ -991,6 +991,7 @@ export const paymentRegisterAPI = {
   getById:              (id)          => api.get(`/payment-register/${id}`).then(r => r.data).catch(handleError),
   getProducersForPeriod:(params)      => api.get('/payment-register/producers-for-period', { params }).then(r => r.data).catch(handleError),
   getLatestProducers:   ()            => api.get('/payment-register/producers-latest').then(r => r.data).catch(handleError),
+  getFarmerMilkValue:   (params)      => api.get('/payment-register/farmer-milk-value', { params }).then(r => r.data).catch(handleError),
   generate:             (data)        => api.post('/payment-register/generate', data).then(r => r.data).catch(handleError),
   generateProducers:    (data)        => api.post('/payment-register/generate-producers', data).then(r => r.data).catch(handleError),
   create:               (data)        => api.post('/payment-register', data).then(r => r.data).catch(handleError),

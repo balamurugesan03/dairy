@@ -25,6 +25,10 @@ const PAYMENT_MODES = [
 const fmt = (v) =>
   (parseFloat(v) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// Default cycle: 1st → last day of current month
+const defaultFrom = () => dayjs().startOf('month').toDate();
+const defaultTo   = () => dayjs().endOf('month').toDate();
+
 const IndividualMilkPayment = () => {
   const { canWrite } = useAuth();
 
@@ -32,12 +36,17 @@ const IndividualMilkPayment = () => {
   const [activeCycle,    setActiveCycle]    = useState(null);
   const [cycleLoading,   setCycleLoading]   = useState(true);
 
+  // ── Cycle date range (used for milk auto-fetch) ──────────────────────────────
+  const [cycleFrom, setCycleFrom] = useState(defaultFrom());
+  const [cycleTo,   setCycleTo]   = useState(defaultTo());
+
   // ── Entry form ──────────────────────────────────────────────────────────────
   const [paymentDate,    setPaymentDate]    = useState(new Date());
   const [farmerNumber,   setFarmerNumber]   = useState('');
   const [farmerLoading,  setFarmerLoading]  = useState(false);
   const [selectedFarmer, setSelectedFarmer] = useState(null);
   const [balancesLoading,setBalancesLoading]= useState(false);
+  const [milkLoading,    setMilkLoading]    = useState(false);
 
   // Outstanding balances (from cycle end date)
   const [outstanding,    setOutstanding]    = useState({ cfAdvance: 0, loanAdvance: 0, cashAdvance: 0 });
@@ -122,7 +131,10 @@ const IndividualMilkPayment = () => {
     setCycleLoading(true);
     try {
       const res = await paymentRegisterAPI.getLatestProducers();
-      setActiveCycle(res?.data || null);
+      const cycle = res?.data || null;
+      setActiveCycle(cycle);
+      if (cycle?.fromDate) setCycleFrom(new Date(cycle.fromDate));
+      if (cycle?.toDate)   setCycleTo(new Date(cycle.toDate));
     } catch (err) {
       console.error('Failed to load active cycle:', err);
     } finally {
@@ -149,6 +161,25 @@ const IndividualMilkPayment = () => {
     finally { setPaymentsLoading(false); }
   };
 
+  // ── Auto-fetch milk amount from MilkCollection for cycle dates ───────────────
+  const fetchMilkAmount = useCallback(async (farmerId) => {
+    if (!farmerId || !cycleFrom || !cycleTo) return;
+    setMilkLoading(true);
+    try {
+      const res = await paymentRegisterAPI.getFarmerMilkValue({
+        farmerId,
+        fromDate: dayjs(cycleFrom).format('YYYY-MM-DD'),
+        toDate:   dayjs(cycleTo).format('YYYY-MM-DD'),
+      });
+      const amt = res?.data?.totalAmount || 0;
+      setMilkAmount(amt > 0 ? amt : '');
+    } catch (err) {
+      console.error('Failed to fetch milk amount:', err);
+    } finally {
+      setMilkLoading(false);
+    }
+  }, [cycleFrom, cycleTo]);
+
   // ── Farmer lookup by number ──────────────────────────────────────────────────
   const handleFarmerKeyDown = async (e) => {
     if (e.key !== 'Enter' && e.key !== 'Tab') return;
@@ -170,7 +201,10 @@ const IndividualMilkPayment = () => {
         return;
       }
       setSelectedFarmer(match);
-      await loadFarmerBalances(match._id);
+      await Promise.all([
+        loadFarmerBalances(match._id),
+        fetchMilkAmount(match._id),
+      ]);
     } catch {
       message.error('Failed to find farmer');
     } finally {
@@ -181,8 +215,7 @@ const IndividualMilkPayment = () => {
   // ── Load farmer outstanding amounts as of cycle end date ─────────────────────
   const loadFarmerBalances = useCallback(async (farmerId) => {
     setBalancesLoading(true);
-    // Use cycle toDate for outstanding; fallback to today
-    const cycleEnd = activeCycle?.toDate ? new Date(activeCycle.toDate) : new Date();
+    const cycleEnd = cycleTo ? new Date(cycleTo) : new Date();
 
     try {
       const [outRes, welfRes, histRes] = await Promise.allSettled([
@@ -190,8 +223,8 @@ const IndividualMilkPayment = () => {
         farmerLedgerAPI.checkWelfare(
           farmerId,
           new Date().toISOString(),
-          activeCycle?.fromDate ? new Date(activeCycle.fromDate).toISOString() : undefined,
-          activeCycle?.toDate   ? new Date(activeCycle.toDate).toISOString()   : undefined,
+          cycleFrom ? new Date(cycleFrom).toISOString() : undefined,
+          cycleEnd.toISOString(),
         ),
         paymentAPI.getFarmerHistory(farmerId, { limit: 1 }),
       ]);
@@ -226,14 +259,13 @@ const IndividualMilkPayment = () => {
       }
       setPreviousBalance(prevBal);
 
-      // Smart cursor: milkAmount first, then deductions if any
       focusInput(milkRef);
     } catch (err) {
       console.error('Failed to load farmer balances:', err);
     } finally {
       setBalancesLoading(false);
     }
-  }, [activeCycle]); // eslint-disable-line
+  }, [cycleFrom, cycleTo]); // eslint-disable-line
 
   // After milk amount entered, navigate based on outstanding
   const handleMilkKeyDown = (e) => {
@@ -256,7 +288,6 @@ const IndividualMilkPayment = () => {
     }
   };
 
-  // Navigate from welfare → next available deduction or payment mode
   const handleWelfareKeyDown = (e) => {
     if (e.key !== 'Enter' && e.key !== 'Tab') return;
     if (e.key === 'Enter') e.preventDefault();
@@ -313,7 +344,6 @@ const IndividualMilkPayment = () => {
 
     const paidAmt = parseFloat(paidAmount) > 0 ? parseFloat(paidAmount) : balance;
 
-    // Build deductions array
     const deductions = [];
     if ((parseFloat(welfareAmt) || 0) > 0)
       deductions.push({ type: 'Welfare Recovery', amount: parseFloat(welfareAmt), description: 'Monthly welfare recovery' });
@@ -338,7 +368,7 @@ const IndividualMilkPayment = () => {
       balanceAmount:   Math.max(0, balance - paidAmt),
       remarks,
       paymentSource:   'Individual',
-      ...(activeCycle ? { paymentPeriod: { fromDate: activeCycle.fromDate, toDate: activeCycle.toDate } } : {}),
+      paymentPeriod:   { fromDate: cycleFrom, toDate: cycleTo },
       ...(isBankMode  ? { bankLedgerId } : {}),
     };
 
@@ -379,7 +409,7 @@ const IndividualMilkPayment = () => {
                 )}
               </Group>
             ) : (
-              <Text size="sm" c="orange" mt={4}>No active payment cycle found</Text>
+              <Text size="sm" c="orange" mt={4}>No payment register found — using manual date range below</Text>
             )}
           </Box>
         </Group>
@@ -388,9 +418,9 @@ const IndividualMilkPayment = () => {
         <Card withBorder radius="md" p="md">
           <Stack gap="sm">
 
-            {/* Row 1: Date + Farmer Number */}
+            {/* Row 1: Payment Date + Cycle Range + Farmer Number */}
             <Grid align="flex-end" gutter="sm">
-              <Grid.Col span={{ base: 12, sm: 4, md: 3 }}>
+              <Grid.Col span={{ base: 12, sm: 4, md: 2 }}>
                 <div ref={dateRef}>
                   <DatePickerInput
                     label="Payment Date"
@@ -401,6 +431,28 @@ const IndividualMilkPayment = () => {
                     onKeyDown={advance(farmerRef)}
                   />
                 </div>
+              </Grid.Col>
+
+              <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
+                <DatePickerInput
+                  label="Cycle From"
+                  value={cycleFrom}
+                  onChange={setCycleFrom}
+                  clearable={false}
+                  disabled={!!activeCycle}
+                  leftSection={<IconCalendar size={16} />}
+                />
+              </Grid.Col>
+
+              <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
+                <DatePickerInput
+                  label="Cycle To"
+                  value={cycleTo}
+                  onChange={setCycleTo}
+                  clearable={false}
+                  disabled={!!activeCycle}
+                  leftSection={<IconCalendar size={16} />}
+                />
               </Grid.Col>
 
               <Grid.Col span={{ base: 12, sm: 4, md: 3 }}>
@@ -417,7 +469,7 @@ const IndividualMilkPayment = () => {
               </Grid.Col>
 
               {selectedFarmer && (
-                <Grid.Col span={{ base: 12, sm: 4, md: 6 }}>
+                <Grid.Col span={{ base: 12, sm: 12, md: 3 }}>
                   <Paper withBorder p="xs" radius="md" bg="gray.0">
                     <Group gap="lg" wrap="nowrap">
                       <Box>
@@ -444,13 +496,14 @@ const IndividualMilkPayment = () => {
             {/* ── After farmer selected ────────────────────────────────── */}
             {selectedFarmer && (
               <>
-                {balancesLoading ? (
+                {(balancesLoading || milkLoading) ? (
                   <Group gap="xs">
                     <Loader size="xs" />
-                    <Text size="sm" c="dimmed">Loading outstanding balances…</Text>
+                    <Text size="sm" c="dimmed">
+                      {milkLoading ? 'Fetching milk amount…' : 'Loading outstanding balances…'}
+                    </Text>
                   </Group>
                 ) : (
-                  /* Outstanding balances info strip */
                   <Paper withBorder p="xs" radius="md" bg="blue.0">
                     <Group gap="xl">
                       <Box>
@@ -486,11 +539,11 @@ const IndividualMilkPayment = () => {
 
                 {/* Milk Amount + Deductions */}
                 <Grid align="flex-end" gutter="xs">
-                  {/* Milk Amount */}
+                  {/* Milk Amount — auto-filled, still editable */}
                   <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
                     <div ref={milkRef}>
                       <NumberInput
-                        label="Milk Amount (₹)"
+                        label={milkLoading ? 'Milk Amount (₹) …' : 'Milk Amount (₹)'}
                         value={milkAmount}
                         onChange={setMilkAmount}
                         onKeyDown={handleMilkKeyDown}
@@ -498,7 +551,7 @@ const IndividualMilkPayment = () => {
                         min={0}
                         decimalScale={2}
                         thousandSeparator=","
-                        leftSection={<IconCurrencyRupee size={14} />}
+                        leftSection={milkLoading ? <Loader size="xs" /> : <IconCurrencyRupee size={14} />}
                         required
                       />
                     </div>
