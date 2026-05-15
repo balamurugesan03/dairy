@@ -348,22 +348,24 @@ export const generateProducerPaymentRegister = async (req, res) => {
     }).lean();
     const welfareFixed = welfareRule?.fixedRate || 0;
 
-    // Welfare is charged ONCE per farmer (lifetime). Build a set of farmers
-    // who already had welfare deducted in any prior cycle — those are skipped
-    // here. Only "new" farmers (no welfare history) get the welfare amount.
+    // Welfare is charged ONCE per farmer per calendar month, in the first
+    // cycle of that month in which the farmer poured milk. Build a set of
+    // farmers who already had welfare deducted in an EARLIER cycle of the
+    // SAME month — those are skipped. The rule resets at month start.
     let alreadyDeductedSet = new Set();
     if (welfareFixed > 0) {
+      const monthStart = new Date(start.getFullYear(), start.getMonth(), 1);
       const [pmtHits, regs] = await Promise.all([
         FarmerPayment.find({
           companyId,
           status: { $ne: 'Cancelled' },
           'deductions.type': 'Welfare Recovery',
-          'paymentPeriod.toDate': { $lt: start },
+          'paymentPeriod.toDate': { $gte: monthStart, $lt: start },
         }).select('farmerId deductions').lean(),
         PaymentRegister.find({
           companyId,
           registerType: 'Ledger',
-          fromDate: { $lt: start },
+          fromDate: { $gte: monthStart, $lt: start },
         }).select('entries.farmerId entries.welfare').lean(),
       ]);
       pmtHits.forEach(p => {

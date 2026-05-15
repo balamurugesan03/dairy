@@ -595,6 +595,7 @@ export const createProducerDuesPaymentVoucher = async ({
   referenceId,
   createdBy,
   bankLedgerName,
+  bankLedgerId,
 }, session = null) => {
   if (!amount || amount <= 0 || !companyId) return null;
 
@@ -610,13 +611,17 @@ export const createProducerDuesPaymentVoucher = async ({
       payLedger = await findOrCreateLedger('Cash in Hand', 'Cash', 'Cash', 'Dr', companyId, session);
     }
   } else {
-    if (bankLedgerName && bankLedgerName !== 'All') {
+    if (bankLedgerId) {
+      payLedger = await Ledger.findById(bankLedgerId);
+    }
+    if (!payLedger && bankLedgerName && bankLedgerName !== 'All') {
       payLedger = await findOrCreateLedger(bankLedgerName, 'Bank', 'Bank Accounts', 'Dr', companyId, session);
-    } else {
+    }
+    if (!payLedger) {
       payLedger = await Ledger.findOne({ ledgerType: 'Bank', companyId });
-      if (!payLedger) {
-        payLedger = await findOrCreateLedger('Bank Account', 'Bank', 'Bank Accounts', 'Dr', companyId, session);
-      }
+    }
+    if (!payLedger) {
+      payLedger = await findOrCreateLedger('Bank Account', 'Bank', 'Bank Accounts', 'Dr', companyId, session);
     }
   }
 

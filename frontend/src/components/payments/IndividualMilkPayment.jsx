@@ -260,7 +260,9 @@ const IndividualMilkPayment = () => {
           cycleFrom ? new Date(cycleFrom).toISOString() : undefined,
           cycleEnd.toISOString(),
         ),
-        paymentAPI.getFarmerPreviousBalance(farmerId),
+        paymentAPI.getFarmerPreviousBalance(farmerId, {
+          cycleFrom: cycleFrom ? dayjs(cycleFrom).format('YYYY-MM-DD') : undefined,
+        }),
       ]);
 
       const out  = outRes.status === 'fulfilled' ? outRes.value?.data || {} : {};

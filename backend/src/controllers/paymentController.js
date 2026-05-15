@@ -220,6 +220,7 @@ export const createFarmerPayment = async (req, res) => {
           referenceType: 'FarmerPayment',
           referenceId:   payment._id,
           createdBy:     payment.createdBy,
+          bankLedgerId:  payment.bankLedgerId,
         });
         if (voucher) {
           payment.voucherId = voucher._id;
@@ -678,23 +679,55 @@ export const cancelPayment = async (req, res) => {
   }
 };
 
-// Sum of balanceAmount from all Pending/Partial payments for a farmer (same logic as generateProducers)
+// Previous balance for a farmer — same logic as generateProducerPaymentRegister:
+//   First cycle ever  → ProducerOpening.dueAmount
+//   Cycle 2+          → SUM of balanceAmount from Pending/Partial payments in prior cycles
 export const getFarmerPreviousBalance = async (req, res) => {
   try {
     const companyId = req.userCompany;
     const farmerId  = req.params.farmerId;
-    const result = await FarmerPayment.aggregate([
-      {
-        $match: {
-          companyId: new mongoose.Types.ObjectId(companyId),
-          farmerId:  new mongoose.Types.ObjectId(farmerId),
-          status:    { $in: ['Pending', 'Partial'] },
+    const { cycleFrom } = req.query; // current cycle start date
+
+    const farmerObjId  = new mongoose.Types.ObjectId(farmerId);
+    const companyObjId = new mongoose.Types.ObjectId(companyId);
+
+    // prevCycleEnd = 1ms before the current cycle starts (exclude current-cycle payments)
+    const prevCycleEnd = cycleFrom
+      ? new Date(new Date(cycleFrom).getTime() - 1)
+      : new Date();
+
+    const [pendingAgg, anyPriorAgg, opening] = await Promise.all([
+      // Sum of pending/partial balances from previous cycles only
+      FarmerPayment.aggregate([
+        {
+          $match: {
+            companyId:              companyObjId,
+            farmerId:               farmerObjId,
+            status:                 { $in: ['Pending', 'Partial'] },
+            'paymentPeriod.toDate': { $lte: prevCycleEnd },
+          },
         },
-      },
-      { $group: { _id: null, total: { $sum: '$balanceAmount' } } },
+        { $group: { _id: null, total: { $sum: '$balanceAmount' } } },
+      ]),
+      // Check if ANY prior-cycle payment exists (to distinguish first cycle)
+      FarmerPayment.findOne({
+        companyId:              companyObjId,
+        farmerId:               farmerObjId,
+        status:                 { $ne: 'Cancelled' },
+        'paymentPeriod.toDate': { $lte: prevCycleEnd },
+      }).select('_id').lean(),
+      // ProducerOpening for first-cycle fallback
+      ProducerOpening.findOne({ companyId: companyObjId, farmerId: farmerObjId }).lean(),
     ]);
-    const previousBalance = Math.round((result[0]?.total || 0) * 100) / 100;
-    res.json({ success: true, data: { previousBalance } });
+
+    const hasPriorPayment   = !!anyPriorAgg;
+    const hasPendingHistory = pendingAgg.length > 0;
+
+    const previousBalance = (!hasPriorPayment && !hasPendingHistory)
+      ? (opening?.dueAmount || 0)      // true first cycle → opening due amount
+      : (pendingAgg[0]?.total || 0);   // cycle 2+: pending balance (0 if fully paid)
+
+    res.json({ success: true, data: { previousBalance: Math.round(previousBalance * 100) / 100 } });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

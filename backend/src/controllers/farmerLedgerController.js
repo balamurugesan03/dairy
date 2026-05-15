@@ -399,12 +399,18 @@ export const checkWelfareRecovery = async (req, res) => {
       checkEnd   = new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 23, 59, 59);
     }
 
-    // 3. Check if welfare already deducted in this window
+    // 3. Check if welfare already deducted in this window.
+    // Use paymentPeriod dates (which cycle the payment belongs to), not paymentDate
+    // (when the entry was recorded). Also scope to companyId to avoid cross-company hits.
     const existingWelfareDeduction = await FarmerPayment.findOne({
       farmerId,
-      paymentDate: { $gte: checkStart, $lte: checkEnd },
+      companyId,
       status: { $ne: 'Cancelled' },
       'deductions.type': 'Welfare Recovery',
+      $or: [
+        { 'paymentPeriod.toDate':   { $gte: checkStart, $lte: checkEnd } },
+        { 'paymentPeriod.fromDate': { $gte: checkStart, $lte: checkEnd } },
+      ],
     });
 
     const alreadyDeducted = !!existingWelfareDeduction;

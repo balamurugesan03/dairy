@@ -193,6 +193,11 @@ const farmerPaymentSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  // Bank ledger selected by user for Bank/UPI payment (used to post the correct bank account)
+  bankLedgerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Ledger'
+  },
   // Voucher reference
   voucherId: {
     type: mongoose.Schema.Types.ObjectId,

@@ -687,10 +687,10 @@ const PaymentRegisterLedger = () => {
         const mapped = entries
           .map((e, i) => {
             let row = toRow(e, i);
-            // Welfare is once-per-farmer (lifetime). The backend already returns
-            // 0 for farmers who had welfare in any prior cycle — DON'T auto-fill
-            // here (would re-charge them). Only fill when the backend's entry
-            // omitted welfare entirely (legacy / first-cycle truly new farmers).
+            // Welfare is once per farmer per calendar month (first cycle they pour milk).
+            // The backend returns 0 for farmers who already had welfare in an earlier
+            // cycle of the same month — DON'T auto-fill (would re-charge them).
+            // Only fill when the backend omitted welfare entirely (null = no data).
             if (e.welfare == null && welfareAmt > 0) row = recalc({ ...row, welfare: welfareAmt });
             row = applyPrevCycle(row);
             row = applyCFAdvance(row);
@@ -720,8 +720,9 @@ const PaymentRegisterLedger = () => {
           const mapped = openings
             .map((o, i) => {
               let row = openingToRow(o, i);
-              // Welfare auto-fill only when this farmer has never been welfare-
-              // deducted before. Re-uses the same lifetime check via mergePayment.
+              // No milk data path: auto-fill welfare for all producers since we have
+              // no per-farmer context here. mergePayment will override with 0 for any
+              // farmer whose payment already carries a welfare deduction this cycle.
               if (!n(row.welfare) && welfareAmt > 0) row = recalc({ ...row, welfare: welfareAmt });
               row = applyPrevCycle(row);
               row = applyCFAdvance(row);
