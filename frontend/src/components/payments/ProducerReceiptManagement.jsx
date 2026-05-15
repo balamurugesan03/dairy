@@ -100,7 +100,8 @@ const ProducerReceiptManagement = () => {
   const [selectedFarmer, setSelectedFarmer] = useState(null);
   const [dueAmount,      setDueAmount]      = useState(null);   // null = not fetched yet
   const [dueLoading,     setDueLoading]     = useState(false);
-  const [bankLedgers,    setBankLedgers]    = useState([]);
+  const [bankLedgers,        setBankLedgers]        = useState([]);
+  const [bankLedgersLoading, setBankLedgersLoading] = useState(false);
 
   // ── Refs for Enter-key navigation ────────────────────────────────────────────
   const farmerRef      = useRef(null);
@@ -174,11 +175,17 @@ const ProducerReceiptManagement = () => {
   };
 
   const fetchBankLedgers = async () => {
+    setBankLedgersLoading(true);
     try {
-      const res = await ledgerAPI.getAll({ ledgerType: 'Bank', status: 'Active' });
-      setBankLedgers((res.data || []).map(l => ({ value: l._id, label: l.ledgerName })));
+      const res = await ledgerAPI.getAll({ status: 'Active' });
+      const BANK_TYPES = ['Bank', 'Bank Accounts', 'Bank Account'];
+      const filtered = (res.data || []).filter(l => BANK_TYPES.includes(l.ledgerType));
+      setBankLedgers(filtered.map(l => ({ value: l._id, label: l.ledgerName })));
     } catch (err) {
       console.error('Failed to fetch bank ledgers:', err);
+      message.error('Failed to load bank ledgers');
+    } finally {
+      setBankLedgersLoading(false);
     }
   };
 
@@ -228,7 +235,7 @@ const ProducerReceiptManagement = () => {
 
   const handlePaymentModeChange = (value) => {
     setFormData(prev => ({ ...prev, paymentMode: value, bankLedgerId: '' }));
-    if (value !== 'Cash' && bankLedgers.length === 0) {
+    if (value !== 'Cash') {
       fetchBankLedgers();
     }
   };
@@ -533,11 +540,13 @@ const ProducerReceiptManagement = () => {
                   <DatePickerInput
                     label="Receipt Date"
                     value={formData.receiptDate}
-                    onChange={handleDateChange}
+                    onChange={() => {}}
                     onKeyDown={advanceKey(farmerRef)}
                     leftSection={<IconCalendar size={16} />}
                     required
                     clearable={false}
+                    disabled
+                    description="Locked to today"
                   />
                 </Grid.Col>
                 <Grid.Col span={7}>
@@ -649,14 +658,14 @@ const ProducerReceiptManagement = () => {
                 <div ref={bankLedgerRef}>
                   <Select
                     label="Bank Ledger"
-                    placeholder="Select bank account"
+                    placeholder={bankLedgersLoading ? 'Loading…' : bankLedgers.length === 0 ? 'No bank ledgers — create one in Ledger Management' : 'Select bank account'}
                     value={formData.bankLedgerId}
                     onChange={(value) => setFormData(prev => ({ ...prev, bankLedgerId: value }))}
                     data={bankLedgers}
                     required
                     searchable
                     onKeyDown={advanceKey(remarksRef)}
-                    rightSection={bankLedgers.length === 0 ? <Loader size="xs" /> : null}
+                    rightSection={bankLedgersLoading ? <Loader size="xs" /> : null}
                   />
                 </div>
               )}

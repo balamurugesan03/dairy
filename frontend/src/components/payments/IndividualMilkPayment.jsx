@@ -179,9 +179,13 @@ const IndividualMilkPayment = () => {
 
   const fetchBankLedgers = async () => {
     try {
-      const res = await ledgerAPI.getAll({ ledgerType: 'Bank', status: 'Active' });
-      setBankLedgers((res?.data || []).map(l => ({ value: l._id, label: l.ledgerName })));
-    } catch {}
+      const res = await ledgerAPI.getAll({ status: 'Active' });
+      const BANK_TYPES = ['Bank', 'Bank Accounts', 'Bank Account'];
+      const filtered = (res?.data || []).filter(l => BANK_TYPES.includes(l.ledgerType));
+      setBankLedgers(filtered.map(l => ({ value: l._id, label: l.ledgerName })));
+    } catch (err) {
+      console.error('Failed to fetch bank ledgers:', err);
+    }
   };
 
   const fetchPayments = async (p = 1, from = cycleFrom, to = cycleTo) => {
@@ -300,7 +304,7 @@ const IndividualMilkPayment = () => {
   const handleMilkKeyDown = (e) => {
     if (e.key !== 'Enter' && e.key !== 'Tab') return;
     if (e.key === 'Enter') e.preventDefault();
-    focusInput(otherEarningsRef);
+    focusInput(prevBalRef);
   };
 
   const handleOtherEarningsKeyDown = (e) => {
@@ -648,6 +652,23 @@ ${(payment.balanceAmount || 0) > 0 ? `<div class="total"><span>Balance</span><sp
                   </Grid.Col>
 
                   <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
+                    <div ref={prevBalRef}>
+                      <NumberInput
+                        label="Prev. Balance (₹)"
+                        value={previousBalance}
+                        onChange={setPreviousBalance}
+                        onKeyDown={advance(otherEarningsRef)}
+                        placeholder="0.00"
+                        min={0}
+                        decimalScale={2}
+                        thousandSeparator=","
+                        leftSection={<IconCurrencyRupee size={14} />}
+                        styles={(previousBalance || 0) > 0 ? { input: { borderColor: 'var(--mantine-color-grape-5)' } } : {}}
+                      />
+                    </div>
+                  </Grid.Col>
+
+                  <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
                     <div ref={otherEarningsRef}>
                       <NumberInput
                         label="Other Earnings (₹)"
@@ -745,7 +766,7 @@ ${(payment.balanceAmount || 0) > 0 ? `<div class="total"><span>Balance</span><sp
                         label="Other Deductions (₹)"
                         value={otherDeductions}
                         onChange={setOtherDeductions}
-                        onKeyDown={advance(prevBalRef)}
+                        onKeyDown={advance(payModeRef)}
                         placeholder="0.00"
                         min={0}
                         decimalScale={2}
@@ -756,23 +777,6 @@ ${(payment.balanceAmount || 0) > 0 ? `<div class="total"><span>Balance</span><sp
                     </div>
                   </Grid.Col>
 
-                  {/* Previous Balance (editable) */}
-                  <Grid.Col span={{ base: 6, sm: 4, md: 2 }}>
-                    <div ref={prevBalRef}>
-                      <NumberInput
-                        label="Prev. Balance (₹)"
-                        value={previousBalance}
-                        onChange={setPreviousBalance}
-                        onKeyDown={advance(payModeRef)}
-                        placeholder="0.00"
-                        min={0}
-                        decimalScale={2}
-                        thousandSeparator=","
-                        leftSection={<IconCurrencyRupee size={14} />}
-                        styles={(previousBalance || 0) > 0 ? { input: { borderColor: 'var(--mantine-color-grape-5)' } } : {}}
-                      />
-                    </div>
-                  </Grid.Col>
                 </Grid>
 
                 {/* ── Balance Summary Bar ───────────────────────────────── */}

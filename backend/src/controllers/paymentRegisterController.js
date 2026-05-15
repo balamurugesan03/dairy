@@ -189,18 +189,37 @@ export const generateProducerPaymentRegister = async (req, res) => {
       return m;
     };
 
-    // CF advances given (Sales to farmer) up to cycle end — balances must reflect
-    // all advances disbursed within this cycle, not just before it started.
-    const priorCFCredits = sumByFarmer(await Sales.aggregate([
+    // CF advances given — two sources, matching getCFAdvanceSummary / getFarmerOutstandingByType:
+    //   (a) Non-cash credit sales of cattle feed items to farmers (cash sales excluded:
+    //       farmer paid at point of sale so no advance is created)
+    //   (b) Advance records with advanceCategory='CF Advance' (direct cash CF disbursements)
+    // Both are counted up to cycle end so the column shows the full outstanding before
+    // this cycle's recovery deduction is applied.
+    const priorCFCreditSales = sumByFarmer(await Sales.aggregate([
       {
         $match: {
           companyId,
           customerType: 'Farmer',
+          paymentMode:  { $ne: 'Cash' },
           billDate:     { $lte: end },
         },
       },
       { $group: { _id: '$customerId', total: { $sum: '$grandTotal' } } },
     ]));
+    const priorCFCreditAdvances = sumByFarmer(await Advance.aggregate([
+      {
+        $match: {
+          companyId,
+          advanceCategory: 'CF Advance',
+          status:          { $ne: 'Cancelled' },
+          advanceDate:     { $lte: end },
+        },
+      },
+      { $group: { _id: '$farmerId', total: { $sum: '$advanceAmount' } } },
+    ]));
+    const priorCFCredits = {};
+    new Set([...Object.keys(priorCFCreditSales), ...Object.keys(priorCFCreditAdvances)])
+      .forEach(fid => { priorCFCredits[fid] = (priorCFCreditSales[fid] || 0) + (priorCFCreditAdvances[fid] || 0); });
 
     // CF recoveries (FarmerPayment CF deductions) whose cycle ends before start.
     // Use paymentPeriod.toDate (which cycle the payment belongs to), NOT paymentDate

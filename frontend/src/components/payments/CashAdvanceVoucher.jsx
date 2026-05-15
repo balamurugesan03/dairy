@@ -97,7 +97,7 @@ const CashAdvanceVoucher = () => {
   const [outstanding,     setOutstanding]      = useState(0);     // from advanceAPI.getStats
   const [statsLoading,    setStatsLoading]     = useState(false);
 
-  const emptyForm = {
+  const emptyForm = () => ({
     farmerId:               null,
     advanceDate:            new Date(),
     advanceType:            'Cash',
@@ -107,8 +107,8 @@ const CashAdvanceVoucher = () => {
     monthlyDeductionAmount: '',
     purpose:                '',
     remarks:                '',
-  };
-  const [form, setForm] = useState(emptyForm);
+  });
+  const [form, setForm] = useState(emptyForm());
   const [errors, setErrors] = useState({});
 
   /* ── Load farmer list ── */
@@ -200,7 +200,6 @@ const CashAdvanceVoucher = () => {
   const validate = () => {
     const e = {};
     if (!form.farmerId)     e.farmerId     = 'Select a producer';
-    if (!form.advanceDate)  e.advanceDate  = 'Date is required';
     if (!form.advanceAmount || Number(form.advanceAmount) <= 0)
                             e.advanceAmount = 'Enter a valid amount';
     return e;
@@ -233,7 +232,7 @@ const CashAdvanceVoucher = () => {
         icon: <IconCheck size={14} />,
       });
       setModalOpen(false);
-      setForm(emptyForm);
+      setForm(emptyForm());
       setErrors({});
       setOpeningBalance(null);
       setOutstanding(0);
@@ -248,7 +247,7 @@ const CashAdvanceVoucher = () => {
 
   const handleModalClose = () => {
     setModalOpen(false);
-    setForm(emptyForm);
+    setForm(emptyForm());
     setErrors({});
     setOpeningBalance(null);
     setOutstanding(0);
@@ -510,11 +509,11 @@ const CashAdvanceVoucher = () => {
             <DatePickerInput
               label="Advance Date"
               value={form.advanceDate}
-              onChange={v => setField('advanceDate', v)}
+              onChange={() => {}}
               leftSection={<IconCalendar size={16} color="#666" />}
               valueFormat="DD/MM/YYYY"
-              error={errors.advanceDate}
-              required
+              disabled
+              description="Locked to today"
               styles={{ input: { borderRadius: 8 } }}
             />
           </SimpleGrid>
