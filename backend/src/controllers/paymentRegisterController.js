@@ -202,14 +202,21 @@ export const generateProducerPaymentRegister = async (req, res) => {
       { $group: { _id: '$customerId', total: { $sum: '$grandTotal' } } },
     ]));
 
-    // CF recoveries (FarmerPayment CF deductions) before start
+    // CF recoveries (FarmerPayment CF deductions) whose cycle ends before start.
+    // Use paymentPeriod.toDate (which cycle the payment belongs to), NOT paymentDate
+    // (when the entry was recorded) — a payment entered after cycle end (e.g. cycle
+    // ended May 15 but entry made May 20) must still count as a prior-cycle recovery.
     const priorCFRecoveries = sumByFarmer(await FarmerPayment.aggregate([
       {
         $match: {
           companyId,
           status:            { $ne: 'Cancelled' },
           'deductions.type': { $in: ['CF Advance', 'Cattle Feed', 'CF Recovery'] },
-          paymentDate:       { $lt: start },
+          $or: [
+            { 'paymentPeriod.toDate': { $lt: start } },
+            { 'paymentPeriod.toDate': { $exists: false }, paymentDate: { $lt: start } },
+            { 'paymentPeriod.toDate': null,               paymentDate: { $lt: start } },
+          ],
         },
       },
       { $unwind: '$deductions' },
@@ -243,14 +250,18 @@ export const generateProducerPaymentRegister = async (req, res) => {
       { $group: { _id: '$farmerId', total: { $sum: '$advanceAmount' } } },
     ]));
 
-    // Cash recoveries before start
+    // Cash recoveries whose cycle ends before start (same paymentPeriod fix as CF)
     const priorCashRecoveries = sumByFarmer(await FarmerPayment.aggregate([
       {
         $match: {
           companyId,
           status:            { $ne: 'Cancelled' },
           'deductions.type': { $in: ['Cash Advance', 'Cash Recovery'] },
-          paymentDate:       { $lt: start },
+          $or: [
+            { 'paymentPeriod.toDate': { $lt: start } },
+            { 'paymentPeriod.toDate': { $exists: false }, paymentDate: { $lt: start } },
+            { 'paymentPeriod.toDate': null,               paymentDate: { $lt: start } },
+          ],
         },
       },
       { $unwind: '$deductions' },
@@ -271,14 +282,18 @@ export const generateProducerPaymentRegister = async (req, res) => {
       { $group: { _id: '$farmerId', total: { $sum: '$advanceAmount' } } },
     ]));
 
-    // Loan recoveries before start
+    // Loan recoveries whose cycle ends before start (same paymentPeriod fix as CF)
     const priorLoanRecoveries = sumByFarmer(await FarmerPayment.aggregate([
       {
         $match: {
           companyId,
           status:            { $ne: 'Cancelled' },
           'deductions.type': { $in: ['Loan Advance', 'Loan Recovery', 'Loan EMI'] },
-          paymentDate:       { $lt: start },
+          $or: [
+            { 'paymentPeriod.toDate': { $lt: start } },
+            { 'paymentPeriod.toDate': { $exists: false }, paymentDate: { $lt: start } },
+            { 'paymentPeriod.toDate': null,               paymentDate: { $lt: start } },
+          ],
         },
       },
       { $unwind: '$deductions' },
