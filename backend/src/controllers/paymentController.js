@@ -3,6 +3,7 @@ import Advance from '../models/Advance.js';
 import ProducerLoan from '../models/ProducerLoan.js';
 import ProducerOpening from '../models/ProducerOpening.js';
 import ProducerPayment from '../models/ProducerPayment.js';
+import ProducerReceipt from '../models/ProducerReceipt.js';
 import Farmer from '../models/Farmer.js';
 import Voucher from '../models/Voucher.js';
 import { createPaymentVoucher, createRecoveryVoucher, createProducerDuesPaymentVoucher } from '../utils/accountingHelper.js';
@@ -741,7 +742,7 @@ export const getLatestPaymentPeriod = async (req, res) => {
       {
         $match: {
           companyId: new mongoose.Types.ObjectId(companyId),
-          paymentSource: { $in: ['Ledger', 'BankTransfer'] },
+          paymentSource: { $in: ['BankTransfer', 'PaymentRegister'] },
           'paymentPeriod.toDate': { $exists: true, $ne: null },
         }
       },
@@ -1382,10 +1383,30 @@ export const getCashAdvanceSummary = async (req, res) => {
     const priorRecoveryMap = {};
     priorRecoveryAgg.forEach(r => { priorRecoveryMap[r._id?.toString()] = r2(r.total); });
 
+    // ProducerReceipt manual recoveries — period
+    const rcptMatchStage = { companyId: cObjId, receiptType: 'Cash Advance', status: { $ne: 'Cancelled' }, receiptDate: { $gte: start, $lte: end } };
+    if (farmerObjId) rcptMatchStage.farmerId = farmerObjId;
+    const rcptAgg = await ProducerReceipt.aggregate([
+      { $match: rcptMatchStage },
+      { $group: { _id: '$farmerId', total: { $sum: '$amount' } } },
+    ]);
+    const rcptMap = {};
+    rcptAgg.forEach(r => { rcptMap[r._id?.toString()] = r2(r.total); });
+
+    // ProducerReceipt manual recoveries — prior
+    const priorRcptMatch = { companyId: cObjId, receiptType: 'Cash Advance', status: { $ne: 'Cancelled' }, receiptDate: { $lt: start } };
+    if (farmerObjId) priorRcptMatch.farmerId = farmerObjId;
+    const priorRcptAgg = await ProducerReceipt.aggregate([
+      { $match: priorRcptMatch },
+      { $group: { _id: '$farmerId', total: { $sum: '$amount' } } },
+    ]);
+    const priorRcptMap = {};
+    priorRcptAgg.forEach(r => { priorRcptMap[r._id?.toString()] = r2(r.total); });
+
     // 4. Build rows from openings
     const computeOpening = (fid, baseOpening) => {
       const prevAdv = priorAdvancedMap[fid] || 0;
-      const prevRec = priorRecoveryMap[fid] || 0;
+      const prevRec = r2((priorRecoveryMap[fid] || 0) + (priorRcptMap[fid] || 0));
       return r2(baseOpening + prevAdv - prevRec);
     };
 
@@ -1395,7 +1416,7 @@ export const getCashAdvanceSummary = async (req, res) => {
         const fid      = o.farmerId._id?.toString() || o.farmerId?.toString();
         const opening  = computeOpening(fid, r2(o.cashAdvance || 0));
         const advanced = r2(advancedMap[fid] || 0);
-        const recovery = r2(recoveryMap[fid] || 0);
+        const recovery = r2((recoveryMap[fid] || 0) + (rcptMap[fid] || 0));
         const balance  = r2(opening + advanced - recovery);
         const farmer   = typeof o.farmerId === 'object' ? o.farmerId : {};
         return {
@@ -1418,7 +1439,7 @@ export const getCashAdvanceSummary = async (req, res) => {
       const farmer = await Farmer.findById(fid).select('farmerNumber personalDetails').lean();
       if (!farmer) continue;
       const opening  = computeOpening(fid, 0);
-      const recovery = r2(recoveryMap[fid] || 0);
+      const recovery = r2((recoveryMap[fid] || 0) + (rcptMap[fid] || 0));
       rows.push({
         slNo:         rows.length + 1,
         farmerId:     fid,
@@ -1513,6 +1534,25 @@ export const getCashAdvanceLedger = async (req, res) => {
             credit:      0,
           });
         }
+      }
+
+      // ProducerReceipt manual recoveries for Cash Advance
+      const rcts = await ProducerReceipt.find({
+        companyId:   cObjId,
+        farmerId:    fObjId,
+        receiptType: 'Cash Advance',
+        status:      { $ne: 'Cancelled' },
+        receiptDate: { $gte: s, $lte: e },
+      }).lean();
+      for (const r of rcts) {
+        entries.push({
+          date:        r.receiptDate,
+          type:        'RECOVERY',
+          refNo:       r.receiptNumber,
+          description: `Cash Advance Recovery — Manual Receipt`,
+          debit:       r2(r.amount || 0),
+          credit:      0,
+        });
       }
 
       entries.sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -1622,6 +1662,25 @@ export const getLoanAdvanceLedger = async (req, res) => {
             credit:      0,
           });
         }
+      }
+
+      // ProducerReceipt manual recoveries for Loan Advance
+      const rcts = await ProducerReceipt.find({
+        companyId:   cObjId,
+        farmerId:    fObjId,
+        receiptType: 'Loan Advance',
+        status:      { $ne: 'Cancelled' },
+        receiptDate: { $gte: s, $lte: e },
+      }).lean();
+      for (const r of rcts) {
+        entries.push({
+          date:        r.receiptDate,
+          type:        'RECOVERY',
+          refNo:       r.receiptNumber,
+          description: `Loan Advance Recovery — Manual Receipt`,
+          debit:       r2(r.amount || 0),
+          credit:      0,
+        });
       }
 
       entries.sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -1768,10 +1827,30 @@ export const getLoanAdvanceSummary = async (req, res) => {
     const priorRecoveryMap = {};
     priorRecoveryAgg.forEach(r => { priorRecoveryMap[r._id?.toString()] = r2(r.total); });
 
+    // ProducerReceipt manual recoveries for Loan Advance — period
+    const loanRcptMatch = { companyId: cObjId, receiptType: 'Loan Advance', status: { $ne: 'Cancelled' }, receiptDate: { $gte: start, $lte: end } };
+    if (farmerObjId) loanRcptMatch.farmerId = farmerObjId;
+    const loanRcptAgg = await ProducerReceipt.aggregate([
+      { $match: loanRcptMatch },
+      { $group: { _id: '$farmerId', total: { $sum: '$amount' } } },
+    ]);
+    const loanRcptMap = {};
+    loanRcptAgg.forEach(r => { loanRcptMap[r._id?.toString()] = r2(r.total); });
+
+    // ProducerReceipt manual recoveries for Loan Advance — prior
+    const priorLoanRcptMatch = { companyId: cObjId, receiptType: 'Loan Advance', status: { $ne: 'Cancelled' }, receiptDate: { $lt: start } };
+    if (farmerObjId) priorLoanRcptMatch.farmerId = farmerObjId;
+    const priorLoanRcptAgg = await ProducerReceipt.aggregate([
+      { $match: priorLoanRcptMatch },
+      { $group: { _id: '$farmerId', total: { $sum: '$amount' } } },
+    ]);
+    const priorLoanRcptMap = {};
+    priorLoanRcptAgg.forEach(r => { priorLoanRcptMap[r._id?.toString()] = r2(r.total); });
+
     // 4. Build rows from openings
     const computeOpening = (fid, baseOpening) => {
       const prevAdv = priorAdvancedMap[fid] || 0;
-      const prevRec = priorRecoveryMap[fid] || 0;
+      const prevRec = r2((priorRecoveryMap[fid] || 0) + (priorLoanRcptMap[fid] || 0));
       return r2(baseOpening + prevAdv - prevRec);
     };
 
@@ -1781,7 +1860,7 @@ export const getLoanAdvanceSummary = async (req, res) => {
         const fid      = o.farmerId._id?.toString() || o.farmerId?.toString();
         const opening  = computeOpening(fid, r2(o.loanAdvance || 0));
         const advanced = r2(advancedMap[fid] || 0);
-        const recovery = r2(recoveryMap[fid] || 0);
+        const recovery = r2((recoveryMap[fid] || 0) + (loanRcptMap[fid] || 0));
         const balance  = r2(opening + advanced - recovery);
         const farmer   = typeof o.farmerId === 'object' ? o.farmerId : {};
         return {
@@ -1804,7 +1883,7 @@ export const getLoanAdvanceSummary = async (req, res) => {
       const farmer = await Farmer.findById(fid).select('farmerNumber personalDetails').lean();
       if (!farmer) continue;
       const opening  = computeOpening(fid, 0);
-      const recovery = r2(recoveryMap[fid] || 0);
+      const recovery = r2((recoveryMap[fid] || 0) + (loanRcptMap[fid] || 0));
       rows.push({
         slNo:         rows.length + 1,
         farmerId:     fid,

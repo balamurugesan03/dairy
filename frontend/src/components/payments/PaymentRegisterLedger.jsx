@@ -587,7 +587,7 @@ const PaymentRegisterLedger = () => {
         paymentRegisterAPI.generateProducers({ fromDate: fd, toDate: td }),
         getWelfareAmount(),
         paymentAPI.getAll({ limit: 1000 }),
-        cattleFeedAdvanceAPI.getSummary().catch(() => ({ success: false })),
+        cattleFeedAdvanceAPI.getSummary({ toDate: td }).catch(() => ({ success: false })),
       ]);
 
       // Build farmerId → outstanding CF advance balance map

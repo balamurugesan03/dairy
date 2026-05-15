@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { message } from '../../utils/toast';
-import { farmerAPI, producerReceiptAPI, farmerLedgerAPI, ledgerAPI } from '../../services/api';
+import { farmerAPI, producerReceiptAPI, farmerLedgerAPI, ledgerAPI, paymentRegisterAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import {
   Container,
@@ -102,6 +102,7 @@ const ProducerReceiptManagement = () => {
   const [dueLoading,     setDueLoading]     = useState(false);
   const [bankLedgers,        setBankLedgers]        = useState([]);
   const [bankLedgersLoading, setBankLedgersLoading] = useState(false);
+  const [lockedCycles,       setLockedCycles]       = useState([]);
 
   // ── Refs for Enter-key navigation ────────────────────────────────────────────
   const farmerRef      = useRef(null);
@@ -187,6 +188,28 @@ const ProducerReceiptManagement = () => {
     } finally {
       setBankLedgersLoading(false);
     }
+  };
+
+  const fetchLockedCycles = async () => {
+    try {
+      const res = await paymentRegisterAPI.getLockedCycles();
+      setLockedCycles((res.data || []).map(c => ({
+        from: new Date(c.fromDate),
+        to:   new Date(c.toDate),
+      })));
+    } catch (err) {
+      console.error('Failed to fetch locked cycles:', err);
+    }
+  };
+
+  const isDateInLockedCycle = (date) => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return lockedCycles.some(c => {
+      const from = new Date(c.from); from.setHours(0, 0, 0, 0);
+      const to   = new Date(c.to);   to.setHours(23, 59, 59, 999);
+      return d >= from && d <= to;
+    });
   };
 
   const fetchDueAmount = async (farmerId, receiptType, date) => {
@@ -363,7 +386,7 @@ const ProducerReceiptManagement = () => {
           </Box>
           <Button
             leftSection={<IconPlus size={18} />}
-            onClick={() => { resetForm(); searchFarmers(''); fetchBankLedgers(); setModalOpen(true); }}
+            onClick={() => { resetForm(); searchFarmers(''); fetchBankLedgers(); fetchLockedCycles(); setModalOpen(true); }}
             disabled={!canWrite('payments')}
           >
             New Receipt
@@ -540,13 +563,13 @@ const ProducerReceiptManagement = () => {
                   <DatePickerInput
                     label="Receipt Date"
                     value={formData.receiptDate}
-                    onChange={() => {}}
+                    onChange={handleDateChange}
                     onKeyDown={advanceKey(farmerRef)}
                     leftSection={<IconCalendar size={16} />}
                     required
                     clearable={false}
-                    disabled
-                    description="Locked to today"
+                    excludeDate={isDateInLockedCycle}
+                    description={lockedCycles.length > 0 ? 'Saved cycle dates are disabled' : undefined}
                   />
                 </Grid.Col>
                 <Grid.Col span={7}>

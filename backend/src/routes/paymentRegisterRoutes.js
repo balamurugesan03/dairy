@@ -12,6 +12,7 @@ import {
   getLatestProducers,
   getFarmerMilkValue,
   applyEntryPayment,
+  getLockedCycleRanges,
 } from '../controllers/paymentRegisterController.js';
 
 const router = express.Router();
@@ -20,6 +21,7 @@ const router = express.Router();
 router.get('/producers-for-period',  getProducersForPeriod);
 router.get('/producers-latest',      getLatestProducers);
 router.get('/farmer-milk-value',     getFarmerMilkValue);
+router.get('/locked-cycles',         getLockedCycleRanges);
 router.get('/',                      getPaymentRegisters);
 router.get('/:id',                   getPaymentRegister);
 

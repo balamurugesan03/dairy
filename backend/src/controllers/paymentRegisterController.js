@@ -42,6 +42,20 @@ export const getPaymentRegisters = async (req, res) => {
   }
 };
 
+// ─── GET saved cycle date ranges (for date picker exclusion) ─────────────────
+export const getLockedCycleRanges = async (req, res) => {
+  try {
+    const companyId = req.companyId;
+    const cycles = await PaymentRegister.find({
+      companyId,
+      status: { $in: ['Saved', 'Printed'] },
+    }).select('fromDate toDate -_id').lean();
+    res.json({ success: true, data: cycles });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // ─── GET single register with full entries ────────────────────────────────────
 export const getPaymentRegister = async (req, res) => {
   try {
