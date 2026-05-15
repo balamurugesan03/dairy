@@ -110,6 +110,7 @@ const ProducerReceiptManagement = () => {
   const bankLedgerRef  = useRef(null);
   const remarksRef     = useRef(null);
   const submitRef      = useRef(null);
+  const submittingRef  = useRef(false);  // synchronous guard — prevents double-submit
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
   const formatDate = (date) => {
@@ -247,6 +248,9 @@ const ProducerReceiptManagement = () => {
       return message.error('Please select a bank ledger for Bank/UPI payment');
     }
 
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+
     setFormLoading(true);
     try {
       const payload = {
@@ -269,6 +273,7 @@ const ProducerReceiptManagement = () => {
     } catch (error) {
       message.error(error.message || 'Failed to create receipt');
     } finally {
+      submittingRef.current = false;
       setFormLoading(false);
     }
   };

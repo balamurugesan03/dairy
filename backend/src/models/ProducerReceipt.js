@@ -2,10 +2,9 @@ import mongoose from 'mongoose';
 import { generateCode } from './Counter.js';
 
 const producerReceiptSchema = new mongoose.Schema({
-  // Auto-generated receipt number
+  // Auto-generated receipt number (uniqueness enforced per-company via compound index below)
   receiptNumber: {
     type: String,
-    unique: true
   },
   companyId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -118,7 +117,7 @@ const producerReceiptSchema = new mongoose.Schema({
 producerReceiptSchema.index({ companyId: 1, receiptDate: -1 });
 producerReceiptSchema.index({ farmerId: 1, receiptDate: -1 });
 producerReceiptSchema.index({ status: 1 });
-producerReceiptSchema.index({ receiptNumber: 1 });
+producerReceiptSchema.index({ companyId: 1, receiptNumber: 1 }, { unique: true, sparse: true });
 producerReceiptSchema.index({ receiptType: 1 });
 producerReceiptSchema.index({ referenceType: 1, referenceId: 1 });
 
