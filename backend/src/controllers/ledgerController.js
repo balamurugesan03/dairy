@@ -21,7 +21,17 @@ export const getAllLedgers = async (req, res) => {
     }
 
     if (ledgerType) {
-      query.ledgerType = ledgerType;
+      // Support comma-separated types (e.g. "Bank,Bank Accounts").
+      // Auto-alias legacy short names to include their formal counterparts so
+      // user-created ledgers (type 'Bank Accounts' / 'Cash in Hand') show up
+      // alongside auto-created ones (type 'Bank' / 'Cash').
+      const TYPE_ALIASES = {
+        'Bank': ['Bank', 'Bank Accounts'],
+        'Cash': ['Cash', 'Cash in Hand'],
+      };
+      const rawTypes = ledgerType.split(',').map(t => t.trim()).filter(Boolean);
+      const expanded = [...new Set(rawTypes.flatMap(t => TYPE_ALIASES[t] || [t]))];
+      query.ledgerType = expanded.length === 1 ? expanded[0] : { $in: expanded };
     }
 
     if (search) {
