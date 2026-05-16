@@ -252,7 +252,7 @@ export const getDayBook = async (req, res) => {
             shift: '$shift'
           },
           totalAmount: { $sum: '$amount' },
-          totalQty:    { $sum: '$qty' },
+          totalQty:    { $sum: '$ltr' },
           farmers:     { $addToSet: '$farmer' }
         }
       },
@@ -293,8 +293,8 @@ export const getDayBook = async (req, res) => {
       // Build the shift-wise narration shown on the PRODUCERS DUES line
       const fmt = (n) => Number(n || 0).toFixed(2);
       const narrationLines = [
-        `AM, Total Farmer ${am.farmerCount}, QTY ${fmt(am.qty)}, AMOUNT ${fmt(am.amount)}`,
-        `PM, Total Farmer ${pm.farmerCount}, QTY ${fmt(pm.qty)}, AMOUNT ${fmt(pm.amount)}`,
+        `AM, Total Farmer ${am.farmerCount}, LTR ${fmt(am.qty)}, AMOUNT ${fmt(am.amount)}`,
+        `PM, Total Farmer ${pm.farmerCount}, LTR ${fmt(pm.qty)}, AMOUNT ${fmt(pm.amount)}`,
       ];
       const narration = narrationLines.join('\n');
 

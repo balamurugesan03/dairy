@@ -552,7 +552,7 @@ export const getFarmerWiseSummary = async (req, res) => {
           totalEntries:   { $sum: 1 },
           amEntries:      { $sum: { $cond: [{ $eq: ['$shift', 'AM'] }, 1, 0] } },
           pmEntries:      { $sum: { $cond: [{ $eq: ['$shift', 'PM'] }, 1, 0] } },
-          totalQty:       { $sum: '$qty' },
+          totalQty:       { $sum: '$ltr' },
           avgFat:         { $avg: '$fat' },
           avgClr:         { $avg: '$clr' },
           avgSnf:         { $avg: '$snf' },
@@ -616,7 +616,7 @@ export const getDateWiseSummary = async (req, res) => {
       { $group: {
         _id:       { dateStr: '$dateStr', isMember: '$isMember' },
         farmerIds: { $addToSet: '$farmerNumber' },
-        qty:       { $sum: '$qty' },
+        qty:       { $sum: '$ltr' },
         amount:    { $sum: '$amount' },
       }},
       { $sort: { '_id.dateStr': 1 } },

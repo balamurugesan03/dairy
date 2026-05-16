@@ -275,7 +275,7 @@ const PaymentRegisterCreditor = () => {
             Payment cycle: {paymentDays === 30 ? '1 Month' : `${paymentDays} Days`}
           </Badge>
           <Badge variant="light" color="indigo" size="sm">
-            Unit: {quantityUnit}
+            Unit: L
           </Badge>
           {activeChart && (
             <Badge variant="light" color="grape" size="sm">
@@ -399,7 +399,7 @@ const PaymentRegisterCreditor = () => {
               <thead>
                 <tr style={{ background: '#1c4e80', color: '#fff' }}>
                   {[
-                    'SL No', 'Product ID', 'Product Name', 'Center', `Qty (${quantityUnit === 'KG' ? 'KG' : 'L'})`,
+                    'SL No', 'Product ID', 'Product Name', 'Center', 'Qty (L)',
                     'Milk Value', 'Prev. Balance', 'Other Earnings', 'Welfare', 'Deductions',
                     'Net Pay', 'Signature',
                   ].map((h) => (

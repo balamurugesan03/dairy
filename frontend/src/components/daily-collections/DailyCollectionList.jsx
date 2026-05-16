@@ -155,7 +155,7 @@ const DailyCollectionList = () => {
   const pagedRecords  = sortedRecords.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // ── Stats — always from ALL records (not filtered/paged) ──────────────────
-  const totalQty = records.reduce((s, r) => s + (r.qty    || 0), 0);
+  const totalQty = records.reduce((s, r) => s + (r.ltr    || 0), 0);
   const totalAmt = records.reduce((s, r) => s + (r.amount || 0), 0);
   const avgFat   = records.length ? records.reduce((s, r) => s + (r.fat || 0), 0) / records.length : 0;
   const avgClr   = records.length ? records.reduce((s, r) => s + (r.clr || 0), 0) / records.length : 0;

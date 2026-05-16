@@ -105,7 +105,7 @@ export const generatePaymentRegister = async (req, res) => {
         {
           $group: {
             _id: null,
-            totalQty:    { $sum: '$qty' },
+            totalQty:    { $sum: '$ltr' },
             totalAmount: { $sum: '$amount' },
           },
         },
@@ -433,7 +433,7 @@ export const generateProducerPaymentRegister = async (req, res) => {
       // 5. Milk collections for period
       const milkAgg = await MilkCollection.aggregate([
         { $match: { farmer: farmer._id, companyId, date: { $gte: start, $lte: end } } },
-        { $group: { _id: null, totalQty: { $sum: '$qty' }, totalAmount: { $sum: '$amount' } } },
+        { $group: { _id: null, totalQty: { $sum: '$ltr' }, totalAmount: { $sum: '$amount' } } },
       ]);
       const milkData = milkAgg[0] || { totalQty: 0, totalAmount: 0 };
 

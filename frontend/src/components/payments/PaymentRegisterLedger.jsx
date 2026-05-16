@@ -135,7 +135,7 @@ const PaymentRow = React.memo(function PaymentRow({ row, idx, quantityUnit, onUp
   // Print-only compact row: plain-text cells so inputs/values render reliably on paper.
   if (isPrinting) {
     const fmt2 = (v) => (v == null || v === '' || isNaN(Number(v))) ? '—' : Number(v).toFixed(2);
-    const fmtQ = (v) => (v == null || v === '' || isNaN(Number(v))) ? '—' : Number(v).toFixed(quantityUnit === 'KG' ? 3 : 1);
+    const fmtQ = (v) => (v == null || v === '' || isNaN(Number(v))) ? '—' : Number(v).toFixed(1);
     const ptd = (extra = {}) => ({
       border: '1px solid #999', padding: '2px 3px', fontSize: 8,
       textAlign: 'center', fontVariantNumeric: 'tabular-nums', ...extra,
@@ -174,7 +174,7 @@ const PaymentRow = React.memo(function PaymentRow({ row, idx, quantityUnit, onUp
 
       {/* QTY */}
       <td style={td()}>
-        <NumberInput {...numPropsRO({ decimalScale: quantityUnit === 'KG' ? 3 : 1 })} value={row.qty} placeholder="—"
+        <NumberInput {...numPropsRO({ decimalScale: 1 })} value={row.qty} placeholder="—"
           styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, width: '100%', cursor: 'default' } }} />
       </td>
       {/* Milk Value */}
@@ -1235,7 +1235,7 @@ const PaymentRegisterLedger = () => {
                 </tr>
                 <tr>
                   {/* Earnings sub */}
-                  {[`QTY (${quantityUnit === 'KG' ? 'Kg' : 'L'})`, 'Milk Value', 'Prev. Bal', 'Other Earn', 'Total Earn'].map(h => (
+                  {['QTY (L)', 'Milk Value', 'Prev. Bal', 'Other Earn', 'Total Earn'].map(h => (
                     <th key={h} style={thCol('#2c5282')}>{h}</th>
                   ))}
                   {/* Deductions sub */}
