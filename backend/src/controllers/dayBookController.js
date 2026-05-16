@@ -6,6 +6,7 @@ import StockTransaction from '../models/StockTransaction.js';
 import Advance from '../models/Advance.js';
 import ProducerReceipt from '../models/ProducerReceipt.js';
 import ProducerPayment from '../models/ProducerPayment.js';
+import FarmerPayment from '../models/FarmerPayment.js';
 import Sales from '../models/Sales.js';
 
 // Get Day Book report with date-wise grouping
@@ -812,6 +813,66 @@ export const getDayBook = async (req, res) => {
       dateMap[dateKey].paymentSide.push(paymentEntry);
       dateMap[dateKey].totalPayments += pp.amountPaid;
       paymentSide.push(paymentEntry);
+    }
+
+    // --- Welfare Fund Recovery — one combined entry per cycle (cycle toDate) ---
+    // Receipt side : WELFARE FUND  (income deducted from producer dues)
+    // Payment side : PRODUCERS DUES (liability reduced by welfare amount)
+    // Both are adjustment (non-cash) entries — same pattern as MilkPurchase / UnionSales.
+    const welfareRaw = await FarmerPayment.aggregate([
+      {
+        $match: {
+          companyId,
+          paymentDate:       { $gte: start, $lte: end },
+          status:            { $ne: 'Cancelled' },
+          'deductions.type': 'Welfare Recovery',
+        },
+      },
+      { $unwind: '$deductions' },
+      { $match: { 'deductions.type': 'Welfare Recovery', 'deductions.amount': { $gt: 0 } } },
+      {
+        $group: {
+          _id:          '$paymentDate',
+          totalWelfare: { $sum: '$deductions.amount' },
+          farmerCount:  { $sum: 1 },
+        },
+      },
+    ]);
+
+    // Bucket by local (IST) date — avoids UTC offset misclassifying midnight entries.
+    const welfareByDate = {};
+    for (const rec of welfareRaw) {
+      const dk = localDateKey(rec._id);
+      if (!welfareByDate[dk]) welfareByDate[dk] = { totalWelfare: 0, farmerCount: 0 };
+      welfareByDate[dk].totalWelfare += rec.totalWelfare;
+      welfareByDate[dk].farmerCount  += rec.farmerCount;
+    }
+
+    for (const [dateKey, welf] of Object.entries(welfareByDate)) {
+      if (welf.totalWelfare <= 0) continue;
+      if (!dateMap[dateKey]) {
+        dateMap[dateKey] = { date: dateKey, receiptSide: [], paymentSide: [], totalReceipts: 0, totalPayments: 0 };
+      }
+      const voucherNumber = `WEL-${dateKey.replace(/-/g, '')}`;
+      const narration     = `Welfare Fund Recovery — ${welf.farmerCount} farmer(s)`;
+
+      const welfReceipt = {
+        date: new Date(dateKey), voucherNumber,
+        voucherType: 'WelfareFund', ledgerName: 'WELFARE FUND',
+        narration, amount: welf.totalWelfare,
+      };
+      dateMap[dateKey].receiptSide.push(welfReceipt);
+      dateMap[dateKey].totalReceipts += welf.totalWelfare;
+      receiptSide.push(welfReceipt);
+
+      const welfPayment = {
+        date: new Date(dateKey), voucherNumber,
+        voucherType: 'WelfareFund', ledgerName: 'PRODUCERS DUES',
+        narration, amount: welf.totalWelfare,
+      };
+      dateMap[dateKey].paymentSide.push(welfPayment);
+      dateMap[dateKey].totalPayments += welf.totalWelfare;
+      paymentSide.push(welfPayment);
     }
 
     // --- Build dayWiseData with chained opening/closing balances ---
