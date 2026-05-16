@@ -1,4 +1,43 @@
 import EarningDeduction from '../models/EarningDeduction.js';
+import Ledger from '../models/Ledger.js';
+
+// Maps EarningDeduction.ledgerGroup → Ledger fields
+const LEDGER_GROUP_MAP = {
+  advance_due_to_society:       { ledgerType: 'Advance due to Society',      voucherType: 'B' },
+  share_capital:                { ledgerType: 'Share Capital',                voucherType: 'B' },
+  statutory_funds_and_reserves: { ledgerType: 'Statutory Funds and Reserves', voucherType: 'B' },
+  advance_due_by_society:       { ledgerType: 'Advance due by Society',       voucherType: 'B' },
+  contingencies:                { ledgerType: 'Contingencies',                voucherType: 'P' },
+  trade_expenses:               { ledgerType: 'Trade Expenses',               voucherType: 'P' },
+};
+
+async function syncLedger(companyId, name, ledgerGroup, oldName = null) {
+  const info = LEDGER_GROUP_MAP[ledgerGroup];
+  if (!info) return;
+
+  const searchName = oldName || name;
+  const existing = await Ledger.findOne({ companyId, ledgerName: searchName });
+
+  if (existing) {
+    // Update name and type in case either changed
+    existing.ledgerName = name;
+    existing.ledgerType = info.ledgerType;
+    existing.voucherType = info.voucherType;
+    await existing.save();
+  } else {
+    // Don't create a duplicate if the new name already has a ledger
+    const byNewName = await Ledger.findOne({ companyId, ledgerName: name });
+    if (!byNewName) {
+      await Ledger.create({
+        ledgerName:  name,
+        ledgerType:  info.ledgerType,
+        voucherType: info.voucherType,
+        companyId,
+        status: 'Active',
+      });
+    }
+  }
+}
 
 // ════════════════════════════════════════════════════════════════
 //  GET ALL — paginated + search + filter
@@ -105,6 +144,9 @@ export const create = async (req, res) => {
       createdBy:   req.user?._id,
     });
 
+    // Auto-create matching ledger
+    await syncLedger(req.companyId, name, ledgerGroup);
+
     res.status(201).json({ success: true, data: record, message: 'Created successfully' });
   } catch (err) {
     if (err.code === 11000) {
@@ -124,6 +166,12 @@ export const update = async (req, res) => {
   try {
     const { name, nameMl, shortName, category, ledgerGroup, formula, active } = req.body;
 
+    // Capture old name before updating (needed to locate the linked ledger)
+    const before = await EarningDeduction.findOne({ _id: req.params.id, companyId: req.companyId }).lean();
+    if (!before) {
+      return res.status(404).json({ success: false, message: 'Record not found' });
+    }
+
     const record = await EarningDeduction.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId },
       {
@@ -138,9 +186,8 @@ export const update = async (req, res) => {
       { new: true, runValidators: true }
     );
 
-    if (!record) {
-      return res.status(404).json({ success: false, message: 'Record not found' });
-    }
+    // Sync linked ledger — pass oldName so the ledger is found even if the name changed
+    await syncLedger(req.companyId, name, ledgerGroup, before.name !== name ? before.name : null);
 
     res.json({ success: true, data: record, message: 'Updated successfully' });
   } catch (err) {
