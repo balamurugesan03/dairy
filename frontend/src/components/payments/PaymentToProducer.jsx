@@ -70,7 +70,7 @@ const DETAIL_PRINT_STYLE = `
   @media print {
     body * { visibility: hidden !important; }
     #ptp-detail-area, #ptp-detail-area * { visibility: visible !important; }
-    #ptp-detail-area { position: fixed; inset: 0; padding: 16px; }
+    #ptp-detail-area { position: fixed !important; inset: 0 !important; padding: 16px; }
     table { page-break-inside: auto; border-collapse: collapse; width: 100%; }
     tr { page-break-inside: avoid; }
     th, td { border: 1px solid #ccc; padding: 5px 6px; font-size: 10px; }
@@ -84,7 +84,7 @@ const VOUCHER_PRINT_STYLE = `
   @media print {
     body * { visibility: hidden !important; }
     #ptp-voucher-area, #ptp-voucher-area * { visibility: visible !important; }
-    #ptp-voucher-area { position: fixed; inset: 0; padding: 24px; }
+    #ptp-voucher-area { position: fixed !important; inset: 0 !important; padding: 24px; }
     @page { size: A5; margin: 10mm; }
     .no-print { display: none !important; }
     .print-only { display: block !important; }
@@ -147,11 +147,30 @@ export default function PaymentToProducer() {
       .then((res) => {
         const list = res?.data || [];
         setCenters(list.map((c) => ({ value: c._id, label: c.centerName })));
+        // Restore last used center from localStorage
+        const savedId   = localStorage.getItem('ptp_lastCenterId');
+        const savedName = localStorage.getItem('ptp_lastCenterName');
+        if (savedId && list.some((c) => c._id === savedId)) {
+          setCenterId(savedId);
+          setCenterName(savedName || 'All');
+        }
       })
       .catch(() => setCenters([]));
 
     producerPaymentAPI.getCycles()
-      .then((res) => setCycles(res?.data || []))
+      .then((res) => {
+        const list = res?.data || [];
+        setCycles(list);
+        // Auto-select last used cycle (or most recent if no saved preference)
+        const savedKey = localStorage.getItem('ptp_lastCycleKey');
+        const match = savedKey
+          ? list.find(c => `${dayjs(c.fromDate).format('YYYY-MM-DD')}|${dayjs(c.toDate).format('YYYY-MM-DD')}` === savedKey)
+          : null;
+        const def = match || list[0] || null;
+        if (def) {
+          setSelectedCycle({ fromDate: new Date(def.fromDate), toDate: new Date(def.toDate), label: def.label });
+        }
+      })
       .catch(() => setCycles([]));
 
     ledgerAPI.getAll({ status: 'Active' })
@@ -453,21 +472,21 @@ export default function PaymentToProducer() {
     setCashPaymentInfo(null);
   };
 
-  // ─── Print handlers ─────────────────────────────────────────────────────────
+  // ─── Print handlers (react-to-print v3: contentRef instead of content) ─────
   const handlePrint = useReactToPrint({
-    content: () => printRef.current,
+    contentRef: printRef,
     documentTitle: 'Payment to Producer',
     pageStyle: PRINT_STYLE,
   });
 
   const handlePrintDetailed = useReactToPrint({
-    content: () => detailPrintRef.current,
+    contentRef: detailPrintRef,
     documentTitle: 'Payment to Producer - Detailed',
     pageStyle: DETAIL_PRINT_STYLE,
   });
 
   const handlePrintVoucher = useReactToPrint({
-    content: () => voucherPrintRef.current,
+    contentRef: voucherPrintRef,
     documentTitle: 'Payment Voucher',
     pageStyle: VOUCHER_PRINT_STYLE,
   });
@@ -630,13 +649,14 @@ export default function PaymentToProducer() {
                     ? `${dayjs(selectedCycle.fromDate).format('YYYY-MM-DD')}|${dayjs(selectedCycle.toDate).format('YYYY-MM-DD')}`
                     : null}
                   onChange={(val) => {
-                    if (!val) { setSelectedCycle(null); setPeriodConfirmed(false); return; }
+                    if (!val) { setSelectedCycle(null); setPeriodConfirmed(false); localStorage.removeItem('ptp_lastCycleKey'); return; }
                     const [from, to] = val.split('|');
                     const found = cycles.find(c =>
                       dayjs(c.fromDate).format('YYYY-MM-DD') === from &&
                       dayjs(c.toDate).format('YYYY-MM-DD') === to
                     );
                     setSelectedCycle(found ? { fromDate: new Date(found.fromDate), toDate: new Date(found.toDate), label: found.label } : null);
+                    localStorage.setItem('ptp_lastCycleKey', val);
                     setPeriodConfirmed(false);
                     resetDetailsForm();
                   }}
@@ -654,6 +674,13 @@ export default function PaymentToProducer() {
                     setCenterId(val);
                     setCenterName(option?.label || 'All');
                     setPeriodConfirmed(false);
+                    if (val) {
+                      localStorage.setItem('ptp_lastCenterId', val);
+                      localStorage.setItem('ptp_lastCenterName', option?.label || 'All');
+                    } else {
+                      localStorage.removeItem('ptp_lastCenterId');
+                      localStorage.removeItem('ptp_lastCenterName');
+                    }
                   }}
                   clearable
                   searchable
