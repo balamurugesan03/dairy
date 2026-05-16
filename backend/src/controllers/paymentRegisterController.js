@@ -487,8 +487,11 @@ export const generateProducerPaymentRegister = async (req, res) => {
         priorCashCredits[fid]  || priorCashRecoveries[fid] ||
         priorLoanCredits[fid]  || priorLoanRecoveries[fid];
 
-      // 8. Welfare — from PeriodicalRule fixedRate (0 if ONCE_IN_MONTH and already deducted)
-      const welfare = (welfareFixed > 0 && !alreadyDeductedSet.has(fid)) ? welfareFixed : 0;
+      // 8. Welfare — deducted once per calendar month, but ONLY if the farmer
+      //    poured milk this cycle. Farmers included solely because they carry an
+      //    outstanding CF/Cash/Loan advance (hasMilk = false) must not be charged
+      //    welfare — they are present only for advance recovery, not for payment.
+      const welfare = (welfareFixed > 0 && hasMilk && !alreadyDeductedSet.has(fid)) ? welfareFixed : 0;
 
       const milkValue  = Math.round((milkData.totalAmount || 0) * 100) / 100;
       // netPayable preview: cfAdv/loanAdv/cashAdv are opening balance columns (not deducted here —

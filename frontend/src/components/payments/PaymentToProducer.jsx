@@ -13,7 +13,6 @@ import {
   NumberInput,
   Select,
   Checkbox,
-  Radio,
   Table,
   Badge,
   ActionIcon,
@@ -36,10 +35,12 @@ import {
   IconCheck,
   IconBuildingBank,
   IconUser,
+  IconFileText,
+  IconListDetails,
 } from '@tabler/icons-react';
 import { useReactToPrint } from 'react-to-print';
 import dayjs from 'dayjs';
-import { collectionCenterAPI, farmerAPI, producerPaymentAPI } from '../../services/api';
+import { collectionCenterAPI, farmerAPI, producerPaymentAPI, ledgerAPI } from '../../services/api';
 
 /* ─── Formatters ─────────────────────────────────────────────────────────────── */
 const fmt = (v) =>
@@ -65,13 +66,37 @@ const PRINT_STYLE = `
   }
 `;
 
+const DETAIL_PRINT_STYLE = `
+  @media print {
+    body * { visibility: hidden !important; }
+    #ptp-detail-area, #ptp-detail-area * { visibility: visible !important; }
+    #ptp-detail-area { position: fixed; inset: 0; padding: 16px; }
+    table { page-break-inside: auto; border-collapse: collapse; width: 100%; }
+    tr { page-break-inside: avoid; }
+    th, td { border: 1px solid #ccc; padding: 5px 6px; font-size: 10px; }
+    @page { size: A4 landscape; margin: 10mm; }
+    .no-print { display: none !important; }
+    .print-only { display: block !important; }
+  }
+`;
+
+const VOUCHER_PRINT_STYLE = `
+  @media print {
+    body * { visibility: hidden !important; }
+    #ptp-voucher-area, #ptp-voucher-area * { visibility: visible !important; }
+    #ptp-voucher-area { position: fixed; inset: 0; padding: 24px; }
+    @page { size: A5; margin: 10mm; }
+    .no-print { display: none !important; }
+    .print-only { display: block !important; }
+  }
+`;
+
 /* ════════════════════════════════════════════════════════════════════════════ */
 export default function PaymentToProducer() {
   // ── Period / Filter state ───────────────────────────────────────────────────
   const [periodConfirmed, setPeriodConfirmed] = useState(false);
-  const [isPartialPayment, setIsPartialPayment] = useState(false);
   const [cycles, setCycles] = useState([]);
-  const [selectedCycle, setSelectedCycle] = useState(null); // { fromDate, toDate, label }
+  const [selectedCycle, setSelectedCycle] = useState(null);
   const [paymentDate, setPaymentDate] = useState(new Date());
   const [centerId, setCenterId] = useState(null);
   const [centerName, setCenterName] = useState('All');
@@ -84,6 +109,9 @@ export default function PaymentToProducer() {
   const [abstractBalance, setAbstractBalance] = useState(0);
   const [amountPaid, setAmountPaid] = useState('');
   const [paymentMode, setPaymentMode] = useState('Cash');
+  const [bankLedgers, setBankLedgers] = useState([]);
+  const [bankLedgerId, setBankLedgerId] = useState(null);
+  const [bankLedgerName, setBankLedgerName] = useState('');
   const [printSlip, setPrintSlip] = useState(false);
   const [selectedFarmer, setSelectedFarmer] = useState(null);
   const [bankTransferPaid, setBankTransferPaid] = useState(false);
@@ -104,10 +132,15 @@ export default function PaymentToProducer() {
   const [grandTotal, setGrandTotal] = useState(0);
   const [tableSearch, setTableSearch] = useState('');
 
+  // ── Voucher print state ─────────────────────────────────────────────────────
+  const [voucherData, setVoucherData] = useState(null);
+
   const printRef = useRef();
+  const detailPrintRef = useRef();
+  const voucherPrintRef = useRef();
   const amountPaidWrapRef = useRef(null);
 
-  // ─── Load collection centers + cycles on mount ───────────────────────────────
+  // ─── Load collection centers + cycles + bank ledgers on mount ────────────────
   useEffect(() => {
     collectionCenterAPI
       .getAll({ status: 'Active' })
@@ -120,6 +153,14 @@ export default function PaymentToProducer() {
     producerPaymentAPI.getCycles()
       .then((res) => setCycles(res?.data || []))
       .catch(() => setCycles([]));
+
+    ledgerAPI.getAll({ status: 'Active' })
+      .then((res) => {
+        const BANK_TYPES = ['Bank', 'Bank Accounts', 'Bank Account'];
+        const filtered = (res?.data || []).filter(l => BANK_TYPES.includes(l.ledgerType));
+        setBankLedgers(filtered.map(l => ({ value: l._id, label: l.ledgerName })));
+      })
+      .catch(() => setBankLedgers([]));
   }, []);
 
   // ─── Load payments when filters/pagination change (and period confirmed) ────
@@ -202,6 +243,7 @@ export default function PaymentToProducer() {
         notifications.show({ title: 'Not Found', message: `No producer found with ID "${producerIdInput}"`, color: 'orange' });
         setSelectedFarmer(null);
         setAbstractBalance(0);
+        setAmountPaid('');
         setBankTransferPaid(false);
         return null;
       }
@@ -219,11 +261,13 @@ export default function PaymentToProducer() {
         const isBT = balanceRes.data?.bankTransferPaid || false;
         const isCashPaid = balanceRes.data?.alreadyPaidCash || false;
         const cashInfo = balanceRes.data?.cashPayment || null;
-        // Last Abstract Balance = the saved cycle's NET PAY for this farmer.
-        // Do not add producer-opening dues — that inflates the figure.
         const netPay = balanceRes.data?.balance || 0;
 
         setAbstractBalance(netPay);
+        // Auto-fill amount paid from abstract balance
+        if (!isBT && !isCashPaid) {
+          setAmountPaid(netPay > 0 ? netPay : '');
+        }
         setSelectedFarmer({
           _id: farmer._id,
           farmerNumber: farmer.farmerNumber,
@@ -256,6 +300,7 @@ export default function PaymentToProducer() {
       notifications.show({ title: 'Error', message: err?.message || 'Failed to fetch producer balance', color: 'red' });
       setSelectedFarmer(null);
       setAbstractBalance(0);
+      setAmountPaid('');
       setBankTransferPaid(false);
       setAlreadyPaidCash(false);
       setCashPaymentInfo(null);
@@ -275,6 +320,14 @@ export default function PaymentToProducer() {
           amountPaidWrapRef.current?.querySelector('input')?.focus();
         }, 50);
       }
+    }
+  };
+
+  // ─── Enter key on amount paid → save ────────────────────────────────────────
+  const handleAmountPaidKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSave();
     }
   };
 
@@ -301,6 +354,10 @@ export default function PaymentToProducer() {
       notifications.show({ title: 'Validation', message: 'Amount Paid must be greater than 0', color: 'orange' });
       return;
     }
+    if (paymentMode !== 'Cash' && !bankLedgerId) {
+      notifications.show({ title: 'Validation', message: 'Please select a Bank Ledger for non-cash payments', color: 'orange' });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -313,14 +370,16 @@ export default function PaymentToProducer() {
           fromDate: dayjs(selectedCycle.fromDate).toISOString(),
           toDate:   dayjs(selectedCycle.toDate).toISOString(),
         },
-        paymentDate:        dayjs(paymentDate).toISOString(),
-        isPartialPayment,
+        paymentDate:        dayjs(paymentDate).format('YYYY-MM-DD'),
+        isPartialPayment:   false,
         paymentCenter:     centerId || null,
         paymentCenterName: centerName || 'All',
         refNo,
         lastAbstractBalance: abstractBalance,
         printSlip,
         paymentMode,
+        bankLedgerId:   paymentMode !== 'Cash' ? bankLedgerId : null,
+        bankLedgerName: paymentMode !== 'Cash' ? bankLedgerName : '',
       };
 
       const res = editingId
@@ -357,6 +416,8 @@ export default function PaymentToProducer() {
     setAbstractBalance(payment.lastAbstractBalance || 0);
     setAmountPaid(payment.amountPaid || '');
     setPaymentMode(payment.paymentMode || 'Cash');
+    setBankLedgerId(payment.bankLedgerId || null);
+    setBankLedgerName(payment.bankLedgerName || '');
     setPrintSlip(payment.printSlip || false);
     setBankTransferPaid(false);
   };
@@ -382,6 +443,8 @@ export default function PaymentToProducer() {
     setAbstractBalance(0);
     setAmountPaid('');
     setPaymentMode('Cash');
+    setBankLedgerId(null);
+    setBankLedgerName('');
     setPrintSlip(false);
     setSelectedFarmer(null);
     setEditingId(null);
@@ -390,12 +453,29 @@ export default function PaymentToProducer() {
     setCashPaymentInfo(null);
   };
 
-  // ─── Print ──────────────────────────────────────────────────────────────────
+  // ─── Print handlers ─────────────────────────────────────────────────────────
   const handlePrint = useReactToPrint({
     content: () => printRef.current,
     documentTitle: 'Payment to Producer',
     pageStyle: PRINT_STYLE,
   });
+
+  const handlePrintDetailed = useReactToPrint({
+    content: () => detailPrintRef.current,
+    documentTitle: 'Payment to Producer - Detailed',
+    pageStyle: DETAIL_PRINT_STYLE,
+  });
+
+  const handlePrintVoucher = useReactToPrint({
+    content: () => voucherPrintRef.current,
+    documentTitle: 'Payment Voucher',
+    pageStyle: VOUCHER_PRINT_STYLE,
+  });
+
+  const triggerVoucherPrint = (pmt) => {
+    setVoucherData(pmt);
+    setTimeout(() => handlePrintVoucher(), 100);
+  };
 
   // ─── Sheet total (current page) ─────────────────────────────────────────────
   const sheetTotal = payments
@@ -407,10 +487,116 @@ export default function PaymentToProducer() {
     label: c.label,
   }));
 
+  const isBankMode = paymentMode !== 'Cash';
+
   /* ─── Render ─────────────────────────────────────────────────────────────── */
   return (
     <Container fluid px="md" py="sm">
       <style>{PRINT_STYLE}</style>
+
+      {/* Hidden voucher print area */}
+      <Box
+        ref={voucherPrintRef}
+        id="ptp-voucher-area"
+        style={{ position: 'absolute', top: -9999, left: -9999, width: 480 }}
+      >
+        {voucherData && (
+          <Box p="lg" style={{ border: '1px solid #333', fontFamily: 'serif' }}>
+            <Title order={3} ta="center" mb={4}>PAYMENT VOUCHER</Title>
+            <Text ta="center" size="xs" mb="sm">Payment to Producer</Text>
+            <Divider mb="sm" />
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <tbody>
+                <tr><td style={{ padding: '4px 0', width: '45%', fontWeight: 600 }}>Payment No</td><td>{voucherData.paymentNumber || '-'}</td></tr>
+                <tr><td style={{ padding: '4px 0', fontWeight: 600 }}>Date</td><td>{fmtDate(voucherData.paymentDate)}</td></tr>
+                <tr><td style={{ padding: '4px 0', fontWeight: 600 }}>Producer No</td><td>{voucherData.producerNumber || '-'}</td></tr>
+                <tr><td style={{ padding: '4px 0', fontWeight: 600 }}>Producer Name</td><td>{voucherData.producerName || '-'}</td></tr>
+                <tr><td style={{ padding: '4px 0', fontWeight: 600 }}>Cycle</td><td>{voucherData.processingPeriod ? `${fmtDate(voucherData.processingPeriod.fromDate)} – ${fmtDate(voucherData.processingPeriod.toDate)}` : '-'}</td></tr>
+                <tr><td style={{ padding: '4px 0', fontWeight: 600 }}>Center</td><td>{voucherData.paymentCenterName || 'All'}</td></tr>
+                <tr><td style={{ padding: '4px 0', fontWeight: 600 }}>Payment Mode</td><td>{voucherData.paymentMode || 'Cash'}</td></tr>
+                {voucherData.bankLedgerName && (
+                  <tr><td style={{ padding: '4px 0', fontWeight: 600 }}>Bank Ledger</td><td>{voucherData.bankLedgerName}</td></tr>
+                )}
+                {voucherData.refNo && (
+                  <tr><td style={{ padding: '4px 0', fontWeight: 600 }}>Ref No</td><td>{voucherData.refNo}</td></tr>
+                )}
+                <tr><td style={{ padding: '4px 0', fontWeight: 600 }}>Abstract Balance</td><td>₹ {fmt(voucherData.lastAbstractBalance)}</td></tr>
+              </tbody>
+            </table>
+            <Divider my="sm" />
+            <Group justify="space-between">
+              <Text fw={700} size="sm">Amount Paid</Text>
+              <Text fw={800} size="lg">₹ {fmt(voucherData.amountPaid)}</Text>
+            </Group>
+            <Divider my="sm" />
+            <Group justify="space-between" mt="xl">
+              <Text size="xs" c="dimmed">Receiver's Signature</Text>
+              <Text size="xs" c="dimmed">Authorised Signatory</Text>
+            </Group>
+          </Box>
+        )}
+      </Box>
+
+      {/* Hidden detailed print area */}
+      <Box
+        ref={detailPrintRef}
+        id="ptp-detail-area"
+        style={{ position: 'absolute', top: -9999, left: -9999, width: 1100 }}
+      >
+        <Box mb="sm">
+          <Title order={4} ta="center">Payment to Producer — Detailed Report</Title>
+          <Text ta="center" size="xs">
+            Cycle: {selectedCycle?.label || '-'} &nbsp;|&nbsp; Center: {centerName || 'All'}
+          </Text>
+          <Divider my="xs" />
+        </Box>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
+          <thead>
+            <tr style={{ background: '#f1f3f5' }}>
+              <th style={{ border: '1px solid #ccc', padding: '5px 6px' }}>Sl.No</th>
+              <th style={{ border: '1px solid #ccc', padding: '5px 6px' }}>Pro.No</th>
+              <th style={{ border: '1px solid #ccc', padding: '5px 6px' }}>Name</th>
+              <th style={{ border: '1px solid #ccc', padding: '5px 6px' }}>Ref No</th>
+              <th style={{ border: '1px solid #ccc', padding: '5px 6px', textAlign: 'right' }}>Abs.Balance</th>
+              <th style={{ border: '1px solid #ccc', padding: '5px 6px', textAlign: 'right' }}>Amt Paid</th>
+              <th style={{ border: '1px solid #ccc', padding: '5px 6px' }}>Mode</th>
+              <th style={{ border: '1px solid #ccc', padding: '5px 6px' }}>Bank Ledger</th>
+              <th style={{ border: '1px solid #ccc', padding: '5px 6px' }}>Center</th>
+              <th style={{ border: '1px solid #ccc', padding: '5px 6px' }}>Date</th>
+              <th style={{ border: '1px solid #ccc', padding: '5px 6px' }}>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {payments.map((pmt, idx) => (
+              <tr key={pmt._id} style={{ textDecoration: pmt.status === 'Cancelled' ? 'line-through' : 'none', color: pmt.status === 'Cancelled' ? '#adb5bd' : 'inherit' }}>
+                <td style={{ border: '1px solid #ccc', padding: '5px 6px', textAlign: 'center' }}>{(page - 1) * limit + idx + 1}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 6px' }}>{pmt.producerNumber || '-'}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 6px' }}>{pmt.producerName || '-'}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 6px' }}>{pmt.refNo || '-'}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 6px', textAlign: 'right' }}>₹ {fmt(pmt.lastAbstractBalance)}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 6px', textAlign: 'right' }}>₹ {fmt(pmt.amountPaid)}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 6px' }}>{pmt.paymentMode || '-'}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 6px' }}>{pmt.bankLedgerName || '-'}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 6px' }}>{pmt.paymentCenterName || 'All'}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 6px' }}>{fmtDate(pmt.paymentDate)}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 6px' }}>{pmt.status || 'Active'}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ background: '#f8f9fa', fontWeight: 700 }}>
+              <td colSpan={5} style={{ border: '1px solid #ccc', padding: '5px 6px', textAlign: 'right' }}>Total (this page):</td>
+              <td style={{ border: '1px solid #ccc', padding: '5px 6px', textAlign: 'right' }}>₹ {fmt(sheetTotal)}</td>
+              <td colSpan={5} style={{ border: '1px solid #ccc', padding: '5px 6px' }}></td>
+            </tr>
+            <tr style={{ background: '#e9ecef', fontWeight: 700 }}>
+              <td colSpan={5} style={{ border: '1px solid #ccc', padding: '5px 6px', textAlign: 'right' }}>Grand Total:</td>
+              <td style={{ border: '1px solid #ccc', padding: '5px 6px', textAlign: 'right' }}>₹ {fmt(grandTotal)}</td>
+              <td colSpan={5} style={{ border: '1px solid #ccc', padding: '5px 6px' }}></td>
+            </tr>
+          </tfoot>
+        </table>
+      </Box>
 
       <Grid gutter="md">
         {/* ══ LEFT COLUMN ══════════════════════════════════════════════════════ */}
@@ -426,19 +612,15 @@ export default function PaymentToProducer() {
               </Group>
 
               <Stack gap="sm">
-                <Radio.Group
-                  label="Payment Type"
-                  value={isPartialPayment ? 'partial' : 'full'}
-                  onChange={(val) => {
-                    setIsPartialPayment(val === 'partial');
-                    setPeriodConfirmed(false);
-                  }}
-                >
-                  <Group mt="xs" gap="md">
-                    <Radio value="full" label="Full Payment" />
-                    <Radio value="partial" label="Partial Payment" />
-                  </Group>
-                </Radio.Group>
+                {/* Date first */}
+                <DatePickerInput
+                  label="Payment Date"
+                  placeholder="Select payment date"
+                  value={paymentDate}
+                  onChange={setPaymentDate}
+                  clearable={false}
+                  required
+                />
 
                 <Select
                   label="Payment Cycle"
@@ -477,15 +659,6 @@ export default function PaymentToProducer() {
                   searchable
                 />
 
-                <DatePickerInput
-                  label="Payment Date"
-                  placeholder="Select payment date"
-                  value={paymentDate}
-                  onChange={setPaymentDate}
-                  clearable={false}
-                  required
-                />
-
                 <Group justify="flex-start" mt="xs">
                   <Button color="blue" onClick={handleOK}>
                     OK
@@ -504,6 +677,18 @@ export default function PaymentToProducer() {
               </Title>
 
               <Stack gap="sm" style={{ opacity: periodConfirmed ? 1 : 0.4, pointerEvents: periodConfirmed ? 'auto' : 'none' }}>
+                {/* Auto-filled context info */}
+                {periodConfirmed && (
+                  <Paper p="xs" bg="blue.0" radius="sm">
+                    <Text size="xs" c="blue.8" fw={500}>
+                      Cycle: {selectedCycle?.label || '-'}
+                    </Text>
+                    <Text size="xs" c="blue.7">
+                      Center: {centerName || 'All'}
+                    </Text>
+                  </Paper>
+                )}
+
                 <Checkbox
                   label="Display Last 5 Days Payments"
                   checked={last5Days}
@@ -523,6 +708,7 @@ export default function PaymentToProducer() {
                       setSelectedFarmer(null);
                       setBankTransferPaid(false);
                       setAbstractBalance(0);
+                      setAmountPaid('');
                     }}
                     onBlur={fetchProducerBalance}
                     onKeyDown={handleProducerIdKeyDown}
@@ -562,13 +748,6 @@ export default function PaymentToProducer() {
                   )}
                 </Box>
 
-                <TextInput
-                  label="Ref No"
-                  placeholder="Reference number (optional)"
-                  value={refNo}
-                  onChange={(e) => setRefNo(e.currentTarget.value)}
-                />
-
                 <NumberInput
                   label="Last Abstract Balance"
                   value={abstractBalance}
@@ -584,6 +763,7 @@ export default function PaymentToProducer() {
                     placeholder="0.00"
                     value={amountPaid}
                     onChange={setAmountPaid}
+                    onKeyDown={handleAmountPaidKeyDown}
                     min={0}
                     decimalScale={2}
                     prefix="₹ "
@@ -595,8 +775,40 @@ export default function PaymentToProducer() {
                   label="Payment Mode"
                   data={['Cash', 'Bank', 'Cheque', 'UPI', 'NEFT', 'RTGS']}
                   value={paymentMode}
-                  onChange={setPaymentMode}
+                  onChange={(val) => {
+                    setPaymentMode(val || 'Cash');
+                    if (val === 'Cash') {
+                      setBankLedgerId(null);
+                      setBankLedgerName('');
+                    }
+                  }}
                   disabled={bankTransferPaid || (alreadyPaidCash && !editingId)}
+                />
+
+                {/* Bank Ledger — shown for non-cash modes */}
+                {isBankMode && (
+                  <Select
+                    label="Bank Ledger"
+                    placeholder="Select bank ledger..."
+                    data={bankLedgers}
+                    value={bankLedgerId}
+                    onChange={(val, option) => {
+                      setBankLedgerId(val);
+                      setBankLedgerName(option?.label || '');
+                    }}
+                    required
+                    searchable
+                    nothingFoundMessage="No bank ledgers found"
+                    disabled={bankTransferPaid || (alreadyPaidCash && !editingId)}
+                    leftSection={<IconBuildingBank size={14} />}
+                  />
+                )}
+
+                <TextInput
+                  label="Ref No"
+                  placeholder="Reference number (optional)"
+                  value={refNo}
+                  onChange={(e) => setRefNo(e.currentTarget.value)}
                 />
 
                 <Checkbox
@@ -647,6 +859,9 @@ export default function PaymentToProducer() {
                 </Button>
                 <Button size="xs" variant="light" color="teal" leftSection={<IconPrinter size={14} />} onClick={handlePrint}>
                   Print
+                </Button>
+                <Button size="xs" variant="light" color="indigo" leftSection={<IconListDetails size={14} />} onClick={handlePrintDetailed}>
+                  Detailed Print
                 </Button>
               </Group>
             </Group>
@@ -723,13 +938,21 @@ export default function PaymentToProducer() {
                         <Table.Td>{pmt.producerName || pmt.farmerId?.personalDetails?.name || '-'}</Table.Td>
                         <Table.Td>{pmt.refNo || '-'}</Table.Td>
                         <Table.Td ta="right">₹ {fmt(pmt.amountPaid)}</Table.Td>
-                        <Table.Td>{pmt.paymentMode || '-'}</Table.Td>
+                        <Table.Td>
+                          {pmt.paymentMode || '-'}
+                          {pmt.bankLedgerName && (
+                            <Text size="xs" c="dimmed">{pmt.bankLedgerName}</Text>
+                          )}
+                        </Table.Td>
                         <Table.Td>{fmtDate(pmt.paymentDate)}</Table.Td>
                         <Table.Td ta="center" className="no-print">
                           {pmt.status !== 'Cancelled' && (
                             <Group gap={4} justify="center">
                               <ActionIcon size="sm" variant="subtle" color="blue" title="Edit" onClick={() => handleEdit(pmt)}>
                                 <IconEdit size={14} />
+                              </ActionIcon>
+                              <ActionIcon size="sm" variant="subtle" color="teal" title="Print Voucher" onClick={() => triggerVoucherPrint(pmt)}>
+                                <IconFileText size={14} />
                               </ActionIcon>
                               <ActionIcon size="sm" variant="subtle" color="red" title="Delete" onClick={() => handleDelete(pmt._id)}>
                                 <IconTrash size={14} />

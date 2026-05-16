@@ -176,6 +176,8 @@ export const createPayment = async (req, res) => {
       lastAbstractBalance,
       printSlip,
       paymentMode,
+      bankLedgerId,
+      bankLedgerName,
       remarks
     } = req.body;
 
@@ -246,6 +248,8 @@ export const createPayment = async (req, res) => {
       lastAbstractBalance: lastAbstractBalance || 0,
       printSlip: printSlip || false,
       paymentMode: paymentMode || 'Cash',
+      bankLedgerId: bankLedgerId || null,
+      bankLedgerName: bankLedgerName || '',
       remarks: remarks || '',
       createdBy: req.user?._id
     });
@@ -266,9 +270,14 @@ export const createPayment = async (req, res) => {
       const farmerObjId  = new mongoose.Types.ObjectId(farmerId);
       const companyObjId = new mongoose.Types.ObjectId(req.userCompany);
       const periodFilter = {
-        companyId: companyObjId,
-        farmerId:  farmerObjId,
-        status:    { $in: ['Pending', 'Partial'] },
+        companyId:     companyObjId,
+        farmerId:      farmerObjId,
+        status:        { $in: ['Pending', 'Partial'] },
+        // Never touch BankTransfer-sourced records — those belong to the bank
+        // transfer module. Updating them here marks them "Paid" via a different
+        // channel, which causes getBankTransferPaid to surface a phantom entry
+        // in the Payment-to-Producer grid with the cycle's toDate as the date.
+        paymentSource: { $ne: 'BankTransfer' },
       };
       if (processingPeriod?.fromDate) periodFilter['paymentPeriod.fromDate'] = { $gte: new Date(processingPeriod.fromDate) };
       if (processingPeriod?.toDate)   periodFilter['paymentPeriod.toDate']   = { $lte: new Date(new Date(processingPeriod.toDate).setHours(23, 59, 59, 999)) };
@@ -293,14 +302,16 @@ export const createPayment = async (req, res) => {
     try {
       if (payment.amountPaid > 0) {
         const voucher = await createProducerDuesPaymentVoucher({
-          amount:        payment.amountPaid,
-          paymentDate:   payment.paymentDate,
-          paymentMode:   payment.paymentMode,
-          companyId:     payment.companyId,
-          narration:     `Payment to Producer — ${payment.producerName || ''} ${payment.producerNumber ? '(#' + payment.producerNumber + ')' : ''}`.trim(),
-          referenceType: 'ProducerPayment',
-          referenceId:   payment._id,
-          createdBy:     payment.createdBy,
+          amount:          payment.amountPaid,
+          paymentDate:     payment.paymentDate,
+          paymentMode:     payment.paymentMode,
+          bankLedgerId:    payment.bankLedgerId || null,
+          bankLedgerName:  payment.bankLedgerName || '',
+          companyId:       payment.companyId,
+          narration:       `Payment to Producer — ${payment.producerName || ''} ${payment.producerNumber ? '(#' + payment.producerNumber + ')' : ''}`.trim(),
+          referenceType:   'ProducerPayment',
+          referenceId:     payment._id,
+          createdBy:       payment.createdBy,
         });
         if (voucher) {
           payment.voucherId = voucher._id;
@@ -572,7 +583,7 @@ export const updatePayment = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Cannot update a cancelled payment' });
     }
 
-    const allowedFields = ['refNo', 'amountPaid', 'printSlip', 'paymentMode', 'remarks'];
+    const allowedFields = ['refNo', 'amountPaid', 'printSlip', 'paymentMode', 'bankLedgerId', 'bankLedgerName', 'remarks'];
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
         payment[field] = req.body[field];
@@ -652,9 +663,10 @@ export const deletePayment = async (req, res) => {
         const farmerObjId  = new mongoose.Types.ObjectId(payment.farmerId);
         const companyObjId = new mongoose.Types.ObjectId(companyId);
         const periodFilter = {
-          companyId: companyObjId,
-          farmerId:  farmerObjId,
-          paidAmount: { $gt: 0 },
+          companyId:     companyObjId,
+          farmerId:      farmerObjId,
+          paidAmount:    { $gt: 0 },
+          paymentSource: { $ne: 'BankTransfer' },
         };
         if (payment.processingPeriod?.fromDate) periodFilter['paymentPeriod.fromDate'] = { $gte: new Date(payment.processingPeriod.fromDate) };
         if (payment.processingPeriod?.toDate)   periodFilter['paymentPeriod.toDate']   = { $lte: new Date(new Date(payment.processingPeriod.toDate).setHours(23, 59, 59, 999)) };

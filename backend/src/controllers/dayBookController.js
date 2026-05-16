@@ -20,10 +20,12 @@ export const getDayBook = async (req, res) => {
       });
     }
 
+    // Use local (IST) midnight — matches how Cash Book and dateFilters.js compute ranges,
+    // and how the PaymentToProducer frontend stores paymentDate (local midnight → UTC 18:30 prev day).
     const start = new Date(startDate);
-    start.setUTCHours(0, 0, 0, 0);
+    start.setHours(0, 0, 0, 0);
     const end = new Date(endDate);
-    end.setUTCHours(23, 59, 59, 999);
+    end.setHours(23, 59, 59, 999);
 
     const companyId = req.companyId;
 
@@ -740,6 +742,15 @@ export const getDayBook = async (req, res) => {
     const bankLedgerForPay = await Ledger.findOne({ companyId, ledgerType: 'Bank' }).lean();
     const bankLedgerPayName = bankLedgerForPay?.ledgerName || 'Bank Account';
 
+    // Local-date helper — avoids UTC offset shifting IST midnight payments to the previous day.
+    const localDateKey = (d) => {
+      const dt = new Date(d);
+      const y  = dt.getFullYear();
+      const m  = String(dt.getMonth() + 1).padStart(2, '0');
+      const dy = String(dt.getDate()).padStart(2, '0');
+      return `${y}-${m}-${dy}`;
+    };
+
     const cashProducerPayments = await ProducerPayment.find({
       companyId,
       paymentDate: { $gte: start, $lte: end },
@@ -749,7 +760,7 @@ export const getDayBook = async (req, res) => {
     }).lean();
 
     for (const pp of cashProducerPayments) {
-      const dateKey = pp.paymentDate.toISOString().split('T')[0];
+      const dateKey = localDateKey(pp.paymentDate);
       if (!dateMap[dateKey]) {
         dateMap[dateKey] = { date: dateKey, receiptSide: [], paymentSide: [], totalReceipts: 0, totalPayments: 0 };
       }
@@ -775,16 +786,18 @@ export const getDayBook = async (req, res) => {
     }).lean();
 
     for (const pp of bankProducerPayments) {
-      const dateKey = pp.paymentDate.toISOString().split('T')[0];
+      const dateKey = localDateKey(pp.paymentDate);
       if (!dateMap[dateKey]) {
         dateMap[dateKey] = { date: dateKey, receiptSide: [], paymentSide: [], totalReceipts: 0, totalPayments: 0 };
       }
-      const voucherNum = pp.paymentNumber || `PTP-${String(pp._id).slice(-6)}`;
-      const narration  = `Payment to Producer — ${pp.producerName || ''}`.trim();
+      const voucherNum  = pp.paymentNumber || `PTP-${String(pp._id).slice(-6)}`;
+      const narration   = `Payment to Producer — ${pp.producerName || ''}`.trim();
+      // Use the specific bank ledger selected for this payment; fall back to first bank ledger
+      const ledgerLabel = pp.bankLedgerName || bankLedgerPayName;
 
       const receiptEntry = {
         date: pp.paymentDate, voucherNumber: voucherNum,
-        voucherType: 'BankTransfer', ledgerName: bankLedgerPayName,
+        voucherType: 'BankTransfer', ledgerName: ledgerLabel,
         narration, amount: pp.amountPaid
       };
       dateMap[dateKey].receiptSide.push(receiptEntry);

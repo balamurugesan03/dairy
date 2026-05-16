@@ -20,6 +20,8 @@ const producerPaymentSchema = new mongoose.Schema({
   amountPaid: { type: Number, required: true, min: 0 },
   printSlip: { type: Boolean, default: false },
   paymentMode: { type: String, enum: ['Cash', 'Bank', 'Cheque', 'UPI', 'NEFT', 'RTGS'], default: 'Cash' },
+  bankLedgerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ledger', default: null },
+  bankLedgerName: { type: String, default: '' },
   remarks: { type: String, maxlength: 500 },
   status: { type: String, enum: ['Active', 'Cancelled'], default: 'Active' },
   cancelledAt: Date,
