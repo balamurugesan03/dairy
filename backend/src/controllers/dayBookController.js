@@ -6,7 +6,6 @@ import StockTransaction from '../models/StockTransaction.js';
 import Advance from '../models/Advance.js';
 import ProducerReceipt from '../models/ProducerReceipt.js';
 import ProducerPayment from '../models/ProducerPayment.js';
-import FarmerPayment from '../models/FarmerPayment.js';
 import Sales from '../models/Sales.js';
 
 // Get Day Book report with date-wise grouping
@@ -99,6 +98,10 @@ export const getDayBook = async (req, res) => {
       // Producer Payments (payment-to-producer) — handled by direct ProducerPayment
       // query below; skip the voucher to avoid double-counting.
       if (voucher.referenceType === 'ProducerPayment') continue;
+      // FarmerPayment advance-recovery Journal vouchers (Dr PRODUCERS DUES / Cr
+      // KDF WELFARE FUND, Cattle Feed Advance, etc.) — one voucher per farmer, so
+      // they appear individually. Grouped into per-date combined entries below.
+      if (voucher.voucherType === 'Journal' && voucher.referenceType === 'FarmerPayment') continue;
 
       const dateKey = voucher.voucherDate.toISOString().split('T')[0];
 
@@ -252,7 +255,7 @@ export const getDayBook = async (req, res) => {
             shift: '$shift'
           },
           totalAmount: { $sum: '$amount' },
-          totalQty:    { $sum: '$ltr' },
+          totalQty:    { $sum: '$qty' },
           farmers:     { $addToSet: '$farmer' }
         }
       },
@@ -815,64 +818,57 @@ export const getDayBook = async (req, res) => {
       paymentSide.push(paymentEntry);
     }
 
-    // --- Welfare Fund Recovery — one combined entry per cycle (cycle toDate) ---
-    // Receipt side : WELFARE FUND  (income deducted from producer dues)
-    // Payment side : PRODUCERS DUES (liability reduced by welfare amount)
-    // Both are adjustment (non-cash) entries — same pattern as MilkPurchase / UnionSales.
-    const welfareRaw = await FarmerPayment.aggregate([
-      {
-        $match: {
-          companyId,
-          paymentDate:       { $gte: start, $lte: end },
-          status:            { $ne: 'Cancelled' },
-          'deductions.type': 'Welfare Recovery',
-        },
-      },
-      { $unwind: '$deductions' },
-      { $match: { 'deductions.type': 'Welfare Recovery', 'deductions.amount': { $gt: 0 } } },
-      {
-        $group: {
-          _id:          '$paymentDate',
-          totalWelfare: { $sum: '$deductions.amount' },
-          farmerCount:  { $sum: 1 },
-        },
-      },
-    ]);
+    // --- FarmerPayment Advance Recovery Vouchers (CF/Cash/Loan/Welfare) ---
+    // Journal vouchers with referenceType='FarmerPayment' are created one per
+    // farmer per cycle (Dr PRODUCERS DUES / Cr KDF WELFARE FUND, CF Advance, etc.).
+    // They are skipped in the main loop above and grouped here by date so the
+    // day book shows one combined entry per date instead of one per farmer.
+    const fpJournals = vouchers.filter(
+      v => v.voucherType === 'Journal' && v.referenceType === 'FarmerPayment'
+    );
 
-    // Bucket by local (IST) date — avoids UTC offset misclassifying midnight entries.
-    const welfareByDate = {};
-    for (const rec of welfareRaw) {
-      const dk = localDateKey(rec._id);
-      if (!welfareByDate[dk]) welfareByDate[dk] = { totalWelfare: 0, farmerCount: 0 };
-      welfareByDate[dk].totalWelfare += rec.totalWelfare;
-      welfareByDate[dk].farmerCount  += rec.farmerCount;
+    // Group: dateKey → ledgerName → { debitTotal, creditTotal }
+    const fpByDate = {};
+    for (const v of fpJournals) {
+      const dk = v.voucherDate.toISOString().split('T')[0];
+      if (!fpByDate[dk]) fpByDate[dk] = {};
+      for (const entry of (v.entries || [])) {
+        const name = entry.ledgerName || '';
+        if (!fpByDate[dk][name]) {
+          fpByDate[dk][name] = { debitTotal: 0, creditTotal: 0 };
+        }
+        fpByDate[dk][name].debitTotal  += entry.debitAmount  || 0;
+        fpByDate[dk][name].creditTotal += entry.creditAmount || 0;
+      }
     }
 
-    for (const [dateKey, welf] of Object.entries(welfareByDate)) {
-      if (welf.totalWelfare <= 0) continue;
+    for (const [dateKey, ledgerMap] of Object.entries(fpByDate)) {
       if (!dateMap[dateKey]) {
         dateMap[dateKey] = { date: dateKey, receiptSide: [], paymentSide: [], totalReceipts: 0, totalPayments: 0 };
       }
-      const voucherNumber = `WEL-${dateKey.replace(/-/g, '')}`;
-      const narration     = `Welfare Fund Recovery — ${welf.farmerCount} farmer(s)`;
-
-      const welfReceipt = {
-        date: new Date(dateKey), voucherNumber,
-        voucherType: 'WelfareFund', ledgerName: 'WELFARE FUND',
-        narration, amount: welf.totalWelfare,
-      };
-      dateMap[dateKey].receiptSide.push(welfReceipt);
-      dateMap[dateKey].totalReceipts += welf.totalWelfare;
-      receiptSide.push(welfReceipt);
-
-      const welfPayment = {
-        date: new Date(dateKey), voucherNumber,
-        voucherType: 'WelfareFund', ledgerName: 'PRODUCERS DUES',
-        narration, amount: welf.totalWelfare,
-      };
-      dateMap[dateKey].paymentSide.push(welfPayment);
-      dateMap[dateKey].totalPayments += welf.totalWelfare;
-      paymentSide.push(welfPayment);
+      const vNum = `ADV-${dateKey.replace(/-/g, '')}`;
+      for (const [ledgerName, totals] of Object.entries(ledgerMap)) {
+        if (totals.debitTotal > 0) {
+          const e = {
+            date: new Date(dateKey), voucherNumber: vNum,
+            voucherType: 'Journal', ledgerName,
+            narration: 'Advance Recovery', amount: totals.debitTotal,
+          };
+          dateMap[dateKey].paymentSide.push(e);
+          dateMap[dateKey].totalPayments += totals.debitTotal;
+          paymentSide.push(e);
+        }
+        if (totals.creditTotal > 0) {
+          const e = {
+            date: new Date(dateKey), voucherNumber: vNum,
+            voucherType: 'Journal', ledgerName,
+            narration: 'Advance Recovery', amount: totals.creditTotal,
+          };
+          dateMap[dateKey].receiptSide.push(e);
+          dateMap[dateKey].totalReceipts += totals.creditTotal;
+          receiptSide.push(e);
+        }
+      }
     }
 
     // --- Build dayWiseData with chained opening/closing balances ---
