@@ -407,9 +407,9 @@ const ProducerRegister = () => {
 
                 {/* Milk Details */}
                 <th className="col-header col-date">Date</th>
-                <th className="col-header col-qty">Morn Qty</th>
-                <th className="col-header col-qty">Eve Qty</th>
-                <th className="col-header col-qty">Total Milk</th>
+                <th className="col-header col-qty">Morn Ltr</th>
+                <th className="col-header col-qty">Eve Ltr</th>
+                <th className="col-header col-qty">Total Ltr</th>
                 <th className="col-header col-rate">Rate</th>
                 <th className="col-header col-amount">Total Amt</th>
 

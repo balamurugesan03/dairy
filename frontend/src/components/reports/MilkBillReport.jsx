@@ -376,17 +376,17 @@ const MilkBillReport = () => {
                   </tr>
                   {/* Column sub-headers */}
                   <tr>
-                    <th style={thCol()}>Qty</th>
+                    <th style={thCol()}>Ltr</th>
                     <th style={thCol()}>CLR</th>
                     <th style={thCol()}>FAT</th>
                     <th style={thCol()}>SNF</th>
                     <th style={thCol()}>Rate</th>
-                    <th style={thCol()}>Qty</th>
+                    <th style={thCol()}>Ltr</th>
                     <th style={thCol()}>CLR</th>
                     <th style={thCol()}>FAT</th>
                     <th style={thCol()}>SNF</th>
                     <th style={thCol()}>Rate</th>
-                    <th style={thCol()}>Qty</th>
+                    <th style={thCol()}>Ltr</th>
                     <th style={thCol()}>Rate</th>
                     <th style={thCol()}>Amt</th>
                     <th style={thCol()}>Cattle Feed</th>

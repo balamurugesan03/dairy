@@ -72,11 +72,11 @@ const calcShiftIncentiveAmt = (incentives, netKg, netLtr, fat, snf, baseAmount) 
   let total = 0;
   for (const inc of incentives) {
     if (inc.rateBased?.enabled) {
-      if (inc.rateBased.qty)    total += inc.rateBased.rate * netKg;
+      if (inc.rateBased.qty)    total += inc.rateBased.rate * netLtr;
       else if (inc.rateBased.amount) total += inc.rateBased.rate;
     }
     if (inc.percentageBased?.enabled) {
-      if (inc.percentageBased.qty)    total += (inc.percentageBased.rate / 100) * netKg;
+      if (inc.percentageBased.qty)    total += (inc.percentageBased.rate / 100) * netLtr;
       else if (inc.percentageBased.amount) total += (inc.percentageBased.rate / 100) * baseAmount;
     }
     if (inc.parameterBased?.enabled) {
@@ -1007,13 +1007,12 @@ const MilkPurchase = () => {
     }).catch(() => setMilmaLookedUpRate(null));
   }, [fat, clr, snf, activeChart, date, paramCombo]); // eslint-disable-line
 
-  // Auto-calc — Net LTR → KG (× 1.03), then calc rate/amount
+  // Auto-calc — Net LTR → calc rate/amount
   useEffect(() => {
     const grossLtr = parseFloat(ltr) || 0;
     const waterLtr = parseFloat(water) || 0;
     const netLtr   = grossLtr;
-    const netKg    = parseFloat((netLtr * 1.03).toFixed(3));
-    const base = calcValues(netKg, parseFloat(fat) || 0, parseFloat(clr) || 0, parseFloat(snf) || 0, activeChart, chartRows, milmaLookedUpRate);
+    const base = calcValues(netLtr, parseFloat(fat) || 0, parseFloat(clr) || 0, parseFloat(snf) || 0, activeChart, chartRows, milmaLookedUpRate);
     const isManualEntry = entryMode === 'rate' || entryMode === 'amount';
     if (entryMode === 'rate' && manualRate !== '') {
       const rate = parseFloat(manualRate) || 0;
@@ -1135,9 +1134,8 @@ const MilkPurchase = () => {
     const grossLtr = parseFloat(q) || 0;
     const waterLtr = parseFloat(w) || 0;
     const netLtr   = grossLtr;
-    const netKg    = parseFloat((netLtr * 1.03).toFixed(3));
     // Always recalculate fresh to avoid stale calcResult (race condition on fast Enter)
-    const fresh = calcValues(netKg, parseFloat(f) || 0, parseFloat(c) || 0, parseFloat(s) || 0, activeChart, chartRows, milmaRate);
+    const fresh = calcValues(netLtr, parseFloat(f) || 0, parseFloat(c) || 0, parseFloat(s) || 0, activeChart, chartRows, milmaRate);
     let freshRate   = fresh.rate;
     let freshAmount = fresh.amount;
     if (em === 'rate' && mr !== '') { freshRate = parseFloat(mr) || 0; freshAmount = parseFloat((netLtr * freshRate).toFixed(2)); }
@@ -1146,10 +1144,10 @@ const MilkPurchase = () => {
     const timeIncRate   = ati?.rate || 0;
     const timeIncAmount = parseFloat((timeIncRate * netLtr).toFixed(2));
     // Add shift incentive if active
-    const shiftIncAmount = calcShiftIncentiveAmt(asi || [], netKg, netLtr, parseFloat(f) || 0, parseFloat(s) || fresh.snf || 0, freshAmount);
+    const shiftIncAmount = calcShiftIncentiveAmt(asi || [], netLtr, netLtr, parseFloat(f) || 0, parseFloat(s) || fresh.snf || 0, freshAmount);
     freshAmount = parseFloat((freshAmount + timeIncAmount + shiftIncAmount).toFixed(2));
     try {
-      const payload = { date: toDate(d).toISOString(), shift: sh, collectionCenter: ct || undefined, agent: ag || undefined, farmer: p._id, farmerNumber: p.no, farmerName: p.name, qty: netKg, ltr: netLtr, clr: parseFloat(c) || 0, fat: parseFloat(f), snf: parseFloat(s) || fresh.snf || 0, addedWater: waterLtr, rate: freshRate, incentive: fresh.incentive, timeIncentiveRate: timeIncRate || undefined, timeIncentiveAmount: timeIncAmount || undefined, shiftIncentiveAmount: shiftIncAmount || undefined, amount: freshAmount };
+      const payload = { date: toDate(d).toISOString(), shift: sh, collectionCenter: ct || undefined, agent: ag || undefined, farmer: p._id, farmerNumber: p.no, farmerName: p.name, qty: netLtr, ltr: netLtr, clr: parseFloat(c) || 0, fat: parseFloat(f), snf: parseFloat(s) || fresh.snf || 0, addedWater: waterLtr, rate: freshRate, incentive: fresh.incentive, timeIncentiveRate: timeIncRate || undefined, timeIncentiveAmount: timeIncAmount || undefined, shiftIncentiveAmount: shiftIncAmount || undefined, amount: freshAmount };
 
       if (eid) {
         // UPDATE existing entry
@@ -1373,7 +1371,6 @@ const MilkPurchase = () => {
 
   // Aggregates
   const totalLtr = entries.reduce((s, e) => s + (e.ltr ?? e.qty), 0);
-  const totalQty = parseFloat((totalLtr * 1.03).toFixed(3));
   const totalAmt = entries.reduce((s, e) => s + e.amount, 0);
   const avgFat   = entries.length ? entries.reduce((s, e) => s + e.fat, 0) / entries.length : 0;
   const avgClr   = entries.length ? entries.reduce((s, e) => s + e.clr, 0) / entries.length : 0;
@@ -1762,16 +1759,11 @@ const MilkPurchase = () => {
               const grossLtr = parseFloat(ltr) || 0;
               const waterLtr = parseFloat(water) || 0;
               const netLtr = grossLtr;
-              const netKg = parseFloat((netLtr * 1.03).toFixed(3));
               return (
                 <Group gap={8} wrap="nowrap">
                   <Box style={{ flex: 1, background: '#fff1f2', border: '1.5px solid #fda4af', borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
                     <Text size="9px" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>Net Ltr</Text>
                     <Text size="14px" fw={700} style={{ color: '#be123c', lineHeight: 1.2 }}>{netLtr.toFixed(2)}</Text>
-                  </Box>
-                  <Box style={{ flex: 1, background: '#ecfdf5', border: '1.5px solid #6ee7b7', borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
-                    <Text size="9px" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>KG</Text>
-                    <Text size="14px" fw={700} style={{ color: '#065f46', lineHeight: 1.2 }}>{netKg.toFixed(3)}</Text>
                   </Box>
                   {/* SNF (Auto) or CLR (Auto) depending on paramCombo */}
                   {paramCombo === 'CLR-FAT' ? (
@@ -1787,7 +1779,7 @@ const MilkPurchase = () => {
                   )}
                   {/* Rate — editable in 'rate' mode */}
                   <Box style={{ flex: 1, background: entryMode === 'rate' ? '#e0f2fe' : '#eff6ff', border: `2px solid ${entryMode === 'rate' ? '#0284c7' : '#bfdbfe'}`, borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
-                    <Text size="9px" fw={700} style={{ color: entryMode === 'rate' ? '#0284c7' : '#64748b' }} tt="uppercase">{entryMode === 'rate' ? '✏ Rate/L' : (entryMode === 'amount' ? 'Rate/L' : 'Rate/KG')}</Text>
+                    <Text size="9px" fw={700} style={{ color: entryMode === 'rate' ? '#0284c7' : '#64748b' }} tt="uppercase">{entryMode === 'rate' ? '✏ Rate/L' : 'Rate/L'}</Text>
                     {entryMode === 'rate' ? (
                       <NumberInput
                         ref={manualRateRef}
@@ -1823,10 +1815,8 @@ const MilkPurchase = () => {
                   {/* Shift Incentive (shown only when active) */}
                   {activeShiftIncentives.length > 0 && (() => {
                     const grossLtr = parseFloat(ltr) || 0;
-                    const waterLtr = parseFloat(water) || 0;
                     const netLtr   = grossLtr;
-                    const netKg    = parseFloat((netLtr * 1.03).toFixed(3));
-                    const sAmt     = calcShiftIncentiveAmt(activeShiftIncentives, netKg, netLtr, parseFloat(fat) || 0, parseFloat(snf) || 0, calcResult.amount);
+                    const sAmt     = calcShiftIncentiveAmt(activeShiftIncentives, netLtr, netLtr, parseFloat(fat) || 0, parseFloat(snf) || 0, calcResult.amount);
                     return (
                       <Box style={{ flex: 1, background: '#fff7ed', border: '2px solid #fb923c', borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
                         <Text size="9px" fw={700} c="#9a3412" tt="uppercase" style={{ letterSpacing: '0.4px' }}>🔄 Shift Inc</Text>
@@ -1852,8 +1842,7 @@ const MilkPurchase = () => {
                       const waterLtr  = parseFloat(water) || 0;
                       const netLtr    = grossLtr;
                       const tAmt  = activeTimeIncentive ? parseFloat((activeTimeIncentive.rate * netLtr).toFixed(2)) : 0;
-                      const netKgD = parseFloat((netLtr * 1.03).toFixed(3));
-                      const sAmt  = calcShiftIncentiveAmt(activeShiftIncentives, netKgD, netLtr, parseFloat(fat) || 0, parseFloat(snf) || 0, calcResult.amount);
+                      const sAmt  = calcShiftIncentiveAmt(activeShiftIncentives, netLtr, netLtr, parseFloat(fat) || 0, parseFloat(snf) || 0, calcResult.amount);
                       return <Text size="18px" fw={900} style={{ color: 'white', lineHeight: 1.2 }}>₹ {(calcResult.amount + tAmt + sAmt).toFixed(2)}</Text>;
                     })()}
                   </Box>
@@ -2041,7 +2030,7 @@ const MilkPurchase = () => {
             <Table striped highlightOnHover stickyHeader withColumnBorders style={{ fontSize: 12 }}>
               <Table.Thead style={{ background: 'linear-gradient(180deg,#dbeafe 0%,#bfdbfe 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
                 <Table.Tr>
-                  {['#', 'Bill No', 'Mem. No', 'Member Name', 'Date', 'Shift', 'Litres', 'KG', 'FAT %', 'CLR', 'SNF %', 'Incentive', 'Rate/L', 'Amount', ''].map(col => (
+                  {['#', 'Bill No', 'Mem. No', 'Member Name', 'Date', 'Shift', 'Litres', 'FAT %', 'CLR', 'SNF %', 'Incentive', 'Rate/L', 'Amount', ''].map(col => (
                     <Table.Th key={col} style={{ fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#1e40af', whiteSpace: 'nowrap', padding: '9px 12px', borderBottom: '2px solid #93c5fd' }}>
                       {col}
                     </Table.Th>
@@ -2079,7 +2068,6 @@ const MilkPurchase = () => {
                       <Table.Td style={{ padding: '6px 8px', color: '#475569', fontSize: 11, whiteSpace: 'nowrap' }}>{entry.date ? new Date(entry.date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit' }) : '—'}</Table.Td>
                       <Table.Td style={{ padding: '6px 8px' }}><Badge size="xs" color={entry.shift === 'AM' ? 'orange' : 'indigo'} variant="light" radius="sm">{entry.shift || '—'}</Badge></Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0369a1', textAlign: 'right' }}>{(entry.ltr ?? entry.qty).toFixed(2)}</Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#065f46', textAlign: 'right' }}>{parseFloat((entry.qty * 1.03).toFixed(3))}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#c2410c', textAlign: 'right' }}>{entry.fat.toFixed(1)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', color: '#6d28d9', textAlign: 'right' }}>{entry.clr.toFixed(1)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', color: '#166534', textAlign: 'right' }}>{entry.snf.toFixed(2)}</Table.Td>
@@ -2101,7 +2089,6 @@ const MilkPurchase = () => {
                   <Table.Tr style={{ background: '#1e3a8a' }}>
                     <Table.Td colSpan={6} style={{ padding: '8px 12px', fontWeight: 700, color: '#93c5fd', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#7dd3fc', textAlign: 'right', fontSize: 13 }}>{totalLtr.toFixed(2)}</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#6ee7b7', textAlign: 'right', fontSize: 13 }}>{totalQty.toFixed(3)}</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#fdba74', textAlign: 'right' }}>{avgFat.toFixed(1)}</Table.Td>
                     <Table.Td colSpan={2} />
                     <Table.Td />

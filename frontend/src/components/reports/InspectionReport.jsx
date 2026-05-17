@@ -39,6 +39,59 @@ const makeDefault = () => ({
   bankBalancePreviousMonth:      '',
   cattleFeedAdvanceOutstanding:  '',
   producerDueAmountOutstanding:  '',
+  // Section H
+  schoolMilkSalesOutstanding:        '',
+  milkCreditSalesOutstanding:        '',
+  // Section I
+  prevYearMilkPurchaseQty:           '',
+  prevYearLocalSalesQty:             '',
+  prevYearMilkPurchasePrice:         '',
+  prevYearLocalSalesPrice:           '',
+  prevYearSchoolSalesQty:            '',
+  prevYearSchoolSalesPrice:          '',
+  prevYearProductionUnitQty:         '',
+  prevYearProductionUnitPrice:       '',
+  prevYearDairySalesQty:             '',
+  prevYearDairySalesPrice:           '',
+  prevYearMilkShortfallExcess:       '',
+  prevYearCattleFeedStock:           '',
+  prevYearMilkProcurementProfit:     '',
+  // Section J
+  prevYearCattleFeedPurchasePrice:   '',
+  prevYearCattleFeedSalesPrice:      '',
+  prevYearCattleFeedClosingStock:    '',
+  prevYearCattleFeedSalesCommission: '',
+  prevYearCattleFeedStockShortfall:  '',
+  // Section K
+  totalTradeIncome:                  '',
+  prevYearTradeExpenses:             '',
+  prevYearTradeProfit:               '',
+  totalSalaryExpenses:               '',
+  salaryExpenseRatio:                '',
+  totalOperatingExpenses:            '',
+  prevYearNetProfit:                 '',
+  netProfitPerSocietyAccounts:       '',
+  netProfitDifference:               '',
+  // Section L
+  permanentEmployeesCount:           '',
+  temporaryEmployeesCount:           '',
+  // Section M
+  section80Implementation:           '',
+  section80NonImplementationReason:  '',
+  welfareFundMembersCount:           '',
+  farmersToAddWelfareFund:           '',
+  welfareFundArrears:                '',
+  // Section N
+  milkPriceIncentiveAmount:          '',
+  secretaryAdvanceOutstanding:       '',
+  presidentAdvanceOutstanding:       '',
+  agenciesAmountPayable:             '',
+  // Section O
+  lastAuditReportYear:               '',
+  auditReportDueTo:                  '',
+  auditReportDueBy:                  '',
+  dailyWrittenDownCompletionDate:    '',
+  societyWrittenRecordsDate:         '',
 });
 
 const n = (v) => parseFloat(v) || 0;
@@ -93,6 +146,34 @@ export default function InspectionReport() {
     form.schoolSalesQty, form.schoolSalesPrice,
     form.productionUnitQty, form.productionUnitPrice,
     form.dairySalesQty,  form.dairySalesPrice,
+  ]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Auto-calculations: Previous Year fields ──────────────────────────────────
+  useEffect(() => {
+    const totalTradeIncome  = fmt(n(form.prevYearMilkProcurementProfit) + n(form.prevYearCattleFeedSalesCommission));
+    const prevYearTradeProfit = fmt(n(totalTradeIncome) - n(form.prevYearTradeExpenses));
+    const salaryExpenseRatio  = n(prevYearTradeProfit) !== 0
+      ? fmt(n(form.totalSalaryExpenses) / n(prevYearTradeProfit) * 100)
+      : '';
+    const prevYearNetProfit   = fmt(
+      n(form.prevYearCattleFeedSalesPrice) -
+      (n(form.prevYearCattleFeedClosingStock) + n(form.prevYearCattleFeedSalesCommission))
+    );
+    const netProfitDifference = fmt(n(prevYearNetProfit) - n(form.netProfitPerSocietyAccounts));
+
+    setForm(prev => ({
+      ...prev,
+      totalTradeIncome,
+      prevYearTradeProfit,
+      salaryExpenseRatio,
+      prevYearNetProfit,
+      netProfitDifference,
+    }));
+  }, [
+    form.prevYearMilkProcurementProfit, form.prevYearCattleFeedSalesCommission,
+    form.prevYearTradeExpenses, form.totalSalaryExpenses,
+    form.prevYearCattleFeedSalesPrice, form.prevYearCattleFeedClosingStock,
+    form.netProfitPerSocietyAccounts,
   ]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Populate API data into form ─────────────────────────────────────────────
@@ -247,9 +328,9 @@ export default function InspectionReport() {
             data.cell.styles.fillColor = [217, 232, 255];
             data.cell.styles.fontStyle = 'bold';
             data.cell.styles.textColor = [26, 58, 107];
-          } else if (['9','10','21','22'].includes(raw[0])) {
+          } else if (['9','10','21','22','49','51','53'].includes(raw[0])) {
             data.cell.styles.fillColor = [255, 251, 235];
-          } else if (['23','24'].includes(raw[0])) {
+          } else if (['23','24','55','57'].includes(raw[0])) {
             data.cell.styles.fillColor = [224, 240, 224];
           }
         }
@@ -304,6 +385,67 @@ export default function InspectionReport() {
       ['26', 'Bank Balance as on Previous Month (₹)',        f.bankBalancePreviousMonth],
       ['27', 'Cattle Feed Advance Outstanding (₹)',          f.cattleFeedAdvanceOutstanding],
       ['28', 'Producer Due Amount Outstanding (₹)',          f.producerDueAmountOutstanding],
+      // Section H
+      ['', 'OUTSTANDING – PREVIOUS MONTH', ''],
+      ['29', 'School Milk Sales Amount Outstanding as on Previous Month (₹)', f.schoolMilkSalesOutstanding],
+      ['30', 'Milk Credit Sales (Vendor/Other Inst.) Amount Outstanding as on Previous Month (₹)', f.milkCreditSalesOutstanding],
+      // Section I
+      ['', 'PREVIOUS YEAR – MILK DATA', ''],
+      ['31', 'Milk Purchase Quantity in Previous Year (Ltr)',                 f.prevYearMilkPurchaseQty],
+      ['32', 'Local Sales Quantity in Previous Year (Ltr)',                   f.prevYearLocalSalesQty],
+      ['33', 'Milk Purchase Price in Previous Year – Total Amount (₹)',       f.prevYearMilkPurchasePrice],
+      ['34', 'Local Sales Price in Previous Year – Total Amount (₹)',         f.prevYearLocalSalesPrice],
+      ['35', 'School/Anganwadi Sales Quantity in Previous Year (Ltr)',        f.prevYearSchoolSalesQty],
+      ['36', 'School/Anganwadi Sales Price in Previous Year – Total Amount (₹)', f.prevYearSchoolSalesPrice],
+      ['37', 'Previous Year\'s Production Unit – Quantity (Ltr)',             f.prevYearProductionUnitQty],
+      ['38', 'Previous Year\'s Production Unit Sales Price – Total Amount (₹)', f.prevYearProductionUnitPrice],
+      ['39', 'Previous Year\'s Dairy Sales – Quantity (Ltr)',                 f.prevYearDairySalesQty],
+      ['40', 'Previous Year\'s Dairy Sales Price – Total Amount (₹)',         f.prevYearDairySalesPrice],
+      ['41', 'Previous Year\'s Milk Procurement – Marketing Deficit/Excess (Ltr)', f.prevYearMilkShortfallExcess],
+      ['42', 'Previous Year\'s Cattle Feed Stock – Total Amount (₹)',         f.prevYearCattleFeedStock],
+      ['43', 'Previous Year\'s Milk Procurement – Marketing Profit (₹)',      f.prevYearMilkProcurementProfit],
+      // Section J
+      ['', 'PREVIOUS YEAR – CATTLE FEED', ''],
+      ['44', 'Previous Year\'s Cattle Feed Purchase Price – Total Amount (₹)', f.prevYearCattleFeedPurchasePrice],
+      ['45', 'Previous Year\'s Cattle Feed Sales Price – Total Amount (₹)',   f.prevYearCattleFeedSalesPrice],
+      ['46', 'Previous Year\'s Cattle Feed Closing Stock – Total Amount (₹)', f.prevYearCattleFeedClosingStock],
+      ['47', 'Previous Year\'s Cattle Feed Sales Commission – Total Amount (₹)', f.prevYearCattleFeedSalesCommission],
+      ['48', 'Previous Year\'s Cattle Feed Stock Deficit / Excess',           f.prevYearCattleFeedStockShortfall],
+      // Section K
+      ['', 'TRADE ANALYSIS – PREVIOUS YEAR', ''],
+      ['49', 'Total Trade Income [43+47] (₹)',                                f.totalTradeIncome],
+      ['50', 'Previous Year\'s Total Trade Related Expenses (₹)',             f.prevYearTradeExpenses],
+      ['51', 'Previous Year\'s Total Trade Profit [49-50] (₹)',               f.prevYearTradeProfit],
+      ['52', 'Total Salary Expenses (₹)',                                     f.totalSalaryExpenses],
+      ['53', 'Salary Expense Ratio – % of Trade Profit [52÷51×100]',          f.salaryExpenseRatio],
+      ['54', 'Total Operating Expenses (₹)',                                  f.totalOperatingExpenses],
+      ['55', 'Net Profit of the Previous Year [45-(46+47)] (₹)',              f.prevYearNetProfit],
+      ['56', 'Net Profit as per the Society Accounts (₹)',                    f.netProfitPerSocietyAccounts],
+      ['57', 'Difference in Net Profit [55-56] (₹)',                          f.netProfitDifference],
+      // Section L
+      ['', 'EMPLOYEES', ''],
+      ['58', 'Number of Permanent Employees',                                 f.permanentEmployeesCount],
+      ['59', 'Number of Temporary Employees',                                 f.temporaryEmployeesCount],
+      // Section M
+      ['', 'SECTION 80 & WELFARE FUND', ''],
+      ['60', 'Implementation of Section 80 (Yes/No)',                         f.section80Implementation],
+      ['61', 'Reason for Non-Implementation of Section 80',                   f.section80NonImplementationReason],
+      ['62', 'Number of Welfare Fund Members',                                f.welfareFundMembersCount],
+      ['63', 'Number of Farmers to be Added to Welfare Fund',                 f.farmersToAddWelfareFund],
+      ['64', 'Welfare Fund Arrears – up to Previous Month (₹)',               f.welfareFundArrears],
+      // Section N
+      ['', 'INCENTIVES & ADVANCES', ''],
+      ['65', 'Total Milk Price Incentive Amount Paid by Society in Previous Year (₹)', f.milkPriceIncentiveAmount],
+      ['66', 'Secretary Advance Amount – up to Previous Month (To be Received) (₹)', f.secretaryAdvanceOutstanding],
+      ['67', 'President Advance Amount – up to Previous Month (To be Received) (₹)', f.presidentAdvanceOutstanding],
+      ['68', 'Amount to be Paid to Agencies – up to Previous Month (To be Paid) (₹)', f.agenciesAmountPayable],
+      // Section O
+      ['', 'AUDIT & COMPLIANCE', ''],
+      ['69', 'Year in which the Last Audit Report was Received',              f.lastAuditReportYear],
+      ['70', 'Total Amount Due to the Society as per Audit Report (Due to) (₹)', f.auditReportDueTo],
+      ['71', 'Total Amount Due from the Society as per Audit Report (Due by) (₹)', f.auditReportDueBy],
+      ['72', 'Date of Completion of the Society\'s Daily Written Down Amount Outstanding', f.dailyWrittenDownCompletionDate],
+      ['73', 'Date of Completion of the Society\'s Written Records',           f.societyWrittenRecordsDate],
     ];
   };
 
@@ -654,6 +796,311 @@ export default function InspectionReport() {
               <td className="sno">28</td>
               <td className="lbl">Producer Due Amount Outstanding (₹)</td>
               <td className="val-db">{numInput('producerDueAmountOutstanding')}</td>
+            </tr>
+
+            {/* ── Section H: Outstanding – Previous Month ── */}
+            <tr className="sec-hdr">
+              <td colSpan={3}>H. Outstanding – Previous Month</td>
+            </tr>
+            <tr>
+              <td className="sno">29</td>
+              <td className="lbl">School Milk Sales Amount Outstanding as on Previous Month (₹)</td>
+              <td className="val">{numInput('schoolMilkSalesOutstanding')}</td>
+            </tr>
+            <tr>
+              <td className="sno">30</td>
+              <td className="lbl">Milk Credit Sales (Vendor / Other Institutions) Amount Outstanding as on Previous Month (₹)</td>
+              <td className="val">{numInput('milkCreditSalesOutstanding')}</td>
+            </tr>
+
+            {/* ── Section I: Previous Year – Milk Data ── */}
+            <tr className="sec-hdr">
+              <td colSpan={3}>I. Previous Year – Milk Data</td>
+            </tr>
+            <tr>
+              <td className="sno">31</td>
+              <td className="lbl">Milk Purchase Quantity in Previous Year (Ltr)</td>
+              <td className="val">{numInput('prevYearMilkPurchaseQty')}</td>
+            </tr>
+            <tr>
+              <td className="sno">32</td>
+              <td className="lbl">Local Sales Quantity in Previous Year (Ltr)</td>
+              <td className="val">{numInput('prevYearLocalSalesQty')}</td>
+            </tr>
+            <tr>
+              <td className="sno">33</td>
+              <td className="lbl">Milk Purchase Price in Previous Year – Total Amount (₹)</td>
+              <td className="val">{numInput('prevYearMilkPurchasePrice')}</td>
+            </tr>
+            <tr>
+              <td className="sno">34</td>
+              <td className="lbl">Local Sales Price in Previous Year – Total Amount (₹)</td>
+              <td className="val">{numInput('prevYearLocalSalesPrice')}</td>
+            </tr>
+            <tr>
+              <td className="sno">35</td>
+              <td className="lbl">School / Anganwadi Sales Quantity in Previous Year (Ltr)</td>
+              <td className="val">{numInput('prevYearSchoolSalesQty')}</td>
+            </tr>
+            <tr>
+              <td className="sno">36</td>
+              <td className="lbl">School / Anganwadi Sales Price in Previous Year – Total Amount (₹)</td>
+              <td className="val">{numInput('prevYearSchoolSalesPrice')}</td>
+            </tr>
+            <tr>
+              <td className="sno">37</td>
+              <td className="lbl">Previous Year's Production Unit – Quantity (Ltr)</td>
+              <td className="val">{numInput('prevYearProductionUnitQty')}</td>
+            </tr>
+            <tr>
+              <td className="sno">38</td>
+              <td className="lbl">Previous Year's Production Unit Sales Price – Total Amount (₹)</td>
+              <td className="val">{numInput('prevYearProductionUnitPrice')}</td>
+            </tr>
+            <tr>
+              <td className="sno">39</td>
+              <td className="lbl">Previous Year's Dairy Sales – Quantity (Ltr)</td>
+              <td className="val">{numInput('prevYearDairySalesQty')}</td>
+            </tr>
+            <tr>
+              <td className="sno">40</td>
+              <td className="lbl">Previous Year's Dairy Sales Price – Total Amount (₹)</td>
+              <td className="val">{numInput('prevYearDairySalesPrice')}</td>
+            </tr>
+            <tr>
+              <td className="sno">41</td>
+              <td className="lbl">Previous Year's Milk Procurement – Marketing Deficit / Excess (Ltr)</td>
+              <td className="val">{numInput('prevYearMilkShortfallExcess')}</td>
+            </tr>
+            <tr>
+              <td className="sno">42</td>
+              <td className="lbl">Previous Year's Cattle Feed Stock – Total Amount (₹)</td>
+              <td className="val">{numInput('prevYearCattleFeedStock')}</td>
+            </tr>
+            <tr>
+              <td className="sno">43</td>
+              <td className="lbl">Previous Year's Milk Procurement – Marketing Profit (₹)</td>
+              <td className="val">{numInput('prevYearMilkProcurementProfit')}</td>
+            </tr>
+
+            {/* ── Section J: Previous Year – Cattle Feed ── */}
+            <tr className="sec-hdr">
+              <td colSpan={3}>J. Previous Year – Cattle Feed</td>
+            </tr>
+            <tr>
+              <td className="sno">44</td>
+              <td className="lbl">Previous Year's Cattle Feed Purchase Price – Total Amount (₹)</td>
+              <td className="val">{numInput('prevYearCattleFeedPurchasePrice')}</td>
+            </tr>
+            <tr>
+              <td className="sno">45</td>
+              <td className="lbl">Previous Year's Cattle Feed Sales Price – Total Amount (₹)</td>
+              <td className="val">{numInput('prevYearCattleFeedSalesPrice')}</td>
+            </tr>
+            <tr>
+              <td className="sno">46</td>
+              <td className="lbl">Previous Year's Cattle Feed Closing Stock – Total Amount (₹)</td>
+              <td className="val">{numInput('prevYearCattleFeedClosingStock')}</td>
+            </tr>
+            <tr>
+              <td className="sno">47</td>
+              <td className="lbl">Previous Year's Cattle Feed Sales Commission – Total Amount (₹)</td>
+              <td className="val">{numInput('prevYearCattleFeedSalesCommission')}</td>
+            </tr>
+            <tr>
+              <td className="sno">48</td>
+              <td className="lbl">Previous Year's Cattle Feed Stock Deficit / Excess</td>
+              <td className="val">{numInput('prevYearCattleFeedStockShortfall')}</td>
+            </tr>
+
+            {/* ── Section K: Trade Analysis ── */}
+            <tr className="sec-hdr-green">
+              <td colSpan={3}>K. Trade Analysis – Previous Year</td>
+            </tr>
+            <tr style={{ fontWeight: 700 }}>
+              <td className="sno">49</td>
+              <td className="lbl" style={{ fontWeight: 700 }}>
+                Total Trade Income (₹)
+                <span style={{ fontSize: 9, fontWeight: 400, color: '#555', marginLeft: 6 }}>[Field 43 + Field 47]</span>
+              </td>
+              <td className="val-calc">{roVal('totalTradeIncome')}</td>
+            </tr>
+            <tr>
+              <td className="sno">50</td>
+              <td className="lbl">Previous Year's Total Trade Related Expenses (₹)</td>
+              <td className="val">{numInput('prevYearTradeExpenses')}</td>
+            </tr>
+            <tr style={{ fontWeight: 700 }}>
+              <td className="sno">51</td>
+              <td className="lbl" style={{ fontWeight: 700 }}>
+                Previous Year's Total Trade Profit (₹)
+                <span style={{ fontSize: 9, fontWeight: 400, color: '#555', marginLeft: 6 }}>[Field 49 – Field 50]</span>
+              </td>
+              <td className="val-calc">{roVal('prevYearTradeProfit', true)}</td>
+            </tr>
+            <tr>
+              <td className="sno">52</td>
+              <td className="lbl">Total Salary Expenses (₹)</td>
+              <td className="val">{numInput('totalSalaryExpenses')}</td>
+            </tr>
+            <tr style={{ fontWeight: 700 }}>
+              <td className="sno">53</td>
+              <td className="lbl" style={{ fontWeight: 700 }}>
+                Salary Expense Ratio – % of Trade Profit
+                <span style={{ fontSize: 9, fontWeight: 400, color: '#555', marginLeft: 6 }}>[Field 52 ÷ Field 51 × 100]</span>
+              </td>
+              <td className="val-auto">{roVal('salaryExpenseRatio')}</td>
+            </tr>
+            <tr>
+              <td className="sno">54</td>
+              <td className="lbl">Total Operating Expenses (₹)</td>
+              <td className="val">{numInput('totalOperatingExpenses')}</td>
+            </tr>
+            <tr style={{ fontWeight: 700 }}>
+              <td className="sno">55</td>
+              <td className="lbl" style={{ fontWeight: 700 }}>
+                Net Profit of the Previous Year (₹)
+                <span style={{ fontSize: 9, fontWeight: 400, color: '#555', marginLeft: 6 }}>[Field 45 – (Field 46 + Field 47)]</span>
+              </td>
+              <td className="val-calc">{roVal('prevYearNetProfit', true)}</td>
+            </tr>
+            <tr>
+              <td className="sno">56</td>
+              <td className="lbl">Net Profit as per the Society Accounts (₹)</td>
+              <td className="val">{numInput('netProfitPerSocietyAccounts')}</td>
+            </tr>
+            <tr style={{ fontWeight: 700 }}>
+              <td className="sno">57</td>
+              <td className="lbl" style={{ fontWeight: 700 }}>
+                Difference in Net Profit (₹)
+                <span style={{ fontSize: 9, fontWeight: 400, color: '#555', marginLeft: 6 }}>[Field 55 – Field 56]</span>
+              </td>
+              <td className="val-calc">{roVal('netProfitDifference', true)}</td>
+            </tr>
+
+            {/* ── Section L: Employees ── */}
+            <tr className="sec-hdr">
+              <td colSpan={3}>L. Employees</td>
+            </tr>
+            <tr>
+              <td className="sno">58</td>
+              <td className="lbl">Number of Permanent Employees</td>
+              <td className="val">{numInput('permanentEmployeesCount')}</td>
+            </tr>
+            <tr>
+              <td className="sno">59</td>
+              <td className="lbl">Number of Temporary Employees</td>
+              <td className="val">{numInput('temporaryEmployeesCount')}</td>
+            </tr>
+
+            {/* ── Section M: Section 80 & Welfare Fund ── */}
+            <tr className="sec-hdr">
+              <td colSpan={3}>M. Section 80 &amp; Welfare Fund</td>
+            </tr>
+            <tr>
+              <td className="sno">60</td>
+              <td className="lbl">Implementation of Section 80 (Yes / No)</td>
+              <td className="val">
+                <select
+                  className="insp-ci-text"
+                  value={form.section80Implementation}
+                  onChange={e => setF('section80Implementation', e.target.value)}
+                  style={{ width: '100%', border: 'none', background: 'transparent', fontFamily: 'inherit', fontSize: 8.5 }}
+                >
+                  <option value="">Select</option>
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </select>
+              </td>
+            </tr>
+            <tr>
+              <td className="sno">61</td>
+              <td className="lbl">Reason for Non-Implementation of Section 80</td>
+              <td className="val">{txtInput('section80NonImplementationReason')}</td>
+            </tr>
+            <tr>
+              <td className="sno">62</td>
+              <td className="lbl">Number of Welfare Fund Members</td>
+              <td className="val">{numInput('welfareFundMembersCount')}</td>
+            </tr>
+            <tr>
+              <td className="sno">63</td>
+              <td className="lbl">Number of Farmers to be Added to Welfare Fund</td>
+              <td className="val">{numInput('farmersToAddWelfareFund')}</td>
+            </tr>
+            <tr>
+              <td className="sno">64</td>
+              <td className="lbl">Welfare Fund Arrears – up to Previous Month (₹)</td>
+              <td className="val">{numInput('welfareFundArrears')}</td>
+            </tr>
+
+            {/* ── Section N: Incentives & Advances ── */}
+            <tr className="sec-hdr-red">
+              <td colSpan={3}>N. Incentives &amp; Advances</td>
+            </tr>
+            <tr>
+              <td className="sno">65</td>
+              <td className="lbl">Total Milk Price Incentive Amount Paid by the Society in Previous Year (₹)</td>
+              <td className="val">{numInput('milkPriceIncentiveAmount')}</td>
+            </tr>
+            <tr>
+              <td className="sno">66</td>
+              <td className="lbl">Secretary Advance Amount – up to Previous Month (To be Received) (₹)</td>
+              <td className="val">{numInput('secretaryAdvanceOutstanding')}</td>
+            </tr>
+            <tr>
+              <td className="sno">67</td>
+              <td className="lbl">President Advance Amount – up to Previous Month (To be Received) (₹)</td>
+              <td className="val">{numInput('presidentAdvanceOutstanding')}</td>
+            </tr>
+            <tr>
+              <td className="sno">68</td>
+              <td className="lbl">Amount to be Paid to Agencies – up to Previous Month (To be Paid) (₹)</td>
+              <td className="val">{numInput('agenciesAmountPayable')}</td>
+            </tr>
+
+            {/* ── Section O: Audit & Compliance ── */}
+            <tr className="sec-hdr">
+              <td colSpan={3}>O. Audit &amp; Compliance</td>
+            </tr>
+            <tr>
+              <td className="sno">69</td>
+              <td className="lbl">Year in which the Last Audit Report was Received</td>
+              <td className="val">{txtInput('lastAuditReportYear')}</td>
+            </tr>
+            <tr>
+              <td className="sno">70</td>
+              <td className="lbl">Total Amount Due to the Society as per Audit Report (Due to) (₹)</td>
+              <td className="val">{numInput('auditReportDueTo')}</td>
+            </tr>
+            <tr>
+              <td className="sno">71</td>
+              <td className="lbl">Total Amount Due from the Society as per Audit Report (Due by) (₹)</td>
+              <td className="val">{numInput('auditReportDueBy')}</td>
+            </tr>
+            <tr>
+              <td className="sno">72</td>
+              <td className="lbl">Date of Completion of the Society's Daily Written Down Amount Outstanding</td>
+              <td className="val">
+                <input
+                  className="insp-ci-date"
+                  type="date"
+                  value={form.dailyWrittenDownCompletionDate}
+                  onChange={e => setF('dailyWrittenDownCompletionDate', e.target.value)}
+                />
+              </td>
+            </tr>
+            <tr>
+              <td className="sno">73</td>
+              <td className="lbl">Date of Completion of the Society's Written Records</td>
+              <td className="val">
+                <input
+                  className="insp-ci-date"
+                  type="date"
+                  value={form.societyWrittenRecordsDate}
+                  onChange={e => setF('societyWrittenRecordsDate', e.target.value)}
+                />
+              </td>
             </tr>
 
           </tbody>

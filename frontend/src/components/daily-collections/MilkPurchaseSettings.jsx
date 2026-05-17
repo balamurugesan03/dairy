@@ -273,7 +273,7 @@ export default function MilkPurchaseSettings() {
       instanceId     : '',
       token          : '',
       apiUrl         : '',
-      messageTemplate: '🐄 Milk Bill\nDate: {date} {shift}\nBill No: {billNo}\nFarmer: {name} ({farmerNo})\nQty: {qty} Ltr\nFat: {fat} | CLR: {clr} | SNF: {snf}\nRate: ₹{rate}/Kg\nAmount: ₹{amount}',
+      messageTemplate: '🐄 Milk Bill\nDate: {date} {shift}\nBill No: {billNo}\nFarmer: {name} ({farmerNo})\nQty: {qty} Ltr\nFat: {fat} | CLR: {clr} | SNF: {snf}\nRate: ₹{rate}/Ltr\nAmount: ₹{amount}',
     },
 
     // Hardware device toggles
