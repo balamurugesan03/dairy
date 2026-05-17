@@ -119,7 +119,7 @@ export const getTradingAccount = async (req, res) => {
     // ── Milk Purchase (MilkCollection aggregate) ────────────────────
     const [milkPurchaseAgg] = await MilkCollection.aggregate([
       { $match: { companyId, date: { $gte: start, $lte: end } } },
-      { $group: { _id: null, total: { $sum: '$amount' }, farmers: { $addToSet: '$farmer' }, qty: { $sum: '$ltr' } } }
+      { $group: { _id: null, total: { $sum: '$amount' }, farmers: { $addToSet: '$farmer' }, qty: { $sum: '$qty' } } }
     ]);
     const milkPurchaseTotal = milkPurchaseAgg?.total || 0;
     const milkFarmerCount   = milkPurchaseAgg?.farmers?.length || 0;
@@ -1185,7 +1185,7 @@ export const getDairyAbstractReport = async (req, res) => {
       { $match: { ...companyFilter, date: { $gte: start, $lte: end } } },
       { $group: {
         _id:    { year: { $year: '$date' }, month: { $month: '$date' } },
-        qty:    { $sum: '$ltr' },
+        qty:    { $sum: '$qty' },
         amount: { $sum: '$amount' },
         days:   { $addToSet: { $dateToString: { format: '%Y-%m-%d', date: '$date' } } }
       }},
@@ -1430,7 +1430,7 @@ export const getDairyRegisterReport = async (req, res) => {
       { $group: {
         _id: { dateStr: '$dateStr', shift: '$shift', isMember: '$isMember' },
         farmerIds: { $addToSet: '$farmer' },
-        qty:       { $sum: '$ltr' },
+        qty:       { $sum: '$qty' },
         amount:    { $sum: '$amount' }
       }},
       { $sort: { '_id.dateStr': 1, '_id.shift': 1 } }

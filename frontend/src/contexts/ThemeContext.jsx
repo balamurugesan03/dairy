@@ -1,16 +1,3 @@
-/**
- * Global Theme Context
- * ====================
- *
- * Ithu full app-oda theme control pannurathu:
- * 1. Color Theme - blue, red, green, violet, orange, etc. (N number of colors)
- * 2. Color Scheme - light / dark mode
- *
- * LocalStorage-la save aagum, so refresh pannaalum theme maraathu.
- *
- * Usage:
- * const { colorTheme, setColorTheme, colorScheme, toggleColorScheme } = useTheme();
- */
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { THEMES, DEFAULT_THEME, DEFAULT_COLOR_SCHEME, getThemeCSSVariables } from '../config/themes';

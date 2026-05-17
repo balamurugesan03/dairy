@@ -155,7 +155,7 @@ const DailyCollectionList = () => {
   const pagedRecords  = sortedRecords.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // ── Stats — always from ALL records (not filtered/paged) ──────────────────
-  const totalQty = records.reduce((s, r) => s + (r.ltr    || 0), 0);
+  const totalQty = records.reduce((s, r) => s + (r.qty    || 0), 0);
   const totalAmt = records.reduce((s, r) => s + (r.amount || 0), 0);
   const avgFat   = records.length ? records.reduce((s, r) => s + (r.fat || 0), 0) / records.length : 0;
   const avgClr   = records.length ? records.reduce((s, r) => s + (r.clr || 0), 0) / records.length : 0;
@@ -327,11 +327,11 @@ const DailyCollectionList = () => {
     const printList  = getSortedRecords(records);
     const members    = printList.filter(r => r.isMembership !== false);
     const nonMembers = printList.filter(r => r.isMembership === false);
-    const totalLtr   = printList.reduce((s, r) => s + (r.ltr || r.qty || 0), 0);
+    const totalLtr   = printList.reduce((s, r) => s + (r.qty || 0), 0);
     const totalAmt_  = printList.reduce((s, r) => s + (r.amount || 0), 0);
 
     const buildRows = (list) => list.map((r, i) => {
-      const ltr  = (r.ltr || r.qty || 0).toFixed(2);
+      const ltr  = (r.qty || 0).toFixed(2);
       const fat  = (r.fat  || 0).toFixed(2);
       const clr  = (r.clr  || 0).toFixed(1);
       const snf  = (r.snf  || 0).toFixed(2);
@@ -352,7 +352,7 @@ const DailyCollectionList = () => {
     }).join('');
 
     const subTotal = (list) => {
-      const t = list.reduce((s, r) => s + (r.ltr || r.qty || 0), 0);
+      const t = list.reduce((s, r) => s + (r.qty || 0), 0);
       const a = list.reduce((s, r) => s + (r.amount || 0), 0);
       return `<tr class="sub">
         <td colspan="6" class="r">Sub Total</td>

@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import ProducerPayment from '../models/ProducerPayment.js';
 import Farmer from '../models/Farmer.js';
 import FarmerPayment from '../models/FarmerPayment.js';
+import BankTransfer from '../models/BankTransfer.js';
 import PaymentRegister from '../models/PaymentRegister.js';
 import Voucher from '../models/Voucher.js';
 import { saveWithUniqueNumber } from '../models/Counter.js';
@@ -141,17 +142,42 @@ export const getBankTransferPaid = async (req, res) => {
       .select('farmerId farmerName paidAmount netPayable paymentDate')
       .lean();
 
-    const data = fps.map(fp => ({
-      _id:            fp._id,
-      farmerId:       fp.farmerId,
-      producerNumber: fp.farmerId?.farmerNumber || '',
-      producerName:   fp.farmerName || fp.farmerId?.personalDetails?.name || '',
-      amountPaid:     fp.paidAmount || fp.netPayable || 0,
-      paymentDate:    fp.paymentDate,
-      paymentMode:    'Bank Transfer',
-      paymentType:    'BankTransfer',
-      status:         'Paid',
-    }));
+    // Build farmerId -> applyDate map from BankTransfer documents (source of truth).
+    // This corrects records that were saved before the paymentDate fix was applied.
+    const dayMs = 24 * 60 * 60 * 1000;
+    const cycleEnd = new Date(cycleToDate);
+    const bankTransfers = await BankTransfer.find({
+      companyId,
+      status: { $in: ['Applied', 'Completed'] },
+      asOnDate: {
+        $gte: new Date(cycleEnd.getTime() - 2 * dayMs),
+        $lte: new Date(cycleEnd.getTime() + 2 * dayMs),
+      },
+    }).select('applyDate transferDetails').lean();
+
+    const farmerApplyDateMap = new Map();
+    for (const bt of bankTransfers) {
+      for (const detail of bt.transferDetails || []) {
+        if (detail.farmerId) {
+          farmerApplyDateMap.set(detail.farmerId.toString(), bt.applyDate);
+        }
+      }
+    }
+
+    const data = fps.map(fp => {
+      const farmerIdStr = fp.farmerId?._id?.toString() || fp.farmerId?.toString();
+      return {
+        _id:            fp._id,
+        farmerId:       fp.farmerId,
+        producerNumber: fp.farmerId?.farmerNumber || '',
+        producerName:   fp.farmerName || fp.farmerId?.personalDetails?.name || '',
+        amountPaid:     fp.paidAmount || fp.netPayable || 0,
+        paymentDate:    farmerApplyDateMap.get(farmerIdStr) || fp.paymentDate,
+        paymentMode:    'Bank Transfer',
+        paymentType:    'BankTransfer',
+        status:         'Paid',
+      };
+    });
 
     res.json({ success: true, data });
   } catch (err) {

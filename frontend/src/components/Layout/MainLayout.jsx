@@ -410,6 +410,7 @@ const MainLayout = () => {
         { key: '/mis-department/report',      label: 'MIS Report Department' },
         { key: '/reports/inspection-report',     label: 'Inspection Report' },
         { key: '/reports/milk-purchase-report', label: 'Milk Purchase Report' },
+        { key: '/reports/milk-statement',       label: 'Milk Statement' },
         { key: '/farmers/crop-statements',   label: 'Crop Damage Statements' },
         { key: '/farmers/agri-stats',        label: 'Monthly Agri Statistics' },
       ]

@@ -63,7 +63,7 @@ const SupplierView = () => {
     fetchTransactions();
     fetchPurchases();
   }, [id]);
-
+ 
   useEffect(() => {
     if (transactions.length > 0 || purchases.length > 0) {
       calculateStatistics();

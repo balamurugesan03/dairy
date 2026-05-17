@@ -355,6 +355,7 @@ export const applyBankTransfer = async (req, res) => {
               paidAmount:    transferAmt,
               balanceAmount,
               status:        newStatus,
+              paymentDate:   new Date(applyDate),
             },
           }
         );

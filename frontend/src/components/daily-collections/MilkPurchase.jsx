@@ -728,7 +728,7 @@ const MilkPurchase = () => {
         return {
           id: r._id, sl: 0, billNo: r.billNo,
           producerNo: r.farmerNumber, producerName: r.farmerName || '',
-          qty: r.qty, ltr: r.ltr ?? parseFloat((r.qty / 1.03).toFixed(2)),
+          qty: r.qty, ltr: r.qty,
           clr: r.clr, fat: r.fat, snf: r.snf,
           incentive: r.incentive, rate: r.rate, amount: r.amount,
           addedWater: r.addedWater || 0,
@@ -752,7 +752,7 @@ const MilkPurchase = () => {
       setEntries(sortByProducerNo(records.map(r => ({
         id: r._id, sl: 0, billNo: r.billNo,
         producerNo: r.farmerNumber, producerName: r.farmerName || '',
-        qty: r.qty, ltr: r.ltr ?? parseFloat((r.qty / 1.03).toFixed(2)),
+        qty: r.qty, ltr: r.qty,
         clr: r.clr, fat: r.fat, snf: r.snf,
         incentive: r.incentive, rate: r.rate, amount: r.amount,
         addedWater: r.addedWater || 0,
@@ -1155,7 +1155,7 @@ const MilkPurchase = () => {
         // UPDATE existing entry
         const res = await milkCollectionAPI.update(eid, payload);
         const saved = res.data;
-        setEntries(prev => prev.map(e => e.id !== eid ? e : { ...e, qty: saved.qty, ltr: saved.ltr ?? parseFloat((saved.qty / 1.03).toFixed(2)), clr: saved.clr, fat: saved.fat, snf: saved.snf, incentive: saved.incentive, rate: saved.rate, amount: saved.amount, producerName: saved.farmerName || p.name }));
+        setEntries(prev => prev.map(e => e.id !== eid ? e : { ...e, qty: saved.qty, ltr: saved.qty, clr: saved.clr, fat: saved.fat, snf: saved.snf, incentive: saved.incentive, rate: saved.rate, amount: saved.amount, producerName: saved.farmerName || p.name }));
         notifications.show({ message: `Updated: ${saved.billNo}`, color: 'blue', autoClose: 2000 });
       } else {
         // CREATE new entry
@@ -1372,8 +1372,8 @@ const MilkPurchase = () => {
   };
 
   // Aggregates
-  const totalQty = entries.reduce((s, e) => s + e.qty, 0);
   const totalLtr = entries.reduce((s, e) => s + (e.ltr ?? e.qty), 0);
+  const totalQty = parseFloat((totalLtr * 1.03).toFixed(3));
   const totalAmt = entries.reduce((s, e) => s + e.amount, 0);
   const avgFat   = entries.length ? entries.reduce((s, e) => s + e.fat, 0) / entries.length : 0;
   const avgClr   = entries.length ? entries.reduce((s, e) => s + e.clr, 0) / entries.length : 0;
@@ -2079,7 +2079,7 @@ const MilkPurchase = () => {
                       <Table.Td style={{ padding: '6px 8px', color: '#475569', fontSize: 11, whiteSpace: 'nowrap' }}>{entry.date ? new Date(entry.date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit' }) : '—'}</Table.Td>
                       <Table.Td style={{ padding: '6px 8px' }}><Badge size="xs" color={entry.shift === 'AM' ? 'orange' : 'indigo'} variant="light" radius="sm">{entry.shift || '—'}</Badge></Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0369a1', textAlign: 'right' }}>{(entry.ltr ?? entry.qty).toFixed(2)}</Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#065f46', textAlign: 'right' }}>{entry.qty.toFixed(3)}</Table.Td>
+                      <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#065f46', textAlign: 'right' }}>{parseFloat((entry.qty * 1.03).toFixed(3))}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#c2410c', textAlign: 'right' }}>{entry.fat.toFixed(1)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', color: '#6d28d9', textAlign: 'right' }}>{entry.clr.toFixed(1)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', color: '#166534', textAlign: 'right' }}>{entry.snf.toFixed(2)}</Table.Td>

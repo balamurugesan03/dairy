@@ -269,6 +269,7 @@ export const reportAPI = {
   dairyAbstract: (params) => api.get('/reports/dairy-abstract', { params }).then(res => res.data).catch(handleError),
   dairyRegister: (params) => api.get('/reports/dairy-register', { params }).then(res => res.data).catch(handleError),
   cooperativeRD: (params) => api.get('/reports/cooperative-rd', { params }).then(res => res.data).catch(handleError),
+  milkStatement: (params) => api.get('/reports/milk-statement', { params }).then(res => res.data).catch(handleError),
   // New accounting reports
   cashBook: (params) => api.get('/reports/cash-book', { params }).then(res => res.data).catch(handleError),
   generalLedger: (params) => api.get('/reports/general-ledger', { params }).then(res => res.data).catch(handleError),
