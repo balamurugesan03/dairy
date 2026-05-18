@@ -440,7 +440,8 @@ export const milkSalesAPI = {
   getNextBillNo:    ()       => api.get('/milk-sales/next-bill-no').then(res => res.data).catch(handleError),
   bulkImport:      (records) => api.post('/milk-sales/bulk-import',       { records }).then(res => res.data).catch(handleError),
   zibittRawImport: (records) => api.post('/milk-sales/zibitt-raw-import', { records }).then(res => res.data).catch(handleError),
-  backfillVouchers: ()       => api.post('/milk-sales/backfill-vouchers', {}, { timeout: 5 * 60 * 1000 }).then(res => res.data).catch(handleError),
+  backfillVouchers:    ()                   => api.post('/milk-sales/backfill-vouchers', {}, { timeout: 5 * 60 * 1000 }).then(res => res.data).catch(handleError),
+  getCreditorBalance:  (creditorId, date)   => api.get('/milk-sales/creditor-balance', { params: { creditorId, date } }).then(res => res.data).catch(handleError),
 };
 
 // UNION SALES SLIP APIs
@@ -1003,6 +1004,7 @@ export const paymentRegisterAPI = {
   reverse:              (id)          => api.post(`/payment-register/${id}/reverse`).then(r => r.data).catch(handleError),
   applyEntry:           (registerId, entryId, data) =>
     api.post(`/payment-register/${registerId}/entries/${entryId}/apply`, data).then(r => r.data).catch(handleError),
+  getPaidReport:        (params)     => api.get('/payment-register/paid-report', { params }).then(r => r.data).catch(handleError),
 };
 
 // ── Dairy Settings API (payment days, account start date, opening balances) ────

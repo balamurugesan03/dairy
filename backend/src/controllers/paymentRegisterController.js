@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import PaymentRegister from '../models/PaymentRegister.js';
 import MilkCollection from '../models/MilkCollection.js';
 import FarmerPayment from '../models/FarmerPayment.js';
+import ProducerPayment from '../models/ProducerPayment.js';
 import Advance from '../models/Advance.js';
 import Farmer from '../models/Farmer.js';
 import ProducerOpening from '../models/ProducerOpening.js';
@@ -11,6 +12,12 @@ import IndividualDeductionEarning from '../models/IndividualDeductionEarning.js'
 import PeriodicalRule from '../models/PeriodicalRule.js';
 import { purgeFarmerPaymentSideEffects } from './paymentController.js';
 import { saveWithUniqueNumber } from '../models/Counter.js';
+
+// ±2-day tolerance for cycle date matching
+function cycleRange(dateStr) {
+  const mid = new Date(dateStr);
+  return { $gte: new Date(mid - 2*86400000), $lte: new Date(mid.getTime() + 2*86400000) };
+}
 
 // ─── GET all registers (paginated, date filter) ───────────────────────────────
 export const getPaymentRegisters = async (req, res) => {
@@ -862,6 +869,103 @@ export const applyEntryPayment = async (req, res) => {
     res.json({ success: true, data: { farmerPaymentId: fp._id, entry } });
   } catch (err) {
     console.error('applyEntryPayment error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── PAYMENT PAID REPORT ──────────────────────────────────────────────────────
+// GET /payment-register/paid-report?fromDate=&toDate=
+// Returns producer-wise summary: net payable, bank transfer, pay-to-producer, individual paid
+export const getPaidReport = async (req, res) => {
+  try {
+    const { fromDate, toDate } = req.query;
+    const companyId = req.companyId;
+    if (!fromDate || !toDate) return res.status(400).json({ success: false, message: 'fromDate and toDate are required' });
+
+    const fromRange = cycleRange(fromDate);
+    const toRange   = cycleRange(toDate);
+
+    // 1. Base list + net payable from saved register (Producers or Ledger type)
+    const register = await PaymentRegister.findOne({
+      companyId,
+      registerType: { $in: ['Producers', 'Ledger'] },
+      fromDate: fromRange,
+      toDate:   toRange,
+      status:   { $in: ['Saved', 'Printed'] },
+    }).lean();
+
+    // Build farmer map from register entries
+    const farmerMap = {};
+    if (register) {
+      for (const e of register.entries) {
+        const id = e.farmerId?.toString();
+        if (!id) continue;
+        farmerMap[id] = {
+          farmerId:     id,
+          producerId:   e.producerId   || e.productId   || '',
+          producerName: e.producerName || e.productName || '',
+          center:       e.center       || '',
+          netPayable:   e.netPay       || 0,
+          bankTransfer: 0,
+          payToProducer: 0,
+          individual:   0,
+        };
+      }
+    }
+
+    // 2. Bank Transfer amounts — FarmerPayment with paymentSource=BankTransfer, status=Paid
+    const btPayments = await FarmerPayment.find({
+      companyId,
+      paymentSource: 'BankTransfer',
+      status: 'Paid',
+      'paymentPeriod.fromDate': fromRange,
+      'paymentPeriod.toDate':   toRange,
+    }).select('farmerId paidAmount farmerName').lean();
+    for (const p of btPayments) {
+      const id = p.farmerId?.toString();
+      if (!id) continue;
+      if (!farmerMap[id]) farmerMap[id] = { farmerId: id, producerId: '', producerName: p.farmerName || '', center: '', netPayable: 0, bankTransfer: 0, payToProducer: 0, individual: 0 };
+      farmerMap[id].bankTransfer += (p.paidAmount || 0);
+    }
+
+    // 3. Pay to Producer (cash) — ProducerPayment
+    const cashPayments = await ProducerPayment.find({
+      companyId,
+      status: 'Active',
+      'processingPeriod.fromDate': fromRange,
+      'processingPeriod.toDate':   toRange,
+    }).select('farmerId amountPaid producerName producerNumber').lean();
+    for (const p of cashPayments) {
+      const id = p.farmerId?.toString();
+      if (!id) continue;
+      if (!farmerMap[id]) farmerMap[id] = { farmerId: id, producerId: p.producerNumber || '', producerName: p.producerName || '', center: '', netPayable: 0, bankTransfer: 0, payToProducer: 0, individual: 0 };
+      farmerMap[id].payToProducer += (p.amountPaid || 0);
+    }
+
+    // 4. Individual payments — FarmerPayment with paymentSource not BankTransfer
+    const indPayments = await FarmerPayment.find({
+      companyId,
+      paymentSource: { $in: ['Ledger', 'PaymentRegister'] },
+      status: { $in: ['Paid', 'Partial'] },
+      'paymentPeriod.fromDate': fromRange,
+      'paymentPeriod.toDate':   toRange,
+    }).select('farmerId paidAmount farmerName').lean();
+    for (const p of indPayments) {
+      const id = p.farmerId?.toString();
+      if (!id) continue;
+      if (!farmerMap[id]) farmerMap[id] = { farmerId: id, producerId: '', producerName: p.farmerName || '', center: '', netPayable: 0, bankTransfer: 0, payToProducer: 0, individual: 0 };
+      farmerMap[id].individual += (p.paidAmount || 0);
+    }
+
+    const rows = Object.values(farmerMap).map((r, i) => ({
+      ...r,
+      slNo: i + 1,
+      totalPaid: r.bankTransfer + r.payToProducer + r.individual,
+      balance:   r.netPayable  - (r.bankTransfer + r.payToProducer + r.individual),
+    }));
+
+    res.json({ success: true, data: { rows, fromDate, toDate } });
+  } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };

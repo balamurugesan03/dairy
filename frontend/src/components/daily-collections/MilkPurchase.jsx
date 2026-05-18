@@ -1379,15 +1379,36 @@ const MilkPurchase = () => {
   // ─── RENDER ───────────────────────────────────────────────────────────────
   return (
     <>
-    <Box style={{ height: 'calc(100vh - 120px)', margin: 'calc(-1 * var(--mantine-spacing-md))', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#eef4fb' }}>
+    <style>{`
+      @media (max-width: 768px) {
+        .mp-root { height: auto !important; min-height: calc(100vh - 60px); overflow-y: auto !important; }
+        .mp-header-group { flex-wrap: wrap !important; gap: 6px !important; padding: 6px 10px !important; }
+        .mp-header-title { display: none !important; }
+        .mp-main-row { flex-direction: column !important; overflow: visible !important; }
+        .mp-left-col { overflow: visible !important; min-height: 0; }
+        .mp-right-panel { display: none !important; }
+        .mp-cards-group { flex-wrap: wrap !important; }
+        .mp-cards-group > * { flex: 1 1 100% !important; min-width: 0 !important; }
+        .mp-entry-inputs { flex-wrap: wrap !important; }
+        .mp-entry-inputs > * { flex: 1 1 40% !important; min-width: 80px !important; }
+        .mp-calc-row { flex-wrap: wrap !important; }
+        .mp-calc-row > * { flex: 1 1 30% !important; min-width: 80px !important; }
+        .mp-footer-strip { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; padding: 8px !important; }
+        .mp-footer-divider { display: none !important; }
+        .mp-footer-strip > * { flex-shrink: 0; text-align: center; }
+        .mp-table-bar { flex-wrap: wrap !important; gap: 4px !important; }
+        .mp-table-bar-right { flex-wrap: wrap !important; }
+      }
+    `}</style>
+    <Box className="mp-root" style={{ height: 'calc(100vh - 120px)', margin: 'calc(-1 * var(--mantine-spacing-md))', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#eef4fb' }}>
 
       {/* ══ HEADER ══════════════════════════════════════════════════════════ */}
       <Box style={{ background: 'white', borderBottom: '1px solid #dbeafe', padding: '5px 16px', flexShrink: 0, boxShadow: '0 1px 6px rgba(37,99,235,0.08)' }}>
-        <Group align="center" gap={12} wrap="nowrap">
+        <Group className="mp-header-group" align="center" gap={12} wrap="wrap">
           <Box style={{ background: '#dbeafe', borderRadius: 10, padding: '7px 9px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             <IconMilk size={22} color="#2563eb" />
           </Box>
-          <Box style={{ flexShrink: 0 }}>
+          <Box className="mp-header-title" style={{ flexShrink: 0 }}>
             <Text size="16px" fw={800} c="#1e3a8a" style={{ lineHeight: 1.1, letterSpacing: '-0.3px' }}>Milk Purchase</Text>
             <Text size="10px" c="#64748b">Daily Collection Entry</Text>
           </Box>
@@ -1453,10 +1474,10 @@ const MilkPurchase = () => {
       </Box>
 
       {/* ══ MAIN CONTENT (Card Row + Table + Right Panel) ═══════════════════ */}
-      <Box style={{ flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden', minHeight: 0 }}>
+      <Box className="mp-main-row" style={{ flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden', minHeight: 0 }}>
 
       {/* ── Left column (Card Row + Table) ── */}
-      <Box style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+      <Box className="mp-left-col" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
 
       {/* ══ CARD ROW ════════════════════════════════════════════════════════ */}
       <Box style={{ flexShrink: 0, padding: '6px 14px 0' }}>
@@ -1531,7 +1552,7 @@ const MilkPurchase = () => {
             </Text>
           </Box>
         )}
-        <Group gap={12} align="stretch" wrap="nowrap" style={{ pointerEvents: (dupBlocked || !formEnabled) ? 'none' : 'all', opacity: dupBlocked ? 0.45 : (!formEnabled ? 0.35 : 1), transition: 'opacity 0.2s' }}>
+        <Group className="mp-cards-group" gap={12} align="stretch" wrap="wrap" style={{ pointerEvents: (dupBlocked || !formEnabled) ? 'none' : 'all', opacity: dupBlocked ? 0.45 : (!formEnabled ? 0.35 : 1), transition: 'opacity 0.2s' }}>
 
           {/* ── CARD 1: Bill Information ── */}
           <Card shadow="xs" radius="lg" withBorder style={{ flex: '0 0 280px', borderColor: '#bfdbfe', borderTop: '3px solid #2563eb', padding: '8px 12px' }}>
@@ -1717,7 +1738,7 @@ const MilkPurchase = () => {
             </Group>
 
             {/* Input row — fields driven by paramCombo + qtyUnit from settings */}
-            <Group gap={8} mb={6} wrap="nowrap" align="flex-end">
+            <Group className="mp-entry-inputs" gap={8} mb={6} wrap="nowrap" align="flex-end">
               {(() => {
                 const ltrLabel = qtyUnit === 'KG' ? 'KG' : 'LTR';
                 const clrFat = paramCombo === 'CLR-FAT';
@@ -1760,7 +1781,7 @@ const MilkPurchase = () => {
               const waterLtr = parseFloat(water) || 0;
               const netLtr = grossLtr;
               return (
-                <Group gap={8} wrap="nowrap">
+                <Group className="mp-calc-row" gap={8} wrap="nowrap">
                   <Box style={{ flex: 1, background: '#fff1f2', border: '1.5px solid #fda4af', borderRadius: 8, padding: '3px 8px', textAlign: 'center' }}>
                     <Text size="9px" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>Net Ltr</Text>
                     <Text size="14px" fw={700} style={{ color: '#be123c', lineHeight: 1.2 }}>{netLtr.toFixed(2)}</Text>
@@ -1859,7 +1880,7 @@ const MilkPurchase = () => {
 
         {/* Table header bar */}
         <Box style={{ background: '#1e3a8a', borderRadius: '10px 10px 0 0', padding: '4px 10px' }}>
-          <Group justify="space-between" align="center" wrap="nowrap">
+          <Group className="mp-table-bar" justify="space-between" align="center" wrap="nowrap">
             <Group gap={8} style={{ flexShrink: 0 }}>
               <Text fw={700} size="12px" c="white" style={{ letterSpacing: '0.3px' }}>Purchase Register</Text>
               <Badge size="sm" style={{ background: 'rgba(255,255,255,0.12)', color: '#93c5fd', border: '1px solid rgba(255,255,255,0.2)' }}>
@@ -1906,7 +1927,7 @@ const MilkPurchase = () => {
               </Group>
             </Group>
 
-            <Group gap={4} wrap="nowrap">
+            <Group className="mp-table-bar-right" gap={4} wrap="nowrap">
               {/* History search input */}
               {showHistory && (
                 <TextInput
@@ -2103,13 +2124,14 @@ const MilkPurchase = () => {
         </Box>
 
         {/* Footer summary strip */}
-        <Box style={{ background: 'white', border: '1px solid #bfdbfe', borderTop: '2px solid #dbeafe', borderRadius: '0 0 10px 10px', padding: '4px 12px' }}>
-          <Group gap={10} wrap="nowrap" align="center">
+        <Box className="mp-footer-box" style={{ background: 'white', border: '1px solid #bfdbfe', borderTop: '2px solid #dbeafe', borderRadius: '0 0 10px 10px', padding: '4px 12px' }}>
+          <style>{`@media(max-width:768px){.mp-footer-box{padding:6px 8px !important;}}`}</style>
+          <Group className="mp-footer-strip" gap={10} wrap="nowrap" align="center">
             <Box style={{ flexShrink: 0 }}>
               <Text size="10px" fw={800} c="#1e3a8a" tt="uppercase" style={{ letterSpacing: '0.5px' }}>Summary</Text>
               <Text size="9px" c="#94a3b8">{entries.length} records</Text>
             </Box>
-            <Divider orientation="vertical" style={{ height: 36 }} />
+            <Divider className="mp-footer-divider" orientation="vertical" style={{ height: 36 }} />
             {[
               { label: 'FAT Avg',   val: avgFat.toFixed(1),              c: '#c2410c', bg: '#fff7ed', border: '#fed7aa' },
               { label: 'CLR Avg',   val: avgClr.toFixed(1),              c: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe' },
@@ -2123,7 +2145,7 @@ const MilkPurchase = () => {
               </Box>
             ))}
 
-            <Divider orientation="vertical" style={{ height: 36 }} />
+            <Divider className="mp-footer-divider" orientation="vertical" style={{ height: 36 }} />
 
             {/* Local & Credit Sales Summary */}
             {[
@@ -2172,7 +2194,7 @@ const MilkPurchase = () => {
       </Box>
 
       {/* ══ RIGHT CONTROL PANEL ══════════════════════════════════════════════ */}
-      <Box style={{
+      <Box className="mp-right-panel" style={{
         width: 200, flexShrink: 0,
         background: 'linear-gradient(180deg, #e0f7fa 0%, #b2ebf2 40%, #e0f2f1 100%)',
         borderLeft: '2px solid #80deea',

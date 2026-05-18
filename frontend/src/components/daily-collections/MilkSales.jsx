@@ -234,7 +234,7 @@ export default function MilkSales() {
       let partyId = null;
 
       if (m === 'CREDIT' && cr) {
-        salesItemKey = 'Customer Sale';
+        salesItemKey = 'Credit Sales';
         partyId = cr;
       } else if (m === 'LOCAL') {
         salesItemKey = 'Local Sales';
@@ -264,6 +264,23 @@ export default function MilkSales() {
   };
 
   useEffect(() => { fetchRate(); }, [creditor, agent, mode, date]); // eslint-disable-line
+
+  // ── Auto-fetch opening credit (outstanding balance) for CREDIT creditor ──
+  const fetchOpCr = async (overrides = {}) => {
+    const m  = overrides.mode     ?? mode;
+    const cr = overrides.creditor !== undefined ? overrides.creditor : creditor;
+    const dt = overrides.date     ?? date;
+    if (m !== 'CREDIT' || !cr) { setOpCr(''); return; }
+    try {
+      const base    = toDate(dt);
+      const istDate = new Date(base.getTime() + 5.5 * 60 * 60000);
+      const dateStr = istDate.toISOString().slice(0, 10);
+      const res = await milkSalesAPI.getCreditorBalance(cr, dateStr);
+      setOpCr(res?.data?.balance != null ? String(res.data.balance) : '');
+    } catch { setOpCr(''); }
+  };
+
+  useEffect(() => { if (!editingId) fetchOpCr(); }, [creditor, mode, date, editingId]); // eslint-disable-line
 
   // Auto-select first center/agent when switching to LOCAL or SAMPLE
   useEffect(() => {
@@ -349,6 +366,7 @@ export default function MilkSales() {
     setCenter(null); setAgent(null); setCategory(null); setCreditor(null);
     setOpCr(''); setLitre(''); setRate(''); setAmount(0); setPType('Cash');
     fetchRate({ mode, creditor: null, agent: null, date });
+    fetchOpCr({ mode, creditor: null, date });
     setTimeout(() => litrRef.current?.focus(), 60);
   };
 
@@ -538,18 +556,37 @@ export default function MilkSales() {
 
   // ─── RENDER ───────────────────────────────────────────────────────────────
   return (
-    <Box style={{ height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#eef4fb' }}>
+    <Box className="ms-root" style={{ height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#eef4fb' }}>
+      <style>{`
+        @media (max-width: 768px) {
+          .ms-root { height: auto !important; min-height: calc(100vh - 60px); overflow-y: auto !important; }
+          .ms-header-box { padding: 6px 10px !important; }
+          .ms-header-group { flex-wrap: wrap !important; gap: 6px !important; }
+          .ms-header-left { flex-wrap: wrap !important; gap: 6px !important; }
+          .ms-header-title { display: none !important; }
+          .ms-header-sep { display: none !important; }
+          .ms-card-row { padding: 6px 8px 0 !important; }
+          .ms-card-group > * { flex: 1 1 100% !important; min-width: 0 !important; }
+          .ms-table-section { padding: 8px 8px 8px !important; overflow: visible !important; }
+          .ms-table-bar { flex-wrap: wrap !important; gap: 4px !important; }
+          .ms-table-bar-right { flex-wrap: wrap !important; gap: 3px !important; }
+          .ms-footer-box { padding: 6px 10px !important; }
+          .ms-footer-strip { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; }
+          .ms-summary-label { grid-column: 1 / -1 !important; }
+          .ms-footer-divider { display: none !important; }
+        }
+      `}</style>
 
       {/* ══ HEADER ══════════════════════════════════════════════════════════ */}
-      <Box style={{ background: 'white', borderBottom: '1px solid #dbeafe', padding: '8px 20px', flexShrink: 0, boxShadow: '0 1px 6px rgba(37,99,235,0.08)' }}>
-        <Group justify="space-between" align="center" wrap="nowrap">
+      <Box className="ms-header-box" style={{ background: 'white', borderBottom: '1px solid #dbeafe', padding: '8px 20px', flexShrink: 0, boxShadow: '0 1px 6px rgba(37,99,235,0.08)' }}>
+        <Group className="ms-header-group" justify="space-between" align="center" wrap="wrap">
 
           {/* LEFT: icon + title + controls */}
-          <Group gap={12} align="center" wrap="nowrap" style={{ flex: 1 }}>
+          <Group className="ms-header-left" gap={12} align="center" wrap="wrap" style={{ flex: 1 }}>
             <Box style={{ background: '#dcfce7', borderRadius: 10, padding: '7px 9px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
               <IconMilk size={22} color="#16a34a" />
             </Box>
-            <Box style={{ flexShrink: 0 }}>
+            <Box className="ms-header-title" style={{ flexShrink: 0 }}>
               <Group gap={8} align="center">
                 <Text size="16px" fw={800} c="#14532d" style={{ lineHeight: 1.1, letterSpacing: '-0.3px' }}>Milk Sales</Text>
                 <Badge color={mode === 'LOCAL' ? 'green' : mode === 'SAMPLE' ? 'blue' : 'violet'} size="sm" variant="filled">{mode}</Badge>
@@ -558,7 +595,7 @@ export default function MilkSales() {
               <Text size="10px" c="#64748b">Daily Sales Entry</Text>
             </Box>
 
-            <Box style={{ width: 1, height: 36, background: '#dbeafe', flexShrink: 0 }} />
+            <Box className="ms-header-sep" style={{ width: 1, height: 36, background: '#dbeafe', flexShrink: 0 }} />
 
             {/* Date */}
             <Box style={{ flexShrink: 0 }}>
@@ -625,8 +662,8 @@ export default function MilkSales() {
       </Box>
 
       {/* ══ CARD ROW ════════════════════════════════════════════════════════ */}
-      <Box style={{ flexShrink: 0, padding: '8px 20px 0' }}>
-        <Group gap={8} align="stretch" wrap="nowrap">
+      <Box className="ms-card-row" style={{ flexShrink: 0, padding: '8px 20px 0' }}>
+        <Group className="ms-card-group" gap={8} align="stretch" wrap="wrap">
 
           {/* ── CARD 1: Bill Information ── */}
           <Card shadow="xs" radius="md" withBorder style={{ flex: '0 0 200px', borderColor: '#bfdbfe', borderTop: '3px solid #2563eb', padding: '8px 12px' }}>
@@ -709,10 +746,10 @@ export default function MilkSales() {
                   />
                 </Box>
                 <Box>
-                  <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Opening Credit (&#8377;)</Text>
-                  <NumberInput value={opCr === '' ? '' : parseFloat(opCr)} onChange={v => setOpCr(String(v ?? ''))}
+                  <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Opening Credit (&#8377;) — Auto</Text>
+                  <NumberInput value={opCr === '' ? '' : parseFloat(opCr)} readOnly
                     min={0} decimalScale={2} placeholder="0.00" size="xs" radius="sm"
-                    styles={{ input: { fontWeight: 600, border: '1.5px solid #c4b5fd', height: 28 } }} />
+                    styles={{ input: { fontWeight: 600, border: '1.5px solid #c4b5fd', height: 28, background: '#f5f3ff', cursor: 'default' } }} />
                 </Box>
               </Stack>
             )}
@@ -763,11 +800,11 @@ export default function MilkSales() {
       </Box>
 
       {/* ══ TABLE SECTION ═══════════════════════════════════════════════════ */}
-      <Box style={{ flex: 1, overflow: 'hidden', minHeight: 0, padding: '10px 20px 12px', display: 'flex', flexDirection: 'column' }}>
+      <Box className="ms-table-section" style={{ flex: 1, overflow: 'hidden', minHeight: 0, padding: '10px 20px 12px', display: 'flex', flexDirection: 'column' }}>
 
         {/* Table header bar */}
         <Box style={{ background: '#14532d', borderRadius: '10px 10px 0 0', padding: '7px 14px' }}>
-          <Group justify="space-between" align="center" wrap="nowrap">
+          <Group className="ms-table-bar" justify="space-between" align="center" wrap="wrap">
             <Group gap={8} style={{ flexShrink: 0 }}>
               <Text fw={700} size="12px" c="white" style={{ letterSpacing: '0.3px' }}>Sales Register</Text>
               <Badge size="sm" style={{ background: 'rgba(255,255,255,0.12)', color: '#86efac', border: '1px solid rgba(255,255,255,0.2)' }}>
@@ -808,7 +845,7 @@ export default function MilkSales() {
               </Group>
             </Group>
 
-            <Group gap={4} wrap="nowrap">
+            <Group className="ms-table-bar-right" gap={4} wrap="wrap">
               {showHistory && (
                 <TextInput
                   placeholder="Search bill, creditor, center..."
@@ -1014,13 +1051,13 @@ export default function MilkSales() {
         </Box>
 
         {/* Footer Summary Strip */}
-        <Box style={{ background: 'white', border: '1px solid #bbf7d0', borderTop: '2px solid #dcfce7', borderRadius: '0 0 10px 10px', padding: '8px 16px' }}>
-          <Group gap={10} wrap="nowrap" align="center">
-            <Box style={{ flexShrink: 0 }}>
+        <Box className="ms-footer-box" style={{ background: 'white', border: '1px solid #bbf7d0', borderTop: '2px solid #dcfce7', borderRadius: '0 0 10px 10px', padding: '8px 16px' }}>
+          <Group className="ms-footer-strip" gap={10} wrap="wrap" align="center">
+            <Box className="ms-summary-label" style={{ flexShrink: 0 }}>
               <Text size="10px" fw={800} c="#14532d" tt="uppercase" style={{ letterSpacing: '0.5px' }}>Summary</Text>
               <Text size="9px" c="#94a3b8">{entries.length} records · {monthMode ? `${MONTHS.find(m => m.value === filterMonth)?.label} ${filterYear}` : toDate(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</Text>
             </Box>
-            <Divider orientation="vertical" style={{ height: 36 }} />
+            <Divider className="ms-footer-divider" orientation="vertical" style={{ height: 36 }} />
             {[
               { label: 'Mode',      val: mode,                           c: modeColor, bg: modeBg, border: `${modeColor}44` },
               { label: 'Session',   val: session,                        c: session === 'AM' ? '#c2410c' : '#4338ca', bg: session === 'AM' ? '#fff7ed' : '#eef2ff', border: session === 'AM' ? '#fdba74' : '#a5b4fc' },

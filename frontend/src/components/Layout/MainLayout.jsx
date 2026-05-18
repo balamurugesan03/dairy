@@ -330,11 +330,12 @@ const MainLayout = () => {
           key: 'registers-sub',
           label: 'Registers / Reports',
           children: [
-            { key: '/payments/producer-register',         label: 'Producer Register' },
-            { key: '/payments/producer-register-summary', label: 'Producer Summary' },
-            { key: '/reports/milk-bill-report',           label: 'Milk Bill (Producer)' },
-            { key: '/payments/farmer-ledger',             label: 'Producer Ledger' },
-            
+            { key: '/payments/producer-register',          label: 'Producer Register' },
+            { key: '/payments/producer-register-summary',  label: 'Producer Summary' },
+            { key: '/reports/milk-bill-report',            label: 'Milk Bill (Producer)' },
+            { key: '/payments/farmer-ledger',              label: 'Producer Ledger' },
+            { key: '/payments/payment-register-report',    label: 'Payment Register' },
+            { key: '/payments/payment-paid-report',        label: 'Payment Paid Report' },
           ]
         },
       ]

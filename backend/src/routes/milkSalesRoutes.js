@@ -7,6 +7,7 @@ import {
   updateMilkSale,
   deleteMilkSale,
   getBalanceReport,
+  getCreditorBalance,
   getNextBillNo,
   bulkImportMilkSales,
   zibittRawImport,
@@ -18,7 +19,8 @@ const router = express.Router();
 router.get('/',               getMilkSales);
 router.get('/next-bill-no',   getNextBillNo);
 router.get('/summary/daily',  getDailySummary);
-router.get('/balance-report', getBalanceReport);
+router.get('/balance-report',    getBalanceReport);
+router.get('/creditor-balance',  getCreditorBalance);
 router.get('/:id',            getMilkSaleById);
 router.post('/bulk-import',      bulkImportMilkSales);
 router.post('/zibitt-raw-import', zibittRawImport);

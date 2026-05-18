@@ -139,6 +139,8 @@ const BankTransferManagement = lazy(() => import('./components/payments/BankTran
 const PaymentRegisterCreditor  = lazy(() => import('./components/payments/PaymentRegisterCreditor'));
 const PaymentRegisterProducers = lazy(() => import('./components/payments/PaymentRegisterProducers'));
 const PaymentToProducer = lazy(() => import('./components/payments/PaymentToProducer'));
+const PaymentRegisterReport = lazy(() => import('./components/payments/PaymentRegisterReport'));
+const PaymentPaidReport     = lazy(() => import('./components/payments/PaymentPaidReport'));
 
 // Report Components
 const ReportsDashboard = lazy(() => import('./components/reports/ReportsDashboard'));
@@ -458,8 +460,10 @@ const AppContent = () => {
                 <Route path="periodical-deduction-earning" element={<PeriodicalDeductionEarning />} />
                 <Route path="creditor-bill"       element={<PaymentRegisterCreditor />} />
                 <Route path="producer-payment"    element={<PaymentRegisterProducers />} />
-                <Route path="payment-to-producer" element={<PaymentToProducer />} />
-                <Route path="cattle-feed-advance" element={<CattleFeedAdvance />} />
+                <Route path="payment-to-producer"    element={<PaymentToProducer />} />
+                <Route path="cattle-feed-advance"    element={<CattleFeedAdvance />} />
+                <Route path="payment-register-report" element={<PaymentRegisterReport />} />
+                <Route path="payment-paid-report"     element={<PaymentPaidReport />} />
               </Route>
 
               {/* Reports Routes */}

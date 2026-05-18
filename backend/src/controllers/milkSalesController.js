@@ -1,3 +1,4 @@
+import mongoose  from 'mongoose';
 import MilkSales from '../models/MilkSales.js';
 import Voucher   from '../models/Voucher.js';
 import Customer  from '../models/Customer.js';
@@ -646,6 +647,51 @@ export const getBalanceReport = async (req, res) => {
       success: true,
       data: { rows, openingBalance, closingBalance: balance, creditorName, totals }
     });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────
+//  CREDITOR OUTSTANDING BALANCE
+//  GET /creditor-balance?creditorId=&date=
+//  Returns cumulative (sales − receipts) for a creditor up to (not including) date
+// ────────────────────────────────────────────────────────────────
+export const getCreditorBalance = async (req, res) => {
+  try {
+    const { creditorId, date } = req.query;
+    if (!creditorId) return res.json({ success: true, data: { balance: 0 } });
+
+    const companyId = req.companyId;
+    const cutoff = date ? new Date(date) : new Date();
+    cutoff.setHours(0, 0, 0, 0);
+
+    const salesAgg = await MilkSales.aggregate([
+      { $match: { companyId, creditorId: new mongoose.Types.ObjectId(creditorId), saleMode: 'CREDIT', date: { $lt: cutoff } } },
+      { $group: { _id: null, total: { $sum: '$amount' } } }
+    ]);
+    const totalSales = salesAgg[0]?.total || 0;
+
+    const customer = await Customer.findById(creditorId).lean();
+    const creditorLedgerId = customer?.ledgerId?.toString() || null;
+    let totalReceipts = 0;
+    if (creditorLedgerId) {
+      const vouchers = await Voucher.find({
+        companyId,
+        voucherType: { $in: ['Receipt', 'Payment'] },
+        voucherDate: { $lt: cutoff },
+        'entries.ledgerId': creditorLedgerId
+      }).lean();
+      for (const v of vouchers) {
+        for (const e of v.entries) {
+          if (e.ledgerId?.toString() === creditorLedgerId && v.voucherType === 'Receipt') {
+            totalReceipts += e.creditAmount || 0;
+          }
+        }
+      }
+    }
+
+    res.json({ success: true, data: { balance: Math.max(0, totalSales - totalReceipts) } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
