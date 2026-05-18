@@ -3,8 +3,21 @@ import { useAuth } from '../context/AuthContext';
 import { companyAPI } from '../services/api';
 import './Login.css';
 
+const useOnline = () => {
+  const [online, setOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const on  = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener('online',  on);
+    window.addEventListener('offline', off);
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+  }, []);
+  return online;
+};
+
 const Login = () => {
   const { login } = useAuth();
+  const isOnline = useOnline();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -33,13 +46,28 @@ const Login = () => {
   }, []);
 
   const fetchCompanies = async () => {
+    // Offline — load from cache
+    if (!navigator.onLine) {
+      try {
+        const cached = JSON.parse(localStorage.getItem('dairy_cached_companies') || '[]');
+        setCompanies(cached);
+      } catch { setCompanies([]); }
+      setLoadingCompanies(false);
+      return;
+    }
     try {
       const response = await companyAPI.getPublic();
       if (response.success) {
-        setCompanies(response.data || []);
+        const list = response.data || [];
+        setCompanies(list);
+        localStorage.setItem('dairy_cached_companies', JSON.stringify(list));
       }
-    } catch (err) {
-      console.error('Error fetching companies:', err);
+    } catch {
+      // Server unreachable — fall back to cache
+      try {
+        const cached = JSON.parse(localStorage.getItem('dairy_cached_companies') || '[]');
+        setCompanies(cached);
+      } catch { setCompanies([]); }
     } finally {
       setLoadingCompanies(false);
     }
@@ -95,6 +123,12 @@ const Login = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
+          {!isOnline && (
+            <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 13, color: '#92400e', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>⚠</span>
+              <span><b>Offline Mode</b> — using cached session. Enter your username to continue.</span>
+            </div>
+          )}
           {error && (
             <div className="login-error">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

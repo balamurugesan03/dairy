@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import { authAPI } from '../services/api';
 
 const AuthContext = createContext();
+const OFFLINE_SESSION_KEY = 'dairy_offline_session';
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -9,6 +10,11 @@ export const useAuth = () => {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
+};
+
+const getCachedSession = () => {
+  try { return JSON.parse(localStorage.getItem(OFFLINE_SESSION_KEY) || 'null'); }
+  catch { return null; }
 };
 
 export const AuthProvider = ({ children }) => {
@@ -23,17 +29,36 @@ export const AuthProvider = ({ children }) => {
 
   const checkAuth = async () => {
     const savedToken = localStorage.getItem('authToken');
-    if (savedToken) {
-      try {
-        const response = await authAPI.getMe();
-        if (response.success) {
-          setUser(response.data.user);
-          setToken(savedToken);
-        } else {
-          logout();
-        }
-      } catch (error) {
-        console.error('Auth check failed:', error);
+    if (!savedToken) { setLoading(false); return; }
+
+    // Offline — restore from cached session
+    if (!navigator.onLine) {
+      const cached = getCachedSession();
+      if (cached?.user) {
+        setUser(cached.user);
+        setToken(savedToken);
+      } else {
+        logout();
+      }
+      setLoading(false);
+      return;
+    }
+
+    // Online — verify with server; fall back to cache if server unreachable
+    try {
+      const response = await authAPI.getMe();
+      if (response.success) {
+        setUser(response.data.user);
+        setToken(savedToken);
+      } else {
+        logout();
+      }
+    } catch {
+      const cached = getCachedSession();
+      if (cached?.user) {
+        setUser(cached.user);
+        setToken(savedToken);
+      } else {
         logout();
       }
     }
@@ -41,6 +66,24 @@ export const AuthProvider = ({ children }) => {
   };
 
   const login = async (username, password) => {
+    // Offline login — restore cached session if username matches
+    if (!navigator.onLine) {
+      const cached = getCachedSession();
+      if (cached && cached.username === username.trim() && cached.token) {
+        localStorage.setItem('authToken', cached.token);
+        setToken(cached.token);
+        setUser(cached.user);
+        if (cached.user?.companyInfo) {
+          localStorage.setItem('selectedCompanyId', cached.user.companyInfo._id);
+          if (cached.user.companyInfo.businessTypes?.length > 0) {
+            localStorage.setItem('selectedBusinessType', cached.user.companyInfo.businessTypes[0]);
+          }
+        }
+        return { success: true, user: cached.user, offline: true };
+      }
+      return { success: false, message: 'No internet — please connect and login at least once first' };
+    }
+
     try {
       const response = await authAPI.login(username, password);
       if (response.success) {
@@ -48,6 +91,13 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem('authToken', newToken);
         setToken(newToken);
         setUser(data.user);
+
+        // Cache session for offline use
+        localStorage.setItem(OFFLINE_SESSION_KEY, JSON.stringify({
+          username: username.trim(),
+          token: newToken,
+          user: data.user,
+        }));
 
         // If user has company info, auto-select it
         if (data.user.companyInfo) {
@@ -72,6 +122,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('authToken');
     localStorage.removeItem('selectedCompanyId');
     localStorage.removeItem('selectedBusinessType');
+    // Keep OFFLINE_SESSION_KEY so user can log back in offline
     setToken(null);
     setUser(null);
   };
