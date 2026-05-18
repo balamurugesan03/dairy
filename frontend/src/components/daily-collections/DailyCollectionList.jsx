@@ -97,7 +97,7 @@ const DailyCollectionList = () => {
       salesList.forEach(s => {
         const mode = (s.saleMode || '').toUpperCase();
         const key = mode === 'LOCAL' ? 'local' : mode === 'CREDIT' ? 'credit' : mode === 'SCHOOL' ? 'school' : mode === 'SAMPLE' ? 'sample' : null;
-        if (key) { sm[key].qty += (s.qty || 0); sm[key].amt += (s.amount || 0); }
+        if (key) { sm[key].qty += (s.litre || 0); sm[key].amt += (s.amount || 0); }
       });
       setSalesSummary(sm);
 
@@ -329,126 +329,149 @@ const DailyCollectionList = () => {
     const nonMembers = printList.filter(r => r.isMembership === false);
     const totalLtr   = printList.reduce((s, r) => s + (r.qty || 0), 0);
     const totalAmt_  = printList.reduce((s, r) => s + (r.amount || 0), 0);
+    const mLtr       = members.reduce((s, r) => s + (r.qty || 0), 0);
+    const mAmt       = members.reduce((s, r) => s + (r.amount || 0), 0);
+    const nmLtr      = nonMembers.reduce((s, r) => s + (r.qty || 0), 0);
+    const nmAmt      = nonMembers.reduce((s, r) => s + (r.amount || 0), 0);
 
-    const buildRows = (list) => list.map((r, i) => {
-      const ltr  = (r.qty || 0).toFixed(2);
-      const fat  = (r.fat  || 0).toFixed(2);
-      const clr  = (r.clr  || 0).toFixed(1);
-      const snf  = (r.snf  || 0).toFixed(2);
-      const rate = (r.rate || 0).toFixed(2);
-      const amt  = (r.amount || 0).toFixed(2);
-      const name = (r.farmerName || '').substring(0, 14).padEnd(14);
-      return `<tr>
-        <td class="c">${String(i + 1).padStart(3)}</td>
-        <td class="c">${r.billNo || ''}</td>
-        <td class="l">${name}</td>
-        <td class="r">${fat}</td>
-        <td class="r">${clr}</td>
-        <td class="r">${snf}</td>
-        <td class="r">${ltr}</td>
-        <td class="r">${rate}</td>
-        <td class="r bold">${amt}</td>
-      </tr>`;
-    }).join('');
+    const buildColRows = (list) => list.map((r, i) => `<tr>
+      <td class="c">${i + 1}</td>
+      <td class="c">${(r.farmerNumber || '')}</td>
+      <td class="l">${(r.farmerName || '').substring(0, 11)}</td>
+      <td class="r">${(r.fat  || 0).toFixed(2)}</td>
+      <td class="r">${(r.clr  || 0).toFixed(1)}</td>
+      <td class="r">${(r.snf  || 0).toFixed(2)}</td>
+      <td class="r">${(r.qty  || 0).toFixed(2)}</td>
+      <td class="r">${(r.rate || 0).toFixed(2)}</td>
+      <td class="r bold">${(r.amount || 0).toFixed(2)}</td>
+    </tr>`).join('');
 
-    const subTotal = (list) => {
-      const t = list.reduce((s, r) => s + (r.qty || 0), 0);
-      const a = list.reduce((s, r) => s + (r.amount || 0), 0);
-      return `<tr class="sub">
-        <td colspan="6" class="r">Sub Total</td>
-        <td class="r">${t.toFixed(2)}</td><td></td>
-        <td class="r bold">${a.toFixed(2)}</td>
-      </tr>`;
+    const colPanel = (title, list, ltr, amt, isNm) => {
+      if (!list.length) return `
+        <div class="panel">
+          <div class="panel-hdr ${isNm ? 'nm' : ''}">${title} (0)</div>
+          <p style="font-size:8px;text-align:center;padding:4px;color:#888;">No records</p>
+        </div>`;
+      return `
+        <div class="panel">
+          <div class="panel-hdr ${isNm ? 'nm' : ''}">${title} (${list.length})</div>
+          <table>
+            <thead><tr>
+              <th class="c" style="width:14px">Sl</th>
+              <th class="c" style="width:20px">F.No</th>
+              <th class="l" style="width:36px">Name</th>
+              <th class="r" style="width:15px">FAT</th>
+              <th class="r" style="width:13px">CLR</th>
+              <th class="r" style="width:15px">SNF</th>
+              <th class="r" style="width:17px">Ltr</th>
+              <th class="r" style="width:16px">Rate</th>
+              <th class="r" style="width:22px">Amt</th>
+            </tr></thead>
+            <tbody>
+              ${buildColRows(list)}
+              <tr class="sub">
+                <td colspan="6" class="r bold">Sub Total :</td>
+                <td class="r bold">${ltr.toFixed(2)}</td>
+                <td></td>
+                <td class="r bold">${amt.toFixed(2)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>`;
     };
 
     const html = `<!DOCTYPE html><html><head>
 <meta charset="utf-8"/>
 <title>Milk Purchase Report</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap');
   @page { size: A4 portrait; margin: 8mm; }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:#c8c8c8; display:flex; justify-content:center; align-items:flex-start; padding:20px; min-height:100vh; }
-  .paper { background:#f5f0e8; font-family:'Courier Prime','Courier New',monospace; font-size:9.5px; color:#1a1a1a; width:190mm; padding:8mm 9mm 12mm; position:relative; box-shadow:3px 4px 18px rgba(0,0,0,0.45); transform:rotate(-0.3deg); }
-  .paper::before { content:''; position:absolute; inset:0; pointer-events:none; background:radial-gradient(ellipse at 50% 50%,transparent 60%,rgba(200,190,170,0.25) 100%); }
-  .hdr { text-align:center; margin-bottom:3mm; }
+  body { background:#fff; padding:6px; }
+  .paper { background:#fff; font-family:'Courier New',monospace; font-size:8px; color:#1a1a1a; width:194mm; }
+  .hdr { text-align:center; margin-bottom:2mm; }
   .hdr .society { font-size:13px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; }
-  .hdr .addr    { font-size:8.5px; letter-spacing:0.5px; margin-top:1px; opacity:0.85; }
-  .dash { border:none; border-top:1.5px dashed #444; margin:2mm 0; }
-  .title-line { text-align:center; font-size:11px; font-weight:700; letter-spacing:2px; text-transform:uppercase; text-decoration:underline; margin:2mm 0; }
-  .meta { font-size:8.5px; margin-bottom:2mm; }
-  .meta span { margin-right:6mm; }
-  table { width:100%; border-collapse:collapse; font-size:8.5px; }
-  thead tr th { border-top:1.5px solid #333; border-bottom:1px solid #555; padding:2px 3px; font-weight:700; font-size:8px; letter-spacing:0.3px; text-transform:uppercase; }
-  tbody tr td { padding:1.5px 3px; border-bottom:1px dotted #bbb; }
-  tbody tr:nth-child(odd) td { background:rgba(0,0,0,0.025); }
-  .section-hdr td { font-weight:700; font-size:8px; letter-spacing:1px; text-transform:uppercase; padding:3px 3px 1px; border-bottom:1px solid #555; background:rgba(30,80,160,0.10); color:#1a3c6e; }
-  .section-hdr.nm td { background:rgba(120,120,120,0.10); color:#444; }
-  .sub td { border-top:1px solid #666; font-weight:700; font-size:8.5px; background:rgba(0,0,0,0.04); }
-  .grand td { border-top:2px solid #333; border-bottom:1.5px solid #333; font-weight:700; font-size:9px; background:rgba(0,0,0,0.07); }
-  .c { text-align:center; } .r { text-align:right; } .l { text-align:left; } .bold { font-weight:700; }
-  .summary { margin-top:3mm; font-size:8.5px; }
+  .hdr .addr    { font-size:8px; margin-top:1px; }
+  .dash { border:none; border-top:1.5px dashed #444; margin:1.5mm 0; }
+  .title-line { text-align:center; font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase; text-decoration:underline; margin:1.5mm 0; }
+  .meta { font-size:8px; margin-bottom:2mm; }
+  .meta span { margin-right:5mm; }
+  /* ── Two-column layout ── */
+  .two-col { display:flex; gap:2mm; align-items:flex-start; }
+  .panel { flex:1; min-width:0; }
+  .col-sep { width:1px; background:#aaa; align-self:stretch; flex-shrink:0; }
+  .panel-hdr { font-weight:700; font-size:8px; letter-spacing:0.8px; text-transform:uppercase;
+               padding:2px 4px; text-align:center; border:1.5px solid #333;
+               background:#dbeafe; color:#1a3c6e; margin-bottom:1px; }
+  .panel-hdr.nm { background:#f3f4f6; color:#374151; }
+  table { width:100%; border-collapse:collapse; font-size:7.5px; }
+  thead tr th { border-top:1px solid #333; border-bottom:1px solid #555; padding:1.5px 2px;
+                font-weight:700; font-size:7px; letter-spacing:0.2px; text-transform:uppercase; }
+  tbody tr td { padding:1px 2px; border-bottom:1px dotted #ccc; }
+  tbody tr:nth-child(odd) td { background:#f7f7f7; }
+  .sub td { border-top:1px solid #555; font-weight:700; font-size:7.5px; background:#e5e7eb; }
+  /* ── Grand total ── */
+  .grand-row { margin-top:2mm; }
+  .grand-row table { font-size:8.5px; }
+  .grand td { border-top:2px solid #333; border-bottom:1.5px solid #333; font-weight:700; font-size:9px; background:#d1fae5; padding:2px 3px; }
+  /* ── Summary ── */
+  .summary { margin-top:2mm; font-size:8px; }
   .summary .dash2 { border:none; border-top:1px solid #555; margin:1.5mm 0; }
   .summary-row { display:flex; justify-content:space-between; padding:1px 0; }
-  .summary-row .lbl { width:55mm; } .summary-row .val { font-weight:700; text-align:right; width:28mm; } .summary-row .val2 { font-weight:700; text-align:right; width:28mm; }
-  .sig { margin-top:6mm; display:flex; justify-content:space-between; font-size:8px; }
+  .summary-row .lbl { width:55mm; }
+  .summary-row .val  { font-weight:700; text-align:right; width:28mm; }
+  .summary-row .val2 { font-weight:700; text-align:right; width:28mm; }
+  .sig { margin-top:5mm; display:flex; justify-content:space-between; font-size:8px; }
   .sig div { border-top:1px solid #555; width:55mm; text-align:center; padding-top:1mm; }
-  .printed { text-align:center; font-size:7.5px; margin-top:4mm; opacity:0.6; letter-spacing:0.5px; }
-  .fade1 { opacity:0.7; } .fade2 { opacity:0.82; }
-  @media print { body { background:none; padding:0; } .paper { box-shadow:none; transform:none; } }
+  .printed { text-align:center; font-size:7px; margin-top:3mm; color:#6b7280; }
+  .c { text-align:center; } .r { text-align:right; } .l { text-align:left; } .bold { font-weight:700; }
+  @media print { body { padding:0; } }
 </style>
 </head>
 <body>
 <div class="paper">
   <div class="hdr">
     <div class="society">${companyName}</div>
-    <div class="addr fade2">${centerLabel !== 'All Centers' ? centerLabel : 'VENIAD (P.O)'}</div>
+    ${centerLabel !== 'All Centers' ? `<div class="addr">${centerLabel}</div>` : ''}
   </div>
   <hr class="dash"/>
   <div class="title-line">*** MILK PURCHASE REPORT ***</div>
   <hr class="dash"/>
-  <div class="meta fade2">
+  <div class="meta">
     <span>Date : ${dayjs(date).format('DD/MM/YYYY')}</span>
     <span>Shift : ${shiftLabel}</span>
-    <span>Category : All</span>
-    <span>Entries : ${printList.length}</span>
+    <span>Members : ${members.length}</span>
+    <span>Non-Members : ${nonMembers.length}</span>
+    <span>Total : ${printList.length}</span>
   </div>
-  <table>
-    <thead>
-      <tr>
-        <th class="c" style="width:22px">Sl</th>
-        <th class="c" style="width:32px">Rcpt No</th>
-        <th class="l" style="width:80px">Name</th>
-        <th class="r" style="width:28px">FAT</th>
-        <th class="r" style="width:28px">CLR</th>
-        <th class="r" style="width:28px">SNF</th>
-        <th class="r" style="width:32px">Litre</th>
-        <th class="r" style="width:30px">Rate</th>
-        <th class="r" style="width:36px">Amount</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${members.length ? `<tr class="section-hdr"><td colspan="9">MEMBER LIST (${members.length})</td></tr>${buildRows(members)}${subTotal(members)}` : ''}
-      ${nonMembers.length ? `<tr class="section-hdr nm"><td colspan="9">NON-MEMBER LIST (${nonMembers.length})</td></tr>${buildRows(nonMembers)}${subTotal(nonMembers)}` : ''}
-      <tr class="grand">
-        <td colspan="6" class="r">TOTAL PURCHASE</td>
-        <td class="r">${totalLtr.toFixed(2)}</td>
-        <td></td>
-        <td class="r bold">${totalAmt_.toFixed(2)}</td>
-      </tr>
-    </tbody>
-  </table>
+
+  <div class="two-col">
+    ${colPanel('MEMBER LIST', members, mLtr, mAmt, false)}
+    <div class="col-sep"></div>
+    ${colPanel('NON-MEMBER LIST', nonMembers, nmLtr, nmAmt, true)}
+  </div>
+
+  <div class="grand-row">
+    <table>
+      <tbody>
+        <tr class="grand">
+          <td style="width:60%" class="r">TOTAL PURCHASE (${printList.length} entries) :</td>
+          <td style="width:15%" class="r">${totalLtr.toFixed(2)} L</td>
+          <td style="width:25%" class="r bold">Rs. ${totalAmt_.toFixed(2)}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
   <div class="summary">
     <hr class="dash2"/>
-    <div class="summary-row fade1">
+    <div class="summary-row">
       <span class="lbl">Total Purchase (Litre)</span>
       <span class="val">${totalLtr.toFixed(3)} L</span>
       <span class="val2">Rs. ${totalAmt_.toFixed(2)}</span>
     </div>
-    <div class="summary-row fade2"><span class="lbl">Milk Sales (Local)</span><span class="val">${salesSummary.local.qty.toFixed(3)} L</span><span class="val2">Rs. ${salesSummary.local.amt.toFixed(2)}</span></div>
-    <div class="summary-row fade2"><span class="lbl">Milk Sample Sales</span><span class="val">${salesSummary.sample.qty.toFixed(3)} L</span><span class="val2">Rs. ${salesSummary.sample.amt.toFixed(2)}</span></div>
-    <div class="summary-row fade2"><span class="lbl">School Milk Supply</span><span class="val">${salesSummary.school.qty.toFixed(3)} L</span><span class="val2">Rs. ${salesSummary.school.amt.toFixed(2)}</span></div>
-    <div class="summary-row fade2"><span class="lbl">Milk Credit Sales</span><span class="val">${salesSummary.credit.qty.toFixed(3)} L</span><span class="val2">Rs. ${salesSummary.credit.amt.toFixed(2)}</span></div>
+    <div class="summary-row"><span class="lbl">Milk Sales — Local</span><span class="val">${salesSummary.local.qty.toFixed(3)} L</span><span class="val2">Rs. ${salesSummary.local.amt.toFixed(2)}</span></div>
+    <div class="summary-row"><span class="lbl">Milk Sales — Sample</span><span class="val">${salesSummary.sample.qty.toFixed(3)} L</span><span class="val2">Rs. ${salesSummary.sample.amt.toFixed(2)}</span></div>
+    <div class="summary-row"><span class="lbl">Milk Sales — School / Credit</span><span class="val">${(salesSummary.school.qty + salesSummary.credit.qty).toFixed(3)} L</span><span class="val2">Rs. ${(salesSummary.school.amt + salesSummary.credit.amt).toFixed(2)}</span></div>
     <hr class="dash2"/>
     <div class="summary-row bold">
       <span class="lbl">Send to Dairy (Milma)</span>
@@ -456,7 +479,7 @@ const DailyCollectionList = () => {
       <span class="val2"></span>
     </div>
     <hr class="dash2"/>
-    <div style="margin-top:2mm; font-size:8px; opacity:0.75;">
+    <div style="font-size:7.5px; color:#444;">
       Avg FAT: ${avgFat.toFixed(2)} &nbsp;|&nbsp; Avg CLR: ${avgClr.toFixed(1)} &nbsp;|&nbsp; Avg SNF: ${avgSnf.toFixed(2)} &nbsp;|&nbsp; AM: ${amCount} &nbsp;|&nbsp; PM: ${pmCount}
     </div>
   </div>
