@@ -4,7 +4,8 @@
  * Keyboard: Tab→Litre→Rate, Enter=Save, Enter again=Print
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { offlineQueue } from '../../utils/offlineQueue';
 import { useNavigate } from 'react-router-dom';
 import {
   Box, Group, Text, TextInput, NumberInput, Select, Button,
@@ -202,6 +203,7 @@ export default function MilkSales() {
   const [importOpen,    setImportOpen]    = useState(false);
   const [rawImportOpen, setRawImportOpen] = useState(false);
   const [backfilling,   setBackfilling]   = useState(false);
+  const [pendingCount,  setPendingCount]  = useState(() => offlineQueue.byType('milk-sales').length);
   const [filterMonth,   setFilterMonth]   = useState(String(new Date().getMonth() + 1));
   const [filterYear,    setFilterYear]    = useState(String(new Date().getFullYear()));
   const [monthMode,     setMonthMode]     = useState(false);
@@ -409,9 +411,12 @@ export default function MilkSales() {
         handleNew();
       }
     } catch {
-      const local = { ...payload, _id: `local-${Date.now()}` };
+      const item = offlineQueue.add('milk-sales', payload);
+      const local = { ...payload, _id: item.localId, _offline: true };
       setEntries(p => [local, ...p]);
-      notifications.show({ color: 'green', message: 'Saved (offline)', autoClose: 2000 });
+      const cnt = offlineQueue.byType('milk-sales').length;
+      setPendingCount(cnt);
+      notifications.show({ color: 'yellow', title: 'No Connection', message: `Saved offline — ${cnt} record(s) pending sync`, autoClose: 3000 });
       handleNew();
     } finally { setSaving(false); }
   };
@@ -502,6 +507,30 @@ export default function MilkSales() {
       setBackfilling(false);
     }
   };
+
+  // ── Offline sync ──────────────────────────────────────────────────────────
+  const syncQueue = useCallback(async () => {
+    const pending = offlineQueue.byType('milk-sales');
+    if (!pending.length || !navigator.onLine) return;
+    let synced = 0;
+    for (const item of pending) {
+      try {
+        await milkSalesAPI.create(item.payload);
+        offlineQueue.remove(item.localId);
+        synced++;
+      } catch { break; }
+    }
+    if (synced > 0) {
+      setPendingCount(offlineQueue.byType('milk-sales').length);
+      notifications.show({ color: 'green', title: 'Offline Sync', message: `${synced} record(s) synced to server`, autoClose: 4000 });
+      loadByDate(toDate(date), session);
+    }
+  }, [date, session]);
+
+  useEffect(() => {
+    window.addEventListener('online', syncQueue);
+    return () => window.removeEventListener('online', syncQueue);
+  }, [syncQueue]);
 
   // ── Keyboard handlers ─────────────────────────────────────────────────────
   const focusNext = (ref) => (e) => { if (e.key === 'Enter') { e.preventDefault(); ref.current?.focus(); } };
@@ -654,10 +683,19 @@ export default function MilkSales() {
             )}
           </Group>
 
-          {/* RIGHT: Clear */}
-          <Button leftSection={<IconX size={14} />} onClick={handleNew} radius="md" size="sm" variant="default" style={{ fontWeight: 700, flexShrink: 0 }}>
-            Clear
-          </Button>
+          {/* RIGHT: Offline badge + Sync + Clear */}
+          <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
+            {pendingCount > 0 && (
+              <Button size="sm" radius="md" onClick={syncQueue}
+                style={{ background: '#d97706', color: 'white', fontWeight: 700 }}
+                leftSection={<Text size="11px" fw={900}>↑</Text>}>
+                Sync {pendingCount}
+              </Button>
+            )}
+            <Button leftSection={<IconX size={14} />} onClick={handleNew} radius="md" size="sm" variant="default" style={{ fontWeight: 700 }}>
+              Clear
+            </Button>
+          </Group>
         </Group>
       </Box>
 

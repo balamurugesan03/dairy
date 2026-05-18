@@ -30,6 +30,7 @@ import {
   milmaChartAPI, whatsappAPI,
 } from '../../services/api';
 import ImportModal from '../common/ImportModal';
+import { offlineQueue } from '../../utils/offlineQueue';
 
 // ── Rate Calculation ─────────────────────────────────────────────────────────
 const fallbackRate = (fat, clr) =>
@@ -267,6 +268,7 @@ const MilkPurchase = () => {
       .map((e, i) => ({ ...e, sl: i + 1 }));
   const [saving,         setSaving]         = useState(false);
   const [loadingEntries, setLoadingEntries] = useState(false);
+  const [pendingCount,   setPendingCount]   = useState(() => offlineQueue.byType('milk-purchase').length);
   const [editingId,      setEditingId]      = useState(null);   // row being edited
   const [historySearch,  setHistorySearch]  = useState('');     // filter text
   const [showHistory,    setShowHistory]    = useState(false);  // search bar toggle
@@ -738,6 +740,30 @@ const MilkPurchase = () => {
     } catch { setEntries([]); }
     finally { setLoadingEntries(false); }
   };
+
+  // ── Offline sync ──────────────────────────────────────────────────────────
+  const syncQueue = useCallback(async () => {
+    const pending = offlineQueue.byType('milk-purchase');
+    if (!pending.length || !navigator.onLine) return;
+    let synced = 0;
+    for (const item of pending) {
+      try {
+        await milkCollectionAPI.create(item.payload);
+        offlineQueue.remove(item.localId);
+        synced++;
+      } catch { break; }
+    }
+    if (synced > 0) {
+      setPendingCount(offlineQueue.byType('milk-purchase').length);
+      notifications.show({ color: 'green', title: 'Offline Sync', message: `${synced} record(s) synced to server`, autoClose: 4000 });
+      loadTodayEntries(formRef.current.date, formRef.current.shift, formRef.current.center);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('online', syncQueue);
+    return () => window.removeEventListener('online', syncQueue);
+  }, [syncQueue]);
 
   const loadMonthEntries = async (month, year) => {
     setLoadingEntries(true);
@@ -1211,7 +1237,23 @@ const MilkPurchase = () => {
         machineConfigAPI.scaleTare().catch(() => {});
       }
     } catch (err) {
-      notifications.show({ message: err?.message || 'Save failed', color: 'red', icon: <IconAlertCircle size={14} /> });
+      if (!navigator.onLine) {
+        const item = offlineQueue.add('milk-purchase', payload);
+        const cnt  = offlineQueue.byType('milk-purchase').length;
+        const localEntry = {
+          id: item.localId, billNo: `OFF-${cnt}`,
+          producerNo: p.no, producerName: p.name,
+          qty: netLtr, ltr: netLtr, clr: parseFloat(c) || 0, fat: parseFloat(f) || 0,
+          snf: parseFloat(s) || fresh.snf || 0, rate: freshRate, amount: freshAmount,
+          addedWater: waterLtr, date: toDate(d).toISOString(), shift: sh, _offline: true,
+        };
+        setEntries(prev => sortByProducerNo([...prev, { ...localEntry, sl: 0 }]));
+        setPendingCount(cnt);
+        notifications.show({ color: 'yellow', title: 'No Connection', message: `Saved offline — ${cnt} record(s) pending sync`, autoClose: 3000 });
+        handleClear();
+      } else {
+        notifications.show({ message: err?.message || 'Save failed', color: 'red', icon: <IconAlertCircle size={14} /> });
+      }
     } finally { setSaving(false); }
   };
 
@@ -1462,6 +1504,13 @@ const MilkPurchase = () => {
           >
             OK
           </Button>
+          {pendingCount > 0 && (
+            <Button size="sm" radius="md" onClick={syncQueue}
+              style={{ background: '#d97706', color: 'white', fontWeight: 700 }}
+              leftSection={<Text size="11px" fw={900}>↑</Text>}>
+              Sync {pendingCount}
+            </Button>
+          )}
           <Button
             leftSection={<IconX size={14} />}
             onClick={() => navigate('/')}
