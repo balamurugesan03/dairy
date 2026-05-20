@@ -174,7 +174,7 @@ export default function MilkSales() {
   }, [navigate]);
 
   const [mode,    setMode]    = useState('LOCAL');
-  const [session, setSession] = useState('AM');
+  const [session, setSession] = useState(() => new Date().getHours() < 12 ? 'AM' : 'PM');
   const [date,    setDate]    = useState(new Date());
   const [billNo,  setBillNo]  = useState('');
 
@@ -297,7 +297,9 @@ export default function MilkSales() {
     loadDropdowns();
     loadByDate(new Date(), session);
     fetchNextBillNo();
-  }, []);
+    // Auto-focus the litres field when the page opens (e.g. via Ctrl+S navigation)
+    setTimeout(() => litrRef.current?.focus({ preventScroll: true }), 300);
+  }, []); // eslint-disable-line
 
   // Reload table whenever date or session changes — pass session explicitly so the
   // API filters to only the selected shift (not both AM + PM for the date)

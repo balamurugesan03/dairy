@@ -588,7 +588,8 @@ export const producerLoanAPI = {
   cancel: (id, reason) => api.post(`/producer-loans/${id}/cancel`, { reason }).then(res => res.data).catch(handleError),
   getFarmerLoans: (farmerId, params) => api.get(`/producer-loans/farmer/${farmerId}`, { params }).then(res => res.data).catch(handleError),
   recordEMI: (id, data) => api.post(`/producer-loans/${id}/emi`, data).then(res => res.data).catch(handleError),
-  getStats: (params) => api.get('/producer-loans/stats', { params }).then(res => res.data).catch(handleError)
+  getStats: (params) => api.get('/producer-loans/stats', { params }).then(res => res.data).catch(handleError),
+  getLoanTypes: () => api.get('/producer-loans/loan-types').then(res => res.data).catch(handleError),
 };
 
 // PRODUCER RECEIPT APIs
@@ -636,6 +637,7 @@ export const bankTransferAPI = {
   checkCycle: (params) => api.get('/bank-transfers/check-cycle', { params }).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/bank-transfers/${id}`).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/bank-transfers/${id}`, data).then(res => res.data).catch(handleError),
+  getPaymentReport: (params) => api.get('/bank-transfers/payment-report', { params }).then(res => res.data).catch(handleError),
 };
 
 // BUSINESS ITEM APIs
@@ -1087,11 +1089,12 @@ export const cropStatementAPI = {
 
 // ── WhatsApp API ──────────────────────────────────────────────────────────────
 export const whatsappAPI = {
-  status:     ()               => api.get('/whatsapp/status').then(r => r.data).catch(handleError),
-  connect:    ()               => api.post('/whatsapp/connect').then(r => r.data).catch(handleError),
-  disconnect: ()               => api.post('/whatsapp/disconnect').then(r => r.data).catch(handleError),
-  send:       (phone, message) => api.post('/whatsapp/send', { phone, message }).then(r => r.data).catch(handleError),
-  test:       (phone)          => api.get('/whatsapp/test', { params: { phone } }).then(r => r.data).catch(handleError),
+  status:     ()                 => api.get('/whatsapp/status').then(r => r.data).catch(handleError),
+  connect:    ()                 => api.post('/whatsapp/connect').then(r => r.data).catch(handleError),
+  disconnect: ()                 => api.post('/whatsapp/disconnect').then(r => r.data).catch(handleError),
+  send:       (phone, message)   => api.post('/whatsapp/send', { phone, message }).then(r => r.data).catch(handleError),
+  sendGroup:  (groupId, message) => api.post('/whatsapp/send-group', { groupId, message }).then(r => r.data).catch(handleError),
+  test:       (phone)            => api.get('/whatsapp/test', { params: { phone } }).then(r => r.data).catch(handleError),
 };
 
 export default api;

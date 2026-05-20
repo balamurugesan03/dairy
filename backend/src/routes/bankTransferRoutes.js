@@ -13,6 +13,7 @@ import {
   deleteBankTransfer,
   updateBankTransfer,
   checkCycleApplied,
+  getPaymentReport,
 } from '../controllers/bankTransferController.js';
 
 const router = express.Router();
@@ -34,6 +35,7 @@ router.get('/bank-transfers/collection-centers', getCollectionCenters);
 router.get('/bank-transfers/banks', getBanks);
 router.get('/bank-transfers/pending-periods', getPendingPeriods);
 router.get('/bank-transfers/check-cycle',     checkCycleApplied);
+router.get('/bank-transfers/payment-report',  getPaymentReport);
 
 // Get single bank transfer by ID
 router.get('/bank-transfers/:id', getBankTransferById);

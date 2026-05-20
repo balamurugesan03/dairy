@@ -143,7 +143,7 @@ const printBill = (entry, dateStr, shift, centerName) => {
     <div class="row"><span>Mem No</span><span class="val">${entry.producerNo}</span></div>
     <div class="row"><span colspan="2">${entry.producerName}</span></div>
     <div class="line"></div>
-    <div class="row"><span>Litres</span><span class="val">${Number(entry.qty).toFixed(2)} L</span></div>
+    <div class="row"><span>KG</span><span class="val">${Number(entry.qty).toFixed(2)} KG</span></div>
     <div class="row"><span>FAT %</span><span>${Number(entry.fat).toFixed(1)}</span></div>
     <div class="row"><span>CLR</span><span>${Number(entry.clr).toFixed(1)}</span></div>
     <div class="row"><span>SNF %</span><span>${Number(entry.snf).toFixed(2)}</span></div>
@@ -231,7 +231,7 @@ const MilkPurchase = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [navigate]);
 
-  const [shift,  setShift]  = useState('AM');
+  const [shift,  setShift]  = useState(() => new Date().getHours() < 12 ? 'AM' : 'PM');
   const [center, setCenter] = useState('');
   const [agent,  setAgent]  = useState('');
 
@@ -303,8 +303,14 @@ const MilkPurchase = () => {
   const [waStatus,       setWaStatus]       = useState({ connected: false, initializing: false, qr: null });
   const [waBulkSending,  setWaBulkSending]  = useState(false);
   const [waBulkProgress, setWaBulkProgress] = useState({ done: 0, total: 0 });
+  const [waSendType,     setWaSendType]     = useState('individual'); // 'individual' | 'group'
+  const [waGroupId,      setWaGroupId]      = useState('');
   // Keep ref in sync so the socket handler (which captures nothing) can read latest value
   useEffect(() => { analyzerModeRef.current = cpMode.includes('Analyzer'); }, [cpMode]);
+  // Keep WA sendType/groupId in ref so save handlers always read latest
+  useEffect(() => {
+    whatsAppSettingsRef.current = { ...whatsAppSettingsRef.current, sendType: waSendType, groupId: waGroupId };
+  }, [waSendType, waGroupId]);
   const [entryMode,   setEntryMode]   = useState('chart'); // 'chart' = auto from rate chart | 'rate' = manual rate→auto amount | 'amount' = manual amount→auto rate
   const [manualRate,  setManualRate]  = useState('');
   const [manualAmount,setManualAmount]= useState('');
@@ -817,7 +823,7 @@ const MilkPurchase = () => {
 
         // Sync parameter combo + quantity unit from settings
         if (settingsRes?.data?.manualEntryCombination) setParamCombo(settingsRes.data.manualEntryCombination);
-        if (settingsRes?.data?.quantityUnit)           setQtyUnit(settingsRes.data.quantityUnit);
+        if (settingsRes?.data?.quantityUnit != null)   setQtyUnit(settingsRes.data.quantityUnit);
 
         // Apply manual entry mode from settings — ONLY when ManualEntry chart type is active.
         // Other chart types (ApplyFormula, SlabRate, MilmaChart, etc.) use auto-chart mode
@@ -839,6 +845,8 @@ const MilkPurchase = () => {
             messageTemplate: wa.messageTemplate ||
               '🐄 Milk Bill\nDate: {date} {shift}\nBill No: {billNo}\nFarmer: {name} ({farmerNo})\nQty: {qty} Ltr\nFat: {fat} | CLR: {clr} | SNF: {snf}\nRate: ₹{rate}/Ltr\nAmount: ₹{amount}',
           };
+          if (wa.sendType) setWaSendType(wa.sendType);
+          if (wa.groupId)  setWaGroupId(wa.groupId);
         }
 
         // Sync cpMode checkboxes from machine toggles saved in settings
@@ -885,6 +893,8 @@ const MilkPurchase = () => {
         // re-click OK. The "Select date & shift … click OK" prompt only
         // appears when no center is selected yet.
         setFormEnabled(true);
+        // Auto-focus the Member No field so the cursor is ready for input
+        setTimeout(() => memberRef.current?.focus({ preventScroll: true }), 120);
       })();
       const found = centersData.find(c => c.value === center);
       if (found) centerNameRef.current = found.label;
@@ -1034,12 +1044,29 @@ const MilkPurchase = () => {
   }, [fat, clr, snf, activeChart, date, paramCombo]); // eslint-disable-line
 
   // Auto-calc — Net LTR → calc rate/amount
+  // Rate is shown only when BOTH fat AND the secondary parameter (CLR in CLR-FAT mode,
+  // SNF in FAT-SNF mode) are entered. This prevents a partial rate from appearing
+  // as soon as FAT is typed but before the second parameter is filled.
   useEffect(() => {
     const grossLtr = parseFloat(ltr) || 0;
-    const waterLtr = parseFloat(water) || 0;
     const netLtr   = grossLtr;
-    const base = calcValues(netLtr, parseFloat(fat) || 0, parseFloat(clr) || 0, parseFloat(snf) || 0, activeChart, chartRows, milmaLookedUpRate);
+    const fatVal   = parseFloat(fat) || 0;
+    const clrVal   = parseFloat(clr) || 0;
+    const snfVal   = parseFloat(snf) || 0;
+
     const isManualEntry = entryMode === 'rate' || entryMode === 'amount';
+
+    // In non-manual (chart) mode: require the secondary parameter before computing rate
+    const secondaryReady = isManualEntry
+      ? true
+      : (paramCombo === 'FAT-SNF' ? snfVal > 0 : clrVal > 0);
+
+    if (!secondaryReady) {
+      setCalcResult({ snf: snfVal || 0, incentive: 0, rate: 0, amount: 0 });
+      return;
+    }
+
+    const base = calcValues(netLtr, fatVal, clrVal, snfVal, activeChart, chartRows, milmaLookedUpRate);
     if (entryMode === 'rate' && manualRate !== '') {
       const rate = parseFloat(manualRate) || 0;
       const amount = parseFloat((netLtr * rate + base.incentive).toFixed(2));
@@ -1049,12 +1076,11 @@ const MilkPurchase = () => {
       const rate = netLtr > 0 ? parseFloat((amount / netLtr).toFixed(2)) : 0;
       setCalcResult({ ...base, rate, amount });
     } else if (isManualEntry) {
-      // Manual entry: fat/snf are dummies — don't derive rate from chart lookup
       setCalcResult({ ...base, rate: 0, amount: 0 });
     } else {
       setCalcResult(base);
     }
-  }, [ltr, water, fat, clr, snf, activeChart, chartRows, entryMode, manualRate, manualAmount, milmaLookedUpRate]); // eslint-disable-line
+  }, [ltr, water, fat, clr, snf, activeChart, chartRows, entryMode, manualRate, manualAmount, milmaLookedUpRate, paramCombo]); // eslint-disable-line
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -1200,13 +1226,12 @@ const MilkPurchase = () => {
 
         // WhatsApp bill send
         const wa = whatsAppSettingsRef.current;
-        const farmerPhone = p?.phone;
-        if (wa?.enabled && farmerPhone) {
-          const dateStr = toDate(formRef.current.date).toLocaleDateString('en-IN');
+        if (wa?.enabled) {
+          const waDateStr = toDate(formRef.current.date).toLocaleDateString('en-IN');
           const msg = (wa.messageTemplate || '')
             .replace(/{name}/g,      p.name || '')
             .replace(/{farmerNo}/g,  p.no   || '')
-            .replace(/{date}/g,      dateStr)
+            .replace(/{date}/g,      waDateStr)
             .replace(/{shift}/g,     formRef.current.shift)
             .replace(/{billNo}/g,    saved.billNo)
             .replace(/{qty}/g,       netLtr.toFixed(3))
@@ -1215,9 +1240,19 @@ const MilkPurchase = () => {
             .replace(/{snf}/g,       (parseFloat(s) || 0).toFixed(2))
             .replace(/{rate}/g,      freshRate.toFixed(2))
             .replace(/{amount}/g,    freshAmount.toFixed(2));
-          whatsappAPI.send(farmerPhone, msg).then(res => {
-            if (res?.success) notifications.show({ message: `WhatsApp sent to ${farmerPhone}`, color: 'green', autoClose: 2500, icon: '\uD83D\uDCF1' });
-          }).catch(() => {});
+          const sendType = wa.sendType || 'individual';
+          if (sendType === 'group' && wa.groupId) {
+            whatsappAPI.sendGroup(wa.groupId, msg).then(res => {
+              if (res?.success) notifications.show({ message: `WhatsApp sent to group`, color: 'green', autoClose: 2500 });
+            }).catch(() => {});
+          } else {
+            const farmerPhone = p?.phone;
+            if (farmerPhone) {
+              whatsappAPI.send(farmerPhone, msg).then(res => {
+                if (res?.success) notifications.show({ message: `WhatsApp sent to ${farmerPhone}`, color: 'green', autoClose: 2500 });
+              }).catch(() => {});
+            }
+          }
         }
 
         if (formRef.current.speakEnabled) {
@@ -1374,6 +1409,7 @@ const MilkPurchase = () => {
     const rows = filteredEntries;
     if (!rows.length) return;
     const dateStr = toDate(formRef.current.date).toLocaleDateString('en-IN');
+    const sendType = wa?.sendType || 'individual';
     setWaBulkSending(true);
     setWaBulkProgress({ done: 0, total: rows.length });
     try {
@@ -1385,8 +1421,7 @@ const MilkPurchase = () => {
       let done = 0, sent = 0;
       for (const entry of rows) {
         const phone = phoneMap[entry.producerNo];
-        if (phone) {
-          const msg = template
+        const msg = template
             .replace(/{name}/g,     entry.producerName || '')
             .replace(/{farmerNo}/g, entry.producerNo   || '')
             .replace(/{date}/g,     dateStr)
@@ -1398,12 +1433,16 @@ const MilkPurchase = () => {
             .replace(/{snf}/g,      Number(entry.snf).toFixed(2))
             .replace(/{rate}/g,     Number(entry.rate).toFixed(2))
             .replace(/{amount}/g,   Number(entry.amount).toFixed(2));
+        if (sendType === 'group' && wa?.groupId) {
+          try { await whatsappAPI.sendGroup(wa.groupId, msg); sent++; } catch { /* skip */ }
+        } else if (phone) {
           try { await whatsappAPI.send(phone, msg); sent++; } catch { /* skip */ }
         }
         done++;
         setWaBulkProgress({ done, total: rows.length });
       }
-      notifications.show({ message: `📱 WhatsApp sent to ${sent} of ${rows.length} farmers`, color: 'green', autoClose: 4000 });
+      const target = sendType === 'group' ? 'group' : `${sent} of ${rows.length} farmers`;
+      notifications.show({ message: `📱 WhatsApp sent to ${target}`, color: 'green', autoClose: 4000 });
     } catch (err) {
       notifications.show({ message: err?.message || 'Bulk send failed', color: 'red' });
     } finally {
@@ -2100,7 +2139,7 @@ const MilkPurchase = () => {
             <Table striped highlightOnHover stickyHeader withColumnBorders style={{ fontSize: 12 }}>
               <Table.Thead style={{ background: 'linear-gradient(180deg,#dbeafe 0%,#bfdbfe 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
                 <Table.Tr>
-                  {['#', 'Bill No', 'Mem. No', 'Member Name', 'Date', 'Shift', 'Litres', 'FAT %', 'CLR', 'SNF %', 'Incentive', 'Rate/L', 'Amount', ''].map(col => (
+                  {['#', 'Bill No', 'Mem. No', 'Member Name', 'Date', 'Shift', 'KG', 'Litres', 'FAT %', 'CLR', 'SNF %', 'Incentive', 'Rate/L', 'Amount', ''].map(col => (
                     <Table.Th key={col} style={{ fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#1e40af', whiteSpace: 'nowrap', padding: '9px 12px', borderBottom: '2px solid #93c5fd' }}>
                       {col}
                     </Table.Th>
@@ -2137,7 +2176,8 @@ const MilkPurchase = () => {
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 600, color: '#1e293b' }}>{entry.producerName}</Table.Td>
                       <Table.Td style={{ padding: '6px 8px', color: '#475569', fontSize: 11, whiteSpace: 'nowrap' }}>{entry.date ? new Date(entry.date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit' }) : '—'}</Table.Td>
                       <Table.Td style={{ padding: '6px 8px' }}><Badge size="xs" color={entry.shift === 'AM' ? 'orange' : 'indigo'} variant="light" radius="sm">{entry.shift || '—'}</Badge></Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0369a1', textAlign: 'right' }}>{(entry.ltr ?? entry.qty).toFixed(2)}</Table.Td>
+                      <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0369a1', textAlign: 'right' }}>{(entry.qty ?? entry.ltr).toFixed(2)}</Table.Td>
+                      <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0284c7', textAlign: 'right' }}>{(entry.ltr ?? entry.qty).toFixed(2)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#c2410c', textAlign: 'right' }}>{entry.fat.toFixed(1)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', color: '#6d28d9', textAlign: 'right' }}>{entry.clr.toFixed(1)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', color: '#166534', textAlign: 'right' }}>{entry.snf.toFixed(2)}</Table.Td>
@@ -2159,6 +2199,7 @@ const MilkPurchase = () => {
                   <Table.Tr style={{ background: '#1e3a8a' }}>
                     <Table.Td colSpan={6} style={{ padding: '8px 12px', fontWeight: 700, color: '#93c5fd', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#7dd3fc', textAlign: 'right', fontSize: 13 }}>{totalLtr.toFixed(2)}</Table.Td>
+                    <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#38bdf8', textAlign: 'right', fontSize: 13 }}>{totalLtr.toFixed(2)}</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#fdba74', textAlign: 'right' }}>{avgFat.toFixed(1)}</Table.Td>
                     <Table.Td colSpan={2} />
                     <Table.Td />
@@ -2185,7 +2226,7 @@ const MilkPurchase = () => {
               { label: 'FAT Avg',   val: avgFat.toFixed(1),              c: '#c2410c', bg: '#fff7ed', border: '#fed7aa' },
               { label: 'CLR Avg',   val: avgClr.toFixed(1),              c: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe' },
               { label: 'Rate Avg',  val: `\u20B9${avgRate.toFixed(2)}`,  c: '#1e40af', bg: '#eff6ff', border: '#bfdbfe' },
-              { label: 'Total Ltr', val: `${totalLtr.toFixed(2)} L`,     c: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' },
+              { label: 'Total KG / Ltr', val: `${totalLtr.toFixed(2)}`, c: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' },
               { label: 'Total Amt', val: `\u20B9${totalAmt.toFixed(2)}`, c: 'white',   bg: '#1e40af', border: '#1e40af', bold: true },
             ].map(({ label, val, c, bg, border, bold }) => (
               <Box key={label} style={{ background: bg, border: `1.5px solid ${border}`, borderRadius: 8, padding: '3px 12px', textAlign: 'center', flexShrink: 0 }}>
@@ -2403,6 +2444,27 @@ const MilkPurchase = () => {
                 </Box>
               )}
 
+              {/* Send Type: Individual vs Group */}
+              <Box style={{ marginTop: 6, background: 'rgba(255,255,255,0.6)', border: '1px solid #d1d5db', borderRadius: 4, padding: '5px 7px' }}>
+                <Text size="9px" fw={700} c="#374151" mb={4} tt="uppercase" style={{ letterSpacing: '0.3px' }}>Send To</Text>
+                <Box style={{ display: 'flex', gap: 8 }}>
+                  {['individual', 'group'].map(t => (
+                    <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontSize: 10, fontWeight: waSendType === t ? 800 : 600, color: waSendType === t ? '#15803d' : '#6b7280' }}>
+                      <input type="radio" name="waSendType" value={t} checked={waSendType === t} onChange={() => setWaSendType(t)} style={{ accentColor: '#15803d', width: 11, height: 11 }} />
+                      {t === 'individual' ? 'Individual' : 'Group'}
+                    </label>
+                  ))}
+                </Box>
+                {waSendType === 'group' && (
+                  <input
+                    value={waGroupId}
+                    onChange={e => setWaGroupId(e.target.value)}
+                    placeholder="Group ID (e.g. 120363...)"
+                    style={{ width: '100%', marginTop: 4, fontSize: 10, padding: '3px 5px', borderRadius: 3, border: '1px solid #9ca3af', boxSizing: 'border-box' }}
+                  />
+                )}
+              </Box>
+
               {/* Connect / Disconnect buttons */}
               <Box style={{ display: 'flex', gap: 4, marginTop: 6 }}>
                 <button
@@ -2413,7 +2475,7 @@ const MilkPurchase = () => {
                     cursor: (waStatus.connected || waStatus.initializing) ? 'not-allowed' : 'pointer',
                     background: waStatus.connected ? '#d1fae5' : '#15803d',
                     color: waStatus.connected ? '#065f46' : 'white',
-                    border: `1px solid ${waStatus.connected ? '#86efac' : '#166534'}`,
+                    border: `1px solid ${waStatus.connected ? '#86efac' : '#166634'}`,
                     opacity: (waStatus.connected || waStatus.initializing) ? 0.6 : 1,
                   }}
                 >

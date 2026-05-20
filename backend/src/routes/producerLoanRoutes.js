@@ -7,7 +7,8 @@ import {
   updateLoan,
   cancelLoan,
   recordEMIPayment,
-  getLoanStats
+  getLoanStats,
+  getLoanTypes,
 } from '../controllers/producerLoanController.js';
 
 const router = express.Router();
@@ -17,6 +18,9 @@ router.post('/producer-loans', createLoan);
 
 // Get all loans with filters
 router.get('/producer-loans', getAllLoans);
+
+// Get loan types from EarningDeduction (LOAN_RECOVERY category)
+router.get('/producer-loans/loan-types', getLoanTypes);
 
 // Get loan statistics
 router.get('/producer-loans/stats', getLoanStats);

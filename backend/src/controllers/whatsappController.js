@@ -1,5 +1,19 @@
 import * as wa from '../services/whatsappWebService.js';
 
+// POST /api/whatsapp/send-group
+export const sendGroupWhatsApp = async (req, res) => {
+  const { groupId, message } = req.body;
+  if (!groupId || !message) {
+    return res.status(400).json({ success: false, message: 'groupId and message are required' });
+  }
+  try {
+    await wa.sendGroupMessage(groupId, message);
+    res.json({ success: true, message: 'Group message sent' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // GET /api/whatsapp/status
 export const getStatus = (req, res) => {
   res.json({ success: true, data: wa.getStatus() });

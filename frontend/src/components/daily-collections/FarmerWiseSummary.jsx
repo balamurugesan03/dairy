@@ -158,7 +158,7 @@ const FarmerWiseSummary = () => {
   const handleExportPDF = () => {
     if (!rows.length) { notifications.show({ message: 'No data to export', color: 'yellow' }); return; }
 
-    const doc = new jsPDF('l', 'mm', 'a4');
+    const doc = new jsPDF('p', 'mm', 'a4');
     const pw  = doc.internal.pageSize.width;
 
     doc.setFont('helvetica', 'bold');
@@ -207,19 +207,19 @@ const FarmerWiseSummary = () => {
       headStyles:         { fillColor: [21, 101, 192], textColor: 255, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [245, 247, 250] },
       columnStyles: {
-        0:  { halign: 'center', cellWidth: 8  },
-        1:  { halign: 'center', cellWidth: 20 },
-        2:  { halign: 'left',   cellWidth: 35 },
-        3:  { halign: 'center', cellWidth: 11 },
-        4:  { halign: 'center', cellWidth: 11 },
-        5:  { halign: 'center', cellWidth: 13 },
-        6:  { halign: 'right',  cellWidth: 15 },
-        7:  { halign: 'right',  cellWidth: 13 },
-        8:  { halign: 'right',  cellWidth: 12 },
-        9:  { halign: 'right',  cellWidth: 13 },
-        10: { halign: 'right',  cellWidth: 18 },
-        11: { halign: 'right',  cellWidth: 18 },
-        12: { halign: 'right',  cellWidth: 22 },
+        0:  { halign: 'center', cellWidth: 7  },
+        1:  { halign: 'center', cellWidth: 18 },
+        2:  { halign: 'left',   cellWidth: 30 },
+        3:  { halign: 'center', cellWidth: 10 },
+        4:  { halign: 'center', cellWidth: 10 },
+        5:  { halign: 'center', cellWidth: 12 },
+        6:  { halign: 'right',  cellWidth: 14 },
+        7:  { halign: 'right',  cellWidth: 12 },
+        8:  { halign: 'right',  cellWidth: 11 },
+        9:  { halign: 'right',  cellWidth: 12 },
+        10: { halign: 'right',  cellWidth: 16 },
+        11: { halign: 'right',  cellWidth: 16 },
+        12: { halign: 'right',  cellWidth: 20 },
       },
       didDrawPage: (data) => {
         const pageCount = doc.internal.getNumberOfPages();
@@ -260,21 +260,21 @@ const FarmerWiseSummary = () => {
   <title>Farmer-Wise Summary — ${rangeLabel}</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family:'Segoe UI',Arial,sans-serif; font-size:10px; color:#111; }
-    .header { text-align:center; margin-bottom:10px; }
-    .header h1 { font-size:15px; font-weight:800; }
-    .header h2 { font-size:12px; font-weight:600; margin-top:2px; }
-    .header p  { font-size:9px; color:#555; margin-top:3px; }
-    table { width:100%; border-collapse:collapse; margin-top:8px; }
-    th { background:#1565c0; color:#fff; padding:5px 6px; font-size:9px; text-align:center; font-weight:700; text-transform:uppercase; }
-    td { padding:4px 6px; border-bottom:1px solid #e0e0e0; font-size:9.5px; }
+    body { font-family:'Segoe UI',Arial,sans-serif; font-size:9px; color:#111; }
+    .header { text-align:center; margin-bottom:8px; }
+    .header h1 { font-size:13px; font-weight:800; }
+    .header h2 { font-size:11px; font-weight:600; margin-top:2px; }
+    .header p  { font-size:8px; color:#555; margin-top:3px; }
+    table { width:100%; border-collapse:collapse; margin-top:6px; }
+    th { background:#1565c0; color:#fff; padding:4px 4px; font-size:8px; text-align:center; font-weight:700; text-transform:uppercase; }
+    td { padding:3px 4px; border-bottom:1px solid #e0e0e0; font-size:8.5px; }
     tr:nth-child(even) td { background:#f5f7fa; }
     .num  { text-align:right; }
     .bold { font-weight:700; }
     .total-row td { background:#e3f2fd !important; font-weight:700; border-top:2px solid #1565c0; }
     .summary { margin-top:12px; display:flex; gap:16px; flex-wrap:wrap; font-size:9px; color:#444; }
     .summary span { background:#f0f4ff; padding:3px 8px; border-radius:4px; }
-    @page { size:A4 landscape; margin:10mm; }
+    @page { size:A4 portrait; margin:10mm; }
   </style>
 </head>
 <body>
@@ -361,7 +361,7 @@ const FarmerWiseSummary = () => {
             <Menu.Divider />
             <Menu.Label>Print</Menu.Label>
             <Menu.Item leftSection={<IconPrinter size={14} />} onClick={handlePrint}>
-              Print (A4 Landscape)
+              Print (A4 Portrait)
             </Menu.Item>
           </Menu.Dropdown>
         </Menu>

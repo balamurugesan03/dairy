@@ -73,3 +73,9 @@ export const sendMessage = async (phone, message) => {
   const chatId = (digits.startsWith('91') ? digits : `91${digits}`) + '@c.us';
   await client.sendMessage(chatId, message);
 };
+
+export const sendGroupMessage = async (groupId, message) => {
+  if (!connected || !client) throw new Error('WhatsApp not connected. Scan the QR code first.');
+  const chatId = groupId.includes('@g.us') ? groupId : `${groupId}@g.us`;
+  await client.sendMessage(chatId, message);
+};

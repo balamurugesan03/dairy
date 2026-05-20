@@ -1,6 +1,7 @@
 import ProducerLoan from '../models/ProducerLoan.js';
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
+import EarningDeduction from '../models/EarningDeduction.js';
 import mongoose from 'mongoose';
 import { generateVoucherNumber, updateLedgerBalances } from '../utils/accountingHelper.js';
 
@@ -61,59 +62,56 @@ export const createLoan = async (req, res) => {
 };
 
 // Create loan disbursement voucher
+// CASH  → Payment voucher: Dr "Farmer Loan A/C" / Cr Cash
+//          → appears in Cash Book (cash column) and Day Book (cash column, payment side)
+// BANK/OTHER → Payment voucher (referenceType:'BankTransfer'): Dr "Farmer Loan A/C" / Cr <bank ledger>
+//          → appears in Day Book only (adjustment column: income=bank, expenditure=Farmer Loan A/C)
 const createLoanDisbursementVoucher = async (loan, companyId) => {
-  const entries = [];
+  const FARMER_LOAN_LEDGER = 'Farmer Loan A/C';
 
-  // Get loan type ledger name
-  const loanLedgerName = loan.loanType === 'CF Advance' ? 'CF Advance' :
-                         loan.loanType === 'Loan Advance' ? 'Loan Advance' :
-                         'Cash Advance';
-
-  // Entry 1: Debit Loan/Advance Ledger
-  let loanLedger = await Ledger.findOne({
-    ledgerName: loanLedgerName,
-    companyId
-  });
-
-  // Create ledger if not exists
+  // Ensure "Farmer Loan A/C" ledger exists
+  let loanLedger = await Ledger.findOne({ ledgerName: FARMER_LOAN_LEDGER, companyId });
   if (!loanLedger) {
     loanLedger = new Ledger({
-      ledgerName: loanLedgerName,
-      ledgerType: 'Other Receivable',
+      ledgerName: FARMER_LOAN_LEDGER,
+      ledgerType: 'Advance due by Society',
       companyId,
       openingBalance: 0,
       currentBalance: 0,
-      balanceType: 'Dr'
+      balanceType: 'Dr',
+      status: 'Active',
     });
     await loanLedger.save();
   }
 
-  entries.push({
-    ledgerId: loanLedger._id,
-    ledgerName: loanLedger.ledgerName,
-    debitAmount: loan.principalAmount,
-    creditAmount: 0
-  });
+  const isCash = loan.paymentMode === 'Cash';
+  let paymentLedger = null;
 
-  // Entry 2: Credit Cash/Bank based on payment mode
-  const paymentLedgerName = loan.paymentMode === 'Cash' ? 'Cash' : 'Bank';
-  const paymentLedger = await Ledger.findOne({
-    ledgerName: paymentLedgerName,
-    ledgerType: loan.paymentMode === 'Cash' ? 'Cash' : 'Bank',
-    companyId
-  });
+  if (isCash) {
+    paymentLedger = await Ledger.findOne({ ledgerType: 'Cash', status: 'Active', companyId });
+  } else if (loan.bankLedgerId) {
+    paymentLedger = await Ledger.findById(loan.bankLedgerId);
+  } else {
+    // Fallback: first active Bank ledger
+    paymentLedger = await Ledger.findOne({ ledgerType: 'Bank', status: 'Active', companyId });
+  }
 
-  if (paymentLedger) {
-    entries.push({
+  if (!paymentLedger) throw new Error('Payment ledger not found. Please ensure a Cash or Bank ledger exists.');
+
+  const entries = [
+    {
+      ledgerId: loanLedger._id,
+      ledgerName: loanLedger.ledgerName,
+      debitAmount: loan.principalAmount,
+      creditAmount: 0,
+    },
+    {
       ledgerId: paymentLedger._id,
       ledgerName: paymentLedger.ledgerName,
       debitAmount: 0,
-      creditAmount: loan.principalAmount
-    });
-  }
-
-  const totalDebit = entries.reduce((sum, e) => sum + e.debitAmount, 0);
-  const totalCredit = entries.reduce((sum, e) => sum + e.creditAmount, 0);
+      creditAmount: loan.principalAmount,
+    },
+  ];
 
   const voucherNumber = await generateVoucherNumber('Payment');
 
@@ -123,11 +121,11 @@ const createLoanDisbursementVoucher = async (loan, companyId) => {
     voucherDate: loan.loanDate,
     companyId,
     entries,
-    totalDebit,
-    totalCredit,
-    narration: `${loan.loanType} disbursement - ${loan.loanNumber}`,
-    referenceType: 'Loan',
-    referenceId: loan._id
+    totalDebit: loan.principalAmount,
+    totalCredit: loan.principalAmount,
+    narration: `Farmer Loan Disbursement — ${loan.loanType} — ${loan.loanNumber}`,
+    referenceType: isCash ? 'Loan' : 'BankTransfer',
+    referenceId: loan._id,
   });
 
   await voucher.save();
@@ -558,6 +556,24 @@ export const getLoanStats = async (req, res) => {
   }
 };
 
+// Get loan types from EarningDeduction LOAN_RECOVERY category
+export const getLoanTypes = async (req, res) => {
+  try {
+    const items = await EarningDeduction.find({
+      companyId: req.userCompany,
+      category: 'LOAN_RECOVERY',
+      active: true,
+    }).sort({ name: 1 }).select('name shortName');
+
+    res.status(200).json({
+      success: true,
+      data: items.map(i => ({ value: i.name, label: i.name, shortName: i.shortName })),
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export default {
   createLoan,
   getAllLoans,
@@ -566,5 +582,6 @@ export default {
   updateLoan,
   cancelLoan,
   recordEMIPayment,
-  getLoanStats
+  getLoanStats,
+  getLoanTypes,
 };

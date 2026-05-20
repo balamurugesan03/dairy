@@ -1136,3 +1136,122 @@ export const getBanks = async (req, res) => {
     });
   }
 };
+
+// ── Payment Report ─────────────────────────────────────────────────────────────
+// Combines BankTransfer (applyDate) + ProducerPayment (paymentDate) records
+// within a date range and groups them by payment date.
+export const getPaymentReport = async (req, res) => {
+  try {
+    const { fromDate, toDate, centerId, bankFilter, reportType } = req.query;
+    const companyId = new mongoose.Types.ObjectId(req.userCompany);
+
+    if (!fromDate || !toDate) {
+      return res.status(400).json({ success: false, message: 'fromDate and toDate are required' });
+    }
+
+    const from = new Date(fromDate);
+    from.setHours(0, 0, 0, 0);
+    const to = new Date(toDate);
+    to.setHours(23, 59, 59, 999);
+
+    // BankTransfer records (applied / completed) in date range
+    const btFilter = {
+      companyId,
+      applyDate: { $gte: from, $lte: to },
+      status: { $in: ['Applied', 'Completed'] },
+    };
+    if (centerId && centerId !== 'all') {
+      btFilter.collectionCenter = new mongoose.Types.ObjectId(centerId);
+    }
+
+    const bankTransfers = await BankTransfer.find(btFilter)
+      .select('applyDate transferNumber collectionCenterName transferDetails')
+      .lean();
+
+    // ProducerPayment records (Pay to Producer / individual cash) in date range
+    let producerPayments = [];
+    if (reportType !== 'bankOnly') {
+      const ppFilter = {
+        companyId,
+        paymentDate: { $gte: from, $lte: to },
+        status: 'Active',
+      };
+      if (centerId && centerId !== 'all') {
+        ppFilter.paymentCenter = new mongoose.Types.ObjectId(centerId);
+      }
+      producerPayments = await ProducerPayment.find(ppFilter)
+        .select('paymentDate paymentNumber producerNumber producerName amountPaid paymentCenterName paymentMode bankLedgerName')
+        .lean();
+    }
+
+    // Group by payment date
+    const groupMap = {};
+    const getGroup = (dateKey) => {
+      if (!groupMap[dateKey]) groupMap[dateKey] = { date: dateKey, bankRows: [], cashRows: [] };
+      return groupMap[dateKey];
+    };
+
+    for (const bt of bankTransfers) {
+      const dateKey = new Date(bt.applyDate).toISOString().slice(0, 10);
+      const group = getGroup(dateKey);
+      for (const det of (bt.transferDetails || [])) {
+        if (!det.approved || !(det.transferAmount > 0)) continue;
+        if (bankFilter && bankFilter !== 'all' && det.bankDetails?.bankName !== bankFilter) continue;
+        const row = {
+          source: 'BankTransfer',
+          transferNumber: bt.transferNumber,
+          producerId: det.producerId || '',
+          producerName: det.producerName || '',
+          center: bt.collectionCenterName || 'All',
+          amount: det.transferAmount,
+          paymentMode: det.paymentMode || 'Bank Transfer',
+          bankName: det.bankDetails?.bankName || '',
+          accountNumber: det.bankDetails?.accountNumber || '',
+          ifscCode: det.bankDetails?.ifscCode || '',
+          branch: det.bankDetails?.branch || '',
+        };
+        if (det.paymentMode === 'Cash') group.cashRows.push(row);
+        else group.bankRows.push(row);
+      }
+    }
+
+    for (const pp of producerPayments) {
+      const dateKey = new Date(pp.paymentDate).toISOString().slice(0, 10);
+      const group = getGroup(dateKey);
+      const row = {
+        source: 'ProducerPayment',
+        paymentNumber: pp.paymentNumber || '',
+        producerId: pp.producerNumber || '',
+        producerName: pp.producerName || '',
+        center: pp.paymentCenterName || 'All',
+        amount: pp.amountPaid,
+        paymentMode: pp.paymentMode || 'Cash',
+        bankName: pp.bankLedgerName || '',
+      };
+      if (['Bank', 'NEFT', 'RTGS'].includes(pp.paymentMode)) group.bankRows.push(row);
+      else group.cashRows.push(row);
+    }
+
+    const groups = Object.values(groupMap)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map(g => ({
+        ...g,
+        totalBank: g.bankRows.reduce((s, r) => s + (r.amount || 0), 0),
+        totalCash: g.cashRows.reduce((s, r) => s + (r.amount || 0), 0),
+        grandTotal: g.bankRows.reduce((s, r) => s + (r.amount || 0), 0) + g.cashRows.reduce((s, r) => s + (r.amount || 0), 0),
+      }));
+
+    const summary = {
+      totalBank: groups.reduce((s, g) => s + g.totalBank, 0),
+      totalCash: groups.reduce((s, g) => s + g.totalCash, 0),
+      grandTotal: groups.reduce((s, g) => s + g.grandTotal, 0),
+      bankCount: groups.reduce((s, g) => s + g.bankRows.length, 0),
+      cashCount: groups.reduce((s, g) => s + g.cashRows.length, 0),
+      dateCount: groups.length,
+    };
+
+    res.json({ success: true, data: { groups, summary } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

@@ -567,7 +567,7 @@ export const getFarmerWiseSummary = async (req, res) => {
     const rows = await MilkCollection.aggregate(pipeline);
     const f2 = v => parseFloat(Number(v || 0).toFixed(2));
     const result = rows.map(r => ({
-      farmerNo:       r._id,
+      farmerNumber:   r._id,
       farmerName:     r.farmerName   || '',
       farmerId:       r.farmerId,
       isMember:       r.isMember     || false,

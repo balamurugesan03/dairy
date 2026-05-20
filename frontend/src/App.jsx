@@ -141,6 +141,7 @@ const PaymentRegisterProducers = lazy(() => import('./components/payments/Paymen
 const PaymentToProducer = lazy(() => import('./components/payments/PaymentToProducer'));
 const PaymentRegisterReport = lazy(() => import('./components/payments/PaymentRegisterReport'));
 const PaymentPaidReport     = lazy(() => import('./components/payments/PaymentPaidReport'));
+const PaymentReport         = lazy(() => import('./components/payments/PaymentReport'));
 
 // Report Components
 const ReportsDashboard = lazy(() => import('./components/reports/ReportsDashboard'));
@@ -464,6 +465,7 @@ const AppContent = () => {
                 <Route path="cattle-feed-advance"    element={<CattleFeedAdvance />} />
                 <Route path="payment-register-report" element={<PaymentRegisterReport />} />
                 <Route path="payment-paid-report"     element={<PaymentPaidReport />} />
+                <Route path="payment-report"          element={<PaymentReport />} />
               </Route>
 
               {/* Reports Routes */}

@@ -53,11 +53,11 @@ const producerLoanSchema = new mongoose.Schema({
     required: true,
     default: Date.now
   },
-  // Loan type categorization
+  // Loan type — populated dynamically from EarningDeduction (LOAN_RECOVERY category)
   loanType: {
     type: String,
-    enum: ['Cash Advance', 'CF Advance', 'Loan Advance'],
-    required: [true, 'Loan type is required']
+    required: [true, 'Loan type is required'],
+    trim: true,
   },
   // Loan scheme for EMI calculation
   loanScheme: {
@@ -110,8 +110,13 @@ const producerLoanSchema = new mongoose.Schema({
   // Payment mode for disbursement
   paymentMode: {
     type: String,
-    enum: ['Cash', 'Bank', 'UPI', 'Cheque'],
+    enum: ['Cash', 'Bank', 'UPI', 'Cheque', 'NEFT', 'RTGS'],
     default: 'Cash'
+  },
+  // Bank ledger used when paymentMode is non-cash
+  bankLedgerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Ledger',
   },
   bankDetails: {
     bankName: String,

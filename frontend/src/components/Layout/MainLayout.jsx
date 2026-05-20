@@ -336,6 +336,7 @@ const MainLayout = () => {
             { key: '/payments/farmer-ledger',              label: 'Producer Ledger' },
             { key: '/payments/payment-register-report',    label: 'Payment Register' },
             { key: '/payments/payment-paid-report',        label: 'Payment Paid Report' },
+            { key: '/payments/payment-report',             label: 'Payment Report' },
           ]
         },
       ]
