@@ -36,18 +36,22 @@ const excelSerialToDate = (val) => {
 };
 
 const mapZibittRows = (rows) =>
-  rows.map((row, i) => ({
-    billNo:      String(row.BillNo || row.VoucherNo || `IMP-${i + 1}`),
-    date:        excelSerialToDate(row.SalesDate),
-    session:     String(row.SalesShift) === '0' ? 'AM' : 'PM',
-    saleMode:    'LOCAL',
-    litre:       Number(row.Sales_Qty)  || 0,
-    rate:        Number(row.RatePerLtr) || 0,
-    amount:      Number(row.TotalAmt)   || 0,
-    centerName:  row.Centercode ? String(row.Centercode) : undefined,
-    agentName:   row.Agent      ? String(row.Agent)      : undefined,
-    paymentType: 'Cash',
-  }));
+  rows.map((row, i) => {
+    const sm = row.SaleMode ? String(row.SaleMode).trim().toUpperCase() : 'LOCAL';
+    const isCredit = sm === 'CREDIT' || sm === 'CR';
+    return {
+      billNo:      String(row.BillNo || row.VoucherNo || `IMP-${i + 1}`),
+      date:        excelSerialToDate(row.SalesDate),
+      session:     String(row.SalesShift) === '0' ? 'AM' : 'PM',
+      saleMode:    isCredit ? 'CREDIT' : 'LOCAL',
+      litre:       Number(row.Sales_Qty)  || 0,
+      rate:        Number(row.RatePerLtr) || 0,
+      amount:      Number(row.TotalAmt)   || 0,
+      centerName:  row.Centercode ? String(row.Centercode) : undefined,
+      agentName:   row.Agent      ? String(row.Agent)      : undefined,
+      paymentType: isCredit ? 'Credit' : 'Cash',
+    };
+  });
 
 // ── Month / Year filter data ──────────────────────────────────────────────────
 const MONTHS = [
@@ -200,8 +204,9 @@ export default function MilkSales() {
   const [milkBill,     setMilkBill]     = useState(false);
   const [historySearch, setHistorySearch] = useState('');
   const [showHistory,   setShowHistory]   = useState(false);
-  const [importOpen,    setImportOpen]    = useState(false);
-  const [rawImportOpen, setRawImportOpen] = useState(false);
+  const [importOpen,      setImportOpen]      = useState(false);
+  const [rawImportOpen,   setRawImportOpen]   = useState(false);
+  const [linzaImportOpen, setLinzaImportOpen] = useState(false);
   const [backfilling,   setBackfilling]   = useState(false);
   const [pendingCount,  setPendingCount]  = useState(() => offlineQueue.byType('milk-sales').length);
   const [filterMonth,   setFilterMonth]   = useState(String(new Date().getMonth() + 1));
@@ -486,6 +491,49 @@ export default function MilkSales() {
       message: `${totalInserted} imported${totalSkipped ? `, ${totalSkipped} skipped` : ''}`,
       autoClose: 4000
     });
+    loadEntries();
+    fetchNextBillNo();
+  };
+
+  // ── LinZA import — columns from the merge-tool output ────────────────────
+  // Handles: BillNo, SalesDate (Date obj / NaN / serial), SalesShift, Sales_Qty,
+  //          RatePerLtr, TotalAmt, Centercode, Vendor, SaleMode
+  const handleLinZAImport = async (rawRows) => {
+    const parseDate = (val) => {
+      if (!val) return new Date();
+      if (val instanceof Date) return isNaN(val.getTime()) ? new Date() : val;
+      const n = Number(val);
+      if (!isNaN(n) && n > 1 && n < 100000) return new Date(Math.round((n - 25569) * 86400000));
+      if (typeof val === 'string') {
+        const m = val.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+        if (m) return new Date(`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`);
+        const d = new Date(val); if (!isNaN(d.getTime())) return d;
+      }
+      return new Date();
+    };
+    const records = rawRows.map((row, i) => {
+      const sm = String(row.SaleMode || 'LOCAL').trim().toUpperCase();
+      const isCredit = sm === 'CREDIT' || sm === 'CR';
+      return {
+        billNo:      String(row.BillNo || `LNZ-${i + 1}`),
+        date:        parseDate(row.SalesDate),
+        session:     String(row.SalesShift ?? '0') === '1' ? 'PM' : 'AM',
+        saleMode:    isCredit ? 'CREDIT' : 'LOCAL',
+        litre:       Number(row.Sales_Qty)  || 0,
+        rate:        Number(row.RatePerLtr) || 0,
+        amount:      Number(row.TotalAmt)   || 0,
+        centerName:  row.Centercode ? String(row.Centercode) : undefined,
+        paymentType: isCredit ? 'Credit' : 'Cash',
+      };
+    });
+    const CHUNK = 500;
+    let totalInserted = 0;
+    for (let i = 0; i < records.length; i += CHUNK) {
+      const batch = records.slice(i, i + CHUNK);
+      const res = await milkSalesAPI.bulkImport(batch);
+      totalInserted += res?.data?.inserted ?? batch.length;
+    }
+    notifications.show({ color: 'teal', message: `${totalInserted} of ${records.length} LinZA records imported`, autoClose: 3000 });
     loadEntries();
     fetchNextBillNo();
   };
@@ -942,6 +990,11 @@ export default function MilkSales() {
                 style={{ background: '#0891b2', border: '1px solid #67e8f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Refresh
               </Button>
+              {/* Import LinZA — green */}
+              <Button leftSection={<IconUpload size={12} />} onClick={() => setLinzaImportOpen(true)} size="compact-xs" radius="sm"
+                style={{ background: '#15803d', border: '1px solid #4ade80', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                Import LinZA
+              </Button>
               {/* Import Zibitt Local Sales CSV — violet */}
               <Button leftSection={<IconUpload size={12} />} onClick={() => setImportOpen(true)} size="compact-xs" radius="sm"
                 style={{ background: '#7c3aed', border: '1px solid #a78bfa', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
@@ -1113,6 +1166,15 @@ export default function MilkSales() {
           </Group>
         </Box>
       </Box>
+
+      <ImportModal
+        isOpen={linzaImportOpen}
+        onClose={() => setLinzaImportOpen(false)}
+        onImport={handleLinZAImport}
+        entityType="Milk Sales (LinZA — BillNo, SalesDate, SalesShift, Sales_Qty, RatePerLtr, TotalAmt)"
+        requiredFields={['BillNo', 'Sales_Qty', 'RatePerLtr', 'TotalAmt']}
+        maxFileSizeMB={50}
+      />
 
       <ImportModal
         isOpen={importOpen}

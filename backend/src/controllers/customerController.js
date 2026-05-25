@@ -60,9 +60,11 @@ export const createCustomer = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Customer ID already exists' });
     }
 
-    const existingPhone = await Customer.findOne({ phone: customerData.phone, companyId });
-    if (existingPhone) {
-      return res.status(400).json({ success: false, message: 'Phone number already exists' });
+    if (customerData.phone) {
+      const existingPhone = await Customer.findOne({ phone: customerData.phone, companyId });
+      if (existingPhone) {
+        return res.status(400).json({ success: false, message: 'Phone number already exists' });
+      }
     }
 
     const customer = new Customer(customerData);
@@ -248,22 +250,24 @@ export const searchCustomer = async (req, res) => {
 // Bulk import customers from OpenLyssa
 export const bulkImportCustomers = async (req, res) => {
   try {
-    const { customers } = req.body;
+    const { customers, categoryMap: dynamicCategoryMap = {} } = req.body;
     if (!customers || !Array.isArray(customers) || customers.length === 0) {
       return res.status(400).json({ success: false, message: 'Customers array is required' });
     }
 
-    const CATEGORY_MAP = {
-      '1': 'Local Sale',  // LOCAL SALE
-      '2': 'Hospital',    // HOSPITAL
-      '3': 'Anganwadi',   // ANGANAVADI
-      '4': 'Public',      // PUBLIC
-      '5': 'Hotel',       // HOTEL
-      '6': 'Booth',       // BOOTH
-      '7': 'Hostel',      // HOSTEL
-      '8': 'Others',      // OTHERS
-      '9': 'School',      // SCHOOL
+    const FALLBACK_CATEGORY_MAP = {
+      '1': 'Local Sale',
+      '2': 'Hospital',
+      '3': 'Anganwadi',
+      '4': 'Public',
+      '5': 'Hotel',
+      '6': 'Booth',
+      '7': 'Hostel',
+      '8': 'Others',
+      '9': 'School',
     };
+    // Dynamic map from uploaded category file overrides the fallback
+    const CATEGORY_MAP = { ...FALLBACK_CATEGORY_MAP, ...dynamicCategoryMap };
 
     const results = { total: customers.length, created: 0, updated: 0, errors: [] };
 
@@ -280,7 +284,7 @@ export const bulkImportCustomers = async (req, res) => {
           customerId:    String(row.customerId),
           name:          String(row.name).trim(),
           address:       row.address       || undefined,
-          category:      CATEGORY_MAP[String(row.catId || '')] || 'Others',
+          category:      row.category || CATEGORY_MAP[String(row.catId || '')] || 'Others',
           active:        row.active !== false && row.active !== 'false',
           dateOfJoining: row.dateOfJoining ? new Date(row.dateOfJoining) : undefined,
           companyId:     req.companyId,

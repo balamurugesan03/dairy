@@ -115,6 +115,8 @@ const CustomerManagement = () => {
   const [importProgress, setImportProgress] = useState(0);
   const [isOpenLyssaImport, setIsOpenLyssaImport] = useState(false);
   const fileInputRef = useRef(null);
+  const catFileRef   = useRef(null);
+  const [catMap,     setCatMap]     = useState({});
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [sortStatus, setSortStatus] = useState({ columnAccessor: '', direction: 'asc' });
@@ -360,6 +362,31 @@ const CustomerManagement = () => {
           return;
         }
 
+        // ── LinZA format detection (Nos + Name columns) ─────────────────────
+        if (headers.includes('nos')) {
+          setIsOpenLyssaImport(true);
+          const nosIdx    = headers.indexOf('nos');
+          const nameIdx   = headers.indexOf('name');
+          const dataRows  = rawRows.slice(1).filter(row => row.some(c => c !== ''));
+          const parsed = dataRows
+            .map(row => ({
+              customerId: String(row[nosIdx] ?? '').trim(),
+              name:       String(row[nameIdx >= 0 ? nameIdx : 1] ?? '').trim(),
+              active:     true,
+            }))
+            .filter(r => r.customerId && r.name);
+          setImportHeaders(['customerId', 'name', 'active']);
+          setImportMapping({});
+          setImportRows(parsed);
+          notifications.show({
+            title: 'LinZA Format Detected',
+            message: `${parsed.length} customers ready to import`,
+            color: 'blue'
+          });
+          e.target.value = '';
+          return;
+        }
+
         // ── Standard column mapping ─────────────────────────────────────────
         setIsOpenLyssaImport(false);
         const mapping = {};
@@ -397,6 +424,43 @@ const CustomerManagement = () => {
     e.target.value = '';
   };
 
+  const parseCategoryFile = (file) => {
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        if (rawRows.length < 2) {
+          notifications.show({ color: 'orange', message: 'Category file appears empty' });
+          return;
+        }
+        const headers = rawRows[0].map(h => String(h).trim().toLowerCase());
+        const idIdx   = headers.findIndex(h => ['cat_id', 'id', 'catid'].includes(h));
+        const nameIdx = headers.findIndex(h => ['name', 'cat_name', 'category_name', 'category'].includes(h));
+        if (idIdx === -1 || nameIdx === -1) {
+          notifications.show({ color: 'orange', message: 'Category file needs a cat_id column and a name column' });
+          return;
+        }
+        const map = {};
+        rawRows.slice(1).forEach(row => {
+          const id   = String(row[idIdx]   ?? '').trim();
+          const name = String(row[nameIdx] ?? '').trim();
+          if (id && name) map[id] = name;
+        });
+        setCatMap(map);
+        notifications.show({
+          color: 'teal',
+          title: 'Category File Loaded',
+          message: `${Object.keys(map).length} categories mapped`,
+        });
+      } catch {
+        notifications.show({ color: 'red', message: 'Could not read category file' });
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
   const handleImportSubmit = async () => {
     if (importRows.length === 0) return;
     setImportLoading(true);
@@ -405,7 +469,7 @@ const CustomerManagement = () => {
     // ── OpenLyssa: single bulk API call ────────────────────────────────────
     if (isOpenLyssaImport) {
       try {
-        const response = await customerAPI.bulkImport(importRows);
+        const response = await customerAPI.bulkImport(importRows, catMap);
         const { created, updated, errors } = response.data;
         notifications.show({
           title: 'Import Complete',
@@ -420,6 +484,7 @@ const CustomerManagement = () => {
       setShowImportModal(false);
       setImportRows([]);
       setIsOpenLyssaImport(false);
+      setCatMap({});
       fetchCustomers();
       return;
     }
@@ -868,7 +933,7 @@ const CustomerManagement = () => {
       {/* Import Modal */}
       <Modal
         opened={showImportModal}
-        onClose={() => { if (!importLoading) { setShowImportModal(false); setImportRows([]); setImportHeaders([]); } }}
+        onClose={() => { if (!importLoading) { setShowImportModal(false); setImportRows([]); setImportHeaders([]); setIsOpenLyssaImport(false); setCatMap({}); } }}
         title="Import Customers from Excel"
         size="xl"
       >
@@ -892,39 +957,93 @@ const CustomerManagement = () => {
               onClick={() => fileInputRef.current?.click()}
               disabled={importLoading}
             >
-              Choose Excel File
+              Choose Customer File
             </Button>
             {importRows.length > 0 && (
               <Text size="sm" c="green" fw={600}>
-                {importRows.length} valid rows parsed ({importHeaders.length} matched columns)
+                {importRows.length} valid rows parsed
               </Text>
             )}
           </Group>
+
+          {/* Category file — shown only for OpenLyssa imports */}
+          {isOpenLyssaImport && (
+            <Group>
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                ref={catFileRef}
+                style={{ display: 'none' }}
+                onChange={e => { if (e.target.files[0]) parseCategoryFile(e.target.files[0]); e.target.value = ''; }}
+              />
+              <Button
+                leftSection={<IconUpload size={16} />}
+                variant={Object.keys(catMap).length > 0 ? 'filled' : 'default'}
+                color="teal"
+                onClick={() => catFileRef.current?.click()}
+                disabled={importLoading}
+              >
+                {Object.keys(catMap).length > 0
+                  ? `Category File (${Object.keys(catMap).length} categories loaded)`
+                  : 'Upload Category File'}
+              </Button>
+              {Object.keys(catMap).length === 0 && (
+                <Text size="xs" c="dimmed">Upload the category Excel file to resolve cat_id → category names</Text>
+              )}
+            </Group>
+          )}
 
           {importRows.length > 0 && (
             <>
               <Text size="sm" fw={600} c="dimmed">Preview (first 5 rows):</Text>
               <ScrollArea>
-                <Table striped withColumnBorders style={{ fontSize: 12 }}>
-                  <Table.Thead>
-                    <Table.Tr>
-                      {importHeaders.map(h => (
-                        <Table.Th key={h} style={{ textTransform: 'capitalize', fontSize: 11 }}>
-                          {h.replace(/([A-Z])/g, ' $1')}
-                        </Table.Th>
-                      ))}
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {importRows.slice(0, 5).map((row, i) => (
-                      <Table.Tr key={i}>
-                        {importHeaders.map(h => (
-                          <Table.Td key={h}>{row[h] || '—'}</Table.Td>
+                {isOpenLyssaImport ? (
+                  <Table striped withColumnBorders style={{ fontSize: 12 }}>
+                    <Table.Thead>
+                      <Table.Tr>
+                        {['Customer ID', 'Name', 'Address', 'Category', 'Active'].map(h => (
+                          <Table.Th key={h} style={{ fontSize: 11 }}>{h}</Table.Th>
                         ))}
                       </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {importRows.slice(0, 5).map((row, i) => {
+                        const resolvedCat = catMap[row.catId]
+                          || (row.catId ? `(id: ${row.catId})` : '—');
+                        return (
+                          <Table.Tr key={i}>
+                            <Table.Td>{row.customerId || '—'}</Table.Td>
+                            <Table.Td>{row.name || '—'}</Table.Td>
+                            <Table.Td>{row.address || '—'}</Table.Td>
+                            <Table.Td style={{ color: catMap[row.catId] ? '#2f9e44' : '#868e96' }}>{resolvedCat}</Table.Td>
+                            <Table.Td>{row.active ? 'Yes' : 'No'}</Table.Td>
+                          </Table.Tr>
+                        );
+                      })}
+                    </Table.Tbody>
+                  </Table>
+                ) : (
+                  <Table striped withColumnBorders style={{ fontSize: 12 }}>
+                    <Table.Thead>
+                      <Table.Tr>
+                        {importHeaders.map(h => (
+                          <Table.Th key={h} style={{ textTransform: 'capitalize', fontSize: 11 }}>
+                            {h.replace(/([A-Z])/g, ' $1')}
+                          </Table.Th>
+                        ))}
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {importRows.slice(0, 5).map((row, i) => (
+                        <Table.Tr key={i}>
+                          {importHeaders.map(h => (
+                            <Table.Td key={h}>{row[h] || '—'}</Table.Td>
+                          ))}
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                )}
               </ScrollArea>
               {importRows.length > 5 && (
                 <Text size="xs" c="dimmed">...and {importRows.length - 5} more rows</Text>
@@ -940,7 +1059,7 @@ const CustomerManagement = () => {
           )}
 
           <Group justify="flex-end">
-            <Button variant="default" onClick={() => { setShowImportModal(false); setImportRows([]); setImportHeaders([]); setIsOpenLyssaImport(false); }} disabled={importLoading}>
+            <Button variant="default" onClick={() => { setShowImportModal(false); setImportRows([]); setImportHeaders([]); setIsOpenLyssaImport(false); setCatMap({}); }} disabled={importLoading}>
               Cancel
             </Button>
             <Button

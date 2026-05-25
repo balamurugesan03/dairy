@@ -1,13 +1,14 @@
 import { useState, useRef } from 'react';
 import {
   Box, Paper, Title, Text, Group, Button, Stack, ActionIcon,
-  Badge, Divider, Alert, List, ThemeIcon, Progress, SimpleGrid, Card
+  Badge, Divider, Alert, List, ThemeIcon, Progress, SimpleGrid, Card, TextInput
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
   IconUpload, IconTrash, IconDownload, IconRefresh,
   IconAlertCircle, IconCircleCheck, IconMilk, IconShoppingCart,
-  IconCalendar, IconFilter
+  IconCalendar, IconFilter, IconArrowsJoin, IconFile, IconPrinter,
+  IconUsers, IconTransform
 } from '@tabler/icons-react';
 import * as XLSX from 'xlsx';
 
@@ -304,13 +305,21 @@ const MilkPurchaseSection = () => {
       // Helper to build a row from session + detail row (respects year filter)
       const pushRow = (session, row) => {
         if (!selectedYears.has(session.date.getFullYear())) return;
+        const kgVal  = num(row.qty);
+        const clrVal = num(row.clr);
+        // OpenLyssa stores qty in kg (weighing scale); our system stores qty in litres.
+        // Convert: Ltr = KG / (1 + CLR/1000)
+        const ltrVal = (clrVal > 0 && kgVal > 0)
+          ? parseFloat((kgVal / (1 + clrVal / 1000)).toFixed(3))
+          : kgVal;
         merged.push({
           Date:        fmtDate(session.date),
           Shift:       session.shift,
           mc_id:       String(row.mc_id ?? ''),
           producer_id: row.producer_id ?? findRowVal(row, 'producer_id', 'farmer_id', 'member_id') ?? '',
           slno:        row.slno ?? row.sl_no ?? row.slNo ?? '',
-          qty:         num(row.qty),
+          qty:         ltrVal,   // litres (converted from kg)
+          kg:          kgVal,    // original kg from OpenLyssa (reference column)
           fat:         num(row.fat),
           clr:         num(row.clr),
           snf:         num(row.snf),
@@ -580,9 +589,14 @@ const detectSalesSheetType = (rows) => {
   if (keys.includes('mc_date') && keys.includes('shift_id')) return 'mc_master';
   if (keys.includes('source_id') && keys.includes('slno'))    return 'sales_detail';
   if (keys.includes('item_name'))                              return 'item';
+  // category must be checked before customer — both have 'name', but category has cat_id not cust_id
+  if (keys.includes('cat_id') && keys.includes('name'))       return 'category';
   if (keys.includes('cust_id') && keys.includes('name'))      return 'customer';
   return null;
 };
+
+// Categories that map to CASH sale type (case-insensitive)
+const CASH_SALE_CATEGORIES = new Set(['local sale', 'local sales', 'sample sale', 'sample sales']);
 
 const MilkSalesSection = () => {
   const [files, setFiles] = useState([]);
@@ -602,7 +616,7 @@ const MilkSalesSection = () => {
     setResult(null);
 
     try {
-      const tables = { mc_master: [], sales_detail: [], customer: [], item: [] };
+      const tables = { mc_master: [], sales_detail: [], customer: [], item: [], category: [] };
       const unrecognised = [];
 
       for (const file of files) {
@@ -650,11 +664,21 @@ const MilkSalesSection = () => {
         }
       });
 
-      // cust_id → name
+      // cat_id → category name
+      const catMap = new Map();
+      tables.category.forEach((row) => {
+        const id   = String(row.cat_id ?? '').trim();
+        const name = String(row.name ?? row.cat_name ?? '').trim();
+        if (id && name) catMap.set(id, name);
+      });
+
+      // cust_id → { name, catId }
       const custMap = new Map();
       tables.customer.forEach((row) => {
-        const id = String(row.cust_id ?? '').trim();
-        if (id) custMap.set(id, String(row.name ?? '').trim());
+        const id    = String(row.cust_id ?? '').trim();
+        const name  = String(row.name    ?? '').trim();
+        const catId = String(row.cat_id  ?? '').trim();
+        if (id) custMap.set(id, { name, catId });
       });
 
       // item_id → item_name
@@ -687,15 +711,19 @@ const MilkSalesSection = () => {
           }
         }
 
-        const itemName = itemMap.get(itemId) ?? '';
-        const saleType = itemName.trim().toLowerCase() === 'local sale' ? 'CASH' : 'CREDIT';
+        const custInfo  = custMap.get(custId) ?? { name: '', catId: '' };
+        const catName   = catMap.get(custInfo.catId) ?? '';
+        // Category-based sale type: Local Sale / Sample Sale → CASH, all others → CREDIT
+        const saleType  = CASH_SALE_CATEGORIES.has(catName.trim().toLowerCase()) ? 'CASH' : 'CREDIT';
+        const itemName  = itemMap.get(itemId) ?? '';
 
         merged.push({
           dcs_id:     row.dcs_id ?? '',
           mc_id:      mcId,
           slno:       row.slno ?? '',
           cust_id:    custId,
-          cust_name:  custMap.get(custId) ?? '',
+          cust_name:  custInfo.name,
+          category:   catName,
           item_id:    itemId,
           item_name:  itemName,
           sale_type:  saleType,
@@ -708,14 +736,20 @@ const MilkSalesSection = () => {
         });
       });
 
+      const cashRows   = merged.filter(r => r.sale_type === 'CASH').length;
+      const creditRows = merged.filter(r => r.sale_type === 'CREDIT').length;
+
       setResult({
         rows: merged,
         stats: {
           mc_master:    tables.mc_master.length,
           customer:     tables.customer.length,
+          category:     tables.category.length,
           item:         tables.item.length,
           sales_detail: tables.sales_detail.length,
           merged:       merged.length,
+          cashRows,
+          creditRows,
           skippedNoQty,
         }
       });
@@ -740,19 +774,20 @@ const MilkSalesSection = () => {
         </ThemeIcon>
         <div>
           <Title order={4}>Milk Sales</Title>
-          <Text size="xs" c="dimmed">Join 4 Zibitt tables: Customer + MC Master + Item + Sales Detail</Text>
+          <Text size="xs" c="dimmed">Join Zibitt tables: Category + Customer + MC Master + Item + Sales Detail</Text>
         </div>
       </Group>
 
       <Alert icon={<IconAlertCircle size={14} />} color="teal" variant="light" mb="md" p="xs">
         <Text size="xs">
-          Upload all 4 Zibitt export files (customer, mc_master, item, sales_detail) — separately or in one Excel with multiple sheets.
-          The tool auto-detects each table and joins them on mc_id / cust_id / item_id.
+          Upload all Zibitt export files (category, customer, mc_master, item, sales_detail) — separately or in one Excel with multiple sheets.
+          The tool auto-detects each table and joins them. Sale type is set from the customer's category:
+          <strong> Local Sale / Sample Sale → CASH</strong>, all others → <strong>CREDIT</strong>.
         </Text>
       </Alert>
 
       <FileListBox
-        label="Customer + MC Master + Item + Sales Detail Files"
+        label="Category + Customer + MC Master + Item + Sales Detail Files"
         color="teal"
         files={files}
         onAdd={addFiles}
@@ -763,11 +798,13 @@ const MilkSalesSection = () => {
         <Alert icon={<IconCircleCheck size={14} />} color="green" variant="light" mt="md" p="xs">
           <Stack gap={2}>
             <Text size="xs">MC Master rows: <strong>{result.stats.mc_master}</strong></Text>
+            <Text size="xs">Category rows: <strong>{result.stats.category}</strong>{result.stats.category === 0 && <Text span c="orange"> — category file not uploaded; sale_type defaults to CREDIT</Text>}</Text>
             <Text size="xs">Customer rows: <strong>{result.stats.customer}</strong></Text>
             <Text size="xs">Item rows: <strong>{result.stats.item}</strong></Text>
             <Text size="xs">Sales Detail rows: <strong>{result.stats.sales_detail}</strong></Text>
             <Divider my={4} />
             <Text size="xs" fw={700} c="green">Merged output: {result.stats.merged} rows</Text>
+            <Text size="xs">CASH: <strong>{result.stats.cashRows}</strong> &nbsp;|&nbsp; CREDIT: <strong>{result.stats.creditRows}</strong></Text>
             {result.stats.skippedNoQty > 0 && (
               <Text size="xs" c="dimmed">Skipped (no qty/amount): {result.stats.skippedNoQty}</Text>
             )}
@@ -804,6 +841,830 @@ const MilkSalesSection = () => {
   );
 };
 
+// ─── LYNZA MERGE — Attach NO+NAME (File 2) → Main Data (File 1) ──────────────
+
+const SingleFilePicker = ({ label, color = 'blue', file, onAdd, onRemove }) => {
+  const ref = useRef(null);
+  return (
+    <Box>
+      <Text fw={600} size="sm" mb={6}>{label}</Text>
+      <Paper withBorder p="sm" radius="md" style={{ minHeight: 60 }}>
+        {file ? (
+          <Group justify="space-between" wrap="nowrap">
+            <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
+              <IconFile size={15} style={{ flexShrink: 0, color: 'var(--mantine-color-' + color + '-6)' }} />
+              <Text size="sm" truncate>{file.name}</Text>
+            </Group>
+            <ActionIcon size="sm" color="red" variant="subtle" onClick={onRemove}>
+              <IconTrash size={13} />
+            </ActionIcon>
+          </Group>
+        ) : (
+          <Text c="dimmed" size="xs" ta="center" pt={6}>No file selected</Text>
+        )}
+      </Paper>
+      <input type="file" accept=".xlsx,.xls,.csv" ref={ref} style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files?.[0]; if (f) onAdd(f); e.target.value = ''; }} />
+      <Button mt={6} size="xs" variant="default" color={color}
+        leftSection={<IconUpload size={13} />} onClick={() => ref.current?.click()}>
+        Select File
+      </Button>
+    </Box>
+  );
+};
+
+const LynzAMergeSection = () => {
+  const [file1, setFile1] = useState(null);   // Main data — NO Nos/Name columns
+  const [file2, setFile2] = useState(null);   // Correct NO + NAME only
+  const [societyName, setSocietyName] = useState('');
+  const [societyAddr, setSocietyAddr] = useState('');
+  const [reportTitle, setReportTitle] = useState('MEMBER / NONMEMBER REGISTER LIST - ALL');
+  const [status, setStatus] = useState(null);
+  const [result, setResult] = useState(null);
+  const printRef = useRef(null);
+
+  const reset = () => { setFile1(null); setFile2(null); setStatus(null); setResult(null); };
+
+  const handleMerge = async () => {
+    if (!file1 || !file2) {
+      notifications.show({ title: 'Missing Files', message: 'Upload both File 1 and File 2', color: 'orange' });
+      return;
+    }
+    setStatus('processing'); setResult(null);
+    try {
+      const [{ sheets: s1 }, { sheets: s2 }] = await Promise.all([
+        readFileSheets(file1), readFileSheets(file2),
+      ]);
+
+      const rows1 = Object.values(s1).find(r => r.length) ?? [];
+      const rows2 = Object.values(s2).find(r => r.length) ?? [];
+      if (!rows1.length) { notifications.show({ title: 'File 1 Empty', color: 'red' }); setStatus(null); return; }
+      if (!rows2.length) { notifications.show({ title: 'File 2 Empty', color: 'red' }); setStatus(null); return; }
+
+      const cols1 = Object.keys(rows1[0]);
+      const cols2 = Object.keys(rows2[0]);
+
+      // Detect NO col in File 2 (exact 'no' first, then serial-pattern, then col[0])
+      const NOS_P = /^(nos?|sl\.?\s*no?\.?|s\.?\s*no?\.?|serial\.?\s*no?\.?|sr\.?\s*no?\.?)$/i;
+      const lc2 = cols2.map(k => k.toLowerCase().trim());
+      const noCol2   = cols2[lc2.indexOf('no')]   ?? cols2.find(k => NOS_P.test(k)) ?? cols2[0];
+      const nameCol2 = cols2[lc2.indexOf('name')] ?? cols2.find(k => k.toLowerCase().includes('name')) ?? cols2[1];
+
+      // Detect key display cols in File 1
+      const lc1 = cols1.map(k => k.toLowerCase().trim());
+      const houseCol  = cols1[lc1.indexOf('house')]  ?? cols1.find(k => k.toLowerCase().includes('house'))  ?? null;
+      const placeCol  = cols1[lc1.indexOf('place')]  ?? cols1.find(k => k.toLowerCase().includes('place'))  ?? null;
+      const shareCol  = cols1[lc1.indexOf('share')]  ?? cols1.find(k => k.toLowerCase().includes('share'))  ?? null;
+      const amountCol = cols1[lc1.indexOf('amount')] ?? cols1.find(k => k.toLowerCase().includes('amount')) ?? null;
+
+      // Filter File 2 to only rows with a valid positive integer NO value.
+      // This removes blank rows, title rows, and header rows (e.g. rows containing
+      // the literal text "NO" / "NAME") that appear in formatted register exports.
+      const validRows2 = rows2.filter(r => {
+        const v = r[noCol2];
+        if (v === null || v === undefined || v === '') return false;
+        const n = Number(v);
+        return !isNaN(n) && n > 0 && Number.isInteger(n);
+      });
+
+      const matched = Math.min(rows1.length, validRows2.length);
+
+      // Merge: match by sequential index against filtered File 2 rows
+      const merged = rows1.map((row, i) => {
+        const r2 = validRows2[i];
+        return {
+          NO:   r2 ? (r2[noCol2]   ?? '') : '',
+          NAME: r2 ? (r2[nameCol2] ?? '') : '',
+          ...row,
+        };
+      });
+
+      setResult({
+        rows: merged,
+        cols: ['NO', 'NAME', ...cols1],
+        houseCol, placeCol, shareCol, amountCol,
+        stats: { total: merged.length, matched, skipped: rows2.length - validRows2.length, extra: Math.max(0, rows1.length - validRows2.length), noCol2, nameCol2 },
+      });
+      setStatus('done');
+      notifications.show({ title: 'Merged!', message: `${merged.length} rows ready`, color: 'teal' });
+    } catch (err) {
+      setStatus('error');
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
+    }
+  };
+
+  const handleDownload = () => {
+    if (!result?.rows?.length) return;
+    const exportRows = result.rows.map(({ NO, NAME, ...rest }) => {
+      // File 1 (LinZA export) may already contain 'Nos'/'Name' columns with wrong values.
+      // Strip any case-variant of nos/name from rest so they don't overwrite the correct
+      // values we got from File 2.
+      const cleanRest = Object.fromEntries(
+        Object.entries(rest).filter(([k]) => {
+          const lk = k.toLowerCase();
+          return lk !== 'nos' && lk !== 'name';
+        })
+      );
+      return { Nos: NO, Name: NAME, ...cleanRest };
+    });
+    downloadExcel(exportRows, `lynza_merged_${Date.now()}.xlsx`, 'Members');
+    notifications.show({ title: 'Downloaded', message: `${result.rows.length} rows — ready for Farmer import`, color: 'green' });
+  };
+
+  const handlePrint = () => {
+    if (!printRef.current) return;
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html><html><head><title>${reportTitle || 'Register'}</title>
+    <style>
+      body   { font-family: monospace; font-size: 11px; margin: 16px; }
+      .hdr   { text-align:center; font-weight:700; font-size:14px; margin-bottom:2px; }
+      .sub   { text-align:center; font-size:11px; margin-bottom:2px; }
+      .title { text-align:center; font-weight:700; font-size:12px; margin:6px 0 10px; text-decoration:underline; }
+      table  { border-collapse:collapse; width:100%; }
+      th { border:1px solid #000; padding:4px 8px; background:#e0e0e0; text-align:center; }
+      td { border:1px solid #aaa; padding:3px 8px; vertical-align:top; }
+      .r { text-align:right; } .c { text-align:center; }
+      .house { white-space:pre-line; }
+      @media print { @page { margin:10mm; } }
+    </style></head><body>${printRef.current.innerHTML}</body></html>`);
+    win.document.close(); win.focus(); win.print(); win.close();
+  };
+
+  const tdB = { border: '1px solid #dee2e6', padding: '3px 8px', verticalAlign: 'top', fontSize: 12 };
+
+  return (
+    <Paper withBorder radius="md" p="md">
+      <Group mb="md">
+        <ThemeIcon color="teal" variant="light" size="lg">
+          <IconArrowsJoin size={20} />
+        </ThemeIcon>
+        <div>
+          <Title order={4}>LynzA Merge — Attach NO &amp; NAME to Member Data</Title>
+          <Text size="xs" c="dimmed">File 1: data without Nos/Name &nbsp;+&nbsp; File 2: correct NO/NAME → merged register</Text>
+        </div>
+      </Group>
+
+      <Alert icon={<IconAlertCircle size={14} />} color="teal" variant="light" mb="md" p="xs">
+        <Text size="xs">
+          <strong>File 1</strong> — House, Place, Share, Amount… (no Nos/Name columns).&nbsp;
+          <strong>File 2</strong> — only NO and NAME columns.&nbsp;
+          Rows matched by order (row 1 ↔ row 1). Output = NO, NAME + all File 1 columns.
+        </Text>
+      </Alert>
+
+      {/* Header inputs */}
+      <SimpleGrid cols={3} spacing="xs" mb="sm">
+        <TextInput size="xs" label="Society Name" placeholder="ILLIKKODE KSS"
+          value={societyName} onChange={e => setSocietyName(e.currentTarget.value.toUpperCase())} />
+        <TextInput size="xs" label="Society Address" placeholder="ILLIKKODE, VENGAD (P.O)"
+          value={societyAddr} onChange={e => setSocietyAddr(e.currentTarget.value.toUpperCase())} />
+        <TextInput size="xs" label="Report Title"
+          value={reportTitle} onChange={e => setReportTitle(e.currentTarget.value.toUpperCase())} />
+      </SimpleGrid>
+
+      {/* File pickers */}
+      <SimpleGrid cols={2} spacing="md" mb="md">
+        <SingleFilePicker
+          label="File 1 — Main Data (no Nos/Name)"
+          color="blue"
+          file={file1}
+          onAdd={setFile1}
+          onRemove={() => setFile1(null)}
+        />
+        <SingleFilePicker
+          label="File 2 — Correct NO + NAME"
+          color="green"
+          file={file2}
+          onAdd={setFile2}
+          onRemove={() => setFile2(null)}
+        />
+      </SimpleGrid>
+
+      {/* Buttons */}
+      <Group>
+        <Button color="teal" leftSection={<IconArrowsJoin size={16} />}
+          onClick={handleMerge} loading={status === 'processing'} disabled={!file1 || !file2}>
+          Merge
+        </Button>
+        <Button color="green" variant="light" leftSection={<IconDownload size={16} />}
+          onClick={handleDownload} disabled={!result?.rows?.length}>
+          Download Excel ({result?.rows?.length ?? 0} rows)
+        </Button>
+        <Button color="teal" variant="light" leftSection={<IconPrinter size={16} />}
+          onClick={handlePrint} disabled={!result?.rows?.length}>
+          Print Register
+        </Button>
+        {(file1 || file2 || result) && (
+          <Button variant="subtle" color="gray" size="xs" onClick={reset}>Clear</Button>
+        )}
+      </Group>
+
+      {/* Stats + Preview */}
+      {status === 'done' && result && (
+        <Stack gap="xs" mt="md">
+          <Alert icon={<IconCircleCheck size={14} />} color="green" variant="light" p="xs">
+            <Group gap="xs" wrap="wrap">
+              <Badge color="green">Total: {result.stats.total} rows</Badge>
+              <Badge color="teal">Matched: {result.stats.matched}</Badge>
+              {result.stats.skipped > 0 && <Badge color="gray">File 2 blank/header rows skipped: {result.stats.skipped}</Badge>}
+              {result.stats.extra > 0 && <Badge color="orange">File 1 rows without NO/NAME: {result.stats.extra}</Badge>}
+              <Text size="xs" c="dimmed">File 2 NO→<strong>"{result.stats.noCol2}"</strong> &nbsp; NAME→<strong>"{result.stats.nameCol2}"</strong></Text>
+            </Group>
+          </Alert>
+
+          {/* Print preview — shows register format */}
+          <Text size="xs" fw={600} c="dimmed">
+            Register preview — first {Math.min(20, result.rows.length)} of {result.rows.length} rows
+          </Text>
+          <Paper withBorder radius="sm" style={{ overflowX: 'auto' }}>
+            <div ref={printRef} style={{ fontFamily: 'monospace', fontSize: 12, padding: 8 }}>
+              {societyName && <div className="hdr" style={{ textAlign:'center', fontWeight:700, fontSize:14, marginBottom:2 }}>{societyName}</div>}
+              {societyAddr && <div className="sub" style={{ textAlign:'center', fontSize:11, marginBottom:2 }}>{societyAddr}</div>}
+              {reportTitle && <div className="title" style={{ textAlign:'center', fontWeight:700, fontSize:12, margin:'6px 0 10px', textDecoration:'underline' }}>{reportTitle}</div>}
+              <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                <thead>
+                  <tr style={{ background:'#e9e9e9' }}>
+                    <th style={{ border:'1px solid #000', padding:'4px 8px', textAlign:'center', width:40 }}>NO</th>
+                    <th style={{ border:'1px solid #000', padding:'4px 8px', textAlign:'left' }}>NAME</th>
+                    <th style={{ border:'1px solid #000', padding:'4px 8px', textAlign:'left' }}>HOUSE</th>
+                    <th style={{ border:'1px solid #000', padding:'4px 8px', textAlign:'right', width:80 }}>SHARE</th>
+                    <th style={{ border:'1px solid #000', padding:'4px 8px', textAlign:'right', width:90 }}>AMOUNT</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.rows.slice(0, 20).map((r, i) => {
+                    const house = result.houseCol  ? String(r[result.houseCol]  ?? '').trim().toUpperCase() : '';
+                    const place = result.placeCol  ? String(r[result.placeCol]  ?? '').trim().toUpperCase() : '';
+                    const share  = result.shareCol  ? num(r[result.shareCol]).toFixed(2)  : '0.00';
+                    const amount = result.amountCol ? num(r[result.amountCol]).toFixed(2) : '0.00';
+                    return (
+                      <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                        <td style={{ ...tdB, textAlign:'center', width:40 }}>{r.NO}</td>
+                        <td style={tdB}>{String(r.NAME ?? '').trim().toUpperCase()}</td>
+                        <td style={{ ...tdB, whiteSpace:'pre-line' }}>{house}{place ? '\n' + place : ''}</td>
+                        <td style={{ ...tdB, textAlign:'right', width:80 }}>{share}</td>
+                        <td style={{ ...tdB, textAlign:'right', width:90 }}>{amount}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Paper>
+          {result.rows.length > 20 && (
+            <Text size="xs" c="dimmed" ta="center">… and {result.rows.length - 20} more rows — Download Excel to see all</Text>
+          )}
+        </Stack>
+      )}
+    </Paper>
+  );
+};
+
+// ─── LINZA MILK SALES SECTION ─────────────────────────────────────────────
+// Converts LinZA milk sales export → Zibitt-compatible format for MilkSales import
+// LinZA columns: BillNo, Fnyear, BillDate, Shift, Rate, Ltr, Amt, Center, Vendor, TTYPE, BANK
+
+const isLinZAMilkSales = (rows) => {
+  if (!rows.length) return false;
+  const keys = Object.keys(rows[0]).map(k => k.toLowerCase().trim());
+  return (keys.includes('ltr') || keys.includes('litres') || keys.includes('litre')) &&
+         (keys.includes('fnyear') || (keys.includes('billno') && keys.includes('shift')));
+};
+
+const parseLinZADate = (val) => {
+  if (val == null || val === '' || val === '00:00.0') return null;
+  // XLSX cellDates:true already returns a Date object — use it directly
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  // Excel serial number (e.g. 44567) — only raw numbers, not timestamps
+  const n = Number(val);
+  if (!isNaN(n) && n > 1 && n < 100000) return new Date(Math.round((n - 25569) * 86400000));
+  if (typeof val === 'string') {
+    const str = val.trim();
+    if (!str || str === '0') return null;
+    // DD-MM-YYYY or DD/MM/YYYY (LinZA default export format)
+    const m = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (m) {
+      const d = new Date(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    const d = new Date(str);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+};
+
+const parseFallbackDateStr = (str) => {
+  if (!str || !str.trim()) return null;
+  const m = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) {
+    const d = new Date(`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const iso = new Date(str);
+  return isNaN(iso.getTime()) ? null : iso;
+};
+
+const LinZAMilkSalesSection = () => {
+  const [files, setFiles] = useState([]);
+  const [status, setStatus] = useState(null);
+  const [result, setResult] = useState(null);
+  const [fallbackDateStr, setFallbackDateStr] = useState('');
+
+  const addFiles  = (picked) => { setFiles(prev => [...prev, ...picked]); setStatus(null); setResult(null); };
+  const removeFile = (i) => { setFiles(prev => prev.filter((_, idx) => idx !== i)); setStatus(null); setResult(null); };
+  const reset = () => { setFiles([]); setStatus(null); setResult(null); setFallbackDateStr(''); };
+
+  const handleConvert = async () => {
+    if (!files.length) return;
+    setStatus('processing'); setResult(null);
+    try {
+      // Collect rows from ALL uploaded files (all sheets)
+      const rows = [];
+      for (const file of files) {
+        const { sheets } = await readFileSheets(file);
+        for (const sheetRows of Object.values(sheets)) {
+          if (sheetRows.length && isLinZAMilkSales(sheetRows)) {
+            sheetRows.forEach(r => rows.push(r));
+          }
+        }
+      }
+
+      if (!rows.length) {
+        notifications.show({ title: 'No LinZA Data Found', message: 'No sheets matched LinZA format (need BillNo, Ltr, Shift columns)', color: 'orange' });
+        setStatus(null); return;
+      }
+
+      const fallback = parseFallbackDateStr(fallbackDateStr);
+      const converted = [];
+      let missingDate = 0, withDate = 0, skipped = 0;
+
+      rows.forEach((row, i) => {
+        const ltr = num(getPartyColVal(row, 'Ltr', 'Litres', 'Litre', 'qty', 'Sales_Qty'));
+        const amt = num(getPartyColVal(row, 'Amt', 'Amount', 'TotalAmt', 'total'));
+        // Skip header-repeat rows and truly empty rows
+        if (ltr === 0 && amt === 0) { skipped++; return; }
+
+        const billNo  = String(getPartyColVal(row, 'BillNo', 'Bill No', 'bill_no', 'VoucherNo') || `LNZ-${i + 1}`).trim();
+        const rawDate = getPartyColVal(row, 'BillDate', 'Bill Date', 'SalesDate', 'Date');
+        const parsedDate = parseLinZADate(rawDate);
+        const finalDate = parsedDate ?? fallback;
+
+        if (!parsedDate) missingDate++;
+        else withDate++;
+
+        const shift  = String(getPartyColVal(row, 'Shift', 'SalesShift', 'session') ?? '0').trim();
+        const rate   = num(getPartyColVal(row, 'Rate', 'RatePerLtr', 'rate'));
+        const center = String(getPartyColVal(row, 'Center', 'Centre', 'Centercode') ?? '').trim();
+        const vendor = String(getPartyColVal(row, 'Vendor', 'Creditor', 'cust_id', 'customer') ?? '').trim();
+        const ttype  = String(getPartyColVal(row, 'TTYPE', 'TType', 'Type', 'SaleType') ?? 'CASH').trim().toUpperCase();
+        const saleMode = (ttype === 'CREDIT' || ttype === 'CR') ? 'CREDIT' : 'LOCAL';
+
+        converted.push({
+          BillNo:     billNo,
+          SalesDate:  finalDate,     // Date object — XLSX writes as serial
+          SalesShift: shift === '1' ? 1 : 0,
+          Sales_Qty:  ltr,
+          RatePerLtr: rate,
+          TotalAmt:   amt,
+          Centercode: center,
+          Vendor:     vendor,
+          SaleMode:   saleMode,
+        });
+      });
+
+      if (!converted.length) {
+        notifications.show({ title: 'No Valid Rows', message: 'All rows skipped (zero qty and amount)', color: 'orange' });
+        setStatus(null); return;
+      }
+
+      const localRows  = converted.filter(r => r.SaleMode === 'LOCAL');
+      const creditRows = converted.filter(r => r.SaleMode === 'CREDIT');
+
+      setResult({ rows: converted, localRows, creditRows, missingDate, withDate, skipped, fallbackUsed: missingDate > 0 && !!fallback });
+      setStatus('done');
+    } catch (err) {
+      setStatus('error');
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
+    }
+  };
+
+  const handleDownload = (subset = 'all') => {
+    if (!result?.rows?.length) return;
+    const rows = subset === 'local'  ? result.localRows
+               : subset === 'credit' ? result.creditRows
+               : result.rows;
+    if (!rows.length) { notifications.show({ title: 'No rows', color: 'orange' }); return; }
+    const label = subset === 'local' ? 'local' : subset === 'credit' ? 'credit' : 'all';
+    downloadExcel(rows, `linza_milksales_${label}_${Date.now()}.xlsx`, 'Milk Sales');
+    notifications.show({ title: 'Downloaded', message: `${rows.length} rows — import via MilkSales → Import (Zibitt)`, color: 'green' });
+  };
+
+  const previewRows = result?.rows?.slice(0, 12) ?? [];
+
+  return (
+    <Paper withBorder radius="md" p="md">
+      <Group mb="md">
+        <ThemeIcon color="green" variant="light" size="lg">
+          <IconMilk size={20} />
+        </ThemeIcon>
+        <div>
+          <Title order={4}>LinZA Milk Sales Convert</Title>
+          <Text size="xs" c="dimmed">
+            Convert LinZA milk sales (BillNo, Fnyear, Ltr, Shift…) → Zibitt-compatible import format
+          </Text>
+        </div>
+      </Group>
+
+      <Alert icon={<IconAlertCircle size={14} />} color="green" variant="light" mb="md" p="xs">
+        <Text size="xs">
+          Upload the LinZA milk sales Excel. BillDate is often missing (shows 00:00.0) — set a <strong>Fallback Date</strong>
+          for those rows. After download, import via <strong>Milk Sales → Import (Zibitt Local Sales)</strong>.
+        </Text>
+      </Alert>
+
+      {/* Files + Fallback date */}
+      <SimpleGrid cols={2} spacing="md" mb="md">
+        <FileListBox
+          label="LinZA Milk Sales Files (select 1 or more)"
+          color="green"
+          files={files}
+          onAdd={addFiles}
+          onRemove={removeFile}
+        />
+        <Box>
+          <TextInput
+            label="Fallback Date (for missing BillDate rows)"
+            placeholder="DD-MM-YYYY  e.g. 01-04-2022"
+            value={fallbackDateStr}
+            onChange={e => setFallbackDateStr(e.currentTarget.value)}
+            size="sm"
+            description="Applied when BillDate is 00:00.0 or blank"
+          />
+          {fallbackDateStr && (
+            <Text size="xs" c={parseFallbackDateStr(fallbackDateStr) ? 'green' : 'red'} mt={4}>
+              {parseFallbackDateStr(fallbackDateStr)
+                ? `Parsed: ${parseFallbackDateStr(fallbackDateStr).toLocaleDateString('en-IN')}`
+                : 'Invalid date format'}
+            </Text>
+          )}
+        </Box>
+      </SimpleGrid>
+
+      {/* Actions */}
+      <Group>
+        <Button
+          color="green"
+          leftSection={<IconTransform size={16} />}
+          onClick={handleConvert}
+          loading={status === 'processing'}
+          disabled={!files.length}
+        >
+          Convert
+        </Button>
+        {result?.rows?.length > 0 && (
+          <>
+            <Button color="green" variant="light" leftSection={<IconDownload size={16} />}
+              onClick={() => handleDownload('all')}>
+              All ({result.rows.length})
+            </Button>
+            {result.localRows.length > 0 && result.creditRows.length > 0 && (
+              <>
+                <Button color="teal" variant="light" leftSection={<IconDownload size={14} />}
+                  onClick={() => handleDownload('local')}>
+                  Local ({result.localRows.length})
+                </Button>
+                <Button color="violet" variant="light" leftSection={<IconDownload size={14} />}
+                  onClick={() => handleDownload('credit')}>
+                  Credit ({result.creditRows.length})
+                </Button>
+              </>
+            )}
+          </>
+        )}
+        {(files.length > 0 || result) && (
+          <Button variant="subtle" color="gray" size="xs" onClick={reset}>Clear</Button>
+        )}
+      </Group>
+
+      {/* Result */}
+      {status === 'done' && result && (
+        <Stack gap="xs" mt="md">
+          <Alert icon={<IconCircleCheck size={14} />} color="green" variant="light" p="xs">
+            <Group gap="xs" wrap="wrap">
+              <Badge color="green">Converted: {result.rows.length}</Badge>
+              <Badge color="teal">Local/Cash: {result.localRows.length}</Badge>
+              {result.creditRows.length > 0 && <Badge color="violet">Credit: {result.creditRows.length}</Badge>}
+              <Badge color="blue">With date: {result.withDate}</Badge>
+              {result.missingDate > 0 && (
+                <Badge color={result.fallbackUsed ? 'orange' : 'red'}>
+                  Missing date: {result.missingDate}{result.fallbackUsed ? ' (fallback used)' : ' (no fallback!)'}
+                </Badge>
+              )}
+              {result.skipped > 0 && <Badge color="gray">Skipped (empty): {result.skipped}</Badge>}
+            </Group>
+            {result.missingDate > 0 && !result.fallbackUsed && (
+              <Text size="xs" c="red" mt={4}>
+                Warning: {result.missingDate} rows have no date and no fallback date was set — set Fallback Date and re-convert.
+              </Text>
+            )}
+          </Alert>
+
+          {previewRows.length > 0 && (
+            <>
+              <Text size="xs" fw={600} c="dimmed">
+                Preview — first {previewRows.length} of {result.rows.length} rows
+              </Text>
+              <Paper withBorder radius="sm" style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                  <thead>
+                    <tr style={{ background: '#f1f3f5' }}>
+                      {Object.keys(previewRows[0]).map(col => (
+                        <th key={col} style={{ border: '1px solid #dee2e6', padding: '3px 6px', textAlign: 'left', whiteSpace: 'nowrap' }}>
+                          {col}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.map((row, i) => (
+                      <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                        {Object.entries(row).map(([col, val], j) => (
+                          <td key={j} style={{ border: '1px solid #dee2e6', padding: '2px 6px' }}>
+                            {val instanceof Date ? val.toLocaleDateString('en-IN') : String(val ?? '')}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Paper>
+              {result.rows.length > 12 && (
+                <Text size="xs" c="dimmed" ta="center">… and {result.rows.length - 12} more rows</Text>
+              )}
+            </>
+          )}
+        </Stack>
+      )}
+    </Paper>
+  );
+};
+
+// ─── PARTY CONVERT SECTION ────────────────────────────────────────────────
+// Converts OpenLyssa Creditor/Customer export → ERP Farmer / Customer import format
+// Creditor columns: Nos, CreditorName, Center  → Farmer import
+// Customer columns: Nos, Name, Center          → Customer import
+
+const detectPartyType = (rows) => {
+  if (!rows.length) return null;
+  const keys = Object.keys(rows[0]).map(k => k.toLowerCase().trim());
+  if (keys.some(k => k === 'creditorname' || k === 'creditor name' || k === 'creditor_name')) return 'creditor';
+  if (keys.some(k => k === 'name')) return 'customer';
+  return null;
+};
+
+const getPartyColVal = (row, ...candidates) => {
+  const keys = Object.keys(row);
+  for (const cand of candidates) {
+    const cl = cand.toLowerCase().trim();
+    const k = keys.find(k => k.toLowerCase().trim() === cl) ?? keys.find(k => k.toLowerCase().trim().includes(cl));
+    if (k !== undefined && row[k] !== null && row[k] !== undefined && row[k] !== '') return row[k];
+  }
+  return '';
+};
+
+const PartyConvertSection = () => {
+  const [file, setFile] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [result, setResult] = useState(null);
+  const [modeOverride, setModeOverride] = useState(null); // 'creditor' | 'customer' | null
+  const fileRef = useRef(null);
+
+  const reset = () => { setFile(null); setStatus(null); setResult(null); setModeOverride(null); };
+
+  const handleFile = (f) => {
+    setFile(f); setStatus(null); setResult(null); setModeOverride(null);
+  };
+
+  const handleConvert = async () => {
+    if (!file) return;
+    setStatus('processing'); setResult(null);
+    try {
+      const { sheets } = await readFileSheets(file);
+      const rows = Object.values(sheets).find(r => r.length) ?? [];
+      if (!rows.length) {
+        notifications.show({ title: 'Empty File', message: 'No rows found in file', color: 'orange' });
+        setStatus(null); return;
+      }
+
+      const autoMode = detectPartyType(rows);
+      const mode = modeOverride ?? autoMode;
+
+      if (!mode) {
+        notifications.show({
+          title: 'Cannot Detect Type',
+          message: 'Expected columns: CreditorName (for farmers) or Name (for customers). Check the file.',
+          color: 'red',
+        });
+        setStatus(null); return;
+      }
+
+      let converted = [];
+      if (mode === 'creditor') {
+        // → Farmer import: Farmer Number, Member ID, Name, Phone Number, Collection Center
+        converted = rows
+          .filter(row => {
+            const nos = getPartyColVal(row, 'Nos', 'no', 'sl no', 'slno', 'number');
+            return nos !== '' && !isNaN(Number(nos)) && Number(nos) > 0;
+          })
+          .map(row => {
+            const nos    = String(getPartyColVal(row, 'Nos', 'no', 'sl no', 'slno', 'number')).trim();
+            const name   = String(getPartyColVal(row, 'CreditorName', 'creditor name', 'creditor_name', 'name')).trim();
+            const center = String(getPartyColVal(row, 'Center', 'centre', 'collection center', 'cc')).trim();
+            return {
+              'Farmer Number': nos,
+              'Member ID':     nos,
+              'Name':          name,
+              'Phone Number':  '',
+              'Collection Center': center,
+            };
+          });
+      } else {
+        // → Customer import: name, customerId, Center
+        converted = rows
+          .filter(row => {
+            const nos = getPartyColVal(row, 'Nos', 'no', 'sl no', 'slno', 'number');
+            return nos !== '' && !isNaN(Number(nos)) && Number(nos) > 0;
+          })
+          .map(row => {
+            const nos    = String(getPartyColVal(row, 'Nos', 'no', 'sl no', 'slno', 'number')).trim();
+            const name   = String(getPartyColVal(row, 'Name', 'customer name', 'customername', 'party name')).trim();
+            const center = String(getPartyColVal(row, 'Center', 'centre', 'collection center', 'cc')).trim();
+            return {
+              'Customer Number': nos,
+              'Name':            name,
+              'Phone':           '',
+              'Email':           '',
+              'Address':         '',
+              'Center':          center,
+            };
+          });
+      }
+
+      if (!converted.length) {
+        notifications.show({ title: 'No Valid Rows', message: 'All rows were skipped (invalid Nos values)', color: 'orange' });
+        setStatus(null); return;
+      }
+
+      setResult({ rows: converted, mode, total: rows.length, converted: converted.length, skipped: rows.length - converted.length });
+      setStatus('done');
+    } catch (err) {
+      setStatus('error');
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
+    }
+  };
+
+  const handleDownload = () => {
+    if (!result?.rows?.length) return;
+    const filename = result.mode === 'creditor'
+      ? `farmer_import_${Date.now()}.xlsx`
+      : `customer_import_${Date.now()}.xlsx`;
+    const sheet = result.mode === 'creditor' ? 'Farmers' : 'Customers';
+    downloadExcel(result.rows, filename, sheet);
+    notifications.show({ title: 'Downloaded', message: `${result.rows.length} rows — ready for ERP import`, color: 'green' });
+  };
+
+  const detectedMode = result?.mode ?? modeOverride;
+  const previewRows = result?.rows?.slice(0, 15) ?? [];
+
+  return (
+    <Paper withBorder radius="md" p="md">
+      <Group mb="md">
+        <ThemeIcon color="violet" variant="light" size="lg">
+          <IconUsers size={20} />
+        </ThemeIcon>
+        <div>
+          <Title order={4}>Party Convert — Creditor / Customer</Title>
+          <Text size="xs" c="dimmed">
+            Convert OpenLyssa Creditor or Customer export → ERP Farmer / Customer import format
+          </Text>
+        </div>
+      </Group>
+
+      <Alert icon={<IconAlertCircle size={14} />} color="violet" variant="light" mb="md" p="xs">
+        <Text size="xs">
+          Upload the OpenLyssa <strong>Creditor table</strong> (Nos, CreditorName, Center) → produces <strong>Farmer import</strong> file.&nbsp;
+          Upload the <strong>Customer table</strong> (Nos, Name, Center) → produces <strong>Customer import</strong> file.
+          The tool auto-detects the type from column names.
+        </Text>
+      </Alert>
+
+      {/* File picker */}
+      <SingleFilePicker
+        label="OpenLyssa Creditor or Customer Excel"
+        color="violet"
+        file={file}
+        onAdd={handleFile}
+        onRemove={reset}
+      />
+
+      {/* Override mode selector */}
+      {file && (
+        <Group mt="sm" gap="xs">
+          <Text size="xs" c="dimmed">Force type:</Text>
+          {['creditor', 'customer'].map(m => (
+            <Badge
+              key={m}
+              size="md"
+              variant={modeOverride === m ? 'filled' : 'outline'}
+              color={m === 'creditor' ? 'blue' : 'teal'}
+              style={{ cursor: 'pointer', userSelect: 'none' }}
+              onClick={() => setModeOverride(prev => prev === m ? null : m)}
+            >
+              {m === 'creditor' ? 'Farmer (Creditor)' : 'Customer'}
+            </Badge>
+          ))}
+          {modeOverride && (
+            <Text size="xs" c="dimmed">(auto-detect disabled)</Text>
+          )}
+        </Group>
+      )}
+
+      {/* Actions */}
+      <Group mt="sm">
+        <Button
+          color="violet"
+          leftSection={<IconTransform size={16} />}
+          onClick={handleConvert}
+          loading={status === 'processing'}
+          disabled={!file}
+        >
+          Convert
+        </Button>
+        <Button
+          color="green"
+          variant="light"
+          leftSection={<IconDownload size={16} />}
+          onClick={handleDownload}
+          disabled={!result?.rows?.length}
+        >
+          Download ({result?.rows?.length ?? 0} rows)
+        </Button>
+        {(file || result) && (
+          <Button variant="subtle" color="gray" size="xs" onClick={reset}>Clear</Button>
+        )}
+      </Group>
+
+      {/* Result */}
+      {status === 'done' && result && (
+        <Stack gap="xs" mt="md">
+          <Alert icon={<IconCircleCheck size={14} />} color="green" variant="light" p="xs">
+            <Group gap="xs" wrap="wrap">
+              <Badge color={result.mode === 'creditor' ? 'blue' : 'teal'}>
+                {result.mode === 'creditor' ? 'Farmer (Creditor)' : 'Customer'} mode
+              </Badge>
+              <Badge color="green">Converted: {result.converted}</Badge>
+              {result.skipped > 0 && <Badge color="gray">Skipped (blank/header): {result.skipped}</Badge>}
+            </Group>
+          </Alert>
+
+          {previewRows.length > 0 && (
+            <>
+              <Text size="xs" fw={600} c="dimmed">
+                Preview — first {previewRows.length} of {result.rows.length} rows
+              </Text>
+              <Paper withBorder radius="sm" style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: '#f1f3f5' }}>
+                      {Object.keys(previewRows[0]).map(col => (
+                        <th key={col} style={{ border: '1px solid #dee2e6', padding: '4px 8px', textAlign: 'left', whiteSpace: 'nowrap' }}>
+                          {col}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.map((row, i) => (
+                      <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                        {Object.values(row).map((val, j) => (
+                          <td key={j} style={{ border: '1px solid #dee2e6', padding: '3px 8px' }}>{String(val)}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Paper>
+              {result.rows.length > 15 && (
+                <Text size="xs" c="dimmed" ta="center">… and {result.rows.length - 15} more rows — Download to see all</Text>
+              )}
+            </>
+          )}
+        </Stack>
+      )}
+    </Paper>
+  );
+};
+
 // ─── Main Page ─────────────────────────────────────────────────────────────
 
 const OpenLyssaMergeTool = () => (
@@ -818,6 +1679,9 @@ const OpenLyssaMergeTool = () => (
     </Paper>
 
     <Stack gap="md">
+      <PartyConvertSection />
+      <LinZAMilkSalesSection />
+      <LynzAMergeSection />
       <MilkPurchaseSection />
       <MilkSalesSection />
     </Stack>
