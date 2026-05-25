@@ -202,38 +202,63 @@ const DailyCollectionList = () => {
     }
 
     const exportList = getSortedRecords(records);
+    const exMembers    = exportList.filter(r => r.isMembership !== false);
+    const exNonMembers = exportList.filter(r => r.isMembership === false);
+    const mLtr  = exMembers.reduce((s, r) => s + (r.qty || 0), 0);
+    const mAmt  = exMembers.reduce((s, r) => s + (r.amount || 0), 0);
+    const nmLtr = exNonMembers.reduce((s, r) => s + (r.qty || 0), 0);
+    const nmAmt = exNonMembers.reduce((s, r) => s + (r.amount || 0), 0);
+    const sendLtr = totalQty - salesSummary.local.qty - salesSummary.sample.qty - salesSummary.school.qty - salesSummary.credit.qty;
+
+    const hdr = ['Sl', 'Bill No', 'Date', 'Shift', 'Farmer No', 'Farmer Name', 'Qty (L)', 'FAT %', 'CLR', 'SNF %', 'Rate (₹)', 'Incentive (₹)', 'Amount (₹)'];
+    const buildDataRows = (list) => list.map((r, i) => [
+      i + 1, r.billNo,
+      dayjs(r.date).format('DD/MM/YYYY'), r.shift,
+      r.farmerNumber, r.farmerName || '',
+      parseFloat((r.qty       || 0).toFixed(2)),
+      parseFloat((r.fat       || 0).toFixed(2)),
+      parseFloat((r.clr       || 0).toFixed(1)),
+      parseFloat((r.snf       || 0).toFixed(2)),
+      parseFloat((r.rate      || 0).toFixed(2)),
+      parseFloat((r.incentive || 0).toFixed(2)),
+      parseFloat((r.amount    || 0).toFixed(2)),
+    ]);
+
     const rows = [
       [companyName],
       [`Daily Milk Collection Register — ${dateLabel} · ${shiftLabel}`],
       [`Center: ${centerLabel}`],
+      [`Members: ${exMembers.length}  |  Non-Members: ${exNonMembers.length}  |  Total: ${exportList.length}`],
       [],
-      ['Sl', 'Bill No', 'Date', 'Shift', 'Farmer No', 'Farmer Name', 'Qty (L)', 'FAT %', 'CLR', 'SNF %', 'Rate (₹)', 'Incentive (₹)', 'Amount (₹)'],
-      ...exportList.map((r, i) => [
-        i + 1, r.billNo,
-        dayjs(r.date).format('DD/MM/YYYY'), r.shift,
-        r.farmerNumber, r.farmerName || '',
-        parseFloat((r.qty       || 0).toFixed(2)),
-        parseFloat((r.fat       || 0).toFixed(2)),
-        parseFloat((r.clr       || 0).toFixed(1)),
-        parseFloat((r.snf       || 0).toFixed(2)),
-        parseFloat((r.rate      || 0).toFixed(2)),
-        parseFloat((r.incentive || 0).toFixed(2)),
-        parseFloat((r.amount    || 0).toFixed(2)),
-      ]),
+      [`Members (${exMembers.length})`],
+      hdr,
+      ...buildDataRows(exMembers),
+      ['', '', '', '', '', 'Sub Total', parseFloat(mLtr.toFixed(2)), '', '', '', '', '', parseFloat(mAmt.toFixed(2))],
       [],
-      ['', '', '', '', '', 'TOTALS',
-        parseFloat(totalQty.toFixed(2)), '', '', '', '', '',
-        parseFloat(totalAmt.toFixed(2)),
+      [`Non-Members (${exNonMembers.length})`],
+      hdr,
+      ...buildDataRows(exNonMembers),
+      ['', '', '', '', '', 'Sub Total', parseFloat(nmLtr.toFixed(2)), '', '', '', '', '', parseFloat(nmAmt.toFixed(2))],
+      [],
+      ['', '', '', '', '', 'GRAND TOTAL',
+        parseFloat(totalQty.toFixed(2)),
+        parseFloat(avgFat.toFixed(2)), parseFloat(avgClr.toFixed(1)), parseFloat(avgSnf.toFixed(2)),
+        '', '', parseFloat(totalAmt.toFixed(2)),
       ],
-      ['', '', '', '', '', 'AVERAGES',
-        '', parseFloat(avgFat.toFixed(2)), parseFloat(avgClr.toFixed(1)), parseFloat(avgSnf.toFixed(2)),
-        '', '', '',
-      ],
+      [],
+      ['— Sales Summary —'],
+      ['Total Purchase',         `${totalQty.toFixed(3)} L`,                     '', `₹${totalAmt.toFixed(2)}`],
+      ['Milk Sales — Local',     `${salesSummary.local.qty.toFixed(3)} L`,       '', `₹${salesSummary.local.amt.toFixed(2)}`],
+      ['Milk Sales — School',    `${salesSummary.school.qty.toFixed(3)} L`,      '', `₹${salesSummary.school.amt.toFixed(2)}`],
+      ['Milk Sales — Credit',    `${salesSummary.credit.qty.toFixed(3)} L`,      '', `₹${salesSummary.credit.amt.toFixed(2)}`],
+      ['Milk Sales — Sample',    `${salesSummary.sample.qty.toFixed(3)} L`,      '', `₹${salesSummary.sample.amt.toFixed(2)}`],
+      ['Send to Dairy (Milma)',  `${sendLtr.toFixed(3)} L`],
+      [`Avg FAT: ${avgFat.toFixed(2)}  |  Avg CLR: ${avgClr.toFixed(1)}  |  Avg SNF: ${avgSnf.toFixed(2)}  |  AM: ${amCount}  |  PM: ${pmCount}`],
     ];
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws['!cols'] = [
-      { wch: 5 }, { wch: 16 }, { wch: 12 }, { wch: 8 }, { wch: 12 },
+      { wch: 24 }, { wch: 16 }, { wch: 12 }, { wch: 8 }, { wch: 12 },
       { wch: 20 }, { wch: 9 }, { wch: 8 }, { wch: 8 }, { wch: 8 },
       { wch: 10 }, { wch: 13 }, { wch: 12 },
     ];
@@ -250,68 +275,151 @@ const DailyCollectionList = () => {
       return;
     }
 
-    const exportList = getSortedRecords(records);
+    const exportList  = getSortedRecords(records);
+    const pdfMembers    = exportList.filter(r => r.isMembership !== false);
+    const pdfNonMembers = exportList.filter(r => r.isMembership === false);
+    const mLtr  = pdfMembers.reduce((s, r) => s + (r.qty || 0), 0);
+    const mAmt  = pdfMembers.reduce((s, r) => s + (r.amount || 0), 0);
+    const nmLtr = pdfNonMembers.reduce((s, r) => s + (r.qty || 0), 0);
+    const nmAmt = pdfNonMembers.reduce((s, r) => s + (r.amount || 0), 0);
+    const sendLtr = totalQty - salesSummary.local.qty - salesSummary.sample.qty - salesSummary.school.qty - salesSummary.credit.qty;
+
     const doc = new jsPDF('l', 'mm', 'a4');
     const pw  = doc.internal.pageSize.width;
+    const ph  = doc.internal.pageSize.height;
 
+    // ── Header ──────────────────────────────────────────────────────────────
     doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
     doc.text(companyName, pw / 2, 13, { align: 'center' });
     doc.setFontSize(11);
     doc.text('Daily Milk Collection Register', pw / 2, 20, { align: 'center' });
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
     doc.text(`Date: ${dateLabel}   Shift: ${shiftLabel}   Center: ${centerLabel}`, pw / 2, 27, { align: 'center' });
-    doc.text(`Printed: ${dayjs().format('DD MMM YYYY HH:mm')}`, pw / 2, 33, { align: 'center' });
+    doc.text(`Members: ${pdfMembers.length}  |  Non-Members: ${pdfNonMembers.length}  |  Total: ${exportList.length}`, pw / 2, 33, { align: 'center' });
 
+    const cols = ['Sl', 'Bill No', 'Farmer No', 'Farmer Name', 'Qty(L)', 'FAT%', 'CLR', 'SNF%', 'Rate', 'Incentive', 'Amount'];
+    const colStyles = {
+      0:  { halign: 'center', cellWidth: 8  },
+      1:  { halign: 'center', cellWidth: 22 },
+      2:  { halign: 'center', cellWidth: 20 },
+      3:  { halign: 'left',   cellWidth: 38 },
+      4:  { halign: 'right',  cellWidth: 16 },
+      5:  { halign: 'right',  cellWidth: 13 },
+      6:  { halign: 'right',  cellWidth: 12 },
+      7:  { halign: 'right',  cellWidth: 13 },
+      8:  { halign: 'right',  cellWidth: 18 },
+      9:  { halign: 'right',  cellWidth: 18 },
+      10: { halign: 'right',  cellWidth: 22 },
+    };
+    const buildBody = (list) => list.map((r, i) => [
+      i + 1, r.billNo,
+      r.farmerNumber, r.farmerName || '—',
+      (r.qty       || 0).toFixed(2),
+      (r.fat       || 0).toFixed(2),
+      (r.clr       || 0).toFixed(1),
+      (r.snf       || 0).toFixed(2),
+      `₹${(r.rate      || 0).toFixed(2)}`,
+      `₹${(r.incentive || 0).toFixed(2)}`,
+      `₹${(r.amount    || 0).toFixed(2)}`,
+    ]);
+    const subRow = (ltr, amt) => [
+      { content: 'Sub Total', colSpan: 4, styles: { fontStyle: 'bold', halign: 'right', fillColor: [229, 231, 235] } },
+      { content: ltr.toFixed(2), styles: { fontStyle: 'bold', halign: 'right', fillColor: [229, 231, 235] } },
+      '', '', '', '', '',
+      { content: `₹${amt.toFixed(2)}`, styles: { fontStyle: 'bold', halign: 'right', fillColor: [229, 231, 235] } },
+    ];
+    const pageFooter = (data) => {
+      const n = doc.internal.getNumberOfPages();
+      doc.setFontSize(7); doc.setTextColor(150);
+      doc.text(`${companyName}   |   Page ${data.pageNumber} of ${n}`, pw / 2, ph - 5, { align: 'center' });
+      doc.setTextColor(0);
+    };
+
+    let nextY = 38;
+
+    // ── Members section ──────────────────────────────────────────────────────
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+    doc.setFillColor(219, 234, 254); doc.rect(14, nextY, pw - 28, 6, 'F');
+    doc.setTextColor(26, 60, 110);
+    doc.text(`Members  (${pdfMembers.length})`, 16, nextY + 4.2);
+    doc.setTextColor(0);
     autoTable(doc, {
-      startY: 37,
-      head: [['Sl', 'Bill No', 'Date', 'Shift', 'Farmer No', 'Farmer Name', 'Qty(L)', 'FAT%', 'CLR', 'SNF%', 'Rate', 'Incentive', 'Amount']],
-      body: [
-        ...exportList.map((r, i) => [
-          i + 1, r.billNo,
-          dayjs(r.date).format('DD/MM/YY'), r.shift,
-          r.farmerNumber, r.farmerName || '—',
-          (r.qty       || 0).toFixed(2),
-          (r.fat       || 0).toFixed(2),
-          (r.clr       || 0).toFixed(1),
-          (r.snf       || 0).toFixed(2),
-          `₹${(r.rate      || 0).toFixed(2)}`,
-          `₹${(r.incentive || 0).toFixed(2)}`,
-          `₹${(r.amount    || 0).toFixed(2)}`,
-        ]),
-        [
-          { content: 'TOTAL', colSpan: 6, styles: { fontStyle: 'bold', halign: 'right' } },
-          { content: totalQty.toFixed(2), styles: { fontStyle: 'bold', halign: 'right' } },
-          { content: avgFat.toFixed(2),   styles: { fontStyle: 'bold', halign: 'right' } },
-          { content: avgClr.toFixed(1),   styles: { fontStyle: 'bold', halign: 'right' } },
-          { content: avgSnf.toFixed(2),   styles: { fontStyle: 'bold', halign: 'right' } },
-          '', '',
-          { content: `₹${totalAmt.toFixed(2)}`, styles: { fontStyle: 'bold', halign: 'right' } },
-        ],
-      ],
-      styles:      { fontSize: 8, cellPadding: 2 },
-      headStyles:  { fillColor: [21, 101, 192], textColor: 255, fontStyle: 'bold' },
+      startY: nextY + 7,
+      head: [cols],
+      body: [...buildBody(pdfMembers), subRow(mLtr, mAmt)],
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [245, 247, 250] },
-      columnStyles: {
-        0:  { halign: 'center', cellWidth: 8  },
-        1:  { halign: 'center', cellWidth: 22 },
-        2:  { halign: 'center', cellWidth: 18 },
-        3:  { halign: 'center', cellWidth: 12 },
-        4:  { halign: 'center', cellWidth: 20 },
-        5:  { halign: 'left',   cellWidth: 32 },
-        6:  { halign: 'right',  cellWidth: 15 },
-        7:  { halign: 'right',  cellWidth: 13 },
-        8:  { halign: 'right',  cellWidth: 12 },
-        9:  { halign: 'right',  cellWidth: 13 },
-        10: { halign: 'right',  cellWidth: 18 },
-        11: { halign: 'right',  cellWidth: 18 },
-        12: { halign: 'right',  cellWidth: 20 },
-      },
-      didDrawPage: (data) => {
-        const pageCount = doc.internal.getNumberOfPages();
-        doc.setFontSize(7); doc.setTextColor(150);
-        doc.text(`Page ${data.pageNumber} of ${pageCount}`, pw / 2, doc.internal.pageSize.height - 5, { align: 'center' });
-      },
+      columnStyles: colStyles,
+      didDrawPage: pageFooter,
     });
+    nextY = doc.lastAutoTable.finalY + 6;
+
+    // ── Non-Members section ──────────────────────────────────────────────────
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+    doc.setFillColor(243, 244, 246); doc.rect(14, nextY, pw - 28, 6, 'F');
+    doc.setTextColor(55, 65, 81);
+    doc.text(`Non-Members  (${pdfNonMembers.length})`, 16, nextY + 4.2);
+    doc.setTextColor(0);
+    autoTable(doc, {
+      startY: nextY + 7,
+      head: [cols],
+      body: pdfNonMembers.length
+        ? [...buildBody(pdfNonMembers), subRow(nmLtr, nmAmt)]
+        : [['', '', '', { content: 'No records', colSpan: 4, styles: { halign: 'center', textColor: [150, 150, 150] } }, '', '', '']],
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [75, 85, 99], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [249, 250, 251] },
+      columnStyles: colStyles,
+      didDrawPage: pageFooter,
+    });
+    nextY = doc.lastAutoTable.finalY + 4;
+
+    // ── Grand total row ──────────────────────────────────────────────────────
+    autoTable(doc, {
+      startY: nextY,
+      body: [[
+        { content: `GRAND TOTAL  (${exportList.length} entries)`, colSpan: 4, styles: { fontStyle: 'bold', halign: 'right', fillColor: [209, 250, 229] } },
+        { content: totalQty.toFixed(2), styles: { fontStyle: 'bold', halign: 'right', fillColor: [209, 250, 229] } },
+        { content: avgFat.toFixed(2),   styles: { fontStyle: 'bold', halign: 'right', fillColor: [209, 250, 229] } },
+        { content: avgClr.toFixed(1),   styles: { fontStyle: 'bold', halign: 'right', fillColor: [209, 250, 229] } },
+        { content: avgSnf.toFixed(2),   styles: { fontStyle: 'bold', halign: 'right', fillColor: [209, 250, 229] } },
+        '', '',
+        { content: `₹${totalAmt.toFixed(2)}`, styles: { fontStyle: 'bold', halign: 'right', fillColor: [209, 250, 229] } },
+      ]],
+      styles: { fontSize: 9, cellPadding: 2 },
+      columnStyles: colStyles,
+      didDrawPage: pageFooter,
+    });
+    nextY = doc.lastAutoTable.finalY + 5;
+
+    // ── Summary section ──────────────────────────────────────────────────────
+    doc.setDrawColor(100); doc.line(14, nextY, pw - 14, nextY);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(0);
+    const sumLines = [
+      ['Total Purchase',         `${totalQty.toFixed(3)} L`,                `₹${totalAmt.toFixed(2)}`],
+      ['Milk Sales — Local',     `${salesSummary.local.qty.toFixed(3)} L`,  `₹${salesSummary.local.amt.toFixed(2)}`],
+      ['Milk Sales — School',    `${salesSummary.school.qty.toFixed(3)} L`, `₹${salesSummary.school.amt.toFixed(2)}`],
+      ['Milk Sales — Credit',    `${salesSummary.credit.qty.toFixed(3)} L`, `₹${salesSummary.credit.amt.toFixed(2)}`],
+      ['Milk Sales — Sample',    `${salesSummary.sample.qty.toFixed(3)} L`, `₹${salesSummary.sample.amt.toFixed(2)}`],
+    ];
+    sumLines.forEach((ln, i) => {
+      const ly = nextY + 5 + i * 6;
+      doc.text(ln[0], 14, ly);
+      doc.text(ln[1], pw - 60, ly, { align: 'right' });
+      doc.text(ln[2], pw - 14, ly, { align: 'right' });
+    });
+    const sepY = nextY + 5 + sumLines.length * 6 + 1;
+    doc.line(14, sepY, pw - 14, sepY);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Send to Dairy (Milma)', 14, sepY + 5);
+    doc.text(`${sendLtr.toFixed(3)} L`, pw - 60, sepY + 5, { align: 'right' });
+    doc.line(14, sepY + 8, pw - 14, sepY + 8);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(100);
+    doc.text(
+      `Avg FAT: ${avgFat.toFixed(2)}  |  Avg CLR: ${avgClr.toFixed(1)}  |  Avg SNF: ${avgSnf.toFixed(2)}  |  AM: ${amCount}  |  PM: ${pmCount}   |   Printed: ${dayjs().format('DD MMM YYYY HH:mm')}`,
+      pw / 2, sepY + 14, { align: 'center' },
+    );
 
     doc.save(`Daily_Collection_${dayjs(date).format('YYYY-MM-DD')}_${shift || 'ALL'}.pdf`);
     notifications.show({ message: 'PDF exported successfully', color: 'green' });
@@ -445,9 +553,9 @@ const DailyCollectionList = () => {
   </div>
 
   <div class="two-col">
-    ${colPanel('MEMBER LIST', members, mLtr, mAmt, false)}
+    ${colPanel('Members', members, mLtr, mAmt, false)}
     <div class="col-sep"></div>
-    ${colPanel('NON-MEMBER LIST', nonMembers, nmLtr, nmAmt, true)}
+    ${colPanel('Non-Members', nonMembers, nmLtr, nmAmt, true)}
   </div>
 
   <div class="grand-row">
@@ -470,8 +578,9 @@ const DailyCollectionList = () => {
       <span class="val2">Rs. ${totalAmt_.toFixed(2)}</span>
     </div>
     <div class="summary-row"><span class="lbl">Milk Sales — Local</span><span class="val">${salesSummary.local.qty.toFixed(3)} L</span><span class="val2">Rs. ${salesSummary.local.amt.toFixed(2)}</span></div>
+    <div class="summary-row"><span class="lbl">Milk Sales — School</span><span class="val">${salesSummary.school.qty.toFixed(3)} L</span><span class="val2">Rs. ${salesSummary.school.amt.toFixed(2)}</span></div>
+    <div class="summary-row"><span class="lbl">Milk Sales — Credit</span><span class="val">${salesSummary.credit.qty.toFixed(3)} L</span><span class="val2">Rs. ${salesSummary.credit.amt.toFixed(2)}</span></div>
     <div class="summary-row"><span class="lbl">Milk Sales — Sample</span><span class="val">${salesSummary.sample.qty.toFixed(3)} L</span><span class="val2">Rs. ${salesSummary.sample.amt.toFixed(2)}</span></div>
-    <div class="summary-row"><span class="lbl">Milk Sales — School / Credit</span><span class="val">${(salesSummary.school.qty + salesSummary.credit.qty).toFixed(3)} L</span><span class="val2">Rs. ${(salesSummary.school.amt + salesSummary.credit.amt).toFixed(2)}</span></div>
     <hr class="dash2"/>
     <div class="summary-row bold">
       <span class="lbl">Send to Dairy (Milma)</span>

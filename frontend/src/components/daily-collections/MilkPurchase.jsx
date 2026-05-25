@@ -911,6 +911,7 @@ const MilkPurchase = () => {
         const rows = res?.data || [];
         let localLtr = 0, localAmt = 0, creditLtr = 0, creditAmt = 0, sampleLtr = 0, sampleAmt = 0;
         rows.forEach(r => {
+          if (r._id?.session !== shift) return;
           if (r._id?.saleMode === 'LOCAL')  { localLtr  += r.totalLitre;  localAmt  += r.totalAmount; }
           if (r._id?.saleMode === 'CREDIT') { creditLtr += r.totalLitre;  creditAmt += r.totalAmount; }
           if (r._id?.saleMode === 'SAMPLE') { sampleLtr += r.totalLitre;  sampleAmt += r.totalAmount; }
@@ -919,7 +920,7 @@ const MilkPurchase = () => {
       } catch { /* silent */ }
     };
     fetchSalesSummary();
-  }, [date]); // eslint-disable-line
+  }, [date, shift]); // eslint-disable-line
 
   // ── Auto-detect active time incentive for current center + shift + date ───
   useEffect(() => {
@@ -989,14 +990,11 @@ const MilkPurchase = () => {
     const fatVal = parseFloat(fat);
     const clrVal = parseFloat(clr);
     if (!fatVal || !clrVal) { setSnf(''); return; } // wait for both fat AND clr
-    const timer = setTimeout(() => {
-      setSnf(((clrVal / 4) + (0.20 * fatVal) + 0.50).toFixed(2));
-    }, 600);
-    return () => clearTimeout(timer);
+    setSnf(((clrVal / 4) + (0.20 * fatVal) + 0.50).toFixed(2));
   }, [clr, fat, paramCombo]); // eslint-disable-line
 
   // CLR = (4 × SNF) − (0.8 × FAT) − 2
-  // Debounced 600ms — auto-computes CLR when FAT+SNF are typed; does NOT auto-save
+  // Auto-computes CLR when FAT+SNF are typed; does NOT auto-save
   // Only runs in FAT-SNF mode (in CLR-FAT mode, CLR is entered manually)
   useEffect(() => {
     if (paramCombo !== 'FAT-SNF') return;
@@ -1004,11 +1002,8 @@ const MilkPurchase = () => {
     const fatVal = parseFloat(fat);
     const snfVal = parseFloat(snf);
     if (!snfVal || !fatVal) { setClr(''); return; }
-    const timer = setTimeout(() => {
-      clrAutoSetRef.current = true;
-      setClr(((4 * snfVal) - (0.8 * fatVal) - 2).toFixed(1));
-    }, 600);
-    return () => clearTimeout(timer);
+    clrAutoSetRef.current = true;
+    setClr(((4 * snfVal) - (0.8 * fatVal) - 2).toFixed(1));
   }, [snf, fat, paramCombo]); // eslint-disable-line
 
   // Auto-save when LTR is manually entered in analyzer mode (machine gave FAT+SNF, user types LTR)
@@ -1050,16 +1045,25 @@ const MilkPurchase = () => {
   useEffect(() => {
     const grossLtr = parseFloat(ltr) || 0;
     const netLtr   = grossLtr;
-    const fatVal   = parseFloat(fat) || 0;
-    const clrVal   = parseFloat(clr) || 0;
-    const snfVal   = parseFloat(snf) || 0;
+    const fatVal       = parseFloat(fat) || 0;
+    const clrVal_state = parseFloat(clr) || 0;
+    const snfVal_state = parseFloat(snf) || 0;
+    // Compute derived parameters inline so the rate updates in the same render cycle
+    // as the user's keypress — avoids a double-render delay caused by the cascading
+    // SNF/CLR auto-calc effects setting state and triggering a second render.
+    const clrVal = (paramCombo === 'FAT-SNF' && fatVal && snfVal_state)
+      ? parseFloat(((4 * snfVal_state) - (0.8 * fatVal) - 2).toFixed(1))
+      : clrVal_state;
+    const snfVal = (paramCombo === 'CLR-FAT' && fatVal && clrVal_state)
+      ? parseFloat(((clrVal_state / 4) + (0.20 * fatVal) + 0.50).toFixed(2))
+      : snfVal_state;
 
     const isManualEntry = entryMode === 'rate' || entryMode === 'amount';
 
     // In non-manual (chart) mode: require the secondary parameter before computing rate
     const secondaryReady = isManualEntry
       ? true
-      : (paramCombo === 'FAT-SNF' ? snfVal > 0 : clrVal > 0);
+      : (paramCombo === 'FAT-SNF' ? snfVal_state > 0 : clrVal_state > 0);
 
     if (!secondaryReady) {
       setCalcResult({ snf: snfVal || 0, incentive: 0, rate: 0, amount: 0 });
@@ -1452,9 +1456,11 @@ const MilkPurchase = () => {
 
   // Aggregates
   const totalLtr = entries.reduce((s, e) => s + (e.ltr ?? e.qty), 0);
+  const totalKg  = entries.reduce((s, e) => s + (e.ltr ?? e.qty) * (1 + (e.clr || 26) / 1000), 0);
   const totalAmt = entries.reduce((s, e) => s + e.amount, 0);
   const avgFat   = entries.length ? entries.reduce((s, e) => s + e.fat, 0) / entries.length : 0;
   const avgClr   = entries.length ? entries.reduce((s, e) => s + e.clr, 0) / entries.length : 0;
+  const avgSnf   = entries.length ? entries.reduce((s, e) => s + (e.snf || 0), 0) / entries.length : 0;
   const avgRate  = entries.length ? entries.reduce((s, e) => s + e.rate, 0) / entries.length : 0;
 
   // ─── RENDER ───────────────────────────────────────────────────────────────
@@ -2139,7 +2145,7 @@ const MilkPurchase = () => {
             <Table striped highlightOnHover stickyHeader withColumnBorders style={{ fontSize: 12 }}>
               <Table.Thead style={{ background: 'linear-gradient(180deg,#dbeafe 0%,#bfdbfe 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
                 <Table.Tr>
-                  {['#', 'Bill No', 'Mem. No', 'Member Name', 'Date', 'Shift', 'KG', 'Litres', 'FAT %', 'CLR', 'SNF %', 'Incentive', 'Rate/L', 'Amount', ''].map(col => (
+                  {['#', 'Bill No', 'Mem. No', 'Member Name', 'Date', 'Shift', 'Litres', 'KG', 'FAT %', 'CLR', 'SNF %', 'Incentive', 'Rate/L', 'Amount', ''].map(col => (
                     <Table.Th key={col} style={{ fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#1e40af', whiteSpace: 'nowrap', padding: '9px 12px', borderBottom: '2px solid #93c5fd' }}>
                       {col}
                     </Table.Th>
@@ -2176,8 +2182,8 @@ const MilkPurchase = () => {
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 600, color: '#1e293b' }}>{entry.producerName}</Table.Td>
                       <Table.Td style={{ padding: '6px 8px', color: '#475569', fontSize: 11, whiteSpace: 'nowrap' }}>{entry.date ? new Date(entry.date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit' }) : '—'}</Table.Td>
                       <Table.Td style={{ padding: '6px 8px' }}><Badge size="xs" color={entry.shift === 'AM' ? 'orange' : 'indigo'} variant="light" radius="sm">{entry.shift || '—'}</Badge></Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0369a1', textAlign: 'right' }}>{(entry.qty ?? entry.ltr).toFixed(2)}</Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0284c7', textAlign: 'right' }}>{(entry.ltr ?? entry.qty).toFixed(2)}</Table.Td>
+                      <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0369a1', textAlign: 'right' }}>{(entry.ltr ?? entry.qty).toFixed(2)}</Table.Td>
+                      <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0284c7', textAlign: 'right' }}>{((entry.ltr ?? entry.qty) * (1 + (entry.clr || 26) / 1000)).toFixed(2)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#c2410c', textAlign: 'right' }}>{entry.fat.toFixed(1)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', color: '#6d28d9', textAlign: 'right' }}>{entry.clr.toFixed(1)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', color: '#166534', textAlign: 'right' }}>{entry.snf.toFixed(2)}</Table.Td>
@@ -2199,9 +2205,10 @@ const MilkPurchase = () => {
                   <Table.Tr style={{ background: '#1e3a8a' }}>
                     <Table.Td colSpan={6} style={{ padding: '8px 12px', fontWeight: 700, color: '#93c5fd', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#7dd3fc', textAlign: 'right', fontSize: 13 }}>{totalLtr.toFixed(2)}</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#38bdf8', textAlign: 'right', fontSize: 13 }}>{totalLtr.toFixed(2)}</Table.Td>
+                    <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#38bdf8', textAlign: 'right', fontSize: 13 }}>{totalKg.toFixed(2)}</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#fdba74', textAlign: 'right' }}>{avgFat.toFixed(1)}</Table.Td>
-                    <Table.Td colSpan={2} />
+                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#a78bfa', textAlign: 'right' }}>{avgClr.toFixed(1)}</Table.Td>
+                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#4ade80', textAlign: 'right' }}>{avgSnf.toFixed(2)}</Table.Td>
                     <Table.Td />
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#e2e8f0', textAlign: 'right' }}>&#8377;{avgRate.toFixed(2)}</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', textAlign: 'right' }}><Text size="14px" fw={900} c="white">&#8377;{totalAmt.toFixed(2)}</Text></Table.Td>
@@ -2225,6 +2232,7 @@ const MilkPurchase = () => {
             {[
               { label: 'FAT Avg',   val: avgFat.toFixed(1),              c: '#c2410c', bg: '#fff7ed', border: '#fed7aa' },
               { label: 'CLR Avg',   val: avgClr.toFixed(1),              c: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe' },
+              { label: 'SNF Avg',   val: avgSnf.toFixed(2),              c: '#166534', bg: '#f0fdf4', border: '#86efac' },
               { label: 'Rate Avg',  val: `\u20B9${avgRate.toFixed(2)}`,  c: '#1e40af', bg: '#eff6ff', border: '#bfdbfe' },
               { label: 'Total KG / Ltr', val: `${totalLtr.toFixed(2)}`, c: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' },
               { label: 'Total Amt', val: `\u20B9${totalAmt.toFixed(2)}`, c: 'white',   bg: '#1e40af', border: '#1e40af', bold: true },

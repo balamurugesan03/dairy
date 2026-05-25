@@ -105,7 +105,7 @@ export const customerAPI = {
   getByCustomerId: (customerId) => api.get(`/customers/customerId/${customerId}`).then(res => res.data).catch(handleError),
   create: (data) => api.post('/customers', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/customers/${id}`, data).then(res => res.data).catch(handleError),
-  bulkImport: (customers) => api.post('/customers/bulk-import', { customers }).then(res => res.data).catch(handleError),
+  bulkImport: (customers, categoryMap = {}) => api.post('/customers/bulk-import', { customers, categoryMap }).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/customers/${id}`).then(res => res.data).catch(handleError),
   bulkDelete: (ids) => api.delete('/customers/bulk-delete', { data: { ids } }).then(res => res.data).catch(handleError),
   search: (query) => {
@@ -858,6 +858,10 @@ export const milkSalesRateAPI = {
   // Delete rate entry
   delete: (id) =>
     api.delete(`/milk-sales-rates/${id}`).then(res => res.data).catch(handleError),
+
+  // Bulk import rates from OpenLyssa milksales_rate file
+  bulkImport: (rates) =>
+    api.post('/milk-sales-rates/bulk-import', { rates }).then(res => res.data).catch(handleError),
 };
 
 // ─── SHIFT INCENTIVE APIs ─────────────────────────────────────────────────────

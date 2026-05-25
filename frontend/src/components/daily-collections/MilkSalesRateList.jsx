@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import {
   Container,
   Group,
@@ -20,6 +21,10 @@ import {
   Divider,
   Grid,
   ThemeIcon,
+  Progress,
+  ScrollArea,
+  Alert,
+  List,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
@@ -34,6 +39,11 @@ import {
   IconCalendarEvent,
   IconUser,
   IconHistory,
+  IconUpload,
+  IconFileImport,
+  IconX,
+  IconCheck,
+  IconAlertCircle,
 } from '@tabler/icons-react';
 import { modals } from '@mantine/modals';
 import { milkSalesRateAPI, customerAPI } from '../../services/api';
@@ -52,6 +62,15 @@ const CATEGORY_MAP = {
 };
 
 const PAGE_SIZE = 15;
+
+// Maps OpenLyssa category name → salesItem for the import
+const IMPORT_SALES_ITEM_MAP = {
+  'local sale':    'Local Sales',
+  'local sales':   'Local Sales',
+  'sample sale':   'Sample Sales',
+  'sample sales':  'Sample Sales',
+};
+const getSalesItemFromCatName = (catName = '') => IMPORT_SALES_ITEM_MAP[catName.trim().toLowerCase()] || 'Credit Sales';
 
 // ────────────────────────────────────────────────────────────────
 //  Main Component
@@ -75,6 +94,18 @@ export default function MilkSalesRateList() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editRecord, setEditRecord] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  // ── Import state ─────────────────────────────────────────────
+  const [importOpen, setImportOpen] = useState(false);
+  const [catRawRows, setCatRawRows] = useState([]);   // { id, name }
+  const [custRawRows, setCustRawRows] = useState([]); // { custId, name, catId }
+  const [rateRawRows, setRateRawRows] = useState([]); // { custId, rate, wefDate }
+  const [importPreview, setImportPreview] = useState([]);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importStats, setImportStats] = useState(null);
+  const catFileRef  = useRef(null);
+  const custFileRef = useRef(null);
+  const rateFileRef = useRef(null);
 
   // ── Form ─────────────────────────────────────────────────────
   const form = useForm({
@@ -107,6 +138,145 @@ export default function MilkSalesRateList() {
       .catch(() => setCustomers([]))
       .finally(() => setPartiesLoading(false));
   }, []);
+
+  // ── Import helpers ───────────────────────────────────────────
+  const parseXlsxRows = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        resolve(XLSX.utils.sheet_to_json(ws, { defval: '' }));
+      } catch (err) { reject(err); }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+
+  const handleCatFile = async (file) => {
+    const rows = await parseXlsxRows(file);
+    const parsed = rows.map(row => {
+      const idKey   = Object.keys(row).find(k => ['cat_id','id'].includes(k.toLowerCase().trim()));
+      const nameKey = Object.keys(row).find(k => ['name','cat_name','category_name','category'].includes(k.toLowerCase().trim()));
+      return { id: String(row[idKey] ?? '').trim(), name: String(row[nameKey] ?? '').trim() };
+    }).filter(r => r.id && r.name);
+    setCatRawRows(parsed);
+    return parsed;
+  };
+
+  const handleCustFile = async (file) => {
+    const rows = await parseXlsxRows(file);
+    const parsed = rows.map(row => {
+      const custIdKey = Object.keys(row).find(k => ['cust_id','customer_id','id'].includes(k.toLowerCase().trim()));
+      const nameKey   = Object.keys(row).find(k => ['name','customer_name','cust_name'].includes(k.toLowerCase().trim()));
+      const catIdKey  = Object.keys(row).find(k => ['cat_id','category_id'].includes(k.toLowerCase().trim()));
+      return {
+        custId: String(row[custIdKey] ?? '').trim(),
+        name:   String(row[nameKey]   ?? '').trim(),
+        catId:  String(row[catIdKey]  ?? '').trim(),
+      };
+    }).filter(r => r.custId);
+    setCustRawRows(parsed);
+    return parsed;
+  };
+
+  const handleRateFile = async (file) => {
+    const rows = await parseXlsxRows(file);
+    const parsed = rows.map(row => {
+      const custIdKey = Object.keys(row).find(k => ['cust_id','customer_id'].includes(k.toLowerCase().trim()));
+      const rateKey   = Object.keys(row).find(k => ['rate','price'].includes(k.toLowerCase().trim()));
+      const dateKey   = Object.keys(row).find(k => ['wef_date','date_entry','date_from','eff_date','effective_date','date'].includes(k.toLowerCase().trim()));
+      const rawDate   = row[dateKey];
+      let wefDate = null;
+      if (rawDate instanceof Date) {
+        wefDate = rawDate;
+      } else if (typeof rawDate === 'number') {
+        const d = XLSX.SSF.parse_date_code(rawDate);
+        wefDate = new Date(d.y, d.m - 1, d.d);
+      } else if (rawDate) {
+        wefDate = new Date(rawDate);
+      }
+      return {
+        custId:  String(row[custIdKey] ?? '').trim(),
+        rate:    parseFloat(row[rateKey]) || 0,
+        wefDate,
+      };
+    }).filter(r => r.custId);
+    setRateRawRows(parsed);
+    return parsed;
+  };
+
+  const buildImportPreview = (catRows, custRows, rateRows) => {
+    const catMap  = new Map(catRows.map(r => [r.id, r.name]));
+    const custMap = new Map(custRows.map(r => [r.custId, { name: r.name, catId: r.catId }]));
+    // System customers (already loaded) override parsed file
+    customers.forEach(c => custMap.set(String(c.customerId), { name: c.name, catId: '', _id: c._id }));
+
+    const preview = rateRows.map(r => {
+      const custInfo = custMap.get(r.custId) || {};
+      const catName  = catMap.get(custInfo.catId) || '';
+      const salesItem = getSalesItemFromCatName(catName);
+      const sysCust  = customers.find(c => String(c.customerId) === r.custId);
+      return {
+        custId:   r.custId,
+        custName: custInfo.name || '(not found)',
+        catName:  catName || '(unknown)',
+        salesItem,
+        category: salesItem,
+        rate:     r.rate,
+        wefDate:  r.wefDate,
+        partyId:  sysCust?._id || null,
+        partyName: custInfo.name || '',
+        _matched: !!sysCust,
+      };
+    });
+    setImportPreview(preview);
+    return preview;
+  };
+
+  const handleImportSubmit = async () => {
+    const validRows = importPreview.filter(r => r.rate > 0 && r.wefDate);
+    if (validRows.length === 0) {
+      notifications.show({ color: 'red', title: 'Nothing to import', message: 'No valid rate rows found.' });
+      return;
+    }
+    setImportLoading(true);
+    try {
+      const normalizeWef = (d) => {
+        const date = d instanceof Date ? d : new Date(d);
+        const ist  = new Date(date.getTime() + 5.5 * 60 * 60000);
+        return new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), 6, 30, 0, 0)).toISOString();
+      };
+      const rates = validRows.map(r => ({
+        partyType: 'Customer',
+        ...(r.partyId   ? { partyId:   r.partyId   } : {}),
+        ...(r.partyName ? { partyName: r.partyName } : {}),
+        salesItem: r.salesItem,
+        category:  r.category,
+        wefDate:   normalizeWef(r.wefDate),
+        rate:      r.rate,
+      }));
+      const res = await milkSalesRateAPI.bulkImport(rates);
+      setImportStats(res.data);
+      notifications.show({ color: 'green', title: 'Import Done', message: `${res.data.created} created, ${res.data.skipped} skipped` });
+      fetchRates();
+    } catch (e) {
+      notifications.show({ color: 'red', title: 'Import Failed', message: e.message });
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const resetImport = () => {
+    setCatRawRows([]);
+    setCustRawRows([]);
+    setRateRawRows([]);
+    setImportPreview([]);
+    setImportStats(null);
+    if (catFileRef.current)  catFileRef.current.value  = '';
+    if (custFileRef.current) custFileRef.current.value = '';
+    if (rateFileRef.current) rateFileRef.current.value = '';
+  };
 
   // ── Fetch rate list ──────────────────────────────────────────
   const fetchRates = useCallback(async () => {
@@ -347,6 +517,15 @@ export default function MilkSalesRateList() {
               {total} {total === 1 ? 'entry' : 'entries'}
             </Text>
             <Button
+              leftSection={<IconFileImport size={16} />}
+              color="indigo"
+              variant="light"
+              radius="md"
+              onClick={() => { resetImport(); setImportOpen(true); }}
+            >
+              Import
+            </Button>
+            <Button
               leftSection={<IconPlus size={16} />}
               color="teal"
               radius="md"
@@ -461,6 +640,227 @@ export default function MilkSalesRateList() {
           </Group>
         )}
       </Paper>
+
+      {/* ══════════════════════════════════════════════════════════
+           IMPORT MODAL
+         ══════════════════════════════════════════════════════════ */}
+      <Modal
+        opened={importOpen}
+        onClose={() => { setImportOpen(false); resetImport(); }}
+        title={
+          <Group gap="sm">
+            <ThemeIcon size={28} radius="md" color="indigo" variant="light">
+              <IconFileImport size={16} />
+            </ThemeIcon>
+            <Text fw={700} size="md">Import Milk Sales Rates (OpenLyssa)</Text>
+          </Group>
+        }
+        size="xl"
+        centered
+        radius="md"
+      >
+        <Stack gap="md">
+          {/* ─ File upload buttons ─ */}
+          <Text size="sm" c="dimmed">
+            Upload the <b>milksales_rate</b> file. Optionally attach the <b>customers</b> and
+            <b> category</b> files to auto-resolve party names and sales types.
+          </Text>
+
+          <Grid gutter="sm">
+            {/* Category file */}
+            <Grid.Col span={4}>
+              <input type="file" accept=".xlsx,.xls" ref={catFileRef} style={{ display: 'none' }}
+                onChange={async (e) => {
+                  const f = e.target.files[0];
+                  if (!f) return;
+                  try {
+                    const catRows = await handleCatFile(f);
+                    buildImportPreview(catRows, custRawRows, rateRawRows);
+                  } catch (err) {
+                    notifications.show({ color: 'red', title: 'Parse error', message: err.message });
+                  }
+                }}
+              />
+              <Button
+                fullWidth
+                variant={catRawRows.length > 0 ? 'filled' : 'default'}
+                color="teal"
+                radius="md"
+                size="sm"
+                leftSection={catRawRows.length > 0 ? <IconCheck size={14} /> : <IconUpload size={14} />}
+                onClick={() => catFileRef.current?.click()}
+              >
+                {catRawRows.length > 0 ? `Category (${catRawRows.length})` : 'Category File'}
+              </Button>
+            </Grid.Col>
+
+            {/* Customers file */}
+            <Grid.Col span={4}>
+              <input type="file" accept=".xlsx,.xls" ref={custFileRef} style={{ display: 'none' }}
+                onChange={async (e) => {
+                  const f = e.target.files[0];
+                  if (!f) return;
+                  try {
+                    const custRows = await handleCustFile(f);
+                    buildImportPreview(catRawRows, custRows, rateRawRows);
+                  } catch (err) {
+                    notifications.show({ color: 'red', title: 'Parse error', message: err.message });
+                  }
+                }}
+              />
+              <Button
+                fullWidth
+                variant={custRawRows.length > 0 ? 'filled' : 'default'}
+                color="blue"
+                radius="md"
+                size="sm"
+                leftSection={custRawRows.length > 0 ? <IconCheck size={14} /> : <IconUpload size={14} />}
+                onClick={() => custFileRef.current?.click()}
+              >
+                {custRawRows.length > 0 ? `Customers (${custRawRows.length})` : 'Customers File'}
+              </Button>
+            </Grid.Col>
+
+            {/* milksales_rate file */}
+            <Grid.Col span={4}>
+              <input type="file" accept=".xlsx,.xls" ref={rateFileRef} style={{ display: 'none' }}
+                onChange={async (e) => {
+                  const f = e.target.files[0];
+                  if (!f) return;
+                  try {
+                    const rateRows = await handleRateFile(f);
+                    buildImportPreview(catRawRows, custRawRows, rateRows);
+                  } catch (err) {
+                    notifications.show({ color: 'red', title: 'Parse error', message: err.message });
+                  }
+                }}
+              />
+              <Button
+                fullWidth
+                variant={rateRawRows.length > 0 ? 'filled' : 'default'}
+                color="indigo"
+                radius="md"
+                size="sm"
+                leftSection={rateRawRows.length > 0 ? <IconCheck size={14} /> : <IconUpload size={14} />}
+                onClick={() => rateFileRef.current?.click()}
+              >
+                {rateRawRows.length > 0 ? `Rates (${rateRawRows.length} rows)` : 'milksales_rate File *'}
+              </Button>
+            </Grid.Col>
+          </Grid>
+
+          {/* ─ Preview table ─ */}
+          {importPreview.length > 0 && (
+            <>
+              <Divider label={`Preview — ${importPreview.length} rows`} labelPosition="left" />
+
+              {/* Stats badges */}
+              <Group gap="xs">
+                <Badge color="green" variant="light">
+                  {importPreview.filter(r => r._matched).length} matched
+                </Badge>
+                <Badge color="orange" variant="light">
+                  {importPreview.filter(r => !r._matched).length} unmatched
+                </Badge>
+                <Badge color="blue" variant="light">
+                  {importPreview.filter(r => r.salesItem === 'Credit Sales').length} Credit
+                </Badge>
+                <Badge color="teal" variant="light">
+                  {importPreview.filter(r => r.salesItem === 'Local Sales').length} Local
+                </Badge>
+                <Badge color="grape" variant="light">
+                  {importPreview.filter(r => r.salesItem === 'Sample Sales').length} Sample
+                </Badge>
+              </Group>
+
+              {catRawRows.length === 0 && (
+                <Alert color="yellow" icon={<IconAlertCircle size={16} />} radius="md">
+                  Category file not uploaded — all rows will be imported as <b>Credit Sales</b>.
+                </Alert>
+              )}
+
+              <ScrollArea h={260} type="auto">
+                <Table fz="xs" withTableBorder withColumnBorders striped>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Cust ID</Table.Th>
+                      <Table.Th>Name</Table.Th>
+                      <Table.Th>Category</Table.Th>
+                      <Table.Th>Sales Item</Table.Th>
+                      <Table.Th>Rate (₹)</Table.Th>
+                      <Table.Th>W.E.F Date</Table.Th>
+                      <Table.Th>Match</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {importPreview.map((r, i) => (
+                      <Table.Tr key={i}>
+                        <Table.Td c="dimmed">{r.custId}</Table.Td>
+                        <Table.Td fw={600} c={r._matched ? 'dark' : 'red'}>{r.custName}</Table.Td>
+                        <Table.Td c="dimmed">{r.catName}</Table.Td>
+                        <Table.Td>
+                          <Badge
+                            size="xs"
+                            color={r.salesItem === 'Credit Sales' ? 'orange' : r.salesItem === 'Sample Sales' ? 'grape' : 'teal'}
+                            variant="light"
+                          >
+                            {r.salesItem}
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td fw={600} c="green">₹{Number(r.rate).toFixed(2)}</Table.Td>
+                        <Table.Td>
+                          {r.wefDate
+                            ? new Date(r.wefDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                            : <Text c="red" size="xs">missing</Text>
+                          }
+                        </Table.Td>
+                        <Table.Td>
+                          {r._matched
+                            ? <Badge size="xs" color="green" variant="dot">Found</Badge>
+                            : <Badge size="xs" color="gray" variant="dot">Not in DB</Badge>
+                          }
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </ScrollArea>
+            </>
+          )}
+
+          {/* ─ Import result ─ */}
+          {importStats && (
+            <Alert color="green" icon={<IconCheck size={16} />} radius="md" title="Import Complete">
+              <List size="sm">
+                <List.Item>{importStats.created} rate(s) created</List.Item>
+                <List.Item>{importStats.skipped} duplicate(s) skipped</List.Item>
+                {importStats.errors?.length > 0 && (
+                  <List.Item c="red">{importStats.errors.length} error(s) — check console</List.Item>
+                )}
+              </List>
+            </Alert>
+          )}
+
+          {importLoading && <Progress value={100} animated color="indigo" radius="md" />}
+
+          <Divider />
+          <Group justify="flex-end" gap="sm">
+            <Button variant="default" radius="md" onClick={() => { setImportOpen(false); resetImport(); }}>
+              Close
+            </Button>
+            <Button
+              color="indigo"
+              radius="md"
+              loading={importLoading}
+              disabled={rateRawRows.length === 0}
+              leftSection={<IconFileImport size={15} />}
+              onClick={handleImportSubmit}
+            >
+              Import {importPreview.length > 0 ? `(${importPreview.length} rows)` : ''}
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       {/* ══════════════════════════════════════════════════════════
            ADD / EDIT MODAL

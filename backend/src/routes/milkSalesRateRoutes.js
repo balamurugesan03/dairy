@@ -5,7 +5,8 @@ import {
   getRateHistory,
   createMilkSalesRate,
   updateMilkSalesRate,
-  deleteMilkSalesRate
+  deleteMilkSalesRate,
+  bulkImportMilkSalesRates
 } from '../controllers/milkSalesRateController.js';
 
 const router = express.Router();
@@ -24,6 +25,9 @@ router.post('/', createMilkSalesRate);
 
 // PUT update existing rate
 router.put('/:id', updateMilkSalesRate);
+
+// POST bulk import rates from OpenLyssa
+router.post('/bulk-import', bulkImportMilkSalesRates);
 
 // DELETE rate entry
 router.delete('/:id', deleteMilkSalesRate);

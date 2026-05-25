@@ -145,6 +145,36 @@ export const updateMilkSalesRate = async (req, res) => {
 };
 
 // ════════════════════════════════════════════════════════════════
+//  BULK IMPORT (OpenLyssa milksales_rate + customers + category)
+// ════════════════════════════════════════════════════════════════
+export const bulkImportMilkSalesRates = async (req, res) => {
+  try {
+    const { rates } = req.body;
+    if (!Array.isArray(rates) || rates.length === 0) {
+      return res.status(400).json({ success: false, message: 'Rates array is required' });
+    }
+    let created = 0, skipped = 0;
+    const errors = [];
+    for (let i = 0; i < rates.length; i++) {
+      const r = rates[i];
+      try {
+        const doc = { ...r, companyId: req.companyId };
+        if (!doc.partyId)   delete doc.partyId;
+        if (!doc.partyName) delete doc.partyName;
+        await MilkSalesRate.create(doc);
+        created++;
+      } catch (err) {
+        if (err.code === 11000) skipped++;
+        else errors.push({ row: i + 1, message: err.message });
+      }
+    }
+    res.json({ success: true, data: { created, skipped, errors } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ════════════════════════════════════════════════════════════════
 //  DELETE
 // ════════════════════════════════════════════════════════════════
 export const deleteMilkSalesRate = async (req, res) => {

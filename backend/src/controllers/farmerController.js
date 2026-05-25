@@ -769,10 +769,18 @@ export const bulkImportFarmers = async (req, res) => {
           if (farmerData.resolutionDate)
             existingFarmer.financialDetails.resolutionDate = new Date(farmerData.resolutionDate);
 
+          // Bank details (from Linzaa or other imports that supply them)
+          if (!existingFarmer.bankDetails) existingFarmer.bankDetails = {};
+          if (farmerData.bankName)      existingFarmer.bankDetails.bankName      = farmerData.bankName;
+          if (farmerData.bankBranch)    existingFarmer.bankDetails.branch        = farmerData.bankBranch;
+          if (farmerData.ifsc)          existingFarmer.bankDetails.ifsc          = farmerData.ifsc;
+          if (farmerData.accountNumber) existingFarmer.bankDetails.accountNumber = farmerData.accountNumber;
+
           // Mark nested objects modified so Mongoose saves all changes
           existingFarmer.markModified('personalDetails');
           existingFarmer.markModified('address');
           existingFarmer.markModified('financialDetails');
+          existingFarmer.markModified('bankDetails');
 
           await existingFarmer.save();
 
@@ -822,6 +830,12 @@ export const bulkImportFarmers = async (req, res) => {
               shareValue:     (Number(farmerData.totalShares) || 0) * 10,
               resolutionNo:   farmerData.resolutionNo   || undefined,
               resolutionDate: farmerData.resolutionDate ? new Date(farmerData.resolutionDate) : undefined,
+            },
+            bankDetails: {
+              bankName:      farmerData.bankName      || undefined,
+              branch:        farmerData.bankBranch    || undefined,
+              ifsc:          farmerData.ifsc          || undefined,
+              accountNumber: farmerData.accountNumber || undefined,
             },
             status:    'Active',
             companyId: req.companyId

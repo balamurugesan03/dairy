@@ -289,6 +289,7 @@ const FarmerManagement = () => {
         : [];
       const isOpenLyssa = firstKeys.includes('pro_name') || firstKeys.includes('producer_id');
       const isZibitt    = !isOpenLyssa && (firstKeys.includes('supplier_no') || firstKeys.includes('supplier_id'));
+      const isLinzaa    = !isOpenLyssa && !isZibitt && firstKeys.includes('nos') && firstKeys.includes('mcast');
 
       // Handles: null, '0000-00-00', '########', Excel serials, DD-MM-YYYY, ISO
       const parseDate = (val) => {
@@ -319,7 +320,8 @@ const FarmerManagement = () => {
       const cleanStr = (val) => {
         if (!val) return undefined;
         const s = String(val).trim();
-        return s === '' || s === '0' ? undefined : s;
+        if (s === '' || s === '0' || s.toUpperCase() === 'NULL' || s === 'undefined') return undefined;
+        return s;
       };
 
       const ageFromDob = (dob) => {
@@ -369,6 +371,39 @@ const FarmerManagement = () => {
             totalShares:     Number(r['mem_total_share_nos']) || undefined,
             resolutionNo:    cleanStr(r['res_no'] || r['resolution_no'] || r['mem_resolution_no']),
             resolutionDate:  parseDate(r['res_date'] || r['resolution_date'] || r['mem_resolution_date']),
+          };
+        }
+        if (isLinzaa) {
+          const r = Object.fromEntries(
+            Object.entries(row).map(([k, v]) => [k.toLowerCase().trim(), v])
+          );
+          const isMember = Number(r['status']) === 1;
+          const pinRaw   = String(r['pin'] || '').replace(/\D/g, '');
+          const mfVal    = Number(r['mf']);
+          return {
+            farmerNumber:    String(r['nos'] || '').trim(),
+            memberId:        isMember ? (cleanStr(r['nonnos']) || cleanStr(r['nos'])) : null,
+            isMembership:    isMember,
+            name:            String(r['name'] || '').trim(),
+            phone:           cleanPhone(r['phone']),
+            gender:          mfVal === 1 ? 'Male' : mfVal === 2 ? 'Female' : undefined,
+            dob:             parseDate(r['dob']),
+            age:             Number(r['age']) > 0 ? Number(r['age']) : undefined,
+            caste:           cleanStr(r['mcast']),
+            nomineeName:     cleanStr(r['nominee']),
+            nomineeRelation: cleanStr(r['relation']),
+            houseName:       cleanStr(r['house']),
+            place:           cleanStr(r['place']),
+            post:            cleanStr(r['post']),
+            pin:             pinRaw.length === 6 ? pinRaw : undefined,
+            admissionDate:   parseDate(r['joiningdate']),
+            membershipDate:  isMember ? parseDate(r['membershipdate']) : undefined,
+            totalShares:     Number(r['share']) > 0 ? Number(r['share']) : undefined,
+            admissionFee:    Number(r['amount']) || 0,
+            bankName:        cleanStr(r['bank']),
+            bankBranch:      cleanStr(r['branch']),
+            ifsc:            cleanStr(r['ifsc']),
+            accountNumber:   cleanStr(r['account']),
           };
         }
         if (isZibitt) {

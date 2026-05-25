@@ -88,12 +88,12 @@ const createLoanDisbursementVoucher = async (loan, companyId) => {
   let paymentLedger = null;
 
   if (isCash) {
-    paymentLedger = await Ledger.findOne({ ledgerType: 'Cash', status: 'Active', companyId });
+    paymentLedger = await Ledger.findOne({ ledgerType: { $in: ['Cash', 'Cash in Hand'] }, status: 'Active', companyId });
   } else if (loan.bankLedgerId) {
     paymentLedger = await Ledger.findById(loan.bankLedgerId);
   } else {
     // Fallback: first active Bank ledger
-    paymentLedger = await Ledger.findOne({ ledgerType: 'Bank', status: 'Active', companyId });
+    paymentLedger = await Ledger.findOne({ ledgerType: { $in: ['Bank', 'Bank Accounts'] }, status: 'Active', companyId });
   }
 
   if (!paymentLedger) throw new Error('Payment ledger not found. Please ensure a Cash or Bank ledger exists.');
@@ -113,7 +113,7 @@ const createLoanDisbursementVoucher = async (loan, companyId) => {
     },
   ];
 
-  const voucherNumber = await generateVoucherNumber('Payment');
+  const voucherNumber = await generateVoucherNumber('Payment', companyId);
 
   const voucher = new Voucher({
     voucherType: 'Payment',
@@ -124,12 +124,12 @@ const createLoanDisbursementVoucher = async (loan, companyId) => {
     totalDebit: loan.principalAmount,
     totalCredit: loan.principalAmount,
     narration: `Farmer Loan Disbursement — ${loan.loanType} — ${loan.loanNumber}`,
-    referenceType: isCash ? 'Loan' : 'BankTransfer',
+    referenceType: isCash ? 'LoanDisbursal' : 'BankTransfer',
     referenceId: loan._id,
   });
 
   await voucher.save();
-  await updateLedgerBalances(entries);
+  await updateLedgerBalances(entries, null, companyId);
 
   return voucher;
 };
@@ -561,7 +561,7 @@ export const getLoanTypes = async (req, res) => {
   try {
     const items = await EarningDeduction.find({
       companyId: req.userCompany,
-      category: 'LOAN_RECOVERY',
+      category: { $in: ['LOAN_RECOVERY', 'DEPOSIT_SCHEME'] },
       active: true,
     }).sort({ name: 1 }).select('name shortName');
 
