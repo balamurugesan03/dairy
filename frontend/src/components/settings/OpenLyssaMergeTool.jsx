@@ -1765,6 +1765,8 @@ const LinZAMilkPurchaseMergeSection = () => {
           // memberNos = member register serial (Nos column) — the "correct" Nos for ERP
           const info  = { name, house, place, phone, memberNos: nosVal };
           if (nonNosVal !== null && !byNonNos.has(nonNosVal)) byNonNos.set(nonNosVal, info);
+          // If Nos was corrected in member file, treat it as NonNos too for lookup
+          if (nosVal    !== null && !byNonNos.has(nosVal))    byNonNos.set(nosVal,    info);
           if (nosVal    !== null && !byNos.has(nosVal))       byNos.set(nosVal,    info);
         });
       }
