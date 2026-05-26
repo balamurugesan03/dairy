@@ -289,6 +289,90 @@ export const zibittRawImportCollections = async (req, res) => {
   }
 };
 
+// ── LinZA IMPORT (Merged OpenLyssa export: Nos/BillDate/Shift/Ltr/Fat/Clr/Snf/Rate/Incent/Amt) ──
+export const linzaImportCollections = async (req, res) => {
+  try {
+    const { records } = req.body;
+    if (!Array.isArray(records) || records.length === 0)
+      return res.status(400).json({ success: false, message: 'No records provided' });
+
+    const companyId = req.companyId;
+
+    const allFarmers = await Farmer.find({ companyId }, 'farmerNumber memberId personalDetails.name _id').lean();
+    const farmerMap = {};
+    for (const f of allFarmers) {
+      if (f.farmerNumber) farmerMap[String(f.farmerNumber)] = { id: f._id, name: f.personalDetails?.name || '' };
+    }
+    for (const f of allFarmers) {
+      if (f.memberId && !farmerMap[String(f.memberId)])
+        farmerMap[String(f.memberId)] = { id: f._id, name: f.personalDetails?.name || '' };
+    }
+
+    const parseLinZADate = (val) => {
+      if (!val) return new Date();
+      if (val instanceof Date) return isNaN(val.getTime()) ? new Date() : val;
+      const str = String(val).trim();
+      const m = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+      if (m) return new Date(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`);
+      const d = new Date(str);
+      return isNaN(d.getTime()) ? new Date() : d;
+    };
+
+    const docs = [];
+    const unmatched = [];
+
+    for (const row of records) {
+      const nos = String(row.Nos ?? row.nos ?? '').trim();
+      const fm = farmerMap[nos];
+      if (!fm && nos) unmatched.push(nos);
+
+      docs.push({
+        billNo:       String(row.BillNo ?? row.billno ?? `LNZ-${nos}`),
+        date:         parseLinZADate(row.BillDate ?? row.billdate),
+        shift:        parseShift(row),
+        farmer:       fm ? fm.id : null,
+        farmerNumber: nos,
+        farmerName:   fm ? fm.name : String(row.Name ?? ''),
+        qty:          Number(row.Ltr    ?? row.ltr    ?? row.qty    ?? 0) || 0,
+        fat:          Number(row.Fat    ?? row.fat    ?? 0),
+        clr:          Number(row.Clr    ?? row.clr    ?? 0),
+        snf:          Number(row.Snf    ?? row.snf    ?? 0),
+        rate:         Number(row.Rate   ?? row.rate   ?? 0),
+        incentive:    Number(row.Incent ?? row.incent ?? row.incentive ?? 0),
+        amount:       Number(row.Amt    ?? row.amt    ?? row.Amount  ?? 0),
+        companyId,
+      });
+    }
+
+    if (!docs.length)
+      return res.status(400).json({ success: false, message: 'No records to import' });
+
+    const CHUNK = 1000;
+    let inserted = 0;
+    for (let i = 0; i < docs.length; i += CHUNK) {
+      try {
+        const result = await MilkCollection.insertMany(docs.slice(i, i + CHUNK), { ordered: false });
+        inserted += result.length;
+      } catch (err) {
+        if (err.name === 'MongoBulkWriteError' || err.code === 11000) inserted += err.result?.nInserted ?? 0;
+        else throw err;
+      }
+    }
+
+    await postBulkMilkPurchaseVouchers(docs, companyId);
+
+    const uniqueUnmatched = [...new Set(unmatched)];
+    const dupSkipped = docs.length - inserted;
+    const msg = uniqueUnmatched.length
+      ? `${inserted} imported (${uniqueUnmatched.length} Nos not found: ${uniqueUnmatched.slice(0, 5).join(', ')}${uniqueUnmatched.length > 5 ? '…' : ''})`
+      : `${inserted} records imported`;
+
+    res.status(201).json({ success: true, data: { inserted, skipped: dupSkipped, unmatchedFarmers: uniqueUnmatched.length }, message: msg });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
 // ── BULK IMPORT  (Zibitt DailyCollection / CSV — no accounting vouchers) ──────
 export const bulkImportCollections = async (req, res) => {
   try {

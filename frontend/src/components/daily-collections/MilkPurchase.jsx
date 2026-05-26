@@ -274,6 +274,7 @@ const MilkPurchase = () => {
   const [showHistory,    setShowHistory]    = useState(false);  // search bar toggle
   const [importOpen,     setImportOpen]     = useState(false);
   const [rawImportOpen,  setRawImportOpen]  = useState(false);
+  const [linzaImportOpen, setLinzaImportOpen] = useState(false);
   const [filterMonth,    setFilterMonth]    = useState(String(new Date().getMonth() + 1));
   const [filterYear,     setFilterYear]     = useState(String(new Date().getFullYear()));
   const [monthMode,      setMonthMode]      = useState(false);  // true = showing month range, false = today's date
@@ -1378,6 +1379,24 @@ const MilkPurchase = () => {
     loadMonthEntries(filterMonth, filterYear);
   };
 
+  // LinZA import — frontend parses Excel (from OpenLyssa merge tool), backend looks up by Nos
+  const handleLinZAImport = async (rawRows) => {
+    const CHUNK = 500;
+    let totalInserted = 0, totalSkipped = 0;
+    for (let i = 0; i < rawRows.length; i += CHUNK) {
+      const batch = rawRows.slice(i, i + CHUNK);
+      const res = await milkCollectionAPI.linzaImport(batch);
+      totalInserted += res?.data?.inserted ?? 0;
+      totalSkipped  += res?.data?.skipped  ?? 0;
+    }
+    notifications.show({
+      color: totalSkipped ? 'yellow' : 'teal',
+      message: `${totalInserted} imported${totalSkipped ? `, ${totalSkipped} skipped` : ''}`,
+      autoClose: 4000
+    });
+    loadMonthEntries(filterMonth, filterYear);
+  };
+
   // ── Keyboard ──────────────────────────────────────────────────────────────
   const handleMemberKeyDown = (e) => {
     if (e.key === 'Enter') {
@@ -2104,6 +2123,12 @@ const MilkPurchase = () => {
                 style={{ background: '#a21caf', border: '1px solid #e879f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Import DB
               </Button>
+              {/* IMPORT LinZA */}
+              <Button leftSection={<IconUpload size={12} />} onClick={() => setLinzaImportOpen(true)}
+                size="compact-xs" radius="sm"
+                style={{ background: '#0e7490', border: '1px solid #67e8f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                Import LinZA
+              </Button>
 
               {/* WHATSAPP BULK SEND — only when WA mode enabled and connected */}
               {cpMode.includes('WhatsApp') && waStatus.connected && (
@@ -2705,6 +2730,16 @@ const MilkPurchase = () => {
         onImport={handleZibittRawImportCollection}
         entityType="Milk Purchase (Zibitt DB — producer_id/qty/fat/rate/amount)"
         requiredFields={['producer_id', 'qty', 'fat', 'rate', 'amount']}
+        maxFileSizeMB={50}
+      />
+
+      {/* ── LinZA Import Modal ────────────────────────────────────────────── */}
+      <ImportModal
+        isOpen={linzaImportOpen}
+        onClose={() => setLinzaImportOpen(false)}
+        onImport={handleLinZAImport}
+        entityType="Milk Purchase (LinZA — Nos/BillDate/Shift/Ltr/Fat/Clr/Snf/Rate/Incent/Amt)"
+        requiredFields={['Nos', 'Ltr']}
         maxFileSizeMB={50}
       />
 

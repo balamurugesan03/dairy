@@ -413,6 +413,7 @@ export const milkCollectionAPI = {
   delete: (id) => api.delete(`/milk-collections/${id}`).then(res => res.data).catch(handleError),
   bulkImport:      (records) => api.post('/milk-collections/bulk-import',       { records }).then(res => res.data).catch(handleError),
   zibittRawImport: (records) => api.post('/milk-collections/zibitt-raw-import', { records }).then(res => res.data).catch(handleError),
+  linzaImport:     (records) => api.post('/milk-collections/linza-import',      { records }).then(res => res.data).catch(handleError),
   fileImport: (file, onUploadProgress) => {
     const form = new FormData();
     form.append('file', file);

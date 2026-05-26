@@ -81,6 +81,13 @@ const findRowVal = (row, ...candidates) => {
   return null;
 };
 
+// Normalize a Nos/NonNos value to a number, trimming whitespace (VALUE+TRIM equivalent)
+const normalizeNos = (v) => {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(String(v).trim());
+  return isNaN(n) || n <= 0 ? null : n;
+};
+
 // Detect if a sheet's rows look like mc_proc_master, mc_proc_detail, or flat (combined)
 const detectSheetType = (rows) => {
   if (!rows.length) return null;
@@ -1665,6 +1672,395 @@ const PartyConvertSection = () => {
   );
 };
 
+// ─── LINZA MILK PURCHASE MERGE SECTION ────────────────────────────────────
+// File 1: LinZA milk purchase bills  (Billno, Nos, FnYear, Billdate, shift, Fat, Clr, Snf, Rate, Ltr, Incent, Amt…)
+// File 2: Member master              (Nos/NonNos, Name, House, Place, phone…)
+// Logic : match bill Nos → member NonNos (then Nos as fallback) — INDEX/MATCH equivalent
+
+const LinZAMilkPurchaseMergeSection = () => {
+  const [milkFile,     setMilkFile]     = useState(null);
+  const [memberFiles,  setMemberFiles]  = useState([]);   // multiple member master files
+  const [fallbackDateStr, setFallbackDateStr] = useState('');
+  const [availableYears,  setAvailableYears]  = useState([]);   // [[year, count], …]
+  const [selectedYears,   setSelectedYears]   = useState(new Set());
+  const [status, setStatus] = useState(null);
+  const [result, setResult] = useState(null);
+
+  const resetMilk   = () => { setMilkFile(null); setStatus(null); setResult(null); setAvailableYears([]); setSelectedYears(new Set()); };
+  const resetMember = () => { setMemberFiles([]); setStatus(null); setResult(null); };
+  const reset       = () => { resetMilk(); resetMember(); setFallbackDateStr(''); };
+
+  const toggleYear = (y) => setSelectedYears(prev => {
+    const next = new Set(prev);
+    next.has(y) ? next.delete(y) : next.add(y);
+    return next;
+  });
+
+  // Scan FnYear values from milk file so user can filter by financial year
+  const handleScanYears = async () => {
+    if (!milkFile) return;
+    setStatus('scanning'); setAvailableYears([]); setSelectedYears(new Set()); setResult(null);
+    try {
+      const { sheets } = await readFileSheets(milkFile);
+      const yearCounts = new Map();
+      for (const rows of Object.values(sheets)) {
+        rows.forEach(row => {
+          const fy = Number(getPartyColVal(row, 'FnYear', 'fnyear', 'fn_year', 'year', 'financial_year'));
+          if (!isNaN(fy) && fy > 1990 && fy < 2100) {
+            yearCounts.set(fy, (yearCounts.get(fy) ?? 0) + 1);
+          }
+        });
+      }
+      if (!yearCounts.size) {
+        notifications.show({ title: 'No FnYear column', message: 'All rows will be included — no year filtering', color: 'orange' });
+        setStatus('ready'); return;
+      }
+      const sorted = [...yearCounts.entries()].sort((a, b) => a[0] - b[0]);
+      setAvailableYears(sorted);
+      setSelectedYears(new Set(sorted.map(([y]) => y)));
+      setStatus('ready');
+    } catch (err) {
+      setStatus('error');
+      notifications.show({ title: 'Scan Error', message: err.message, color: 'red' });
+    }
+  };
+
+  const handleMerge = async () => {
+    if (!milkFile || !memberFiles.length) {
+      notifications.show({ title: 'Missing Files', message: 'Upload milk purchase file and at least one member master file', color: 'orange' });
+      return;
+    }
+    setStatus('processing'); setResult(null);
+    try {
+      const [milkResult, ...memberResults] = await Promise.all([
+        readFileSheets(milkFile),
+        ...memberFiles.map(f => readFileSheets(f)),
+      ]);
+      const milkSheets = milkResult.sheets;
+
+      // Collect all milk rows
+      const milkRows = [];
+      for (const rows of Object.values(milkSheets)) {
+        if (rows.length) rows.forEach(r => milkRows.push(r));
+      }
+      if (!milkRows.length) {
+        notifications.show({ title: 'Empty Milk File', message: 'No rows found', color: 'red' });
+        setStatus(null); return;
+      }
+
+      // Build two lookup maps from ALL member master files combined:
+      //   byNonNos — keyed on NonNos (LinZA farmer number, matches milk bill Nos)
+      //   byNos    — keyed on Nos    (member register number, fallback)
+      const byNonNos = new Map();
+      const byNos    = new Map();
+      for (const { sheets: memberSheets } of memberResults) {
+      for (const rows of Object.values(memberSheets)) {
+        rows.forEach(row => {
+          const nosVal    = normalizeNos(getPartyColVal(row, 'Nos',    'nos',    'no',    'sl no'));
+          const nonNosVal = normalizeNos(getPartyColVal(row, 'NonNos', 'nonnos', 'non_nos', 'nonno'));
+          const name  = String(getPartyColVal(row, 'Name', 'name', 'CreditorName') ?? '').trim();
+          const house = String(getPartyColVal(row, 'House', 'house') ?? '').trim();
+          const place = String(getPartyColVal(row, 'Place', 'place') ?? '').trim();
+          const phone = String(getPartyColVal(row, 'phone', 'Phone', 'mobile', 'Mobile') ?? '').trim();
+          // memberNos = member register serial (Nos column) — the "correct" Nos for ERP
+          const info  = { name, house, place, phone, memberNos: nosVal };
+          if (nonNosVal !== null && !byNonNos.has(nonNosVal)) byNonNos.set(nonNosVal, info);
+          if (nosVal    !== null && !byNos.has(nosVal))       byNos.set(nosVal,    info);
+        });
+      }
+      }
+      if (!byNonNos.size && !byNos.size) {
+        notifications.show({ title: 'No Member Data', message: 'Member master must have Nos/NonNos + Name columns', color: 'red' });
+        setStatus(null); return;
+      }
+
+      // Try NonNos map first (correct match for milk bill Nos), then Nos map as fallback
+      const lookupMember = (nosKey) => byNonNos.get(nosKey) ?? byNos.get(nosKey) ?? null;
+
+      const fallback = parseFallbackDateStr(fallbackDateStr);
+      const merged   = [];
+      let matchedCount = 0, noDateCount = 0, skippedYear = 0;
+      const unmatchedNos = new Set();
+
+      milkRows.forEach((row) => {
+        // Year filter (skip if FnYear present and not selected)
+        if (availableYears.length > 0 && selectedYears.size > 0) {
+          const fy = Number(getPartyColVal(row, 'FnYear', 'fnyear', 'fn_year', 'year'));
+          if (!isNaN(fy) && fy > 1990 && !selectedYears.has(fy)) { skippedYear++; return; }
+        }
+
+        // Nos lookup — bill's Nos matches member's NonNos
+        const nosRaw = getPartyColVal(row, 'Nos', 'nos', 'no', 'farmer_id', 'member_id', 'producer_id');
+        const nosKey = normalizeNos(nosRaw);
+        const member = nosKey !== null ? lookupMember(nosKey) : null;
+        if (member) matchedCount++;
+        else if (nosKey !== null) unmatchedNos.add(nosKey);
+
+        // Date: Billdate is often "00:00.0" in LinZA — use fallback
+        const rawDate  = getPartyColVal(row, 'Billdate', 'BillDate', 'Bill_Date', 'Date', 'date_entry', 'saledate');
+        const parsedDate = parseLinZADate(rawDate);
+        const finalDate  = parsedDate ?? fallback;
+        if (!parsedDate) noDateCount++;
+
+        const shiftRaw = String(getPartyColVal(row, 'shift', 'Shift', 'session', 'time') ?? '').trim();
+        const shiftNum = Number(shiftRaw);
+        const shift = shiftRaw.toUpperCase() === 'AM' ? 'AM'
+          : shiftRaw.toUpperCase() === 'PM' ? 'PM'
+          : shiftNum === 0 ? 'AM' : shiftNum === 1 ? 'PM'
+          : shiftRaw;
+
+        merged.push({
+          Nos:       member?.memberNos ?? nosKey ?? String(nosRaw ?? '').trim(),
+          Name:     member?.name  ?? '',
+          House:    member?.house ?? '',
+          Place:    member?.place ?? '',
+          Phone:    member?.phone ?? '',
+          BillNo:   String(getPartyColVal(row, 'Billno', 'BillNo', 'bill_no', 'billno') ?? '').trim(),
+          FnYear:   String(getPartyColVal(row, 'FnYear', 'fnyear', 'year') ?? '').trim(),
+          BillDate: finalDate ? finalDate.toLocaleDateString('en-IN') : '',
+          Shift:    shift,
+          Fat:      num(getPartyColVal(row, 'Fat',   'fat')),
+          Clr:      num(getPartyColVal(row, 'Clr',   'clr',   'CLR')),
+          Snf:      num(getPartyColVal(row, 'Snf',   'snf',   'SNF')),
+          Rate:     num(getPartyColVal(row, 'Rate',  'rate')),
+          Ltr:      num(getPartyColVal(row, 'Ltr',   'ltr',   'Litres', 'litres', 'qty')),
+          Incent:   num(getPartyColVal(row, 'Incent','incent','incentive','Incentive')),
+          Amt:      num(getPartyColVal(row, 'Amt',   'amt',   'Amount',  'amount')),
+          Vendor:   String(getPartyColVal(row, 'Vendor', 'vendor') ?? '').trim(),
+          Mode:     String(getPartyColVal(row, 'Mode',   'mode')   ?? '').trim(),
+          Water:    num(getPartyColVal(row, 'Water', 'water')),
+        });
+      });
+
+      setResult({
+        rows: merged,
+        stats: {
+          milkRows:     milkRows.length,
+          memberFiles:  memberFiles.length,
+          memberKeys:   byNonNos.size || byNos.size,
+          usedNonNos:   byNonNos.size > 0,
+          merged:       merged.length,
+          matched:      matchedCount,
+          unmatched:    unmatchedNos.size,
+          unmatchedList:[...unmatchedNos].slice(0, 20),
+          noDate:       noDateCount,
+          fallbackUsed: noDateCount > 0 && !!fallback,
+          skippedYear,
+        },
+      });
+      setStatus('done');
+      notifications.show({ title: 'Merged!', message: `${merged.length} rows — ${matchedCount} matched`, color: 'teal' });
+    } catch (err) {
+      setStatus('error');
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
+    }
+  };
+
+  const handleDownload = (subset = 'all') => {
+    if (!result?.rows?.length) return;
+    const rows = subset === 'matched' ? result.rows.filter(r => r.Name !== '') : result.rows;
+    if (!rows.length) { notifications.show({ title: 'No rows', color: 'orange' }); return; }
+    downloadExcel(rows, `linza_milkpurchase_merged_${Date.now()}.xlsx`, 'Milk Purchase');
+    notifications.show({ title: 'Downloaded', message: `${rows.length} rows`, color: 'green' });
+  };
+
+  const previewRows = result?.rows?.slice(0, 10) ?? [];
+
+  return (
+    <Paper withBorder radius="md" p="md">
+      <Group mb="md">
+        <ThemeIcon color="indigo" variant="light" size="lg">
+          <IconArrowsJoin size={20} />
+        </ThemeIcon>
+        <div>
+          <Title order={4}>LinZA Milk Purchase — Member Merge</Title>
+          <Text size="xs" c="dimmed">
+            Match bill Nos → member NonNos/Nos to attach Name (INDEX/MATCH equivalent)
+          </Text>
+        </div>
+      </Group>
+
+      <Alert icon={<IconAlertCircle size={14} />} color="indigo" variant="light" mb="md" p="xs">
+        <Text size="xs">
+          <strong>File 1</strong> — LinZA milk purchase bills (Nos, Billdate, Fat, Clr, Snf, Rate, Ltr, Amt…).&nbsp;
+          <strong>File 2</strong> — Member master (Nos, NonNos, Name, House, Place…).&nbsp;
+          Bill <em>Nos</em> is matched against member <em>NonNos</em> (LinZA farmer number) to attach the correct Name.
+        </Text>
+      </Alert>
+
+      {/* File pickers */}
+      <SimpleGrid cols={2} spacing="md" mb="md">
+        <SingleFilePicker
+          label="File 1 — LinZA Milk Purchase Bills"
+          color="indigo"
+          file={milkFile}
+          onAdd={(f) => { setMilkFile(f); setStatus(null); setResult(null); setAvailableYears([]); setSelectedYears(new Set()); }}
+          onRemove={resetMilk}
+        />
+        <FileListBox
+          label="File 2 — Member Master (Nos + NonNos + Name)"
+          color="green"
+          files={memberFiles}
+          onAdd={(picked) => { setMemberFiles(prev => [...prev, ...picked]); setStatus(null); setResult(null); }}
+          onRemove={(i) => { setMemberFiles(prev => prev.filter((_, idx) => idx !== i)); setStatus(null); setResult(null); }}
+        />
+      </SimpleGrid>
+
+      {/* Fallback date for missing Billdate */}
+      <Box mb="sm">
+        <TextInput
+          label="Fallback Date (for rows where Billdate is 00:00.0 or blank)"
+          placeholder="DD-MM-YYYY  e.g. 01-04-2022"
+          value={fallbackDateStr}
+          onChange={e => setFallbackDateStr(e.currentTarget.value)}
+          size="sm"
+          maw={300}
+          description="Applied when Billdate is missing in LinZA export"
+        />
+        {fallbackDateStr && (
+          <Text size="xs" c={parseFallbackDateStr(fallbackDateStr) ? 'green' : 'red'} mt={4}>
+            {parseFallbackDateStr(fallbackDateStr)
+              ? `Parsed: ${parseFallbackDateStr(fallbackDateStr).toLocaleDateString('en-IN')}`
+              : 'Invalid date format — use DD-MM-YYYY'}
+          </Text>
+        )}
+      </Box>
+
+      {/* Scan FnYear */}
+      <Group mb="sm">
+        <Button size="xs" variant="light" color="indigo"
+          leftSection={<IconCalendar size={14} />}
+          onClick={handleScanYears}
+          loading={status === 'scanning'}
+          disabled={!milkFile}>
+          Scan FnYears
+        </Button>
+        {(milkFile || memberFiles.length > 0 || result) && (
+          <Button variant="subtle" color="gray" size="xs" onClick={reset}>Clear</Button>
+        )}
+      </Group>
+
+      {/* Year filter */}
+      {availableYears.length > 0 && (
+        <Paper withBorder p="sm" mb="sm" radius="sm">
+          <Group mb="xs" justify="space-between">
+            <Group gap={6}>
+              <IconFilter size={14} />
+              <Text size="xs" fw={600}>Filter by FnYear</Text>
+            </Group>
+            <Group gap={6}>
+              <Button size="xs" variant="subtle" compact onClick={() => setSelectedYears(new Set(availableYears.map(([y]) => y)))}>All</Button>
+              <Button size="xs" variant="subtle" compact onClick={() => setSelectedYears(new Set())}>None</Button>
+            </Group>
+          </Group>
+          <Group gap="xs">
+            {availableYears.map(([y, count]) => (
+              <Badge key={y} size="lg" variant={selectedYears.has(y) ? 'filled' : 'outline'}
+                color="indigo" style={{ cursor: 'pointer', userSelect: 'none' }}
+                onClick={() => toggleYear(y)}>
+                FY {y} ({count.toLocaleString()})
+              </Badge>
+            ))}
+          </Group>
+          <Text size="xs" c="dimmed" mt={6}>
+            {selectedYears.size} of {availableYears.length} year{availableYears.length !== 1 ? 's' : ''} selected
+          </Text>
+        </Paper>
+      )}
+
+      {/* Merge + download buttons */}
+      <Group>
+        <Button color="indigo" leftSection={<IconArrowsJoin size={16} />}
+          onClick={handleMerge} loading={status === 'processing'}
+          disabled={!milkFile || !memberFiles.length}>
+          Merge (Match by Nos)
+        </Button>
+        {result?.rows?.length > 0 && (
+          <>
+            <Button color="green" variant="light" leftSection={<IconDownload size={16} />}
+              onClick={() => handleDownload('all')}>
+              All ({result.rows.length})
+            </Button>
+            {result.stats.unmatched > 0 && (
+              <Button color="teal" variant="light" leftSection={<IconDownload size={14} />}
+                onClick={() => handleDownload('matched')}>
+                Matched only ({result.stats.matched})
+              </Button>
+            )}
+          </>
+        )}
+      </Group>
+
+      {/* Result stats + preview */}
+      {status === 'done' && result && (
+        <Stack gap="xs" mt="md">
+          <Alert icon={<IconCircleCheck size={14} />} color="green" variant="light" p="xs">
+            <Stack gap={2}>
+              <Text size="xs">
+                Milk rows: <strong>{result.stats.milkRows}</strong> &nbsp;|&nbsp;
+                Member files: <strong>{result.stats.memberFiles}</strong> &nbsp;|&nbsp;
+                Member records: <strong>{result.stats.memberKeys}</strong>
+                {result.stats.usedNonNos && <Text span c="dimmed"> (matched via NonNos)</Text>}
+              </Text>
+              <Text size="xs" fw={700} c="green">Merged: {result.stats.merged} rows</Text>
+              <Text size="xs">Name matched: <strong>{result.stats.matched}</strong></Text>
+              {result.stats.unmatched > 0 && (
+                <Text size="xs" c="orange">
+                  Nos not found in member master: <strong>{result.stats.unmatched}</strong>
+                  {result.stats.unmatchedList.length > 0 && ` — e.g. ${result.stats.unmatchedList.join(', ')}${result.stats.unmatched > 20 ? '…' : ''}`}
+                </Text>
+              )}
+              {result.stats.noDate > 0 && (
+                <Text size="xs" c={result.stats.fallbackUsed ? 'orange' : 'red'}>
+                  Missing Billdate: {result.stats.noDate}
+                  {result.stats.fallbackUsed ? ' (fallback applied)' : ' — set Fallback Date and re-merge!'}
+                </Text>
+              )}
+              {result.stats.skippedYear > 0 && (
+                <Text size="xs" c="dimmed">Skipped by FnYear filter: {result.stats.skippedYear}</Text>
+              )}
+            </Stack>
+          </Alert>
+
+          {previewRows.length > 0 && (
+            <>
+              <Text size="xs" fw={600} c="dimmed">
+                Preview — first {previewRows.length} of {result.rows.length} rows
+              </Text>
+              <Paper withBorder radius="sm" style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                  <thead>
+                    <tr style={{ background: '#f1f3f5' }}>
+                      {Object.keys(previewRows[0]).map(col => (
+                        <th key={col} style={{ border: '1px solid #dee2e6', padding: '3px 6px', whiteSpace: 'nowrap' }}>{col}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.map((row, i) => (
+                      <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                        {Object.entries(row).map(([col, val], j) => (
+                          <td key={j} style={{ border: '1px solid #dee2e6', padding: '2px 6px',
+                            color: col === 'Name' && !val ? '#fa5252' : undefined }}>
+                            {String(val ?? '')}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Paper>
+              {result.rows.length > 10 && (
+                <Text size="xs" c="dimmed" ta="center">… and {result.rows.length - 10} more rows — Download to see all</Text>
+              )}
+            </>
+          )}
+        </Stack>
+      )}
+    </Paper>
+  );
+};
+
 // ─── Main Page ─────────────────────────────────────────────────────────────
 
 const OpenLyssaMergeTool = () => (
@@ -1681,6 +2077,7 @@ const OpenLyssaMergeTool = () => (
     <Stack gap="md">
       <PartyConvertSection />
       <LinZAMilkSalesSection />
+      <LinZAMilkPurchaseMergeSection />
       <LynzAMergeSection />
       <MilkPurchaseSection />
       <MilkSalesSection />

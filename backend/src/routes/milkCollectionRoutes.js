@@ -14,6 +14,7 @@ import {
   bulkImportCollections,
   fileUploadImportCollections,
   zibittRawImportCollections,
+  linzaImportCollections,
 } from '../controllers/milkCollectionController.js';
 
 const router = express.Router();
@@ -29,6 +30,7 @@ router.get('/farmer/:farmerNumber',        getFarmerHistory);
 router.post('/file-import',      upload.single('file'), fileUploadImportCollections);
 router.post('/bulk-import',      bulkImportCollections);
 router.post('/zibitt-raw-import', zibittRawImportCollections);
+router.post('/linza-import',      linzaImportCollections);
 
 // Main CRUD
 router.post('/',      createCollection);
