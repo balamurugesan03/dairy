@@ -300,12 +300,19 @@ export const linzaImportCollections = async (req, res) => {
 
     const allFarmers = await Farmer.find({ companyId }, 'farmerNumber memberId personalDetails.name _id').lean();
     const farmerMap = {};
+    const addToMap = (key, val) => {
+      const k = String(key).trim();
+      if (!k) return;
+      farmerMap[k] = val;
+      const numeric = String(parseInt(k, 10));
+      if (numeric !== k && numeric !== 'NaN') farmerMap[numeric] = val;
+    };
     for (const f of allFarmers) {
-      if (f.farmerNumber) farmerMap[String(f.farmerNumber)] = { id: f._id, name: f.personalDetails?.name || '' };
+      if (f.farmerNumber) addToMap(f.farmerNumber, { id: f._id, name: f.personalDetails?.name || '' });
     }
     for (const f of allFarmers) {
       if (f.memberId && !farmerMap[String(f.memberId)])
-        farmerMap[String(f.memberId)] = { id: f._id, name: f.personalDetails?.name || '' };
+        addToMap(f.memberId, { id: f._id, name: f.personalDetails?.name || '' });
     }
 
     const parseLinZADate = (val) => {
@@ -323,7 +330,8 @@ export const linzaImportCollections = async (req, res) => {
 
     for (const row of records) {
       const nos = String(row.Nos ?? row.nos ?? '').trim();
-      const fm = farmerMap[nos];
+      const nosNum = String(parseInt(nos, 10));
+      const fm = farmerMap[nos] ?? farmerMap[nosNum];
       if (!fm && nos) unmatched.push(nos);
 
       docs.push({
