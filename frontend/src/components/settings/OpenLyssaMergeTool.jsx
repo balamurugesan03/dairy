@@ -1759,11 +1759,9 @@ const LinZAMilkPurchaseMergeSection = () => {
           const nosVal    = normalizeNos(getPartyColVal(row, 'Nos',    'nos',    'no',    'sl no'));
           const nonNosVal = normalizeNos(getPartyColVal(row, 'NonNos', 'nonnos', 'non_nos', 'nonno'));
           const name  = String(getPartyColVal(row, 'Name', 'name', 'CreditorName') ?? '').trim();
-          const house = String(getPartyColVal(row, 'House', 'house') ?? '').trim();
-          const place = String(getPartyColVal(row, 'Place', 'place') ?? '').trim();
           const phone = String(getPartyColVal(row, 'phone', 'Phone', 'mobile', 'Mobile') ?? '').trim();
           // memberNos = member register serial (Nos column) — the "correct" Nos for ERP
-          const info  = { name, house, place, phone, memberNos: nosVal };
+          const info  = { name, phone, memberNos: nosVal };
           if (nonNosVal !== null && !byNonNos.has(nonNosVal)) byNonNos.set(nonNosVal, info);
           // If Nos was corrected in member file, treat it as NonNos too for lookup
           if (nosVal    !== null && !byNonNos.has(nosVal))    byNonNos.set(nosVal,    info);
@@ -1814,8 +1812,6 @@ const LinZAMilkPurchaseMergeSection = () => {
         merged.push({
           Nos:       member?.memberNos ?? nosKey ?? String(nosRaw ?? '').trim(),
           Name:     member?.name  ?? '',
-          House:    member?.house ?? '',
-          Place:    member?.place ?? '',
           Phone:    member?.phone ?? '',
           BillNo:   String(getPartyColVal(row, 'Billno', 'BillNo', 'bill_no', 'billno') ?? '').trim(),
           FnYear:   String(getPartyColVal(row, 'FnYear', 'fnyear', 'year') ?? '').trim(),
