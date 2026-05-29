@@ -1872,7 +1872,8 @@ const LinZAMilkPurchaseMergeSection = () => {
       const key = String(row.Nos);
       const ov = overrides[key];
       if (!ov?.name) return row;
-      return { ...row, Name: ov.name.trim(), Phone: ov.phone?.trim() || row.Phone };
+      const correctedNos = ov.memberNos?.trim() ? normalizeNos(ov.memberNos.trim()) ?? row.Nos : row.Nos;
+      return { ...row, Nos: correctedNos, Name: ov.name.trim(), Phone: ov.phone?.trim() || row.Phone };
     });
     const newUnmatched = [...new Set(updatedRows.filter(r => r.Name === '').map(r => r.Nos))];
     setResult(prev => ({
@@ -2074,15 +2075,22 @@ const LinZAMilkPurchaseMergeSection = () => {
                     </Text>
                     <TextInput
                       size="xs"
-                      placeholder="Member Name"
+                      placeholder="Member Name *"
                       style={{ flex: 1 }}
                       value={overrides[String(nosKey)]?.name || ''}
                       onChange={e => setOverrides(prev => ({ ...prev, [String(nosKey)]: { ...prev[String(nosKey)], name: e.target.value } }))}
                     />
                     <TextInput
                       size="xs"
-                      placeholder="Phone (optional)"
+                      placeholder="Actual Nos (e.g. 34)"
                       style={{ width: 130 }}
+                      value={overrides[String(nosKey)]?.memberNos || ''}
+                      onChange={e => setOverrides(prev => ({ ...prev, [String(nosKey)]: { ...prev[String(nosKey)], memberNos: e.target.value } }))}
+                    />
+                    <TextInput
+                      size="xs"
+                      placeholder="Phone"
+                      style={{ width: 110 }}
                       value={overrides[String(nosKey)]?.phone || ''}
                       onChange={e => setOverrides(prev => ({ ...prev, [String(nosKey)]: { ...prev[String(nosKey)], phone: e.target.value } }))}
                     />
