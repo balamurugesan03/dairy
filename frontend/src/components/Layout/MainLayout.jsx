@@ -935,7 +935,7 @@ const MainLayout = () => {
       >
         <ScrollArea h="calc(100vh - 80px)" type="auto">
           <Stack gap="xs" p="xs">
-            {menuItems.map((item) => {
+            {[...menuItems, ...rightMenuItems].map((item) => {
               if (item.children) {
                 return (
                   <Box key={item.key}>

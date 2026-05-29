@@ -81,11 +81,16 @@ const findRowVal = (row, ...candidates) => {
   return null;
 };
 
-// Normalize a Nos/NonNos value to a number, trimming whitespace (VALUE+TRIM equivalent)
+// Normalize a Nos/NonNos value for lookup.
+// Returns a positive Number for pure-numeric values, an uppercase String for alphanumeric
+// values like "E110", and null for empty/invalid entries.
 const normalizeNos = (v) => {
   if (v === null || v === undefined || v === '') return null;
-  const n = Number(String(v).trim());
-  return isNaN(n) || n <= 0 ? null : n;
+  const str = String(v).trim();
+  if (!str) return null;
+  const n = Number(str);
+  if (!isNaN(n) && n > 0) return n;          // numeric → Number key
+  return str.toUpperCase() || null;           // alphanumeric (e.g. "E110") → String key
 };
 
 // Detect if a sheet's rows look like mc_proc_master, mc_proc_detail, or flat (combined)
@@ -1753,11 +1758,15 @@ const LinZAMilkPurchaseMergeSection = () => {
       //   byNos    — keyed on Nos    (member register number, fallback)
       const byNonNos = new Map();
       const byNos    = new Map();
+      const detectedMemberCols = new Set(); // track which column names were found in member files
       for (const { sheets: memberSheets } of memberResults) {
       for (const rows of Object.values(memberSheets)) {
+        if (!rows.length) continue;
+        // Record the actual column names present in this sheet for diagnostics
+        Object.keys(rows[0]).forEach(k => detectedMemberCols.add(k));
         rows.forEach(row => {
           const nosVal    = normalizeNos(getPartyColVal(row, 'Nos',    'nos',    'no',    'sl no'));
-          const nonNosVal = normalizeNos(getPartyColVal(row, 'NonNos', 'nonnos', 'non_nos', 'nonno'));
+          const nonNosVal = normalizeNos(getPartyColVal(row, 'NonNos', 'nonnos', 'non_nos', 'nonno', 'non nos', 'linza nos', 'linzanos', 'farmer no', 'farmer_no', 'farmerno'));
           const name  = String(getPartyColVal(row, 'Name', 'name', 'CreditorName') ?? '').trim();
           const phone = String(getPartyColVal(row, 'phone', 'Phone', 'mobile', 'Mobile') ?? '').trim();
           // memberNos = member register serial (Nos column) — the "correct" Nos for ERP
@@ -1833,15 +1842,16 @@ const LinZAMilkPurchaseMergeSection = () => {
       setResult({
         rows: merged,
         stats: {
-          milkRows:     milkRows.length,
-          memberFiles:  memberFiles.length,
-          memberKeys:   byNonNos.size || byNos.size,
-          usedNonNos:   byNonNos.size > 0,
-          merged:       merged.length,
-          matched:      matchedCount,
-          unmatched:    unmatchedNos.size,
-          unmatchedList:[...unmatchedNos].slice(0, 20),
-          noDate:       noDateCount,
+          milkRows:          milkRows.length,
+          memberFiles:       memberFiles.length,
+          memberKeys:        byNonNos.size || byNos.size,
+          usedNonNos:        byNonNos.size > 0,
+          merged:            merged.length,
+          matched:           matchedCount,
+          unmatched:         unmatchedNos.size,
+          unmatchedList:     [...unmatchedNos].slice(0, 20),
+          detectedMemberCols:[...detectedMemberCols],
+          noDate:            noDateCount,
           fallbackUsed: noDateCount > 0 && !!fallback,
           skippedYear,
         },
@@ -2016,6 +2026,11 @@ const LinZAMilkPurchaseMergeSection = () => {
               )}
               {result.stats.skippedYear > 0 && (
                 <Text size="xs" c="dimmed">Skipped by FnYear filter: {result.stats.skippedYear}</Text>
+              )}
+              {result.stats.detectedMemberCols?.length > 0 && (
+                <Text size="xs" c="dimmed">
+                  Member file columns: <strong>{result.stats.detectedMemberCols.join(', ')}</strong>
+                </Text>
               )}
             </Stack>
           </Alert>

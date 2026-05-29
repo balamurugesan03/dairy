@@ -1492,7 +1492,7 @@ const MilkPurchase = () => {
         .mp-header-title { display: none !important; }
         .mp-main-row { flex-direction: column !important; overflow: visible !important; }
         .mp-left-col { overflow: visible !important; min-height: 0; }
-        .mp-right-panel { display: none !important; }
+        .mp-right-panel { width: 100% !important; border-left: none !important; border-top: 2px solid #80deea !important; flex-direction: row !important; flex-wrap: wrap !important; align-items: flex-start !important; overflow-y: visible !important; }
         .mp-cards-group { flex-wrap: wrap !important; }
         .mp-cards-group > * { flex: 1 1 100% !important; min-width: 0 !important; }
         .mp-entry-inputs { flex-wrap: wrap !important; }
