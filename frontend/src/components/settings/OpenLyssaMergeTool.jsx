@@ -1683,17 +1683,18 @@ const PartyConvertSection = () => {
 // Logic : match bill Nos → member NonNos (then Nos as fallback) — INDEX/MATCH equivalent
 
 const LinZAMilkPurchaseMergeSection = () => {
-  const [milkFile,     setMilkFile]     = useState(null);
-  const [memberFiles,  setMemberFiles]  = useState([]);   // multiple member master files
-  const [fallbackDateStr, setFallbackDateStr] = useState('');
-  const [availableYears,  setAvailableYears]  = useState([]);   // [[year, count], …]
-  const [selectedYears,   setSelectedYears]   = useState(new Set());
+  const [milkFile,         setMilkFile]         = useState(null);
+  const [linzaInitFile,    setLinzaInitFile]    = useState(null);  // LinZA raw member export (Nos = LinZA numbers)
+  const [memberReportFile, setMemberReportFile] = useState(null);  // Merged member report (Nos = register serials, real names)
+  const [fallbackDateStr,  setFallbackDateStr]  = useState('');
+  const [availableYears,   setAvailableYears]   = useState([]);
+  const [selectedYears,    setSelectedYears]    = useState(new Set());
   const [status, setStatus] = useState(null);
   const [result, setResult] = useState(null);
-  const [overrides, setOverrides] = useState({}); // { [nosKey]: { name, phone } }
+  const [overrides, setOverrides] = useState({});
 
   const resetMilk   = () => { setMilkFile(null); setStatus(null); setResult(null); setAvailableYears([]); setSelectedYears(new Set()); setOverrides({}); };
-  const resetMember = () => { setMemberFiles([]); setStatus(null); setResult(null); setOverrides({}); };
+  const resetMember = () => { setLinzaInitFile(null); setMemberReportFile(null); setStatus(null); setResult(null); setOverrides({}); };
   const reset       = () => { resetMilk(); resetMember(); setFallbackDateStr(''); };
 
   const toggleYear = (y) => setSelectedYears(prev => {
@@ -1732,21 +1733,21 @@ const LinZAMilkPurchaseMergeSection = () => {
   };
 
   const handleMerge = async () => {
-    if (!milkFile || !memberFiles.length) {
-      notifications.show({ title: 'Missing Files', message: 'Upload milk purchase file and at least one member master file', color: 'orange' });
+    if (!milkFile || !linzaInitFile || !memberReportFile) {
+      notifications.show({ title: 'Missing Files', message: 'Upload all three files: Milk Purchase, LinZA Initial and Member Report', color: 'orange' });
       return;
     }
     setStatus('processing'); setResult(null);
     try {
-      const [milkResult, ...memberResults] = await Promise.all([
+      const [milkResult, initResult, reportResult] = await Promise.all([
         readFileSheets(milkFile),
-        ...memberFiles.map(f => readFileSheets(f)),
+        readFileSheets(linzaInitFile),
+        readFileSheets(memberReportFile),
       ]);
-      const milkSheets = milkResult.sheets;
 
       // Collect all milk rows
       const milkRows = [];
-      for (const rows of Object.values(milkSheets)) {
+      for (const rows of Object.values(milkResult.sheets)) {
         if (rows.length) rows.forEach(r => milkRows.push(r));
       }
       if (!milkRows.length) {
@@ -1754,38 +1755,44 @@ const LinZAMilkPurchaseMergeSection = () => {
         setStatus(null); return;
       }
 
-      // Build two lookup maps from ALL member master files combined:
-      //   byNonNos — keyed on NonNos (LinZA farmer number, matches milk bill Nos)
-      //   byNos    — keyed on Nos    (member register number, fallback)
-      const byNonNos = new Map();
-      const byNos    = new Map();
-      const detectedMemberCols = new Set(); // track which column names were found in member files
-      for (const { sheets: memberSheets } of memberResults) {
-      for (const rows of Object.values(memberSheets)) {
-        if (!rows.length) continue;
-        // Record the actual column names present in this sheet for diagnostics
-        Object.keys(rows[0]).forEach(k => detectedMemberCols.add(k));
-        rows.forEach(row => {
-          const nosVal    = normalizeNos(getPartyColVal(row, 'Nos',    'nos',    'no',    'sl no'));
-          const nonNosVal = normalizeNos(getPartyColVal(row, 'NonNos', 'nonnos', 'non_nos', 'nonno', 'non nos', 'linza nos', 'linzanos', 'farmer no', 'farmer_no', 'farmerno'));
-          const name  = String(getPartyColVal(row, 'Name', 'name', 'CreditorName') ?? '').trim();
-          const phone = String(getPartyColVal(row, 'phone', 'Phone', 'mobile', 'Mobile') ?? '').trim();
-          // memberNos = member register serial (Nos column) — the "correct" Nos for ERP
-          const info  = { name, phone, memberNos: nosVal };
-          if (nonNosVal !== null && !byNonNos.has(nonNosVal)) byNonNos.set(nonNosVal, info);
-          // If Nos was corrected in member file, treat it as NonNos too for lookup
-          if (nosVal    !== null && !byNonNos.has(nosVal))    byNonNos.set(nosVal,    info);
-          if (nosVal    !== null && !byNos.has(nosVal))       byNos.set(nosVal,    info);
-        });
-      }
-      }
-      if (!byNonNos.size && !byNos.size) {
-        notifications.show({ title: 'No Member Data', message: 'Member master must have Nos/NonNos + Name columns', color: 'red' });
+      // Collect LinZA initial rows and member report rows
+      const initRows   = Object.values(initResult.sheets).flatMap(r => r);
+      const reportRows = Object.values(reportResult.sheets).flatMap(r => r);
+
+      const detectedMemberCols = new Set();
+      if (reportRows.length) Object.keys(reportRows[0]).forEach(k => detectedMemberCols.add(k));
+
+      // Sort both files by their Nos column ascending — positional pairing gives correct mapping
+      // even when NonNos column has wrong values in the member report file.
+      const sortByNos = (rows) =>
+        rows
+          .map(row => ({ row, nos: normalizeNos(getPartyColVal(row, 'Nos', 'nos', 'no', 'sl no')) }))
+          .filter(x => x.nos !== null)
+          .sort((a, b) => {
+            if (typeof a.nos === 'number' && typeof b.nos === 'number') return a.nos - b.nos;
+            return String(a.nos) < String(b.nos) ? -1 : String(a.nos) > String(b.nos) ? 1 : 0;
+          });
+
+      const sortedInit   = sortByNos(initRows);   // LinZA Nos values (match milk bill Nos)
+      const sortedReport = sortByNos(reportRows); // member register serials + real names
+
+      // Build lookup: LinZA Nos[i] → { name, phone, memberNos } from report[i]
+      const lookupMap = new Map();
+      sortedInit.forEach((initItem, i) => {
+        const reportItem = sortedReport[i];
+        if (!reportItem) return;
+        const name      = String(getPartyColVal(reportItem.row, 'Name', 'name', 'CreditorName') ?? '').trim();
+        const phone     = String(getPartyColVal(reportItem.row, 'phone', 'Phone', 'mobile', 'Mobile') ?? '').trim();
+        const memberNos = reportItem.nos;
+        if (!lookupMap.has(initItem.nos)) lookupMap.set(initItem.nos, { name, phone, memberNos });
+      });
+
+      if (!lookupMap.size) {
+        notifications.show({ title: 'No Member Data', message: 'Could not build lookup — check that LinZA initial file has a Nos column', color: 'red' });
         setStatus(null); return;
       }
 
-      // Try NonNos map first (correct match for milk bill Nos), then Nos map as fallback
-      const lookupMember = (nosKey) => byNonNos.get(nosKey) ?? byNos.get(nosKey) ?? null;
+      const lookupMember = (nosKey) => lookupMap.get(nosKey) ?? null;
 
       const fallback = parseFallbackDateStr(fallbackDateStr);
       const merged   = [];
@@ -1844,9 +1851,9 @@ const LinZAMilkPurchaseMergeSection = () => {
         rows: merged,
         stats: {
           milkRows:          milkRows.length,
-          memberFiles:       memberFiles.length,
-          memberKeys:        byNonNos.size || byNos.size,
-          usedNonNos:        byNonNos.size > 0,
+          initRows:          sortedInit.length,
+          reportRows:        sortedReport.length,
+          memberKeys:        lookupMap.size,
           merged:            merged.length,
           matched:           matchedCount,
           unmatched:         unmatchedNos.size,
@@ -1909,21 +1916,22 @@ const LinZAMilkPurchaseMergeSection = () => {
         <div>
           <Title order={4}>LinZA Milk Purchase — Member Merge</Title>
           <Text size="xs" c="dimmed">
-            Match bill Nos → member NonNos/Nos to attach Name (INDEX/MATCH equivalent)
+            Sort LinZA initial + member report by Nos, pair positionally → attach real name (NonNos ignored)
           </Text>
         </div>
       </Group>
 
       <Alert icon={<IconAlertCircle size={14} />} color="indigo" variant="light" mb="md" p="xs">
         <Text size="xs">
-          <strong>File 1</strong> — LinZA milk purchase bills (Nos, Billdate, Fat, Clr, Snf, Rate, Ltr, Amt…).&nbsp;
-          <strong>File 2</strong> — Member master (Nos, NonNos, Name, House, Place…).&nbsp;
-          Bill <em>Nos</em> is matched against member <em>NonNos</em> (LinZA farmer number) to attach the correct Name.
+          <strong>File 1</strong> — LinZA milk purchase bills (Nos, Billdate, Fat, Clr, Snf, Rate, Ltr, Amt…).<br />
+          <strong>File 2a</strong> — LinZA initial member export (Nos = LinZA farmer numbers — same as milk bill Nos).<br />
+          <strong>File 2b</strong> — Member report / merged member file (Nos = register serials 1, 2, 30, 31… — real names).<br />
+          Both files are sorted by Nos and paired positionally — <em>NonNos column is ignored</em>.
         </Text>
       </Alert>
 
       {/* File pickers */}
-      <SimpleGrid cols={2} spacing="md" mb="md">
+      <SimpleGrid cols={3} spacing="md" mb="md">
         <SingleFilePicker
           label="File 1 — LinZA Milk Purchase Bills"
           color="indigo"
@@ -1931,12 +1939,19 @@ const LinZAMilkPurchaseMergeSection = () => {
           onAdd={(f) => { setMilkFile(f); setStatus(null); setResult(null); setAvailableYears([]); setSelectedYears(new Set()); }}
           onRemove={resetMilk}
         />
-        <FileListBox
-          label="File 2 — Member Master (Nos + NonNos + Name)"
+        <SingleFilePicker
+          label="File 2a — LinZA Initial Member File (Nos = LinZA numbers)"
+          color="cyan"
+          file={linzaInitFile}
+          onAdd={(f) => { setLinzaInitFile(f); setStatus(null); setResult(null); }}
+          onRemove={() => { setLinzaInitFile(null); setStatus(null); setResult(null); }}
+        />
+        <SingleFilePicker
+          label="File 2b — Member Report (Nos = register serials, real names)"
           color="green"
-          files={memberFiles}
-          onAdd={(picked) => { setMemberFiles(prev => [...prev, ...picked]); setStatus(null); setResult(null); }}
-          onRemove={(i) => { setMemberFiles(prev => prev.filter((_, idx) => idx !== i)); setStatus(null); setResult(null); }}
+          file={memberReportFile}
+          onAdd={(f) => { setMemberReportFile(f); setStatus(null); setResult(null); }}
+          onRemove={() => { setMemberReportFile(null); setStatus(null); setResult(null); }}
         />
       </SimpleGrid>
 
@@ -1969,7 +1984,7 @@ const LinZAMilkPurchaseMergeSection = () => {
           disabled={!milkFile}>
           Scan FnYears
         </Button>
-        {(milkFile || memberFiles.length > 0 || result) && (
+        {(milkFile || linzaInitFile || memberReportFile || result) && (
           <Button variant="subtle" color="gray" size="xs" onClick={reset}>Clear</Button>
         )}
       </Group>
@@ -2006,8 +2021,8 @@ const LinZAMilkPurchaseMergeSection = () => {
       <Group>
         <Button color="indigo" leftSection={<IconArrowsJoin size={16} />}
           onClick={handleMerge} loading={status === 'processing'}
-          disabled={!milkFile || !memberFiles.length}>
-          Merge (Match by Nos)
+          disabled={!milkFile || !linzaInitFile || !memberReportFile}>
+          Merge (Sequential Nos Pairing)
         </Button>
         {result?.rows?.length > 0 && (
           <>
@@ -2032,9 +2047,12 @@ const LinZAMilkPurchaseMergeSection = () => {
             <Stack gap={2}>
               <Text size="xs">
                 Milk rows: <strong>{result.stats.milkRows}</strong> &nbsp;|&nbsp;
-                Member files: <strong>{result.stats.memberFiles}</strong> &nbsp;|&nbsp;
-                Member records: <strong>{result.stats.memberKeys}</strong>
-                {result.stats.usedNonNos && <Text span c="dimmed"> (matched via NonNos)</Text>}
+                LinZA init: <strong>{result.stats.initRows}</strong> rows &nbsp;|&nbsp;
+                Member report: <strong>{result.stats.reportRows}</strong> rows &nbsp;|&nbsp;
+                Lookup pairs: <strong>{result.stats.memberKeys}</strong>
+                {result.stats.initRows !== result.stats.reportRows && (
+                  <Text span c="orange"> ⚠ row count mismatch</Text>
+                )}
               </Text>
               <Text size="xs" fw={700} c="green">Merged: {result.stats.merged} rows</Text>
               <Text size="xs">Name matched: <strong>{result.stats.matched}</strong></Text>
