@@ -1690,9 +1690,10 @@ const LinZAMilkPurchaseMergeSection = () => {
   const [selectedYears,   setSelectedYears]   = useState(new Set());
   const [status, setStatus] = useState(null);
   const [result, setResult] = useState(null);
+  const [overrides, setOverrides] = useState({}); // { [nosKey]: { name, phone } }
 
-  const resetMilk   = () => { setMilkFile(null); setStatus(null); setResult(null); setAvailableYears([]); setSelectedYears(new Set()); };
-  const resetMember = () => { setMemberFiles([]); setStatus(null); setResult(null); };
+  const resetMilk   = () => { setMilkFile(null); setStatus(null); setResult(null); setAvailableYears([]); setSelectedYears(new Set()); setOverrides({}); };
+  const resetMember = () => { setMemberFiles([]); setStatus(null); setResult(null); setOverrides({}); };
   const reset       = () => { resetMilk(); resetMember(); setFallbackDateStr(''); };
 
   const toggleYear = (y) => setSelectedYears(prev => {
@@ -1849,7 +1850,7 @@ const LinZAMilkPurchaseMergeSection = () => {
           merged:            merged.length,
           matched:           matchedCount,
           unmatched:         unmatchedNos.size,
-          unmatchedList:     [...unmatchedNos].slice(0, 20),
+          unmatchedList:     [...unmatchedNos],
           detectedMemberCols:[...detectedMemberCols],
           noDate:            noDateCount,
           fallbackUsed: noDateCount > 0 && !!fallback,
@@ -1862,6 +1863,30 @@ const LinZAMilkPurchaseMergeSection = () => {
       setStatus('error');
       notifications.show({ title: 'Error', message: err.message, color: 'red' });
     }
+  };
+
+  const handleApplyOverrides = () => {
+    if (!result) return;
+    const updatedRows = result.rows.map(row => {
+      if (row.Name !== '') return row; // already matched — don't touch
+      const key = String(row.Nos);
+      const ov = overrides[key];
+      if (!ov?.name) return row;
+      return { ...row, Name: ov.name.trim(), Phone: ov.phone?.trim() || row.Phone };
+    });
+    const newUnmatched = [...new Set(updatedRows.filter(r => r.Name === '').map(r => r.Nos))];
+    setResult(prev => ({
+      ...prev,
+      rows: updatedRows,
+      stats: {
+        ...prev.stats,
+        matched:       updatedRows.filter(r => r.Name !== '').length,
+        unmatched:     newUnmatched.length,
+        unmatchedList: newUnmatched,
+      },
+    }));
+    setOverrides({});
+    notifications.show({ title: 'Names Applied', message: 'Override names filled into merged rows', color: 'teal', autoClose: 2500 });
   };
 
   const handleDownload = (subset = 'all') => {
@@ -2034,6 +2059,46 @@ const LinZAMilkPurchaseMergeSection = () => {
               )}
             </Stack>
           </Alert>
+
+          {/* ── Manual name override for unmatched Nos ── */}
+          {result.stats.unmatchedList.length > 0 && (
+            <Paper withBorder p="sm" radius="sm" style={{ borderColor: '#fd7e14' }}>
+              <Text size="xs" fw={700} c="orange" mb="xs">
+                Enter names for {result.stats.unmatchedList.length} unmatched Nos — type name &amp; click Apply
+              </Text>
+              <Stack gap={6}>
+                {result.stats.unmatchedList.map(nosKey => (
+                  <Group key={nosKey} gap="xs" align="flex-end" wrap="nowrap">
+                    <Text size="xs" fw={700} c="orange" style={{ width: 60, flexShrink: 0 }}>
+                      Nos: {nosKey}
+                    </Text>
+                    <TextInput
+                      size="xs"
+                      placeholder="Member Name"
+                      style={{ flex: 1 }}
+                      value={overrides[String(nosKey)]?.name || ''}
+                      onChange={e => setOverrides(prev => ({ ...prev, [String(nosKey)]: { ...prev[String(nosKey)], name: e.target.value } }))}
+                    />
+                    <TextInput
+                      size="xs"
+                      placeholder="Phone (optional)"
+                      style={{ width: 130 }}
+                      value={overrides[String(nosKey)]?.phone || ''}
+                      onChange={e => setOverrides(prev => ({ ...prev, [String(nosKey)]: { ...prev[String(nosKey)], phone: e.target.value } }))}
+                    />
+                  </Group>
+                ))}
+                <Button
+                  size="xs"
+                  color="orange"
+                  onClick={handleApplyOverrides}
+                  disabled={!Object.values(overrides).some(v => v?.name?.trim())}
+                >
+                  Apply Names
+                </Button>
+              </Stack>
+            </Paper>
+          )}
 
           {previewRows.length > 0 && (
             <>
