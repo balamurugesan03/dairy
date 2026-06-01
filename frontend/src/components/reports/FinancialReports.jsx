@@ -48,8 +48,8 @@ const FinancialReports = () => {
     setLoading(true);
     try {
       const params = {
-        startDate: dateRange[0].toISOString(),
-        endDate: dateRange[1].toISOString()
+        startDate: dateRange[0].format('YYYY-MM-DD'),
+        endDate: dateRange[1].format('YYYY-MM-DD')
       };
 
       if (activeTab === 'profitLoss') {

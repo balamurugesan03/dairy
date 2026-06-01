@@ -17,6 +17,7 @@ import {
 } from '@tabler/icons-react';
 import { milkCollectionAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
+import { localDateStr } from '../../utils/dateUtils';
 import './MilkPurchaseReport.css';
 
 // ── Formatters ──────────────────────────────────────────────────────────────
@@ -26,7 +27,7 @@ const fz2 = v => { const n = Number(v || 0); return n === 0 ? '' : n.toFixed(2);
 const fz3 = v => { const n = Number(v || 0); return n === 0 ? '' : n.toFixed(3); };
 const fmtDate = d => { if (!d) return ''; const [y, m, day] = d.split('-'); return `${day}/${m}/${y}`; };
 const dayName = d => { if (!d) return ''; return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(d).getDay()]; };
-const toISO = d => d instanceof Date ? d.toISOString().slice(0, 10) : d;
+const toISO = d => d instanceof Date ? localDateStr(d) : d;
 
 // ── Stat Card ───────────────────────────────────────────────────────────────
 const StatCard = ({ label, value, sub, icon: Icon, color = '#1c3d6e' }) => (
@@ -49,7 +50,7 @@ export default function MilkPurchaseReport() {
   const { company } = useCompany();
   const printRef    = useRef(null);
 
-  const today        = new Date().toISOString().slice(0, 10);
+  const today        = localDateStr(new Date());
   const firstOfMonth = today.slice(0, 8) + '01';
 
   const [tab,          setTab]          = useState('date');

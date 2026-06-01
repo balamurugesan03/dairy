@@ -44,6 +44,7 @@ import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { DataTable } from 'mantine-datatable';
 import { businessItemAPI, businessLedgerAPI, businessSupplierAPI } from '../../services/api';
+import { localDateStr } from '../../utils/dateUtils';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -426,7 +427,7 @@ const BusinessItemList = () => {
       { wch: 20 }, { wch: 8 }, { wch: 10 }
     ];
 
-    XLSX.writeFile(wb, `Business_Items_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(wb, `Business_Items_${localDateStr(new Date())}.xlsx`);
 
     notifications.show({
       title: 'Success',
@@ -467,7 +468,7 @@ const BusinessItemList = () => {
       }
     });
 
-    doc.save(`Business_Items_${new Date().toISOString().split('T')[0]}.pdf`);
+    doc.save(`Business_Items_${localDateStr(new Date())}.pdf`);
 
     notifications.show({
       title: 'Success',

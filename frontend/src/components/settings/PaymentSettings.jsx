@@ -12,6 +12,7 @@ import {
   IconBuildingBank
 } from '@tabler/icons-react';
 import { dairySettingsAPI } from '../../services/api';
+import { localDateStr } from '../../utils/dateUtils';
 
 // ── Payment Day option card ───────────────────────────────────────────────────
 const DayCard = ({ days, label, sublabel, periods, selected, onClick }) => (
@@ -101,8 +102,8 @@ export default function PaymentSettings() {
     setSaving(true);
     const res = await dairySettingsAPI.update({
       paymentDays,
-      paymentFromDate: paymentFromDate ? new Date(paymentFromDate).toISOString() : null,
-      accountStartDate:                    accountStartDate ? new Date(accountStartDate).toISOString() : null,
+      paymentFromDate: paymentFromDate ? localDateStr(new Date(paymentFromDate)) : null,
+      accountStartDate:                    accountStartDate ? localDateStr(new Date(accountStartDate)) : null,
       accountStartDateOpeningBalance:      acStartBalance,
       accountStartDateOpeningBalanceType:  acStartBalanceType,
       financialYearOpeningBalance:         fyOpeningBalance,

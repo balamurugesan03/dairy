@@ -6,6 +6,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
+import { localDateStr } from '../../utils/dateUtils';
 import { businessLedgerAPI, businessVoucherAPI } from '../../services/api';
 import {
   Box,
@@ -137,7 +138,7 @@ const BusinessExpenseVoucher = () => {
 
       const payload = {
         voucherType: 'Expense',
-        date: new Date(values.voucherDate).toISOString(),
+        date: localDateStr(new Date(values.voucherDate)),
         entries: [
           {
             ledgerId: values.ledgerId,
@@ -356,7 +357,7 @@ const BusinessExpenseVoucher = () => {
 
         const payload = {
           voucherType: 'Expense',
-          date: new Date(entry.voucherDate).toISOString(),
+          date: localDateStr(new Date(entry.voucherDate)),
           entries: [
             {
               ledgerId: entry.ledgerId,

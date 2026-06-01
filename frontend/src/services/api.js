@@ -253,6 +253,21 @@ export const milmaChartAPI = {
   lookup: (data) => api.post('/milma-charts/lookup', data).then(r => r.data).catch(handleError),
 };
 
+// ─── MILMA RATE CHART APIs (super-admin side) ────────────────────────────────
+export const adminMilmaChartAPI = {
+  upload: (companyId, file) => {
+    const fd = new FormData();
+    fd.append('companyId', companyId);
+    fd.append('file', file);
+    return api.post('/milma-charts/admin/upload', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    }).then(r => r.data).catch(handleError);
+  },
+  getMasters: (companyId) => api.get(`/milma-charts/admin/${companyId}/masters`).then(r => r.data).catch(handleError),
+  delete: (companyId) => api.delete(`/milma-charts/admin/${companyId}`).then(r => r.data).catch(handleError),
+};
+
 
 // REPORTS APIs
 export const reportAPI = {

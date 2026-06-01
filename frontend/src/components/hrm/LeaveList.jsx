@@ -14,6 +14,7 @@ import {
   IconFilterOff, IconEye, IconCalendarPlus
 } from '@tabler/icons-react';
 import { leaveAPI, employeeAPI } from '../../services/api';
+import { localDateStr } from '../../utils/dateUtils';
 
 const getStatusColor = (s) => ({ Pending: 'yellow', Approved: 'green', Rejected: 'red' }[s] || 'gray');
 const getLeaveTypeColor = (t) => ({
@@ -52,8 +53,8 @@ const LeaveList = () => {
     setLoading(true);
     try {
       const params = {};
-      if (dateRange[0]) params.startDate = dateRange[0].toISOString().split('T')[0];
-      if (dateRange[1]) params.endDate = dateRange[1].toISOString().split('T')[0];
+      if (dateRange[0]) params.startDate = localDateStr(dateRange[0]);
+      if (dateRange[1]) params.endDate = localDateStr(dateRange[1]);
       if (filters.employee) params.employee = filters.employee;
       if (filters.status) params.status = filters.status;
       if (filters.leaveType) params.leaveType = filters.leaveType;

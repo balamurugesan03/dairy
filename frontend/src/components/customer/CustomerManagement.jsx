@@ -49,6 +49,7 @@ import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import * as XLSX from 'xlsx';
 import { customerAPI } from '../../services/api';
+import { localDateStr } from '../../utils/dateUtils';
 import CustomerModal from './CustomerModal';
 import { useAuth } from '../../context/AuthContext';
 
@@ -267,7 +268,7 @@ const CustomerManagement = () => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `customers_${new Date().toISOString().split('T')[0]}.csv`;
+        a.download = `customers_${localDateStr(new Date())}.csv`;
         a.click();
         window.URL.revokeObjectURL(url);
 
@@ -282,7 +283,7 @@ const CustomerManagement = () => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `customers_${new Date().toISOString().split('T')[0]}.json`;
+        a.download = `customers_${localDateStr(new Date())}.json`;
         a.click();
         window.URL.revokeObjectURL(url);
 

@@ -33,6 +33,7 @@ import {
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { businessStockAPI } from '../../services/api';
+import { localDateStr } from '../../utils/dateUtils';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -143,7 +144,7 @@ const BusinessStockReport = () => {
     }));
     ws['!cols'] = colWidths;
 
-    const fileName = `Business_Stock_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const fileName = `Business_Stock_Report_${localDateStr(new Date())}.xlsx`;
     XLSX.writeFile(wb, fileName);
 
     notifications.show({
@@ -187,7 +188,7 @@ const BusinessStockReport = () => {
       alternateRowStyles: { fillColor: [245, 247, 250] }
     });
 
-    const fileName = `Business_Stock_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+    const fileName = `Business_Stock_Report_${localDateStr(new Date())}.pdf`;
     doc.save(fileName);
 
     notifications.show({

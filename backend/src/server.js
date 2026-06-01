@@ -1,3 +1,5 @@
+process.env.TZ = 'Asia/Kolkata'; // IST — must be set before any Date() calls
+
 import http from 'http';
 import express from 'express';
 import mongoose from 'mongoose';

@@ -32,8 +32,8 @@ const SalesReportView = () => {
     setLoading(true);
     try {
       const params = {
-        startDate: dayjs(startDate).toISOString(),
-        endDate:   dayjs(endDate).toISOString(),
+        startDate,
+        endDate,
       };
       const response = await reportAPI.sales(params);
       setSalesData(response.data.sales || []);

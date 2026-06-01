@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { message } from '../../utils/toast';
+import { localDateStr } from '../../utils/dateUtils';
 import dayjs from 'dayjs';
 import { ledgerAPI, voucherAPI } from '../../services/api';
 import {
@@ -364,7 +365,7 @@ const JournalVoucher = () => {
 
       const payload = {
         voucherType: 'Journal',
-        voucherDate: new Date(voucherDate).toISOString(),
+        voucherDate: localDateStr(new Date(voucherDate)),
         entries,
         totalDebit,
         totalCredit,

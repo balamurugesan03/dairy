@@ -12,6 +12,7 @@ import {
   IconUserOff, IconClock, IconFilter, IconFilterOff
 } from '@tabler/icons-react';
 import { attendanceAPI, employeeAPI } from '../../services/api';
+import { localDateStr } from '../../utils/dateUtils';
 
 const getStatusColor = (s) => ({ Present: 'green', Absent: 'red', 'Half Day': 'yellow' }[s] || 'gray');
 
@@ -39,8 +40,8 @@ const AttendanceList = () => {
     setLoading(true);
     try {
       const params = {};
-      if (dateRange[0]) params.startDate = dateRange[0].toISOString().split('T')[0];
-      if (dateRange[1]) params.endDate = dateRange[1].toISOString().split('T')[0];
+      if (dateRange[0]) params.startDate = localDateStr(dateRange[0]);
+      if (dateRange[1]) params.endDate = localDateStr(dateRange[1]);
       if (filters.employee) params.employeeId = filters.employee;
       if (filters.status) params.status = filters.status;
       const res = await attendanceAPI.getAll(params);

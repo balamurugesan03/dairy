@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { reportAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
+import { localDateStr } from '../../utils/dateUtils';
 import './MISReport.css';
 
 // ── Formatters ──────────────────────────────────────────────────────────────
@@ -11,8 +12,8 @@ const fmtA = (v) => Number(v || 0).toLocaleString('en-IN', { minimumFractionDigi
 const fmtN = (v, d = 2) => Number(v || 0).toFixed(d);
 const pct  = (v) => Number(v || 0).toFixed(1) + '%';
 
-const today       = () => new Date().toISOString().split('T')[0];
-const firstOfMonth = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]; };
+const today       = () => localDateStr(new Date());
+const firstOfMonth = () => { const d = new Date(); return localDateStr(new Date(d.getFullYear(), d.getMonth(), 1)); };
 const monthLabel  = (dateStr) => {
   if (!dateStr) return '';
   const d = new Date(dateStr);
@@ -174,8 +175,8 @@ export default function MISReport() {
         </div>
         <div className="mis-filter-footer">
           <div className="mis-quick-btns">
-            <button onClick={() => { const d = new Date(); setFromDate(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]); setToDate(d.toISOString().split('T')[0]); }}>This Month</button>
-            <button onClick={() => { const d = new Date(); setFromDate(new Date(d.getFullYear(), d.getMonth() - 1, 1).toISOString().split('T')[0]); setToDate(new Date(d.getFullYear(), d.getMonth(), 0).toISOString().split('T')[0]); }}>Last Month</button>
+            <button onClick={() => { const d = new Date(); setFromDate(localDateStr(new Date(d.getFullYear(), d.getMonth(), 1))); setToDate(localDateStr(d)); }}>This Month</button>
+            <button onClick={() => { const d = new Date(); setFromDate(localDateStr(new Date(d.getFullYear(), d.getMonth() - 1, 1))); setToDate(localDateStr(new Date(d.getFullYear(), d.getMonth(), 0))); }}>Last Month</button>
             <button onClick={() => { const d = new Date(); const fy = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1; setFromDate(`${fy}-04-01`); setToDate(`${fy + 1}-03-31`); }}>This FY</button>
           </div>
           <button className="mis-btn mis-btn-generate" onClick={fetchReport} disabled={loading}>

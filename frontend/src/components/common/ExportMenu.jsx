@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import { notifications } from '@mantine/notifications';
+import { localDateStr } from '../../utils/dateUtils';
 
 const ExportMenu = ({
   data,
@@ -16,10 +17,7 @@ const ExportMenu = ({
 }) => {
   const [exporting, setExporting] = useState(false);
 
-  const formatDate = () => {
-    const now = new Date();
-    return now.toISOString().split('T')[0];
-  };
+  const formatDate = () => localDateStr(new Date());
 
   const exportToExcel = () => {
     try {

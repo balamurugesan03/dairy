@@ -4,9 +4,10 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { reportAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
+import { localDateStr } from '../../utils/dateUtils';
 import './InspectionReport.css';
 
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = localDateStr(new Date());
 
 const makeDefault = () => ({
   district:                      '',

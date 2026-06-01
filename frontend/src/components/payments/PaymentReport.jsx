@@ -12,6 +12,7 @@ import {
 } from '@tabler/icons-react';
 import * as XLSX from 'xlsx';
 import { bankTransferAPI } from '../../services/api';
+import { localDateStr } from '../../utils/dateUtils';
 import { useCompany } from '../../context/CompanyContext';
 
 const fmt  = (v) => (parseFloat(v) || 0).toFixed(2);
@@ -417,8 +418,8 @@ export default function PaymentReport() {
 
     setGenerating(true);
     setModalOpen(false);
-    const fd = new Date(fromDate).toISOString().slice(0, 10);
-    const td = new Date(toDate).toISOString().slice(0, 10);
+    const fd = localDateStr(fromDate);
+    const td = localDateStr(toDate);
 
     try {
       const res = await bankTransferAPI.getPaymentReport({

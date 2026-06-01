@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { localDateStr } from '../../utils/dateUtils';
 import {
   Box, Paper, Title, Text, Group, Stack, Badge, Button, ActionIcon,
   Modal, TextInput, Select, Textarea, Grid, Card, Divider, Tooltip,
@@ -102,8 +103,8 @@ export default function FinancialYearManagement() {
     setSaving(true);
     const payload = {
       ...form,
-      startDate: form.startDate instanceof Date ? form.startDate.toISOString() : form.startDate,
-      endDate:   form.endDate instanceof Date   ? form.endDate.toISOString()   : form.endDate,
+      startDate: form.startDate instanceof Date ? localDateStr(form.startDate) : form.startDate,
+      endDate:   form.endDate instanceof Date   ? localDateStr(form.endDate)   : form.endDate,
     };
     const res = editId
       ? await financialYearAPI.update(editId, payload)

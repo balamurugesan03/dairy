@@ -49,6 +49,7 @@ import { notifications } from '@mantine/notifications';
 import { businessStockAPI } from '../../services/api';
 import { printReport } from '../../utils/printReport';
 import BusinessStockInModal from './BusinessStockInModal';
+import { localDateStr } from '../../utils/dateUtils';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -86,8 +87,8 @@ const BusinessStockInManagement = () => {
     try {
       const params = {
         transactionType: 'in',
-        ...(filters.startDate && { startDate: filters.startDate.toISOString() }),
-        ...(filters.endDate && { endDate: filters.endDate.toISOString() }),
+        ...(filters.startDate && { startDate: localDateStr(filters.startDate) }),
+        ...(filters.endDate && { endDate: localDateStr(filters.endDate) }),
         ...(filters.referenceType && { referenceType: filters.referenceType })
       };
 
@@ -262,7 +263,7 @@ const BusinessStockInManagement = () => {
     }));
     ws['!cols'] = colWidths;
 
-    const fileName = `Business_Stock_In_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const fileName = `Business_Stock_In_${localDateStr(new Date())}.xlsx`;
     XLSX.writeFile(wb, fileName);
 
     notifications.show({
@@ -311,7 +312,7 @@ const BusinessStockInManagement = () => {
       alternateRowStyles: { fillColor: [245, 247, 250] }
     });
 
-    const fileName = `Business_Stock_In_${new Date().toISOString().split('T')[0]}.pdf`;
+    const fileName = `Business_Stock_In_${localDateStr(new Date())}.pdf`;
     doc.save(fileName);
 
     notifications.show({

@@ -9,6 +9,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useReactToPrint } from 'react-to-print';
 import dayjs from 'dayjs';
+import { localDateStr } from '../../utils/dateUtils';
 import {
   Container,
   Title,
@@ -565,7 +566,7 @@ const BillingForm = () => {
       // as a credit/debt sale regardless of which payment-mode chip is on.
       const effectivePaymentMode = paid > 0 ? form.values.paymentMode : 'Credit';
       const payload = {
-        billDate: form.values.billDate ? new Date(form.values.billDate).toISOString() : new Date().toISOString(),
+        billDate: localDateStr(form.values.billDate ? new Date(form.values.billDate) : new Date()),
         customerType: form.values.customerType,
         customerId: (form.values.customerType === 'Farmer' || form.values.customerType === 'Customer') ? form.values.customerId : null,
         customerName: form.values.customerName,

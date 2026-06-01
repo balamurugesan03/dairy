@@ -8,6 +8,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useReactToPrint } from 'react-to-print';
 import dayjs from 'dayjs';
+import { localDateStr } from '../../utils/dateUtils';
 import {
   Container,
   Title,
@@ -174,8 +175,8 @@ const BusinessBillingForm = () => {
   const fetchInvoicesByDate = async (date) => {
     try {
       setLoadingDateInvoices(true);
-      const startDate = dayjs(date).startOf('day').toISOString();
-      const endDate = dayjs(date).endOf('day').toISOString();
+      const startDate = localDateStr(new Date(date));
+      const endDate = localDateStr(new Date(date));
       const response = await businessSalesAPI.getAll({ startDate, endDate, limit: 100 });
       const invoices = response?.data || response || [];
       setDateInvoices(Array.isArray(invoices) ? invoices : []);

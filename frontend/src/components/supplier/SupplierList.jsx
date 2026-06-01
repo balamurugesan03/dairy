@@ -46,6 +46,7 @@ import {
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { supplierAPI } from '../../services/api';
+import { localDateStr } from '../../utils/dateUtils';
 import SupplierModal from './SupplierModal';
 import { useAuth } from '../../context/AuthContext';
 
@@ -225,7 +226,7 @@ const SupplierList = () => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `suppliers_${new Date().toISOString().split('T')[0]}.csv`;
+        a.download = `suppliers_${localDateStr(new Date())}.csv`;
         a.click();
         window.URL.revokeObjectURL(url);
 
@@ -240,7 +241,7 @@ const SupplierList = () => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `suppliers_${new Date().toISOString().split('T')[0]}.json`;
+        a.download = `suppliers_${localDateStr(new Date())}.json`;
         a.click();
         window.URL.revokeObjectURL(url);
 

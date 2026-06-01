@@ -47,6 +47,7 @@ import {
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { stockAPI } from '../../services/api';
+import { localDateStr } from '../../utils/dateUtils';
 import StockInModal from './StockInModal';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -248,7 +249,7 @@ const StockInManagement = () => {
     }));
     ws['!cols'] = colWidths;
 
-    const fileName = `Stock_In_Transactions_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const fileName = `Stock_In_Transactions_${localDateStr(new Date())}.xlsx`;
     XLSX.writeFile(wb, fileName);
 
     notifications.show({
@@ -301,7 +302,7 @@ const StockInManagement = () => {
       alternateRowStyles: { fillColor: [245, 247, 250] }
     });
 
-    const fileName = `Stock_In_Transactions_${new Date().toISOString().split('T')[0]}.pdf`;
+    const fileName = `Stock_In_Transactions_${localDateStr(new Date())}.pdf`;
     doc.save(fileName);
 
     notifications.show({

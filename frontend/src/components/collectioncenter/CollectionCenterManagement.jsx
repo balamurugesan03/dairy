@@ -39,6 +39,7 @@ import {
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { collectionCenterAPI } from '../../services/api';
+import { localDateStr } from '../../utils/dateUtils';
 import CollectionCenterModal from './CollectionCenterModal';
 import ImportModal from '../common/ImportModal';
 import { useAuth } from '../../context/AuthContext';
@@ -289,7 +290,7 @@ const CollectionCenterManagement = () => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `collection_centers_${new Date().toISOString().split('T')[0]}.csv`;
+        a.download = `collection_centers_${localDateStr(new Date())}.csv`;
         a.click();
         window.URL.revokeObjectURL(url);
 
@@ -304,7 +305,7 @@ const CollectionCenterManagement = () => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `collection_centers_${new Date().toISOString().split('T')[0]}.json`;
+        a.download = `collection_centers_${localDateStr(new Date())}.json`;
         a.click();
         window.URL.revokeObjectURL(url);
 

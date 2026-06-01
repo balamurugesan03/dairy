@@ -35,6 +35,7 @@ import {
 import { notifications } from '@mantine/notifications';
 import dayjs from 'dayjs';
 import { supplierAPI, voucherAPI, stockAPI } from '../../services/api';
+import { localDateStr } from '../../utils/dateUtils';
 import { printReport } from '../../utils/printReport';
 
 const SupplierView = () => {
@@ -170,7 +171,7 @@ const SupplierView = () => {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `supplier_${supplier.supplierId}_${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `supplier_${supplier.supplierId}_${localDateStr(new Date())}.json`;
       a.click();
       window.URL.revokeObjectURL(url);
 

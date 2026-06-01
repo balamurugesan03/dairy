@@ -1,4 +1,5 @@
 import XLSX from 'xlsx';
+import mongoose from 'mongoose';
 import { MilmaChartMaster, MilmaChartDetail } from '../models/MilmaChart.js';
 
 // ─── Helper: parse Excel date serial (e.g. 43727 → Date) ─────────────────────
@@ -27,6 +28,9 @@ export const uploadMilmaChart = async (req, res) => {
 
     const { companyId } = req.body;
     if (!companyId) return res.status(400).json({ success: false, message: 'companyId is required' });
+    if (!mongoose.Types.ObjectId.isValid(companyId)) {
+      return res.status(400).json({ success: false, message: 'Invalid companyId — must be a valid MongoDB ObjectId' });
+    }
     if (!req.file)  return res.status(400).json({ success: false, message: 'Excel file is required' });
 
     // ── Parse workbook ────────────────────────────────────────────────────────
@@ -73,20 +77,24 @@ export const uploadMilmaChart = async (req, res) => {
     await MilmaChartMaster.bulkWrite(masterOps, { ordered: false });
 
     // ── Bulk replace Chart Detail rows ────────────────────────────────────────
-    // Delete existing detail for this company then insert fresh batch
+    // Use upsert so duplicate (chartId+fat+clr) rows within the Excel don't crash the import
     await MilmaChartDetail.deleteMany({ companyId });
 
     const BATCH = 2000;
     for (let i = 0; i < detailRows.length; i += BATCH) {
-      const batch = detailRows.slice(i, i + BATCH).map(row => ({
-        companyId,
-        chartId: Number(row.chart_id),
-        fat:     Number(row.fat),
-        clr:     Number(row.clr),
-        snf:     Number(row.snf),
-        rate:    Number(row.rate),
+      const ops = detailRows.slice(i, i + BATCH).map(row => ({
+        updateOne: {
+          filter: {
+            companyId,
+            chartId: Number(row.chart_id),
+            fat:     Number(row.fat),
+            clr:     Number(row.clr),
+          },
+          update: { $set: { snf: Number(row.snf), rate: Number(row.rate) } },
+          upsert: true,
+        }
       }));
-      await MilmaChartDetail.insertMany(batch, { ordered: false });
+      await MilmaChartDetail.bulkWrite(ops, { ordered: false });
     }
 
     res.json({

@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   AppShell, Box, Button, Badge, Card, Divider, Grid, Group, Loader,
   Modal, PasswordInput, Stack, Table, Text, TextInput, Textarea,
   Title, Tooltip, ActionIcon, Avatar, Paper, Checkbox, SimpleGrid,
-  Center, ThemeIcon, Anchor
+  Center, ThemeIcon, Anchor, Select, FileInput, Alert
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
@@ -11,10 +11,11 @@ import { modals } from '@mantine/modals';
 import {
   IconBuilding, IconUsers, IconPlus, IconLock, IconTrash,
   IconToggleLeft, IconToggleRight, IconLogout, IconShieldCheck,
-  IconBuildingStore, IconRefresh, IconChartBar
+  IconBuildingStore, IconRefresh, IconChartBar, IconUpload, IconTableImport,
+  IconAlertCircle, IconCheck
 } from '@tabler/icons-react';
 import { useAuth } from '../context/AuthContext';
-import { companyAPI } from '../services/api';
+import { companyAPI, adminMilmaChartAPI } from '../services/api';
 
 // ─── Stat Card ───────────────────────────────────────────────────────────────
 const StatCard = ({ icon: Icon, label, value, color }) => (

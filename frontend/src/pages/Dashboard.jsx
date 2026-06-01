@@ -62,6 +62,7 @@ import {
   businessSalesAPI,
   businessVoucherAPI
 } from '../services/api';
+import { localDateStr } from '../utils/dateUtils';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -138,7 +139,7 @@ const Dashboard = () => {
         const customersData = customersRes.status === 'fulfilled' ? customersRes.value : {};
         const salesData = salesRes.status === 'fulfilled' ? salesRes.value : {};
         const sales = salesData.data || [];
-        const today = new Date().toISOString().split('T')[0];
+        const today = localDateStr(new Date());
         const todaySales = sales.filter(s => s.billDate?.split('T')[0] === today);
         const todayAmount = todaySales.reduce((sum, s) => sum + (s.grandTotal || 0), 0);
         const itemsData = itemsRes.status === 'fulfilled' ? itemsRes.value : {};
@@ -196,7 +197,7 @@ const Dashboard = () => {
         const customersData = customersRes.status === 'fulfilled' ? customersRes.value : {};
         const salesData = salesRes.status === 'fulfilled' ? salesRes.value : {};
         const sales = salesData.data || [];
-        const today = new Date().toISOString().split('T')[0];
+        const today = localDateStr(new Date());
         const todaySales = sales.filter(s => (s.invoiceDate || s.billDate || s.date)?.split('T')[0] === today);
         const todayAmount = todaySales.reduce((sum, s) => sum + (s.grandTotal || s.totalAmount || 0), 0);
         const itemsData = itemsRes.status === 'fulfilled' ? itemsRes.value : {};
@@ -279,7 +280,7 @@ const Dashboard = () => {
         for (let i = 6; i >= 0; i--) {
           const date = new Date();
           date.setDate(date.getDate() - i);
-          last7Days.push(date.toISOString().split('T')[0]);
+          last7Days.push(localDateStr(date));
         }
 
         const salesByDate = last7Days.map(date => {

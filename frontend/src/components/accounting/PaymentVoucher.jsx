@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { message } from '../../utils/toast';
+import { localDateStr } from '../../utils/dateUtils';
 import dayjs from 'dayjs';
 import { ledgerAPI, voucherAPI } from '../../services/api';
 import PageHeader from '../common/PageHeader';
@@ -120,7 +121,7 @@ const PaymentVoucher = () => {
 
       const payload = {
         voucherType: 'Payment',
-        voucherDate: new Date(values.voucherDate).toISOString(),
+        voucherDate: localDateStr(new Date(values.voucherDate)),
         entries: [
           {
             ledgerId: values.ledgerId,
@@ -309,7 +310,7 @@ const PaymentVoucher = () => {
 
         const payload = {
           voucherType: 'Payment',
-          voucherDate: new Date(entry.voucherDate).toISOString(),
+          voucherDate: localDateStr(new Date(entry.voucherDate)),
           entries: [
             {
               ledgerId: entry.ledgerId,

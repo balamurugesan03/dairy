@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { offlineQueue } from '../../utils/offlineQueue';
+import { localDateStr } from '../../utils/dateUtils';
 import { useNavigate } from 'react-router-dom';
 import {
   Box, Group, Text, TextInput, NumberInput, Select, Button,
@@ -234,8 +235,7 @@ export default function MilkSales() {
       const ag  = overrides.agent    !== undefined ? overrides.agent    : agent;
       const dt  = overrides.date     ?? date;
       const base = toDate(dt);
-      const istDate = new Date(base.getTime() + 5.5 * 60 * 60000);
-      const dateStr = istDate.toISOString().slice(0, 10);
+      const dateStr = localDateStr(base);
 
       let salesItemKey = null;
       let partyId = null;
@@ -280,8 +280,7 @@ export default function MilkSales() {
     if (m !== 'CREDIT' || !cr) { setOpCr(''); return; }
     try {
       const base    = toDate(dt);
-      const istDate = new Date(base.getTime() + 5.5 * 60 * 60000);
-      const dateStr = istDate.toISOString().slice(0, 10);
+      const dateStr = localDateStr(base);
       const res = await milkSalesAPI.getCreditorBalance(cr, dateStr);
       setOpCr(res?.data?.balance != null ? String(res.data.balance) : '');
     } catch { setOpCr(''); }
@@ -349,7 +348,7 @@ export default function MilkSales() {
     setLoading(true);
     setMonthMode(false);
     try {
-      const dateStr = toDate(d).toISOString().slice(0, 10);
+      const dateStr = localDateStr(toDate(d));
       const currentSession = ses ?? formRef.current.session;
       const res = await milkSalesAPI.getAll({ date: dateStr, session: currentSession, limit: 500 });
       setEntries(res?.data || []);
@@ -391,7 +390,7 @@ export default function MilkSales() {
 
     const payload = {
       billNo: bn, session: ses, saleMode: m,
-      date: toDate(d).toISOString().slice(0, 10),
+      date: localDateStr(toDate(d)),
       centerId: ct || undefined, centerName: ct ? ccLabel : undefined,
       agentId: ag || undefined, agentName: ag ? agLabel : undefined,
       creditorId: !isLoc ? cr : undefined, creditorName: !isLoc ? crLabel : undefined,

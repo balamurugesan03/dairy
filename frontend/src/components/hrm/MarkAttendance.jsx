@@ -10,6 +10,7 @@ import {
   IconCalendarCheck, IconArrowLeft, IconUsers, IconUserCheck, IconUserOff, IconClock
 } from '@tabler/icons-react';
 import { attendanceAPI, employeeAPI } from '../../services/api';
+import { localDateStr } from '../../utils/dateUtils';
 
 const STATUS_OPTIONS = ['Present', 'Absent', 'Half Day'];
 
@@ -31,7 +32,7 @@ const MarkAttendance = () => {
       const employees = res.data || [];
 
       // Fetch existing attendance for this date
-      const dateStr = selectedDate.toISOString().split('T')[0];
+      const dateStr = localDateStr(selectedDate);
       const existing = await attendanceAPI.getByDate(dateStr);
       const existingMap = {};
       (existing.data || []).forEach(r => { existingMap[r.employeeId?._id || r.employeeId] = r.status; });
@@ -65,7 +66,7 @@ const MarkAttendance = () => {
   const handleSubmit = async () => {
     setSaving(true);
     try {
-      const dateStr = selectedDate.toISOString().split('T')[0];
+      const dateStr = localDateStr(selectedDate);
       const records = attendanceData.map(r => ({
         employeeId: r.employeeId,
         date: dateStr,

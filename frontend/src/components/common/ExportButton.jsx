@@ -1,5 +1,6 @@
 import React from 'react';
 import * as XLSX from 'xlsx';
+import { localDateStr } from '../../utils/dateUtils';
 
 const ExportButton = ({
   data,
@@ -18,7 +19,7 @@ const ExportButton = ({
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
 
-    const timestamp = new Date().toISOString().slice(0, 10);
+    const timestamp = localDateStr(new Date());
     XLSX.writeFile(workbook, `${filename}_${timestamp}.xlsx`);
   };
 

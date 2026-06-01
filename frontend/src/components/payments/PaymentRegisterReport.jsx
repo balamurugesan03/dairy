@@ -15,6 +15,7 @@ import {
 } from '@tabler/icons-react';
 import { useReactToPrint } from 'react-to-print';
 import { paymentRegisterAPI, producerPaymentAPI } from '../../services/api';
+import { localDateStr } from '../../utils/dateUtils';
 
 const fmt   = (v) => (parseFloat(v) || 0).toFixed(2);
 const fmtD  = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '—';
@@ -196,7 +197,7 @@ export default function PaymentRegisterReport() {
   useEffect(() => {
     producerPaymentAPI.getCycles().then(res => {
       const list = (res?.data || []).map(c => ({
-        value: `${new Date(c.fromDate).toISOString().slice(0,10)}|${new Date(c.toDate).toISOString().slice(0,10)}`,
+        value: `${localDateStr(new Date(c.fromDate))}|${localDateStr(new Date(c.toDate))}`,
         label: c.label,
         fromDate: c.fromDate,
         toDate:   c.toDate,
