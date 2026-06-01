@@ -1416,11 +1416,15 @@ const MilkPurchase = () => {
 
   // Filtered entries for history search
   const filteredEntries = historySearch.trim()
-    ? entries.filter(e =>
-        e.producerNo.toLowerCase().includes(historySearch.toLowerCase()) ||
-        e.producerName.toLowerCase().includes(historySearch.toLowerCase()) ||
-        e.billNo.toLowerCase().includes(historySearch.toLowerCase())
-      )
+    ? entries.filter(e => {
+        const q = historySearch.trim();
+        if (/^\d+$/.test(q)) {
+          return e.producerNo.toLowerCase().includes(q.toLowerCase()) ||
+                 e.billNo.toLowerCase().includes(q.toLowerCase());
+        }
+        return e.producerName.toLowerCase().includes(q.toLowerCase()) ||
+               e.billNo.toLowerCase().includes(q.toLowerCase());
+      })
     : entries;
 
   const WA_DEFAULT_TEMPLATE = '🐄 Milk Bill\nDate: {date} {shift}\nBill No: {billNo}\nFarmer: {name} ({farmerNo})\nQty: {qty} Ltr\nFat: {fat} | CLR: {clr} | SNF: {snf}\nRate: ₹{rate}/Ltr\nAmount: ₹{amount}';
@@ -2170,7 +2174,7 @@ const MilkPurchase = () => {
             <Table striped highlightOnHover stickyHeader withColumnBorders style={{ fontSize: 12 }}>
               <Table.Thead style={{ background: 'linear-gradient(180deg,#dbeafe 0%,#bfdbfe 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
                 <Table.Tr>
-                  {['#', 'Bill No', 'Mem. No', 'Member Name', 'Date', 'Shift', 'Litres', 'KG', 'FAT %', 'CLR', 'SNF %', 'Incentive', 'Rate/L', 'Amount', ''].map(col => (
+                  {['#', 'Bill No', 'Mem. No', 'Date', 'Shift', 'Litres', 'KG', 'FAT %', 'CLR', 'SNF %', 'Incentive', 'Rate/L', 'Amount', ''].map(col => (
                     <Table.Th key={col} style={{ fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#1e40af', whiteSpace: 'nowrap', padding: '9px 12px', borderBottom: '2px solid #93c5fd' }}>
                       {col}
                     </Table.Th>
@@ -2181,7 +2185,7 @@ const MilkPurchase = () => {
               <Table.Tbody>
                 {filteredEntries.length === 0 ? (
                   <Table.Tr>
-                    <Table.Td colSpan={15}>
+                    <Table.Td colSpan={14}>
                       <Center py="xl">
                         <Stack align="center" gap={6}>
                           <IconMilk size={48} color="#bfdbfe" />
@@ -2204,7 +2208,6 @@ const MilkPurchase = () => {
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#94a3b8', width: 32, fontSize: 11 }}>{entry.sl}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#1e40af', whiteSpace: 'nowrap' }}>{entry.billNo}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px' }}><Badge size="sm" color="blue" variant="light" radius="sm">{entry.producerNo}</Badge></Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', fontWeight: 600, color: '#1e293b' }}>{entry.producerName}</Table.Td>
                       <Table.Td style={{ padding: '6px 8px', color: '#475569', fontSize: 11, whiteSpace: 'nowrap' }}>{entry.date ? new Date(entry.date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit' }) : '—'}</Table.Td>
                       <Table.Td style={{ padding: '6px 8px' }}><Badge size="xs" color={entry.shift === 'AM' ? 'orange' : 'indigo'} variant="light" radius="sm">{entry.shift || '—'}</Badge></Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0369a1', textAlign: 'right' }}>{(entry.ltr ?? entry.qty).toFixed(2)}</Table.Td>

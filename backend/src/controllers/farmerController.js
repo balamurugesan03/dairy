@@ -383,13 +383,17 @@ export const searchFarmer = async (req, res) => {
       });
     }
 
+    const isNumeric = /^\d+$/.test(query);
     const farmers = await Farmer.find({
-      $or: [
-        { farmerNumber: { $regex: query, $options: 'i' } },
-        { memberId: { $regex: query, $options: 'i' } },
-        { 'personalDetails.name': { $regex: query, $options: 'i' } },
-        { 'personalDetails.phone': { $regex: query, $options: 'i' } }
-      ],
+      $or: isNumeric
+        ? [
+            { farmerNumber: { $regex: `^${query}`, $options: 'i' } },
+            { memberId: { $regex: `^${query}`, $options: 'i' } }
+          ]
+        : [
+            { 'personalDetails.name': { $regex: query, $options: 'i' } },
+            { 'personalDetails.phone': { $regex: query, $options: 'i' } }
+          ],
       status: 'Active',
       companyId: req.companyId
     }).populate('ledgerId', 'ledgerName currentBalance balanceType')

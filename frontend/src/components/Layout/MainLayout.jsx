@@ -771,7 +771,7 @@ const MainLayout = () => {
         <Box
           style={{
             background: headerGradient,
-            padding: '12px 20px',
+            padding: '6px 20px',
             boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
           }}
         >
