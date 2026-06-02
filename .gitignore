@@ -20,6 +20,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Exception: WhatsApp session LevelDB files must be tracked
+!backend/.wwebjs_auth/**/*.log
+
 # IDE
 .vscode/
 .idea/
