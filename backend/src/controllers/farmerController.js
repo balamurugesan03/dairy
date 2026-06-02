@@ -387,8 +387,8 @@ export const searchFarmer = async (req, res) => {
     const farmers = await Farmer.find({
       $or: isNumeric
         ? [
-            { farmerNumber: { $regex: `^${query}`, $options: 'i' } },
-            { memberId: { $regex: `^${query}`, $options: 'i' } }
+            { farmerNumber: query },   // exact match — typing 12 returns only 12, not 112/120
+            { memberId: query }
           ]
         : [
             { 'personalDetails.name': { $regex: query, $options: 'i' } },

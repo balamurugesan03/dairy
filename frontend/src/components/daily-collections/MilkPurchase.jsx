@@ -1133,20 +1133,27 @@ const MilkPurchase = () => {
     return () => document.removeEventListener('keydown', block, true);
   }, [dupBlocked]);
 
-  // Search debounce — show dropdown for both name and farmer number input
+  // Search debounce — skip when producer already selected with this number
   useEffect(() => {
-    if (memberInput.trim().length < 2) { setSearchResults([]); setShowDropdown(false); return; }
+    // If producer is already set and input matches, skip (prevents dropdown reopening after selectProducer)
+    if (producer && producer.no === memberInput.trim()) return;
+    if (memberInput.trim().length < 1) { setSearchResults([]); setShowDropdown(false); return; }
     const t = setTimeout(async () => {
       setSearchLoading(true);
       try {
         const res = await farmerAPI.search(memberInput.trim());
         const list = res?.data || [];
-        setSearchResults(list); setShowDropdown(list.length > 0);
+        // If exactly 1 result and it's a numeric exact match → auto-select, no dropdown
+        if (list.length === 1 && /^\d+$/.test(memberInput.trim())) {
+          selectProducer(list[0]);
+        } else {
+          setSearchResults(list); setShowDropdown(list.length > 0);
+        }
       } catch { setSearchResults([]); setShowDropdown(false); }
       finally { setSearchLoading(false); }
     }, 300);
     return () => clearTimeout(t);
-  }, [memberInput]);
+  }, [memberInput]); // eslint-disable-line
 
   const selectProducer = async (farmer) => {
     const base = { _id: farmer._id, no: farmer.farmerNumber, memberId: farmer.memberId || '', name: farmer.personalDetails?.name || '', phone: farmer.personalDetails?.phone || '', avg: { qty: 0, clr: 0, fat: 0 } };
@@ -1427,6 +1434,14 @@ const MilkPurchase = () => {
   const handleMemberKeyDown = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
+      const q = memberInput.trim().toLowerCase();
+      if (!q) return;
+      // Use already-loaded results first (instant, no extra API call)
+      const cached =
+        searchResults.find(f => f.farmerNumber?.toLowerCase() === q) ||
+        searchResults.find(f => f.memberId?.toLowerCase() === q);
+      if (cached) { selectProducer(cached); return; }
+      // Fallback: fresh API lookup
       lookupMember(memberInput);
     }
   };
