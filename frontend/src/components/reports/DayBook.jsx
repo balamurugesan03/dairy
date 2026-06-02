@@ -50,8 +50,10 @@ const DayBook = () => {
   const navigate = useNavigate();
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
-  const [preset, setPreset] = useState('thisMonth');
+  const [preset,    setPreset]    = useState('thisMonth');
   const [dateRange, setDateRange] = useState(getPresetRange('thisMonth'));
+  const [dateMode,  setDateMode]  = useState('range');   // 'range' | 'single'
+  const [singleDate,setSingleDate]= useState(new Date());
   const [dayBookData, setDayBookData] = useState(null);
   const printRef = useRef();
 
@@ -59,7 +61,15 @@ const DayBook = () => {
 
   const handlePresetChange = (val) => {
     setPreset(val);
+    setDateMode('range');
     if (val !== 'custom') setDateRange(getPresetRange(val));
+  };
+
+  const handleSingleDateChange = (val) => {
+    if (!val) return;
+    setSingleDate(val);
+    setPreset('custom');
+    setDateRange([dayjs(val).startOf('day').toDate(), dayjs(val).endOf('day').toDate()]);
   };
 
   const companyName = selectedCompany?.companyName || 'Dairy Co-operative Society';
@@ -564,18 +574,35 @@ const DayBook = () => {
               w={150}
             />
 
-            <DatePickerInput
-              type="range"
-              label="Date Range"
-              value={dateRange}
-              onChange={(val) => { setDateRange(val); setPreset('custom'); }}
-              valueFormat="DD/MM/YYYY"
-              size="xs"
-              leftSection={<IconCalendar size={14} />}
-              w={260}
-              radius="md"
-              clearable={false}
-            />
+            {/* Range / Single toggle */}
+            <Group gap={4} align="flex-end">
+              <DatePickerInput
+                type={dateMode === 'single' ? 'default' : 'range'}
+                label={dateMode === 'single' ? 'Single Date' : 'Date Range'}
+                value={dateMode === 'single' ? singleDate : dateRange}
+                onChange={dateMode === 'single' ? handleSingleDateChange : (val) => { setDateRange(val); setPreset('custom'); }}
+                valueFormat="DD/MM/YYYY"
+                size="xs"
+                leftSection={<IconCalendar size={14} />}
+                w={dateMode === 'single' ? 150 : 260}
+                radius="md"
+                clearable={false}
+              />
+              <Button.Group>
+                <Button
+                  size="xs" radius="md"
+                  variant={dateMode === 'range' ? 'filled' : 'default'}
+                  onClick={() => setDateMode('range')}
+                  style={{ fontSize: 11, height: 30 }}
+                >Range</Button>
+                <Button
+                  size="xs" radius="md"
+                  variant={dateMode === 'single' ? 'filled' : 'default'}
+                  onClick={() => { setDateMode('single'); handleSingleDateChange(singleDate); }}
+                  style={{ fontSize: 11, height: 30 }}
+                >Single</Button>
+              </Button.Group>
+            </Group>
 
             <Button
               size="xs"
