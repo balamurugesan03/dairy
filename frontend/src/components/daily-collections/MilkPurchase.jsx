@@ -2431,7 +2431,7 @@ const MilkPurchase = () => {
         <Box style={{ margin: '6px 8px 0', borderRadius: 4, border: '1px solid #80deea', background: 'rgba(255,255,255,0.45)', overflow: 'hidden' }}>
           <Box style={{ background: '#006064', padding: '2px 8px', color: '#e0f7fa', fontSize: 10, fontWeight: 700, letterSpacing: '0.5px' }}>MODE</Box>
           <Box style={{ padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {['Weight', 'Analyzer', 'DISP', 'Milk Bill', 'SMS', 'WhatsApp'].map(opt => (
+            {['Weight', 'Analyzer', 'DISP', 'Milk Bill', 'WhatsApp'].map(opt => (
               <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 11 }}>
                 <input type="checkbox"
                   checked={cpMode.includes(opt)}
