@@ -1176,7 +1176,10 @@ const MilkPurchase = () => {
     try {
       const res = await farmerAPI.search(query.trim());
       const farmers = res?.data || [];
-      const exact = farmers.find(f => f.memberId?.toLowerCase() === query.trim().toLowerCase() || f.farmerNumber?.toLowerCase() === query.trim().toLowerCase());
+      const q = query.trim().toLowerCase();
+      const exact =
+        farmers.find(f => f.farmerNumber?.toLowerCase() === q) ||
+        farmers.find(f => f.memberId?.toLowerCase() === q);
       if (exact) { selectProducer(exact); }
       else if (farmers.length === 1) { selectProducer(farmers[0]); }
       else { setSearchResults(farmers); setShowDropdown(farmers.length > 0); }
@@ -1742,7 +1745,8 @@ const MilkPurchase = () => {
                         <Box style={{ flex: 1, minWidth: 0 }}>
                           <Text size="12px" fw={700} style={{ lineHeight: 1.2 }}>{f.personalDetails?.name || 'Unknown'}</Text>
                           <Group gap={4}>
-                            <Badge size="xs" color="blue" radius="sm">{f.memberId || f.farmerNumber}</Badge>
+                            <Badge size="xs" color="blue" radius="sm">{f.farmerNumber}</Badge>
+                            {f.memberId && f.memberId !== f.farmerNumber && <Badge size="xs" color="violet" radius="sm" variant="outline">M:{f.memberId}</Badge>}
                             {f.personalDetails?.phone && <Text size="9px" c="dimmed">{f.personalDetails.phone}</Text>}
                           </Group>
                         </Box>
