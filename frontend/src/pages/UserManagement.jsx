@@ -44,26 +44,178 @@ import { userManagementAPI } from '../services/api';
 import { message } from '../utils/toast';
 import PageHeader from '../components/common/PageHeader';
 
-// Module labels for display
-const MODULE_LABELS = {
-  dashboard: 'Dashboard',
-  farmers: 'Farmers',
-  customers: 'Customers',
-  suppliers: 'Suppliers',
-  sales: 'Sales',
-  purchases: 'Purchases',
-  milkCollection: 'Milk Collection',
-  payments: 'Payments',
-  inventory: 'Inventory',
-  accounting: 'Accounting',
-  reports: 'Reports',
-  hrm: 'HRM',
-  settings: 'Settings',
-  collectionCenters: 'Collection Centers',
-  subsidies: 'Subsidies'
-};
+// Full grouped module structure — main modules + sub-modules
+const MODULE_GROUPS = [
+  {
+    key: 'dashboard', label: 'Dashboard', color: '#4dabf7',
+    subModules: []
+  },
+  {
+    key: 'farmers', label: 'Farmers Management', color: '#51cf66',
+    subModules: [
+      { key: 'farmers.producers',          label: 'Producer Management'   },
+      { key: 'farmers.collectionCenters',  label: 'Collection Centre'     },
+      { key: 'farmers.agents',             label: 'Agent Management'      },
+      { key: 'farmers.milkSalesCustomers', label: 'Customer (Milk Sales)' },
+    ]
+  },
+  {
+    key: 'milkCollection', label: 'Milk Purchase & Sales', color: '#74c0fc',
+    subModules: [
+      { key: 'milkCollection.purchase',        label: 'Milk Purchase'         },
+      { key: 'milkCollection.dailyList',        label: 'Daily Collection List' },
+      { key: 'milkCollection.sales',            label: 'Milk Sales'            },
+      { key: 'milkCollection.unionSales',       label: 'Union Sales'           },
+      { key: 'milkCollection.farmerSummary',    label: 'Farmer-Wise Summary'   },
+      { key: 'milkCollection.rateChart',        label: 'Rate Chart Settings'   },
+      { key: 'milkCollection.machineConfig',    label: 'Machine Configuration' },
+      { key: 'milkCollection.milkSalesRate',    label: 'Milk Sales Rate'       },
+      { key: 'milkCollection.shiftIncentive',   label: 'Shift Incentive'       },
+      { key: 'milkCollection.timeIncentive',    label: 'Time Incentive'        },
+      { key: 'milkCollection.producerOpenings', label: 'Producer Openings'     },
+    ]
+  },
+  {
+    key: 'inventory', label: 'Dairy Inventory', color: '#ffa94d',
+    subModules: [
+      { key: 'inventory.suppliers',        label: 'Supplier'                        },
+      { key: 'inventory.items',            label: 'Items'                           },
+      { key: 'inventory.stockIn',          label: 'Inventory Purchase'              },
+      { key: 'inventory.sales',            label: 'Inventory Sales'                 },
+      { key: 'inventory.stockOut',         label: 'Stock Returns'                   },
+      { key: 'inventory.purchaseReturns',  label: 'Purchase Return (Debit Note)'    },
+      { key: 'inventory.salesReturns',     label: 'Sales Return'                    },
+      { key: 'inventory.subsidies',        label: 'Subsidy'                         },
+    ]
+  },
+  {
+    key: 'payments', label: 'Producers Dues', color: '#69db7c',
+    subModules: [
+      { key: 'payments.receipts',           label: 'Producer Receipts'      },
+      { key: 'payments.register',           label: 'Payment Register'       },
+      { key: 'payments.bankTransfer',       label: 'Bank Transfer'          },
+      { key: 'payments.paymentToProducer',  label: 'Payment to Producer'    },
+      { key: 'payments.loans',              label: 'Loans'                  },
+      { key: 'payments.cashAdvance',        label: 'Cash Advance'           },
+      { key: 'payments.cattleFeed',         label: 'Cattle Feed Advance'    },
+      { key: 'payments.earningDeduction',   label: 'Earnings / Deductions'  },
+      { key: 'payments.producerRegister',   label: 'Producer Register'      },
+      { key: 'payments.farmerLedger',       label: 'Producer Ledger'        },
+    ]
+  },
+  {
+    key: 'accounting', label: 'Accounts', color: '#a9e34b',
+    subModules: [
+      { key: 'accounting.ledgers',   label: 'Ledgers'                  },
+      { key: 'accounting.receipt',   label: 'Receipt Voucher'          },
+      { key: 'accounting.payment',   label: 'Payment Voucher'          },
+      { key: 'accounting.journal',   label: 'Adjustment / Journal'     },
+      { key: 'accounting.vouchers',  label: 'Vouchers Management'      },
+      { key: 'accounting.cashBook',  label: 'Cash Book'                },
+      { key: 'accounting.dayBook',   label: 'Day Book'                 },
+      { key: 'accounting.generalLedger', label: 'General Ledger'       },
+      { key: 'accounting.balanceSheet',  label: 'Balance Sheet'        },
+      { key: 'accounting.finalAccounts', label: 'Final Accounts'       },
+      { key: 'accounting.outstanding',   label: 'Outstanding Report'   },
+    ]
+  },
+  {
+    key: 'reports', label: 'Dairy Reports', color: '#f783ac',
+    subModules: [
+      { key: 'reports.dairyAbstract',   label: 'Dairy Abstract'           },
+      { key: 'reports.dairyRegister',   label: 'Dairy Register'           },
+      { key: 'reports.misReport',       label: 'MIS Report'               },
+      { key: 'reports.monthlyMIS',      label: 'Monthly MIS Report'       },
+      { key: 'reports.milkPurchase',    label: 'Milk Purchase Report'     },
+      { key: 'reports.milkStatement',   label: 'Milk Statement'           },
+      { key: 'reports.milkBillAbstract',label: 'Milk Bill Abstract'       },
+      { key: 'reports.rdStatement',     label: 'R&D Statement'            },
+      { key: 'reports.inspectionReport',label: 'Inspection Report'        },
+      { key: 'reports.cropStatements',  label: 'Crop Damage Statements'   },
+      { key: 'reports.agriStats',       label: 'Monthly Agri Statistics'  },
+    ]
+  },
+  {
+    key: 'businessInventory', label: 'Business Inventory', color: '#da77f2',
+    subModules: [
+      { key: 'businessInventory.suppliers',       label: 'Supplier'            },
+      { key: 'businessInventory.items',           label: 'Item Master'         },
+      { key: 'businessInventory.stockIn',         label: 'Purchase / Stock In' },
+      { key: 'businessInventory.sales',           label: 'Sales Invoices'      },
+      { key: 'businessInventory.stockOut',        label: 'Stock Out / Returns' },
+      { key: 'businessInventory.purchaseReturns', label: 'Purchase Return'     },
+      { key: 'businessInventory.salesReturns',    label: 'Sales Return'        },
+    ]
+  },
+  {
+    key: 'businessReports', label: 'Business Reports', color: '#4cc9f0',
+    subModules: [
+      { key: 'businessReports.saleReport',     label: 'Sale Report'       },
+      { key: 'businessReports.purchaseReport', label: 'Purchase Report'   },
+      { key: 'businessReports.partyStatement', label: 'Party Statement'   },
+      { key: 'businessReports.allParties',     label: 'All Parties'       },
+      { key: 'businessReports.gstr1',          label: 'GSTR-1'            },
+      { key: 'businessReports.gstr2',          label: 'GSTR-2'            },
+      { key: 'businessReports.profitLoss',     label: 'Profit & Loss'     },
+      { key: 'businessReports.tradingAccount', label: 'Trading Account'   },
+      { key: 'businessReports.balanceSheet',   label: 'Balance Sheet'     },
+      { key: 'businessReports.trialBalance',   label: 'Trial Balance'     },
+    ]
+  },
+  {
+    key: 'quotations', label: 'Quotations', color: '#63e6be',
+    subModules: [
+      { key: 'quotations.add',  label: 'Add Quotation'   },
+      { key: 'quotations.list', label: 'Quotation List'  },
+    ]
+  },
+  {
+    key: 'machines', label: 'Machines', color: '#ffd43b',
+    subModules: [
+      { key: 'machines.add',  label: 'Add Machine'  },
+      { key: 'machines.list', label: 'Machine List' },
+    ]
+  },
+  {
+    key: 'warranty', label: 'Warranty', color: '#ff8787',
+    subModules: [
+      { key: 'warranty.add',  label: 'Add Warranty'   },
+      { key: 'warranty.list', label: 'Warranty List'  },
+    ]
+  },
+  {
+    key: 'promotions', label: 'Promotions', color: '#f08c00',
+    subModules: [
+      { key: 'promotions.dashboard', label: 'Dashboard'        },
+      { key: 'promotions.coupons',   label: 'Discount Coupons' },
+      { key: 'promotions.offers',    label: 'Offers & Schemes' },
+      { key: 'promotions.campaigns', label: 'Campaigns'        },
+    ]
+  },
+  {
+    key: 'hrm', label: 'Human Resources', color: '#748ffc',
+    subModules: [
+      { key: 'hrm.employees',   label: 'Employees'         },
+      { key: 'hrm.attendance',  label: 'Attendance'        },
+      { key: 'hrm.leaves',      label: 'Leave Management'  },
+      { key: 'hrm.salary',      label: 'Payroll'           },
+      { key: 'hrm.loans',       label: 'Loans / Advance'   },
+    ]
+  },
+  {
+    key: 'settings', label: 'Settings', color: '#94d82d',
+    subModules: [
+      { key: 'settings.societyInfo',      label: 'Society Info'        },
+      { key: 'settings.financialYear',    label: 'Financial Year'      },
+      { key: 'settings.paymentSettings',  label: 'Payment Settings'    },
+      { key: 'settings.userManagement',   label: 'User Management'     },
+      { key: 'settings.openLyssaMerge',   label: 'OpenLyssa Merge Tool'},
+    ]
+  },
+];
 
-const MODULES = Object.keys(MODULE_LABELS);
+// Flat list of ALL module keys (main + sub) for permission initialisation
+const MODULES = MODULE_GROUPS.flatMap(g => [g.key, ...g.subModules.map(s => s.key)]);
 
 const UserManagement = () => {
   const { isAdmin, companyInfo } = useAuth();
@@ -254,37 +406,39 @@ const UserManagement = () => {
     }
   };
 
-  // Handle permission change
-  const handlePermissionChange = (moduleIndex, action, checked) => {
-    const newPermissions = [...formData.permissions];
-    newPermissions[moduleIndex] = {
-      ...newPermissions[moduleIndex],
-      [action]: checked
-    };
+  // Handle permission change by module key
+  const handlePermissionChange = (moduleKey, action, checked) => {
+    const newPermissions = formData.permissions.map(p =>
+      p.module === moduleKey ? { ...p, [action]: checked } : p
+    );
     setFormData({ ...formData, permissions: newPermissions });
   };
 
-  // Toggle all permissions for a module
-  const handleSelectAllModule = (moduleIndex, checked) => {
-    const newPermissions = [...formData.permissions];
-    newPermissions[moduleIndex] = {
-      ...newPermissions[moduleIndex],
-      read: checked,
-      write: checked,
-      edit: checked,
-      delete: checked
-    };
+  // Toggle all CRUD for a single module row
+  const handleSelectAllModule = (moduleKey, checked) => {
+    const newPermissions = formData.permissions.map(p =>
+      p.module === moduleKey
+        ? { ...p, read: checked, write: checked, edit: checked, delete: checked }
+        : p
+    );
+    setFormData({ ...formData, permissions: newPermissions });
+  };
+
+  // Toggle all CRUD for all modules in a group (main + sub-modules)
+  const handleSelectAllGroup = (group, checked) => {
+    const keys = new Set([group.key, ...group.subModules.map(s => s.key)]);
+    const newPermissions = formData.permissions.map(p =>
+      keys.has(p.module)
+        ? { ...p, read: checked, write: checked, edit: checked, delete: checked }
+        : p
+    );
     setFormData({ ...formData, permissions: newPermissions });
   };
 
   // Select all permissions for all modules
   const handleSelectAll = (checked) => {
     const newPermissions = formData.permissions.map(p => ({
-      ...p,
-      read: checked,
-      write: checked,
-      edit: checked,
-      delete: checked
+      ...p, read: checked, write: checked, edit: checked, delete: checked
     }));
     setFormData({ ...formData, permissions: newPermissions });
   };
@@ -602,56 +756,82 @@ const UserManagement = () => {
               Select which operations each user can perform in each module
             </Alert>
 
-            <ScrollArea h={300}>
-              <Table withTableBorder withColumnBorders>
+            <ScrollArea h={500}>
+              <Table withTableBorder withColumnBorders style={{ fontSize: 12 }}>
                 <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Module</Table.Th>
-                    <Table.Th style={{ textAlign: 'center' }}>Read</Table.Th>
-                    <Table.Th style={{ textAlign: 'center' }}>Write</Table.Th>
-                    <Table.Th style={{ textAlign: 'center' }}>Edit</Table.Th>
-                    <Table.Th style={{ textAlign: 'center' }}>Delete</Table.Th>
-                    <Table.Th style={{ textAlign: 'center' }}>All</Table.Th>
+                  <Table.Tr style={{ background: '#f1f3f5' }}>
+                    <Table.Th style={{ minWidth: 220 }}>Module / Sub-Module</Table.Th>
+                    <Table.Th style={{ textAlign: 'center', width: 52 }}>Read</Table.Th>
+                    <Table.Th style={{ textAlign: 'center', width: 52 }}>Write</Table.Th>
+                    <Table.Th style={{ textAlign: 'center', width: 52 }}>Edit</Table.Th>
+                    <Table.Th style={{ textAlign: 'center', width: 52 }}>Delete</Table.Th>
+                    <Table.Th style={{ textAlign: 'center', width: 52 }}>All</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                  {formData.permissions.map((perm, index) => {
-                    const allChecked = perm.read && perm.write && perm.edit && perm.delete;
-                    return (
-                      <Table.Tr key={perm.module}>
-                        <Table.Td fw={500}>{MODULE_LABELS[perm.module]}</Table.Td>
-                        <Table.Td style={{ textAlign: 'center' }}>
+                  {MODULE_GROUPS.map(group => {
+                    const allKeys = [group.key, ...group.subModules.map(s => s.key)];
+                    const allPerms = allKeys.map(k => formData.permissions.find(p => p.module === k) || { module: k, read: false, write: false, edit: false, delete: false });
+                    const groupAllChecked = allPerms.every(p => p.read && p.write && p.edit && p.delete);
+                    const mainPerm = formData.permissions.find(p => p.module === group.key) || { read: false, write: false, edit: false, delete: false };
+                    const mainAllChecked = mainPerm.read && mainPerm.write && mainPerm.edit && mainPerm.delete;
+
+                    return [
+                      /* ── Group header row ── */
+                      <Table.Tr key={`hdr-${group.key}`} style={{ background: group.color + '33' }}>
+                        <Table.Td colSpan={5} style={{ fontWeight: 800, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.6px', color: '#1a1a2e', paddingLeft: 8 }}>
+                          {group.label}
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'center', background: group.color + '55' }}>
                           <Checkbox
-                            checked={perm.read}
-                            onChange={(e) => handlePermissionChange(index, 'read', e.currentTarget.checked)}
+                            size="xs"
+                            checked={groupAllChecked}
+                            title="Toggle all in this group"
+                            onChange={e => handleSelectAllGroup(group, e.currentTarget.checked)}
                           />
                         </Table.Td>
-                        <Table.Td style={{ textAlign: 'center' }}>
-                          <Checkbox
-                            checked={perm.write}
-                            onChange={(e) => handlePermissionChange(index, 'write', e.currentTarget.checked)}
-                          />
+                      </Table.Tr>,
+
+                      /* ── Main module row ── */
+                      <Table.Tr key={group.key} style={{ background: group.color + '18' }}>
+                        <Table.Td style={{ fontWeight: 600, paddingLeft: 14, color: '#222' }}>
+                          {group.label}
                         </Table.Td>
+                        {['read', 'write', 'edit', 'delete'].map(action => (
+                          <Table.Td key={action} style={{ textAlign: 'center' }}>
+                            <Checkbox size="xs" checked={!!mainPerm[action]}
+                              onChange={e => handlePermissionChange(group.key, action, e.currentTarget.checked)} />
+                          </Table.Td>
+                        ))}
                         <Table.Td style={{ textAlign: 'center' }}>
-                          <Checkbox
-                            checked={perm.edit}
-                            onChange={(e) => handlePermissionChange(index, 'edit', e.currentTarget.checked)}
-                          />
+                          <Checkbox size="xs" checked={mainAllChecked}
+                            onChange={e => handleSelectAllModule(group.key, e.currentTarget.checked)} />
                         </Table.Td>
-                        <Table.Td style={{ textAlign: 'center' }}>
-                          <Checkbox
-                            checked={perm.delete}
-                            onChange={(e) => handlePermissionChange(index, 'delete', e.currentTarget.checked)}
-                          />
-                        </Table.Td>
-                        <Table.Td style={{ textAlign: 'center' }}>
-                          <Checkbox
-                            checked={allChecked}
-                            onChange={(e) => handleSelectAllModule(index, e.currentTarget.checked)}
-                          />
-                        </Table.Td>
-                      </Table.Tr>
-                    );
+                      </Table.Tr>,
+
+                      /* ── Sub-module rows ── */
+                      ...group.subModules.map(sub => {
+                        const perm = formData.permissions.find(p => p.module === sub.key) || { read: false, write: false, edit: false, delete: false };
+                        const subAllChecked = perm.read && perm.write && perm.edit && perm.delete;
+                        return (
+                          <Table.Tr key={sub.key}>
+                            <Table.Td style={{ paddingLeft: 28, color: '#444', fontSize: 11 }}>
+                              ↳ {sub.label}
+                            </Table.Td>
+                            {['read', 'write', 'edit', 'delete'].map(action => (
+                              <Table.Td key={action} style={{ textAlign: 'center' }}>
+                                <Checkbox size="xs" checked={!!perm[action]}
+                                  onChange={e => handlePermissionChange(sub.key, action, e.currentTarget.checked)} />
+                              </Table.Td>
+                            ))}
+                            <Table.Td style={{ textAlign: 'center' }}>
+                              <Checkbox size="xs" checked={subAllChecked}
+                                onChange={e => handleSelectAllModule(sub.key, e.currentTarget.checked)} />
+                            </Table.Td>
+                          </Table.Tr>
+                        );
+                      })
+                    ];
                   })}
                 </Table.Tbody>
               </Table>
