@@ -307,6 +307,9 @@ import machineConfigRoutes from './routes/machineConfigRoutes.js';
 // WhatsApp messaging routes
 import whatsappRoutes from './routes/whatsappRoutes.js';
 
+// Razorpay payment gateway routes
+import razorpayRoutes from './routes/razorpayRoutes.js';
+
 // Society Info & Document Management routes
 import societyInfoRoutes from './routes/societyInfoRoutes.js';
 
@@ -508,6 +511,9 @@ app.use('/api/inspection-report',  protect, addCompanyFilter, inspectionReportRo
 
 // Protected company routes (for superadmin management)
 app.use('/api/companies', protect, companyRoutes);
+
+// Razorpay routes (no company filter — payment gateway is global)
+app.use('/api/razorpay', protect, razorpayRoutes);
 
 // 404 handler
 app.use((req, res, next) => {

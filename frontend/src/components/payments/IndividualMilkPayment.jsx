@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { message } from '../../utils/toast';
 import {
-  farmerAPI, paymentAPI, farmerLedgerAPI, ledgerAPI, paymentRegisterAPI, dairySettingsAPI,
+  farmerAPI, paymentAPI, farmerLedgerAPI, ledgerAPI, paymentRegisterAPI, dairySettingsAPI, razorpayAPI,
 } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -18,10 +18,22 @@ import {
 import dayjs from 'dayjs';
 
 const PAYMENT_MODES = [
-  { value: 'Cash',  label: 'Cash' },
-  { value: 'Bank',  label: 'Bank Transfer' },
-  { value: 'UPI',   label: 'UPI' },
+  { value: 'Cash',     label: 'Cash' },
+  { value: 'Bank',     label: 'Bank Transfer' },
+  { value: 'UPI',      label: 'UPI' },
+  { value: 'Razorpay', label: '💳 Razorpay' },
 ];
+
+// Dynamically load the Razorpay checkout script
+const loadRazorpayScript = () =>
+  new Promise((resolve) => {
+    if (window.Razorpay) return resolve(true);
+    const s = document.createElement('script');
+    s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    s.onload  = () => resolve(true);
+    s.onerror = () => resolve(false);
+    document.body.appendChild(s);
+  });
 
 const fmt = (v) =>
   (parseFloat(v) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -70,6 +82,10 @@ const IndividualMilkPayment = () => {
   const [remarks,         setRemarks]         = useState('');
   const [printVoucher,    setPrintVoucher]    = useState(false);
 
+  // Razorpay
+  const [rzpPaymentId,   setRzpPaymentId]   = useState('');
+  const [rzpPaying,      setRzpPaying]      = useState(false);
+
   // Bank ledgers + save
   const [bankLedgers,    setBankLedgers]    = useState([]);
   const [saving,         setSaving]         = useState(false);
@@ -107,8 +123,9 @@ const IndividualMilkPayment = () => {
 
   const totalEarnings = (parseFloat(milkAmount) || 0) + (parseFloat(otherEarnings) || 0);
   const balance       = totalEarnings - totalDeductions + (previousBalance || 0);
-  const isBankMode    = paymentMode !== 'Cash';
-  const canSave       = selectedFarmer && (parseFloat(milkAmount) || 0) > 0 && balance >= 0 && (!isBankMode || bankLedgerId);
+  const isBankMode    = paymentMode === 'Bank';
+  const isRazorpay    = paymentMode === 'Razorpay';
+  const canSave       = selectedFarmer && (parseFloat(milkAmount) || 0) > 0 && balance >= 0 && (!isBankMode || bankLedgerId) && (!isRazorpay || rzpPaymentId);
 
   // ── Focus helper ─────────────────────────────────────────────────────────────
   const focusInput = (ref) => {
@@ -361,7 +378,71 @@ const IndividualMilkPayment = () => {
     setPaidAmount('');
     setRemarks('');
     setPrintVoucher(false);
+    setRzpPaymentId('');
     focusInput(farmerRef);
+  };
+
+  // ── Razorpay checkout ─────────────────────────────────────────────────────────
+  const handleRazorpayPay = async () => {
+    if (!selectedFarmer)               return message.error('Please select a farmer first');
+    if (!(parseFloat(milkAmount) > 0)) return message.error('Please enter milk amount');
+    if (balance <= 0)                  return message.error('Balance must be greater than 0');
+
+    setRzpPaying(true);
+    try {
+      const loaded = await loadRazorpayScript();
+      if (!loaded) { message.error('Failed to load Razorpay. Check internet connection.'); return; }
+
+      const orderRes = await razorpayAPI.createOrder(
+        balance,
+        `dairy_${selectedFarmer._id}_${Date.now()}`,
+        { farmerName: selectedFarmer.personalDetails?.name || '', farmerNo: selectedFarmer.farmerNumber || '' }
+      );
+      if (!orderRes?.success) { message.error(orderRes?.message || 'Failed to create Razorpay order'); return; }
+
+      const { orderId, amount: orderAmount, currency, keyId } = orderRes.data;
+      const farmerName = selectedFarmer.personalDetails?.name || '';
+      const farmerPhone = selectedFarmer.personalDetails?.phone || '';
+
+      const options = {
+        key:         keyId,
+        amount:      orderAmount,
+        currency:    currency || 'INR',
+        name:        'Dairy Society',
+        description: `Milk Payment — ${farmerName} (${selectedFarmer.farmerNumber})`,
+        order_id:    orderId,
+        prefill: { name: farmerName, contact: farmerPhone },
+        theme: { color: '#16a34a' },
+        handler: async (response) => {
+          try {
+            const verifyRes = await razorpayAPI.verifyPayment(
+              response.razorpay_order_id,
+              response.razorpay_payment_id,
+              response.razorpay_signature,
+            );
+            if (verifyRes?.success) {
+              setRzpPaymentId(response.razorpay_payment_id);
+              setPaidAmount(String(balance));
+              message.success(`Payment verified! ID: ${response.razorpay_payment_id}`);
+            } else {
+              message.error('Payment verification failed');
+            }
+          } catch { message.error('Payment verification error'); }
+        },
+        modal: { ondismiss: () => setRzpPaying(false) },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', (resp) => {
+        message.error(`Payment failed: ${resp.error.description}`);
+        setRzpPaying(false);
+      });
+      rzp.open();
+    } catch (err) {
+      message.error(err.message || 'Razorpay error');
+    } finally {
+      setRzpPaying(false);
+    }
   };
 
   // ── Print voucher ─────────────────────────────────────────────────────────────
@@ -463,6 +544,7 @@ ${(payment.balanceAmount || 0) > 0 ? `<div class="total"><span>Balance</span><sp
       paymentSource:   'Ledger',
       paymentPeriod:   { fromDate: cycleFrom, toDate: cycleTo },
       ...(isBankMode ? { bankLedgerId } : {}),
+      ...(isRazorpay  ? { razorpayPaymentId: rzpPaymentId } : {}),
     };
 
     setSaving(true);
@@ -856,6 +938,37 @@ ${(payment.balanceAmount || 0) > 0 ? `<div class="total"><span>Balance</span><sp
                           rightSection={bankLedgers.length === 0 ? <Loader size="xs" /> : null}
                         />
                       </div>
+                    </Grid.Col>
+                  )}
+
+                  {isRazorpay && (
+                    <Grid.Col span={{ base: 12, sm: 8, md: 5 }}>
+                      <Box style={{ border: '1.5px solid #86efac', borderRadius: 8, padding: '10px 14px', background: '#f0fdf4' }}>
+                        <Group justify="space-between" align="center" mb={6}>
+                          <Text size="12px" fw={700} c="#15803d">💳 Razorpay Payment</Text>
+                          {rzpPaymentId && (
+                            <Badge color="green" size="sm" variant="filled">✓ Verified</Badge>
+                          )}
+                        </Group>
+                        {rzpPaymentId ? (
+                          <Group gap={6} align="center">
+                            <Text size="11px" c="dimmed">Payment ID:</Text>
+                            <Text size="11px" fw={700} c="#15803d" style={{ fontFamily: 'monospace' }}>{rzpPaymentId}</Text>
+                          </Group>
+                        ) : (
+                          <Button
+                            fullWidth
+                            size="sm"
+                            loading={rzpPaying}
+                            disabled={!selectedFarmer || balance <= 0}
+                            onClick={handleRazorpayPay}
+                            style={{ background: '#16a34a', color: 'white', fontWeight: 700 }}
+                            leftSection={<Text size="14px">💳</Text>}
+                          >
+                            Pay ₹{fmt(balance)} via Razorpay
+                          </Button>
+                        )}
+                      </Box>
                     </Grid.Col>
                   )}
 

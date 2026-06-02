@@ -1117,4 +1117,9 @@ export const whatsappAPI = {
   test:       (phone)            => api.get('/whatsapp/test', { params: { phone } }).then(r => r.data).catch(handleError),
 };
 
+export const razorpayAPI = {
+  createOrder:  (amount, receipt, notes) => api.post('/razorpay/create-order', { amount, receipt, notes }).then(r => r.data),
+  verifyPayment:(orderId, paymentId, signature) => api.post('/razorpay/verify', { razorpay_order_id: orderId, razorpay_payment_id: paymentId, razorpay_signature: signature }).then(r => r.data),
+};
+
 export default api;
