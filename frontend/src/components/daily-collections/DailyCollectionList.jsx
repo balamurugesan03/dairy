@@ -445,7 +445,7 @@ const DailyCollectionList = () => {
     const buildColRows = (list) => list.map((r, i) => `<tr>
       <td class="c">${i + 1}</td>
       <td class="c">${(r.farmerNumber || '')}</td>
-      <td class="l">${(r.farmerName || '').substring(0, 11)}</td>
+      <td class="l">${(r.farmerName || '').substring(0, 22)}</td>
       <td class="r">${(r.fat  || 0).toFixed(2)}</td>
       <td class="r">${(r.clr  || 0).toFixed(1)}</td>
       <td class="r">${(r.snf  || 0).toFixed(2)}</td>
@@ -465,15 +465,15 @@ const DailyCollectionList = () => {
           <div class="panel-hdr ${isNm ? 'nm' : ''}">${title} (${list.length})</div>
           <table>
             <thead><tr>
-              <th class="c" style="width:14px">Sl</th>
-              <th class="c" style="width:20px">F.No</th>
-              <th class="l" style="width:36px">Name</th>
-              <th class="r" style="width:15px">FAT</th>
-              <th class="r" style="width:13px">CLR</th>
-              <th class="r" style="width:15px">SNF</th>
-              <th class="r" style="width:17px">Ltr</th>
-              <th class="r" style="width:16px">Rate</th>
-              <th class="r" style="width:22px">Amt</th>
+              <th class="c" style="width:20px">Sl</th>
+              <th class="c" style="width:28px">F.No</th>
+              <th class="l" style="width:70px">Name</th>
+              <th class="r" style="width:22px">FAT</th>
+              <th class="r" style="width:20px">CLR</th>
+              <th class="r" style="width:22px">SNF</th>
+              <th class="r" style="width:26px">Ltr</th>
+              <th class="r" style="width:24px">Rate</th>
+              <th class="r" style="width:32px">Amt</th>
             </tr></thead>
             <tbody>
               ${buildColRows(list)}
@@ -503,15 +503,14 @@ const DailyCollectionList = () => {
   .title-line { text-align:center; font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase; text-decoration:underline; margin:1.5mm 0; }
   .meta { font-size:8px; margin-bottom:2mm; }
   .meta span { margin-right:5mm; }
-  /* ── Two-column layout ── */
-  .two-col { display:flex; gap:2mm; align-items:flex-start; }
-  .panel { flex:1; min-width:0; }
-  .col-sep { width:1px; background:#aaa; align-self:stretch; flex-shrink:0; }
-  .panel-hdr { font-weight:700; font-size:8px; letter-spacing:0.8px; text-transform:uppercase;
-               padding:2px 4px; text-align:center; border:1.5px solid #333;
+  /* ── Stacked layout ── */
+  .two-col { display:block; }
+  .panel { margin-bottom:3mm; }
+  .panel-hdr { font-weight:700; font-size:9px; letter-spacing:0.8px; text-transform:uppercase;
+               padding:2px 6px; text-align:center; border:1.5px solid #333;
                background:#dbeafe; color:#1a3c6e; margin-bottom:1px; }
   .panel-hdr.nm { background:#f3f4f6; color:#374151; }
-  table { width:100%; border-collapse:collapse; font-size:7.5px; }
+  table { width:100%; border-collapse:collapse; font-size:8px; }
   thead tr th { border-top:1px solid #333; border-bottom:1px solid #555; padding:1.5px 2px;
                 font-weight:700; font-size:7px; letter-spacing:0.2px; text-transform:uppercase; }
   tbody tr td { padding:1px 2px; border-bottom:1px dotted #ccc; }
@@ -554,7 +553,6 @@ const DailyCollectionList = () => {
 
   <div class="two-col">
     ${colPanel('Members', members, mLtr, mAmt, false)}
-    <div class="col-sep"></div>
     ${colPanel('Non-Members', nonMembers, nmLtr, nmAmt, true)}
   </div>
 

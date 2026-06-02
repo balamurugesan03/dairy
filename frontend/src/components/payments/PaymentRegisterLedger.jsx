@@ -1074,7 +1074,7 @@ const PaymentRegisterLedger = () => {
                 </Stack>
               </Center>
             }
-          />
+          /> 
           <Progress value={savePct} size="sm" radius="xl" color="indigo" w="100%" animated />
           <Text size="sm" c="dimmed" lineClamp={1} ta="center" w="100%">
             {saveProgress.name

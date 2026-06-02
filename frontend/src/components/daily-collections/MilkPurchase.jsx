@@ -298,6 +298,7 @@ const MilkPurchase = () => {
   const [dupBlocked,  setDupBlocked]  = useState(false);
   const [dupInfo,     setDupInfo]     = useState(null); // { name, billNo, amount, center }
   const [speakEnabled, setSpeakEnabled] = useState(false);
+  const [speakLang,    setSpeakLang]    = useState('en-IN'); // 'en-IN' | 'ml-IN'
   const [cpMode,      setCpMode]      = useState([]);
   const [paramCombo,  setParamCombo]  = useState('CLR-FAT'); // 'CLR-FAT' | 'FAT-SNF'
   const [qtyUnit,     setQtyUnit]     = useState('Litre');   // 'Litre' | 'KG'
@@ -361,7 +362,7 @@ const MilkPurchase = () => {
   const [displayConnected, setDisplayConnected] = useState(false);
   const [displayStarting,  setDisplayStarting]  = useState(false);
   const displaySendTimerRef = useRef(null);  // debounce for display sends
-  formRef.current = { producer, ltr, water, fat, clr, snf, date, shift, center, agent, calcResult, editingId, speakEnabled, entries, dupBlocked, entryMode, manualRate, manualAmount, activeTimeIncentive, activeShiftIncentives, cpMode, scaleConnected, displayConnected, milmaLookedUpRate, paramCombo, activeChart };
+  formRef.current = { producer, ltr, water, fat, clr, snf, date, shift, center, agent, calcResult, editingId, speakEnabled, speakLang, entries, dupBlocked, entryMode, manualRate, manualAmount, activeTimeIncentive, activeShiftIncentives, cpMode, scaleConnected, displayConnected, milmaLookedUpRate, paramCombo, activeChart };
 
   // ── Send to LED Display whenever entry values change ──────────────────────
   useEffect(() => {
@@ -1281,10 +1282,12 @@ const MilkPurchase = () => {
         }
 
         if (formRef.current.speakEnabled) {
-          const utterance = new SpeechSynthesisUtterance(
-            `Fat ${saved.fat.toFixed(1)}. Rate ${saved.rate.toFixed(2)}. Amount ${saved.amount.toFixed(2)}.`
-          );
-          utterance.lang = 'en-IN';
+          const lang = formRef.current.speakLang || 'en-IN';
+          const text = lang === 'ml-IN'
+            ? `ഫാറ്റ് ${saved.fat.toFixed(1)}. നിരക്ക് ${saved.rate.toFixed(2)}. തുക ${saved.amount.toFixed(2)}.`
+            : `Fat ${saved.fat.toFixed(1)}. Rate ${saved.rate.toFixed(2)}. Amount ${saved.amount.toFixed(2)}.`;
+          const utterance = new SpeechSynthesisUtterance(text);
+          utterance.lang = lang;
           utterance.rate = 0.95;
           window.speechSynthesis.cancel();
           window.speechSynthesis.speak(utterance);
@@ -2251,7 +2254,7 @@ const MilkPurchase = () => {
               {entries.length > 0 && (
                 <Table.Tfoot>
                   <Table.Tr style={{ background: '#1e3a8a' }}>
-                    <Table.Td colSpan={6} style={{ padding: '8px 12px', fontWeight: 700, color: '#93c5fd', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
+                    <Table.Td colSpan={5} style={{ padding: '8px 12px', fontWeight: 700, color: '#93c5fd', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#7dd3fc', textAlign: 'right', fontSize: 13 }}>{totalLtr.toFixed(2)}</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#38bdf8', textAlign: 'right', fontSize: 13 }}>{totalKg.toFixed(2)}</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#fdba74', textAlign: 'right' }}>{avgFat.toFixed(1)}</Table.Td>
@@ -2382,6 +2385,26 @@ const MilkPurchase = () => {
           >
             <span style={{ fontSize: 18 }}>{speakEnabled ? '🔊' : '🔇'}</span>
             <span>{speakEnabled ? 'ON' : 'OFF'}</span>
+          </Box>
+        </Box>
+
+        {/* Language Toggle (for TTS) */}
+        <Box style={{ padding: '0 10px 6px' }}>
+          <Box style={{ fontSize: 9, fontWeight: 700, color: '#004d40', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 3 }}>Language</Box>
+          <Box style={{ display: 'flex', gap: 4 }}>
+            {[{ code: 'en-IN', label: 'EN' }, { code: 'ml-IN', label: 'ML' }].map(({ code, label }) => (
+              <Box key={code}
+                onClick={() => setSpeakLang(code)}
+                style={{
+                  flex: 1, textAlign: 'center', padding: '3px 0', borderRadius: 4, cursor: 'pointer',
+                  fontWeight: 700, fontSize: 11, userSelect: 'none',
+                  background: speakLang === code ? '#006064' : 'rgba(255,255,255,0.5)',
+                  color: speakLang === code ? '#e0f7fa' : '#004d40',
+                  border: `1.5px solid ${speakLang === code ? '#006064' : '#80deea'}`,
+                  boxShadow: speakLang === code ? 'inset 1px 1px 2px rgba(0,0,0,0.2)' : '1px 1px 2px rgba(255,255,255,0.8)',
+                }}
+              >{label}</Box>
+            ))}
           </Box>
         </Box>
 
