@@ -409,12 +409,11 @@ const FarmerManagement = () => {
         if (isZibitt) {
           const status     = String(row['Status'] || '').trim().toUpperCase();
           const isMember   = status === 'M';   // M = Member, P = Producer (non-member)
-          const supplierId = String(row['Supplier_Id'] || row['Supplier_No'] || '').trim();
-          const supplierNo = String(row['Supplier_No'] || '').trim();
+          const supplierNo = String(row['Supplier_No'] || row['Supplier_Id'] || '').trim();
           const pinRaw     = String(row['Pin'] || '').replace(/\D/g, '');
           return {
-            farmerNumber:   supplierId,                          // Supplier_Id → producer number
-            memberId:       isMember ? supplierNo : null,        // Supplier_No only for members
+            farmerNumber:   supplierNo,                          // Supplier_No → actual producer number
+            memberId:       isMember ? supplierNo : null,        // Supplier_No for members too
             isMembership:   isMember,                            // false for P (Producer)
             name:           String(row['Name'] || '').trim(),
             phone:          cleanPhone(row['Phone']),
