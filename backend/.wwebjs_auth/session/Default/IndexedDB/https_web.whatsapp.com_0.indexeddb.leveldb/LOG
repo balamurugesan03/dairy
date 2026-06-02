@@ -1,0 +1,50 @@
+2026/06/02-19:48:56.644 5e28 Creating DB C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb since it was missing.
+2026/06/02-19:48:56.660 5e28 Reusing MANIFEST C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/06/02-19:48:56.660 5e28 Recovering log #3525
+2026/06/02-19:48:56.661 5e28 Reusing old log C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/003525.log 
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3436
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3437
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3438
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3439
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3446
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3447
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3450
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3451
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3454
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3458
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3461
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3491
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3492
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3494
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3495
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3499
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3500
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3501
+2026/06/02-19:48:56.661 5e28 Delete type=2 #3502
+2026/06/02-19:48:56.662 5e28 Delete type=2 #3504
+2026/06/02-19:48:56.662 5e28 Delete type=2 #3506
+2026/06/02-19:48:56.662 5e28 Delete type=2 #3508
+2026/06/02-19:48:56.662 5e28 Delete type=2 #3510
+2026/06/02-19:48:56.662 5e28 Delete type=2 #3526
+2026/06/02-19:48:56.662 5e28 Delete type=2 #3532
+2026/06/02-19:48:56.662 5e28 Delete type=2 #3533
+2026/06/02-19:48:56.662 5e28 Delete type=2 #3534
+2026/06/02-19:48:56.662 5e28 Delete type=2 #3535
+2026/06/02-19:48:56.662 5e28 Delete type=2 #3536
+2026/06/02-19:48:56.662 5e28 Delete type=2 #3538
+2026/06/02-19:48:56.662 5e28 Delete type=2 #3539
+2026/06/02-19:48:56.680 34c8 Level-0 table #3527: started
+2026/06/02-19:48:56.684 34c8 Level-0 table #3527: 6740 bytes OK
+2026/06/02-19:48:56.685 34c8 Delete type=0 #3525
+2026/06/02-19:48:56.686 5e28 Manual compaction at level-0 from '\x00\x16\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x17\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/06/02-19:48:56.687 5e28 Level-0 table #3529: started
+2026/06/02-19:48:56.699 5e28 Level-0 table #3529: 547 bytes OK
+2026/06/02-19:48:56.700 5e28 Delete type=0 #3526
+2026/06/02-19:48:56.700 5e28 Manual compaction at level-0 from '\x00\x0e\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x0f\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/06/02-19:48:56.701 5e28 Manual compaction at level-1 from '\x00\x0e\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x0f\x00\x00\x00' @ 0 : 0; will stop at '\x00\x1a\x00\x00\x05' @ 12324625 : 1
+2026/06/02-19:48:56.701 5e28 Compacting 1@1 + 1@2 files
+2026/06/02-19:48:56.704 5e28 Generated table #3530@1: 341 keys, 5216 bytes
+2026/06/02-19:48:56.704 5e28 Compacted 1@1 + 1@2 files => 5216 bytes
+2026/06/02-19:48:56.705 5e28 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/06/02-19:48:56.705 5e28 Delete type=2 #3529
+2026/06/02-19:48:56.705 5e28 Manual compaction at level-1 from '\x00\x1a\x00\x00\x05' @ 12324625 : 1 .. '\x00\x0f\x00\x00\x00' @ 0 : 0; will stop at (end)
