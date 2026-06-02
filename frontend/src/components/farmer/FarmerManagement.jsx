@@ -464,7 +464,7 @@ const FarmerManagement = () => {
   const handleShareImport = async (data) => {
     try {
       const shares = data.map(row => ({
-        memberNo:    String(row['MemberNo'] || '').trim(),
+        memberNo:    String(row['MemberNo'] || row['Supplier_No'] || '').trim(),
         transDate:   excelSerialToDate(row['TransDate']),
         noOfShares:  Number(row['NoOfShares']) || 0,
         shareAmount: Number(row['ShareAmount']) || 10,
@@ -985,8 +985,9 @@ const FarmerManagement = () => {
                 leftSection={<IconUpload size={18} />}
                 onClick={() => setShowImportModal(true)}
                 disabled={!canWrite('farmers')}
+                title="Supports Zibit, OpenLyssa, LinZA and generic formats"
               >
-                Import Farmers
+                Import Farmers (Zibit / OL)
               </Button>
               <Button
                 variant="light"
@@ -1325,9 +1326,9 @@ const FarmerManagement = () => {
         onClose={() => setShowShareImportModal(false)}
         onImport={handleShareImport}
         entityType="Share Transactions"
-        requiredFields={['MemberNo']}
+        requiredFields={[]}
         validationSchema={{
-          'MemberNo': { required: true, type: 'string' },
+          'MemberNo': { required: false, type: 'string' },
         }}
       />
 
