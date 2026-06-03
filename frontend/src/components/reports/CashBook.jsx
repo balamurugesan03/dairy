@@ -221,10 +221,10 @@ const CashBook = () => {
               ) : (
                 entries.map((entry, idx) => (
                   <Table.Tr key={idx}>
-                    <Table.Td title={entry.description} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 0 }}>
+                    <Table.Td title={entry.description} style={{ overflow: 'hidden', maxWidth: 0 }}>
                       <Text fz={12} fw={500} truncate>{entry.description}</Text>
                       {entry.narration && (
-                        <Text fz={10} c="dimmed" fs="italic" truncate>{entry.narration}</Text>
+                        <Text fz={10} c="dimmed" fs="italic" style={{ whiteSpace: 'pre-line' }}>{entry.narration}</Text>
                       )}
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'center', fontFamily: 'Consolas, monospace', fontSize: 11 }}>

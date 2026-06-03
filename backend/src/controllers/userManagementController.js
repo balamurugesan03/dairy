@@ -407,7 +407,8 @@ export const getUserTypesList = async (req, res) => {
       { value: 'president', label: 'President' },
       { value: 'superuser', label: 'Superuser' },
       { value: 'admin', label: 'Admin' },
-      { value: 'ordinary', label: 'Ordinary' }
+      { value: 'ordinary', label: 'Ordinary' },
+      { value: 'agent', label: 'Agent' }
     ];
 
     res.status(200).json({

@@ -86,18 +86,6 @@ export const getCashBook = async (req, res) => {
       .sort({ voucherDate: 1, voucherNumber: 1 })
       .populate('entries.ledgerId', 'ledgerName ledgerType');
 
-    // Direct cash receipts — Milk Sales (Cash)
-    // Skip rows that already have a Voucher posted (those are picked up by the
-    // voucher loop above via the Receipt voucher's Cash leg) — prevents the
-    // same LOCAL/SAMPLE sale from appearing twice in the Cash Book.
-    const milkSalesCash = await MilkSales.find({
-      companyId: req.companyId,
-      date: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
-      paymentType: 'Cash',
-      amount: { $gt: 0 },
-      $or: [{ voucherId: { $exists: false } }, { voucherId: null }],
-    }).sort({ date: 1 });
-
     // Direct cash receipts — Item Sales (Cash)
     // Skip rows that already have a Voucher posted (those are picked up by the
     // voucher loop above via the Sales voucher's Cash leg) — prevents the same
@@ -166,9 +154,11 @@ export const getCashBook = async (req, res) => {
 
     // From vouchers (existing accounting entries)
     // Skip ProducerReceipt/ProducerPayment vouchers — covered by direct queries below.
+    // Skip milk LOCAL/SAMPLE sale Receipt vouchers — aggregated per day below.
     vouchers.forEach(voucher => {
       if (voucher.referenceType === 'ProducerReceipt') return;
       if (voucher.referenceType === 'ProducerPayment') return;
+      if (voucher.referenceType === 'Sales' && voucher.voucherType === 'Receipt') return;
       voucher.entries.forEach(entry => {
         if (entry.ledgerId._id.toString() === cashLedger._id.toString()) {
           const isReceipt = entry.debitAmount > 0;
@@ -196,18 +186,66 @@ export const getCashBook = async (req, res) => {
       });
     });
 
-    // Milk Sales — Cash Receipts
-    milkSalesCash.forEach(ms => {
-      rawTransactions.push({
-        date: ms.date,
-        voucherNumber: ms.billNumber || ms.invoiceNumber || `MS-${ms._id.toString().slice(-6)}`,
-        voucherType: 'MilkSales',
-        particulars: `Milk Sales — ${ms.agentName || ms.creditorName || 'Cash Customer'}`,
-        debit: ms.amount,
-        credit: 0,
-        narration: 'Milk Sales (Cash)'
-      });
-    });
+    // Milk Sales LOCAL/SAMPLE — single aggregated cash entry per day
+    const milkLocalSalesCBAgg = await MilkSales.aggregate([
+      {
+        $match: {
+          companyId: req.companyId,
+          date: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
+          saleMode: { $in: ['LOCAL', 'SAMPLE'] },
+          paymentType: 'Cash',
+          amount: { $gt: 0 }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            day:      { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+            session:  '$session',
+            saleMode: '$saleMode'
+          },
+          totalQty:    { $sum: '$litre' },
+          totalAmount: { $sum: '$amount' }
+        }
+      },
+      { $sort: { '_id.day': 1, '_id.session': 1 } }
+    ]);
+
+    const cbLocalDayMap = {};
+    for (const r of milkLocalSalesCBAgg) {
+      const { day, session, saleMode } = r._id;
+      if (!cbLocalDayMap[day]) cbLocalDayMap[day] = {};
+      if (!cbLocalDayMap[day][saleMode]) cbLocalDayMap[day][saleMode] = {};
+      cbLocalDayMap[day][saleMode][(session || 'AM').toUpperCase()] = {
+        qty: r.totalQty, amount: r.totalAmount
+      };
+    }
+
+    const fmtCBN = (n) => Number(n || 0).toFixed(2);
+
+    for (const day of Object.keys(cbLocalDayMap).sort()) {
+      for (const saleMode of Object.keys(cbLocalDayMap[day])) {
+        const shifts = cbLocalDayMap[day][saleMode];
+        const am = shifts['AM'] || { qty: 0, amount: 0 };
+        const pm = shifts['PM'] || { qty: 0, amount: 0 };
+        const totalAmt = (am.amount || 0) + (pm.amount || 0);
+        if (totalAmt <= 0) continue;
+        const ledgerLabel = saleMode === 'SAMPLE' ? 'SAMPLE SALES' : 'LOCAL SALES';
+        const narration = [
+          `AM, QTY ${fmtCBN(am.qty)}, AMOUNT ${fmtCBN(am.amount)}`,
+          `PM, QTY ${fmtCBN(pm.qty)}, AMOUNT ${fmtCBN(pm.amount)}`
+        ].join('\n');
+        rawTransactions.push({
+          date: new Date(day),
+          voucherNumber: `MLS-${day.replace(/-/g, '')}`,
+          voucherType: 'MilkSales',
+          particulars: ledgerLabel,
+          debit: totalAmt,
+          credit: 0,
+          narration
+        });
+      }
+    }
 
     // Item Sales — Cash Receipts (fallback for sales without an auto-posted voucher)
     itemSalesCash.forEach(sale => {

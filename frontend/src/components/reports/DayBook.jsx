@@ -140,6 +140,7 @@ const DayBook = () => {
           const isAdjustment =
             entry.voucherType === 'Journal' ||
             entry.voucherType === 'MilkPurchase' ||
+            entry.voucherType === 'MilkCreditSales' ||
             entry.voucherType === 'ProducersDue' ||
             entry.voucherType === 'UnionSales' ||
             entry.voucherType === 'InventoryPurchase' ||

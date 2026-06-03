@@ -1,6 +1,7 @@
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
 import MilkCollection from '../models/MilkCollection.js';
+import MilkSales from '../models/MilkSales.js';
 import UnionSalesSlip from '../models/UnionSalesSlip.js';
 import StockTransaction from '../models/StockTransaction.js';
 import Advance from '../models/Advance.js';
@@ -102,6 +103,12 @@ export const getDayBook = async (req, res) => {
       // KDF WELFARE FUND, Cattle Feed Advance, etc.) — one voucher per farmer, so
       // they appear individually. Grouped into per-date combined entries below.
       if (voucher.voucherType === 'Journal' && voucher.referenceType === 'FarmerPayment') continue;
+      // Milk LOCAL/SAMPLE sale Receipt vouchers — replaced by a single combined
+      // entry per day (built below from MilkSales model).
+      if (voucher.voucherType === 'Receipt' && voucher.referenceType === 'Sales') continue;
+      // Milk CREDIT sale Journal vouchers — replaced by per-creditor adjustment
+      // entries per day (built below from MilkSales model).
+      if (voucher.voucherType === 'Journal' && voucher.referenceType === 'Sales') continue;
 
       const dateKey = voucher.voucherDate.toISOString().split('T')[0];
 
@@ -414,6 +421,183 @@ export const getDayBook = async (req, res) => {
       dateMap[dateKey].paymentSide.push(milmaUnionEntry);
       dateMap[dateKey].totalPayments += totalAmt;
       paymentSide.push(milmaUnionEntry);
+    }
+
+    // --- Milk Sales LOCAL/SAMPLE — single cash entry per day (AM+PM combined) ---
+    // Receipt side : LOCAL SALES (or SAMPLE SALES) — Cash column
+    // Narration    : AM/PM qty and amount
+    const milkLocalSalesAgg = await MilkSales.aggregate([
+      {
+        $match: {
+          companyId,
+          date: { $gte: start, $lte: end },
+          saleMode: { $in: ['LOCAL', 'SAMPLE'] },
+          amount: { $gt: 0 }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            day:      { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+            session:  '$session',
+            saleMode: '$saleMode'
+          },
+          totalQty:    { $sum: '$litre' },
+          totalAmount: { $sum: '$amount' }
+        }
+      },
+      { $sort: { '_id.day': 1, '_id.session': 1 } }
+    ]);
+
+    // Group: day → saleMode → session
+    const localSalesDayMap = {};
+    for (const r of milkLocalSalesAgg) {
+      const { day, session, saleMode } = r._id;
+      if (!localSalesDayMap[day]) localSalesDayMap[day] = {};
+      if (!localSalesDayMap[day][saleMode]) localSalesDayMap[day][saleMode] = {};
+      localSalesDayMap[day][saleMode][(session || 'AM').toUpperCase()] = {
+        qty: r.totalQty, amount: r.totalAmount
+      };
+    }
+
+    const fmtLS = (n) => Number(n || 0).toFixed(2);
+
+    for (const dateKey of Object.keys(localSalesDayMap).sort()) {
+      for (const saleMode of Object.keys(localSalesDayMap[dateKey])) {
+        const shifts = localSalesDayMap[dateKey][saleMode];
+        const am = shifts['AM'] || { qty: 0, amount: 0 };
+        const pm = shifts['PM'] || { qty: 0, amount: 0 };
+        const totalAmt = (am.amount || 0) + (pm.amount || 0);
+        if (totalAmt <= 0) continue;
+
+        if (!dateMap[dateKey]) {
+          dateMap[dateKey] = {
+            date: dateKey, receiptSide: [], paymentSide: [], totalReceipts: 0, totalPayments: 0
+          };
+        }
+
+        const ledgerName = saleMode === 'SAMPLE' ? 'SAMPLE SALES' : 'LOCAL SALES';
+        const narration = [
+          `AM, QTY ${fmtLS(am.qty)}, AMOUNT ${fmtLS(am.amount)}`,
+          `PM, QTY ${fmtLS(pm.qty)}, AMOUNT ${fmtLS(pm.amount)}`
+        ].join('\n');
+
+        const salesEntry = {
+          date: new Date(dateKey),
+          voucherNumber: `MLS-${dateKey.replace(/-/g, '')}`,
+          voucherType: 'MilkSales',
+          ledgerName,
+          narration,
+          amount: totalAmt
+        };
+        dateMap[dateKey].receiptSide.push(salesEntry);
+        dateMap[dateKey].totalReceipts += totalAmt;
+        receiptSide.push(salesEntry);
+      }
+    }
+
+    // --- Milk Credit Sales — adjustment entries per day ---
+    // Receipt side : MILK CREDIT SALES (Cr) — day total, Adjustment column
+    // Payment side : per-creditor (Dr) — individual creditor amounts, Adjustment column
+    // Narration    : AM/PM qty and amount
+    const milkCreditSalesAgg = await MilkSales.aggregate([
+      {
+        $match: {
+          companyId,
+          date: { $gte: start, $lte: end },
+          saleMode: 'CREDIT',
+          amount: { $gt: 0 }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            day:          { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+            session:      '$session',
+            creditorName: '$creditorName'
+          },
+          totalQty:    { $sum: '$litre' },
+          totalAmount: { $sum: '$amount' }
+        }
+      },
+      { $sort: { '_id.day': 1, '_id.session': 1 } }
+    ]);
+
+    // Group: day → { sessionTotals: {AM,PM}, creditors: { name → {AM,PM} } }
+    const creditDayMap = {};
+    for (const r of milkCreditSalesAgg) {
+      const { day, session, creditorName } = r._id;
+      const sess  = (session || 'AM').toUpperCase();
+      const cName = creditorName || 'Unknown Customer';
+      if (!creditDayMap[day]) {
+        creditDayMap[day] = {
+          sessionTotals: { AM: { qty: 0, amount: 0 }, PM: { qty: 0, amount: 0 } },
+          creditors: {}
+        };
+      }
+      creditDayMap[day].sessionTotals[sess].qty    += r.totalQty;
+      creditDayMap[day].sessionTotals[sess].amount += r.totalAmount;
+      if (!creditDayMap[day].creditors[cName]) {
+        creditDayMap[day].creditors[cName] = { AM: { qty: 0, amount: 0 }, PM: { qty: 0, amount: 0 } };
+      }
+      creditDayMap[day].creditors[cName][sess].qty    += r.totalQty;
+      creditDayMap[day].creditors[cName][sess].amount += r.totalAmount;
+    }
+
+    for (const dateKey of Object.keys(creditDayMap).sort()) {
+      if (!dateMap[dateKey]) {
+        dateMap[dateKey] = {
+          date: dateKey, receiptSide: [], paymentSide: [], totalReceipts: 0, totalPayments: 0
+        };
+      }
+
+      const voucherNumber = `MCS-${dateKey.replace(/-/g, '')}`;
+      const { sessionTotals, creditors } = creditDayMap[dateKey];
+      const am = sessionTotals['AM'];
+      const pm = sessionTotals['PM'];
+      const dayTotalAmt = (am.amount || 0) + (pm.amount || 0);
+      if (dayTotalAmt <= 0) continue;
+
+      const receiptNarration = [
+        `AM, QTY ${fmtLS(am.qty)}, AMOUNT ${fmtLS(am.amount)}`,
+        `PM, QTY ${fmtLS(pm.qty)}, AMOUNT ${fmtLS(pm.amount)}`
+      ].join('\n');
+
+      // Receipt side: MILK CREDIT SALES (Cr leg) — day total
+      const creditReceiptEntry = {
+        date: new Date(dateKey),
+        voucherNumber,
+        voucherType: 'MilkCreditSales',
+        ledgerName: 'MILK CREDIT SALES',
+        narration: receiptNarration,
+        amount: dayTotalAmt
+      };
+      dateMap[dateKey].receiptSide.push(creditReceiptEntry);
+      dateMap[dateKey].totalReceipts += dayTotalAmt;
+      receiptSide.push(creditReceiptEntry);
+
+      // Payment side: per-creditor (Dr legs)
+      for (const [credName, sessions] of Object.entries(creditors)) {
+        const cAm = sessions['AM'];
+        const cPm = sessions['PM'];
+        const credTotal = (cAm.amount || 0) + (cPm.amount || 0);
+        if (credTotal <= 0) continue;
+        const credNarration = [
+          `AM, QTY ${fmtLS(cAm.qty)}, AMOUNT ${fmtLS(cAm.amount)}`,
+          `PM, QTY ${fmtLS(cPm.qty)}, AMOUNT ${fmtLS(cPm.amount)}`
+        ].join('\n');
+        const credEntry = {
+          date: new Date(dateKey),
+          voucherNumber,
+          voucherType: 'MilkCreditSales',
+          ledgerName: credName,
+          narration: credNarration,
+          amount: credTotal
+        };
+        dateMap[dateKey].paymentSide.push(credEntry);
+        dateMap[dateKey].totalPayments += credTotal;
+        paymentSide.push(credEntry);
+      }
     }
 
     // --- Inventory Purchase — adjustment column (one row per voucher) ---

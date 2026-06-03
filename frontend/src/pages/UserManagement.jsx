@@ -40,7 +40,7 @@ import {
   IconAlertCircle
 } from '@tabler/icons-react';
 import { useAuth } from '../context/AuthContext';
-import { userManagementAPI } from '../services/api';
+import { userManagementAPI, agentAPI } from '../services/api';
 import { message } from '../utils/toast';
 import PageHeader from '../components/common/PageHeader';
 
@@ -226,10 +226,12 @@ const UserManagement = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [designations, setDesignations] = useState([]);
   const [userTypes, setUserTypes] = useState([]);
+  const [agents, setAgents] = useState([]);
 
   // Modal states
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
+  const [selectedAgentId, setSelectedAgentId] = useState(null);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState(null);
 
@@ -256,11 +258,12 @@ const UserManagement = () => {
     }
   }, [isAdmin, navigate]);
 
-  // Fetch users, designations and user types on mount
+  // Fetch users, designations, user types and agents on mount
   useEffect(() => {
     fetchUsers();
     fetchDesignations();
     fetchUserTypes();
+    fetchAgents();
   }, []);
 
   const fetchUsers = async () => {
@@ -293,6 +296,15 @@ const UserManagement = () => {
     }
   };
 
+  const fetchAgents = async () => {
+    try {
+      const response = await agentAPI.getAllActive();
+      setAgents(response.data || []);
+    } catch (error) {
+      console.error('Failed to fetch agents:', error);
+    }
+  };
+
   // Initialize permissions for new user
   const initializePermissions = () => {
     return MODULES.map(module => ({
@@ -304,9 +316,24 @@ const UserManagement = () => {
     }));
   };
 
+  // When userType is 'agent', auto-fill fields from selected agent
+  const handleAgentSelect = (agentId) => {
+    setSelectedAgentId(agentId);
+    const agent = agents.find(a => a._id === agentId);
+    if (!agent) return;
+    setFormData(prev => ({
+      ...prev,
+      displayName: agent.agentName || prev.displayName,
+      phone: agent.phone || prev.phone,
+      email: agent.email || prev.email,
+      joiningDate: agent.dateOfJoining ? new Date(agent.dateOfJoining) : prev.joiningDate
+    }));
+  };
+
   // Open modal for new user
   const handleAddUser = () => {
     setEditingUser(null);
+    setSelectedAgentId(null);
     setFormData({
       displayName: '',
       username: '',
@@ -325,6 +352,7 @@ const UserManagement = () => {
   // Open modal for editing user
   const handleEditUser = (user) => {
     setEditingUser(user);
+    setSelectedAgentId(null);
 
     // Merge existing permissions with all modules
     const existingPerms = user.permissions || [];
@@ -692,8 +720,26 @@ const UserManagement = () => {
               placeholder="Select user type"
               data={userTypes}
               value={formData.userType}
-              onChange={(value) => setFormData({ ...formData, userType: value })}
+              onChange={(value) => {
+                setFormData({ ...formData, userType: value });
+                if (value !== 'agent') setSelectedAgentId(null);
+              }}
             />
+            {formData.userType === 'agent' && (
+              <Select
+                label="Select Agent"
+                placeholder="Choose from Agent Management"
+                required
+                searchable
+                data={agents.map(a => ({
+                  value: a._id,
+                  label: `${a.agentName} (${a.agentCode})`
+                }))}
+                value={selectedAgentId}
+                onChange={handleAgentSelect}
+                description="Agent data will be auto-filled below"
+              />
+            )}
             <Select
               label="Designation"
               placeholder="Select designation"
