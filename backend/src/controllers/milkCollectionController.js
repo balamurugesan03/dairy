@@ -544,17 +544,21 @@ export const fileUploadImportCollections = async (req, res) => {
       }
     }
 
-    const skipped = [];
+    const unlinked = [];
     const docs = [];
     for (const r of mapped) {
       const fm = farmerMap[r.farmerNumber];
-      if (!fm) { skipped.push(r.farmerNumber); continue; }
-      docs.push({ ...r, farmer: fm.id, farmerName: fm.name, companyId: req.companyId });
+      if (!fm) unlinked.push(r.farmerNumber);
+      docs.push({
+        ...r,
+        farmer:     fm ? fm.id   : null,
+        farmerName: fm ? fm.name : '',
+        companyId: req.companyId
+      });
     }
 
     if (docs.length === 0) {
-      const unknown = [...new Set(skipped)].slice(0, 10).join(', ');
-      return res.status(400).json({ success: false, message: `No matching farmers found. Unknown producer numbers: ${unknown}` });
+      return res.status(400).json({ success: false, message: 'No records to import' });
     }
 
     // Insert in chunks of 1000 to avoid driver limits
@@ -573,14 +577,14 @@ export const fileUploadImportCollections = async (req, res) => {
       }
     }
 
-    const unknownSample = [...new Set(skipped)].slice(0, 5).join(', ');
-    const msg = skipped.length
-      ? `${inserted} imported, ${skipped.length} skipped (farmer not found: ${unknownSample}${skipped.length > 5 ? '…' : ''})`
+    const uniqueUnlinked = [...new Set(unlinked)];
+    const msg = uniqueUnlinked.length
+      ? `${inserted} imported (${uniqueUnlinked.length} supplier IDs not linked to a farmer: ${uniqueUnlinked.slice(0, 5).join(', ')}${uniqueUnlinked.length > 5 ? '…' : ''})`
       : `${inserted} records imported`;
 
     await postBulkMilkPurchaseVouchers(docs, req.companyId);
 
-    res.json({ success: true, data: { inserted, skipped: skipped.length, total: rows.length }, message: msg });
+    res.json({ success: true, data: { inserted, unlinked: uniqueUnlinked.length, total: rows.length }, message: msg });
   } catch (err) {
     console.error('[MilkCollection fileImport] Error:', err.message);
     res.status(400).json({ success: false, message: err.message });
