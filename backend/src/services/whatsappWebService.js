@@ -6,54 +6,72 @@ let client       = null;
 let qrBase64     = null;
 let connected    = false;
 let initializing = false;
+let lastError    = null;
 
-export const getStatus = () => ({ connected, initializing, qr: qrBase64 });
+export const getStatus = () => ({ connected, initializing, qr: qrBase64, error: lastError });
+
+const resetState = () => {
+  connected    = false;
+  initializing = false;
+  qrBase64     = null;
+  client       = null;
+};
 
 export const startClient = () => {
   if (client || initializing) return;
   initializing = true;
   qrBase64     = null;
   connected    = false;
+  lastError    = null;
 
   client = new Client({
     authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
-    puppeteer   : { headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] },
+    puppeteer: {
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',   // critical on Linux servers (small /dev/shm)
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-accelerated-2d-canvas',
+        '--disable-extensions',
+      ],
+    },
   });
 
   client.on('qr', async (qr) => {
-    qrBase64  = await qrcode.toDataURL(qr);
-    connected = false;
+    qrBase64     = await qrcode.toDataURL(qr);
+    initializing = false;
+    connected    = false;
   });
 
   client.on('ready', () => {
     connected    = true;
     initializing = false;
     qrBase64     = null;
+    lastError    = null;
   });
 
   client.on('authenticated', () => {
-    qrBase64 = null;
+    qrBase64  = null;
+    lastError = null;
   });
 
-  client.on('auth_failure', () => {
-    connected    = false;
-    initializing = false;
-    qrBase64     = null;
-    client       = null;
+  client.on('auth_failure', (msg) => {
+    lastError = msg || 'Authentication failed';
+    resetState();
   });
 
-  client.on('disconnected', () => {
-    connected    = false;
-    initializing = false;
-    qrBase64     = null;
-    client       = null;
+  client.on('disconnected', (reason) => {
+    lastError = reason || 'Disconnected';
+    resetState();
   });
 
-  client.initialize().catch(() => {
-    connected    = false;
-    initializing = false;
-    qrBase64     = null;
-    client       = null;
+  client.initialize().catch((err) => {
+    lastError = err?.message || 'Failed to start WhatsApp client';
+    resetState();
   });
 };
 

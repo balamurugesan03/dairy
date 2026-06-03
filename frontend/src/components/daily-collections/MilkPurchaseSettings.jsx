@@ -206,7 +206,7 @@ export default function MilkPurchaseSettings() {
     const [milmaMasters, setMilmaMasters] = useState([]);
 
   // ── WhatsApp QR state ──────────────────────────────────────────────────────
-  const [waStatus,      setWaStatus]      = useState({ connected: false, initializing: false, qr: null });
+  const [waStatus,      setWaStatus]      = useState({ connected: false, initializing: false, qr: null, error: null });
   const [waConnecting,  setWaConnecting]  = useState(false);
   const [waDisconnecting, setWaDisconnecting] = useState(false);
 
@@ -217,7 +217,7 @@ export default function MilkPurchaseSettings() {
     } catch { /* silent */ }
   };
 
-  // poll every 3 s while initializing (waiting for QR scan)
+  // poll every 3 s while initializing or waiting for QR
   const waPoller = useInterval(pollWaStatus, 3000);
 
   useEffect(() => {
@@ -1065,9 +1065,17 @@ export default function MilkPurchaseSettings() {
                         <Badge color="teal" variant="filled" size="md" leftSection={<IconCircleCheck size={12} />}>
                           Connected
                         </Badge>
-                      ) : waStatus.initializing || waStatus.qr ? (
+                      ) : waStatus.initializing ? (
+                        <Badge color="yellow" variant="filled" size="md" leftSection={<Loader size={10} color="white" />}>
+                          Starting…
+                        </Badge>
+                      ) : waStatus.qr ? (
                         <Badge color="yellow" variant="filled" size="md" leftSection={<Loader size={10} color="white" />}>
                           Waiting for QR scan…
+                        </Badge>
+                      ) : waStatus.error ? (
+                        <Badge color="red" variant="filled" size="md" leftSection={<IconCircleX size={12} />}>
+                          Error
                         </Badge>
                       ) : (
                         <Badge color="gray" variant="filled" size="md" leftSection={<IconCircleX size={12} />}>
@@ -1097,6 +1105,13 @@ export default function MilkPurchaseSettings() {
                         </Button>
                       )}
                     </Group>
+
+                    {/* Error message from server */}
+                    {waStatus.error && !waStatus.connected && (
+                      <Text size="xs" c="red" fw={500}>
+                        ⚠ {waStatus.error}
+                      </Text>
+                    )}
 
                     {/* QR Code display */}
                     {waStatus.qr && (
