@@ -204,14 +204,21 @@ export const zibittRawImportCollections = async (req, res) => {
       'farmerNumber memberId personalDetails.name _id'
     ).lean();
 
+    // Normalise: add both original key AND leading-zero-stripped numeric key
+    const addToMap = (key, val) => {
+      const k = String(key).trim();
+      if (!k) return;
+      farmerMap[k] = val;
+      const stripped = String(parseInt(k, 10));
+      if (stripped !== 'NaN' && stripped !== k) farmerMap[stripped] = val;
+    };
+
     const farmerMap = {};
     for (const f of allFarmers) {
-      if (f.farmerNumber) farmerMap[String(f.farmerNumber)] = { id: f._id, name: f.personalDetails?.name || '' };
+      if (f.farmerNumber) addToMap(f.farmerNumber, { id: f._id, name: f.personalDetails?.name || '' });
     }
     for (const f of allFarmers) {
-      if (f.memberId && !farmerMap[String(f.memberId)]) {
-        farmerMap[String(f.memberId)] = { id: f._id, name: f.personalDetails?.name || '' };
-      }
+      if (f.memberId) addToMap(f.memberId, { id: f._id, name: f.personalDetails?.name || '' });
     }
 
     const parseDateTime = (row) => {
@@ -522,15 +529,42 @@ export const fileUploadImportCollections = async (req, res) => {
     console.log(`[MilkCollection Import] File rows: ${rows.length}, columns: ${Object.keys(rows[0] || {}).join(', ')}`);
 
     // Resolve supplier numbers → Farmer ObjectIds
-    // First pass: match by farmerNumber; second pass: match unresolved by memberId
+    // Normalise: add both original key AND leading-zero-stripped numeric key so
+    // "0612" and "612" both resolve to the same farmer.
+    const addToFarmerMap = (map, key, val) => {
+      const k = String(key).trim();
+      if (!k) return;
+      map[k] = val;
+      const stripped = String(parseInt(k, 10));
+      if (stripped !== 'NaN' && stripped !== k) map[stripped] = val;
+    };
+
     const mapped = rows.map((r, i) => mapDailyCollectionRow(r, i));
-    const uniqueNums = [...new Set(mapped.map(r => r.farmerNumber).filter(Boolean))];
+    // Expand uniqueNums to include zero-padded variants (2–5 digits) + stripped
+    // so DB query matches regardless of whether farmerNumber is "612" or "0612"
+    const uniqueNums = [...new Set(
+      mapped.flatMap(r => {
+        if (!r.farmerNumber) return [];
+        const stripped = String(parseInt(r.farmerNumber, 10));
+        if (stripped === 'NaN') return [r.farmerNumber];
+        return [
+          r.farmerNumber,
+          stripped,
+          stripped.padStart(3, '0'),
+          stripped.padStart(4, '0'),
+          stripped.padStart(5, '0'),
+        ];
+      })
+    )].filter(Boolean);
+
     const farmers = await Farmer.find(
       { farmerNumber: { $in: uniqueNums }, companyId: req.companyId },
       { farmerNumber: 1, memberId: 1, 'personalDetails.name': 1 }
     ).lean();
     const farmerMap = {};
-    for (const f of farmers) farmerMap[f.farmerNumber] = { id: f._id, name: f.personalDetails?.name || '' };
+    for (const f of farmers) {
+      addToFarmerMap(farmerMap, f.farmerNumber, { id: f._id, name: f.personalDetails?.name || '' });
+    }
 
     // Fallback: numbers not found by farmerNumber → try memberId (members in Zibitt/OpenlyPSSA)
     const unmatched = uniqueNums.filter(n => !farmerMap[n]);
@@ -540,14 +574,16 @@ export const fileUploadImportCollections = async (req, res) => {
         { memberId: 1, farmerNumber: 1, 'personalDetails.name': 1 }
       ).lean();
       for (const f of memberFarmers) {
-        if (f.memberId) farmerMap[f.memberId] = { id: f._id, name: f.personalDetails?.name || '' };
+        if (f.memberId) addToFarmerMap(farmerMap, f.memberId, { id: f._id, name: f.personalDetails?.name || '' });
       }
     }
 
     const skipped = [];
     const docs = [];
     for (const r of mapped) {
-      const fm = farmerMap[r.farmerNumber];
+      // Try original farmerNumber, then stripped version
+      const stripped = String(parseInt(r.farmerNumber, 10));
+      const fm = farmerMap[r.farmerNumber] || (stripped !== 'NaN' ? farmerMap[stripped] : null);
       if (!fm) { skipped.push(r.farmerNumber); continue; }
       docs.push({ ...r, farmer: fm.id, farmerName: fm.name, companyId: req.companyId });
     }
