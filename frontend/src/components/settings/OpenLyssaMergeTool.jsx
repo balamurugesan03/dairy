@@ -1,7 +1,8 @@
 import { useState, useRef } from 'react';
 import {
   Box, Paper, Title, Text, Group, Button, Stack, ActionIcon,
-  Badge, Divider, Alert, List, ThemeIcon, Progress, SimpleGrid, Card, TextInput
+  Badge, Divider, Alert, List, ThemeIcon, Progress, SimpleGrid, Card, TextInput,
+  Select
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {

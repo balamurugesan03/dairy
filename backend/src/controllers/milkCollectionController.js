@@ -272,116 +272,80 @@ export const bulkDeleteCollections = async (req, res) => {
   }
 };
 
-// ── ZIBITT RAW DB IMPORT ──────────────────────────────────────────────────────
-//  Accepts raw Zibitt table rows: dcs_id, mc_id, slno, producer_id,
-//  qty, fat, clr, snf, rate, amount, incentive, col_mode, date_entry
-//  col_mode: D → AM (Morning),  M → PM (Evening)
-export const zibittRawImportCollections = async (req, res) => {
+// ── ZIBITT BROWSER IMPORT ─────────────────────────────────────────────────────
+// Accepts raw Zibitt DailyCollection rows parsed in the browser (any file size).
+// Uses mapDailyCollectionRow so all Zibitt columns (Collection_Id, Supplier_ID,
+// Rt_Date, Shift 0/1, CowFAT/CLR/SNF/QtyLtr/Rate/Amount, TimeIncentive …) are
+// handled identically to the server-side file upload path.
+export const zibittBrowserImportCollections = async (req, res) => {
   try {
     const { records } = req.body;
-    if (!Array.isArray(records) || records.length === 0) {
+    if (!Array.isArray(records) || records.length === 0)
       return res.status(400).json({ success: false, message: 'No records provided' });
-    }
 
     const companyId = req.companyId;
 
-    // Pre-load all farmers for O(1) lookup (farmerNumber + memberId fallback)
-    const allFarmers = await Farmer.find(
-      { companyId },
-      'farmerNumber memberId personalDetails.name _id'
+    // Map raw Zibitt column names → internal field names
+    const mapped = records.map((r, i) => mapDailyCollectionRow(r, i));
+
+    // Farmer lookup: first by farmerNumber, fallback by memberId
+    const uniqueNums = [...new Set(mapped.map(r => r.farmerNumber).filter(Boolean))];
+    const farmers = await Farmer.find(
+      { farmerNumber: { $in: uniqueNums }, companyId },
+      { farmerNumber: 1, memberId: 1, 'personalDetails.name': 1 }
     ).lean();
-
     const farmerMap = {};
-    for (const f of allFarmers) {
-      if (f.farmerNumber) farmerMap[String(f.farmerNumber)] = { id: f._id, name: f.personalDetails?.name || '' };
-    }
-    for (const f of allFarmers) {
-      if (f.memberId && !farmerMap[String(f.memberId)]) {
-        farmerMap[String(f.memberId)] = { id: f._id, name: f.personalDetails?.name || '' };
-      }
+    for (const f of farmers)
+      farmerMap[String(f.farmerNumber)] = { id: f._id, name: f.personalDetails?.name || '' };
+
+    const unresolved = uniqueNums.filter(n => !farmerMap[n]);
+    if (unresolved.length) {
+      const byMember = await Farmer.find(
+        { memberId: { $in: unresolved }, companyId },
+        { memberId: 1, 'personalDetails.name': 1 }
+      ).lean();
+      for (const f of byMember)
+        if (f.memberId) farmerMap[String(f.memberId)] = { id: f._id, name: f.personalDetails?.name || '' };
     }
 
-    const parseDateTime = (row) => {
-      const dateStr = row.date_entry || row.mc_date || row.date || row.Date || '';
-      if (!dateStr) return new Date();
-      if (typeof dateStr === 'number') return new Date(Math.round((dateStr - 25569) * 86400000));
-      const str = String(dateStr).trim();
-      const [datePart, timePart] = str.split(' ');
-      const parts = datePart.split(/[-/]/);
-      if (parts.length !== 3) return new Date(str);
-      // DD-MM-YYYY or YYYY-MM-DD
-      const isYearFirst = parts[0].length === 4;
-      const [dd, mm, yyyy] = isYearFirst ? [parts[2], parts[1], parts[0]] : [parts[0], parts[1], parts[2]];
-      return new Date(`${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T${timePart || '00:00'}:00`);
-    };
-
+    const unlinked = [];
     const docs = [];
-    const unmatched = [];
-
-    for (const row of records) {
-      // Support both Zibitt raw DB (producer_id) and file export (Supplier_ID) formats
-      const producerId = String(row.producer_id || row.Supplier_ID || row.supplier_id || '');
-      const fm = farmerMap[producerId];
-
-      if (!fm) unmatched.push(producerId);
-
-      // Use Collection_Id if available (globally unique); otherwise date+slno composite
-      const colId     = row.Collection_Id || row.collection_id || '';
-      const rtDate    = String(row.date_entry || row.mc_date || row.Date || row.date || '').split(' ')[0].trim();
-      const slno      = row.slno || row.Receipt_NO || '0';
-      const billNo    = colId
-        ? String(colId)
-        : rtDate
-          ? `${rtDate}-${producerId}-${slno}`
-          : `MC-${row.dcs_id || 0}-${row.mc_id || 0}-${producerId}-${slno}`;
-
-      docs.push({
-        billNo,
-        date:         parseDateTime(row),
-        shift:        parseShift(row),
-        farmer:       fm ? fm.id : null,
-        farmerNumber: producerId,
-        farmerName:   fm ? fm.name : '',
-        qty:          Number(row.qty)       || 0,
-        fat:          Number(row.fat)       || 0,
-        clr:          Number(row.clr)       || 0,
-        snf:          Number(row.snf)       || 0,
-        rate:         Number(row.rate)      || 0,
-        incentive:    Number(row.incentive) || 0,
-        amount:       Number(row.amount)    || 0,
-        companyId,
-      });
+    for (const r of mapped) {
+      const fm = farmerMap[r.farmerNumber];
+      if (!fm) unlinked.push(r.farmerNumber);
+      docs.push({ ...r, farmer: fm?.id ?? null, farmerName: fm?.name ?? '', companyId });
     }
 
-    if (docs.length === 0) {
+    if (!docs.length)
       return res.status(400).json({ success: false, message: 'No records to import' });
-    }
 
     const CHUNK = 1000;
-    let inserted = 0;
+    let inserted = 0, duplicates = 0;
     for (let i = 0; i < docs.length; i += CHUNK) {
       try {
         const result = await MilkCollection.insertMany(docs.slice(i, i + CHUNK), { ordered: false });
         inserted += result.length;
       } catch (err) {
         if (err.name === 'MongoBulkWriteError' || err.name === 'BulkWriteError' || err.code === 11000) {
-          inserted += err.result?.insertedCount ?? err.result?.nInserted ?? err.insertedDocs?.length ?? 0;
-        } else {
-          throw err;
-        }
+          const ok = err.result?.insertedCount ?? err.result?.nInserted ?? err.insertedDocs?.length ?? 0;
+          inserted   += ok;
+          duplicates += docs.slice(i, i + CHUNK).length - ok;
+        } else throw err;
       }
     }
 
-    // Auto-post to PRODUCERS DUES / MILK PURCHASE
     await postBulkMilkPurchaseVouchers(docs, companyId);
 
-    const uniqueUnmatched = [...new Set(unmatched)];
-    const dupSkipped = docs.length - inserted;
-    const msg = uniqueUnmatched.length
-      ? `${inserted} imported (${uniqueUnmatched.length} producer_ids not linked to farmers: ${uniqueUnmatched.slice(0, 5).join(', ')}${uniqueUnmatched.length > 5 ? '…' : ''})`
-      : `${inserted} records imported`;
+    const uniqueUnlinked = [...new Set(unlinked)];
+    let msg = `${inserted} imported`;
+    if (duplicates)            msg += `, ${duplicates} skipped (duplicate)`;
+    if (uniqueUnlinked.length) msg += ` | ${uniqueUnlinked.length} Supplier IDs not linked to farmer`;
 
-    res.status(201).json({ success: true, data: { inserted, skipped: dupSkipped, unmatchedFarmers: uniqueUnmatched.length }, message: msg });
+    res.status(201).json({
+      success: true,
+      data: { inserted, skipped: duplicates, unlinked: uniqueUnlinked.length, total: records.length },
+      message: msg
+    });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }

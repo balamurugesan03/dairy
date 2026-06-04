@@ -428,8 +428,8 @@ export const milkCollectionAPI = {
   delete: (id) => api.delete(`/milk-collections/${id}`).then(res => res.data).catch(handleError),
   dateSummary: (params) => api.get('/milk-collections/date-summary', { params }).then(res => res.data).catch(handleError),
   bulkDelete:  (slots)  => api.post('/milk-collections/bulk-delete', { slots }).then(res => res.data).catch(handleError),
-  bulkImport:      (records) => api.post('/milk-collections/bulk-import',       { records }).then(res => res.data).catch(handleError),
-  zibittRawImport: (records) => api.post('/milk-collections/zibitt-raw-import', { records }).then(res => res.data).catch(handleError),
+  bulkImport:      (records) => api.post('/milk-collections/bulk-import',   { records }).then(res => res.data).catch(handleError),
+  zibittImport:    (records) => api.post('/milk-collections/zibitt-import', { records }).then(res => res.data).catch(handleError),
   linzaImport:     (records) => api.post('/milk-collections/linza-import',      { records }).then(res => res.data).catch(handleError),
   fileImport: (file, onUploadProgress) => {
     const form = new FormData();
@@ -575,8 +575,9 @@ export const loanAPI = {
 // COMPANY APIs
 export const companyAPI = {
   getAll: (params) => api.get('/companies', { params }).then(res => res.data).catch(handleError),
-  // Use publicApi for getPublic - no auth token needed (for login page)
-  getPublic: () => publicApi.get('/companies/public').then(res => res.data).catch(handleError),
+  getPublic:    ()     => publicApi.get('/companies/public').then(res => res.data).catch(handleError),
+  getByCode:    (code) => publicApi.get(`/companies/by-code/${code}`).then(res => res.data).catch(handleError),
+  getNextCode:  ()     => publicApi.get('/companies/next-code').then(res => res.data).catch(handleError),
   getById: (id) => api.get(`/companies/${id}`).then(res => res.data).catch(handleError),
   create: (data) => api.post('/companies', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/companies/${id}`, data).then(res => res.data).catch(handleError),

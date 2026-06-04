@@ -30,10 +30,11 @@ export const authAPI = {
 };
 
 export const companyAPI = {
-  getAll:   (p)        => api.get('/companies', { params: p }).then(r => r.data),
-  create:   (data)     => api.post('/companies', data).then(r => r.data),
-  update:   (id, data) => api.put(`/companies/${id}`, data).then(r => r.data),
-  delete:   (id)       => api.delete(`/companies/${id}`).then(r => r.data)
+  getAll:      (p)        => api.get('/companies', { params: p }).then(r => r.data),
+  create:      (data)     => api.post('/companies', data).then(r => r.data),
+  update:      (id, data) => api.put(`/companies/${id}`, data).then(r => r.data),
+  delete:      (id)       => api.delete(`/companies/${id}`).then(r => r.data),
+  getNextCode: ()         => api.get('/companies/next-code').then(r => r.data),
 };
 
 export const milmaChartAdminAPI = {

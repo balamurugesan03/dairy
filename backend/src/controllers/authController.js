@@ -18,7 +18,8 @@ const createSendToken = (user, statusCode, res, type = 'user', companyData = nul
 
   const userData = {
     ...user.toObject(),
-    role: type === 'company' ? 'admin' : user.role
+    role: type === 'company' ? 'admin' : user.role,
+    loginType: type  // 'company' | 'user'
   };
 
   // Add permissions object for easy frontend access
@@ -163,7 +164,8 @@ export const getMe = async (req, res) => {
 
     const userObj = {
       ...userData.toObject(),
-      role: req.userType === 'company' ? 'admin' : userData.role
+      role: req.userType === 'company' ? 'admin' : userData.role,
+      loginType: req.userType  // 'company' | 'user'
     };
 
     // Add permissions object for easy frontend access

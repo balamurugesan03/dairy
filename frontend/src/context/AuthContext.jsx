@@ -203,6 +203,7 @@ export const AuthProvider = ({ children }) => {
     loading,
     isAuthenticated: !!token && !!user,
     isSuperAdmin: user?.role === 'superadmin',
+    isCompanyAdmin: user?.loginType === 'company',  // logged in via Company credentials
     isAdmin: user?.role === 'admin' || user?.role === 'superadmin',
     isUser: user?.role === 'user',
     userCompany: user?.company || user?.companyInfo?._id,

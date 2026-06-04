@@ -11,7 +11,7 @@ import {
   Box, Group, Text, TextInput, NumberInput, Select, Button,
   Table, ScrollArea, ActionIcon, Badge, Divider, Center,
   Loader, Avatar, Card, SimpleGrid, Stack, Checkbox,
-  Modal, Progress, RingProgress,
+  Modal,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { modals } from '@mantine/modals';
@@ -30,6 +30,7 @@ import {
   thermalPrintAPI, machineConfigAPI, timeIncentiveAPI, shiftIncentiveAPI,
   milmaChartAPI, whatsappAPI,
 } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 import ImportModal from '../common/ImportModal';
 import { offlineQueue } from '../../utils/offlineQueue';
 import { localDateStr } from '../../utils/dateUtils';
@@ -203,6 +204,7 @@ const toDate = (d) => {
 };
 
 const MilkPurchase = () => {
+  const { isSuperAdmin, isCompanyAdmin } = useAuth();
   const [centersData, setCentersData] = useState([]);
   const [agentsData,  setAgentsData]  = useState([]);
   const [date,   setDate]   = useState(new Date());
@@ -274,17 +276,13 @@ const MilkPurchase = () => {
   const [editingId,      setEditingId]      = useState(null);   // row being edited
   const [historySearch,  setHistorySearch]  = useState('');     // filter text
   const [showHistory,    setShowHistory]    = useState(false);  // search bar toggle
-  const [importOpen,     setImportOpen]     = useState(false);
-  const [rawImportOpen,  setRawImportOpen]  = useState(false);
-  const [linzaImportOpen, setLinzaImportOpen] = useState(false);
+  const [linzaImportOpen,  setLinzaImportOpen]  = useState(false);
+  const [zibittLoading,    setZibittLoading]    = useState(false);
+  const zibittFileRef = useRef(null);
   const [filterMonth,    setFilterMonth]    = useState(String(new Date().getMonth() + 1));
   const [filterYear,     setFilterYear]     = useState(String(new Date().getFullYear()));
   const [monthMode,      setMonthMode]      = useState(false);  // true = showing month range, false = today's date
-  const [importProgress, setImportProgress] = useState(0);    // 0-100
-  const [importResult,   setImportResult]   = useState(null); // { inserted, skipped, total, message }
-  const [importUploading,setImportUploading]= useState(false);
   const [formEnabled,    setFormEnabled]    = useState(false); // true only after OK is clicked
-  const importFileRef = useRef(null);
 
   const memberRef   = useRef(null);
   const dropdownRef = useRef(null);
@@ -1435,103 +1433,61 @@ const MilkPurchase = () => {
     }
   };
 
-  // Parse Excel in the browser and send as JSON chunks (avoids 413 / Nginx file size limit)
-  const handleZibittFileUpload = async (file) => {
+  // Zibitt import — parse Excel in browser (any size, no upload limit), send as JSON chunks
+  const handleZibittImport = async (file) => {
     if (!file) return;
-    setImportUploading(true);
-    setImportProgress(0);
-    setImportResult(null);
+    setZibittLoading(true);
+    const nid = `zibitt-${Date.now()}`;
+    notifications.show({ id: nid, loading: true, title: 'Zibitt Import', message: 'Reading file…', autoClose: false, withCloseButton: false });
     try {
-      // Read file in browser
       const arrayBuffer = await file.arrayBuffer();
       const XLSX2 = await import('xlsx');
       const wb = XLSX2.read(arrayBuffer, { type: 'array', cellDates: false, sheetStubs: false, defval: '' });
 
-      // Combine all sheets
+      // Read ALL sheets and merge
       let allRows = [];
       for (const sheetName of wb.SheetNames) {
         const ws = wb.Sheets[sheetName];
-        const sheetRows = XLSX2.utils.sheet_to_json(ws, { defval: '' });
-        allRows = allRows.concat(sheetRows);
+        allRows = allRows.concat(XLSX2.utils.sheet_to_json(ws, { defval: '' }));
       }
-
-      // Filter empty rows
       const rows = allRows.filter(r => Object.values(r).some(v => v !== '' && v !== null));
-      if (rows.length === 0) {
-        notifications.show({ color: 'red', message: 'File is empty' });
+
+      if (!rows.length) {
+        notifications.update({ id: nid, color: 'red', message: 'File is empty', loading: false, autoClose: 4000 });
         return;
       }
 
-      // Warn if exactly 65535 rows — this is the .xls hard limit; data beyond that is cut off
-      if (rows.length === 65535) {
-        notifications.show({
-          color: 'orange',
-          title: '⚠ .xls Row Limit Reached',
-          message: 'File has exactly 65,535 rows — the .xls format limit. Data beyond row 65535 (e.g. 2026 records) is CUT OFF in the file. Ask Zibitt to export as .xlsx to get all data.',
-          autoClose: 15000,
+      notifications.update({ id: nid, loading: true, message: `${rows.length} rows found. Importing…`, autoClose: false });
+
+      const CHUNK = 500;
+      let totalInserted = 0, totalSkipped = 0, totalUnlinked = 0;
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        const res = await milkCollectionAPI.zibittImport(rows.slice(i, i + CHUNK));
+        totalInserted  += res?.data?.inserted ?? 0;
+        totalSkipped   += res?.data?.skipped  ?? 0;
+        totalUnlinked  += res?.data?.unlinked ?? 0;
+        notifications.update({
+          id: nid, loading: true, autoClose: false,
+          message: `Imported ${Math.min(i + CHUNK, rows.length)} / ${rows.length} rows…`,
         });
       }
 
-      // Map Zibitt file columns → backend zibittRawImport format
-      const mapped = rows.map(r => ({
-        Collection_Id: r.Collection_Id ?? r.collection_id ?? '',
-        producer_id:   r.Supplier_ID   ?? r.supplier_id   ?? r.producer_id ?? '',
-        qty:           Number(r.CowQtyLtr ?? r.cowqtyltr ?? r.Qty ?? r.qty ?? 0) || Number(r.CowQtyKG ?? r.cowqtykg ?? 0) || 0,
-        fat:           Number(r.CowFAT   ?? r.cowfat   ?? r.FAT  ?? r.fat  ?? 0),
-        clr:           Number(r.CowCLR   ?? r.cowclr   ?? r.CLR  ?? r.clr  ?? 0),
-        snf:           Number(r.CowSNF   ?? r.cowsnf   ?? r.SNF  ?? r.snf  ?? 0),
-        rate:          Number(r.CowRate  ?? r.cowrate  ?? r.Rate ?? r.rate  ?? 0),
-        amount:        Number(r.Amount   ?? r.amount   ?? 0),
-        incentive:     Number(r.TimeIncentive ?? r.timeincentive ?? r.incentive ?? 0),
-        date_entry:    r.Rt_Date ?? r.rt_date ?? r.Date ?? r.date ?? '',
-        Shift:         r.Shift   ?? r.shift   ?? '',
-        slno:          r.Receipt_NO ?? r.receipt_no ?? '',
-      }));
-
-      // Send in chunks of 500 (JSON — no Nginx file size limit)
-      const CHUNK = 500;
-      let totalInserted = 0, totalSkipped = 0, totalUnlinked = 0;
-      for (let i = 0; i < mapped.length; i += CHUNK) {
-        const batch = mapped.slice(i, i + CHUNK);
-        const res = await milkCollectionAPI.zibittRawImport(batch);
-        totalInserted  += res?.data?.inserted          ?? 0;
-        totalSkipped   += res?.data?.skipped           ?? 0;
-        totalUnlinked  += res?.data?.unmatchedFarmers  ?? 0;
-        setImportProgress(Math.round(((i + batch.length) / mapped.length) * 100));
-      }
-
-      setImportProgress(100);
-      const duplicates = rows.length - totalInserted - totalSkipped;
-      let msg = `${totalInserted} new records imported from ${rows.length} rows`;
-      if (totalSkipped > 0)  msg += ` | ${totalSkipped} skipped (duplicate)`;
-      if (totalUnlinked > 0) msg += ` | ${totalUnlinked} supplier IDs without farmer link`;
-      if (totalInserted === 0 && rows.length > 0) msg += ' — all records already exist in DB';
-      setImportResult({ inserted: totalInserted, skipped: totalSkipped, total: rows.length, unlinked: totalUnlinked, message: msg });
-      notifications.show({ color: totalInserted > 0 ? 'teal' : 'orange', message: msg, autoClose: 8000 });
+      let msg = `${totalInserted} records imported from ${rows.length} rows`;
+      if (totalSkipped > 0)   msg += ` | ${totalSkipped} duplicate (skipped)`;
+      if (totalUnlinked > 0)  msg += ` | ${totalUnlinked} Supplier IDs not linked to farmer`;
+      notifications.update({
+        id: nid, loading: false, autoClose: 10000,
+        color: totalInserted > 0 ? 'teal' : 'orange',
+        title: 'Zibitt Import Done',
+        message: msg,
+      });
       loadMonthEntries(filterMonth, filterYear);
     } catch (err) {
-      notifications.show({ color: 'red', title: 'Import failed', message: err?.message || 'Parse error', autoClose: 6000 });
+      notifications.update({ id: nid, loading: false, color: 'red', title: 'Import Failed', message: err?.message || 'Error', autoClose: 6000 });
     } finally {
-      setImportUploading(false);
+      setZibittLoading(false);
+      if (zibittFileRef.current) zibittFileRef.current.value = '';
     }
-  };
-
-  // Raw Zibitt DB import — frontend parses Excel, backend transforms + farmer lookup
-  const handleZibittRawImportCollection = async (rawRows) => {
-    const CHUNK = 500;
-    let totalInserted = 0, totalSkipped = 0;
-    for (let i = 0; i < rawRows.length; i += CHUNK) {
-      const batch = rawRows.slice(i, i + CHUNK);
-      const res = await milkCollectionAPI.zibittRawImport(batch);
-      totalInserted += res?.data?.inserted ?? 0;
-      totalSkipped  += res?.data?.skipped  ?? 0;
-    }
-    notifications.show({
-      color: totalSkipped ? 'yellow' : 'teal',
-      message: `${totalInserted} imported${totalSkipped ? `, ${totalSkipped} skipped` : ''}`,
-      autoClose: 4000
-    });
-    loadMonthEntries(filterMonth, filterYear);
   };
 
   // LinZA import — frontend parses Excel (from OpenLyssa merge tool), backend looks up by Nos
@@ -2289,24 +2245,35 @@ const MilkPurchase = () => {
                 Delete All
               </Button>
 
-              {/* IMPORT ZIBITT */}
-              <Button leftSection={<IconUpload size={12} />} onClick={() => setImportOpen(true)}
-                size="compact-xs" radius="sm"
-                style={{ background: '#7c3aed', border: '1px solid #a78bfa', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                Import
-              </Button>
-              {/* IMPORT ZIBITT RAW DB */}
-              <Button leftSection={<IconUpload size={12} />} onClick={() => setRawImportOpen(true)}
-                size="compact-xs" radius="sm"
-                style={{ background: '#a21caf', border: '1px solid #e879f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                Import DB
-              </Button>
-              {/* IMPORT LinZA */}
-              <Button leftSection={<IconUpload size={12} />} onClick={() => setLinzaImportOpen(true)}
-                size="compact-xs" radius="sm"
-                style={{ background: '#0e7490', border: '1px solid #67e8f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                Import LinZA
-              </Button>
+              {/* IMPORT ZIBITT — superadmin / company-admin only */}
+              {(isSuperAdmin || isCompanyAdmin) && (
+                <>
+                  <input
+                    ref={zibittFileRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    style={{ display: 'none' }}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleZibittImport(f); }}
+                  />
+                  <Button
+                    leftSection={<IconUpload size={12} />}
+                    loading={zibittLoading}
+                    onClick={() => zibittFileRef.current?.click()}
+                    size="compact-xs" radius="sm"
+                    style={{ background: '#7c3aed', border: '1px solid #a78bfa', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                    Zibitt
+                  </Button>
+                </>
+              )}
+
+              {/* IMPORT LinZA — superadmin / company-admin only */}
+              {(isSuperAdmin || isCompanyAdmin) && (
+                <Button leftSection={<IconUpload size={12} />} onClick={() => setLinzaImportOpen(true)}
+                  size="compact-xs" radius="sm"
+                  style={{ background: '#0e7490', border: '1px solid #67e8f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                  Import LinZA
+                </Button>
+              )}
 
               {/* WHATSAPP BULK SEND — only when WA mode enabled and connected */}
               {cpMode.includes('WhatsApp') && waStatus.connected && (
@@ -2920,16 +2887,6 @@ const MilkPurchase = () => {
 
     </Box>
 
-      {/* ── Zibitt Raw DB Import Modal ────────────────────────────────────── */}
-      <ImportModal
-        isOpen={rawImportOpen}
-        onClose={() => setRawImportOpen(false)}
-        onImport={handleZibittRawImportCollection}
-        entityType="Milk Purchase (Zibitt DB — producer_id/qty/fat/rate/amount)"
-        requiredFields={['producer_id', 'qty', 'fat', 'rate', 'amount']}
-        maxFileSizeMB={50}
-      />
-
       {/* ── LinZA Import Modal ────────────────────────────────────────────── */}
       <ImportModal
         isOpen={linzaImportOpen}
@@ -2939,82 +2896,6 @@ const MilkPurchase = () => {
         requiredFields={['Nos', 'Ltr']}
         maxFileSizeMB={50}
       />
-
-      {/* ── Zibitt File Import Modal ───────────────────────────────────────── */}
-      <Modal
-        opened={importOpen}
-        onClose={() => { if (!importUploading) { setImportOpen(false); setImportResult(null); setImportProgress(0); if (importFileRef.current) importFileRef.current.value = ''; } }}
-        title="Import Milk Purchase — Zibitt DailyCollection"
-        size="sm"
-        closeOnClickOutside={!importUploading}
-      >
-        <Stack gap="md">
-          <Text size="xs" c="dimmed">
-            Accepts .xlsx, .xls, .csv (any size). Columns needed:
-            <br /><strong>Receipt_NO, Rt_Date, Shift, Supplier_ID, CowQtyLtr, CowFAT, CowCLR, CowSNF, CowRate, Amount, TimeIncentive</strong>
-          </Text>
-
-          {/* Hidden file input */}
-          <input
-            ref={importFileRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            style={{ display: 'none' }}
-            onChange={e => { const f = e.target.files?.[0]; if (f) handleZibittFileUpload(f); }}
-          />
-
-          {!importResult && (
-            <Button
-              leftSection={<IconUpload size={16} />}
-              onClick={() => importFileRef.current?.click()}
-              loading={importUploading}
-              disabled={importUploading}
-              fullWidth
-              color="violet"
-            >
-              {importUploading ? 'Uploading…' : 'Choose File & Upload'}
-            </Button>
-          )}
-
-          {importUploading && (
-            <Stack gap={4}>
-              <Progress value={importProgress} animated color="violet" size="lg" radius="sm" />
-              <Text size="xs" c="dimmed" ta="center">
-                {importProgress < 100 ? `Processing… ${importProgress}% (${Math.round(importProgress / 100 * (importResult?.total || 0))} rows sent)` : 'Finalising…'}
-              </Text>
-            </Stack>
-          )}
-
-          {importResult && (
-            <Stack gap="xs">
-              <Text fw={700} c={importResult.inserted > 0 ? 'teal.7' : 'orange.7'} ta="center">
-                {importResult.inserted ?? 0} new records imported
-              </Text>
-              {importResult.skipped > 0 && (
-                <Text size="xs" c="dimmed" ta="center">
-                  {importResult.skipped} already in DB (skipped)
-                </Text>
-              )}
-              {importResult.unlinked > 0 && (
-                <Text size="xs" c="orange" ta="center">
-                  {importResult.unlinked} supplier IDs not linked to a farmer (imported without farmer link)
-                </Text>
-              )}
-              {importResult.inserted === 0 && importResult.total > 0 && (
-                <Text size="xs" c="red" fw={600} ta="center">
-                  All {importResult.total} rows already exist in DB — nothing new to import.
-                  {importResult.total === 65535 && (
-                    <><br />⚠ File has exactly 65,535 rows (.xls limit) — 2026 data may be cut off. Use .xlsx format.</>
-                  )}
-                </Text>
-              )}
-              <Button size="xs" variant="light" mt={4} onClick={() => { setImportOpen(false); setImportResult(null); setImportProgress(0); if (importFileRef.current) importFileRef.current.value = ''; }}>
-                Close
-              </Button>
-            </Stack>
-          )}
-        </Stack>
-      </Modal>
 
       {/* ── Bulk Delete Modal ─────────────────────────────────────────────── */}
       <Modal

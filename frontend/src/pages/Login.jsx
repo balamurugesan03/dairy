@@ -18,81 +18,70 @@ const useOnline = () => {
 const Login = () => {
   const { login } = useAuth();
   const isOnline = useOnline();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [companies, setCompanies] = useState([]);
-  const [selectedCompany, setSelectedCompany] = useState('');
-  const [loadingCompanies, setLoadingCompanies] = useState(true);
-  const [searchText, setSearchText] = useState('');
-  const [showDropdown, setShowDropdown] = useState(false);
-  const searchRef = useRef(null);
+  const [username,    setUsername]    = useState('');
+  const [password,    setPassword]    = useState('');
+  const [error,       setError]       = useState('');
+  const [loading,     setLoading]     = useState(false);
 
-  // Fetch companies on mount
-  useEffect(() => {
-    fetchCompanies();
-  }, []);
+  // Society code lookup
+  const [societyCode,    setSocietyCode]    = useState('');
+  const [codeCompany,    setCodeCompany]    = useState(null);   // { _id, companyName, businessTypes }
+  const [codeLookingUp,  setCodeLookingUp]  = useState(false);
+  const [codeError,      setCodeError]      = useState('');
 
-  // Close dropdown on outside click
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (searchRef.current && !searchRef.current.contains(e.target)) {
-        setShowDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  const lookupTimer = useRef(null);
 
-  const fetchCompanies = async () => {
-    // Offline — load from cache
-    if (!navigator.onLine) {
-      try {
-        const cached = JSON.parse(localStorage.getItem('dairy_cached_companies') || '[]');
-        setCompanies(cached);
-      } catch { setCompanies([]); }
-      setLoadingCompanies(false);
-      return;
+  const handleCodeChange = (e) => {
+    const val = e.target.value.replace(/\D/g, '').slice(0, 6); // digits only, max 6
+    setSocietyCode(val);
+    setCodeCompany(null);
+    setCodeError('');
+
+    clearTimeout(lookupTimer.current);
+    if (val.length >= 4) {
+      setCodeLookingUp(true);
+      lookupTimer.current = setTimeout(async () => {
+        try {
+          // Try live lookup first
+          if (navigator.onLine) {
+            const res = await companyAPI.getByCode(val);
+            if (res?.success && res.data) {
+              setCodeCompany(res.data);
+              setCodeError('');
+            } else {
+              setCodeError('No company found with this code');
+              setCodeCompany(null);
+            }
+          } else {
+            // Offline — check cache
+            const cached = JSON.parse(localStorage.getItem('dairy_cached_companies') || '[]');
+            const found = cached.find(c => c.societyCode === val);
+            if (found) { setCodeCompany(found); setCodeError(''); }
+            else { setCodeError('Code not found in cached data'); setCodeCompany(null); }
+          }
+        } catch {
+          setCodeError('Lookup failed — check connection');
+        } finally {
+          setCodeLookingUp(false);
+        }
+      }, 400);
+    } else {
+      setCodeLookingUp(false);
     }
-    try {
-      const response = await companyAPI.getPublic();
-      if (response.success) {
-        const list = response.data || [];
-        setCompanies(list);
-        localStorage.setItem('dairy_cached_companies', JSON.stringify(list));
-      }
-    } catch {
-      // Server unreachable — fall back to cache
-      try {
-        const cached = JSON.parse(localStorage.getItem('dairy_cached_companies') || '[]');
-        setCompanies(cached);
-      } catch { setCompanies([]); }
-    } finally {
-      setLoadingCompanies(false);
-    }
-  };
-
-  const filteredCompanies = companies.filter(c =>
-    c.companyName.toLowerCase().includes(searchText.toLowerCase())
-  );
-
-  const handleSelectCompany = (company) => {
-    setSelectedCompany(company._id);
-    setSearchText(company.companyName);
-    setShowDropdown(false);
-  };
-
-  const handleSearchChange = (e) => {
-    setSearchText(e.target.value);
-    setSelectedCompany('');
-    setShowDropdown(true);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
+    if (!societyCode.trim()) {
+      setError('Please enter your society code');
+      return;
+    }
+    if (!codeCompany) {
+      setError('Enter a valid society code to continue');
+      return;
+    }
     if (!username.trim() || !password.trim()) {
       setError('Please enter username and password');
       return;
@@ -140,58 +129,36 @@ const Login = () => {
             </div>
           )}
 
-          {/* Company Search */}
-          <div className="form-group" ref={searchRef}>
-            <label htmlFor="company-search">Company</label>
-            <div className="company-search-wrapper">
+          {/* Society Code */}
+          <div className="form-group">
+            <label htmlFor="society-code">Society Code</label>
+            <div className="society-code-wrapper">
               <input
-                id="company-search"
+                id="society-code"
                 type="text"
-                value={searchText}
-                onChange={handleSearchChange}
-                onFocus={() => setShowDropdown(true)}
-                placeholder={loadingCompanies ? 'Loading companies...' : 'Search company...'}
-                disabled={loading || loadingCompanies}
+                inputMode="numeric"
+                value={societyCode}
+                onChange={handleCodeChange}
+                placeholder="Enter 4-digit society code (e.g. 1001)"
+                disabled={loading}
                 autoComplete="off"
+                autoFocus
+                maxLength={6}
               />
-              {searchText && (
-                <button
-                  type="button"
-                  className="company-clear-btn"
-                  onClick={() => { setSearchText(''); setSelectedCompany(''); setShowDropdown(true); }}
-                  tabIndex={-1}
-                >×</button>
-              )}
-              {showDropdown && filteredCompanies.length > 0 && (
-                <ul className="company-dropdown">
-                  {filteredCompanies.map(company => (
-                    <li
-                      key={company._id}
-                      className={`company-option${selectedCompany === company._id ? ' selected' : ''}`}
-                      onMouseDown={() => handleSelectCompany(company)}
-                    >
-                      <span className="company-option-name">{company.companyName}</span>
-                      <span className="company-option-type">
-                        {company.businessTypes.map(t => t === 'Dairy Cooperative Society' ? 'Dairy' : 'Private').join(', ')}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {showDropdown && !loadingCompanies && searchText && filteredCompanies.length === 0 && (
-                <ul className="company-dropdown">
-                  <li className="company-no-result">No companies found</li>
-                </ul>
-              )}
+              {codeLookingUp && <span className="code-spinner"><span className="spinner-small"></span></span>}
             </div>
+            {/* Company name confirmation */}
+            {codeCompany && (
+              <div className="code-company-found">
+                <span className="code-check">✓</span>
+                <span className="code-company-name">{codeCompany.companyName}</span>
+                <span className="code-company-type">
+                  {codeCompany.businessTypes?.map(t => t.includes('Dairy') ? 'Dairy' : 'Private').join(', ')}
+                </span>
+              </div>
+            )}
+            {codeError && <p className="code-error">{codeError}</p>}
           </div>
-
-          {loadingCompanies && (
-            <div className="loading-companies">
-              <span className="spinner-small"></span>
-              Loading companies...
-            </div>
-          )}
 
           <div className="form-group">
             <label htmlFor="username">Username</label>

@@ -15,7 +15,7 @@ import {
   getDateWiseSummary,
   bulkImportCollections,
   fileUploadImportCollections,
-  zibittRawImportCollections,
+  zibittBrowserImportCollections,
   linzaImportCollections,
 } from '../controllers/milkCollectionController.js';
 
@@ -33,11 +33,11 @@ router.get('/date-summary', getDateSummary);
 // Bulk delete selected date+shift slots
 router.post('/bulk-delete', bulkDeleteCollections);
 
-// Import routes (Zibitt)
-router.post('/file-import',      upload.single('file'), fileUploadImportCollections);
-router.post('/bulk-import',      bulkImportCollections);
-router.post('/zibitt-raw-import', zibittRawImportCollections);
-router.post('/linza-import',      linzaImportCollections);
+// Import routes
+router.post('/file-import',    upload.single('file'), fileUploadImportCollections);
+router.post('/bulk-import',    bulkImportCollections);
+router.post('/zibitt-import',  zibittBrowserImportCollections);
+router.post('/linza-import',   linzaImportCollections);
 
 // Main CRUD
 router.post('/',      createCollection);

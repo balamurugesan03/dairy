@@ -39,6 +39,16 @@ export const createCompany = async (req, res) => {
       });
     }
 
+    // Auto-generate societyCode if not provided (1000, 1001, 1002 …)
+    if (!companyData.societyCode || !companyData.societyCode.trim()) {
+      const last = await Company.findOne(
+        { societyCode: { $exists: true, $ne: '' } },
+        { societyCode: 1 }
+      ).sort({ societyCode: -1 }).lean();
+      const lastNum = last?.societyCode ? parseInt(last.societyCode, 10) : 999;
+      companyData.societyCode = String(isNaN(lastNum) ? 1000 : Math.max(lastNum, 999) + 1);
+    }
+
     const company = new Company(companyData);
     await company.save();
 

@@ -346,7 +346,7 @@ app.get('/api/companies/public', async (req, res) => {
   try {
     const Company = (await import('./models/Company.js')).default;
     const companies = await Company.find({ status: 'Active' })
-      .select('companyName businessTypes _id')
+      .select('companyName businessTypes societyCode _id')
       .sort({ companyName: 1 });
     res.status(200).json({
       success: true,
@@ -355,10 +355,39 @@ app.get('/api/companies/public', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching public companies:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch companies'
-    });
+    res.status(500).json({ success: false, message: 'Failed to fetch companies' });
+  }
+});
+
+// Public endpoint - look up company by society code (for login page)
+app.get('/api/companies/by-code/:code', async (req, res) => {
+  try {
+    const Company = (await import('./models/Company.js')).default;
+    const company = await Company.findOne({
+      societyCode: req.params.code.trim(),
+      status: 'Active'
+    }).select('companyName businessTypes societyCode _id');
+    if (!company) {
+      return res.status(404).json({ success: false, message: 'No company found with this code' });
+    }
+    res.json({ success: true, data: company });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lookup failed' });
+  }
+});
+
+// Public endpoint - get next available society code (for super-admin)
+app.get('/api/companies/next-code', async (req, res) => {
+  try {
+    const Company = (await import('./models/Company.js')).default;
+    const last = await Company.findOne(
+      { societyCode: { $exists: true, $ne: '' } },
+      { societyCode: 1 }
+    ).sort({ societyCode: -1 }).lean();
+    const lastNum = last?.societyCode ? parseInt(last.societyCode, 10) : 999;
+    res.json({ success: true, data: { nextCode: String(isNaN(lastNum) ? 1000 : Math.max(lastNum, 999) + 1) } });
+  } catch (error) {
+    res.json({ success: true, data: { nextCode: '1000' } });
   }
 });
 
