@@ -185,6 +185,93 @@ export const deleteCollection = async (req, res) => {
   }
 };
 
+// ── DATE SUMMARY (for bulk delete picker) ─────────────────────────────────────
+// GET /milk-collections/date-summary?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD
+// Returns [{ date, shift, count }] so the frontend can show a date checkbox list.
+export const getDateSummary = async (req, res) => {
+  try {
+    const { fromDate, toDate } = req.query;
+    if (!fromDate || !toDate) return res.status(400).json({ success: false, message: 'fromDate and toDate required' });
+
+    const start = new Date(fromDate); start.setHours(0, 0, 0, 0);
+    const end   = new Date(toDate);   end.setHours(23, 59, 59, 999);
+
+    const rows = await MilkCollection.aggregate([
+      { $match: { companyId: req.companyId, date: { $gte: start, $lte: end } } },
+      {
+        $group: {
+          _id: {
+            date:  { $dateToString: { format: '%Y-%m-%d', date: '$date', timezone: '+05:30' } },
+            shift: '$shift'
+          },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { '_id.date': 1, '_id.shift': 1 } }
+    ]);
+
+    res.json({
+      success: true,
+      data: rows.map(r => ({ date: r._id.date, shift: r._id.shift, count: r.count }))
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ── BULK DELETE ───────────────────────────────────────────────────────────────
+// POST /milk-collections/bulk-delete
+// Body: { slots: [{ date: 'YYYY-MM-DD', shift: 'AM'|'PM'|null }, ...] }
+// Deletes all records matching any slot + reverses vouchers.
+export const bulkDeleteCollections = async (req, res) => {
+  try {
+    const { slots } = req.body;
+    const companyId = req.companyId;
+
+    if (!Array.isArray(slots) || slots.length === 0) {
+      return res.status(400).json({ success: false, message: 'slots array required' });
+    }
+
+    const makeStart = (d) => { const s = new Date(d); s.setHours(0, 0, 0, 0); return s; };
+    const makeEnd   = (d) => { const e = new Date(d); e.setHours(23, 59, 59, 999); return e; };
+
+    // Build $or conditions for each slot
+    const orConditions = slots.map(slot => {
+      const cond = { date: { $gte: makeStart(slot.date), $lte: makeEnd(slot.date) } };
+      if (slot.shift) cond.shift = slot.shift;
+      return cond;
+    });
+
+    const filter = { companyId, $or: orConditions };
+
+    const records = await MilkCollection.find(filter, { _id: 1, voucherId: 1 }).lean();
+    if (records.length === 0) {
+      return res.json({ success: true, deleted: 0, message: 'No records found for selected dates' });
+    }
+
+    // Reverse all linked vouchers
+    const voucherIds = records.map(r => r.voucherId).filter(Boolean);
+    for (const vid of voucherIds) {
+      try {
+        const voucher = await Voucher.findById(vid);
+        if (voucher) {
+          await reverseLedgerBalances(voucher.entries);
+          await voucher.deleteOne();
+        }
+      } catch (vErr) {
+        console.warn('[BulkDelete] Voucher reversal failed (non-fatal):', vErr.message);
+      }
+    }
+
+    const ids = records.map(r => r._id);
+    await MilkCollection.deleteMany({ _id: { $in: ids } });
+
+    res.json({ success: true, deleted: records.length, message: `${records.length} records deleted` });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // ── ZIBITT RAW DB IMPORT ──────────────────────────────────────────────────────
 //  Accepts raw Zibitt table rows: dcs_id, mc_id, slno, producer_id,
 //  qty, fat, clr, snf, rate, amount, incentive, col_mode, date_entry

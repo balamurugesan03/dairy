@@ -7,6 +7,8 @@ import {
   getCollectionById,
   updateCollection,
   deleteCollection,
+  bulkDeleteCollections,
+  getDateSummary,
   getFarmerHistory,
   getFarmerStats,
   getFarmerWiseSummary,
@@ -25,6 +27,11 @@ router.get('/summary/farmer-wise',         getFarmerWiseSummary);
 router.get('/summary/date-wise',           getDateWiseSummary);
 router.get('/farmer/:farmerNumber/stats',  getFarmerStats);
 router.get('/farmer/:farmerNumber',        getFarmerHistory);
+
+// Date summary (for bulk delete date picker)
+router.get('/date-summary', getDateSummary);
+// Bulk delete selected date+shift slots
+router.post('/bulk-delete', bulkDeleteCollections);
 
 // Import routes (Zibitt)
 router.post('/file-import',      upload.single('file'), fileUploadImportCollections);

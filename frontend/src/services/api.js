@@ -426,6 +426,8 @@ export const milkCollectionAPI = {
   create: (data) => api.post('/milk-collections', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/milk-collections/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/milk-collections/${id}`).then(res => res.data).catch(handleError),
+  dateSummary: (params) => api.get('/milk-collections/date-summary', { params }).then(res => res.data).catch(handleError),
+  bulkDelete:  (slots)  => api.post('/milk-collections/bulk-delete', { slots }).then(res => res.data).catch(handleError),
   bulkImport:      (records) => api.post('/milk-collections/bulk-import',       { records }).then(res => res.data).catch(handleError),
   zibittRawImport: (records) => api.post('/milk-collections/zibitt-raw-import', { records }).then(res => res.data).catch(handleError),
   linzaImport:     (records) => api.post('/milk-collections/linza-import',      { records }).then(res => res.data).catch(handleError),

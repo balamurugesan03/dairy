@@ -14,6 +14,7 @@ import {
   Modal, Progress, RingProgress,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
+import { modals } from '@mantine/modals';
 import { DatePickerInput } from '@mantine/dates';
 import {
   IconSearch, IconUser, IconDeviceFloppy,
@@ -1374,6 +1375,66 @@ const MilkPurchase = () => {
     } catch (err) { notifications.show({ message: err?.message || 'Delete failed', color: 'red' }); }
   };
 
+  const [bulkDeleting,   setBulkDeleting]   = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bdMonth,        setBdMonth]        = useState(String(new Date().getMonth() + 1));
+  const [bdYear,         setBdYear]         = useState(String(new Date().getFullYear()));
+  const [bdSlots,        setBdSlots]        = useState([]);   // [{ date, shift, count }]
+  const [bdSelected,     setBdSelected]     = useState(new Set()); // keys = "date|shift"
+  const [bdLoading,      setBdLoading]      = useState(false);
+
+  const slotKey = (s) => `${s.date}|${s.shift || 'ALL'}`;
+
+  const loadBdSlots = async (month, year) => {
+    const m = parseInt(month);
+    const y = parseInt(year);
+    const fromDate = localDateStr(new Date(y, m - 1, 1));
+    const toDate   = localDateStr(new Date(y, m, 0));
+    setBdLoading(true);
+    try {
+      const res = await milkCollectionAPI.dateSummary({ fromDate, toDate });
+      const slots = res?.data || [];
+      setBdSlots(slots);
+      setBdSelected(new Set(slots.map(slotKey)));
+    } catch { setBdSlots([]); }
+    finally { setBdLoading(false); }
+  };
+
+  const toggleSlot = (key) => {
+    setBdSelected(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const toggleAll = (checked) => {
+    setBdSelected(checked ? new Set(bdSlots.map(slotKey)) : new Set());
+  };
+
+  const executeBulkDelete = async () => {
+    const selected = bdSlots.filter(s => bdSelected.has(slotKey(s)));
+    if (selected.length === 0) return;
+    const slots = selected.map(s => ({ date: s.date, shift: s.shift || null }));
+    const totalCount = selected.reduce((sum, s) => sum + s.count, 0);
+
+    setBulkDeleting(true);
+    try {
+      const res = await milkCollectionAPI.bulkDelete(slots);
+      const deleted = res?.data?.deleted ?? totalCount;
+      notifications.show({ color: 'red', message: `${deleted} records deleted`, autoClose: 4000 });
+      setBulkDeleteOpen(false);
+      setBdSlots([]);
+      setBdSelected(new Set());
+      if (monthMode) loadMonthEntries(filterMonth, filterYear);
+      else loadTodayEntries(date, shift, center);
+    } catch (err) {
+      notifications.show({ color: 'red', message: err?.message || 'Bulk delete failed' });
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   const handleZibittFileUpload = async (file) => {
     if (!file) return;
     setImportUploading(true);
@@ -2157,6 +2218,16 @@ const MilkPurchase = () => {
                 Refresh
               </Button>
 
+              {/* DELETE ALL */}
+              <Button
+                leftSection={<IconTrash size={12} />}
+                onClick={() => setBulkDeleteOpen(true)}
+                size="compact-xs" radius="sm"
+                style={{ background: '#991b1b', border: '1px solid #f87171', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}
+              >
+                Delete All
+              </Button>
+
               {/* IMPORT ZIBITT */}
               <Button leftSection={<IconUpload size={12} />} onClick={() => setImportOpen(true)}
                 size="compact-xs" radius="sm"
@@ -2864,6 +2935,119 @@ const MilkPurchase = () => {
               </Button>
             </Stack>
           )}
+        </Stack>
+      </Modal>
+
+      {/* ── Bulk Delete Modal ─────────────────────────────────────────────── */}
+      <Modal
+        opened={bulkDeleteOpen}
+        onClose={() => { setBulkDeleteOpen(false); setBdSlots([]); setBdSelected(new Set()); }}
+        title="Bulk Delete — Milk Purchase"
+        size="md"
+        centered
+      >
+        <Stack gap="sm">
+          {/* Month + Year + Load */}
+          <Group align="flex-end" gap="sm">
+            <Select
+              label="Month"
+              data={MONTHS}
+              value={bdMonth}
+              onChange={v => { if (v) { setBdMonth(v); setBdSlots([]); setBdSelected(new Set()); } }}
+              style={{ flex: 1 }}
+            />
+            <Select
+              label="Year"
+              data={YEARS}
+              value={bdYear}
+              onChange={v => { if (v) { setBdYear(v); setBdSlots([]); setBdSelected(new Set()); } }}
+              style={{ width: 90 }}
+            />
+            <Button
+              size="sm"
+              leftSection={<IconSearch size={14} />}
+              loading={bdLoading}
+              onClick={() => loadBdSlots(bdMonth, bdYear)}
+            >
+              Load
+            </Button>
+          </Group>
+
+          {/* Date checkboxes */}
+          {bdSlots.length > 0 && (
+            <Stack gap={4}>
+              <Group justify="space-between" mb={2}>
+                <Text size="xs" fw={700} c="dimmed">Select dates to delete:</Text>
+                <Group gap={8}>
+                  <Button size="compact-xs" variant="subtle" onClick={() => toggleAll(true)}>All</Button>
+                  <Button size="compact-xs" variant="subtle" color="gray" onClick={() => toggleAll(false)}>None</Button>
+                </Group>
+              </Group>
+              <ScrollArea h={260}>
+                <Stack gap={3}>
+                  {bdSlots.map(s => {
+                    const key = slotKey(s);
+                    return (
+                      <Group
+                        key={key}
+                        gap="sm"
+                        px={8} py={4}
+                        style={{
+                          background: bdSelected.has(key) ? '#fee2e2' : '#f9fafb',
+                          borderRadius: 6,
+                          border: bdSelected.has(key) ? '1px solid #fca5a5' : '1px solid #e5e7eb',
+                          cursor: 'pointer'
+                        }}
+                        onClick={() => toggleSlot(key)}
+                      >
+                        <Checkbox
+                          size="xs"
+                          checked={bdSelected.has(key)}
+                          onChange={() => toggleSlot(key)}
+                          onClick={e => e.stopPropagation()}
+                          color="red"
+                        />
+                        <Text size="sm" fw={600} style={{ minWidth: 90 }}>{s.date}</Text>
+                        <Badge size="sm" color={s.shift === 'AM' ? 'blue' : 'orange'} variant="light">
+                          {s.shift || 'ALL'}
+                        </Badge>
+                        <Text size="xs" c="dimmed" ml="auto">{s.count} records</Text>
+                      </Group>
+                    );
+                  })}
+                </Stack>
+              </ScrollArea>
+              <Text size="xs" c="dimmed">
+                {bdSelected.size} date-shifts selected —{' '}
+                {bdSlots.filter(s => bdSelected.has(slotKey(s))).reduce((sum, s) => sum + s.count, 0)} records will be deleted
+              </Text>
+            </Stack>
+          )}
+
+          {bdSlots.length === 0 && !bdLoading && (
+            <Text size="sm" c="dimmed" ta="center" py="md">
+              Select month &amp; year and click Load to see available dates.
+            </Text>
+          )}
+
+          <Text size="xs" c="orange" fw={600}>
+            ⚠ Deleted records and their accounting entries cannot be recovered.
+          </Text>
+
+          <Group justify="flex-end" gap="sm">
+            <Button variant="default" onClick={() => { setBulkDeleteOpen(false); setBdSlots([]); setBdSelected(new Set()); }}>
+              Cancel
+            </Button>
+            <Button
+              color="red"
+              leftSection={<IconTrash size={14} />}
+              loading={bulkDeleting}
+              disabled={bdSelected.size === 0}
+              onClick={executeBulkDelete}
+            >
+              Delete {bdSelected.size > 0 ? `(${bdSlots.filter(s => bdSelected.has(slotKey(s))).reduce((sum, s) => sum + s.count, 0)} records)` : ''}
+            </Button>
+          </Group>
         </Stack>
       </Modal>
     </>
