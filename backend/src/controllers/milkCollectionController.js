@@ -571,7 +571,9 @@ const parseShift = (row) => {
 };
 
 const mapDailyCollectionRow = (row, idx) => ({
-  billNo:       String(row.Receipt_NO ?? row.ReceiptNo ?? row.receipt_no ?? row.slno ?? `ZB-${idx + 1}`),
+  // Collection_Id is a globally unique ID in Zibitt — use it first to avoid
+  // duplicate-key conflicts when the same Receipt_NO repeats across months/years.
+  billNo:       String(row.Collection_Id ?? row.collection_id ?? row.CollectionId ?? row.Receipt_NO ?? row.ReceiptNo ?? row.receipt_no ?? row.slno ?? `ZB-${idx + 1}`),
   date:         parseAnyDate(row.Rt_Date ?? row.rt_date ?? row.Date ?? row.date ?? row.mc_date ?? ''),
   shift:        parseShift(row),
   farmerNumber: String(row.Supplier_ID ?? row.supplier_id ?? row.SupplierId ?? row.producer_id ?? ''),

@@ -535,6 +535,9 @@ app.use((err, req, res, next) => {
 
 // Start server
 httpServer.listen(PORT, () => {
+  // Allow large file imports (200MB+) to process without timing out
+  httpServer.timeout         = 30 * 60 * 1000; // 30 min
+  httpServer.keepAliveTimeout = 30 * 60 * 1000;
   console.log(`Server is running on port ${PORT}`);
 
   console.log('[SerialPort] Analyzer managed via /api/machine-config (DB-driven, start/stop from UI).');
