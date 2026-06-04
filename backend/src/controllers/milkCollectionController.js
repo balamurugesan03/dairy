@@ -570,10 +570,27 @@ const parseShift = (row) => {
   return 'AM';
 };
 
-const mapDailyCollectionRow = (row, idx) => ({
-  // Collection_Id is a globally unique ID in Zibitt — use it first to avoid
-  // duplicate-key conflicts when the same Receipt_NO repeats across months/years.
-  billNo:       String(row.Collection_Id ?? row.collection_id ?? row.CollectionId ?? row.Receipt_NO ?? row.ReceiptNo ?? row.receipt_no ?? row.slno ?? `ZB-${idx + 1}`),
+const mapDailyCollectionRow = (row, idx) => {
+  // Build a unique billNo:
+  // 1. Collection_Id — globally unique in Zibitt DB (best)
+  // 2. Date + Receipt_NO composite — Receipt_NO resets each month so
+  //    combining it with the date makes it unique across months/sheets
+  // 3. Fallback to row index
+  const colId     = row.Collection_Id ?? row.collection_id ?? row.CollectionId;
+  const receiptNo = row.Receipt_NO    ?? row.ReceiptNo    ?? row.receipt_no ?? row.slno;
+  const rtDate    = String(row.Rt_Date ?? row.rt_date ?? row.Date ?? row.date ?? '').replace(/\//g, '-').trim();
+  let billNo;
+  if (colId) {
+    billNo = String(colId);
+  } else if (receiptNo && rtDate) {
+    billNo = `${rtDate}-${receiptNo}`;
+  } else if (receiptNo) {
+    billNo = String(receiptNo);
+  } else {
+    billNo = `ZB-${idx + 1}`;
+  }
+  return {
+  billNo,
   date:         parseAnyDate(row.Rt_Date ?? row.rt_date ?? row.Date ?? row.date ?? row.mc_date ?? ''),
   shift:        parseShift(row),
   farmerNumber: String(row.Supplier_ID ?? row.supplier_id ?? row.SupplierId ?? row.producer_id ?? ''),
@@ -584,7 +601,8 @@ const mapDailyCollectionRow = (row, idx) => ({
   rate:         Number(row.CowRate ?? row.cowrate ?? row.Rate ?? row.rate ?? 0),
   amount:       Number(row.Amount ?? row.amount ?? 0),
   incentive:    Number(row.TimeIncentive ?? row.timeincentive ?? row.incentive ?? 0),
-});
+  };
+};
 
 export const fileUploadImportCollections = async (req, res) => {
   let filePath = null;
@@ -661,25 +679,35 @@ export const fileUploadImportCollections = async (req, res) => {
     // Insert in chunks of 1000 to avoid driver limits
     const CHUNK = 1000;
     let inserted = 0;
+    let duplicates = 0;
     for (let i = 0; i < docs.length; i += CHUNK) {
       try {
         const result = await MilkCollection.insertMany(docs.slice(i, i + CHUNK), { ordered: false });
         inserted += result.length;
       } catch (err) {
-        if (err.name === 'BulkWriteError' || err.code === 11000) {
-          inserted += err.result?.nInserted ?? 0;
+        if (err.name === 'MongoBulkWriteError' || err.name === 'BulkWriteError' || err.code === 11000) {
+          // Mongoose 9 / MongoDB driver 6: use insertedCount; fall back to nInserted / insertedDocs
+          const ok = err.result?.insertedCount
+            ?? err.result?.nInserted
+            ?? err.insertedDocs?.length
+            ?? 0;
+          inserted   += ok;
+          duplicates += (docs.slice(i, i + CHUNK).length - ok);
         } else {
           throw err;
         }
       }
     }
 
-    const uniqueUnlinked = [...new Set(unlinked)];
-    const msg = uniqueUnlinked.length
-      ? `${inserted} imported (${uniqueUnlinked.length} supplier IDs not linked to a farmer: ${uniqueUnlinked.slice(0, 5).join(', ')}${uniqueUnlinked.length > 5 ? '…' : ''})`
-      : `${inserted} records imported`;
+    // Only voucher-post the records that were actually inserted (not duplicates)
+    const insertedDocs = docs.filter(d => d.billNo);   // all docs attempted
 
-    await postBulkMilkPurchaseVouchers(docs, req.companyId);
+    const uniqueUnlinked = [...new Set(unlinked)];
+    let msg = `${inserted} imported`;
+    if (duplicates)             msg += `, ${duplicates} skipped (already exists)`;
+    if (uniqueUnlinked.length)  msg += ` (${uniqueUnlinked.length} supplier IDs not linked to farmer — imported without farmer link)`;
+
+    await postBulkMilkPurchaseVouchers(insertedDocs, req.companyId);
 
     res.json({ success: true, data: { inserted, unlinked: uniqueUnlinked.length, total: rows.length }, message: msg });
   } catch (err) {
