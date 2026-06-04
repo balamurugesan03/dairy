@@ -319,13 +319,24 @@ export const zibittRawImportCollections = async (req, res) => {
     const unmatched = [];
 
     for (const row of records) {
-      const producerId = String(row.producer_id || '');
+      // Support both Zibitt raw DB (producer_id) and file export (Supplier_ID) formats
+      const producerId = String(row.producer_id || row.Supplier_ID || row.supplier_id || '');
       const fm = farmerMap[producerId];
 
       if (!fm) unmatched.push(producerId);
 
+      // Use Collection_Id if available (globally unique); otherwise date+slno composite
+      const colId     = row.Collection_Id || row.collection_id || '';
+      const rtDate    = String(row.date_entry || row.mc_date || row.Date || row.date || '').split(' ')[0].trim();
+      const slno      = row.slno || row.Receipt_NO || '0';
+      const billNo    = colId
+        ? String(colId)
+        : rtDate
+          ? `${rtDate}-${producerId}-${slno}`
+          : `MC-${row.dcs_id || 0}-${row.mc_id || 0}-${producerId}-${slno}`;
+
       docs.push({
-        billNo:       `MC-${row.dcs_id || 0}-${row.mc_id || 0}-${row.producer_id}-${row.slno || 0}`,
+        billNo,
         date:         parseDateTime(row),
         shift:        parseShift(row),
         farmer:       fm ? fm.id : null,
@@ -353,8 +364,8 @@ export const zibittRawImportCollections = async (req, res) => {
         const result = await MilkCollection.insertMany(docs.slice(i, i + CHUNK), { ordered: false });
         inserted += result.length;
       } catch (err) {
-        if (err.name === 'MongoBulkWriteError' || err.code === 11000) {
-          inserted += err.result?.nInserted ?? 0;
+        if (err.name === 'MongoBulkWriteError' || err.name === 'BulkWriteError' || err.code === 11000) {
+          inserted += err.result?.insertedCount ?? err.result?.nInserted ?? err.insertedDocs?.length ?? 0;
         } else {
           throw err;
         }

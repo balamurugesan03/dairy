@@ -1435,21 +1435,67 @@ const MilkPurchase = () => {
     }
   };
 
+  // Parse Excel in the browser and send as JSON chunks (avoids 413 / Nginx file size limit)
   const handleZibittFileUpload = async (file) => {
     if (!file) return;
     setImportUploading(true);
     setImportProgress(0);
     setImportResult(null);
     try {
-      const res = await milkCollectionAPI.fileImport(file, (evt) => {
-        if (evt.total) setImportProgress(Math.round((evt.loaded / evt.total) * 100));
-      });
+      // Read file in browser
+      const arrayBuffer = await file.arrayBuffer();
+      const XLSX2 = await import('xlsx');
+      const wb = XLSX2.read(arrayBuffer, { type: 'array', cellDates: false, sheetStubs: false, defval: '' });
+
+      // Combine all sheets
+      let allRows = [];
+      for (const sheetName of wb.SheetNames) {
+        const ws = wb.Sheets[sheetName];
+        const sheetRows = XLSX2.utils.sheet_to_json(ws, { defval: '' });
+        allRows = allRows.concat(sheetRows);
+      }
+
+      // Filter empty rows
+      const rows = allRows.filter(r => Object.values(r).some(v => v !== '' && v !== null));
+      if (rows.length === 0) {
+        notifications.show({ color: 'red', message: 'File is empty' });
+        return;
+      }
+
+      // Map Zibitt file columns → backend zibittRawImport format
+      const mapped = rows.map(r => ({
+        Collection_Id: r.Collection_Id ?? r.collection_id ?? '',
+        producer_id:   r.Supplier_ID   ?? r.supplier_id   ?? r.producer_id ?? '',
+        qty:           Number(r.CowQtyLtr ?? r.cowqtyltr ?? r.Qty ?? r.qty ?? 0) || Number(r.CowQtyKG ?? r.cowqtykg ?? 0) || 0,
+        fat:           Number(r.CowFAT   ?? r.cowfat   ?? r.FAT  ?? r.fat  ?? 0),
+        clr:           Number(r.CowCLR   ?? r.cowclr   ?? r.CLR  ?? r.clr  ?? 0),
+        snf:           Number(r.CowSNF   ?? r.cowsnf   ?? r.SNF  ?? r.snf  ?? 0),
+        rate:          Number(r.CowRate  ?? r.cowrate  ?? r.Rate ?? r.rate  ?? 0),
+        amount:        Number(r.Amount   ?? r.amount   ?? 0),
+        incentive:     Number(r.TimeIncentive ?? r.timeincentive ?? r.incentive ?? 0),
+        date_entry:    r.Rt_Date ?? r.rt_date ?? r.Date ?? r.date ?? '',
+        Shift:         r.Shift   ?? r.shift   ?? '',
+        slno:          r.Receipt_NO ?? r.receipt_no ?? '',
+      }));
+
+      // Send in chunks of 500 (JSON — no Nginx file size limit)
+      const CHUNK = 500;
+      let totalInserted = 0, totalUnlinked = 0;
+      for (let i = 0; i < mapped.length; i += CHUNK) {
+        const batch = mapped.slice(i, i + CHUNK);
+        const res = await milkCollectionAPI.zibittRawImport(batch);
+        totalInserted  += res?.data?.inserted  ?? 0;
+        totalUnlinked  += res?.data?.unmatchedFarmers ?? 0;
+        setImportProgress(Math.round(((i + batch.length) / mapped.length) * 100));
+      }
+
       setImportProgress(100);
-      setImportResult(res?.data ?? { message: res?.message });
-      notifications.show({ color: 'teal', message: res?.message || 'Import complete', autoClose: 5000 });
+      const msg = `${totalInserted} imported from ${rows.length} rows${totalUnlinked ? ` (${totalUnlinked} supplier IDs without farmer link)` : ''}`;
+      setImportResult({ inserted: totalInserted, total: rows.length, unlinked: totalUnlinked, message: msg });
+      notifications.show({ color: 'teal', message: msg, autoClose: 5000 });
       loadMonthEntries(filterMonth, filterYear);
     } catch (err) {
-      notifications.show({ color: 'red', title: 'Import failed', message: err?.message || 'Upload error', autoClose: 6000 });
+      notifications.show({ color: 'red', title: 'Import failed', message: err?.message || 'Parse error', autoClose: 6000 });
     } finally {
       setImportUploading(false);
     }
