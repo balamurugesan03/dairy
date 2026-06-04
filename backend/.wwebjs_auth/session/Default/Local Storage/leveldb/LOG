@@ -1,3 +1,5 @@
-2026/06/02-19:48:34.952 3b28 Reusing MANIFEST C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\Local Storage\leveldb/MANIFEST-000001
-2026/06/02-19:48:34.991 3b28 Recovering log #4
-2026/06/02-19:48:34.996 3b28 Reusing old log C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\Local Storage\leveldb/000004.log 
+2026/06/05-00:42:58.610 5cf0 Creating DB C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\Local Storage\leveldb since it was missing.
+2026/06/05-00:42:58.677 5cf0 Reusing MANIFEST C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\Local Storage\leveldb/MANIFEST-000001
+2026/06/05-00:42:58.702 5cf0 Recovering log #4
+2026/06/05-00:42:58.705 5cf0 Reusing old log C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\Local Storage\leveldb/000004.log 
+2026/06/05-00:42:58.706 5cf0 Delete type=2 #5

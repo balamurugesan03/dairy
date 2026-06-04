@@ -1,3 +1,4 @@
-2026/06/02-19:48:41.092 3b28 Reusing MANIFEST C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\Session Storage/MANIFEST-000001
-2026/06/02-19:48:41.110 3b28 Recovering log #3
-2026/06/02-19:48:41.114 3b28 Reusing old log C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\Session Storage/000003.log 
+2026/06/05-00:42:58.599 390c Creating DB C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\Session Storage since it was missing.
+2026/06/05-00:42:58.654 390c Reusing MANIFEST C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\Session Storage/MANIFEST-000001
+2026/06/05-00:42:58.674 390c Recovering log #3
+2026/06/05-00:42:58.679 390c Reusing old log C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\Session Storage/000003.log 

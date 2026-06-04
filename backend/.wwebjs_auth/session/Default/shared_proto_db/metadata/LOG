@@ -1,3 +1,4 @@
-2026/06/02-19:48:35.067 3ac0 Reusing MANIFEST C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\shared_proto_db\metadata/MANIFEST-000001
-2026/06/02-19:48:35.084 3ac0 Recovering log #3
-2026/06/02-19:48:35.085 3ac0 Reusing old log C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\shared_proto_db\metadata/000003.log 
+2026/06/05-00:42:58.483 4d24 Creating DB C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\shared_proto_db\metadata since it was missing.
+2026/06/05-00:42:58.492 4d24 Reusing MANIFEST C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\shared_proto_db\metadata/MANIFEST-000001
+2026/06/05-00:42:58.507 4d24 Recovering log #3
+2026/06/05-00:42:58.507 4d24 Reusing old log C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\shared_proto_db\metadata/000003.log 

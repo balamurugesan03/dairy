@@ -1,3 +1,4 @@
-2026/06/02-19:48:34.901 5c4c Reusing MANIFEST C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\Site Characteristics Database/MANIFEST-000001
-2026/06/02-19:48:34.914 5c4c Recovering log #3
-2026/06/02-19:48:34.915 5c4c Reusing old log C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\Site Characteristics Database/000003.log 
+2026/06/05-00:42:58.330 5a50 Creating DB C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\Site Characteristics Database since it was missing.
+2026/06/05-00:42:58.413 5a50 Reusing MANIFEST C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\Site Characteristics Database/MANIFEST-000001
+2026/06/05-00:42:58.440 5a50 Recovering log #3
+2026/06/05-00:42:58.441 5a50 Reusing old log C:\Users\BALA\Desktop\DairysocietyERP\backend\.wwebjs_auth\session\Default\Site Characteristics Database/000003.log 
