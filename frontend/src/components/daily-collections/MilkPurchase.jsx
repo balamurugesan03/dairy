@@ -1462,6 +1462,16 @@ const MilkPurchase = () => {
         return;
       }
 
+      // Warn if exactly 65535 rows — this is the .xls hard limit; data beyond that is cut off
+      if (rows.length === 65535) {
+        notifications.show({
+          color: 'orange',
+          title: '⚠ .xls Row Limit Reached',
+          message: 'File has exactly 65,535 rows — the .xls format limit. Data beyond row 65535 (e.g. 2026 records) is CUT OFF in the file. Ask Zibitt to export as .xlsx to get all data.',
+          autoClose: 15000,
+        });
+      }
+
       // Map Zibitt file columns → backend zibittRawImport format
       const mapped = rows.map(r => ({
         Collection_Id: r.Collection_Id ?? r.collection_id ?? '',
@@ -1480,19 +1490,24 @@ const MilkPurchase = () => {
 
       // Send in chunks of 500 (JSON — no Nginx file size limit)
       const CHUNK = 500;
-      let totalInserted = 0, totalUnlinked = 0;
+      let totalInserted = 0, totalSkipped = 0, totalUnlinked = 0;
       for (let i = 0; i < mapped.length; i += CHUNK) {
         const batch = mapped.slice(i, i + CHUNK);
         const res = await milkCollectionAPI.zibittRawImport(batch);
-        totalInserted  += res?.data?.inserted  ?? 0;
-        totalUnlinked  += res?.data?.unmatchedFarmers ?? 0;
+        totalInserted  += res?.data?.inserted          ?? 0;
+        totalSkipped   += res?.data?.skipped           ?? 0;
+        totalUnlinked  += res?.data?.unmatchedFarmers  ?? 0;
         setImportProgress(Math.round(((i + batch.length) / mapped.length) * 100));
       }
 
       setImportProgress(100);
-      const msg = `${totalInserted} imported from ${rows.length} rows${totalUnlinked ? ` (${totalUnlinked} supplier IDs without farmer link)` : ''}`;
-      setImportResult({ inserted: totalInserted, total: rows.length, unlinked: totalUnlinked, message: msg });
-      notifications.show({ color: 'teal', message: msg, autoClose: 5000 });
+      const duplicates = rows.length - totalInserted - totalSkipped;
+      let msg = `${totalInserted} new records imported from ${rows.length} rows`;
+      if (totalSkipped > 0)  msg += ` | ${totalSkipped} skipped (duplicate)`;
+      if (totalUnlinked > 0) msg += ` | ${totalUnlinked} supplier IDs without farmer link`;
+      if (totalInserted === 0 && rows.length > 0) msg += ' — all records already exist in DB';
+      setImportResult({ inserted: totalInserted, skipped: totalSkipped, total: rows.length, unlinked: totalUnlinked, message: msg });
+      notifications.show({ color: totalInserted > 0 ? 'teal' : 'orange', message: msg, autoClose: 8000 });
       loadMonthEntries(filterMonth, filterYear);
     } catch (err) {
       notifications.show({ color: 'red', title: 'Import failed', message: err?.message || 'Parse error', autoClose: 6000 });
@@ -2964,19 +2979,36 @@ const MilkPurchase = () => {
           {importUploading && (
             <Stack gap={4}>
               <Progress value={importProgress} animated color="violet" size="lg" radius="sm" />
-              <Text size="xs" c="dimmed" ta="center">{importProgress < 100 ? `Uploading… ${importProgress}%` : 'Processing on server…'}</Text>
+              <Text size="xs" c="dimmed" ta="center">
+                {importProgress < 100 ? `Processing… ${importProgress}% (${Math.round(importProgress / 100 * (importResult?.total || 0))} rows sent)` : 'Finalising…'}
+              </Text>
             </Stack>
           )}
 
           {importResult && (
-            <Stack gap="xs" align="center">
-              <RingProgress
-                size={80} thickness={8}
-                sections={[{ value: importResult.total ? Math.round((importResult.inserted / importResult.total) * 100) : 100, color: 'teal' }]}
-              />
-              <Text fw={700} c="teal.7">{importResult.inserted ?? 0} records imported</Text>
-              {importResult.skipped > 0 && <Text size="xs" c="orange">{importResult.skipped} skipped (farmer not found)</Text>}
-              <Button size="xs" variant="light" onClick={() => { setImportOpen(false); setImportResult(null); setImportProgress(0); if (importFileRef.current) importFileRef.current.value = ''; }}>
+            <Stack gap="xs">
+              <Text fw={700} c={importResult.inserted > 0 ? 'teal.7' : 'orange.7'} ta="center">
+                {importResult.inserted ?? 0} new records imported
+              </Text>
+              {importResult.skipped > 0 && (
+                <Text size="xs" c="dimmed" ta="center">
+                  {importResult.skipped} already in DB (skipped)
+                </Text>
+              )}
+              {importResult.unlinked > 0 && (
+                <Text size="xs" c="orange" ta="center">
+                  {importResult.unlinked} supplier IDs not linked to a farmer (imported without farmer link)
+                </Text>
+              )}
+              {importResult.inserted === 0 && importResult.total > 0 && (
+                <Text size="xs" c="red" fw={600} ta="center">
+                  All {importResult.total} rows already exist in DB — nothing new to import.
+                  {importResult.total === 65535 && (
+                    <><br />⚠ File has exactly 65,535 rows (.xls limit) — 2026 data may be cut off. Use .xlsx format.</>
+                  )}
+                </Text>
+              )}
+              <Button size="xs" variant="light" mt={4} onClick={() => { setImportOpen(false); setImportResult(null); setImportProgress(0); if (importFileRef.current) importFileRef.current.value = ''; }}>
                 Close
               </Button>
             </Stack>
