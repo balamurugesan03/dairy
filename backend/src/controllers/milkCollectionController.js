@@ -602,13 +602,21 @@ export const fileUploadImportCollections = async (req, res) => {
     if (semiCount > commaCount) opts.FS = ';';
 
     const wb = XLSX.read(raw, opts);
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const jsonData = XLSX.utils.sheet_to_json(ws, { defval: '' });
 
-    if (!jsonData.length) return res.status(400).json({ success: false, message: 'File is empty' });
+    // Read ALL sheets and combine — Zibitt exports often split data across
+    // multiple sheets (one per month/year/centre). Only reading sheet[0] would
+    // silently drop all other sheets.
+    let allRows = [];
+    for (const sheetName of wb.SheetNames) {
+      const ws = wb.Sheets[sheetName];
+      const sheetRows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      allRows = allRows.concat(sheetRows);
+    }
 
-    const rows = jsonData.filter(r => Object.values(r).some(v => v !== '' && v !== null));
-    console.log(`[MilkCollection Import] File rows: ${rows.length}, columns: ${Object.keys(rows[0] || {}).join(', ')}`);
+    if (!allRows.length) return res.status(400).json({ success: false, message: 'File is empty' });
+
+    const rows = allRows.filter(r => Object.values(r).some(v => v !== '' && v !== null));
+    console.log(`[MilkCollection Import] Sheets: ${wb.SheetNames.length}, Total rows: ${rows.length}, columns: ${Object.keys(rows[0] || {}).join(', ')}`);
 
     // Resolve supplier numbers → Farmer ObjectIds
     // First pass: match by farmerNumber; second pass: match unresolved by memberId
