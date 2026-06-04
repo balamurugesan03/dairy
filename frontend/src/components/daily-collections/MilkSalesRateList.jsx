@@ -209,8 +209,11 @@ export default function MilkSalesRateList() {
   const buildImportPreview = (catRows, custRows, rateRows) => {
     const catMap  = new Map(catRows.map(r => [r.id, r.name]));
     const custMap = new Map(custRows.map(r => [r.custId, { name: r.name, catId: r.catId }]));
-    // System customers (already loaded) override parsed file
-    customers.forEach(c => custMap.set(String(c.customerId), { name: c.name, catId: '', _id: c._id }));
+    // System customers override name/_id but keep catId from the imported file
+    customers.forEach(c => {
+      const fromFile = custMap.get(String(c.customerId));
+      custMap.set(String(c.customerId), { name: c.name, catId: fromFile?.catId || '', _id: c._id });
+    });
 
     const preview = rateRows.map(r => {
       const custInfo = custMap.get(r.custId) || {};

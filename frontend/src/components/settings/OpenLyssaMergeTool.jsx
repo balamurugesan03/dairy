@@ -725,8 +725,11 @@ const MilkSalesSection = () => {
 
         const custInfo  = custMap.get(custId) ?? { name: '', catId: '' };
         const catName   = catMap.get(custInfo.catId) ?? '';
-        // Category-based sale type: Local Sale / Sample Sale → CASH, all others → CREDIT
-        const saleType  = CASH_SALE_CATEGORIES.has(catName.trim().toLowerCase()) ? 'CASH' : 'CREDIT';
+        // Category OR item name: Local Sale / Sample Sale → CASH, all others → CREDIT
+        const saleType  = (
+          CASH_SALE_CATEGORIES.has(catName.trim().toLowerCase()) ||
+          CASH_SALE_CATEGORIES.has(itemName.trim().toLowerCase())
+        ) ? 'CASH' : 'CREDIT';
         const itemName  = itemMap.get(itemId) ?? '';
 
         merged.push({
@@ -793,8 +796,8 @@ const MilkSalesSection = () => {
       <Alert icon={<IconAlertCircle size={14} />} color="teal" variant="light" mb="md" p="xs">
         <Text size="xs">
           Upload all Zibitt export files (category, customer, mc_master, item, sales_detail) — separately or in one Excel with multiple sheets.
-          The tool auto-detects each table and joins them. Sale type is set from the customer's category:
-          <strong> Local Sale / Sample Sale → CASH</strong>, all others → <strong>CREDIT</strong>.
+          The tool auto-detects each table and joins them. Sale type is set from the item name or customer category:
+          <strong> Local Sale / Sample Sale → CASH</strong>, Customer Sale / Others → <strong>CREDIT</strong>.
         </Text>
       </Alert>
 
