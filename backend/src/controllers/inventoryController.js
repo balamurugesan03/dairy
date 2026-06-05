@@ -10,7 +10,7 @@ import {
   getItemStockHistory,
   getStockReport
 } from '../utils/stockHelper.js';
-import { createPurchaseVoucher, createSalesVoucher } from '../utils/accountingHelper.js';
+import { createPurchaseVoucher, createSalesVoucher, updateLedgerBalances } from '../utils/accountingHelper.js';
 
 // Helper function to find or create category-based ledger
 const findOrCreateCategoryLedger = async (category, ledgerType, companyId) => {
@@ -802,6 +802,28 @@ export const deleteStockTransaction = async (req, res) => {
         item.currentBalance += transaction.quantity;
       }
       await item.save();
+    }
+
+    // Delete voucher and reverse ledger balances when this is the last
+    // transaction referencing that voucher (multi-item bills share one voucher)
+    if (transaction.voucherId) {
+      const siblingCount = await StockTransaction.countDocuments({
+        voucherId: transaction.voucherId,
+        _id: { $ne: transaction._id }
+      });
+      if (siblingCount === 0) {
+        const voucher = await Voucher.findById(transaction.voucherId);
+        if (voucher) {
+          const reversedEntries = voucher.entries.map(e => ({
+            ledgerId: e.ledgerId,
+            ledgerName: e.ledgerName,
+            debitAmount: e.creditAmount,
+            creditAmount: e.debitAmount
+          }));
+          await updateLedgerBalances(reversedEntries);
+          await Voucher.findByIdAndDelete(transaction.voucherId);
+        }
+      }
     }
 
     await StockTransaction.findByIdAndDelete(id);

@@ -127,7 +127,8 @@ export const getCashBook = async (req, res) => {
       companyId: req.companyId,
       receiptDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
       paymentMode: 'Cash',
-      amount: { $gt: 0 }
+      amount: { $gt: 0 },
+      status: { $ne: 'Cancelled' }
     }).sort({ receiptDate: 1 }).populate('farmerId', 'farmerName farmerNumber');
 
     // Direct cash payments — Producer Payments (Payment-to-Producer, Cash mode)
