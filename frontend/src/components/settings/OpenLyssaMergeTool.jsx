@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { milkSalesAPI } from '../../services/api';
 import {
   Box, Paper, Title, Text, Group, Button, Stack, ActionIcon,
   Badge, Divider, Alert, List, ThemeIcon, Progress, SimpleGrid, Card, TextInput,
@@ -600,11 +601,11 @@ const detectSalesSheetType = (rows) => {
   if (!rows.length) return null;
   const keys = Object.keys(rows[0]).map((k) => k.toLowerCase());
   if (keys.includes('mc_date') && keys.includes('shift_id')) return 'mc_master';
-  if (keys.includes('source_id') && keys.includes('slno'))    return 'sales_detail';
-  if (keys.includes('item_name'))                              return 'item';
-  // category must be checked before customer — both have 'name', but category has cat_id not cust_id
-  if (keys.includes('cat_id') && keys.includes('name'))       return 'category';
-  if (keys.includes('cust_id') && keys.includes('name'))      return 'customer';
+  if (keys.includes('source_id') && keys.includes('slno'))   return 'sales_detail';
+  if (keys.includes('item_name'))                             return 'item';
+  // customer table also has cat_id — distinguish by absence of cust_id
+  if (keys.includes('cat_id') && !keys.includes('cust_id'))  return 'category';
+  if (keys.includes('cust_id'))                               return 'customer';
   return null;
 };
 
@@ -726,12 +727,11 @@ const MilkSalesSection = () => {
 
         const custInfo  = custMap.get(custId) ?? { name: '', catId: '' };
         const catName   = catMap.get(custInfo.catId) ?? '';
-        // Category OR item name: Local Sale / Sample Sale → CASH, all others → CREDIT
+        const itemName  = itemMap.get(itemId) ?? '';
         const saleType  = (
           CASH_SALE_CATEGORIES.has(catName.trim().toLowerCase()) ||
           CASH_SALE_CATEGORIES.has(itemName.trim().toLowerCase())
         ) ? 'CASH' : 'CREDIT';
-        const itemName  = itemMap.get(itemId) ?? '';
 
         merged.push({
           dcs_id:     row.dcs_id ?? '',
@@ -2152,6 +2152,324 @@ const LinZAMilkPurchaseMergeSection = () => {
   );
 };
 
+// ─── OPENLYSSA MILK SALES IMPORT SECTION ─────────────────────────────────
+// Reads 4 OpenLyssa tables (mc_master + customer + category + sales_detail),
+// joins them in the browser, then POSTs to /api/milk-sales/openlyssa-import.
+// LOCAL SALE category → saleMode CASH (LOCAL); all others → CREDIT.
+
+const OpenLyssaSalesImportSection = () => {
+  const [files, setFiles]           = useState([]);
+  const [status, setStatus]         = useState(null); // null|processing|parsed|importing|done|error
+  const [parsed, setParsed]         = useState(null);
+  const [importResult, setImportResult] = useState(null);
+
+  const addFiles   = (picked) => { setFiles(p => [...p, ...picked]); setStatus(null); setParsed(null); setImportResult(null); };
+  const removeFile = (i) => { setFiles(p => p.filter((_, idx) => idx !== i)); setStatus(null); setParsed(null); setImportResult(null); };
+  const reset      = () => { setFiles([]); setStatus(null); setParsed(null); setImportResult(null); };
+
+  const handleParse = async () => {
+    if (!files.length) return;
+    setStatus('processing'); setParsed(null); setImportResult(null);
+    try {
+      const tables = { mc_master: [], sales_detail: [], customer: [], category: [] };
+      for (const file of files) {
+        const { sheets } = await readFileSheets(file);
+        for (const [, rows] of Object.entries(sheets)) {
+          const type = detectSalesSheetType(rows);
+          if (type && type !== 'item') rows.forEach(r => tables[type].push(r));
+        }
+      }
+
+      if (!tables.sales_detail.length) {
+        setStatus('error');
+        notifications.show({ title: 'Missing Sales Detail', message: 'No sales detail table found (needs source_id + slno columns)', color: 'red' });
+        return;
+      }
+
+      // mc_id → { dateEntry: "DD-MM-YYYY HH:MM", shift }
+      const mcMap = new Map();
+      tables.mc_master.forEach((row) => {
+        const mcId    = String(row.mc_id ?? '').trim();
+        if (!mcId) return;
+        const date    = parseDate(row.mc_date);
+        const mcTime  = String(row.mc_time ?? '').trim().toUpperCase();
+        const shiftId = Number(row.shift_id);
+        const shift   = mcTime === 'AM' ? 'AM' : mcTime === 'PM' ? 'PM'
+          : shiftId === 1 ? 'AM' : shiftId === 2 ? 'PM' : 'AM';
+        if (date) {
+          const timeStr = shift === 'PM' ? '18:00' : '06:00';
+          const dd = String(date.getDate()).padStart(2, '0');
+          const mm = String(date.getMonth() + 1).padStart(2, '0');
+          mcMap.set(mcId, { dateEntry: `${dd}-${mm}-${date.getFullYear()} ${timeStr}`, shift });
+        }
+      });
+
+      // cat_id → cat_name
+      const catMap = new Map();
+      tables.category.forEach((row) => {
+        const id   = String(row.cat_id ?? '').trim();
+        const name = String(row.cat_name ?? row.name ?? '').trim();
+        if (id && name) catMap.set(id, name);
+      });
+
+      // cust_id → { name, catId }
+      const custMap = new Map();
+      tables.customer.forEach((row) => {
+        const id    = String(row.cust_id ?? '').trim();
+        const name  = String(row.name ?? '').trim();
+        const catId = String(row.cat_id ?? '').trim();
+        if (id) custMap.set(id, { name, catId });
+      });
+
+      const records = [];
+      let skippedNoQty = 0;
+
+      tables.sales_detail.forEach((row) => {
+        if (!row.qty && !row.amount) { skippedNoQty++; return; }
+
+        const mcId   = String(row.mc_id   ?? '').trim();
+        const custId = String(row.cust_id ?? '').trim();
+        const mc     = mcMap.get(mcId);
+
+        let dateEntry = mc?.dateEntry ?? '';
+        let shift     = mc?.shift ?? 'AM';
+        if (!dateEntry && row.date_entry) {
+          const d = parseDate(row.date_entry);
+          if (d) {
+            const dd = String(d.getDate()).padStart(2, '0');
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            dateEntry = `${dd}-${mm}-${d.getFullYear()} 06:00`;
+          }
+        }
+
+        const custInfo = custMap.get(custId) ?? { name: '', catId: '' };
+        const catName  = catMap.get(custInfo.catId) ?? '';
+        const saleType = CASH_SALE_CATEGORIES.has(catName.trim().toLowerCase()) ? 'CASH' : 'CREDIT';
+
+        records.push({
+          dcs_id:     row.dcs_id ?? '',
+          mc_id:      mcId,
+          slno:       row.slno ?? '',
+          cust_id:    custId,
+          cust_name:  custInfo.name,
+          category:   catName,
+          qty:        num(row.qty),
+          rate:       num(row.rate),
+          amount:     num(row.amount),
+          date_entry: dateEntry,
+          shift,
+          sale_type:  saleType,
+        });
+      });
+
+      const cashCount   = records.filter(r => r.sale_type === 'CASH').length;
+      const creditCount = records.filter(r => r.sale_type === 'CREDIT').length;
+
+      setParsed({
+        records,
+        stats: {
+          mc_master:    tables.mc_master.length,
+          customer:     tables.customer.length,
+          category:     tables.category.length,
+          sales_detail: tables.sales_detail.length,
+          total:        records.length,
+          cashCount,
+          creditCount,
+          skippedNoQty,
+        }
+      });
+      setStatus('parsed');
+    } catch (err) {
+      setStatus('error');
+      notifications.show({ title: 'Parse Error', message: err.message, color: 'red' });
+    }
+  };
+
+  const handleImport = async () => {
+    if (!parsed?.records?.length) return;
+    setStatus('importing'); setImportResult(null);
+    try {
+      const res = await milkSalesAPI.openLyssaImport(parsed.records);
+      setImportResult(res?.data ?? res);
+      setStatus('done');
+      notifications.show({ title: 'Import Complete', message: res?.message ?? 'Done', color: 'green' });
+    } catch (err) {
+      setStatus('error');
+      notifications.show({ title: 'Import Failed', message: err?.message ?? 'Unknown error', color: 'red' });
+    }
+  };
+
+  const previewRows = parsed?.records?.slice(0, 15) ?? [];
+  const tdStyle = { border: '1px solid #dee2e6', padding: '2px 6px', fontSize: 11 };
+
+  return (
+    <Paper withBorder radius="md" p="md">
+      <Group mb="md">
+        <ThemeIcon color="orange" variant="light" size="lg">
+          <IconUpload size={20} />
+        </ThemeIcon>
+        <div>
+          <Title order={4}>OpenLyssa Milk Sales — Import to ERP</Title>
+          <Text size="xs" c="dimmed">Parse the 4 OpenLyssa tables and save directly to Milk Sales</Text>
+        </div>
+      </Group>
+
+      <Alert icon={<IconAlertCircle size={14} />} color="orange" variant="light" mb="md" p="xs">
+        <Text size="xs">
+          Upload OpenLyssa export files: <strong>category</strong>, <strong>customer</strong>, <strong>mc_master</strong>, <strong>sales_detail</strong> (separately or in one workbook).
+          &nbsp;<strong>LOCAL SALE</strong> category → <strong>CASH SALES</strong>.
+          &nbsp;All other categories → <strong>CREDIT SALES</strong>.
+          For CREDIT, customer is matched by cust_id (Customer ID in ERP).
+        </Text>
+      </Alert>
+
+      <FileListBox
+        label="Category + Customer + MC Master + Sales Detail Files"
+        color="orange"
+        files={files}
+        onAdd={addFiles}
+        onRemove={removeFile}
+      />
+
+      <Group mt="md" wrap="wrap">
+        <Button
+          color="orange"
+          leftSection={<IconRefresh size={16} />}
+          onClick={handleParse}
+          loading={status === 'processing'}
+          disabled={!files.length}
+        >
+          Parse &amp; Preview
+        </Button>
+        <Button
+          color="cyan"
+          variant="light"
+          leftSection={<IconDownload size={16} />}
+          onClick={() => {
+            if (!parsed?.records?.length) return;
+            downloadExcel(
+              parsed.records.map(r => ({
+                Date:       r.date_entry.split(' ')[0],
+                Shift:      r.shift,
+                Cust_ID:    r.cust_id,
+                Customer:   r.cust_name,
+                Category:   r.category,
+                Sale_Type:  r.sale_type,
+                Qty:        r.qty,
+                Rate:       r.rate,
+                Amount:     r.amount,
+                MC_ID:      r.mc_id,
+                Slno:       r.slno,
+                DCS_ID:     r.dcs_id,
+              })),
+              `openlyssa_milk_sales_${Date.now()}.xlsx`,
+              'Milk Sales'
+            );
+            notifications.show({ title: 'Downloaded', message: `${parsed.records.length} rows exported`, color: 'cyan' });
+          }}
+          disabled={!parsed?.records?.length}
+        >
+          Download Excel ({parsed?.records?.length ?? 0})
+        </Button>
+        <Button
+          color="green"
+          leftSection={<IconUpload size={16} />}
+          onClick={handleImport}
+          loading={status === 'importing'}
+          disabled={status !== 'parsed' || !parsed?.records?.length}
+        >
+          Save as Import ({parsed?.records?.length ?? 0} records)
+        </Button>
+        {(files.length > 0 || parsed) && (
+          <Button variant="subtle" color="gray" size="xs" onClick={reset}>Clear</Button>
+        )}
+      </Group>
+
+      {/* Parse preview */}
+      {(status === 'parsed' || status === 'importing' || status === 'done') && parsed && (
+        <Stack gap="xs" mt="md">
+          <Alert icon={<IconCircleCheck size={14} />} color="teal" variant="light" p="xs">
+            <Stack gap={4}>
+              <Text size="xs">
+                MC Master: <strong>{parsed.stats.mc_master}</strong> &nbsp;|&nbsp;
+                Customers: <strong>{parsed.stats.customer}</strong> &nbsp;|&nbsp;
+                Categories: <strong>{parsed.stats.category}</strong> &nbsp;|&nbsp;
+                Detail rows: <strong>{parsed.stats.sales_detail}</strong>
+              </Text>
+              <Group gap="xs" wrap="wrap">
+                <Badge color="green">Total: {parsed.stats.total}</Badge>
+                <Badge color="teal">Cash (LOCAL SALE): {parsed.stats.cashCount}</Badge>
+                <Badge color="violet">Credit (others): {parsed.stats.creditCount}</Badge>
+                {parsed.stats.skippedNoQty > 0 && <Badge color="gray">Skipped (no qty): {parsed.stats.skippedNoQty}</Badge>}
+              </Group>
+            </Stack>
+          </Alert>
+
+          {previewRows.length > 0 && (
+            <>
+              <Text size="xs" fw={600} c="dimmed">Preview — first {previewRows.length} of {parsed.records.length} records</Text>
+              <Paper withBorder radius="sm" style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                  <thead>
+                    <tr style={{ background: '#f1f3f5' }}>
+                      {['Date', 'Shift', 'Cust ID', 'Customer', 'Category', 'Type', 'Qty', 'Rate', 'Amount'].map(col => (
+                        <th key={col} style={{ ...tdStyle, background: '#e9ecef', whiteSpace: 'nowrap' }}>{col}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.map((row, i) => (
+                      <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                        <td style={tdStyle}>{row.date_entry.split(' ')[0]}</td>
+                        <td style={{ ...tdStyle, textAlign: 'center' }}>{row.shift}</td>
+                        <td style={{ ...tdStyle, textAlign: 'center' }}>{row.cust_id}</td>
+                        <td style={tdStyle}>{row.cust_name}</td>
+                        <td style={tdStyle}>{row.category}</td>
+                        <td style={{ ...tdStyle, textAlign: 'center' }}>
+                          <Badge size="xs" color={row.sale_type === 'CASH' ? 'teal' : 'violet'}>{row.sale_type}</Badge>
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{row.qty}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{row.rate}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{row.amount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Paper>
+              {parsed.records.length > 15 && (
+                <Text size="xs" c="dimmed" ta="center">… and {parsed.records.length - 15} more records</Text>
+              )}
+            </>
+          )}
+        </Stack>
+      )}
+
+      {/* Import result */}
+      {status === 'done' && importResult && (
+        <Alert icon={<IconCircleCheck size={14} />} color="green" variant="filled" mt="md" p="xs">
+          <Stack gap={4}>
+            <Text size="xs" fw={700} c="white">Import Complete</Text>
+            <Group gap="xs" wrap="wrap">
+              <Badge color="lime" variant="light">Inserted: {importResult.inserted}</Badge>
+              <Badge color="blue" variant="light">Posted to Day Book: {importResult.posted}</Badge>
+              {importResult.skipped > 0 && <Badge color="orange" variant="light">Skipped: {importResult.skipped}</Badge>}
+            </Group>
+            {importResult.skipReasons?.length > 0 && (
+              <Text size="xs" c="white">
+                Skipped: {importResult.skipReasons.slice(0, 5).join(' | ')}
+                {importResult.skipReasons.length > 5 ? ` … (+${importResult.skipReasons.length - 5} more)` : ''}
+              </Text>
+            )}
+            {importResult.voucherErrors?.length > 0 && (
+              <Text size="xs" c="yellow">Voucher errors: {importResult.voucherErrors.length}</Text>
+            )}
+          </Stack>
+        </Alert>
+      )}
+    </Paper>
+  );
+};
+
 // ─── Main Page ─────────────────────────────────────────────────────────────
 
 const OpenLyssaMergeTool = () => (
@@ -2166,12 +2484,12 @@ const OpenLyssaMergeTool = () => (
     </Paper>
 
     <Stack gap="md">
+      <OpenLyssaSalesImportSection />
       <PartyConvertSection />
       <LinZAMilkSalesSection />
       <LinZAMilkPurchaseMergeSection />
       <LynzAMergeSection />
       <MilkPurchaseSection />
-      <MilkSalesSection />
     </Stack>
   </Box>
 );

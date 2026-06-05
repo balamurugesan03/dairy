@@ -482,6 +482,127 @@ export const bulkImportMilkSales = async (req, res) => {
 };
 
 // ────────────────────────────────────────────────────────────────
+//  OPENLYSSA IMPORT
+//  Accepts the 4 joined OpenLyssa tables (already merged in frontend):
+//    { dcs_id, mc_id, slno, cust_id, cust_name, qty, rate, amount,
+//      date_entry (DD-MM-YYYY HH:MM), shift (AM/PM), sale_type (CASH|CREDIT) }
+//  LOCAL SALE category → sale_type='CASH' → saleMode='LOCAL'
+//  All other categories → sale_type='CREDIT' → saleMode='CREDIT'
+// ────────────────────────────────────────────────────────────────
+export const openLyssaImport = async (req, res) => {
+  try {
+    const { records } = req.body;
+    if (!Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({ success: false, message: 'No records provided' });
+    }
+    const companyId = req.companyId;
+
+    const allCustomers = await Customer.find({ companyId }, 'customerId name _id').lean();
+    const custByIdMap   = {};
+    const custByNameMap = {};
+    for (const c of allCustomers) {
+      if (c.customerId) custByIdMap[String(c.customerId).trim()]              = c;
+      if (c.name)       custByNameMap[c.name.trim().toLowerCase()]             = c;
+    }
+
+    const parseDateTime = (dateStr, shift = 'AM') => {
+      if (!dateStr) return new Date();
+      const str = String(dateStr).trim();
+      const spaceIdx = str.indexOf(' ');
+      const datePart = spaceIdx !== -1 ? str.slice(0, spaceIdx) : str;
+      const timePart = spaceIdx !== -1 ? str.slice(spaceIdx + 1) : (shift === 'PM' ? '18:00' : '06:00');
+      const parts = datePart.split(/[-/]/);
+      if (parts.length !== 3) return new Date(str);
+      const isYearFirst = parts[0].length === 4;
+      const [dd, mm, yyyy] = isYearFirst ? [parts[2], parts[1], parts[0]] : [parts[0], parts[1], parts[2]];
+      return new Date(`${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T${timePart}:00`);
+    };
+
+    const docs    = [];
+    const skipped = [];
+
+    for (const row of records) {
+      if ((!row.qty || Number(row.qty) <= 0) && (!row.amount || Number(row.amount) <= 0)) {
+        skipped.push('empty row'); continue;
+      }
+
+      const saleMode = row.sale_type === 'CASH' ? 'LOCAL' : 'CREDIT';
+      const shift    = String(row.shift || 'AM').trim().toUpperCase();
+      const billNo   = `OL-${row.dcs_id}-${row.mc_id}-${row.cust_id}-${row.slno}`;
+
+      const doc = {
+        billNo,
+        date:        parseDateTime(row.date_entry, shift),
+        session:     shift === 'PM' ? 'PM' : 'AM',
+        saleMode,
+        litre:       Number(row.qty)    || 0,
+        rate:        Number(row.rate)   || 0,
+        amount:      Number(row.amount) || 0,
+        paymentType: 'Cash',
+        companyId,
+      };
+
+      if (saleMode === 'CREDIT') {
+        const customer = custByIdMap[String(row.cust_id).trim()]
+                      || custByNameMap[String(row.cust_name || '').trim().toLowerCase()];
+        if (customer) {
+          doc.creditorId   = customer._id;
+          doc.creditorName = customer.name;
+        } else {
+          // No matching Customer found — save with name only (creditorId left unlinked)
+          doc.creditorName = String(row.cust_name || `Customer-${row.cust_id}`).trim();
+        }
+      }
+
+      docs.push(doc);
+    }
+
+    let insertedDocs = [];
+    try {
+      insertedDocs = await MilkSales.insertMany(docs, { ordered: false });
+    } catch (err) {
+      if (err.name === 'MongoBulkWriteError' || err.code === 11000) {
+        insertedDocs = err.insertedDocs || [];
+      } else {
+        throw err;
+      }
+    }
+
+    let posted = 0;
+    const voucherErrors = [];
+    for (const sale of insertedDocs) {
+      try {
+        const voucher = await createMilkSaleVoucher(sale, companyId);
+        if (voucher) {
+          sale.voucherId = voucher._id;
+          await sale.save();
+          posted++;
+        }
+      } catch (vErr) {
+        console.warn('[MilkSales] OL voucher failed:', sale.billNo, vErr.message);
+        voucherErrors.push({ billNo: sale.billNo, message: vErr.message });
+      }
+    }
+
+    const inserted     = insertedDocs.length;
+    const totalSkipped = skipped.length + (docs.length - inserted);
+    res.status(201).json({
+      success: true,
+      data: {
+        inserted,
+        posted,
+        skipped:       totalSkipped,
+        skipReasons:   skipped.slice(0, 20),
+        voucherErrors: voucherErrors.slice(0, 20),
+      },
+      message: `${inserted} inserted, ${posted} posted to Day Book${voucherErrors.length ? ` (${voucherErrors.length} voucher errors)` : ''}, ${totalSkipped} skipped`
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────
 //  BACKFILL VOUCHERS — post Day Book/Cash Book vouchers for any
 //  existing milk sale that doesn't already have one. Safe to re-run.
 // ────────────────────────────────────────────────────────────────

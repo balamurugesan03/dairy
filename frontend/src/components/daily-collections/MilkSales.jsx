@@ -178,20 +178,29 @@ export default function MilkSales() {
     return () => window.removeEventListener('keydown', onKey);
   }, [navigate]);
 
-  const [mode,    setMode]    = useState('LOCAL');
-  const [session, setSession] = useState(() => new Date().getHours() < 12 ? 'AM' : 'PM');
-  const [date,    setDate]    = useState(new Date());
-  const [billNo,  setBillNo]  = useState('');
+  // Saved form fields helper (lazy — only parsed once per mount)
+  const _msf = () => { try { return JSON.parse(sessionStorage.getItem('milkSales_form') || 'null') || {}; } catch { return {}; } };
 
-  const [center,   setCenter]   = useState(null);
-  const [agent,    setAgent]    = useState(null);
-  const [category, setCategory] = useState(null);
-  const [creditor, setCreditor] = useState(null);
+  const [mode,    setMode]    = useState(() => _msf().mode    || 'LOCAL');
+  const [session, setSession] = useState(() => _msf().session || (new Date().getHours() < 12 ? 'AM' : 'PM'));
+  const [date,    setDate]    = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('milkSales_date');
+      if (saved) { const d = new Date(saved); if (!isNaN(d)) return d; }
+    } catch { /* ignore */ }
+    return new Date();
+  });
+  const [billNo,  setBillNo]  = useState(() => _msf().billNo || '');
+
+  const [center,   setCenter]   = useState(() => _msf().center   ?? null);
+  const [agent,    setAgent]    = useState(() => _msf().agent     ?? null);
+  const [category, setCategory] = useState(() => _msf().category ?? null);
+  const [creditor, setCreditor] = useState(() => _msf().creditor  ?? null);
   const [opCr,     setOpCr]     = useState('');
-  const [litre,    setLitre]    = useState('');
-  const [rate,     setRate]     = useState('');
+  const [litre,    setLitre]    = useState(() => _msf().litre || '');
+  const [rate,     setRate]     = useState(() => _msf().rate  || '');
   const [amount,   setAmount]   = useState(0);
-  const [pType,    setPType]    = useState('Cash');
+  const [pType,    setPType]    = useState(() => _msf().pType || 'Cash');
 
   const [customersRaw, setCustomersRaw] = useState([]);
   const [customers,    setCustomers]    = useState([]);
@@ -205,9 +214,10 @@ export default function MilkSales() {
   const [milkBill,     setMilkBill]     = useState(false);
   const [historySearch, setHistorySearch] = useState('');
   const [showHistory,   setShowHistory]   = useState(false);
-  const [importOpen,      setImportOpen]      = useState(false);
-  const [rawImportOpen,   setRawImportOpen]   = useState(false);
-  const [linzaImportOpen, setLinzaImportOpen] = useState(false);
+  const [importOpen,        setImportOpen]        = useState(false);
+  const [rawImportOpen,     setRawImportOpen]     = useState(false);
+  const [linzaImportOpen,   setLinzaImportOpen]   = useState(false);
+  const [olImportOpen,      setOlImportOpen]      = useState(false);
   const [backfilling,   setBackfilling]   = useState(false);
   const [pendingCount,  setPendingCount]  = useState(() => offlineQueue.byType('milk-sales').length);
   const [filterMonth,   setFilterMonth]   = useState(String(new Date().getMonth() + 1));
@@ -224,6 +234,20 @@ export default function MilkSales() {
   const whatsAppSettingsRef = useRef({ enabled: false, sendType: 'individual', groupId: '', messageTemplate: '' });
 
   const isLocal = mode === 'LOCAL' || mode === 'SAMPLE';
+
+  // Persist date across Ctrl+S / Ctrl+P navigation
+  useEffect(() => {
+    try { sessionStorage.setItem('milkSales_date', date.toISOString()); } catch { /* ignore */ }
+  }, [date]);
+
+  // Persist unsaved form fields across navigation
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('milkSales_form', JSON.stringify({
+        mode, session, billNo, center, agent, category, creditor, litre, rate, pType
+      }));
+    } catch { /* ignore */ }
+  }, [mode, session, billNo, center, agent, category, creditor, litre, rate, pType]); // eslint-disable-line
 
   const litrRef   = useRef(null);
   const rateRef   = useRef(null);
@@ -550,6 +574,62 @@ export default function MilkSales() {
     fetchNextBillNo();
   };
 
+  // ── OpenLyssa Merged Excel import ────────────────────────────────────────
+  // Columns: Date(DD-MM-YYYY), Shift, Cust_ID, Customer, Category,
+  //          Sale_Type(CASH|CREDIT), Qty, Rate, Amount, MC_ID, Slno, DCS_ID
+  const handleOpenLyssaExcelImport = async (rawRows) => {
+    const parseDMY = (val) => {
+      if (!val) return null;
+      if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+      const n = Number(val);
+      if (!isNaN(n) && n > 1 && n < 100000) return new Date(Math.round((n - 25569) * 86400000));
+      const s = String(val).trim();
+      const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+      if (m) return new Date(`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`);
+      const d = new Date(s); return isNaN(d.getTime()) ? null : d;
+    };
+
+    const records = rawRows
+      .filter(row => row.Qty || row.Amount)
+      .map(row => {
+        const d     = parseDMY(row.Date);
+        const shift = String(row.Shift || 'AM').trim().toUpperCase();
+        const dd    = d ? String(d.getDate()).padStart(2,'0') : '01';
+        const mm    = d ? String(d.getMonth()+1).padStart(2,'0') : '01';
+        const yyyy  = d ? d.getFullYear() : new Date().getFullYear();
+        const time  = shift === 'PM' ? '18:00' : '06:00';
+        return {
+          dcs_id:     String(row.DCS_ID ?? ''),
+          mc_id:      String(row.MC_ID  ?? ''),
+          slno:       String(row.Slno   ?? ''),
+          cust_id:    String(row.Cust_ID ?? ''),
+          cust_name:  String(row.Customer ?? ''),
+          category:   String(row.Category ?? ''),
+          qty:        Number(row.Qty)    || 0,
+          rate:       Number(row.Rate)   || 0,
+          amount:     Number(row.Amount) || 0,
+          date_entry: `${dd}-${mm}-${yyyy} ${time}`,
+          shift,
+          sale_type:  String(row.Sale_Type || 'CREDIT').trim().toUpperCase() === 'CASH' ? 'CASH' : 'CREDIT',
+        };
+      });
+
+    const CHUNK = 500;
+    let totalInserted = 0, totalSkipped = 0;
+    for (let i = 0; i < records.length; i += CHUNK) {
+      const res = await milkSalesAPI.openLyssaImport(records.slice(i, i + CHUNK));
+      totalInserted += res?.data?.inserted ?? 0;
+      totalSkipped  += res?.data?.skipped  ?? 0;
+    }
+    notifications.show({
+      color: totalSkipped ? 'yellow' : 'teal',
+      message: `${totalInserted} imported${totalSkipped ? `, ${totalSkipped} skipped` : ''}`,
+      autoClose: 4000
+    });
+    loadEntries();
+    fetchNextBillNo();
+  };
+
   // ── LinZA import — columns from the merge-tool output ────────────────────
   // Handles: BillNo, SalesDate (Date obj / NaN / serial), SalesShift, Sales_Qty,
   //          RatePerLtr, TotalAmt, Centercode, Vendor, SaleMode
@@ -805,7 +885,7 @@ export default function MilkSales() {
             <Box style={{ flexShrink: 0 }}>
               <Text size="9px" fw={700} c="#64748b" tt="uppercase" mb={3} style={{ letterSpacing: '0.4px' }}>Sale Type</Text>
               <SegmentedControl
-                value={mode} onChange={setMode}
+                value={mode} onChange={(v) => { setMode(v); setPType(v === 'CREDIT' ? 'Bank' : 'Cash'); }}
                 data={[{ value: 'LOCAL', label: 'Local' }, { value: 'CREDIT', label: 'Credit' }, { value: 'SAMPLE', label: 'Sample' }]}
                 size="xs" radius="md"
                 styles={{ root: { background: '#f1f5f9', border: '1.5px solid #bfdbfe' } }}
@@ -1178,12 +1258,17 @@ export default function MilkSales() {
               {/* Import Zibitt Local Sales CSV — violet */}
               <Button leftSection={<IconUpload size={12} />} onClick={() => setImportOpen(true)} size="compact-xs" radius="sm"
                 style={{ background: '#7c3aed', border: '1px solid #a78bfa', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                Import
+                Zibbit
               </Button>
               {/* Import Zibitt Raw DB — fuchsia */}
-              <Button leftSection={<IconUpload size={12} />} onClick={() => setRawImportOpen(true)} size="compact-xs" radius="sm"
+              {/* <Button leftSection={<IconUpload size={12} />} onClick={() => setRawImportOpen(true)} size="compact-xs" radius="sm"
                 style={{ background: '#a21caf', border: '1px solid #e879f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Import DB
+              </Button> */}
+              {/* Import OpenLyssa merged Excel — orange */}
+              <Button leftSection={<IconUpload size={12} />} onClick={() => setOlImportOpen(true)} size="compact-xs" radius="sm"
+                style={{ background: '#c2410c', border: '1px solid #fb923c', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                 OpenLyssa
               </Button>
               {/* Sync to Day Book — back-posts journal/receipt vouchers for legacy + imported sales */}
               <Button leftSection={backfilling ? <Loader size={10} color="white" /> : <IconBook size={12} />}
@@ -1386,6 +1471,15 @@ export default function MilkSales() {
         onImport={handleZibittRawImport}
         entityType="Milk Sales (Zibitt DB — dcs_id/mc_id/cust_id/qty/source_id)"
         requiredFields={[]}
+        maxFileSizeMB={50}
+      />
+
+      <ImportModal
+        isOpen={olImportOpen}
+        onClose={() => setOlImportOpen(false)}
+        onImport={handleOpenLyssaExcelImport}
+        entityType="Milk Sales (OpenLyssa — Date/Shift/Cust_ID/Customer/Sale_Type/Qty/Rate/Amount)"
+        requiredFields={['Date', 'Qty', 'Amount']}
         maxFileSizeMB={50}
       />
     </Box>

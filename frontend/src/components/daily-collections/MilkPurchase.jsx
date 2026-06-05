@@ -207,7 +207,13 @@ const MilkPurchase = () => {
   const { isSuperAdmin, isCompanyAdmin } = useAuth();
   const [centersData, setCentersData] = useState([]);
   const [agentsData,  setAgentsData]  = useState([]);
-  const [date,   setDate]   = useState(new Date());
+  const [date,   setDate]   = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('milkPurchase_date');
+      if (saved) { const d = new Date(saved); if (!isNaN(d)) return d; }
+    } catch { /* ignore */ }
+    return new Date();
+  });
   const navigate = useNavigate();
 
   // Keyboard swap:
@@ -235,22 +241,40 @@ const MilkPurchase = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [navigate]);
 
-  const [shift,  setShift]  = useState(() => new Date().getHours() < 12 ? 'AM' : 'PM');
-  const [center, setCenter] = useState('');
-  const [agent,  setAgent]  = useState('');
+  // Persist date across Ctrl+S / Ctrl+P navigation
+  useEffect(() => {
+    try { sessionStorage.setItem('milkPurchase_date', date.toISOString()); } catch { /* ignore */ }
+  }, [date]); // eslint-disable-line
 
-  const [memberInput,   setMemberInput]   = useState('');
+  // Saved form fields helper (lazy — only parsed once per mount)
+
+  const _mpf = () => { try { return JSON.parse(sessionStorage.getItem('milkPurchase_form') || 'null') || {}; } catch { return {}; } };
+
+  const [shift,  setShift]  = useState(() => _mpf().shift  || (new Date().getHours() < 12 ? 'AM' : 'PM'));
+  const [center, setCenter] = useState(() => _mpf().center || '');
+  const [agent,  setAgent]  = useState(() => _mpf().agent  || '');
+
+  const [memberInput,   setMemberInput]   = useState(() => _mpf().memberInput || '');
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [showDropdown,  setShowDropdown]  = useState(false);
-  const [producer,      setProducer]      = useState(null);
-  const [billNo,        setBillNo]        = useState('');
+  const [producer,      setProducer]      = useState(() => _mpf().producer || null);
+  const [billNo,        setBillNo]        = useState(() => _mpf().billNo || '');
 
-  const [ltr, setLtr] = useState('');
-  const [water, setWater] = useState('');
-  const [fat, setFat] = useState('');
-  const [clr, setClr] = useState('');
-  const [snf, setSnf] = useState('');
+  const [ltr,   setLtr]   = useState(() => _mpf().ltr   || '');
+  const [water, setWater] = useState(() => _mpf().water || '');
+  const [fat,   setFat]   = useState(() => _mpf().fat   || '');
+  const [clr,   setClr]   = useState(() => _mpf().clr   || '');
+  const [snf,   setSnf]   = useState(() => _mpf().snf   || '');
+
+  // Persist unsaved form fields across navigation
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('milkPurchase_form', JSON.stringify({
+        shift, center, agent, memberInput, producer, ltr, water, fat, clr, snf, billNo
+      }));
+    } catch { /* ignore */ }
+  }, [shift, center, agent, memberInput, producer, ltr, water, fat, clr, snf, billNo]); // eslint-disable-line
 
   const [calcResult,       setCalcResult]       = useState({ snf: 0, incentive: 0, rate: 0, amount: 0 });
   const [activeChart,      setActiveChart]      = useState('ApplyFormula');
@@ -282,7 +306,9 @@ const MilkPurchase = () => {
   const [filterMonth,    setFilterMonth]    = useState(String(new Date().getMonth() + 1));
   const [filterYear,     setFilterYear]     = useState(String(new Date().getFullYear()));
   const [monthMode,      setMonthMode]      = useState(false);  // true = showing month range, false = today's date
-  const [formEnabled,    setFormEnabled]    = useState(false); // true only after OK is clicked
+  const [formEnabled,    setFormEnabled]    = useState(() => {
+    try { return !!sessionStorage.getItem('milkPurchase_date'); } catch { return false; }
+  }); // true immediately on return navigation; false only on first visit
 
   const memberRef   = useRef(null);
   const dropdownRef = useRef(null);
@@ -1292,12 +1318,17 @@ const MilkPurchase = () => {
 
         if (formRef.current.speakEnabled) {
           const lang = formRef.current.speakLang || 'en-IN';
+          const rupees = Math.floor(saved.amount);
+          const paise  = Math.round((saved.amount - rupees) * 100);
+          const no     = saved.producerNo;
           const text = lang === 'ml-IN'
-            ? `ഫാറ്റ് ${saved.fat.toFixed(1)}. നിരക്ക് ${saved.rate.toFixed(2)}. തുക ${saved.amount.toFixed(2)}.`
-            : `Fat ${saved.fat.toFixed(1)}. Rate ${saved.rate.toFixed(2)}. Amount ${saved.amount.toFixed(2)}.`;
+            ? `അംഗ നമ്പർ ${no}. തുക ${rupees} രൂപ${paise > 0 ? ` ${paise} പൈസ` : ''}.`
+            : lang === 'ta-IN'
+            ? `உறுப்பினர் எண் ${no}. தொகை ${rupees} ரூபாய்${paise > 0 ? ` ${paise} பைசா` : ''}.`
+            : `Member number ${no}. Amount ${rupees} rupees${paise > 0 ? ` ${paise} paise` : ''}.`;
           const utterance = new SpeechSynthesisUtterance(text);
           utterance.lang = lang;
-          utterance.rate = 0.95;
+          utterance.rate = 0.9;
           window.speechSynthesis.cancel();
           window.speechSynthesis.speak(utterance);
         }
@@ -1810,7 +1841,7 @@ const MilkPurchase = () => {
 
             {/* Member No */}
             <Box mb={5} style={{ position: 'relative' }}>
-              <Text size="10px" fw={700} c="#64748b" mb={4} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Member No / Name</Text>
+              <Text size="10px" fw={700} c="#64748b" mb={4} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Farmer No / Name</Text>
               <TextInput
                 ref={memberRef}
                 placeholder="Type No or Name, press Enter..."
@@ -2187,6 +2218,22 @@ const MilkPurchase = () => {
                 Save
               </Button>
 
+              {/* PRINT */}
+              <Button leftSection={<IconPrinter size={12} />} disabled={!selectedRow}
+                onClick={() => selectedRow && printBill(selectedRow, date.toLocaleDateString('en-IN'), shift, centerNameRef.current)}
+                size="compact-xs" radius="sm"
+                style={{ background: selectedRow ? '#b91c1c' : 'rgba(255,255,255,0.07)', border: 'none', fontWeight: 700, fontSize: 10, height: 24 }}>
+                Print
+              </Button>
+
+              {/* DELETE */}
+              <Button leftSection={<IconTrash size={12} />} disabled={!selectedRow}
+                onClick={() => selectedRow && handleDelete(selectedRow.id)}
+                size="compact-xs" radius="sm"
+                style={{ background: selectedRow ? '#7f1d1d' : 'rgba(255,255,255,0.07)', border: 'none', fontWeight: 700, fontSize: 10, height: 24 }}>
+                Delete
+              </Button>
+
               {/* CLEAR */}
               <Button leftSection={<IconBan size={12} />} onClick={handleClear}
                 size="compact-xs" radius="sm"
@@ -2196,26 +2243,12 @@ const MilkPurchase = () => {
 
               <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
 
-              {/* NEW */}
-              <Button leftSection={<IconPlus size={12} />} onClick={handleClear}
-                size="compact-xs" radius="sm"
-                style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                New
-              </Button>
-
               {/* EDIT */}
               <Button leftSection={<IconEdit size={12} />} disabled={!selectedRow}
                 onClick={handleEdit}
                 size="compact-xs" radius="sm"
                 style={{ background: selectedRow ? '#1d4ed8' : 'rgba(255,255,255,0.07)', border: 'none', fontWeight: 700, fontSize: 10, height: 24 }}>
                 Edit
-              </Button>
-
-              {/* CANCEL / CLEAR */}
-              <Button leftSection={<IconBan size={12} />} onClick={handleClear}
-                size="compact-xs" radius="sm"
-                style={{ background: editingId ? '#b45309' : 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                {editingId ? 'Cancel Edit' : 'Clear'}
               </Button>
 
               <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
@@ -2233,16 +2266,6 @@ const MilkPurchase = () => {
                 size="compact-xs" radius="sm"
                 style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Refresh
-              </Button>
-
-              {/* DELETE ALL */}
-              <Button
-                leftSection={<IconTrash size={12} />}
-                onClick={() => setBulkDeleteOpen(true)}
-                size="compact-xs" radius="sm"
-                style={{ background: '#991b1b', border: '1px solid #f87171', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}
-              >
-                Delete All
               </Button>
 
               {/* IMPORT ZIBITT — superadmin / company-admin only */}
@@ -2288,23 +2311,16 @@ const MilkPurchase = () => {
                 </Button>
               )}
 
-              <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
-
-              {/* PRINT */}
-              <Button leftSection={<IconPrinter size={12} />} disabled={!selectedRow}
-                onClick={() => selectedRow && printBill(selectedRow, date.toLocaleDateString('en-IN'), shift, centerNameRef.current)}
+              {/* DELETE ALL */}
+              <Button
+                leftSection={<IconTrash size={12} />}
+                onClick={() => setBulkDeleteOpen(true)}
                 size="compact-xs" radius="sm"
-                style={{ background: selectedRow ? '#b91c1c' : 'rgba(255,255,255,0.07)', border: 'none', fontWeight: 700, fontSize: 10, height: 24 }}>
-                Print
+                style={{ background: '#991b1b', border: '1px solid #f87171', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}
+              >
+                Delete All
               </Button>
 
-              {/* DELETE */}
-              <Button leftSection={<IconTrash size={12} />} disabled={!selectedRow}
-                onClick={() => selectedRow && handleDelete(selectedRow.id)}
-                size="compact-xs" radius="sm"
-                style={{ background: selectedRow ? '#7f1d1d' : 'rgba(255,255,255,0.07)', border: 'none', fontWeight: 700, fontSize: 10, height: 24 }}>
-                Delete
-              </Button>
             </Group>
           </Group>
         </Box>
@@ -2315,7 +2331,7 @@ const MilkPurchase = () => {
             <Table striped highlightOnHover stickyHeader withColumnBorders style={{ fontSize: 12 }}>
               <Table.Thead style={{ background: 'linear-gradient(180deg,#dbeafe 0%,#bfdbfe 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
                 <Table.Tr>
-                  {['#', 'Bill No', 'Mem. No', 'Date', 'Shift', 'Litres', 'KG', 'FAT %', 'CLR', 'SNF %', 'Incentive', 'Rate/L', 'Amount', ''].map(col => (
+                  {['#', 'Bill No', 'Far. No', 'Date', 'Shift', 'Litres', 'KG', 'FAT %', 'CLR', 'SNF %', 'Incentive', 'Rate/L', 'Amount'].map(col => (
                     <Table.Th key={col} style={{ fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#1e40af', whiteSpace: 'nowrap', padding: '9px 12px', borderBottom: '2px solid #93c5fd' }}>
                       {col}
                     </Table.Th>
@@ -2345,11 +2361,11 @@ const MilkPurchase = () => {
                   const isEditing = editingId === entry.id;
                   return (
                     <Table.Tr key={entry.id} onClick={() => setSelectedRow(isSel ? null : entry)}
-                      style={{ cursor: 'pointer', background: isEditing ? '#fffbeb' : isSel ? '#eff6ff' : undefined, borderLeft: isEditing ? '3px solid #d97706' : isSel ? '3px solid #2563eb' : '3px solid transparent', transition: 'background 0.1s' }}>
-                      <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#94a3b8', width: 32, fontSize: 11 }}>{entry.sl}</Table.Td>
+                      style={{ cursor: 'pointer', fontSize: 13, background: isEditing ? '#fffbeb' : isSel ? '#eff6ff' : undefined, borderLeft: isEditing ? '3px solid #d97706' : isSel ? '3px solid #2563eb' : '3px solid transparent', transition: 'background 0.1s' }}>
+                      <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#94a3b8', width: 32, fontSize: 13 }}>{entry.sl}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#1e40af', whiteSpace: 'nowrap' }}>{entry.billNo}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px' }}><Badge size="sm" color="blue" variant="light" radius="sm">{entry.producerNo}</Badge></Table.Td>
-                      <Table.Td style={{ padding: '6px 8px', color: '#475569', fontSize: 11, whiteSpace: 'nowrap' }}>{entry.date ? new Date(entry.date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit' }) : '—'}</Table.Td>
+                      <Table.Td style={{ padding: '6px 8px', color: '#475569', fontSize: 13, whiteSpace: 'nowrap' }}>{entry.date ? new Date(entry.date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit' }) : '—'}</Table.Td>
                       <Table.Td style={{ padding: '6px 8px' }}><Badge size="xs" color={entry.shift === 'AM' ? 'orange' : 'indigo'} variant="light" radius="sm">{entry.shift || '—'}</Badge></Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0369a1', textAlign: 'right' }}>{(entry.ltr ?? entry.qty).toFixed(2)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0284c7', textAlign: 'right' }}>{((entry.ltr ?? entry.qty) * (1 + (entry.clr || 26) / 1000)).toFixed(2)}</Table.Td>
@@ -2358,12 +2374,7 @@ const MilkPurchase = () => {
                       <Table.Td style={{ padding: '6px 12px', color: '#166534', textAlign: 'right' }}>{entry.snf.toFixed(2)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', textAlign: 'right' }}>&#8377;{entry.incentive.toFixed(2)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 600, textAlign: 'right' }}>&#8377;{entry.rate.toFixed(2)}</Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', textAlign: 'right' }}><Text size="13px" fw={800} c="blue.7">&#8377;{entry.amount.toFixed(2)}</Text></Table.Td>
-                      <Table.Td style={{ padding: '6px 8px', width: 30 }}>
-                        <ActionIcon size="xs" color="red" variant="subtle" radius="sm" onClick={e => { e.stopPropagation(); handleDelete(entry.id); }}>
-                          <IconTrash size={12} />
-                        </ActionIcon>
-                      </Table.Td>
+                      <Table.Td style={{ padding: '6px 12px', textAlign: 'right' }}><Text size="15px" fw={800} c="blue.7">&#8377;{entry.amount.toFixed(2)}</Text></Table.Td>
                     </Table.Tr>
                   );
                 })}
@@ -2372,15 +2383,15 @@ const MilkPurchase = () => {
               {entries.length > 0 && (
                 <Table.Tfoot>
                   <Table.Tr style={{ background: '#1e3a8a' }}>
-                    <Table.Td colSpan={5} style={{ padding: '8px 12px', fontWeight: 700, color: '#93c5fd', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#7dd3fc', textAlign: 'right', fontSize: 13 }}>{totalLtr.toFixed(2)}</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#38bdf8', textAlign: 'right', fontSize: 13 }}>{totalKg.toFixed(2)}</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#fdba74', textAlign: 'right' }}>{avgFat.toFixed(1)}</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#a78bfa', textAlign: 'right' }}>{avgClr.toFixed(1)}</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#4ade80', textAlign: 'right' }}>{avgSnf.toFixed(2)}</Table.Td>
+                    <Table.Td colSpan={5} style={{ padding: '8px 12px', fontWeight: 700, color: '#93c5fd', fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
+                    <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#7dd3fc', textAlign: 'right', fontSize: 15 }}>{totalLtr.toFixed(2)}</Table.Td>
+                    <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#38bdf8', textAlign: 'right', fontSize: 15 }}>{totalKg.toFixed(2)}</Table.Td>
+                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#fdba74', textAlign: 'right', fontSize: 14 }}>{avgFat.toFixed(1)}</Table.Td>
+                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#a78bfa', textAlign: 'right', fontSize: 14 }}>{avgClr.toFixed(1)}</Table.Td>
+                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#4ade80', textAlign: 'right', fontSize: 14 }}>{avgSnf.toFixed(2)}</Table.Td>
                     <Table.Td />
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#e2e8f0', textAlign: 'right' }}>&#8377;{avgRate.toFixed(2)}</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', textAlign: 'right' }}><Text size="14px" fw={900} c="white">&#8377;{totalAmt.toFixed(2)}</Text></Table.Td>
+                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#e2e8f0', textAlign: 'right', fontSize: 14 }}>&#8377;{avgRate.toFixed(2)}</Table.Td>
+                    <Table.Td style={{ padding: '8px 12px', textAlign: 'right' }}><Text size="16px" fw={900} c="white">&#8377;{totalAmt.toFixed(2)}</Text></Table.Td>
                     <Table.Td />
                   </Table.Tr>
                 </Table.Tfoot>
@@ -2394,8 +2405,8 @@ const MilkPurchase = () => {
           <style>{`@media(max-width:768px){.mp-footer-box{padding:6px 8px !important;}}`}</style>
           <Group className="mp-footer-strip" gap={10} wrap="nowrap" align="center">
             <Box style={{ flexShrink: 0 }}>
-              <Text size="10px" fw={800} c="#1e3a8a" tt="uppercase" style={{ letterSpacing: '0.5px' }}>Summary</Text>
-              <Text size="9px" c="#94a3b8">{entries.length} records</Text>
+              <Text size="13px" fw={800} c="#1e3a8a" tt="uppercase" style={{ letterSpacing: '0.5px' }}>Summary</Text>
+              <Text size="11px" c="#94a3b8">{entries.length} records</Text>
             </Box>
             <Divider className="mp-footer-divider" orientation="vertical" style={{ height: 36 }} />
             {[
@@ -2403,12 +2414,13 @@ const MilkPurchase = () => {
               { label: 'CLR Avg',   val: avgClr.toFixed(1),              c: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe' },
               { label: 'SNF Avg',   val: avgSnf.toFixed(2),              c: '#166534', bg: '#f0fdf4', border: '#86efac' },
               { label: 'Rate Avg',  val: `\u20B9${avgRate.toFixed(2)}`,  c: '#1e40af', bg: '#eff6ff', border: '#bfdbfe' },
-              { label: 'Total KG / Ltr', val: `${totalLtr.toFixed(2)}`, c: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' },
+              { label: 'Total KG / Ltr', val: `${totalKg.toFixed(2)} KG`, val2: `${totalLtr.toFixed(2)} L`, c: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' },
               { label: 'Total Amt', val: `\u20B9${totalAmt.toFixed(2)}`, c: 'white',   bg: '#1e40af', border: '#1e40af', bold: true },
-            ].map(({ label, val, c, bg, border, bold }) => (
+            ].map(({ label, val, val2, c, bg, border, bold }) => (
               <Box key={label} style={{ background: bg, border: `1.5px solid ${border}`, borderRadius: 8, padding: '3px 12px', textAlign: 'center', flexShrink: 0 }}>
-                <Text size="10px" fw={600} c={bold ? 'rgba(255,255,255,0.75)' : '#64748b'} tt="uppercase" style={{ letterSpacing: '0.4px' }}>{label}</Text>
-                <Text size={bold ? '18px' : '16px'} fw={900} style={{ color: c, lineHeight: 1.2 }}>{val}</Text>
+                <Text size="12px" fw={600} c={bold ? 'rgba(255,255,255,0.75)' : '#64748b'} tt="uppercase" style={{ letterSpacing: '0.4px' }}>{label}</Text>
+                <Text size={bold ? '22px' : '19px'} fw={900} style={{ color: c, lineHeight: 1.2 }}>{val}</Text>
+                {val2 && <Text size="17px" fw={800} style={{ color: c, lineHeight: 1.1 }}>{val2}</Text>}
               </Box>
             ))}
 
@@ -2421,9 +2433,9 @@ const MilkPurchase = () => {
               { label: 'Sample Sale', ltr: salesSummary.sampleLtr, amt: salesSummary.sampleAmt, c: '#0369a1', bg: '#f0f9ff', border: '#7dd3fc' },
             ].map(({ label, ltr, amt, c, bg, border }) => (
               <Box key={label} style={{ background: bg, border: `1.5px solid ${border}`, borderRadius: 8, padding: '5px 14px', textAlign: 'center', flexShrink: 0 }}>
-                <Text size="10px" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>{label}</Text>
-                <Text size="13px" fw={800} style={{ color: c, lineHeight: 1.3 }}>{ltr.toFixed(2)} L</Text>
-                <Text size="15px" fw={900} style={{ color: c, lineHeight: 1.2 }}>&#8377;{amt.toFixed(2)}</Text>
+                <Text size="12px" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>{label}</Text>
+                <Text size="16px" fw={800} style={{ color: c, lineHeight: 1.3 }}>{ltr.toFixed(2)} L</Text>
+                <Text size="18px" fw={900} style={{ color: c, lineHeight: 1.2 }}>&#8377;{amt.toFixed(2)}</Text>
               </Box>
             ))}
 
@@ -2432,9 +2444,9 @@ const MilkPurchase = () => {
               const unionLtr = Math.max(0, totalLtr - salesSummary.localLtr - salesSummary.creditLtr - salesSummary.sampleLtr);
               return (
                 <Box style={{ background: '#eff6ff', border: '1.5px solid #93c5fd', borderRadius: 8, padding: '5px 14px', textAlign: 'center', flexShrink: 0 }}>
-                  <Text size="10px" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>Union Sale</Text>
-                  <Text size="10px" c="#94a3b8" style={{ lineHeight: 1.2 }}>{totalLtr.toFixed(2)} − {salesSummary.localLtr.toFixed(2)} − {salesSummary.creditLtr.toFixed(2)} − {salesSummary.sampleLtr.toFixed(2)}</Text>
-                  <Text size="15px" fw={900} style={{ color: '#1e40af', lineHeight: 1.2 }}>{unionLtr.toFixed(2)} L</Text>
+                  <Text size="12px" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>Union Sale</Text>
+                  <Text size="11px" c="#94a3b8" style={{ lineHeight: 1.2 }}>{totalLtr.toFixed(2)} − {salesSummary.localLtr.toFixed(2)} − {salesSummary.creditLtr.toFixed(2)} − {salesSummary.sampleLtr.toFixed(2)}</Text>
+                  <Text size="18px" fw={900} style={{ color: '#1e40af', lineHeight: 1.2 }}>{unionLtr.toFixed(2)} L</Text>
                 </Box>
               );
             })()}
@@ -2444,11 +2456,11 @@ const MilkPurchase = () => {
               const best = entries.reduce((b, e) => e.amount > b.amount ? e : b, entries[0]);
               return (
                 <Box style={{ background: 'linear-gradient(135deg,#fef9c3,#fde68a)', border: '1.5px solid #f59e0b', borderRadius: 8, padding: '5px 12px', flexShrink: 0 }}>
-                  <Text size="13px" fw={700} c="#78350f" tt="uppercase" style={{ letterSpacing: '0.4px' }}>⭐ Today's Best Farmer</Text>
-                  <Text size="19px" fw={800} c="#92400e" style={{ lineHeight: 1.3, whiteSpace: 'nowrap' }}>{best.producerName}</Text>
+                  <Text size="15px" fw={700} c="#78350f" tt="uppercase" style={{ letterSpacing: '0.4px' }}>⭐ Today's Best Farmer</Text>
+                  <Text size="22px" fw={800} c="#92400e" style={{ lineHeight: 1.3, whiteSpace: 'nowrap' }}>{best.producerName}</Text>
                   <Group gap={4}>
                     <Badge size="xs" color="orange" variant="filled" radius="sm">{best.producerNo}</Badge>
-                    <Text size="19px" fw={900} c="#b45309">&#8377;{best.rate.toFixed(2)}</Text>
+                    <Text size="22px" fw={900} c="#b45309">&#8377;{best.amount.toFixed(2)}</Text>
                   </Group>
                 </Box>
               );
@@ -2510,7 +2522,7 @@ const MilkPurchase = () => {
         <Box style={{ padding: '0 10px 6px' }}>
           <Box style={{ fontSize: 9, fontWeight: 700, color: '#004d40', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 3 }}>Language</Box>
           <Box style={{ display: 'flex', gap: 4 }}>
-            {[{ code: 'en-IN', label: 'EN' }, { code: 'ml-IN', label: 'ML' }].map(({ code, label }) => (
+            {[{ code: 'en-IN', label: 'EN' }, { code: 'ml-IN', label: 'ML' }, { code: 'ta-IN', label: 'TA' }].map(({ code, label }) => (
               <Box key={code}
                 onClick={() => setSpeakLang(code)}
                 style={{

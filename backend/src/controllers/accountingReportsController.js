@@ -1,5 +1,6 @@
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
+import MilkCollection from '../models/MilkCollection.js';
 import MilkSales from '../models/MilkSales.js';
 import Sales from '../models/Sales.js';
 import FarmerPayment from '../models/FarmerPayment.js';
@@ -386,133 +387,193 @@ export const getGeneralLedger = async (req, res) => {
     const { ledgerId, startDate, endDate, filterType, customStart, customEnd } = req.query;
 
     if (!ledgerId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Ledger ID is required'
-      });
+      return res.status(400).json({ success: false, message: 'Ledger ID is required' });
     }
 
-    // Get date range
+    // Date range
     let dateFilter;
     if (filterType) {
       dateFilter = getDateRange(filterType, customStart, customEnd);
     } else if (startDate && endDate) {
-      const start = new Date(startDate);
-      start.setUTCHours(0, 0, 0, 0);
-      const end = new Date(endDate);
-      end.setUTCHours(23, 59, 59, 999); // include the full end date
+      const start = new Date(startDate); start.setUTCHours(0, 0, 0, 0);
+      const end   = new Date(endDate);   end.setUTCHours(23, 59, 59, 999);
       dateFilter = { startDate: start, endDate: end };
     } else {
       dateFilter = getDateRange('thisMonth');
     }
 
-    // Validate dates
     if (isNaN(dateFilter.startDate.getTime()) || isNaN(dateFilter.endDate.getTime())) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid date parameters provided'
-      });
+      return res.status(400).json({ success: false, message: 'Invalid date parameters' });
     }
 
-    // Get ledger details
+    // Ledger details
     const ledger = await Ledger.findOne({ _id: ledgerId, companyId: req.companyId });
     if (!ledger) {
-      return res.status(404).json({
-        success: false,
-        message: 'Ledger not found'
-      });
+      return res.status(404).json({ success: false, message: 'Ledger not found' });
     }
 
-    // Calculate opening balance
+    const isDebitNature = isDebitNatureLedger(ledger.ledgerType);
+
+    // Opening balance (sum of all voucher entries before start date)
     const openingBalance = await calculateOpeningBalance(
-      Ledger,
-      Voucher,
-      ledgerId,
-      dateFilter.startDate,
-      req.companyId
+      Ledger, Voucher, ledgerId, dateFilter.startDate, req.companyId
     );
 
-    // Get all voucher entries for this ledger in the period
+    // ── Collect raw transactions from Vouchers ─────────────────────────────────
     const vouchers = await Voucher.find({
       companyId: req.companyId,
-      voucherDate: {
-        $gte: dateFilter.startDate,
-        $lte: dateFilter.endDate
-      },
+      voucherDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
       'entries.ledgerId': ledgerId
     })
       .sort({ voucherDate: 1, voucherNumber: 1 })
       .populate('entries.ledgerId', 'ledgerName ledgerType');
 
-    const isDebitNature = isDebitNatureLedger(ledger.ledgerType);
-
-    // Process transactions with running balance
-    const transactions = [];
-    let runningBalance = openingBalance;
+    const rawTxns = [];
 
     vouchers.forEach(voucher => {
       voucher.entries.forEach(entry => {
-        if (entry.ledgerId._id.toString() === ledgerId.toString()) {
-          // Calculate new balance
-          const netChange = entry.debitAmount - entry.creditAmount;
-          if (isDebitNature) {
-            runningBalance += netChange;
-          } else {
-            runningBalance -= netChange;
-          }
+        if (!entry.ledgerId) return;
+        if (entry.ledgerId._id.toString() !== ledgerId.toString()) return;
 
-          // Find contra ledger (the other side of the entry)
-          const contraEntry = voucher.entries.find(
-            e => e.ledgerId._id.toString() !== ledgerId.toString()
-          );
-
-          transactions.push({
-            date: voucher.voucherDate,
-            voucherNumber: voucher.voucherNumber,
-            voucherType: voucher.voucherType,
-            particulars: contraEntry ? contraEntry.ledgerName : 'Various',
-            voucherId: voucher._id,
-            debit: entry.debitAmount,
-            credit: entry.creditAmount,
-            balance: Math.abs(runningBalance),
-            balanceType: getBalanceType(runningBalance, isDebitNature),
-            narration: entry.narration || voucher.narration
-          });
-        }
+        const contraEntry = voucher.entries.find(
+          e => e.ledgerId && e.ledgerId._id.toString() !== ledgerId.toString()
+        );
+        rawTxns.push({
+          date:          voucher.voucherDate,
+          voucherNumber: voucher.voucherNumber,
+          voucherType:   voucher.voucherType,
+          particulars:   contraEntry?.ledgerName || voucher.narration || 'Various',
+          voucherId:     voucher._id,
+          debit:         entry.debitAmount  || 0,
+          credit:        entry.creditAmount || 0,
+          narration:     entry.narration || voucher.narration || '',
+        });
       });
     });
 
-    const totalDebits = transactions.reduce((sum, t) => sum + t.debit, 0);
-    const totalCredits = transactions.reduce((sum, t) => sum + t.credit, 0);
+    // ── Dairy-direct queries (dairy flow without formal vouchers) ──────────────
+    const lName = ledger.ledgerName.toLowerCase();
+    const lType = ledger.ledgerType;
+
+    // ── 1. MILK PURCHASE ledger: Dr side of every milk collection ──
+    const isMilkPurchaseLedger =
+      ['Purchases', 'Purchases A/c', 'Trade Expenses'].includes(lType) ||
+      /milk\s*(purchase|procure|collection)/i.test(ledger.ledgerName);
+
+    // ── 2. PRODUCERS DUES ledger: Cr side of milk collection + Dr side of farmer payments ──
+    const isProducersDuesLedger =
+      /producers?\s*(dues?|payable|account)/i.test(ledger.ledgerName) ||
+      (lType === 'Other Payable' && /producer|farmer|dues/i.test(ledger.ledgerName));
+
+    if (isMilkPurchaseLedger || isProducersDuesLedger) {
+      // Aggregate MilkCollection by day + shift
+      const mcAgg = await MilkCollection.aggregate([
+        {
+          $match: {
+            companyId: req.companyId,
+            date: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
+            amount: { $gt: 0 }
+          }
+        },
+        {
+          $group: {
+            _id: {
+              day:   { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+              shift: '$shift'
+            },
+            totalQty:    { $sum: '$qty'    },
+            totalAmount: { $sum: '$amount' },
+            farmerCount: { $sum: 1 }
+          }
+        },
+        { $sort: { '_id.day': 1, '_id.shift': 1 } }
+      ]);
+
+      mcAgg.forEach(c => {
+        const { day, shift } = c._id;
+        rawTxns.push({
+          date:          new Date(day + 'T00:00:00.000Z'),
+          voucherNumber: `MKP-${day.replace(/-/g, '')}-${shift}`,
+          voucherType:   'MilkPurchase',
+          // For milk-purchase expense ledger: debit (expense increases)
+          // For producers-dues liability ledger: credit (liability increases)
+          particulars:   isMilkPurchaseLedger ? 'PRODUCERS DUES' : 'MILK PURCHASE',
+          debit:         isMilkPurchaseLedger ? c.totalAmount : 0,
+          credit:        isProducersDuesLedger ? c.totalAmount : 0,
+          narration:     `${shift} | Qty: ${c.totalQty.toFixed(2)} L | ${c.farmerCount} farmers`,
+        });
+      });
+    }
+
+    // ── LOCAL SALES / SAMPLE SALES: also pull from MilkSales for completeness
+    //    (vouchers already cover this, but include unvouched entries too)
+    const isMilkSalesLedger =
+      /local\s*sales?|sample\s*sales?|credit\s*sales?/i.test(ledger.ledgerName) ||
+      (lType === 'Sales' && /milk|local|credit|sample/i.test(ledger.ledgerName));
+
+    if (isMilkSalesLedger) {
+      const saleModeFilter = /local/i.test(ledger.ledgerName) ? 'LOCAL'
+        : /sample/i.test(ledger.ledgerName) ? 'SAMPLE'
+        : /credit/i.test(ledger.ledgerName) ? 'CREDIT'
+        : null;
+
+      const msMatch = {
+        companyId: req.companyId,
+        date: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
+        amount: { $gt: 0 },
+        $or: [{ voucherId: { $exists: false } }, { voucherId: null }]
+      };
+      if (saleModeFilter) msMatch.saleMode = saleModeFilter;
+
+      const unvouchedSales = await MilkSales.find(msMatch).sort({ date: 1 });
+      unvouchedSales.forEach(s => {
+        rawTxns.push({
+          date:          s.date,
+          voucherNumber: s.billNo,
+          voucherType:   'MilkSales',
+          particulars:   s.creditorName || s.centerName || 'Customer',
+          debit:         0,
+          credit:        s.amount || 0,
+          narration:     `${s.session || ''} | ${s.litre || 0} L @ ${s.rate || 0}`,
+        });
+      });
+    }
+
+    // ── Sort all transactions by date, then compute running balance ────────────
+    rawTxns.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    let runningBalance = openingBalance;
+    const transactions = rawTxns.map(t => {
+      const netChange = t.debit - t.credit;
+      if (isDebitNature) runningBalance += netChange;
+      else               runningBalance -= netChange;
+      return {
+        ...t,
+        balance:     Math.abs(runningBalance),
+        balanceType: getBalanceType(runningBalance, isDebitNature),
+      };
+    });
+
+    const totalDebits  = transactions.reduce((s, t) => s + t.debit,  0);
+    const totalCredits = transactions.reduce((s, t) => s + t.credit, 0);
 
     res.status(200).json({
       success: true,
       data: {
-        ledger: {
-          id: ledger._id,
-          name: ledger.ledgerName,
-          type: ledger.ledgerType
-        },
-        startDate: dateFilter.startDate,
-        endDate: dateFilter.endDate,
-        openingBalance: Math.abs(openingBalance),
-        openingBalanceType: getBalanceType(openingBalance, isDebitNature),
-        closingBalance: Math.abs(runningBalance),
-        closingBalanceType: getBalanceType(runningBalance, isDebitNature),
+        ledger:              { id: ledger._id, name: ledger.ledgerName, type: ledger.ledgerType },
+        startDate:           dateFilter.startDate,
+        endDate:             dateFilter.endDate,
+        openingBalance:      Math.abs(openingBalance),
+        openingBalanceType:  getBalanceType(openingBalance, isDebitNature),
+        closingBalance:      Math.abs(runningBalance),
+        closingBalanceType:  getBalanceType(runningBalance, isDebitNature),
         transactions,
-        summary: {
-          totalDebits,
-          totalCredits,
-          difference: totalDebits - totalCredits
-        }
+        summary: { totalDebits, totalCredits, difference: totalDebits - totalCredits }
       }
     });
   } catch (error) {
     console.error('Error generating general ledger:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Error generating general ledger'
-    });
+    res.status(500).json({ success: false, message: error.message || 'Error generating general ledger' });
   }
 };
 

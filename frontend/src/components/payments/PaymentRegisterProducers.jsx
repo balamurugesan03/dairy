@@ -105,11 +105,12 @@ const PaymentRegisterProducers = () => {
   /* ── filtered / paginated rows ─────────────────────────────────────────── */
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
-    const q = search.toLowerCase();
-    return rows.filter(
-      (r) =>
-        (r.productId   || '').toLowerCase().includes(q) ||
-        (r.productName || '').toLowerCase().includes(q)
+    const q   = search.trim().toLowerCase();
+    const num = /^\d+$/.test(q);
+    return rows.filter((r) =>
+      num
+        ? (r.productId || '').trim() === q
+        : (r.productName || '').toLowerCase().includes(q)
     );
   }, [rows, search]);
 

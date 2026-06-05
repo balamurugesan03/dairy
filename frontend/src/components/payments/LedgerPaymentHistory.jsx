@@ -22,26 +22,26 @@ const fmt  = (v) => (parseFloat(v) || 0).toFixed(2);
 const fmtD = (d) => d ? dayjs(d).format('DD/MM/YYYY') : '—';
 
 const th = {
-  fontSize: 10, fontWeight: 700, background: '#1a365d', color: '#fff',
-  padding: '5px 6px', textAlign: 'center', border: '1px solid #2d4a7a',
+  fontSize: 10, fontWeight: 700, background: '#000', color: '#fff',
+  padding: '5px 6px', textAlign: 'center', border: '1px solid #000',
   whiteSpace: 'nowrap',
 };
 const tdStyle = (align = 'center') => ({
-  fontSize: 11, padding: '4px 6px', border: '1px solid #e2e8f0',
-  textAlign: align, verticalAlign: 'middle',
+  fontSize: 11, fontWeight: 700, padding: '4px 6px', border: '1px solid #999',
+  textAlign: align, verticalAlign: 'middle', color: '#000', background: '#fff',
 });
 
 const PRINT_STYLE = `
+  @media screen {
+    .lph-print-area { display: none; }
+  }
   @media print {
-    body * { visibility: hidden !important; }
-    .lph-print-area, .lph-print-area * { visibility: visible !important; }
-    .lph-print-area { position: fixed; inset: 0; padding: 10px; }
     .no-print { display: none !important; }
     table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #999; font-size: 9px; padding: 3px 5px; }
-    th { background: #1a365d !important; color: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .tot-row td { background: #ebf8ff !important; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    @page { size: A4 landscape; margin: 8mm; }
+    th, td { border: 1px solid #000; font-size: 9px; padding: 3px 5px; font-weight: 700; color: #000; }
+    th { background: #000 !important; color: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .tot-row td { background: #fff !important; font-weight: 700; border-top: 2px solid #000 !important; }
+    @page { size: A4 portrait; margin: 8mm; }
   }
 `;
 
@@ -74,7 +74,7 @@ const CycleTable = ({ entries }) => (
     <tbody>
       {entries.map((e, i) => {
         return (
-          <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#f7fafc' }}>
+          <tr key={i}>
             <td style={tdStyle()}>{e.slNo || i + 1}</td>
             <td style={tdStyle()}>{e.producerId || e.productId || '—'}</td>
             <td style={tdStyle('left')}>{e.producerName || e.productName || '—'}</td>
@@ -92,13 +92,13 @@ const CycleTable = ({ entries }) => (
             <td style={tdStyle()}>{fmt(e.loanRec)}</td>
             <td style={tdStyle()}>{fmt(e.otherDed)}</td>
             <td style={tdStyle()}>{fmt(e.totalDed)}</td>
-            <td style={{ ...tdStyle(), fontWeight: 700, color: '#276749' }}>{fmt(e.netPay)}</td>
-            <td style={{ ...tdStyle(), fontWeight: 700, color: '#2b6cb0' }}>{fmt(e.paidAmount)}</td>
+            <td style={tdStyle()}>{fmt(e.netPay)}</td>
+            <td style={tdStyle()}>{fmt(e.paidAmount)}</td>
           </tr>
         );
       })}
       {/* totals row */}
-      <tr className="tot-row" style={{ background: '#ebf8ff', fontWeight: 700 }}>
+      <tr className="tot-row" style={{ fontWeight: 700, borderTop: '2px solid #000' }}>
         <td colSpan={3} style={{ ...tdStyle('right'), fontWeight: 700 }}>TOTAL</td>
         <td style={tdStyle()}>{entries.reduce((s,e)=>s+(parseFloat(e.qty)||0),0).toFixed(2)}</td>
         <td style={tdStyle()}>{fmt(entries.reduce((s,e)=>s+(parseFloat(e.milkValue)||0),0))}</td>
@@ -114,8 +114,8 @@ const CycleTable = ({ entries }) => (
         <td style={tdStyle()}>{fmt(entries.reduce((s,e)=>s+(parseFloat(e.loanRec)||0),0))}</td>
         <td style={tdStyle()}>{fmt(entries.reduce((s,e)=>s+(parseFloat(e.otherDed)||0),0))}</td>
         <td style={tdStyle()}>{fmt(entries.reduce((s,e)=>s+(parseFloat(e.totalDed)||0),0))}</td>
-        <td style={{ ...tdStyle(), color: '#276749' }}>{fmt(entries.reduce((s,e)=>s+(parseFloat(e.netPay)||0),0))}</td>
-        <td style={{ ...tdStyle(), color: '#2b6cb0' }}>{fmt(entries.reduce((s,e)=>s+(parseFloat(e.paidAmount)||0),0))}</td>
+        <td style={tdStyle()}>{fmt(entries.reduce((s,e)=>s+(parseFloat(e.netPay)||0),0))}</td>
+        <td style={tdStyle()}>{fmt(entries.reduce((s,e)=>s+(parseFloat(e.paidAmount)||0),0))}</td>
       </tr>
     </tbody>
   </table>
@@ -131,7 +131,7 @@ const CycleCard = ({ rec, companyName, onEdit, onReverse, reversing }) => {
   const totalQty  = entries.reduce((s, e) => s + (parseFloat(e.qty)        || 0), 0);
 
   const handlePrint = useReactToPrint({
-    content: () => printRef.current,
+    contentRef: printRef,
     documentTitle: `LedgerHistory_${fmtD(rec.fromDate)}_${fmtD(rec.toDate)}`,
   });
 
@@ -198,7 +198,7 @@ const CycleCard = ({ rec, companyName, onEdit, onReverse, reversing }) => {
       </Group>
 
       {/* ── hidden print area ── */}
-      <div ref={printRef} className="lph-print-area" style={{ display: 'none' }}>
+      <div ref={printRef} className="lph-print-area">
         <div style={{ textAlign: 'center', marginBottom: 8 }}>
           <div style={{ fontWeight: 700, fontSize: 14 }}>{companyName || 'Dairy Cooperative Society'}</div>
           <div style={{ fontWeight: 600, fontSize: 12 }}>LEDGER PAYMENT HISTORY</div>
@@ -242,7 +242,7 @@ const LedgerPaymentHistory = () => {
   const [reversingId, setReversingId] = useState(null);
 
   const handlePrintAll = useReactToPrint({
-    content: () => printAllRef.current,
+    contentRef: printAllRef,
     documentTitle: `LedgerHistory_All_${dayjs(fromDate).format('DDMMYYYY')}`,
   });
 
@@ -441,7 +441,7 @@ const LedgerPaymentHistory = () => {
           ))}
 
           {/* ── hidden print-all area ── */}
-          <div ref={printAllRef} className="lph-print-area" style={{ display: 'none' }}>
+          <div ref={printAllRef} className="lph-print-area">
             <div style={{ textAlign: 'center', marginBottom: 10 }}>
               <div style={{ fontWeight: 700, fontSize: 14 }}>Dairy Cooperative Society</div>
               <div style={{ fontWeight: 600, fontSize: 12 }}>LEDGER PAYMENT HISTORY</div>

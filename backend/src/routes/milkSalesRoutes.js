@@ -11,6 +11,7 @@ import {
   getNextBillNo,
   bulkImportMilkSales,
   zibittRawImport,
+  openLyssaImport,
   backfillMilkSaleVouchers,
 } from '../controllers/milkSalesController.js';
 
@@ -22,8 +23,9 @@ router.get('/summary/daily',  getDailySummary);
 router.get('/balance-report',    getBalanceReport);
 router.get('/creditor-balance',  getCreditorBalance);
 router.get('/:id',            getMilkSaleById);
-router.post('/bulk-import',      bulkImportMilkSales);
+router.post('/bulk-import',       bulkImportMilkSales);
 router.post('/zibitt-raw-import', zibittRawImport);
+router.post('/openlyssa-import',  openLyssaImport);
 router.post('/backfill-vouchers', backfillMilkSaleVouchers);
 router.post('/',              createMilkSale);
 router.put('/:id',            updateMilkSale);
