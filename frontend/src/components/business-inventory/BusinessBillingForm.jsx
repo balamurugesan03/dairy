@@ -205,7 +205,7 @@ const BusinessBillingForm = () => {
 
   const fetchCustomers = async () => {
     try {
-      const response = await businessCustomerAPI.getAll();
+      const response = await businessCustomerAPI.getAll({ limit: 2000 });
       const customersData = response?.data || response || [];
       setCustomers(Array.isArray(customersData) ? customersData.filter(c => c.active !== false) : []);
     } catch (error) {
@@ -267,6 +267,7 @@ const BusinessBillingForm = () => {
         salesmanId: invoice.salesmanId?._id || invoice.salesmanId || null,
         salesmanName: invoice.salesmanName || ''
       });
+
 
       if (invoice.salesmanId) {
         const sm = typeof invoice.salesmanId === 'object' ? invoice.salesmanId : null;

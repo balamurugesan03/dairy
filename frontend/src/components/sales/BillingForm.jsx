@@ -99,6 +99,7 @@ const BillingForm = () => {
   const [formReady, setFormReady] = useState(false);
   const [dateError, setDateError] = useState('');
   const [checkingDate, setCheckingDate] = useState(false);
+  const [farmerSearch, setFarmerSearch] = useState('');
   const [lastCycleEnd, setLastCycleEnd] = useState(null);
   const [deletingBillId, setDeletingBillId] = useState(null);
 
@@ -237,7 +238,7 @@ const BillingForm = () => {
 
   const fetchFarmers = async () => {
     try {
-      const response = await farmerAPI.getAll();
+      const response = await farmerAPI.getAll({ limit: 2000 });
       const farmersData = response?.data || response || [];
       setFarmers(Array.isArray(farmersData) ? farmersData.filter(f => f.status === 'Active') : []);
     } catch (error) {
@@ -639,6 +640,15 @@ const BillingForm = () => {
     label: `${farmer.farmerNumber || ''} - ${farmer.personalDetails?.name || 'N/A'} ${farmer.memberId ? ` | ${farmer.memberId}` : ''}`
   }));
 
+  const filteredFarmerOptions = (() => {
+    const search = farmerSearch.trim();
+    if (!search) return farmerOptions;
+    if (/^\d+$/.test(search)) {
+      return farmerOptions.filter(opt => opt.label.split(' - ')[0]?.trim() === search);
+    }
+    return farmerOptions.filter(opt => opt.label.toLowerCase().includes(search.toLowerCase()));
+  })();
+
   const customerOptions = customers.map(customer => ({
     value: customer._id,
     label: `${customer.customerId || ''} - ${customer.name} ${customer.phone ? `| ${customer.phone}` : ''}`
@@ -773,14 +783,22 @@ const BillingForm = () => {
                     <Grid.Col span={6}>
                       <Select
                         label="Select Farmer"
-                        placeholder="Search farmer..."
+                        placeholder="Search farmer number or name..."
                         value={form.values.customerId}
-                        onChange={handleFarmerSelect}
-                        data={farmerOptions}
+                        onChange={(val) => { handleFarmerSelect(val); setFarmerSearch(''); }}
+                        data={filteredFarmerOptions}
+                        searchValue={farmerSearch}
+                        onSearchChange={setFarmerSearch}
                         error={form.errors.customerId}
                         searchable
                         clearable
                         leftSection={<IconSearch size={16} />}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && filteredFarmerOptions.length === 1) {
+                            handleFarmerSelect(filteredFarmerOptions[0].value);
+                            setFarmerSearch('');
+                          }
+                        }}
                       />
                     </Grid.Col>
                     <Grid.Col span={3}>
