@@ -443,6 +443,102 @@ export const linzaImportCollections = async (req, res) => {
   }
 };
 
+// ── OPENLYSSA IMPORT (Date/Shift/mc_id/producer_id/slno/qty/kg/fat/clr/snf/rate/amount/incentive) ──
+export const openLyssaImportCollections = async (req, res) => {
+  try {
+    const { records } = req.body;
+    if (!Array.isArray(records) || records.length === 0)
+      return res.status(400).json({ success: false, message: 'No records provided' });
+
+    const companyId = req.companyId;
+
+    // Build farmer lookup map by farmerNumber and memberId
+    const allFarmers = await Farmer.find({ companyId }, 'farmerNumber memberId personalDetails.name _id').lean();
+    const farmerMap = {};
+    for (const f of allFarmers) {
+      if (f.farmerNumber) farmerMap[String(f.farmerNumber).trim()] = { id: f._id, name: f.personalDetails?.name || '' };
+    }
+    for (const f of allFarmers) {
+      const mid = String(f.memberId || '').trim();
+      if (mid && !farmerMap[mid]) farmerMap[mid] = { id: f._id, name: f.personalDetails?.name || '' };
+    }
+
+    const parseOLDate = (val) => {
+      if (!val) return new Date();
+      if (val instanceof Date) return isNaN(val.getTime()) ? new Date() : val;
+      if (typeof val === 'number') return new Date(Math.round((val - 25569) * 86400000));
+      const s = String(val).trim();
+      const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+      if (m) return new Date(`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`);
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? new Date() : d;
+    };
+
+    const docs = [];
+    const unmatched = new Set();
+
+    for (let idx = 0; idx < records.length; idx++) {
+      const row = records[idx];
+      const producerId = String(row.producer_id ?? row.Producer_Id ?? row.PRODUCER_ID ?? '').trim();
+      const fm = farmerMap[producerId];
+      if (!fm && producerId) unmatched.add(producerId);
+
+      const dateVal = parseOLDate(row.Date ?? row.date ?? row.DATE);
+      const dateStr = dateVal.toISOString().slice(0, 10).replace(/-/g, '');
+      const slno    = row.slno ?? row.Slno ?? row.SLNO ?? (idx + 1);
+      const shift   = (() => {
+        const s = String(row.Shift ?? row.shift ?? row.SHIFT ?? 'AM').toUpperCase().trim();
+        if (s === 'AM' || s === 'PM') return s;
+        return s === '0' || s === '1' ? 'AM' : 'PM';
+      })();
+
+      docs.push({
+        billNo:       `OL-${dateStr}-${slno}`,
+        date:         dateVal,
+        shift,
+        farmer:       fm ? fm.id : null,
+        farmerNumber: producerId,
+        farmerName:   fm ? fm.name : '',
+        qty:          Number(row.qty ?? row.Qty ?? row.QTY ?? 0) || 0,
+        fat:          Number(row.fat ?? row.Fat ?? row.FAT ?? 0),
+        clr:          Number(row.clr ?? row.Clr ?? row.CLR ?? 0),
+        snf:          Number(row.snf ?? row.Snf ?? row.SNF ?? 0),
+        rate:         Number(row.rate ?? row.Rate ?? row.RATE ?? 0),
+        amount:       Number(row.amount ?? row.Amount ?? row.AMOUNT ?? 0),
+        incentive:    Number(row.incentive ?? row.Incentive ?? row.INCENTIVE ?? 0),
+        companyId,
+      });
+    }
+
+    if (!docs.length)
+      return res.status(400).json({ success: false, message: 'No records to import' });
+
+    const CHUNK = 1000;
+    let inserted = 0;
+    for (let i = 0; i < docs.length; i += CHUNK) {
+      try {
+        const result = await MilkCollection.insertMany(docs.slice(i, i + CHUNK), { ordered: false });
+        inserted += result.length;
+      } catch (err) {
+        if (err.name === 'MongoBulkWriteError' || err.code === 11000) inserted += err.result?.nInserted ?? 0;
+        else throw err;
+      }
+    }
+
+    await postBulkMilkPurchaseVouchers(docs, companyId);
+
+    const dupSkipped = docs.length - inserted;
+    const um = [...unmatched];
+    const msg = um.length
+      ? `${inserted} imported (${um.length} producer IDs not matched: ${um.slice(0,5).join(', ')}${um.length > 5 ? '…' : ''})`
+      : `${inserted} records imported`;
+
+    res.status(201).json({ success: true, data: { inserted, skipped: dupSkipped, unmatched: um.length }, message: msg });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
 // ── BULK IMPORT  (Zibitt DailyCollection / CSV — no accounting vouchers) ──────
 export const bulkImportCollections = async (req, res) => {
   try {

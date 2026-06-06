@@ -429,8 +429,9 @@ export const milkCollectionAPI = {
   dateSummary: (params) => api.get('/milk-collections/date-summary', { params }).then(res => res.data).catch(handleError),
   bulkDelete:  (slots)  => api.post('/milk-collections/bulk-delete', { slots }).then(res => res.data).catch(handleError),
   bulkImport:      (records) => api.post('/milk-collections/bulk-import',   { records }).then(res => res.data).catch(handleError),
-  zibittImport:    (records) => api.post('/milk-collections/zibitt-import', { records }).then(res => res.data).catch(handleError),
-  linzaImport:     (records) => api.post('/milk-collections/linza-import',      { records }).then(res => res.data).catch(handleError),
+  zibittImport:    (records) => api.post('/milk-collections/zibitt-import',    { records }).then(res => res.data).catch(handleError),
+  linzaImport:     (records) => api.post('/milk-collections/linza-import',     { records }).then(res => res.data).catch(handleError),
+  openLyssaImport: (records) => api.post('/milk-collections/openlyssa-import', { records }).then(res => res.data).catch(handleError),
   fileImport: (file, onUploadProgress) => {
     const form = new FormData();
     form.append('file', file);

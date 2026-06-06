@@ -2470,6 +2470,147 @@ const OpenLyssaSalesImportSection = () => {
   );
 };
 
+// ─── ZIBITT DAILY COLLECTION CONVERT ─────────────────────────────────────────
+// Attach Supplier file + Daily Collection file.
+// Builds Supplier_Id → Supplier_No map from Supplier file,
+// then replaces Supplier_ID in each Daily Collection row with Supplier_No.
+
+const ZibittDailyCollectionConvertSection = () => {
+  const [supplierFile,    setSupplierFile]    = useState(null);
+  const [collectionFile,  setCollectionFile]  = useState(null);
+  const [status,          setStatus]          = useState(null);
+  const [result,          setResult]          = useState(null);
+
+  const reset = () => { setSupplierFile(null); setCollectionFile(null); setStatus(null); setResult(null); };
+
+  const handleConvert = async () => {
+    if (!supplierFile || !collectionFile) {
+      notifications.show({ color: 'orange', message: 'Please attach both Supplier and Daily Collection files' });
+      return;
+    }
+    setStatus('processing'); setResult(null);
+    try {
+      // 1. Parse supplier file → Map: Supplier_Id → Supplier_No + Name
+      const { sheets: sSheets } = await readFileSheets(supplierFile);
+      const sRows = Object.values(sSheets).find(r => r.length) ?? [];
+      const supplierMap = {};
+      for (const row of sRows) {
+        const id  = String(getPartyColVal(row, 'Supplier_Id', 'Supplier_ID', 'supplier_id', 'SupplierID', 'ID', 'id') ?? '').trim();
+        const no  = String(getPartyColVal(row, 'Supplier_No', 'Supplier_NO', 'supplier_no', 'SupplierNo', 'No', 'no') ?? '').trim();
+        const nm  = String(getPartyColVal(row, 'Name', 'name', 'NAME') ?? '').trim();
+        if (id && no) supplierMap[id] = { no, name: nm };
+      }
+      const supplierCount = Object.keys(supplierMap).length;
+      if (!supplierCount) {
+        notifications.show({ color: 'red', title: 'Supplier Map Empty', message: 'Could not find Supplier_Id / Supplier_No columns in Supplier file' });
+        setStatus(null); return;
+      }
+
+      // 2. Parse daily collection file (all sheets)
+      const { sheets: cSheets } = await readFileSheets(collectionFile);
+      let allRows = [];
+      for (const sheetRows of Object.values(cSheets)) {
+        if (sheetRows.length) allRows = allRows.concat(sheetRows);
+      }
+      allRows = allRows.filter(r => Object.values(r).some(v => v !== null && v !== ''));
+      if (!allRows.length) {
+        notifications.show({ color: 'orange', message: 'Daily Collection file is empty' });
+        setStatus(null); return;
+      }
+
+      let matched = 0, unmatched = 0;
+      const converted = allRows.map(row => {
+        // find the Supplier_ID column value (case-insensitive)
+        const rawId = String(getPartyColVal(row, 'Supplier_ID', 'Supplier_Id', 'supplier_id', 'SupplierID') ?? '').trim();
+        const entry = supplierMap[rawId];
+        if (entry) { matched++; } else { unmatched++; }
+        // Replace Supplier_ID with Supplier_No; keep all other columns as-is
+        return { ...row, Supplier_ID: entry ? entry.no : rawId };
+      });
+
+      // 3. Export as XLSX
+      downloadExcel(converted, `Zibitt_Converted_DailyCollection_${Date.now()}.xlsx`, 'DailyCollection');
+      setResult({ total: allRows.length, matched, unmatched, supplierCount });
+      setStatus('done');
+      notifications.show({ color: 'teal', title: 'Converted & Downloaded', message: `${matched} matched, ${unmatched} unmatched` });
+    } catch (err) {
+      setStatus(null);
+      notifications.show({ color: 'red', title: 'Error', message: err.message });
+    }
+  };
+
+  return (
+    <Paper withBorder radius="md" p="md">
+      <Group mb="md">
+        <ThemeIcon color="violet" variant="light" size="lg">
+          <IconTransform size={20} />
+        </ThemeIcon>
+        <div>
+          <Title order={4}>Zibitt Daily Collection — Supplier_ID → Supplier_No</Title>
+          <Text size="xs" c="dimmed">
+            Attach Supplier file + Daily Collection file. Converts Supplier_ID (DB key) → Supplier_No (farmer number).
+          </Text>
+        </div>
+      </Group>
+
+      <Alert icon={<IconAlertCircle size={14} />} color="violet" variant="light" mb="md" p="xs">
+        <Text size="xs">
+          <strong>Supplier file</strong>: must have <code>Supplier_Id</code> and <code>Supplier_No</code> columns.<br />
+          <strong>Daily Collection file</strong>: must have <code>Supplier_ID</code> column (will be replaced with <code>Supplier_No</code>).<br />
+          After conversion, import the downloaded file using the <strong>Milk Purchase → Zibitt</strong> button.
+        </Text>
+      </Alert>
+
+      <SimpleGrid cols={2} spacing="md" mb="md">
+        <SingleFilePicker
+          label="Supplier File"
+          color="violet"
+          file={supplierFile}
+          onAdd={f => { setSupplierFile(f); setResult(null); setStatus(null); }}
+          onRemove={() => { setSupplierFile(null); setResult(null); setStatus(null); }}
+        />
+        <SingleFilePicker
+          label="Daily Collection File"
+          color="blue"
+          file={collectionFile}
+          onAdd={f => { setCollectionFile(f); setResult(null); setStatus(null); }}
+          onRemove={() => { setCollectionFile(null); setResult(null); setStatus(null); }}
+        />
+      </SimpleGrid>
+
+      <Group>
+        <Button
+          color="violet"
+          leftSection={<IconTransform size={16} />}
+          onClick={handleConvert}
+          loading={status === 'processing'}
+          disabled={!supplierFile || !collectionFile}
+        >
+          Convert &amp; Download
+        </Button>
+        {(supplierFile || collectionFile || result) && (
+          <Button variant="subtle" color="gray" size="xs" onClick={reset}>Clear</Button>
+        )}
+      </Group>
+
+      {status === 'done' && result && (
+        <Alert icon={<IconCircleCheck size={14} />} color="green" variant="light" mt="md" p="xs">
+          <Stack gap={4}>
+            <Text size="xs" fw={700} c="green">Conversion Complete — file downloaded</Text>
+            <Group gap="xs" wrap="wrap">
+              <Badge color="teal">Total rows: {result.total}</Badge>
+              <Badge color="green">Matched: {result.matched}</Badge>
+              {result.unmatched > 0 && <Badge color="orange">Unmatched (ID kept): {result.unmatched}</Badge>}
+              <Badge color="gray">Suppliers loaded: {result.supplierCount}</Badge>
+            </Group>
+            <Text size="xs" c="dimmed">Import via <strong>Milk Purchase → Zibitt</strong> button</Text>
+          </Stack>
+        </Alert>
+      )}
+    </Paper>
+  );
+};
+
 // ─── Main Page ─────────────────────────────────────────────────────────────
 
 const OpenLyssaMergeTool = () => (
@@ -2490,6 +2631,7 @@ const OpenLyssaMergeTool = () => (
       <LinZAMilkPurchaseMergeSection />
       <LynzAMergeSection />
       <MilkPurchaseSection />
+      <ZibittDailyCollectionConvertSection />
     </Stack>
   </Box>
 );

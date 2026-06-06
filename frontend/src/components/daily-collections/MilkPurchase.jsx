@@ -300,9 +300,11 @@ const MilkPurchase = () => {
   const [editingId,      setEditingId]      = useState(null);   // row being edited
   const [historySearch,  setHistorySearch]  = useState('');     // filter text
   const [showHistory,    setShowHistory]    = useState(false);  // search bar toggle
-  const [linzaImportOpen,  setLinzaImportOpen]  = useState(false);
-  const [zibittLoading,    setZibittLoading]    = useState(false);
-  const zibittFileRef = useRef(null);
+  const [linzaImportOpen,    setLinzaImportOpen]    = useState(false);
+  const [zibittLoading,      setZibittLoading]      = useState(false);
+  const [openLyssaLoading,   setOpenLyssaLoading]   = useState(false);
+  const zibittFileRef    = useRef(null);
+  const openLyssaFileRef = useRef(null);
   const [filterMonth,    setFilterMonth]    = useState(String(new Date().getMonth() + 1));
   const [filterYear,     setFilterYear]     = useState(String(new Date().getFullYear()));
   const [monthMode,      setMonthMode]      = useState(false);  // true = showing month range, false = today's date
@@ -1150,7 +1152,15 @@ const MilkPurchase = () => {
   useEffect(() => {
     if (!dupBlocked) return;
     const block = (e) => {
-      if (e.key === 'Tab' || e.key === 'Enter' || e.key === 'Escape') return; // allow OK button focus via keyboard
+      if (e.key === 'Enter' || e.key === 'Escape') {
+        e.stopPropagation();
+        e.preventDefault();
+        setDupBlocked(false);
+        setDupInfo(null);
+        setTimeout(() => ltrRef.current?.focus({ preventScroll: true }), 60);
+        return;
+      }
+      if (e.key === 'Tab') return;
       e.stopPropagation();
       e.preventDefault();
     };
@@ -1518,6 +1528,49 @@ const MilkPurchase = () => {
     } finally {
       setZibittLoading(false);
       if (zibittFileRef.current) zibittFileRef.current.value = '';
+    }
+  };
+
+  // OpenLyssa import — Date/Shift/mc_id/producer_id/slno/qty/kg/fat/clr/snf/rate/amount/incentive
+  const handleOpenLyssaImport = async (file) => {
+    if (!file) return;
+    setOpenLyssaLoading(true);
+    const nid = `ol-${Date.now()}`;
+    notifications.show({ id: nid, loading: true, title: 'OpenLyssa Import', message: 'Reading file…', autoClose: false, withCloseButton: false });
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const XLSX2 = await import('xlsx');
+      const wb = XLSX2.read(arrayBuffer, { type: 'array', cellDates: false, sheetStubs: false, defval: '' });
+      let allRows = [];
+      for (const sheetName of wb.SheetNames) {
+        const ws = wb.Sheets[sheetName];
+        allRows = allRows.concat(XLSX2.utils.sheet_to_json(ws, { defval: '' }));
+      }
+      const rows = allRows.filter(r => Object.values(r).some(v => v !== '' && v !== null));
+      if (!rows.length) {
+        notifications.update({ id: nid, loading: false, color: 'orange', title: 'OpenLyssa Import', message: 'File is empty or unreadable', autoClose: 5000 });
+        return;
+      }
+      notifications.update({ id: nid, loading: true, message: `Importing ${rows.length} rows…` });
+      const CHUNK = 500;
+      let totalInserted = 0, totalSkipped = 0, totalUnmatched = 0;
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        const res = await milkCollectionAPI.openLyssaImport(rows.slice(i, i + CHUNK));
+        totalInserted  += res?.data?.inserted  ?? 0;
+        totalSkipped   += res?.data?.skipped   ?? 0;
+        totalUnmatched += res?.data?.unmatched ?? 0;
+        notifications.update({ id: nid, loading: true, message: `Imported ${totalInserted} of ${rows.length}…` });
+      }
+      let msg = `${totalInserted} records imported from ${rows.length} rows`;
+      if (totalSkipped   > 0) msg += ` | ${totalSkipped} duplicates skipped`;
+      if (totalUnmatched > 0) msg += ` | ${totalUnmatched} producer IDs not matched`;
+      notifications.update({ id: nid, loading: false, autoClose: 10000, color: totalInserted > 0 ? 'teal' : 'orange', title: 'OpenLyssa Import Done', message: msg });
+      loadMonthEntries(filterMonth, filterYear);
+    } catch (err) {
+      notifications.update({ id: nid, loading: false, color: 'red', title: 'Import Failed', message: err?.message || 'Error', autoClose: 6000 });
+    } finally {
+      setOpenLyssaLoading(false);
+      if (openLyssaFileRef.current) openLyssaFileRef.current.value = '';
     }
   };
 
@@ -2286,6 +2339,22 @@ const MilkPurchase = () => {
                     style={{ background: '#7c3aed', border: '1px solid #a78bfa', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                     Zibitt
                   </Button>
+                  {/* OpenLyssa import */}
+                  <input
+                    ref={openLyssaFileRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    style={{ display: 'none' }}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleOpenLyssaImport(f); }}
+                  />
+                  <Button
+                    leftSection={<IconUpload size={12} />}
+                    loading={openLyssaLoading}
+                    onClick={() => openLyssaFileRef.current?.click()}
+                    size="compact-xs" radius="sm"
+                    style={{ background: '#0369a1', border: '1px solid #7dd3fc', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                    OpenLyssa
+                  </Button>
                 </>
               )}
 
@@ -2414,7 +2483,7 @@ const MilkPurchase = () => {
               { label: 'CLR Avg',   val: avgClr.toFixed(1),              c: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe' },
               { label: 'SNF Avg',   val: avgSnf.toFixed(2),              c: '#166534', bg: '#f0fdf4', border: '#86efac' },
               { label: 'Rate Avg',  val: `\u20B9${avgRate.toFixed(2)}`,  c: '#1e40af', bg: '#eff6ff', border: '#bfdbfe' },
-              { label: 'Total KG / Ltr', val: `${totalKg.toFixed(2)} KG`, val2: `${totalLtr.toFixed(2)} L`, c: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' },
+              { label: 'Total Ltr / KG', val: `${totalLtr.toFixed(2)} L`, val2: `${totalKg.toFixed(2)} KG`, c: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' },
               { label: 'Total Amt', val: `\u20B9${totalAmt.toFixed(2)}`, c: 'white',   bg: '#1e40af', border: '#1e40af', bold: true },
             ].map(({ label, val, val2, c, bg, border, bold }) => (
               <Box key={label} style={{ background: bg, border: `1.5px solid ${border}`, borderRadius: 8, padding: '3px 12px', textAlign: 'center', flexShrink: 0 }}>
@@ -2453,14 +2522,14 @@ const MilkPurchase = () => {
 
             {/* Best Farmer */}
             {entries.length > 0 && (() => {
-              const best = entries.reduce((b, e) => e.amount > b.amount ? e : b, entries[0]);
+              const best = entries.reduce((b, e) => e.rate > b.rate ? e : b, entries[0]);
               return (
                 <Box style={{ background: 'linear-gradient(135deg,#fef9c3,#fde68a)', border: '1.5px solid #f59e0b', borderRadius: 8, padding: '5px 12px', flexShrink: 0 }}>
                   <Text size="15px" fw={700} c="#78350f" tt="uppercase" style={{ letterSpacing: '0.4px' }}>⭐ Today's Best Farmer</Text>
                   <Text size="22px" fw={800} c="#92400e" style={{ lineHeight: 1.3, whiteSpace: 'nowrap' }}>{best.producerName}</Text>
                   <Group gap={4}>
                     <Badge size="xs" color="orange" variant="filled" radius="sm">{best.producerNo}</Badge>
-                    <Text size="22px" fw={900} c="#b45309">&#8377;{best.amount.toFixed(2)}</Text>
+                    <Text size="22px" fw={900} c="#b45309">&#8377;{best.rate.toFixed(2)}/Ltr</Text>
                   </Group>
                 </Box>
               );
@@ -2870,7 +2939,7 @@ const MilkPurchase = () => {
         {/* Bottom Buttons: CAN + TARE */}
         <Box style={{ padding: '10px 10px 14px', display: 'flex', gap: 8 }}>
           {[
-            { label: 'CAN', bg: '#b71c1c', hover: '#c62828' },
+            // { label: 'CAN', bg: '#b71c1c', hover: '#c62828' },
             { label: 'TARE', bg: '#1b5e20', hover: '#2e7d32' },
           ].map(({ label, bg, hover }) => (
             <Box key={label} style={{

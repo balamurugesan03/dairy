@@ -17,6 +17,7 @@ import {
   fileUploadImportCollections,
   zibittBrowserImportCollections,
   linzaImportCollections,
+  openLyssaImportCollections,
 } from '../controllers/milkCollectionController.js';
 
 const router = express.Router();
@@ -36,8 +37,9 @@ router.post('/bulk-delete', bulkDeleteCollections);
 // Import routes
 router.post('/file-import',    upload.single('file'), fileUploadImportCollections);
 router.post('/bulk-import',    bulkImportCollections);
-router.post('/zibitt-import',  zibittBrowserImportCollections);
-router.post('/linza-import',   linzaImportCollections);
+router.post('/zibitt-import',    zibittBrowserImportCollections);
+router.post('/linza-import',     linzaImportCollections);
+router.post('/openlyssa-import', openLyssaImportCollections);
 
 // Main CRUD
 router.post('/',      createCollection);
