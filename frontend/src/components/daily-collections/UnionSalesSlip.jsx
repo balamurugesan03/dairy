@@ -272,11 +272,23 @@ export default function UnionSalesSlip() {
       message: `${totalCreated} created, ${totalUpdated} updated${totalSkipped ? `, ${totalSkipped} skipped` : ''}`,
       autoClose: 4000
     });
-    // Try to detect the imported month from the first raw row
-    const firstDate = rawRows[0]?.date_entry || rawRows[0]?.SalesDate || rawRows[0]?.date;
-    if (firstDate) {
-      const d = new Date(typeof firstDate === 'number' ? Math.round((firstDate - 25569) * 86400000) : firstDate);
-      if (!isNaN(d.getTime())) {
+    // Try to detect the imported month from ms_date (dd-mm-yyyy format)
+    const firstDateStr = rawRows[0]?.ms_date || rawRows[0]?.date_entry || rawRows[0]?.SalesDate || rawRows[0]?.date;
+    if (firstDateStr) {
+      let d;
+      if (typeof firstDateStr === 'number') {
+        d = new Date(Math.round((firstDateStr - 25569) * 86400000));
+      } else {
+        const parts = String(firstDateStr).trim().split('-');
+        if (parts.length === 3) {
+          const [p0, p1, p2] = parts;
+          if (p0.length === 4) d = new Date(`${p0}-${p1.padStart(2,'0')}-${p2.slice(0,2).padStart(2,'0')}`);
+          else d = new Date(`${p2.slice(0,4)}-${p1.padStart(2,'0')}-${p0.padStart(2,'0')}`);
+        } else {
+          d = new Date(firstDateStr);
+        }
+      }
+      if (d && !isNaN(d.getTime())) {
         const m = String(d.getMonth() + 1);
         const y = String(d.getFullYear());
         setFilterMonth(m);

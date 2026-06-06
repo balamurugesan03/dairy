@@ -581,10 +581,15 @@ export const zibittRawImportSlips = async (req, res) => {
 
     const parseDate = (dateStr) => {
       if (!dateStr) return null;
-      const str = String(dateStr);
+      const str = String(dateStr).trim();
       const parts = str.split('-');
       if (parts.length !== 3) return null;
-      const [yyyy, mm, dd] = parts; // ms_date is yyyy-mm-dd format
+      let yyyy, mm, dd;
+      if (parts[0].length === 4) {
+        [yyyy, mm, dd] = parts; // yyyy-mm-dd
+      } else {
+        [dd, mm, yyyy] = parts; // dd-mm-yyyy (e.g. 01-04-2022)
+      }
       const d = new Date(`${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`);
       return isNaN(d.getTime()) ? null : d;
     };
