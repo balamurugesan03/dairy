@@ -327,14 +327,14 @@ const PaymentRegisterCreditor = () => {
             Generate
           </Button>
 
-          <Button
+          {/* <Button
             leftSection={<IconPlus size={15} />}
             variant="light"
             size="sm"
             onClick={addRow}
           >
             Add Row
-          </Button>
+          </Button> */}
 
           <Button
             leftSection={<IconDeviceFloppy size={15} />}
