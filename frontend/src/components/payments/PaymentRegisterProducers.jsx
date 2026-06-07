@@ -11,8 +11,8 @@ import {
   IconPrinter, IconFileSpreadsheet, IconPlus, IconTrash, IconCheck,
   IconReportMoney,
 } from '@tabler/icons-react';
-import { useReactToPrint } from 'react-to-print';
 import * as XLSX from 'xlsx';
+import { printReport } from '../../utils/printReport';
 import dayjs from 'dayjs';
 import { paymentRegisterAPI, farmerAPI, dairySettingsAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
@@ -45,19 +45,6 @@ const emptyRow = (slNo = 1) => ({
 
 const PAGE_SIZE = 20;
 
-/* ─── Print styles ─────────────────────────────────────────────────────────── */
-const PRINT_STYLE = `
-  @media print {
-    body * { visibility: hidden !important; }
-    #prp-print-area, #prp-print-area * { visibility: visible !important; }
-    #prp-print-area { position: fixed; inset: 0; padding: 12px; }
-    table { page-break-inside: auto; border-collapse: collapse; }
-    tr    { page-break-inside: avoid; }
-    @page { size: A4 landscape; margin: 10mm; }
-    .no-print { display: none !important; }
-    .print-header { display: block !important; }
-  }
-`;
 
 /* ═══════════════════════════════════════════════════════════════════════════
    COMPONENT
@@ -424,10 +411,27 @@ const PaymentRegisterProducers = () => {
   };
 
   /* ── Print ──────────────────────────────────────────────────────────────── */
-  const handlePrint = useReactToPrint({
-    content:       () => printRef.current,
-    documentTitle: `Payment_Register_Producers_${dayjs(fromDate).format('MMYYYY')}`,
-  });
+  const handlePrint = () => {
+    printReport(printRef, {
+      title: `Payment Register (Producers) — ${dayjs(fromDate).format('DD/MM/YYYY')} to ${dayjs(toDate).format('DD/MM/YYYY')}`,
+      orientation: 'landscape',
+      extraCss: `
+        .no-print { display: none !important; }
+        .print-header { display: block !important; }
+        input {
+          display: block !important;
+          border: none !important;
+          background: transparent !important;
+          font-size: 11px !important;
+          font-family: Arial, sans-serif !important;
+          padding: 1px 4px !important;
+          width: 100% !important;
+          height: auto !important;
+        }
+        thead th { position: static !important; }
+      `,
+    });
+  };
 
   /* ── Reset ──────────────────────────────────────────────────────────────── */
   const handleReset = () => {
@@ -442,7 +446,12 @@ const PaymentRegisterProducers = () => {
   ═════════════════════════════════════════════════════════════════════════ */
   return (
     <Container fluid px="md" py="sm">
-      <style>{PRINT_STYLE}</style>
+      {/* Remove number-input spinners from all cells in this table */}
+      <style>{`
+        #prp-print-area input[type=number]::-webkit-outer-spin-button,
+        #prp-print-area input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        #prp-print-area input[type=number] { -moz-appearance: textfield; }
+      `}</style>
 
       {/* ── Page Header ────────────────────────────────────────────────── */}
       <Box mb="md">
@@ -515,13 +524,13 @@ const PaymentRegisterProducers = () => {
             Generate
           </Button>
 
-          <Button
+          {/* <Button
             leftSection={<IconPlus size={15} />}
             variant="light" size="sm"
             onClick={addRow}
           >
             Add Row
-          </Button>
+          </Button> */}
 
           <Button
             leftSection={<IconDeviceFloppy size={15} />}
@@ -883,8 +892,8 @@ const PaymentRegisterProducers = () => {
                     ₹ {fmt(totals.netPayable)}
                   </td>
                   <td style={{ ...TF, textAlign: 'center', fontSize: 11 }}>
-                    <div style={{ color: '#7fffb5' }}>▲ {totals.payableCount}</div>
-                    <div style={{ color: '#ff9a9a' }}>▼ {totals.receivableCount}</div>
+                    <div style={{ color: '#7fffb5' }}>Pay: {totals.payableCount}</div>
+                    <div style={{ color: '#ff9a9a' }}>Rec: {totals.receivableCount}</div>
                   </td>
                   <td style={TF} />
                   <td style={TF} className="no-print" />
@@ -896,9 +905,6 @@ const PaymentRegisterProducers = () => {
             <Group mt="sm" gap="md" wrap="wrap">
               <Text size="xs" c="dimmed">
                 <strong>Formula:</strong> Net Payable = Milk Value − Welfare − C/F Rec − Loan Adv − Cash Pocket + Previous Balance
-              </Text>
-              <Text size="xs" c="dimmed">
-                ▲ Payable (society pays producer) &nbsp; ▼ Receivable (producer owes society)
               </Text>
               {savedId && (
                 <Badge color="green" size="xs" variant="dot">Saved to database</Badge>

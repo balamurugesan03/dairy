@@ -1,7 +1,15 @@
 import DairyPurchaseReturn from '../models/DairyPurchaseReturn.js';
 import Item from '../models/Item.js';
 import StockTransaction from '../models/StockTransaction.js';
+import Voucher from '../models/Voucher.js';
+import Ledger from '../models/Ledger.js';
 import { getNextSequence } from '../models/Counter.js';
+import {
+  generateVoucherNumber,
+  findOrCreateLedger,
+  updateLedgerBalances,
+  reverseLedgerBalances
+} from '../utils/accountingHelper.js';
 
 // Generate Dairy Debit Note Number (DDN2603-0001) — atomic, conflict-free
 const generateReturnNumber = async (companyId) => {
@@ -10,6 +18,107 @@ const generateReturnNumber = async (companyId) => {
   const mm = (now.getMonth() + 1).toString().padStart(2, '0');
   const seq = await getNextSequence(`ddn-${yy}${mm}-${companyId || 'global'}`, 0);
   return `DDN${yy}${mm}-${seq.toString().padStart(4, '0')}`;
+};
+
+// Create accounting voucher for a dairy purchase return
+const createPurchaseReturnAccountingVoucher = async (purchaseReturn, companyId) => {
+  try {
+    const {
+      returnNumber, returnDate, supplierName, paymentMode,
+      taxableAmount, totalCgst, totalSgst, totalIgst,
+      roundOff, grandTotal, receivedAmount, balanceAmount
+    } = purchaseReturn;
+
+    const isCash    = paymentMode !== 'Credit' && paymentMode !== 'Adjustment';
+    const received  = parseFloat(receivedAmount) || 0;
+    const balance   = parseFloat(balanceAmount)  || 0;
+    const returnAmt = parseFloat((taxableAmount + (parseFloat(roundOff) || 0)).toFixed(2));
+
+    const prLedger  = await findOrCreateLedger('PURCHASE RETURNS', 'Trade Expenses', 'PURCHASE_ACCOUNTS', 'Cr', companyId);
+    const supLedger = await findOrCreateLedger(
+      supplierName || 'Sundry Creditors', 'Sundry Creditors', 'SUNDRY_CREDITORS', 'Cr', companyId
+    );
+
+    const entries = [];
+
+    // ── DEBIT side ────────────────────────────────────────────────────────────
+    if (isCash) {
+      if (received > 0) {
+        const isBank = paymentMode === 'Bank' || paymentMode === 'Cheque';
+        let cashLedger = await Ledger.findOne({ ledgerType: isBank ? 'Bank' : 'Cash', companyId });
+        if (!cashLedger) {
+          cashLedger = await findOrCreateLedger(
+            isBank ? 'Bank Account' : 'Cash in Hand',
+            isBank ? 'Bank' : 'Cash',
+            isBank ? 'Bank Accounts' : 'Cash',
+            'Dr', companyId
+          );
+        }
+        entries.push({ ledgerId: cashLedger._id, ledgerName: cashLedger.ledgerName, debitAmount: received, creditAmount: 0 });
+      }
+      if (balance > 0) {
+        entries.push({ ledgerId: supLedger._id, ledgerName: supLedger.ledgerName, debitAmount: balance, creditAmount: 0 });
+      }
+    } else {
+      entries.push({ ledgerId: supLedger._id, ledgerName: supLedger.ledgerName, debitAmount: grandTotal, creditAmount: 0 });
+    }
+
+    // ── CREDIT side ───────────────────────────────────────────────────────────
+    entries.push({ ledgerId: prLedger._id, ledgerName: prLedger.ledgerName, debitAmount: 0, creditAmount: returnAmt });
+
+    if (totalCgst > 0) {
+      const l = await findOrCreateLedger('CGST Input', 'Duties & Taxes', 'DUTIES_TAXES', 'Cr', companyId);
+      entries.push({ ledgerId: l._id, ledgerName: l.ledgerName, debitAmount: 0, creditAmount: totalCgst });
+    }
+    if (totalSgst > 0) {
+      const l = await findOrCreateLedger('SGST Input', 'Duties & Taxes', 'DUTIES_TAXES', 'Cr', companyId);
+      entries.push({ ledgerId: l._id, ledgerName: l.ledgerName, debitAmount: 0, creditAmount: totalSgst });
+    }
+    if (totalIgst > 0) {
+      const l = await findOrCreateLedger('IGST Input', 'Duties & Taxes', 'DUTIES_TAXES', 'Cr', companyId);
+      entries.push({ ledgerId: l._id, ledgerName: l.ledgerName, debitAmount: 0, creditAmount: totalIgst });
+    }
+
+    const totalDebit  = entries.reduce((s, e) => s + e.debitAmount,  0);
+    const totalCredit = entries.reduce((s, e) => s + e.creditAmount, 0);
+
+    if (Math.abs(totalDebit - totalCredit) > 0.02) {
+      console.warn(`[DairyPurchaseReturn Voucher] Imbalance: Dr=${totalDebit} Cr=${totalCredit} — skipping voucher`);
+      return null;
+    }
+
+    const voucherNumber = await generateVoucherNumber('Journal', companyId);
+
+    const voucher = new Voucher({
+      voucherType:     'Journal',
+      voucherNumber,
+      voucherDate:     new Date(returnDate),
+      entries,
+      totalDebit,
+      totalCredit,
+      narration:       `Purchase Return ${returnNumber} — ${supplierName || 'Supplier'}`,
+      referenceType:   'PurchaseReturn',
+      referenceId:     purchaseReturn._id,
+      referenceNumber: returnNumber,
+      companyId,
+      status:          'Posted'
+    });
+
+    await voucher.save();
+    await updateLedgerBalances(entries, null, companyId);
+    return voucher;
+  } catch (err) {
+    console.error('[DairyPurchaseReturn Voucher]', err.message);
+    return null;
+  }
+};
+
+// Reverse and delete the voucher for a purchase return
+const reverseReturnVoucher = async (referenceId, companyId) => {
+  const voucher = await Voucher.findOne({ referenceType: 'PurchaseReturn', referenceId });
+  if (!voucher) return;
+  await reverseLedgerBalances(voucher.entries, null, companyId);
+  await Voucher.findByIdAndDelete(voucher._id);
 };
 
 // Create Dairy Purchase Return (Debit Note)
@@ -181,6 +290,9 @@ export const createDairyPurchaseReturn = async (req, res) => {
       await stockTransaction.save();
     }
 
+    // Auto-post to Day Book and General Ledger
+    await createPurchaseReturnAccountingVoucher(purchaseReturn, companyId);
+
     res.status(201).json({ success: true, data: purchaseReturn });
   } catch (error) {
     console.error('Create dairy purchase return error:', error);
@@ -275,6 +387,11 @@ export const updateDairyPurchaseReturn = async (req, res) => {
     if (!purchaseReturn) {
       return res.status(404).json({ message: 'Purchase return not found' });
     }
+
+    const companyId = req.companyId;
+
+    // Reverse old accounting voucher
+    await reverseReturnVoucher(purchaseReturn._id, companyId);
 
     // Reverse old stock transactions
     for (const item of purchaseReturn.items) {
@@ -391,7 +508,7 @@ export const updateDairyPurchaseReturn = async (req, res) => {
         date: returnDate || purchaseReturn.returnDate,
         supplierName: supplierName || '',
         notes: `Purchase Return - ${purchaseReturn.returnNumber} (Updated)`,
-        companyId: req.companyId
+        companyId
       });
       await stockTransaction.save();
     }
@@ -441,6 +558,10 @@ export const updateDairyPurchaseReturn = async (req, res) => {
     });
 
     await purchaseReturn.save();
+
+    // Re-post accounting voucher
+    await createPurchaseReturnAccountingVoucher(purchaseReturn, companyId);
+
     res.json({ success: true, data: purchaseReturn });
   } catch (error) {
     console.error('Update dairy purchase return error:', error);
@@ -455,6 +576,11 @@ export const deleteDairyPurchaseReturn = async (req, res) => {
     if (!purchaseReturn) {
       return res.status(404).json({ message: 'Purchase return not found' });
     }
+
+    const companyId = req.companyId;
+
+    // Reverse accounting voucher
+    await reverseReturnVoucher(purchaseReturn._id, companyId);
 
     // Reverse stock for each item
     for (const item of purchaseReturn.items) {
@@ -483,23 +609,23 @@ export const getDairyPurchaseReturnSummary = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    const dateFilter = {};
-    if (startDate) dateFilter.$gte = new Date(startDate);
-    if (endDate) dateFilter.$lte = new Date(endDate);
+    const match = { companyId: req.companyId, status: 'Active' };
 
-    const matchQuery = Object.keys(dateFilter).length > 0
-      ? { returnDate: dateFilter, status: 'Active' }
-      : { status: 'Active' };
+    if (startDate || endDate) {
+      match.returnDate = {};
+      if (startDate) match.returnDate.$gte = new Date(startDate);
+      if (endDate)   match.returnDate.$lte = new Date(endDate);
+    }
 
     const [summary] = await DairyPurchaseReturn.aggregate([
-      { $match: matchQuery },
+      { $match: match },
       {
         $group: {
           _id: null,
-          totalReturns: { $sum: 1 },
-          totalAmount: { $sum: '$grandTotal' },
+          totalReturns:  { $sum: 1 },
+          totalAmount:   { $sum: '$grandTotal' },
           totalReceived: { $sum: '$receivedAmount' },
-          totalPending: { $sum: '$balanceAmount' }
+          totalPending:  { $sum: '$balanceAmount' }
         }
       }
     ]);

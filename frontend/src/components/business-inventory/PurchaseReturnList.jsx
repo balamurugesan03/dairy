@@ -18,7 +18,6 @@ import {
   Select,
   Badge,
   ActionIcon,
-  Menu,
   Modal,
   Alert,
   Box,
@@ -37,7 +36,6 @@ import {
   IconEye,
   IconEdit,
   IconTrash,
-  IconDotsVertical,
   IconCurrencyRupee,
   IconReceipt,
   IconCheck,
@@ -272,44 +270,42 @@ const PurchaseReturnList = () => {
     {
       accessor: 'actions',
       title: '',
-      width: 80,
+      width: 100,
       render: (record) => (
         <Group gap={4} justify="flex-end">
           <Tooltip label="View">
             <ActionIcon
               variant="light"
               size="sm"
+              color="blue"
               onClick={() => navigate(`/business-inventory/purchase-returns/${record._id}`)}
             >
               <IconEye size={14} />
             </ActionIcon>
           </Tooltip>
-          <Menu position="bottom-end" shadow="md">
-            <Menu.Target>
-              <ActionIcon variant="subtle" size="sm">
-                <IconDotsVertical size={14} />
-              </ActionIcon>
-            </Menu.Target>
-            <Menu.Dropdown>
-              <Menu.Item
-                leftSection={<IconEdit size={14} />}
-                onClick={() => navigate(`/business-inventory/purchase-returns/edit/${record._id}`)}
-              >
-                Edit
-              </Menu.Item>
-              <Menu.Divider />
-              <Menu.Item
-                leftSection={<IconTrash size={14} />}
-                color="red"
-                onClick={() => {
-                  setSelectedReturn(record);
-                  setDeleteModalOpen(true);
-                }}
-              >
-                Delete
-              </Menu.Item>
-            </Menu.Dropdown>
-          </Menu>
+          <Tooltip label="Edit">
+            <ActionIcon
+              variant="light"
+              size="sm"
+              color="yellow"
+              onClick={() => navigate(`/business-inventory/purchase-returns/edit/${record._id}`)}
+            >
+              <IconEdit size={14} />
+            </ActionIcon>
+          </Tooltip>
+          <Tooltip label="Delete">
+            <ActionIcon
+              variant="light"
+              size="sm"
+              color="red"
+              onClick={() => {
+                setSelectedReturn(record);
+                setDeleteModalOpen(true);
+              }}
+            >
+              <IconTrash size={14} />
+            </ActionIcon>
+          </Tooltip>
         </Group>
       )
     }

@@ -297,13 +297,14 @@ const MainLayout = () => {
           key: 'payments-sub',
           label: 'Payments',
           children: [
-            { key: '/payments/register', label: 'Individual Payment' },
+             { key: '/payments/producer-payment', label: 'Payment Register (Producers)' },
+            // { key: '/payments/register', label: 'Individual Payment' },
             { key: '/payments/register-ledger', label: 'Payment Register Detailed' },
             { key: '/payments/bank-transfer', label: 'Bank Transfer' },
             { key: '/payments/ledger-history',  label: 'Ledger Payment History' },
             { key: '/payments/individual', label: 'Individual Payment' },
             { key: '/payments/creditor-bill', label: 'Payment Register ' },
-            { key: '/payments/producer-payment', label: 'Payment Register (Producers)' },
+           
             { key: '/payments/payment-to-producer', label: 'Payment to Producer' },
           ]
         },

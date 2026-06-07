@@ -148,8 +148,8 @@ const SalesList = () => {
       (s.totalSubsidy || 0).toFixed(2),
       (s.roundOff || 0).toFixed(2),
       (s.grandTotal || 0).toFixed(2),
-      (s.oldBalance || 0).toFixed(2),
-      (s.totalDue || 0).toFixed(2),
+      Math.max(0, s.oldBalance || 0).toFixed(2),
+      (Math.max(0, s.oldBalance || 0) + (s.grandTotal || 0)).toFixed(2),
       (s.paidAmount || 0).toFixed(2),
       (s.balanceAmount || 0).toFixed(2),
       s.status || '',
@@ -502,21 +502,27 @@ const SalesList = () => {
                 accessor: 'oldBalance',
                 title: 'Old Bal',
                 textAlign: 'right',
-                render: (row) => (
-                  <Text size="sm" c={(row.oldBalance || 0) > 0 ? 'orange' : 'dimmed'}>
-                    ₹{(row.oldBalance || 0).toFixed(2)}
-                  </Text>
-                )
+                render: (row) => {
+                  const ob = Math.max(0, row.oldBalance || 0);
+                  return (
+                    <Text size="sm" c={ob > 0 ? 'orange' : 'dimmed'}>
+                      ₹{ob.toFixed(2)}
+                    </Text>
+                  );
+                }
               },
               {
                 accessor: 'totalDue',
                 title: 'Total Due',
                 textAlign: 'right',
-                render: (row) => (
-                  <Text size="sm" fw={600} c={(row.totalDue || 0) > 0 ? 'red' : 'dimmed'}>
-                    ₹{(row.totalDue || 0).toFixed(2)}
-                  </Text>
-                )
+                render: (row) => {
+                  const due = Math.max(0, row.oldBalance || 0) + (row.grandTotal || 0);
+                  return (
+                    <Text size="sm" fw={600} c={due > 0 ? 'red' : 'dimmed'}>
+                      ₹{due.toFixed(2)}
+                    </Text>
+                  );
+                }
               },
               {
                 accessor: 'paidAmount',

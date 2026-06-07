@@ -490,37 +490,42 @@ const aggregateByDateShift = (rows) => {
 
 // ── Shared insert logic (upsert — updates existing record if same date+time) ─
 const processImportSlips = async (rows, companyId, userId) => {
-  const results = { total: rows.length, created: 0, updated: 0, skipped: 0, errors: [] };
+  const results = { total: rows.length, created: 0, updated: 0, skipped: 0, errors: [], skipReasons: {} };
+  const addSkip = (reason) => {
+    results.skipReasons[reason] = (results.skipReasons[reason] || 0) + 1;
+    results.skipped++;
+  };
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const rowNum = i + 2;
     try {
-      if (!row.date) { results.skipped++; continue; }
-      if (!row.time) { results.skipped++; continue; }
+      if (!row.date) { addSkip('No date'); continue; }
+      if (!row.time) { addSkip('No time'); continue; }
       const qty = Number(row.qty) || 0;
-      if (qty <= 0) { results.skipped++; continue; }
+      if (qty <= 0) { addSkip('Zero qty'); continue; }
 
       const d = new Date(row.date); d.setHours(0, 0, 0, 0);
       const nextD = new Date(d); nextD.setDate(nextD.getDate() + 1);
 
-      const amount = Number(row.amount) || parseFloat((qty * (Number(row.rate) || 0)).toFixed(2));
-      const fat    = Number(row.fat) || 0;
-      const snf    = Number(row.snf) || 0;
-      const rate   = Number(row.rate) || 0;
+      const amount                = Number(row.amount) || parseFloat((qty * (Number(row.rate) || 0)).toFixed(2));
+      const fat                   = Number(row.fat) || 0;
+      const snf                   = Number(row.snf) || 0;
+      const rate                  = Number(row.rate) || 0;
+      const unionSpoilage         = Number(row.unionSpoilage) || 0;
+      const transportationSpoilage = Number(row.transportationSpoilage) || 0;
+      const spoilage              = unionSpoilage > 0 || transportationSpoilage > 0;
 
       // Try to find existing record for same date + time
       const existing = await UnionSalesSlip.findOne({ companyId, time: row.time, date: { $gte: d, $lt: nextD } });
 
       if (existing) {
-        // Update existing record with new aggregated values
         const updated = await UnionSalesSlip.findByIdAndUpdate(
           existing._id,
-          { $set: { qty, fat, snf, rate, amount } },
+          { $set: { qty, fat, snf, rate, amount, spoilage, unionSpoilage, transportationSpoilage } },
           { new: true }
         );
         results.updated++;
-        // Refresh Day Book voucher
         try {
           await reverseUnionSalesVoucher(updated);
           const voucher = await createUnionSalesVoucher(updated, companyId);
@@ -530,7 +535,6 @@ const processImportSlips = async (rows, companyId, userId) => {
           console.warn('[UnionSales] Voucher refresh failed (non-fatal):', vErr.message);
         }
       } else {
-        // Insert new record
         const slipNo = await generateSlipNo(companyId);
         for (let attempt = 0; attempt < 5; attempt++) {
           try {
@@ -538,17 +542,13 @@ const processImportSlips = async (rows, companyId, userId) => {
               slipNo: attempt === 0 ? slipNo : await generateSlipNo(companyId),
               date: d, time: row.time,
               qty, fat, snf, rate, amount,
-              spoilage: false, unionSpoilage: 0, transportationSpoilage: 0,
+              spoilage, unionSpoilage, transportationSpoilage,
               companyId, createdBy: userId,
             });
             await slip.save();
-            // Auto-post Day Book voucher
             try {
               const voucher = await createUnionSalesVoucher(slip, companyId);
-              if (voucher) {
-                slip.voucherId = voucher._id;
-                await slip.save();
-              }
+              if (voucher) { slip.voucherId = voucher._id; await slip.save(); }
             } catch (vErr) {
               console.warn('[UnionSales] Voucher creation failed (non-fatal):', vErr.message);
             }
@@ -569,9 +569,9 @@ const processImportSlips = async (rows, companyId, userId) => {
 };
 
 // ── ZIBITT RAW DB IMPORT ─────────────────────────────────────────────────────
-//  Raw fields: dcs_id, ms_id, ms_date (dd-mm-yyyy), ms_time (AM/PM),
+//  Raw fields: dcs_id, ms_id, ms_date (dd-mm-yyyy OR Excel serial), ms_time (AM/PM),
 //  qty_ltr, fat, snf, rate, amount, union_spoilage, transit_spoilage
-//  Upserts by date+time — safe to re-run.
+//  Aggregates by date+time before upserting — safe to re-run with any DCS count.
 export const zibittRawImportSlips = async (req, res) => {
   try {
     const { records } = req.body;
@@ -579,39 +579,95 @@ export const zibittRawImportSlips = async (req, res) => {
       return res.status(400).json({ success: false, message: 'No records provided' });
     }
 
-    const parseDate = (dateStr) => {
-      if (!dateStr) return null;
-      const str = String(dateStr).trim();
-      const parts = str.split('-');
-      if (parts.length !== 3) return null;
-      let yyyy, mm, dd;
-      if (parts[0].length === 4) {
-        [yyyy, mm, dd] = parts; // yyyy-mm-dd
-      } else {
-        [dd, mm, yyyy] = parts; // dd-mm-yyyy (e.g. 01-04-2022)
+    const parseZibittDate = (v) => {
+      if (!v) return null;
+      // JavaScript Date object (cellDates:true path)
+      if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
+      // Excel serial number — XLSX.js default when cell is date-formatted
+      if (typeof v === 'number' && v > 1000) {
+        return new Date(Math.round((v - 25569) * 86400 * 1000));
       }
-      const d = new Date(`${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`);
+      const str = String(v).trim();
+      if (!str) return null;
+      // DD-MM-YYYY or YYYY-MM-DD (dash-separated)
+      const dash = str.split('-');
+      if (dash.length === 3) {
+        let yyyy, mm, dd;
+        if (dash[0].length === 4) { [yyyy, mm, dd] = dash; }
+        else { [dd, mm, yyyy] = dash; }
+        const d = new Date(`${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      // DD/MM/YYYY or MM/DD/YYYY (slash-separated — assume DD/MM for India)
+      const slash = str.split('/');
+      if (slash.length === 3) {
+        const [p0, p1, p2] = slash;
+        const d = p2.length === 4
+          ? new Date(`${p2}-${p1.padStart(2,'0')}-${p0.padStart(2,'0')}`) // DD/MM/YYYY
+          : new Date(str);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      const d = new Date(str);
       return isNaN(d.getTime()) ? null : d;
     };
 
     const mapped = records.map(row => ({
-      date:                   parseDate(row.ms_date),
-      time:                   String(row.ms_time || '').toUpperCase() === 'PM' ? 'PM' : 'AM',
-      qty:                    Number(row.qty_ltr)          || 0,
-      fat:                    Number(row.fat)              || 0,
-      snf:                    Number(row.snf)              || 0,
-      rate:                   Number(row.rate)             || 0,
-      amount:                 Number(row.amount)           || 0,
-      spoilage:               Number(row.union_spoilage) > 0 || Number(row.transit_spoilage) > 0,
-      unionSpoilage:          Number(row.union_spoilage)   || 0,
-      transportationSpoilage: Number(row.transit_spoilage) || 0,
+      date:                   parseZibittDate(row.ms_date),
+      time:                   String(row.ms_time || '').trim().toUpperCase() === 'PM' ? 'PM' : 'AM',
+      // Use qty_ltr first; fall back to qty_kg if liters not recorded
+      qty:                    parseFloat(row.qty_ltr) || parseFloat(row.qty_kg) || 0,
+      fat:                    parseFloat(row.fat)              || 0,
+      snf:                    parseFloat(row.snf)              || 0,
+      rate:                   parseFloat(row.rate)             || 0,
+      amount:                 parseFloat(row.amount)           || 0,
+      unionSpoilage:          parseFloat(row.union_spoilage)   || 0,
+      transportationSpoilage: parseFloat(row.transit_spoilage) || 0,
     }));
 
-    const results = await processImportSlips(mapped, req.companyId, req.user?._id);
+    // Aggregate by date+time — sum qty/amount/spoilage; weight-average fat/snf/rate
+    const grouped = {};
+    for (const r of mapped) {
+      if (!r.date || r.qty <= 0) continue;
+      const dateKey = r.date.toISOString().slice(0, 10);
+      const key = `${dateKey}-${r.time}`;
+      if (!grouped[key]) {
+        grouped[key] = { date: r.date, time: r.time, totalQty: 0, totalAmount: 0, fatSum: 0, snfSum: 0, unionSpg: 0, transitSpg: 0 };
+      }
+      const g = grouped[key];
+      g.totalQty    += r.qty;
+      g.totalAmount += r.amount;
+      g.fatSum      += r.qty * r.fat;
+      g.snfSum      += r.qty * r.snf;
+      g.unionSpg    += r.unionSpoilage;
+      g.transitSpg  += r.transportationSpoilage;
+    }
+    const aggregated = Object.values(grouped).map(g => ({
+      date:                   g.date,
+      time:                   g.time,
+      qty:                    parseFloat(g.totalQty.toFixed(3)),
+      amount:                 parseFloat(g.totalAmount.toFixed(2)),
+      fat:                    parseFloat((g.fatSum   / g.totalQty).toFixed(2)),
+      snf:                    parseFloat((g.snfSum   / g.totalQty).toFixed(2)),
+      rate:                   parseFloat((g.totalAmount / g.totalQty).toFixed(4)),
+      unionSpoilage:          parseFloat(g.unionSpg.toFixed(3)),
+      transportationSpoilage: parseFloat(g.transitSpg.toFixed(3)),
+    }));
+
+    if (!aggregated.length) {
+      return res.status(400).json({
+        success: false,
+        message: `No valid rows found. Parsed ${mapped.length} rows but all had missing date or zero qty. Check ms_date format (DD-MM-YYYY) and qty_ltr column.`,
+      });
+    }
+
+    const results = await processImportSlips(aggregated, req.companyId, req.user?._id);
+    results.rawRows = mapped.length;
+    results.aggregatedGroups = aggregated.length;
+
     res.json({
       success: true,
       data: results,
-      message: `${results.created} created, ${results.updated} updated, ${results.skipped} skipped`
+      message: `${results.created} created, ${results.updated} updated, ${results.skipped} skipped (from ${mapped.length} raw rows → ${aggregated.length} date/shift groups)`,
     });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });

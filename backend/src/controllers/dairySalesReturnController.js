@@ -4,6 +4,9 @@ import StockTransaction from '../models/StockTransaction.js';
 import Farmer from '../models/Farmer.js';
 import Customer from '../models/Customer.js';
 import { getNextSequence } from '../models/Counter.js';
+import Voucher from '../models/Voucher.js';
+import Ledger from '../models/Ledger.js';
+import { generateVoucherNumber, findOrCreateLedger, updateLedgerBalances, reverseLedgerBalances } from '../utils/accountingHelper.js';
 
 // Generate Dairy Credit Note Number (DCN2603-0001) — atomic, conflict-free
 const generateReturnNumber = async (companyId) => {
@@ -12,6 +15,98 @@ const generateReturnNumber = async (companyId) => {
   const mm = (now.getMonth() + 1).toString().padStart(2, '0');
   const seq = await getNextSequence(`dcn-${yy}${mm}-${companyId || 'global'}`, 0);
   return `DCN${yy}${mm}-${seq.toString().padStart(4, '0')}`;
+};
+
+// Build and post a Journal voucher for a dairy sales return
+const createSalesReturnAccountingVoucher = async (salesReturn, companyId) => {
+  try {
+    const { grandTotal, taxableAmount, roundOff, totalCgst, totalSgst, totalIgst,
+            paymentMode, paidAmount, balanceAmount, customerName, returnNumber, returnDate } = salesReturn;
+
+    const entries = [];
+    const isCredit = paymentMode === 'Credit' || paymentMode === 'Adjustment';
+    const paid = paidAmount || 0;
+
+    // Debit: Sales Returns A/c
+    const salesReturnLedger = await findOrCreateLedger('SALES RETURNS', 'Sales Accounts', 'Sales Accounts', 'Debit', companyId);
+    entries.push({
+      ledgerId: salesReturnLedger._id,
+      ledgerName: 'SALES RETURNS',
+      debitAmount: taxableAmount + (roundOff || 0),
+      creditAmount: 0
+    });
+
+    // Debit: GST Output ledgers
+    if (totalCgst > 0) {
+      const cgstLedger = await findOrCreateLedger('OUTPUT CGST', 'Duties & Taxes', 'Duties & Taxes', 'Debit', companyId);
+      entries.push({ ledgerId: cgstLedger._id, ledgerName: 'OUTPUT CGST', debitAmount: totalCgst, creditAmount: 0 });
+    }
+    if (totalSgst > 0) {
+      const sgstLedger = await findOrCreateLedger('OUTPUT SGST', 'Duties & Taxes', 'Duties & Taxes', 'Debit', companyId);
+      entries.push({ ledgerId: sgstLedger._id, ledgerName: 'OUTPUT SGST', debitAmount: totalSgst, creditAmount: 0 });
+    }
+    if (totalIgst > 0) {
+      const igstLedger = await findOrCreateLedger('OUTPUT IGST', 'Duties & Taxes', 'Duties & Taxes', 'Debit', companyId);
+      entries.push({ ledgerId: igstLedger._id, ledgerName: 'OUTPUT IGST', debitAmount: totalIgst, creditAmount: 0 });
+    }
+
+    if (isCredit) {
+      // Credit: Customer A/c = grandTotal
+      const customerLedger = await findOrCreateLedger(
+        customerName || 'Sundry Debtors', 'Sundry Debtors', 'Sundry Debtors', 'Debit', companyId
+      );
+      entries.push({ ledgerId: customerLedger._id, ledgerName: customerName || 'Sundry Debtors', debitAmount: 0, creditAmount: grandTotal });
+    } else {
+      // Cash/Bank return: Credit Cash or Bank for paid amount
+      const cashBankName = (paymentMode === 'Bank' || paymentMode === 'UPI' || paymentMode === 'Cheque') ? 'Bank Account' : 'Cash';
+      const cashBankType = cashBankName === 'Cash' ? 'Cash' : 'Bank Accounts';
+      const cashBankLedger = await findOrCreateLedger(cashBankName, cashBankType, cashBankType, 'Debit', companyId);
+      entries.push({ ledgerId: cashBankLedger._id, ledgerName: cashBankName, debitAmount: 0, creditAmount: paid });
+
+      // If balance remains, Credit Customer A/c
+      const balance = balanceAmount || (grandTotal - paid);
+      if (balance > 0.009) {
+        const customerLedger = await findOrCreateLedger(
+          customerName || 'Sundry Debtors', 'Sundry Debtors', 'Sundry Debtors', 'Debit', companyId
+        );
+        entries.push({ ledgerId: customerLedger._id, ledgerName: customerName || 'Sundry Debtors', debitAmount: 0, creditAmount: balance });
+      }
+    }
+
+    const totalDebit = entries.reduce((s, e) => s + (e.debitAmount || 0), 0);
+    const totalCredit = entries.reduce((s, e) => s + (e.creditAmount || 0), 0);
+
+    const voucherNumber = await generateVoucherNumber('Journal', companyId);
+    const voucher = new Voucher({
+      voucherType: 'Journal',
+      voucherNumber,
+      voucherDate: returnDate || new Date(),
+      entries,
+      totalDebit,
+      totalCredit,
+      narration: `Sales Return ${returnNumber} - ${customerName || ''}`,
+      referenceType: 'SalesReturn',
+      referenceId: salesReturn._id,
+      referenceNumber: returnNumber,
+      companyId
+    });
+    await voucher.save();
+    await updateLedgerBalances(entries, null, companyId);
+  } catch (err) {
+    console.error('Sales return voucher creation error:', err);
+  }
+};
+
+// Reverse and delete a previously posted sales return voucher
+const reverseSalesReturnVoucher = async (referenceId, companyId) => {
+  try {
+    const voucher = await Voucher.findOne({ referenceType: 'SalesReturn', referenceId, companyId });
+    if (!voucher) return;
+    await reverseLedgerBalances(voucher.entries, null, companyId);
+    await Voucher.findByIdAndDelete(voucher._id);
+  } catch (err) {
+    console.error('Sales return voucher reversal error:', err);
+  }
 };
 
 // Create Dairy Sales Return (Credit Note)
@@ -178,6 +273,9 @@ export const createDairySalesReturn = async (req, res) => {
     const salesReturn = new DairySalesReturn(returnData);
     await salesReturn.save();
 
+    // Post accounting voucher
+    await createSalesReturnAccountingVoucher(salesReturn, companyId);
+
     // Update stock - sales return adds stock back (Stock In)
     for (const item of processedItems) {
       const dairyItem = await Item.findById(item.itemId);
@@ -292,6 +390,9 @@ export const updateDairySalesReturn = async (req, res) => {
     if (!salesReturn) {
       return res.status(404).json({ message: 'Sales return not found' });
     }
+
+    // Reverse accounting voucher before re-processing
+    await reverseSalesReturnVoucher(salesReturn._id, req.companyId);
 
     // Reverse old stock transactions (remove the stock that was added back)
     for (const item of salesReturn.items) {
@@ -458,6 +559,10 @@ export const updateDairySalesReturn = async (req, res) => {
     });
 
     await salesReturn.save();
+
+    // Post new accounting voucher
+    await createSalesReturnAccountingVoucher(salesReturn, req.companyId);
+
     res.json({ success: true, data: salesReturn });
   } catch (error) {
     console.error('Update dairy sales return error:', error);
@@ -472,6 +577,9 @@ export const deleteDairySalesReturn = async (req, res) => {
     if (!salesReturn) {
       return res.status(404).json({ message: 'Sales return not found' });
     }
+
+    // Reverse accounting voucher
+    await reverseSalesReturnVoucher(salesReturn._id, req.companyId);
 
     // Reverse stock for each item (remove the stock that was added back)
     for (const item of salesReturn.items) {
@@ -504,9 +612,9 @@ export const getDairySalesReturnSummary = async (req, res) => {
     if (startDate) dateFilter.$gte = new Date(startDate);
     if (endDate) dateFilter.$lte = new Date(endDate);
 
-    const matchQuery = Object.keys(dateFilter).length > 0
-      ? { returnDate: dateFilter, status: 'Active' }
-      : { status: 'Active' };
+    const match = { companyId: req.companyId, status: 'Active' };
+    if (Object.keys(dateFilter).length > 0) match.returnDate = dateFilter;
+    const matchQuery = match;
 
     const [summary] = await DairySalesReturn.aggregate([
       { $match: matchQuery },

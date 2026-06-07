@@ -47,7 +47,7 @@ export const createSale = async (req, res) => {
       if (saleData.customerId) {
         const farmer = await Farmer.findById(saleData.customerId).populate('ledgerId');
         if (farmer && farmer.ledgerId) {
-          saleData.oldBalance = farmer.ledgerId.currentBalance;
+          saleData.oldBalance = Math.max(0, farmer.ledgerId.currentBalance || 0);
           saleData.customerName = farmer.personalDetails.name;
           saleData.customerPhone = farmer.personalDetails.phone;
         }
@@ -138,7 +138,8 @@ export const createSale = async (req, res) => {
         'Sale',
         sale._id,
         null,
-        companyId
+        companyId,
+        sale.billDate ? new Date(sale.billDate) : new Date()
       );
     } catch (stockError) {
       console.error('Error creating stock transactions:', stockError);
@@ -307,7 +308,10 @@ export const updateSale = async (req, res) => {
     await createBulkStockTransactions(
       updatedSaleData.items,
       'Sale',
-      existingSale._id
+      existingSale._id,
+      null,
+      req.companyId,
+      existingSale.billDate ? new Date(existingSale.billDate) : new Date()
     );
 
     res.status(200).json({

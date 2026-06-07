@@ -215,6 +215,13 @@ const dairyPurchaseReturnSchema = new mongoose.Schema({
   businessType: {
     type: String,
     default: 'Dairy Cooperative'
+  },
+
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true,
+    index: true
   }
 }, {
   timestamps: true

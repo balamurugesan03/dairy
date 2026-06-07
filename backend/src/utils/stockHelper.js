@@ -103,7 +103,7 @@ export const createStockTransaction = async (transactionData, session = null) =>
 };
 
 // Create multiple stock transactions (for sales with multiple items)
-export const createBulkStockTransactions = async (items, referenceType, referenceId, session = null, companyId = null) => {
+export const createBulkStockTransactions = async (items, referenceType, referenceId, session = null, companyId = null, date = null) => {
   const transactions = [];
 
   for (const itemData of items) {
@@ -114,6 +114,7 @@ export const createBulkStockTransactions = async (items, referenceType, referenc
       rate: itemData.rate,
       referenceType,
       referenceId,
+      date: date || new Date(),
       notes: `${referenceType} - Item: ${itemData.itemName}`,
       companyId
     }, session);

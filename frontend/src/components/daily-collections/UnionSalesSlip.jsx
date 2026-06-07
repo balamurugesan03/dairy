@@ -260,17 +260,23 @@ export default function UnionSalesSlip() {
   const handleZibittRawImportSlip = async (rawRows) => {
     const CHUNK = 500;
     let totalCreated = 0, totalUpdated = 0, totalSkipped = 0;
+    const allSkipReasons = {};
     for (let i = 0; i < rawRows.length; i += CHUNK) {
       const batch = rawRows.slice(i, i + CHUNK);
       const res = await unionSalesSlipAPI.zibittRawImport(batch);
       totalCreated  += res?.data?.created  ?? 0;
       totalUpdated  += res?.data?.updated  ?? 0;
       totalSkipped  += res?.data?.skipped  ?? 0;
+      const sr = res?.data?.skipReasons || {};
+      for (const [k, v] of Object.entries(sr)) {
+        allSkipReasons[k] = (allSkipReasons[k] || 0) + v;
+      }
     }
+    const skipDetail = Object.entries(allSkipReasons).map(([k, v]) => `${k}: ${v}`).join(', ');
     notifications.show({
       color: totalSkipped && !totalCreated && !totalUpdated ? 'orange' : 'teal',
-      message: `${totalCreated} created, ${totalUpdated} updated${totalSkipped ? `, ${totalSkipped} skipped` : ''}`,
-      autoClose: 4000
+      message: `${totalCreated} created, ${totalUpdated} updated${totalSkipped ? `, ${totalSkipped} skipped${skipDetail ? ` (${skipDetail})` : ''}` : ''}`,
+      autoClose: 6000,
     });
     // Try to detect the imported month from ms_date (dd-mm-yyyy format)
     const firstDateStr = rawRows[0]?.ms_date || rawRows[0]?.date_entry || rawRows[0]?.SalesDate || rawRows[0]?.date;
