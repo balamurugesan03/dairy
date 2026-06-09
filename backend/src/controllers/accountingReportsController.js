@@ -8,6 +8,9 @@ import Advance from '../models/Advance.js';
 import ProducerReceipt from '../models/ProducerReceipt.js';
 import ProducerPayment from '../models/ProducerPayment.js';
 import BankTransfer from '../models/BankTransfer.js';
+import PaymentRegister from '../models/PaymentRegister.js';
+import StockTransaction from '../models/StockTransaction.js';
+import ProducerLoan from '../models/ProducerLoan.js';
 import { getDateRange } from '../utils/dateFilters.js';
 import {
   calculateOpeningBalance,
@@ -1306,10 +1309,158 @@ export const getLedgersForDropdown = async (req, res) => {
   }
 };
 
+// RECEIPTS & PAYMENTS ACCOUNT — summary of all cash/value flows
+export const getReceiptsPayments = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ success: false, message: 'startDate and endDate are required' });
+    }
+    const start = new Date(startDate); start.setUTCHours(0, 0, 0, 0);
+    const end   = new Date(endDate);   end.setUTCHours(23, 59, 59, 999);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({ success: false, message: 'Invalid date parameters' });
+    }
+    const cid = req.companyId;
+
+    const [
+      mcAgg,
+      localAgg, creditAgg, sampleAgg,
+      cfSalesTxns, cfPurchaseTxns,
+      regProducers, regCreditors,
+      prAgg,
+      cfAdvAgg, cashAdvAgg, loanAgg
+    ] = await Promise.all([
+      // Milk Purchase (payment side)
+      MilkCollection.aggregate([
+        { $match: { companyId: cid, date: { $gte: start, $lte: end }, amount: { $gt: 0 } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      // Milk Sales by mode (receipt side)
+      MilkSales.aggregate([
+        { $match: { companyId: cid, date: { $gte: start, $lte: end }, saleMode: 'LOCAL', amount: { $gt: 0 } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      MilkSales.aggregate([
+        { $match: { companyId: cid, date: { $gte: start, $lte: end }, saleMode: 'CREDIT', amount: { $gt: 0 } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      MilkSales.aggregate([
+        { $match: { companyId: cid, date: { $gte: start, $lte: end }, saleMode: 'SAMPLE', amount: { $gt: 0 } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      // CF Sales (Stock Out, not returns) — receipt side
+      StockTransaction.find({
+        companyId: cid, transactionType: 'Stock Out',
+        referenceType: { $nin: ['Return', 'Opening Balance Adjustment'] },
+        $expr: { $and: [
+          { $gte: [{ $ifNull: ['$purchaseDate', '$date'] }, start] },
+          { $lte: [{ $ifNull: ['$purchaseDate', '$date'] }, end] }
+        ]}
+      }).select('quantity rate').lean(),
+      // CF Purchase (Stock In, not returns) — payment side + commission/inspection extraction
+      StockTransaction.find({
+        companyId: cid, transactionType: 'Stock In',
+        referenceType: { $nin: ['Return', 'Opening Balance Adjustment'] },
+        $expr: { $and: [
+          { $gte: [{ $ifNull: ['$purchaseDate', '$date'] }, start] },
+          { $lte: [{ $ifNull: ['$purchaseDate', '$date'] }, end] }
+        ]}
+      }).select('quantity rate ledgerEntries').populate('ledgerEntries.ledgerId', 'ledgerName').lean(),
+      // PaymentRegister — Producers type
+      PaymentRegister.aggregate([
+        { $match: { companyId: cid, registerType: 'Producers', fromDate: { $gte: start, $lte: end } } },
+        { $group: { _id: null, milkValue: { $sum: '$totalMilkValue' }, welfare: { $sum: '$totalWelfare' } } }
+      ]),
+      // PaymentRegister — Creditor type
+      PaymentRegister.aggregate([
+        { $match: { companyId: cid, registerType: 'Creditor', fromDate: { $gte: start, $lte: end } } },
+        { $group: { _id: null, milkValue: { $sum: '$totalMilkValue' }, welfare: { $sum: '$totalWelfare' } } }
+      ]),
+      // Producer Receipts (money received back from producers) — receipt side
+      ProducerReceipt.aggregate([
+        { $match: { companyId: cid, status: 'Active', receiptDate: { $gte: start, $lte: end } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      // CF Advance given — payment side
+      Advance.aggregate([
+        { $match: { companyId: cid, advanceCategory: 'CF Advance', advanceDate: { $gte: start, $lte: end }, status: { $ne: 'Cancelled' } } },
+        { $group: { _id: null, total: { $sum: '$advanceAmount' } } }
+      ]),
+      // Cash Advance given — payment side
+      Advance.aggregate([
+        { $match: { companyId: cid, advanceCategory: 'Cash Advance', advanceDate: { $gte: start, $lte: end }, status: { $ne: 'Cancelled' } } },
+        { $group: { _id: null, total: { $sum: '$advanceAmount' } } }
+      ]),
+      // Loan Advance disbursed (ProducerLoan) — payment side
+      ProducerLoan.aggregate([
+        { $match: { companyId: cid, loanDate: { $gte: start, $lte: end }, status: { $ne: 'Cancelled' } } },
+        { $group: { _id: null, total: { $sum: '$principalAmount' } } }
+      ])
+    ]);
+
+    // Derive CF purchase total + commission + inspection fee from ledgerEntries
+    let cfPurchaseTotal = 0, cfCommission = 0, cfInspectionFee = 0;
+    cfPurchaseTxns.forEach(txn => {
+      const qty = txn.quantity || 0;
+      cfPurchaseTotal += qty * (txn.rate || 0);
+      (txn.ledgerEntries || []).forEach(le => {
+        const name = (le.ledgerId?.ledgerName || '').toLowerCase();
+        const amt  = (le.amount || 0) * qty;
+        if (name.includes('cattle feed commission')) cfCommission    += amt;
+        else if (name.includes('inspection fee'))    cfInspectionFee += amt;
+      });
+    });
+
+    const cfSalesTotal       = cfSalesTxns.reduce((s, t) => s + (t.quantity || 0) * (t.rate || 0), 0);
+    const producersDue       = regProducers[0]?.milkValue || 0;
+    const producersDueCredit = regCreditors[0]?.milkValue || 0;
+    const kdwfWelfare        = (regProducers[0]?.welfare || 0) + (regCreditors[0]?.welfare || 0);
+
+    const receiptItems = [
+      { label: 'Producer Due',            amount: producersDueCredit },
+      { label: 'Local Sales',             amount: localAgg[0]?.total  || 0 },
+      { label: 'Credit Sales',            amount: creditAgg[0]?.total || 0 },
+      { label: 'Sample Sales',            amount: sampleAgg[0]?.total || 0 },
+      { label: 'Cattle Feed Sales',       amount: cfSalesTotal },
+      { label: 'Producer Report',         amount: producersDue },
+      { label: 'Producer Receipt',        amount: prAgg[0]?.total     || 0 },
+      { label: 'KDFW Welfare',            amount: kdwfWelfare },
+      { label: 'Cattle Feed Commission',  amount: cfCommission },
+      { label: 'CF Inspection Fee',       amount: cfInspectionFee },
+    ];
+
+    const paymentItems = [
+      { label: 'Milk Purchase',          amount: mcAgg[0]?.total || 0 },
+      { label: 'Cattle Feed Purchase',   amount: cfPurchaseTotal },
+      { label: 'CF Advance',             amount: cfAdvAgg[0]?.total  || 0 },
+      { label: 'Cash Advance',           amount: cashAdvAgg[0]?.total || 0 },
+      { label: 'Loan Advance',           amount: loanAgg[0]?.total   || 0 },
+    ];
+
+    const totalReceipts = receiptItems.reduce((s, r) => s + r.amount, 0);
+    const totalPayments = paymentItems.reduce((s, p) => s + p.amount, 0);
+
+    res.json({
+      success: true,
+      data: {
+        startDate: start, endDate: end,
+        receiptItems, paymentItems,
+        totalReceipts, totalPayments,
+        balance: totalReceipts - totalPayments
+      }
+    });
+  } catch (error) {
+    console.error('Error generating receipts & payments:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error generating report' });
+  }
+};
+
 export default {
   getCashBook,
   getGeneralLedger,
   getGeneralLedgerAbstract,
   getReceiptsDisbursementEnhanced,
-  getLedgersForDropdown
+  getLedgersForDropdown,
+  getReceiptsPayments
 };

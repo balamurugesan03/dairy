@@ -92,7 +92,7 @@ const MainLayout = () => {
 
   const isOnDashboard = location.pathname === '/';
   const isBankTransferPage = location.pathname === '/payments/bank-transfer';
-  const hideBackButton = isOnDashboard || location.pathname === '/daily-collections/milk-purchase' || location.pathname === '/farmers' || location.pathname === '/collection-centers' || location.pathname === '/agents' || location.pathname === '/customers' || location.pathname === '/daily-collections/union-sales-slip' || location.pathname === '/daily-collections/milk-sales' || location.pathname === '/daily-collections/list' || location.pathname === '/reports/salesman-balance' || location.pathname === '/daily-collections/rate-chart-settings' || location.pathname === '/reports/cash-book' || location.pathname === '/reports/daybook';
+  const hideBackButton = isOnDashboard || location.pathname === '/daily-collections/milk-purchase' || location.pathname === '/farmers' || location.pathname === '/collection-centers' || location.pathname === '/agents' || location.pathname === '/customers' || location.pathname === '/daily-collections/union-sales-slip' || location.pathname === '/daily-collections/milk-sales' || location.pathname === '/daily-collections/list' || location.pathname === '/reports/salesman-balance' || location.pathname === '/daily-collections/rate-chart-settings' || location.pathname === '/reports/cash-book' || location.pathname === '/reports/daybook' || location.pathname === '/reports/receipts-payments';
 
   // ── Global hotkeys ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -359,11 +359,12 @@ const MainLayout = () => {
           key: 'accounts-reports-sub',
           label: 'Reports',
           children: [
-            { key: '/reports/cash-book',          label: 'Cash Book' },
-            { key: '/reports/daybook',            label: 'Day Book' },
-            { key: '/reports/general-ledger',     label: 'General Ledger' },
-            { key: '/reports/ledger-abstract',    label: 'Ledger Abstract' },
-            { key: '/reports/rd-enhanced',        label: 'R&D Statement' },
+            { key: '/reports/cash-book',             label: 'Cash Book' },
+            { key: '/reports/daybook',               label: 'Day Book' },
+            { key: '/reports/general-ledger',        label: 'General Ledger' },
+            { key: '/reports/ledger-abstract',       label: 'Ledger Abstract' },
+            { key: '/reports/receipts-payments',     label: 'Receipts & Payments' },
+            { key: '/reports/rd-enhanced',           label: 'R&D Statement' },
             { key: '/reports/final-accounts',     label: 'Final Accounts' },
             { key: '/reports/balance-sheet',      label: 'Balance Sheet' },
             { key: '/reports/milk-bill-abstract', label: 'Milk Bill Abstract' },

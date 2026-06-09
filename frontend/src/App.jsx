@@ -152,6 +152,7 @@ const SubsidyReport = lazy(() => import('./components/reports/SubsidyReport'));
 const DayBook = lazy(() => import('./components/reports/DayBook'));
 const CashBook = lazy(() => import('./components/reports/CashBook'));
 const GeneralLedger = lazy(() => import('./components/reports/GeneralLedger'));
+const ReceiptsPayments = lazy(() => import('./components/reports/ReceiptsPayments'));
 const LedgerAbstract = lazy(() => import('./components/reports/LedgerAbstract'));
 const ReceiptsDisbursement = lazy(() => import('./components/reports/ReceiptsDisbursement'));
 const FinalAccounts = lazy(() => import('./components/reports/FinalAccounts'));
@@ -501,6 +502,7 @@ const AppContent = () => {
                 {/* Dairy Society Reports */}
                 <Route path="cash-book" element={<CashBook />} />
                 <Route path="general-ledger" element={<GeneralLedger />} />
+                <Route path="receipts-payments" element={<ReceiptsPayments />} />
                 <Route path="ledger-abstract" element={<LedgerAbstract />} />
                 <Route path="rd-enhanced" element={<ReceiptsDisbursement />} />
                 <Route path="final-accounts" element={<FinalAccounts />} />

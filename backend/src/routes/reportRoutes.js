@@ -29,7 +29,8 @@ import {
   getGeneralLedger,
   getGeneralLedgerAbstract,
   getReceiptsDisbursementEnhanced,
-  getLedgersForDropdown
+  getLedgersForDropdown,
+  getReceiptsPayments
 } from '../controllers/accountingReportsController.js';
 import {
   getSaleReport,
@@ -95,6 +96,7 @@ router.get('/general-ledger', getGeneralLedger);
 router.get('/ledger-abstract', getGeneralLedgerAbstract);
 router.get('/rd-enhanced', getReceiptsDisbursementEnhanced);
 router.get('/ledgers-dropdown', getLedgersForDropdown);
+router.get('/receipts-payments', getReceiptsPayments);
 
 // Vyapar Reports - Private Firm
 router.get('/vyapar/sale-report', getSaleReport);

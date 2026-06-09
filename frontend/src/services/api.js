@@ -290,6 +290,7 @@ export const reportAPI = {
   generalLedger: (params) => api.get('/reports/general-ledger', { params }).then(res => res.data).catch(handleError),
   ledgerAbstract: (params) => api.get('/reports/ledger-abstract', { params }).then(res => res.data).catch(handleError),
   rdEnhanced: (params) => api.get('/reports/rd-enhanced', { params }).then(res => res.data).catch(handleError),
+  receiptsPayments: (params) => api.get('/reports/receipts-payments', { params }).then(res => res.data).catch(handleError),
   ledgersDropdown: (params) => api.get('/reports/ledgers-dropdown', { params }).then(res => res.data).catch(handleError),
   // Vyapar Reports - Private Firm
   vyaparSaleReport: (params) => api.get('/reports/vyapar/sale-report', { params }).then(res => res.data).catch(handleError),
