@@ -498,11 +498,10 @@ export const getGeneralLedger = async (req, res) => {
           date:          new Date(day + 'T00:00:00.000Z'),
           voucherNumber: `MKP-${day.replace(/-/g, '')}-${shift}`,
           voucherType:   'MilkPurchase',
-          // For milk-purchase expense ledger: debit (expense increases)
-          // For producers-dues liability ledger: credit (liability increases)
+          // Milk Purchase = payment (credit side); Producers Dues = credit (liability increases)
           particulars:   isMilkPurchaseLedger ? 'PRODUCERS DUES' : 'MILK PURCHASE',
-          debit:         isMilkPurchaseLedger ? c.totalAmount : 0,
-          credit:        isProducersDuesLedger ? c.totalAmount : 0,
+          debit:         isProducersDuesLedger ? c.totalAmount : 0,
+          credit:        isMilkPurchaseLedger  ? c.totalAmount : 0,
           narration:     `${shift} | Qty: ${c.totalQty.toFixed(2)} L | ${c.farmerCount} farmers`,
         });
       });
@@ -535,9 +534,229 @@ export const getGeneralLedger = async (req, res) => {
           voucherNumber: s.billNo,
           voucherType:   'MilkSales',
           particulars:   s.creditorName || s.centerName || 'Customer',
-          debit:         0,
-          credit:        s.amount || 0,
+          debit:         s.amount || 0,
+          credit:        0,
           narration:     `${s.session || ''} | ${s.litre || 0} L @ ${s.rate || 0}`,
+        });
+      });
+    }
+
+    // ── 3. CATTLE FEED PURCHASE ledger → payment (credit) side ──
+    const isCfPurchaseLedger =
+      /cattle\s*feed\s*purchase|cf\s*purchase/i.test(ledger.ledgerName) ||
+      (/cattle\s*feed/i.test(ledger.ledgerName) && lType === 'Purchases');
+
+    if (isCfPurchaseLedger) {
+      const cfTxns = await StockTransaction.find({
+        companyId: req.companyId,
+        transactionType: 'Stock In',
+        referenceType: { $nin: ['Return', 'Opening Balance Adjustment'] },
+        $expr: { $and: [
+          { $gte: [{ $ifNull: ['$purchaseDate', '$date'] }, dateFilter.startDate] },
+          { $lte: [{ $ifNull: ['$purchaseDate', '$date'] }, dateFilter.endDate] }
+        ]}
+      }).select('quantity rate purchaseDate date invoiceNumber supplierName').lean();
+
+      cfTxns.forEach(t => {
+        const txDate = t.purchaseDate || t.date;
+        rawTxns.push({
+          date:          txDate,
+          voucherNumber: t.invoiceNumber || `CFP-${new Date(txDate).toISOString().slice(0,10)}`,
+          voucherType:   'CFPurchase',
+          particulars:   t.supplierName || 'Cattle Feed Supplier',
+          debit:         0,
+          credit:        (t.quantity || 0) * (t.rate || 0),
+          narration:     `Qty: ${t.quantity || 0} @ ${t.rate || 0}`,
+        });
+      });
+    }
+
+    // ── 4. CATTLE FEED SALES ledger → receipt (debit) side ──
+    const isCfSalesLedger =
+      /cattle\s*feed\s*sales?|cf\s*sales?/i.test(ledger.ledgerName) ||
+      (/cattle\s*feed/i.test(ledger.ledgerName) && lType === 'Sales');
+
+    if (isCfSalesLedger) {
+      const cfSaleTxns = await StockTransaction.find({
+        companyId: req.companyId,
+        transactionType: 'Stock Out',
+        referenceType: { $nin: ['Return', 'Opening Balance Adjustment'] },
+        $expr: { $and: [
+          { $gte: [{ $ifNull: ['$purchaseDate', '$date'] }, dateFilter.startDate] },
+          { $lte: [{ $ifNull: ['$purchaseDate', '$date'] }, dateFilter.endDate] }
+        ]}
+      }).select('quantity rate purchaseDate date invoiceNumber customerName').lean();
+
+      cfSaleTxns.forEach(t => {
+        const txDate = t.purchaseDate || t.date;
+        rawTxns.push({
+          date:          txDate,
+          voucherNumber: t.invoiceNumber || `CFS-${new Date(txDate).toISOString().slice(0,10)}`,
+          voucherType:   'CFSales',
+          particulars:   t.customerName || 'Cattle Feed Customer',
+          debit:         (t.quantity || 0) * (t.rate || 0),
+          credit:        0,
+          narration:     `Qty: ${t.quantity || 0} @ ${t.rate || 0}`,
+        });
+      });
+    }
+
+    // ── 5. CATTLE FEED ADVANCE ledger → payment (credit) side ──
+    const isCfAdvanceLedger =
+      /cattle\s*feed\s*adv|cf\s*adv/i.test(ledger.ledgerName) ||
+      (/cattle\s*feed/i.test(ledger.ledgerName) && /advanc/i.test(ledger.ledgerName));
+
+    if (isCfAdvanceLedger) {
+      const cfAdvTxns = await Advance.find({
+        companyId: req.companyId,
+        advanceCategory: 'CF Advance',
+        advanceDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
+        status: { $ne: 'Cancelled' }
+      }).select('advanceDate advanceAmount farmerName referenceNumber').lean();
+
+      cfAdvTxns.forEach(t => {
+        rawTxns.push({
+          date:          t.advanceDate,
+          voucherNumber: t.referenceNumber || `CFA-${new Date(t.advanceDate).toISOString().slice(0,10)}`,
+          voucherType:   'CFAdvance',
+          particulars:   t.farmerName || 'Producer',
+          debit:         0,
+          credit:        t.advanceAmount || 0,
+          narration:     'Cattle Feed Advance',
+        });
+      });
+    }
+
+    // ── 6. PRODUCER RECEIPT ledger → receipt (debit) side ──
+    const isProducerReceiptLedger =
+      /producer\s*receipt|farmer\s*receipt/i.test(ledger.ledgerName) ||
+      (/receipt/i.test(ledger.ledgerName) && /producer|farmer/i.test(ledger.ledgerName));
+
+    if (isProducerReceiptLedger) {
+      const prTxns = await ProducerReceipt.find({
+        companyId: req.companyId,
+        status: 'Active',
+        receiptDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate }
+      }).select('receiptDate amount receiptNumber farmerName').lean();
+
+      prTxns.forEach(t => {
+        rawTxns.push({
+          date:          t.receiptDate,
+          voucherNumber: t.receiptNumber || `PR-${new Date(t.receiptDate).toISOString().slice(0,10)}`,
+          voucherType:   'ProducerReceipt',
+          particulars:   t.farmerName || 'Producer',
+          debit:         t.amount || 0,
+          credit:        0,
+          narration:     'Producer Receipt',
+        });
+      });
+    }
+
+    // ── 7. CASH ADVANCE ledger → payment (credit) side ──
+    const isCashAdvanceLedger =
+      /cash\s*advanc/i.test(ledger.ledgerName);
+
+    if (isCashAdvanceLedger) {
+      const cashAdvTxns = await Advance.find({
+        companyId: req.companyId,
+        advanceCategory: 'Cash Advance',
+        advanceDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
+        status: { $ne: 'Cancelled' }
+      }).select('advanceDate advanceAmount farmerName referenceNumber').lean();
+
+      cashAdvTxns.forEach(t => {
+        rawTxns.push({
+          date:          t.advanceDate,
+          voucherNumber: t.referenceNumber || `CA-${new Date(t.advanceDate).toISOString().slice(0,10)}`,
+          voucherType:   'CashAdvance',
+          particulars:   t.farmerName || 'Producer',
+          debit:         0,
+          credit:        t.advanceAmount || 0,
+          narration:     'Cash Advance',
+        });
+      });
+    }
+
+    // ── 8. LOAN ADVANCE ledger → payment (credit) side ──
+    const isLoanAdvanceLedger =
+      /loan\s*advanc|producer\s*loan/i.test(ledger.ledgerName);
+
+    if (isLoanAdvanceLedger) {
+      const loanTxns = await ProducerLoan.find({
+        companyId: req.companyId,
+        loanDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
+        status: { $ne: 'Cancelled' }
+      }).select('loanDate principalAmount farmerName loanNumber').lean();
+
+      loanTxns.forEach(t => {
+        rawTxns.push({
+          date:          t.loanDate,
+          voucherNumber: t.loanNumber || `LA-${new Date(t.loanDate).toISOString().slice(0,10)}`,
+          voucherType:   'LoanAdvance',
+          particulars:   t.farmerName || 'Producer',
+          debit:         0,
+          credit:        t.principalAmount || 0,
+          narration:     'Loan Advance',
+        });
+      });
+    }
+
+    // ── 9. KDFW WELFARE ledger → receipt (debit) side ──
+    const isKdwfLedger =
+      /kdfw|kdwf|welfare/i.test(ledger.ledgerName);
+
+    if (isKdwfLedger) {
+      const welfareAgg = await PaymentRegister.find({
+        companyId: req.companyId,
+        fromDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate }
+      }).select('fromDate toDate totalWelfare registerNumber').lean();
+
+      welfareAgg.forEach(t => {
+        if ((t.totalWelfare || 0) <= 0) return;
+        rawTxns.push({
+          date:          t.fromDate,
+          voucherNumber: t.registerNumber || `WLF-${new Date(t.fromDate).toISOString().slice(0,10)}`,
+          voucherType:   'Welfare',
+          particulars:   'KDFW Welfare Collection',
+          debit:         t.totalWelfare || 0,
+          credit:        0,
+          narration:     `Period: ${new Date(t.fromDate).toLocaleDateString('en-IN')} - ${new Date(t.toDate).toLocaleDateString('en-IN')}`,
+        });
+      });
+    }
+
+    // ── 10. CATTLE FEED COMMISSION ledger → receipt (debit) side ──
+    const isCfCommissionLedger =
+      /cattle\s*feed\s*comm|cf\s*comm/i.test(ledger.ledgerName);
+
+    if (isCfCommissionLedger) {
+      const cfCommTxns = await StockTransaction.find({
+        companyId: req.companyId,
+        transactionType: 'Stock In',
+        referenceType: { $nin: ['Return', 'Opening Balance Adjustment'] },
+        $expr: { $and: [
+          { $gte: [{ $ifNull: ['$purchaseDate', '$date'] }, dateFilter.startDate] },
+          { $lte: [{ $ifNull: ['$purchaseDate', '$date'] }, dateFilter.endDate] }
+        ]}
+      }).select('quantity purchaseDate date invoiceNumber ledgerEntries')
+        .populate('ledgerEntries.ledgerId', 'ledgerName').lean();
+
+      cfCommTxns.forEach(t => {
+        const txDate = t.purchaseDate || t.date;
+        (t.ledgerEntries || []).forEach(le => {
+          const name = (le.ledgerId?.ledgerName || '').toLowerCase();
+          if (!name.includes('cattle feed commission') && !name.includes('cf commission')) return;
+          const amt = (le.amount || 0) * (t.quantity || 0);
+          if (amt <= 0) return;
+          rawTxns.push({
+            date:          txDate,
+            voucherNumber: t.invoiceNumber || `CFCO-${new Date(txDate).toISOString().slice(0,10)}`,
+            voucherType:   'CFCommission',
+            particulars:   'Cattle Feed Commission',
+            debit:         amt,
+            credit:        0,
+            narration:     `Qty: ${t.quantity || 0}`,
+          });
         });
       });
     }
