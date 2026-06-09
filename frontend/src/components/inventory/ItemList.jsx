@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef,useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Container,
@@ -55,13 +55,15 @@ import {
   IconAlertCircle,
   IconChevronDown,
   IconSettings,
-  IconRefresh
+  IconRefresh,
+  IconScale
 } from '@tabler/icons-react';
 import { useForm } from '@mantine/form';
 import { useDisclosure } from '@mantine/hooks';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { DataTable } from 'mantine-datatable';
+import { DateInput } from '@mantine/dates';
 import { itemAPI, ledgerAPI, supplierAPI } from '../../services/api';
 import { localDateStr } from '../../utils/dateUtils';
 import * as XLSX from 'xlsx';
@@ -78,6 +80,7 @@ const ItemList = () => {
   // Modal states
   const [itemModalOpened, { open: openItemModal, close: closeItemModal }] = useDisclosure(false);
   const [openingBalanceModalOpened, { open: openOpeningBalanceModal, close: closeOpeningBalanceModal }] = useDisclosure(false);
+  const [standaloneObModalOpened, { open: openStandaloneObModal, close: closeStandaloneObModal }] = useDisclosure(false);
 
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedItemForBalance, setSelectedItemForBalance] = useState(null);
@@ -147,6 +150,23 @@ const ItemList = () => {
     validate: {
       openingBalance: (value) => (value === undefined || value === null || value === '') ? 'Opening balance is required' : null,
       rate: (value) => (value === undefined || value === null || value === '') ? 'Rate is required' : null,
+    }
+  });
+
+  const standaloneObForm = useForm({
+    initialValues: {
+      itemId: '',
+      openingDate: new Date(),
+      openingBalance: 0,
+      purchaseRate: 0,
+      salesRate: 0
+    },
+    validate: {
+      itemId: (value) => !value ? 'Please select a product' : null,
+      openingDate: (value) => !value ? 'Opening date is required' : null,
+      openingBalance: (value) => (value === undefined || value === null || value === '') ? 'Qty is required' : null,
+      purchaseRate: (value) => (value === undefined || value === null || value === '') ? 'Purchase rate is required' : null,
+      salesRate: (value) => (value === undefined || value === null || value === '') ? 'Sales rate is required' : null,
     }
   });
 
@@ -301,6 +321,32 @@ const ItemList = () => {
       notifications.show({
         title: 'Error',
         message: error.message || 'Failed to update opening balance',
+        color: 'red'
+      });
+    }
+  };
+
+  const handleStandaloneObSubmit = async (values) => {
+    try {
+      await itemAPI.updateOpeningBalance(values.itemId, {
+        openingBalance: values.openingBalance,
+        purchaseRate: values.purchaseRate,
+        salesRate: values.salesRate,
+        openingDate: values.openingDate
+      });
+      notifications.show({
+        title: 'Success',
+        message: 'Opening balance saved successfully',
+        color: 'green'
+      });
+      closeStandaloneObModal();
+      standaloneObForm.reset();
+      standaloneObForm.setValues({ itemId: '', openingDate: new Date(), openingBalance: 0, purchaseRate: 0, salesRate: 0 });
+      fetchItems();
+    } catch (error) {
+      notifications.show({
+        title: 'Error',
+        message: error.message || 'Failed to save opening balance',
         color: 'red'
       });
     }
@@ -672,6 +718,19 @@ const ItemList = () => {
             Add Item
           </Button>
           <Button
+            variant="light"
+            color="teal"
+            leftSection={<IconScale size={16} />}
+            size="sm"
+            onClick={() => {
+              standaloneObForm.reset();
+              standaloneObForm.setValues({ itemId: '', openingDate: new Date(), openingBalance: 0, purchaseRate: 0, salesRate: 0 });
+              openStandaloneObModal();
+            }}
+          >
+            Opening Balance
+          </Button>
+          <Button
             variant="default"
             leftSection={<IconX size={16} />}
             size="sm"
@@ -1021,6 +1080,96 @@ const ItemList = () => {
               </Button>
               <Button type="submit" color="blue">
                 {selectedItem ? 'Update Item' : 'Create Item'}
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
+
+      {/* Standalone Opening Balance Modal */}
+      <Modal
+        opened={standaloneObModalOpened}
+        onClose={closeStandaloneObModal}
+        title="Opening Balance Entry"
+        size="md"
+        centered
+      >
+        <form onSubmit={standaloneObForm.onSubmit(handleStandaloneObSubmit)}>
+          <Stack gap="md">
+            <Select
+              label="Product"
+              placeholder="Select product"
+              withAsterisk
+              searchable
+              data={items.map(item => ({
+                value: item._id,
+                label: `${item.itemCode ? item.itemCode + ' - ' : ''}${item.itemName} (${item.measurement})`
+              }))}
+              value={standaloneObForm.values.itemId}
+              onChange={(val) => {
+                standaloneObForm.setFieldValue('itemId', val || '');
+                const found = items.find(i => i._id === val);
+                if (found) {
+                  standaloneObForm.setFieldValue('purchaseRate', found.purchaseRate || 0);
+                  standaloneObForm.setFieldValue('salesRate', found.salesRate || 0);
+                  standaloneObForm.setFieldValue('openingBalance', found.openingBalance || 0);
+                }
+              }}
+              error={standaloneObForm.errors.itemId}
+            />
+
+            <DateInput
+              label="Opening Date"
+              placeholder="Select date"
+              withAsterisk
+              valueFormat="DD/MM/YYYY"
+              value={standaloneObForm.values.openingDate}
+              onChange={(val) => standaloneObForm.setFieldValue('openingDate', val)}
+              error={standaloneObForm.errors.openingDate}
+            />
+
+            <NumberInput
+              label="Qty"
+              placeholder="Enter quantity"
+              withAsterisk
+              min={0}
+              allowDecimal
+              decimalScale={2}
+              value={standaloneObForm.values.openingBalance}
+              onChange={(val) => standaloneObForm.setFieldValue('openingBalance', val ?? 0)}
+              error={standaloneObForm.errors.openingBalance}
+            />
+
+            <NumberInput
+              label="Purchase Rate"
+              placeholder="Enter purchase rate"
+              withAsterisk
+              min={0}
+              allowDecimal
+              decimalScale={2}
+              value={standaloneObForm.values.purchaseRate}
+              onChange={(val) => standaloneObForm.setFieldValue('purchaseRate', val ?? 0)}
+              error={standaloneObForm.errors.purchaseRate}
+            />
+
+            <NumberInput
+              label="Sales Rate"
+              placeholder="Enter sales rate"
+              withAsterisk
+              min={0}
+              allowDecimal
+              decimalScale={2}
+              value={standaloneObForm.values.salesRate}
+              onChange={(val) => standaloneObForm.setFieldValue('salesRate', val ?? 0)}
+              error={standaloneObForm.errors.salesRate}
+            />
+
+            <Group justify="flex-end" mt="md">
+              <Button variant="default" onClick={closeStandaloneObModal}>
+                Cancel
+              </Button>
+              <Button type="submit" color="teal">
+                Save
               </Button>
             </Group>
           </Stack>

@@ -588,7 +588,7 @@ export const getStockBalance = async (req, res) => {
 export const updateOpeningBalance = async (req, res) => {
   try {
     const { id } = req.params;
-    let { openingBalance, rate } = req.body;
+    let { openingBalance, rate, openingDate, purchaseRate, salesRate } = req.body;
 
     // Parse and validate openingBalance
     openingBalance = parseFloat(openingBalance);
@@ -599,8 +599,8 @@ export const updateOpeningBalance = async (req, res) => {
       });
     }
 
-    // Parse rate with fallback to 0
-    rate = parseFloat(rate) || 0;
+    purchaseRate = parseFloat(purchaseRate) || parseFloat(rate) || 0;
+    salesRate = parseFloat(salesRate) || 0;
 
     const item = await Item.findOne({ _id: id, companyId: req.companyId });
     if (!item) {
@@ -613,20 +613,28 @@ export const updateOpeningBalance = async (req, res) => {
     // Calculate the difference to adjust current balance
     const difference = openingBalance - (item.openingBalance || 0);
 
-    // Update item balances
+    // Update only the opening balance metadata (NOT currentBalance here —
+    // createStockTransaction will update currentBalance to avoid double-counting)
     item.openingBalance = openingBalance;
-    item.currentBalance = (item.currentBalance || 0) + difference;
+    item.purchaseRate = purchaseRate;
+    if (salesRate > 0) item.salesRate = salesRate;
+    if (openingDate) item.openingDate = new Date(openingDate);
     await item.save();
 
     // Create a stock transaction for the adjustment
+    // (createStockTransaction also updates item.currentBalance by the difference)
     if (difference !== 0) {
+      const txnDate = openingDate ? new Date(openingDate) : new Date();
       await createStockTransaction({
         itemId: id,
         transactionType: difference > 0 ? 'Stock In' : 'Stock Out',
         quantity: Math.abs(difference),
-        rate: rate || item.salesRate || 0,
+        rate: purchaseRate || item.salesRate || 0,
+        purchaseDate: txnDate,
+        date: txnDate,
         referenceType: 'Opening Balance Adjustment',
-        notes: 'Opening balance adjusted'
+        notes: 'Opening balance adjusted',
+        companyId: item.companyId
       });
     }
 

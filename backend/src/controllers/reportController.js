@@ -810,7 +810,7 @@ export const getStockRegister = async (req, res) => {
 
     // Fetch all active items
     const items = await Item.find({ status: 'Active', companyId: req.companyId })
-      .select('itemCode itemName category measurement unit salesRate openingBalance currentBalance')
+      .select('itemCode itemName category measurement unit salesRate purchaseRate openingBalance currentBalance')
       .sort({ itemName: 1 });
 
     // Build a map of initial opening balances
@@ -818,10 +818,12 @@ export const getStockRegister = async (req, res) => {
     items.forEach(item => { initialOB[item._id.toString()] = item.openingBalance || 0; });
 
     // Calculate OB at start of the period from pre-period transactions.
-    // Use the user-entered purchaseDate when present so legacy entries keyed
-    // by their auto `date` still fall back correctly.
+    // Opening Balance Adjustment records are excluded because item.openingBalance
+    // already represents that value — including the adjustment transactions would
+    // double-count them.
     const preTxns = await StockTransaction.find({
       companyId: req.companyId,
+      referenceType: { $ne: 'Opening Balance Adjustment' },
       $expr: { $lt: [{ $ifNull: ['$purchaseDate', '$date'] }, start] },
     }).select('itemId transactionType quantity');
     const obMap = { ...initialOB };
@@ -832,9 +834,12 @@ export const getStockRegister = async (req, res) => {
       else if (txn.transactionType === 'Stock Out') obMap[id] -= txn.quantity;
     });
 
-    // Fetch transactions within the period (filter on purchaseDate fallback)
+    // Fetch transactions within the period (filter on purchaseDate fallback).
+    // Exclude Opening Balance Adjustments — they are already captured by item.openingBalance
+    // and should never appear as purchases/sales in the register rows.
     const transactions = await StockTransaction.find({
       companyId: req.companyId,
+      referenceType: { $ne: 'Opening Balance Adjustment' },
       $expr: {
         $and: [
           { $gte: [{ $ifNull: ['$purchaseDate', '$date'] }, start] },
@@ -842,7 +847,7 @@ export const getStockRegister = async (req, res) => {
         ]
       }
     })
-      .populate('itemId', 'itemCode itemName measurement unit salesRate')
+      .populate('itemId', 'itemCode itemName measurement unit salesRate purchaseRate')
       .populate('ledgerEntries.ledgerId', 'ledgerName')
       .sort({ purchaseDate: 1, date: 1 });
 
@@ -924,7 +929,7 @@ export const getStockRegister = async (req, res) => {
             itemName: txn.itemId.itemName,
             unit: txn.itemId.unit,
             measurement: txn.itemId.measurement,
-            rate: txn.itemId.salesRate,
+            rate: txn.itemId.purchaseRate || txn.itemId.salesRate,
           });
         }
         applyTxn(groups[id], txn);
@@ -940,7 +945,7 @@ export const getStockRegister = async (req, res) => {
           itemName: item.itemName,
           unit: item.unit,
           measurement: item.measurement,
-          rate: item.salesRate,
+          rate: item.purchaseRate || item.salesRate,
         });
         reportData.push(buildRow(group, ob));
       });
@@ -962,7 +967,7 @@ export const getStockRegister = async (req, res) => {
             itemName: txn.itemId.itemName,
             unit: txn.itemId.unit,
             measurement: txn.itemId.measurement,
-            rate: txn.itemId.salesRate,
+            rate: txn.itemId.purchaseRate || txn.itemId.salesRate,
           });
         }
         applyTxn(dayGroups[key], txn);
@@ -999,7 +1004,7 @@ export const getStockRegister = async (req, res) => {
             itemName: txn.itemId.itemName,
             unit: txn.itemId.unit,
             measurement: txn.itemId.measurement,
-            rate: txn.itemId.salesRate,
+            rate: txn.itemId.purchaseRate || txn.itemId.salesRate,
           });
         }
         applyTxn(monthGroups[key], txn);

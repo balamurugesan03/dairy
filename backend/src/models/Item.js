@@ -28,6 +28,14 @@ const itemSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
+  openingDate: {
+    type: Date
+  },
+  purchaseRate: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   currentBalance: {
     type: Number,
     default: 0,

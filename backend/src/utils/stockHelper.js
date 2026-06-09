@@ -197,8 +197,8 @@ export const getItemStockHistory = async (itemId, startDate = null, endDate = nu
 };
 
 // Get current stock report for all items.
-// `Item` does not store a purchaseRate field — derive it from each item's most
-// recent Stock In transaction so the Stock Report column actually populates.
+// purchaseRate is taken from the item field (set via Opening Balance entry),
+// with a fallback to the most recent actual Stock In transaction rate.
 export const getStockReport = async (category = null, status = 'Active', companyId = null) => {
   const query = { status };
   if (category) {
@@ -210,9 +210,9 @@ export const getStockReport = async (category = null, status = 'Active', company
 
   const items = await Item.find(query)
     .sort({ itemName: 1 })
-    .select('itemCode itemName category unit currentBalance salesRate');
+    .select('itemCode itemName category unit currentBalance openingBalance salesRate purchaseRate openingDate');
 
-  // Latest Stock In rate per item (most recent purchase price)
+  // Latest actual purchase rate per item (fallback for items without a set purchaseRate)
   const itemIds = items.map(i => i._id);
   const latestPurchases = itemIds.length
     ? await StockTransaction.aggregate([
@@ -230,11 +230,12 @@ export const getStockReport = async (category = null, status = 'Active', company
       ])
     : [];
 
-  const purchaseRateMap = {};
-  for (const p of latestPurchases) purchaseRateMap[p._id.toString()] = p.rate || 0;
+  const latestTxnRateMap = {};
+  for (const p of latestPurchases) latestTxnRateMap[p._id.toString()] = p.rate || 0;
 
   return items.map(item => {
-    const purchaseRate = purchaseRateMap[item._id.toString()] || 0;
+    // Prefer item.purchaseRate (set via Opening Balance); fall back to latest transaction rate
+    const purchaseRate = item.purchaseRate || latestTxnRateMap[item._id.toString()] || 0;
     return {
       _id: item._id,
       itemCode: item.itemCode,
@@ -242,6 +243,8 @@ export const getStockReport = async (category = null, status = 'Active', company
       category: item.category,
       unit: item.unit,
       currentBalance: item.currentBalance,
+      openingBalance: item.openingBalance,
+      openingDate: item.openingDate,
       purchaseRate,
       salesRate: item.salesRate,
       stockValue: (item.currentBalance || 0) * purchaseRate,
