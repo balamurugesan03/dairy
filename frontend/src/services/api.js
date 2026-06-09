@@ -1032,6 +1032,8 @@ export const paymentRegisterAPI = {
   applyEntry:           (registerId, entryId, data) =>
     api.post(`/payment-register/${registerId}/entries/${entryId}/apply`, data).then(r => r.data).catch(handleError),
   getPaidReport:        (params)     => api.get('/payment-register/paid-report', { params }).then(r => r.data).catch(handleError),
+  saveAndPost:          (data)       => api.post('/payment-register/producers-post', data).then(r => r.data).catch(handleError),
+  getProducersHistory:  ()           => api.get('/payment-register/producers-history').then(r => r.data).catch(handleError),
 };
 
 // ── Dairy Settings API (payment days, account start date, opening balances) ────

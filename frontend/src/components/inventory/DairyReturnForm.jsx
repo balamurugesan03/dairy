@@ -64,7 +64,9 @@ import {
   IconArrowForward,
   IconFileInvoice,
   IconReceipt2,
-  IconX
+  IconX,
+  IconAlertCircle,
+  IconList
 } from '@tabler/icons-react';
 import { itemAPI, dairyPurchaseReturnAPI, dairySalesReturnAPI, supplierAPI, farmerAPI, customerAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
@@ -95,6 +97,8 @@ const DairyReturnForm = () => {
   const [printModalOpened, setPrintModalOpened] = useState(false);
   const [savedReturn, setSavedReturn] = useState(null);
   const [showMoreOptions, { toggle: toggleMoreOptions }] = useDisclosure(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // For sales return: customer type (Farmer / Customer / Other)
   const [customerType, setCustomerType] = useState('Farmer');
@@ -542,6 +546,22 @@ const DairyReturnForm = () => {
     }
   });
 
+  const handleDelete = async () => {
+    if (!id) return;
+    setDeleting(true);
+    try {
+      const returnApi = isPurchaseReturn ? dairyPurchaseReturnAPI : dairySalesReturnAPI;
+      await returnApi.delete(id);
+      notifications.show({ title: 'Deleted', message: 'Return deleted successfully', color: 'green' });
+      navigate(isPurchaseReturn ? '/inventory/purchase-returns/list' : '/inventory/sales-returns/list');
+    } catch (error) {
+      notifications.show({ title: 'Error', message: error.message || 'Failed to delete return', color: 'red' });
+      setDeleteModalOpen(false);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (billItems.length === 0) {
       notifications.show({ title: 'Error', message: 'Please add at least one item', color: 'red' });
@@ -708,6 +728,16 @@ const DairyReturnForm = () => {
               color={themeColor}
               size="sm"
             />
+            {id && (
+              <Button
+                variant="light"
+                color="red"
+                leftSection={<IconTrash size={16} />}
+                onClick={() => setDeleteModalOpen(true)}
+              >
+                Delete
+              </Button>
+            )}
             <Button
               variant="light"
               leftSection={<IconReceipt2 size={16} />}
@@ -719,7 +749,7 @@ const DairyReturnForm = () => {
             <Button
               variant="default"
               leftSection={<IconX size={16} />}
-              onClick={() => navigate('/')}
+              onClick={() => navigate(isPurchaseReturn ? '/inventory/purchase-returns/list' : '/inventory/sales-returns/list')}
             >
               Close
             </Button>
@@ -1232,6 +1262,13 @@ const DairyReturnForm = () => {
           <Group justify="flex-end">
             <Button
               variant="light"
+              leftSection={<IconList size={16} />}
+              onClick={() => navigate(isPurchaseReturn ? '/inventory/purchase-returns/list' : '/inventory/sales-returns/list')}
+            >
+              View List
+            </Button>
+            <Button
+              variant="light"
               onClick={() => {
                 setPrintModalOpened(false);
                 if (!id) resetForm();
@@ -1246,6 +1283,27 @@ const DairyReturnForm = () => {
             >
               Print {noteType}
             </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        opened={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        title="Delete Return"
+        centered
+      >
+        <Stack>
+          <Alert color="red" icon={<IconAlertCircle size={16} />}>
+            <Text size="sm">
+              Are you sure you want to delete this {returnLabel}? This action cannot be undone and will
+              reverse all stock and accounting entries.
+            </Text>
+          </Alert>
+          <Group justify="flex-end">
+            <Button variant="light" onClick={() => setDeleteModalOpen(false)}>Cancel</Button>
+            <Button color="red" onClick={handleDelete} loading={deleting}>Delete</Button>
           </Group>
         </Stack>
       </Modal>

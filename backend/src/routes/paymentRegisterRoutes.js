@@ -14,11 +14,14 @@ import {
   applyEntryPayment,
   getLockedCycleRanges,
   getPaidReport,
+  saveAndPostProducersRegister,
+  getProducersHistory,
 } from '../controllers/paymentRegisterController.js';
 
 const router = express.Router();
 
 // Static GET routes first
+router.get('/producers-history',     getProducersHistory);
 router.get('/producers-for-period',  getProducersForPeriod);
 router.get('/producers-latest',      getLatestProducers);
 router.get('/farmer-milk-value',     getFarmerMilkValue);
@@ -28,6 +31,7 @@ router.get('/',                      getPaymentRegisters);
 router.get('/:id',                   getPaymentRegister);
 
 // Static POST routes before parameterised ones
+router.post('/producers-post',       saveAndPostProducersRegister);
 router.post('/generate',             generatePaymentRegister);
 router.post('/generate-producers',   generateProducerPaymentRegister);
 router.post('/',                     createPaymentRegister);

@@ -22,6 +22,7 @@ import {
   Divider,
   Paper,
   Alert,
+  Radio,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
@@ -93,6 +94,9 @@ const VOUCHER_PRINT_STYLE = `
 
 /* ════════════════════════════════════════════════════════════════════════════ */
 export default function PaymentToProducer() {
+  // ── Payment type: Settlement (cycle-based) | Partial (no cycle required) ───
+  const [paymentType, setPaymentType] = useState('Settlement');
+
   // ── Period / Filter state ───────────────────────────────────────────────────
   const [periodConfirmed, setPeriodConfirmed] = useState(false);
   const [cycles, setCycles] = useState([]);
@@ -134,6 +138,10 @@ export default function PaymentToProducer() {
 
   // ── Voucher print state ─────────────────────────────────────────────────────
   const [voucherData, setVoucherData] = useState(null);
+
+  // ── Derived flags (must be before callbacks that reference them) ─────────────
+  const isPartial  = paymentType === 'Partial';
+  const formActive = isPartial || periodConfirmed;
 
   const printRef = useRef();
   const detailPrintRef = useRef();
@@ -184,7 +192,7 @@ export default function PaymentToProducer() {
 
   // ─── Load payments when filters/pagination change (and period confirmed) ────
   const loadPayments = useCallback(async () => {
-    if (!periodConfirmed) return;
+    if (!formActive) return;
     setTableLoading(true);
     try {
       const params = {
@@ -213,11 +221,11 @@ export default function PaymentToProducer() {
     } finally {
       setTableLoading(false);
     }
-  }, [periodConfirmed, page, limit, last5Days, selectedCycle, centerId, tableSearch]);
+  }, [formActive, page, limit, last5Days, selectedCycle, centerId, tableSearch]);
 
   // ─── Load bank-transfer-paid rows for the selected cycle ────────────────────
   const loadBankTransferRows = useCallback(async () => {
-    if (!periodConfirmed || !selectedCycle) { setBankTransferRows([]); return; }
+    if (!formActive || !selectedCycle) { setBankTransferRows([]); return; }
     try {
       const res = await producerPaymentAPI.getBankTransferPaid({
         cycleFromDate: dayjs(selectedCycle.fromDate).format('YYYY-MM-DD'),
@@ -227,10 +235,10 @@ export default function PaymentToProducer() {
     } catch {
       setBankTransferRows([]);
     }
-  }, [periodConfirmed, selectedCycle]);
+  }, [formActive, selectedCycle]);
 
   useEffect(() => {
-    if (periodConfirmed) {
+    if (formActive) {
       loadPayments();
       loadBankTransferRows();
     }
@@ -238,7 +246,7 @@ export default function PaymentToProducer() {
 
   // ─── Handle period OK / Cancel ──────────────────────────────────────────────
   const handleOK = () => {
-    if (!selectedCycle) {
+    if (!isPartial && !selectedCycle) {
       notifications.show({ title: 'Validation', message: 'Please select a payment cycle', color: 'orange' });
       return;
     }
@@ -269,7 +277,7 @@ export default function PaymentToProducer() {
 
       const farmer = farmers[0];
       const periodParams = {};
-      if (selectedCycle) {
+      if (!isPartial && selectedCycle) {
         periodParams.fromDate = dayjs(selectedCycle.fromDate).format('YYYY-MM-DD');
         periodParams.toDate   = dayjs(selectedCycle.toDate).format('YYYY-MM-DD');
       }
@@ -277,21 +285,21 @@ export default function PaymentToProducer() {
       const balanceRes = await producerPaymentAPI.getProducerBalance(farmer._id, periodParams);
 
       if (balanceRes?.success) {
-        const isBT = balanceRes.data?.bankTransferPaid || false;
-        const isCashPaid = balanceRes.data?.alreadyPaidCash || false;
-        const cashInfo = balanceRes.data?.cashPayment || null;
-        const netPay = balanceRes.data?.balance || 0;
+        // In Partial mode, ignore already-paid guards — allow multiple partial payments
+        const isBT       = !isPartial && (balanceRes.data?.bankTransferPaid || false);
+        const isCashPaid = !isPartial && (balanceRes.data?.alreadyPaidCash  || false);
+        const cashInfo   = balanceRes.data?.cashPayment || null;
+        const netPay     = balanceRes.data?.balance || 0;
 
         setAbstractBalance(netPay);
-        // Auto-fill amount paid from abstract balance
         if (!isBT && !isCashPaid) {
           setAmountPaid(netPay > 0 ? netPay : '');
         }
         setSelectedFarmer({
-          _id: farmer._id,
-          farmerNumber: farmer.farmerNumber,
-          name: farmer.personalDetails?.name || '',
-          bankName: balanceRes.data?.farmer?.bankName || farmer.bankDetails?.bankName || '',
+          _id:           farmer._id,
+          farmerNumber:  farmer.farmerNumber,
+          name:          farmer.personalDetails?.name || '',
+          bankName:      balanceRes.data?.farmer?.bankName || farmer.bankDetails?.bankName || '',
           accountNumber: balanceRes.data?.farmer?.accountNumber || farmer.bankDetails?.accountNumber || '',
         });
         setBankTransferPaid(isBT);
@@ -356,16 +364,20 @@ export default function PaymentToProducer() {
       notifications.show({ title: 'Validation', message: 'Please enter a valid Producer ID', color: 'orange' });
       return;
     }
-    if (bankTransferPaid) {
+    if (!isPartial && bankTransferPaid) {
       notifications.show({ title: 'Blocked', message: 'This producer is already paid via Bank Transfer', color: 'orange' });
       return;
     }
-    if (alreadyPaidCash && !editingId) {
+    if (!isPartial && alreadyPaidCash && !editingId) {
       notifications.show({
         title: 'Blocked',
         message: 'This producer has already been paid in this cycle. Re-entry is not allowed.',
         color: 'orange',
       });
+      return;
+    }
+    if (!isPartial && !selectedCycle) {
+      notifications.show({ title: 'Validation', message: 'Please select a payment cycle', color: 'orange' });
       return;
     }
     const paid = parseFloat(amountPaid);
@@ -381,16 +393,15 @@ export default function PaymentToProducer() {
     setSaving(true);
     try {
       const payload = {
-        farmerId: selectedFarmer._id,
-        producerNumber: selectedFarmer.farmerNumber,
-        producerName: selectedFarmer.name,
-        amountPaid: paid,
-        processingPeriod: {
-          fromDate: dayjs(selectedCycle.fromDate).toISOString(),
-          toDate:   dayjs(selectedCycle.toDate).toISOString(),
-        },
+        farmerId:          selectedFarmer._id,
+        producerNumber:    selectedFarmer.farmerNumber,
+        producerName:      selectedFarmer.name,
+        amountPaid:        paid,
+        processingPeriod:  selectedCycle
+          ? { fromDate: dayjs(selectedCycle.fromDate).toISOString(), toDate: dayjs(selectedCycle.toDate).toISOString() }
+          : { fromDate: dayjs(paymentDate).toISOString(),            toDate: dayjs(paymentDate).toISOString() },
         paymentDate:        dayjs(paymentDate).format('YYYY-MM-DD'),
-        isPartialPayment:   false,
+        isPartialPayment:   isPartial,
         paymentCenter:     centerId || null,
         paymentCenterName: centerName || 'All',
         refNo,
@@ -631,7 +642,23 @@ export default function PaymentToProducer() {
               </Group>
 
               <Stack gap="sm">
-                {/* Date first */}
+                {/* Payment type selector */}
+                <Radio.Group
+                  value={paymentType}
+                  onChange={(val) => {
+                    setPaymentType(val);
+                    setPeriodConfirmed(false);
+                    resetDetailsForm();
+                  }}
+                  label="Payment Type"
+                >
+                  <Group mt={6} gap="lg">
+                    <Radio value="Settlement" label="Settlement" color="blue" />
+                    <Radio value="Partial"    label="Partial Payment" color="orange" />
+                  </Group>
+                </Radio.Group>
+
+                {/* Date */}
                 <DatePickerInput
                   label="Payment Date"
                   placeholder="Select payment date"
@@ -641,29 +668,32 @@ export default function PaymentToProducer() {
                   required
                 />
 
-                <Select
-                  label="Payment Cycle"
-                  placeholder="Select cycle..."
-                  data={cycleSelectData}
-                  value={selectedCycle
-                    ? `${dayjs(selectedCycle.fromDate).format('YYYY-MM-DD')}|${dayjs(selectedCycle.toDate).format('YYYY-MM-DD')}`
-                    : null}
-                  onChange={(val) => {
-                    if (!val) { setSelectedCycle(null); setPeriodConfirmed(false); localStorage.removeItem('ptp_lastCycleKey'); return; }
-                    const [from, to] = val.split('|');
-                    const found = cycles.find(c =>
-                      dayjs(c.fromDate).format('YYYY-MM-DD') === from &&
-                      dayjs(c.toDate).format('YYYY-MM-DD') === to
-                    );
-                    setSelectedCycle(found ? { fromDate: new Date(found.fromDate), toDate: new Date(found.toDate), label: found.label } : null);
-                    localStorage.setItem('ptp_lastCycleKey', val);
-                    setPeriodConfirmed(false);
-                    resetDetailsForm();
-                  }}
-                  clearable
-                  searchable
-                  nothingFoundMessage="No saved cycles found"
-                />
+                {/* Payment Cycle — hidden in Partial mode */}
+                {!isPartial && (
+                  <Select
+                    label="Payment Cycle"
+                    placeholder="Select cycle..."
+                    data={cycleSelectData}
+                    value={selectedCycle
+                      ? `${dayjs(selectedCycle.fromDate).format('YYYY-MM-DD')}|${dayjs(selectedCycle.toDate).format('YYYY-MM-DD')}`
+                      : null}
+                    onChange={(val) => {
+                      if (!val) { setSelectedCycle(null); setPeriodConfirmed(false); localStorage.removeItem('ptp_lastCycleKey'); return; }
+                      const [from, to] = val.split('|');
+                      const found = cycles.find(c =>
+                        dayjs(c.fromDate).format('YYYY-MM-DD') === from &&
+                        dayjs(c.toDate).format('YYYY-MM-DD') === to
+                      );
+                      setSelectedCycle(found ? { fromDate: new Date(found.fromDate), toDate: new Date(found.toDate), label: found.label } : null);
+                      localStorage.setItem('ptp_lastCycleKey', val);
+                      setPeriodConfirmed(false);
+                      resetDetailsForm();
+                    }}
+                    clearable
+                    searchable
+                    nothingFoundMessage="No saved cycles found"
+                  />
+                )}
 
                 <Select
                   label="Payment Center"
@@ -699,20 +729,31 @@ export default function PaymentToProducer() {
 
             {/* ── Card 2: Payment Details form ─────────────────────────────── */}
             <Card withBorder shadow="sm" radius="md" p="md">
-              <Title order={5} fw={600} mb="sm" c={periodConfirmed ? 'dark' : 'dimmed'}>
+              <Title order={5} fw={600} mb="sm" c={formActive ? 'dark' : 'dimmed'}>
                 Payment Details
+                {isPartial && (
+                  <Badge ml="xs" color="orange" variant="light" size="sm">Partial</Badge>
+                )}
               </Title>
 
-              <Stack gap="sm" style={{ opacity: periodConfirmed ? 1 : 0.4, pointerEvents: periodConfirmed ? 'auto' : 'none' }}>
+              <Stack gap="sm" style={{ opacity: formActive ? 1 : 0.4, pointerEvents: formActive ? 'auto' : 'none' }}>
                 {/* Auto-filled context info */}
-                {periodConfirmed && (
-                  <Paper p="xs" bg="blue.0" radius="sm">
-                    <Text size="xs" c="blue.8" fw={500}>
-                      Cycle: {selectedCycle?.label || '-'}
-                    </Text>
-                    <Text size="xs" c="blue.7">
-                      Center: {centerName || 'All'}
-                    </Text>
+                {formActive && (
+                  <Paper p="xs" bg={isPartial ? 'orange.0' : 'blue.0'} radius="sm">
+                    {isPartial ? (
+                      <Text size="xs" c="orange.8" fw={500}>
+                        Partial Payment — no cycle restriction
+                      </Text>
+                    ) : (
+                      <>
+                        <Text size="xs" c="blue.8" fw={500}>
+                          Cycle: {selectedCycle?.label || '-'}
+                        </Text>
+                        <Text size="xs" c="blue.7">
+                          Center: {centerName || 'All'}
+                        </Text>
+                      </>
+                    )}
                   </Paper>
                 )}
 
@@ -794,7 +835,7 @@ export default function PaymentToProducer() {
                     min={0}
                     decimalScale={2}
                     prefix="₹ "
-                    disabled={bankTransferPaid || (alreadyPaidCash && !editingId)}
+                    disabled={!isPartial && (bankTransferPaid || (alreadyPaidCash && !editingId))}
                   />
                 </Box>
 
@@ -809,7 +850,7 @@ export default function PaymentToProducer() {
                       setBankLedgerName('');
                     }
                   }}
-                  disabled={bankTransferPaid || (alreadyPaidCash && !editingId)}
+                  disabled={!isPartial && (bankTransferPaid || (alreadyPaidCash && !editingId))}
                 />
 
                 {/* Bank Ledger — shown for non-cash modes */}
@@ -826,7 +867,7 @@ export default function PaymentToProducer() {
                     required
                     searchable
                     nothingFoundMessage="No bank ledgers found"
-                    disabled={bankTransferPaid || (alreadyPaidCash && !editingId)}
+                    disabled={!isPartial && (bankTransferPaid || (alreadyPaidCash && !editingId))}
                     leftSection={<IconBuildingBank size={14} />}
                   />
                 )}
@@ -846,10 +887,10 @@ export default function PaymentToProducer() {
 
                 <Group justify="flex-start" mt="xs">
                   <Button
-                    color="blue"
+                    color={isPartial ? 'orange' : 'blue'}
                     loading={saving}
                     onClick={handleSave}
-                    disabled={bankTransferPaid || (alreadyPaidCash && !editingId)}
+                    disabled={!isPartial && (bankTransferPaid || (alreadyPaidCash && !editingId))}
                   >
                     Save
                   </Button>
@@ -932,9 +973,11 @@ export default function PaymentToProducer() {
               ) : payments.length === 0 && bankTransferRows.length === 0 ? (
                 <Center py="xl">
                   <Text c="dimmed" size="sm">
-                    {periodConfirmed
-                      ? 'No payments found for the selected cycle.'
-                      : 'Select a payment cycle and click OK to load payments.'}
+                    {formActive
+                      ? 'No payments found for the selected filters.'
+                      : isPartial
+                        ? 'Click OK to start recording partial payments.'
+                        : 'Select a payment cycle and click OK to load payments.'}
                   </Text>
                 </Center>
               ) : (
@@ -966,7 +1009,12 @@ export default function PaymentToProducer() {
                         <Table.Td>{pmt.refNo || '-'}</Table.Td>
                         <Table.Td ta="right">₹ {fmt(pmt.amountPaid)}</Table.Td>
                         <Table.Td>
-                          {pmt.paymentMode || '-'}
+                          <Group gap={4}>
+                            <Text size="sm">{pmt.paymentMode || '-'}</Text>
+                            {pmt.isPartialPayment && (
+                              <Badge size="xs" color="orange" variant="light">Partial</Badge>
+                            )}
+                          </Group>
                           {pmt.bankLedgerName && (
                             <Text size="xs" c="dimmed">{pmt.bankLedgerName}</Text>
                           )}

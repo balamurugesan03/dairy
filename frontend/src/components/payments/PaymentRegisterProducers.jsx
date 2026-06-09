@@ -2,19 +2,19 @@ import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import {
   Container, Box, Group, Text, Title, Button, TextInput,
   Paper, Badge, Divider, ActionIcon, Tooltip,
-  LoadingOverlay, Grid, ThemeIcon, ScrollArea, Pagination, Center,
+  LoadingOverlay, Grid, ThemeIcon, ScrollArea, Pagination, Center, Modal,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import {
-  IconCalendar, IconSearch, IconRefresh, IconDeviceFloppy,
-  IconPrinter, IconFileSpreadsheet, IconPlus, IconTrash, IconCheck,
-  IconReportMoney,
+  IconCalendar, IconSearch, IconRefresh,
+  IconPrinter, IconFileSpreadsheet, IconTrash, IconCheck,
+  IconReportMoney, IconHistory, IconDeviceFloppy,
 } from '@tabler/icons-react';
 import * as XLSX from 'xlsx';
 import { printReport } from '../../utils/printReport';
 import dayjs from 'dayjs';
-import { paymentRegisterAPI, farmerAPI, dairySettingsAPI } from '../../services/api';
+import { paymentRegisterAPI, farmerAPI, dairySettingsAPI, periodicalRuleAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
@@ -80,12 +80,16 @@ const PaymentRegisterProducers = () => {
   }, []);
   const [search,      setSearch]      = useState('');
   const [rows,        setRows]        = useState([emptyRow(1)]);
-  const [saving,      setSaving]      = useState(false);
   const [generating,  setGenerating]  = useState(false);
-  const [savedId,     setSavedId]     = useState(null);
-  const [page,        setPage]        = useState(1);
-  // Dates for the CURRENT entries (may differ from picker if dates were advanced after Generate)
-  const [entriesPeriod, setEntriesPeriod] = useState(null); // { from, to }
+  const [savedId,       setSavedId]       = useState(null);
+  const [fillingWelfare, setFillingWelfare] = useState(false);
+  const [page,          setPage]          = useState(1);
+  const [cycleGenerated, setCycleGenerated] = useState(false);
+  const [saving,        setSaving]        = useState(false);
+  const [editingId,     setEditingId]     = useState(null);
+  const [showLog,       setShowLog]       = useState(false);
+  const [logData,       setLogData]       = useState([]);
+  const [logLoading,    setLogLoading]    = useState(false);
   // Per-row farmer search: { [localId]: { query, results, open } }
   const [rowSearch,   setRowSearch]   = useState({});
 
@@ -233,18 +237,20 @@ const PaymentRegisterProducers = () => {
 
   /* ── Generate from backend ──────────────────────────────────────────────── */
   const handleGenerate = async () => {
-    // Block if a register already exists for this period
-    const fd = dayjs(fromDate).format('YYYY-MM-DD');
-    const td = dayjs(toDate).format('YYYY-MM-DD');
-    const existing = await paymentRegisterAPI.getProducersForPeriod({ fromDate: fd, toDate: td });
-    if (existing?.data) {
-      notifications.show({
-        title:   'Already Exists',
-        message: `A Payment Register already exists for ${dayjs(fromDate).format('DD/MM/YYYY')} – ${dayjs(toDate).format('DD/MM/YYYY')}. Cannot generate again for the same cycle.`,
-        color:   'red',
-        autoClose: 5000,
-      });
-      return;
+    // When NOT editing an existing register, block if a register already exists for this period
+    if (!editingId) {
+      const fd = dayjs(fromDate).format('YYYY-MM-DD');
+      const td = dayjs(toDate).format('YYYY-MM-DD');
+      const existing = await paymentRegisterAPI.getProducersForPeriod({ fromDate: fd, toDate: td });
+      if (existing?.data) {
+        notifications.show({
+          title:   'Already Exists',
+          message: `A Payment Register already exists for ${dayjs(fromDate).format('DD/MM/YYYY')} – ${dayjs(toDate).format('DD/MM/YYYY')}. Cannot generate again for the same cycle.`,
+          color:   'red',
+          autoClose: 5000,
+        });
+        return;
+      }
     }
 
     setGenerating(true);
@@ -275,32 +281,17 @@ const PaymentRegisterProducers = () => {
         _cashZero:       !e.cashPocket,
       }));
 
-      // Capture the period these entries belong to BEFORE advancing dates
-      const currentFrom = fromDate;
-      const currentTo   = toDate;
-      setEntriesPeriod({ from: currentFrom, to: currentTo });
-
       setRows(generated.length > 0 ? generated : [emptyRow(1)]);
       setSavedId(null);
       setPage(1);
+      setCycleGenerated(true);
+      setEditingId(null);
 
       notifications.show({
         title:   'Generated',
-        message: `${generated.length} producer(s) loaded for ${dayjs(currentFrom).format('DD/MM/YYYY')} – ${dayjs(currentTo).format('DD/MM/YYYY')}`,
+        message: `${generated.length} producer(s) loaded for ${dayjs(fromDate).format('DD/MM/YYYY')} – ${dayjs(toDate).format('DD/MM/YYYY')}`,
         color:   'teal',
         icon:    <IconCheck size={16} />,
-      });
-
-      // Advance date picker to next cycle (entries period is preserved separately)
-      const cycleDays = dayjs(currentTo).diff(dayjs(currentFrom), 'day') + 1;
-      const nextFrom  = dayjs(currentTo).add(1, 'day').toDate();
-      const nextTo    = dayjs(nextFrom).add(cycleDays - 1, 'day').toDate();
-      setFromDate(nextFrom);
-      setToDate(nextTo);
-      notifications.show({
-        title:   'Cycle Advanced',
-        message: `Next period: ${dayjs(nextFrom).format('DD/MM/YYYY')} – ${dayjs(nextTo).format('DD/MM/YYYY')}`,
-        color:   'blue',
       });
     } catch (err) {
       notifications.show({ title: 'Error', message: err.message, color: 'red' });
@@ -309,54 +300,142 @@ const PaymentRegisterProducers = () => {
     }
   };
 
-  /* ── Save ───────────────────────────────────────────────────────────────── */
+  /* ── Auto-fill Welfare ──────────────────────────────────────────────────── */
+  const handleFillWelfare = async () => {
+    setFillingWelfare(true);
+    try {
+      const res = await periodicalRuleAPI.getAll({ component: 'DEDUCTIONS', basedOn: 'FIXED_AMOUNT' });
+      const rules = res?.data || [];
+      const activeRule = rules.find(r => r.active);
+      const welfareFixed = activeRule?.fixedRate || 0;
+      if (!welfareFixed) {
+        notifications.show({ title: 'No Welfare Rule', message: 'No active welfare fixed-rate rule found.', color: 'orange' });
+        return;
+      }
+      setRows(prev => prev.map(r => {
+        if (!n(r.milkValue)) return r;
+        const updated = { ...r, welfare: welfareFixed };
+        updated.netPayable = calcNet(updated);
+        updated.payStatus  = updated.netPayable > 0 ? 'Payable' : updated.netPayable < 0 ? 'Receivable' : '';
+        return updated;
+      }));
+      notifications.show({ title: 'Welfare Applied', message: `₹ ${welfareFixed} welfare applied to all rows with milk value.`, color: 'teal', icon: <IconCheck size={16} /> });
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
+    } finally {
+      setFillingWelfare(false);
+    }
+  };
+
+
+  /* ── Save & Post ────────────────────────────────────────────────────────── */
   const handleSave = async () => {
-    const valid = rows.filter((r) => r.productId || n(r.milkValue));
+    const valid = rows.filter(r => r.farmerId || r.productId);
     if (valid.length === 0) {
-      notifications.show({ title: 'Validation', message: 'Add at least one entry', color: 'orange' });
+      notifications.show({ title: 'Validation', message: 'Generate entries first', color: 'orange' });
       return;
     }
-    // Duplicate farmer check before save
-    const ids = valid.map(r => r.productId?.trim().toLowerCase()).filter(Boolean);
-    const dupId = ids.find((id, i) => ids.indexOf(id) !== i);
-    if (dupId) {
+    const missing = valid.filter(r => !r.farmerId);
+    if (missing.length > 0) {
       notifications.show({
-        title:   'Duplicate Entry',
-        message: `Producer ID "${dupId}" appears more than once. Remove the duplicate before saving.`,
-        color:   'red',
-        autoClose: 5000,
+        title:   'Incomplete rows',
+        message: `${missing.length} row(s) have no farmer selected. Add farmers or skip them.`,
+        color:   'orange',
       });
       return;
     }
     setSaving(true);
     try {
-      // Use entriesPeriod if dates were advanced after Generate; else use current picker dates
-      const saveFrom = entriesPeriod ? dayjs(entriesPeriod.from).format('YYYY-MM-DD') : dayjs(fromDate).format('YYYY-MM-DD');
-      const saveTo   = entriesPeriod ? dayjs(entriesPeriod.to).format('YYYY-MM-DD')   : dayjs(toDate).format('YYYY-MM-DD');
-
       const payload = {
-        fromDate:     saveFrom,
-        toDate:       saveTo,
-        registerType: 'Producers',
-        status:       'Saved',
-        entries:      rows.map(({ _localId, payStatus, ...r }) => r),
+        fromDate:   dayjs(fromDate).format('YYYY-MM-DD'),
+        toDate:     dayjs(toDate).format('YYYY-MM-DD'),
+        registerId: editingId || undefined,
+        entries:    valid.map(({ _localId, payStatus, netPayable, ...r }) => ({ ...r, netPay: netPayable })),
       };
-
-      let res;
-      if (savedId) {
-        res = await paymentRegisterAPI.update(savedId, payload);
-      } else {
-        res = await paymentRegisterAPI.create(payload);
-      }
-
-      if (!res.success) throw new Error(res.message || 'Save failed');
+      const res = await paymentRegisterAPI.saveAndPost(payload);
+      if (!res?.success) throw new Error(res?.message || 'Save failed');
       setSavedId(res.data._id);
-      setEntriesPeriod(null); // clear after successful save
-      notifications.show({ title: 'Saved', message: 'Payment register saved successfully', color: 'green', icon: <IconCheck size={16} /> });
+      setCycleGenerated(false);
+      setEditingId(null);
+      // Advance to next cycle
+      const cycleDays = dayjs(toDate).diff(dayjs(fromDate), 'day') + 1;
+      const nextFrom  = dayjs(toDate).add(1, 'day').toDate();
+      const nextTo    = dayjs(nextFrom).add(cycleDays - 1, 'day').toDate();
+      setFromDate(nextFrom);
+      setToDate(nextTo);
+      setRows([emptyRow(1)]);
+      setPage(1);
+      notifications.show({
+        title:   'Saved & Posted',
+        message: `${res.postedCount || 0} entries posted to ledgers. Next cycle: ${dayjs(nextFrom).format('DD/MM/YYYY')} – ${dayjs(nextTo).format('DD/MM/YYYY')}`,
+        color:   'green',
+        icon:    <IconCheck size={16} />,
+      });
     } catch (err) {
       notifications.show({ title: 'Error', message: err.message, color: 'red' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  /* ── Payment Log ─────────────────────────────────────────────────────────── */
+  const handleLoadLog = async () => {
+    setLogLoading(true);
+    try {
+      const res = await paymentRegisterAPI.getProducersHistory();
+      setLogData(res?.data || []);
+      setShowLog(true);
+    } catch {
+      notifications.show({ title: 'Error', message: 'Failed to load history', color: 'red' });
+    } finally {
+      setLogLoading(false);
+    }
+  };
+
+  const handleEditLog = async (reg) => {
+    const res = await paymentRegisterAPI.getById(reg._id);
+    if (!res?.success) return;
+    const savedReg = res.data;
+    const loaded = (savedReg.entries || []).map((e, i) => ({
+      _localId:        Date.now() + i + Math.random(),
+      slNo:            i + 1,
+      productId:       e.productId       || '',
+      productName:     e.productName     || '',
+      farmerId:        e.farmerId,
+      previousBalance: e.previousBalance ?? 0,
+      qty:             e.qty             ?? 0,
+      milkValue:       e.milkValue       ?? 0,
+      welfare:         e.welfare         ?? 0,
+      cfRec:           e.cfRec           ?? 0,
+      loanAdv:         e.loanAdv         ?? 0,
+      cashPocket:      e.cashPocket      ?? 0,
+      netPayable:      e.netPay          ?? 0,
+      payStatus:       e.payStatus       || '',
+    }));
+    setFromDate(new Date(savedReg.fromDate));
+    setToDate(new Date(savedReg.toDate));
+    setRows(loaded.length > 0 ? loaded : [emptyRow(1)]);
+    setEditingId(reg._id);
+    setCycleGenerated(true);
+    setSavedId(reg._id);
+    setPage(1);
+    setShowLog(false);
+    notifications.show({
+      title:   'Loaded for Edit',
+      message: `Editing cycle ${dayjs(savedReg.fromDate).format('DD/MM/YYYY')} – ${dayjs(savedReg.toDate).format('DD/MM/YYYY')}`,
+      color:   'blue',
+    });
+  };
+
+  const handleDeleteLog = async (reg) => {
+    if (!window.confirm(`Delete cycle ${dayjs(reg.fromDate).format('DD/MM/YYYY')} – ${dayjs(reg.toDate).format('DD/MM/YYYY')}? This will reverse all ledger postings.`)) return;
+    try {
+      const res = await paymentRegisterAPI.reverse(reg._id);
+      if (!res?.success) throw new Error(res?.message || 'Delete failed');
+      setLogData(prev => prev.filter(r => r._id !== reg._id));
+      notifications.show({ title: 'Deleted', message: res.message || 'Cycle reversed', color: 'teal' });
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
     }
   };
 
@@ -414,21 +493,26 @@ const PaymentRegisterProducers = () => {
   const handlePrint = () => {
     printReport(printRef, {
       title: `Payment Register (Producers) — ${dayjs(fromDate).format('DD/MM/YYYY')} to ${dayjs(toDate).format('DD/MM/YYYY')}`,
-      orientation: 'landscape',
+      orientation: 'portrait',
       extraCss: `
+        @page { size: A4 portrait; margin: 10mm 8mm; }
+        body { font-size: 10px; }
         .no-print { display: none !important; }
         .print-header { display: block !important; }
         input {
           display: block !important;
           border: none !important;
           background: transparent !important;
-          font-size: 11px !important;
+          font-size: 9px !important;
           font-family: Arial, sans-serif !important;
-          padding: 1px 4px !important;
+          padding: 1px 2px !important;
           width: 100% !important;
           height: auto !important;
         }
-        thead th { position: static !important; }
+        table { font-size: 9px !important; min-width: unset !important; width: 100% !important; }
+        thead th { position: static !important; font-size: 8px !important; padding: 4px 3px !important; }
+        td, tfoot td { padding: 3px 3px !important; font-size: 9px !important; }
+        col { width: auto !important; }
       `,
     });
   };
@@ -439,18 +523,25 @@ const PaymentRegisterProducers = () => {
     setSavedId(null);
     setSearch('');
     setPage(1);
+    setCycleGenerated(false);
+    setEditingId(null);
   };
 
   /* ═════════════════════════════════════════════════════════════════════════
      RENDER
   ═════════════════════════════════════════════════════════════════════════ */
   return (
-    <Container fluid px="md" py="sm">
-      {/* Remove number-input spinners from all cells in this table */}
+    <Container fluid px="md" py="sm" id="prp-root">
+      {/* Remove number-input spinners & style scrollbar */}
       <style>{`
-        #prp-print-area input[type=number]::-webkit-outer-spin-button,
-        #prp-print-area input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-        #prp-print-area input[type=number] { -moz-appearance: textfield; }
+        #prp-root input[type=number]::-webkit-outer-spin-button,
+        #prp-root input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        #prp-root input[type=number] { -moz-appearance: textfield; }
+        #prp-root .mantine-ScrollArea-scrollbar { background: #444 !important; border-radius: 4px; }
+        #prp-root .mantine-ScrollArea-scrollbar[data-orientation="horizontal"] { height: 12px !important; }
+        #prp-root .mantine-ScrollArea-scrollbar[data-orientation="vertical"] { width: 12px !important; }
+        #prp-root .mantine-ScrollArea-thumb { background: #888 !important; border-radius: 4px; }
+        #prp-root .mantine-ScrollArea-thumb:hover { background: #aaa !important; }
       `}</style>
 
       {/* ── Page Header ────────────────────────────────────────────────── */}
@@ -479,29 +570,40 @@ const PaymentRegisterProducers = () => {
       {/* ── Toolbar ────────────────────────────────────────────────────── */}
       <Paper withBorder shadow="sm" p="sm" radius="md" mb="md" className="no-print">
         <Group wrap="wrap" gap="sm" align="flex-end">
-          <DatePickerInput
-            label="From Date"
-            value={fromDate}
-            onChange={(v) => {
-              if (!v) return;
-              setFromDate(v);
-              setToDate(dayjs(v).add(paymentDays - 1, 'day').toDate());
-            }}
-            leftSection={<IconCalendar size={15} />}
-            valueFormat="DD/MM/YYYY"
-            style={{ minWidth: 140 }}
-            size="sm"
-          />
-          <DatePickerInput
-            label="To Date"
-            value={toDate}
-            onChange={setToDate}
-            leftSection={<IconCalendar size={15} />}
-            valueFormat="DD/MM/YYYY"
-            minDate={fromDate}
-            style={{ minWidth: 140 }}
-            size="sm"
-          />
+          {cycleGenerated ? (
+            <Paper withBorder p="xs" radius="sm" style={{ minWidth: 300 }}>
+              <Text size="xs" c="dimmed">Period (locked — save to advance)</Text>
+              <Text fw={600} size="sm">
+                {dayjs(fromDate).format('DD/MM/YYYY')} – {dayjs(toDate).format('DD/MM/YYYY')}
+              </Text>
+            </Paper>
+          ) : (
+            <>
+              <DatePickerInput
+                label="From Date"
+                value={fromDate}
+                onChange={(v) => {
+                  if (!v) return;
+                  setFromDate(v);
+                  setToDate(dayjs(v).add(paymentDays - 1, 'day').toDate());
+                }}
+                leftSection={<IconCalendar size={15} />}
+                valueFormat="DD/MM/YYYY"
+                style={{ minWidth: 140 }}
+                size="sm"
+              />
+              <DatePickerInput
+                label="To Date"
+                value={toDate}
+                onChange={setToDate}
+                leftSection={<IconCalendar size={15} />}
+                valueFormat="DD/MM/YYYY"
+                minDate={fromDate}
+                style={{ minWidth: 140 }}
+                size="sm"
+              />
+            </>
+          )}
 
           <TextInput
             label="Search Producer"
@@ -520,25 +622,38 @@ const PaymentRegisterProducers = () => {
             variant="light" color="teal" size="sm"
             loading={generating}
             onClick={handleGenerate}
+            disabled={cycleGenerated && !editingId}
           >
             Generate
           </Button>
-
-          {/* <Button
-            leftSection={<IconPlus size={15} />}
-            variant="light" size="sm"
-            onClick={addRow}
-          >
-            Add Row
-          </Button> */}
 
           <Button
             leftSection={<IconDeviceFloppy size={15} />}
             color="green" size="sm"
             loading={saving}
             onClick={handleSave}
+            disabled={!cycleGenerated}
           >
-            Save
+            Save &amp; Post
+          </Button>
+
+          <Button
+            leftSection={<IconCheck size={15} />}
+            variant="light" color="orange" size="sm"
+            loading={fillingWelfare}
+            onClick={handleFillWelfare}
+            title="Auto-fill Welfare deduction for all rows with milk value"
+          >
+            Fill Welfare
+          </Button>
+
+          <Button
+            leftSection={<IconHistory size={15} />}
+            variant="light" color="violet" size="sm"
+            loading={logLoading}
+            onClick={handleLoadLog}
+          >
+            Payment Log
           </Button>
 
           <Button
@@ -551,7 +666,7 @@ const PaymentRegisterProducers = () => {
 
           <Button
             leftSection={<IconPrinter size={15} />}
-            variant="outline" size="sm"
+            variant="filled" color="blue" size="sm"
             onClick={handlePrint}
           >
             Print
@@ -567,9 +682,9 @@ const PaymentRegisterProducers = () => {
 
       {/* ── Table ──────────────────────────────────────────────────────── */}
       <Paper withBorder shadow="sm" radius="md" style={{ position: 'relative', overflow: 'hidden' }}>
-        <LoadingOverlay visible={generating || saving} />
+        <LoadingOverlay visible={generating || fillingWelfare} />
 
-        <ScrollArea type="hover" scrollbarSize={6}>
+        <ScrollArea type="always" scrollbarSize={12}>
           <Box id="prp-print-area" ref={printRef} p="md">
 
             {/* Print-only header */}
@@ -620,7 +735,7 @@ const PaymentRegisterProducers = () => {
                 <col style={{ width: 112 }} />  {/* Net Payable */}
                 <col style={{ width: 80 }} />   {/* Status */}
                 <col style={{ width: 88 }} />   {/* Sign */}
-                <col style={{ width: 36 }} />   {/* Delete */}
+                <col style={{ width: 62 }} />   {/* Skip */}
               </colgroup>
 
               {/* ── STICKY THEAD ── */}
@@ -643,7 +758,7 @@ const PaymentRegisterProducers = () => {
                     NET PAYABLE
                   </th>
                   <th style={{ ...TH_BASE, background: '#2d3748' }} rowSpan={2}>Sign</th>
-                  <th style={{ ...TH_BASE, background: '#2d3748', padding: '7px 4px' }} rowSpan={2} className="no-print" />
+                  <th style={{ ...TH_BASE, background: '#2d3748', textAlign: 'center' }} rowSpan={2} className="no-print">Skip</th>
                 </tr>
 
                 <tr style={{ background: '#1c4e80', color: '#e8f1ff' }}>
@@ -851,16 +966,20 @@ const PaymentRegisterProducers = () => {
                       {/* Sign */}
                       <td style={{ ...TD_CENTER, minWidth: 80 }}>&nbsp;</td>
 
-                      {/* Delete */}
+                      {/* Skip */}
                       <td style={{ ...TD_CENTER, padding: 2 }} className="no-print">
-                        <ActionIcon
-                          size="sm" color="red" variant="subtle"
-                          onClick={() => deleteRow(row._localId)}
-                          title="Remove row"
+                        <Button
+                          size="xs"
+                          variant="subtle"
+                          color="orange"
+                          onClick={() => setRows(prev =>
+                            prev.filter(r => r._localId !== row._localId).map((r, i) => ({ ...r, slNo: i + 1 }))
+                          )}
                         >
-                          <IconTrash size={13} />
-                        </ActionIcon>
+                          Skip
+                        </Button>
                       </td>
+
                     </tr>
                   );
                 })}
@@ -957,6 +1076,64 @@ const PaymentRegisterProducers = () => {
           </Grid.Col>
         ))}
       </Grid>
+      {/* ── Payment Log Modal ───────────────────────────────────────────────── */}
+      <Modal
+        opened={showLog}
+        onClose={() => setShowLog(false)}
+        title="Payment Log — Producers Cycles"
+        size="xl"
+      >
+        {logData.length === 0 ? (
+          <Text c="dimmed" ta="center" py="xl">No saved cycles found.</Text>
+        ) : (
+          <ScrollArea>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: '#0d3b6e', color: '#fff' }}>
+                  <th style={{ padding: '8px 10px', textAlign: 'left' }}>Period</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Milk Value</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Welfare</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Net Payable</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'center' }}>Posted</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'center' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logData.map((reg, i) => (
+                  <tr key={reg._id} style={{ background: i % 2 === 0 ? '#fff' : '#f7fafc' }}>
+                    <td style={{ padding: '6px 10px', borderBottom: '1px solid #e2e8f0' }}>
+                      {dayjs(reg.fromDate).format('DD/MM/YYYY')} – {dayjs(reg.toDate).format('DD/MM/YYYY')}
+                    </td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right', borderBottom: '1px solid #e2e8f0' }}>
+                      ₹ {fmt(reg.totalMilkValue)}
+                    </td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right', borderBottom: '1px solid #e2e8f0' }}>
+                      ₹ {fmt(reg.totalWelfare)}
+                    </td>
+                    <td style={{ padding: '6px 10px', textAlign: 'right', borderBottom: '1px solid #e2e8f0' }}>
+                      ₹ {fmt(reg.totalNetPay)}
+                    </td>
+                    <td style={{ padding: '6px 10px', textAlign: 'center', borderBottom: '1px solid #e2e8f0' }}>
+                      {reg.autoPosted ? (
+                        <Badge color="green" size="xs">Yes</Badge>
+                      ) : (
+                        <Badge color="gray" size="xs">No</Badge>
+                      )}
+                    </td>
+                    <td style={{ padding: '6px 10px', textAlign: 'center', borderBottom: '1px solid #e2e8f0' }}>
+                      <Group gap="xs" justify="center">
+                        <Button size="xs" variant="light" color="blue" onClick={() => handleEditLog(reg)}>Edit</Button>
+                        <Button size="xs" variant="light" color="red" onClick={() => handleDeleteLog(reg)}>Delete</Button>
+                      </Group>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollArea>
+        )}
+      </Modal>
+
     </Container>
   );
 };

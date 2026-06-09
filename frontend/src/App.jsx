@@ -440,7 +440,7 @@ const AppContent = () => {
 
               {/* Farmer Payments Routes */}
               <Route path="payments">
-                <Route index element={<Navigate to="/payments/register" replace />} />
+                <Route index element={<Navigate to="/payments/producer-payment" replace />} />
                 <Route path="register" element={<MilkPaymentRegister />} />
                 <Route path="register-ledger" element={<PaymentRegisterLedger />} />
                 <Route path="ledger-history"  element={<LedgerPaymentHistory />} />

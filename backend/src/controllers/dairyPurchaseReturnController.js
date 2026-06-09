@@ -82,7 +82,7 @@ const createPurchaseReturnAccountingVoucher = async (purchaseReturn, companyId) 
     const totalDebit  = entries.reduce((s, e) => s + e.debitAmount,  0);
     const totalCredit = entries.reduce((s, e) => s + e.creditAmount, 0);
 
-    if (Math.abs(totalDebit - totalCredit) > 0.02) {
+    if (Math.abs(totalDebit - totalCredit) > 0.01) {
       console.warn(`[DairyPurchaseReturn Voucher] Imbalance: Dr=${totalDebit} Cr=${totalCredit} — skipping voucher`);
       return null;
     }

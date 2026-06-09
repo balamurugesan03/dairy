@@ -292,7 +292,9 @@ export const updateLedgerBalances = async (entries, session = null, companyId = 
     'Sales A/c', 'Trade Income', 'Miscellaneous Income', 'Other Revenue',
     'Grants & Aid', 'Subsidies', 'Accounts Due To (Sundry Creditors)',
     'Other Liabilities', 'Deposit A/c', 'Contingency Fund', 'Education Fund',
-    'Share Capital', 'Profit & Loss A/c'
+    'Share Capital', 'Profit & Loss A/c',
+    'Sundry Creditors', 'SUNDRY_CREDITORS',   // supplier payables
+    'Duties & Taxes', 'DUTIES_TAXES'           // GST / tax liabilities
   ];
 
   for (const entry of entries) {

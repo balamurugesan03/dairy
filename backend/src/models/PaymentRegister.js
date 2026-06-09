@@ -59,9 +59,10 @@ const paymentRegisterSchema = new mongoose.Schema({
   totalLoanAdv:         { type: Number, default: 0 },
   totalCashPocket:      { type: Number, default: 0 },
 
-  status:    { type: String, enum: ['Draft', 'Saved', 'Printed'], default: 'Draft' },
-  remarks:   { type: String, maxlength: 500 },
-  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  status:     { type: String, enum: ['Draft', 'Saved', 'Printed'], default: 'Draft' },
+  autoPosted: { type: Boolean, default: false },
+  remarks:    { type: String, maxlength: 500 },
+  createdBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });
 
 // Pre-save: auto SL numbers, recalculate netPay & totals

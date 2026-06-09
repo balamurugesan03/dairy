@@ -12,6 +12,7 @@ import IndividualDeductionEarning from '../models/IndividualDeductionEarning.js'
 import PeriodicalRule from '../models/PeriodicalRule.js';
 import { purgeFarmerPaymentSideEffects } from './paymentController.js';
 import { saveWithUniqueNumber } from '../models/Counter.js';
+import { createRecoveryVoucher, createProducerDuesPaymentVoucher } from '../utils/accountingHelper.js';
 
 // ±2-day tolerance for cycle date matching
 function cycleRange(dateStr) {
@@ -869,6 +870,200 @@ export const applyEntryPayment = async (req, res) => {
     res.json({ success: true, data: { farmerPaymentId: fp._id, entry } });
   } catch (err) {
     console.error('applyEntryPayment error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── SAVE AND POST Producers register (POST /payment-register/producers-post) ─
+// Saves the register + auto-posts deductions and payment vouchers to ledgers.
+export const saveAndPostProducersRegister = async (req, res) => {
+  try {
+    const { fromDate, toDate, entries, registerId } = req.body;
+    const companyId = req.companyId;
+
+    if (!fromDate || !toDate) {
+      return res.status(400).json({ success: false, message: 'fromDate and toDate are required' });
+    }
+
+    const fd = new Date(fromDate);
+    const td = new Date(toDate);
+
+    // ── Proportional deduction cap ─────────────────────────────────────────────
+    // If total deductions > (milkValue + previousBalance) and earnings > 0,
+    // scale deductions proportionally so netPayable >= 0.
+    const cappedEntries = (entries || []).map(e => {
+      const earnings = (e.milkValue || 0) + (e.previousBalance || 0);
+      const totalDed = (e.welfare || 0) + (e.cfRec || 0) + (e.loanAdv || 0) + (e.cashPocket || 0);
+      if (totalDed > earnings && earnings > 0) {
+        const factor = earnings / totalDed;
+        return {
+          ...e,
+          welfare:    Math.round((e.welfare    || 0) * factor * 100) / 100,
+          cfRec:      Math.round((e.cfRec      || 0) * factor * 100) / 100,
+          loanAdv:    Math.round((e.loanAdv    || 0) * factor * 100) / 100,
+          cashPocket: Math.round((e.cashPocket || 0) * factor * 100) / 100,
+          netPay:     0,
+        };
+      }
+      return e;
+    });
+
+    // ── Find existing register by registerId or date range match ───────────────
+    const fdLow  = new Date(fd); fdLow.setDate(fdLow.getDate()   - 2);
+    const fdHigh = new Date(fd); fdHigh.setDate(fdHigh.getDate() + 2);
+    const tdLow  = new Date(td); tdLow.setDate(tdLow.getDate()   - 2);
+    const tdHigh = new Date(td); tdHigh.setDate(tdHigh.getDate() + 2);
+
+    let reg = null;
+    if (registerId) {
+      reg = await PaymentRegister.findOne({ _id: registerId, companyId });
+    }
+    if (!reg) {
+      reg = await PaymentRegister.findOne({
+        companyId,
+        registerType: 'Producers',
+        fromDate: { $gte: fdLow, $lte: fdHigh },
+        toDate:   { $gte: tdLow, $lte: tdHigh },
+      });
+    }
+
+    // ── Purge old FarmerPayments if register was already auto-posted ───────────
+    if (reg?.autoPosted) {
+      const oldPayments = await FarmerPayment.find({
+        companyId,
+        paymentSource: 'PaymentRegister',
+        status:        { $ne: 'Cancelled' },
+        'paymentPeriod.fromDate': { $gte: fdLow, $lte: fdHigh },
+        'paymentPeriod.toDate':   { $gte: tdLow, $lte: tdHigh },
+      });
+      for (const p of oldPayments) {
+        try {
+          await purgeFarmerPaymentSideEffects(p);
+          await FarmerPayment.deleteOne({ _id: p._id });
+        } catch (err) {
+          console.error(`purge FarmerPayment ${p._id}:`, err.message);
+        }
+      }
+    }
+
+    // ── Save the register ──────────────────────────────────────────────────────
+    if (reg) {
+      reg.fromDate   = fd;
+      reg.toDate     = td;
+      reg.entries    = cappedEntries;
+      reg.status     = 'Saved';
+      reg.autoPosted = false; // will be set true after successful posting
+    } else {
+      reg = new PaymentRegister({
+        companyId,
+        fromDate:     fd,
+        toDate:       td,
+        registerType: 'Producers',
+        entries:      cappedEntries,
+        status:       'Saved',
+        createdBy:    req.user?._id,
+      });
+    }
+    await reg.save();
+
+    // ── Post each entry to ledgers ─────────────────────────────────────────────
+    let postedCount = 0;
+    const warnings  = [];
+    const fdStr = fd.toLocaleDateString('en-IN');
+    const tdStr = td.toLocaleDateString('en-IN');
+
+    for (const e of cappedEntries) {
+      if (!e.farmerId) continue;
+      const netPay = typeof e.netPay === 'number' ? e.netPay : (e.netPayable || 0);
+
+      // Build deductions array (matches FarmerPayment enum)
+      const deductions = [];
+      if ((e.welfare    || 0) > 0) deductions.push({ type: 'Welfare Recovery', amount: e.welfare,    description: 'Welfare' });
+      if ((e.cfRec      || 0) > 0) deductions.push({ type: 'CF Advance',       amount: e.cfRec,      description: 'CF Advance' });
+      if ((e.loanAdv    || 0) > 0) deductions.push({ type: 'Loan Advance',     amount: e.loanAdv,    description: 'Loan Advance' });
+      if ((e.cashPocket || 0) > 0) deductions.push({ type: 'Cash Advance',     amount: e.cashPocket, description: 'Cash Advance' });
+
+      // Create FarmerPayment record
+      let fp;
+      try {
+        fp = await saveWithUniqueNumber({
+          Model:       FarmerPayment,
+          companyId,
+          prefix:      'PAY',
+          numberField: 'paymentNumber',
+          build: () => new FarmerPayment({
+            companyId,
+            farmerId:        e.farmerId,
+            farmerName:      e.productName      || '',
+            paymentDate:     td,
+            paymentPeriod:   { fromDate: fd, toDate: td, periodType: 'Custom' },
+            milkAmount:      e.milkValue        || 0,
+            previousBalance: e.previousBalance  || 0,
+            deductions,
+            netPayable:      netPay,
+            paidAmount:      netPay > 0 ? netPay : 0,
+            balanceAmount:   0,
+            paymentMode:     'Cash',
+            paymentSource:   'PaymentRegister',
+            status:          netPay > 0 ? 'Paid' : 'Pending',
+            remarks:         `Payment Register — ${fdStr}–${tdStr}`,
+          }),
+        });
+      } catch (err) {
+        warnings.push(`FarmerPayment failed for ${e.productName || e.farmerId}: ${err.message}`);
+        continue;
+      }
+
+      // Create recovery voucher for deductions (CF/Cash/Loan/Welfare → ledger)
+      if (deductions.length > 0) {
+        try {
+          await createRecoveryVoucher(fp, null);
+        } catch (err) {
+          warnings.push(`Recovery voucher failed for ${e.productName}: ${err.message}`);
+        }
+      }
+
+      // Create payment voucher if farmer is owed money (Dr PRODUCERS DUES / Cr Cash)
+      if (netPay > 0) {
+        try {
+          await createProducerDuesPaymentVoucher({
+            amount:        netPay,
+            paymentDate:   td,
+            paymentMode:   'Cash',
+            companyId,
+            narration:     `Producers Dues — ${e.productName || ''} | ${fdStr}–${tdStr}`,
+            referenceType: 'FarmerPayment',
+            referenceId:   fp._id,
+            createdBy:     req.user?._id,
+          }, null);
+        } catch (err) {
+          warnings.push(`Payment voucher failed for ${e.productName}: ${err.message}`);
+        }
+      }
+
+      postedCount++;
+    }
+
+    reg.autoPosted = true;
+    await reg.save();
+
+    res.json({ success: true, data: reg, postedCount, warnings });
+  } catch (err) {
+    console.error('saveAndPostProducersRegister error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── GET Producers history (GET /payment-register/producers-history) ──────────
+export const getProducersHistory = async (req, res) => {
+  try {
+    const companyId = req.companyId;
+    const registers = await PaymentRegister.find({
+      companyId,
+      registerType: 'Producers',
+    }).select('-entries').sort({ fromDate: -1 }).limit(50);
+    res.json({ success: true, data: registers });
+  } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };

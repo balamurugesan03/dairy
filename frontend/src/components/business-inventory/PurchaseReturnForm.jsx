@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams, useLocation } from 'react-router-dom';
 import { useReactToPrint } from 'react-to-print';
 import dayjs from 'dayjs';
 import {
@@ -63,7 +63,10 @@ import {
   IconArrowBack,
   IconArrowForward,
   IconFileInvoice,
-  IconReceipt2
+  IconReceipt2,
+  IconAlertCircle,
+  IconX,
+  IconList
 } from '@tabler/icons-react';
 import { businessItemAPI, purchaseReturnAPI, salesReturnAPI, businessSupplierAPI, businessCustomerAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
@@ -72,11 +75,14 @@ const PurchaseReturnForm = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const printRef = useRef();
   const { selectedCompany } = useCompany();
 
   // Return type: 'purchase' (Debit Note) or 'sales' (Credit Note)
-  const initialType = searchParams.get('type') || 'purchase';
+  // Derive from URL pathname first (sales-returns routes), then query param
+  const pathType = location.pathname.includes('sales-returns') ? 'sales' : null;
+  const initialType = pathType || searchParams.get('type') || 'purchase';
   const [returnType, setReturnType] = useState(initialType);
 
   const isPurchaseReturn = returnType === 'purchase';
@@ -91,6 +97,8 @@ const PurchaseReturnForm = () => {
   const [printModalOpened, setPrintModalOpened] = useState(false);
   const [savedReturn, setSavedReturn] = useState(null);
   const [showMoreOptions, { toggle: toggleMoreOptions }] = useDisclosure(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const form = useForm({
     initialValues: {
@@ -538,6 +546,22 @@ const PurchaseReturnForm = () => {
     }
   });
 
+  const handleDelete = async () => {
+    if (!id) return;
+    setDeleting(true);
+    try {
+      const returnApi = isPurchaseReturn ? purchaseReturnAPI : salesReturnAPI;
+      await returnApi.delete(id);
+      notifications.show({ title: 'Deleted', message: 'Return deleted successfully', color: 'green' });
+      navigate(isPurchaseReturn ? '/business-inventory/purchase-returns/list' : '/business-inventory/sales-returns/list');
+    } catch (error) {
+      notifications.show({ title: 'Error', message: error.message || 'Failed to delete return', color: 'red' });
+      setDeleteModalOpen(false);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (billItems.length === 0) {
       notifications.show({
@@ -710,6 +734,16 @@ const PurchaseReturnForm = () => {
               color={themeColor}
               size="sm"
             />
+            {id && (
+              <Button
+                variant="light"
+                color="red"
+                leftSection={<IconTrash size={16} />}
+                onClick={() => setDeleteModalOpen(true)}
+              >
+                Delete
+              </Button>
+            )}
             <Button
               variant="light"
               leftSection={<IconReceipt2 size={16} />}
@@ -717,6 +751,13 @@ const PurchaseReturnForm = () => {
               color={themeColor}
             >
               New Return
+            </Button>
+            <Button
+              variant="default"
+              leftSection={<IconX size={16} />}
+              onClick={() => navigate(isPurchaseReturn ? '/business-inventory/purchase-returns/list' : '/business-inventory/sales-returns/list')}
+            >
+              Close
             </Button>
           </Group>
         </Group>
@@ -1200,6 +1241,13 @@ const PurchaseReturnForm = () => {
           <Group justify="flex-end">
             <Button
               variant="light"
+              leftSection={<IconList size={16} />}
+              onClick={() => navigate(isPurchaseReturn ? '/business-inventory/purchase-returns/list' : '/business-inventory/sales-returns/list')}
+            >
+              View List
+            </Button>
+            <Button
+              variant="light"
               onClick={() => {
                 setPrintModalOpened(false);
                 if (!id) resetForm();
@@ -1214,6 +1262,27 @@ const PurchaseReturnForm = () => {
             >
               Print {noteType}
             </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        opened={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        title="Delete Return"
+        centered
+      >
+        <Stack>
+          <Alert color="red" icon={<IconAlertCircle size={16} />}>
+            <Text size="sm">
+              Are you sure you want to delete this {returnLabel}? This action cannot be undone and will
+              reverse all stock and accounting entries.
+            </Text>
+          </Alert>
+          <Group justify="flex-end">
+            <Button variant="light" onClick={() => setDeleteModalOpen(false)}>Cancel</Button>
+            <Button color="red" onClick={handleDelete} loading={deleting}>Delete</Button>
           </Group>
         </Stack>
       </Modal>
