@@ -1138,4 +1138,12 @@ export const razorpayAPI = {
   verifyPayment:(orderId, paymentId, signature) => api.post('/razorpay/verify', { razorpay_order_id: orderId, razorpay_payment_id: paymentId, razorpay_signature: signature }).then(r => r.data),
 };
 
+// ── Bank Master API ────────────────────────────────────────────────────────────
+export const bankMasterAPI = {
+  getAll:  ()          => api.get('/bank-master').then(r => r.data).catch(handleError),
+  create:  (data)      => api.post('/bank-master', data).then(r => r.data).catch(handleError),
+  update:  (id, data)  => api.put(`/bank-master/${id}`, data).then(r => r.data).catch(handleError),
+  delete:  (id)        => api.delete(`/bank-master/${id}`).then(r => r.data).catch(handleError),
+};
+
 export default api;

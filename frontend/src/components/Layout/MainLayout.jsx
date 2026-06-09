@@ -148,7 +148,7 @@ const MainLayout = () => {
         { key: '/collection-centers', label: 'Collection Centre' },
         { key: '/agents', label: 'Agent Management' },
         { key: '/customers', label: 'Customer' },
-       
+        { key: '/farmer-bank-details', label: 'Farmer Bank Details' },
       ]
     }] : []),
     // PRIVATE FIRM - Customer Module Only

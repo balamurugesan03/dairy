@@ -337,6 +337,9 @@ import cropStatementRoutes from './routes/cropStatementRoutes.js';
 import agriStatsRoutes from './routes/agriStatsRoutes.js';
 import inspectionReportRoutes from './routes/inspectionReportRoutes.js';
 
+// Bank Master routes
+import bankMasterRoutes from './routes/bankMasterRoutes.js';
+
 // Auth routes (public login, protected user management)
 app.use('/api/auth', authRoutes);
 
@@ -537,6 +540,9 @@ app.use('/api/cattle-feed-advance', protect, addCompanyFilter, cattleFeedAdvance
 app.use('/api/crop-statements',    protect, addCompanyFilter, cropStatementRoutes);
 app.use('/api/agri-stats',         protect, addCompanyFilter, agriStatsRoutes);
 app.use('/api/inspection-report',  protect, addCompanyFilter, inspectionReportRoutes);
+
+// Bank Master routes
+app.use('/api/bank-master', protect, addCompanyFilter, bankMasterRoutes);
 
 // Protected company routes (for superadmin management)
 app.use('/api/companies', protect, companyRoutes);

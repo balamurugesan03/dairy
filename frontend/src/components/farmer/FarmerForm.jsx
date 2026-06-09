@@ -23,7 +23,7 @@ import {
 import { DatePickerInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { IconX, IconDeviceFloppy, IconUpload, IconTrash, IconCamera } from '@tabler/icons-react';
-import { farmerAPI, collectionCenterAPI, ledgerAPI } from '../../services/api';
+import { farmerAPI, collectionCenterAPI, ledgerAPI, bankMasterAPI } from '../../services/api';
 import { INDIAN_BANKS } from '../../utils/indianBanks';
 import { message } from '../../utils/toast';
 
@@ -37,6 +37,7 @@ const FarmerForm = () => {
   const [pincodeLoading, setPincodeLoading] = useState(false);
   const [pincodeOptions, setPincodeOptions] = useState([]);
   const [bankLedgerOptions, setBankLedgerOptions] = useState([]);
+  const [bankMasters, setBankMasters] = useState([]);
 
   const isEditMode = Boolean(id);
 
@@ -133,6 +134,7 @@ const FarmerForm = () => {
   useEffect(() => {
     fetchCollectionCenters();
     fetchBankLedgers();
+    fetchBankMasters();
     if (isEditMode) {
       fetchFarmer();
     }
@@ -162,6 +164,26 @@ const FarmerForm = () => {
     } catch (err) {
       console.error('Failed to fetch bank ledgers:', err);
     }
+  };
+
+  const fetchBankMasters = async () => {
+    try {
+      const res = await bankMasterAPI.getAll();
+      setBankMasters(res?.data || []);
+    } catch {
+      // non-fatal
+    }
+  };
+
+  const handleBankSelect = (bankId) => {
+    form.setFieldValue('bankDetails.bankName', bankId || '');
+    if (!bankId) return;
+    const bank = bankMasters.find(b => b._id === bankId);
+    if (!bank) return;
+    form.setFieldValue('bankDetails.branch',      bank.branch || '');
+    form.setFieldValue('bankDetails.ifsc',         bank.ifsc   || '');
+    form.setFieldValue('bankDetails.micr',         bank.micr   || '');
+    form.setFieldValue('bankDetails.bankLedgerId', bank.bankLedgerId?._id || bank.bankLedgerId || '');
   };
 
   const fetchCollectionCenters = async () => {
@@ -215,7 +237,15 @@ const FarmerForm = () => {
         },
         bankDetails: {
           accountNumber: farmer.bankDetails?.accountNumber || '',
-          bankName: farmer.bankDetails?.bankName || '',
+          bankName: (() => {
+            const saved = farmer.bankDetails?.bankName || '';
+            if (!saved) return '';
+            // If already looks like a Mongo ObjectId, use as-is
+            if (/^[a-f0-9]{24}$/.test(saved)) return saved;
+            // Otherwise try to match by bankName in loaded bankMasters
+            // (bankMasters may not be loaded yet; leave as string — Select will show no match but value is preserved)
+            return saved;
+          })(),
           branch: farmer.bankDetails?.branch || '',
           ifsc: farmer.bankDetails?.ifsc || '',
           micr: farmer.bankDetails?.micr || '',
@@ -320,7 +350,16 @@ const FarmerForm = () => {
         membershipDate: values.membershipDate ? values.membershipDate.toISOString() : null,
         bankDetails: {
           accountNumber: values.bankDetails.accountNumber,
-          bankName: values.bankDetails.bankName,
+          bankName: (() => {
+            const val = values.bankDetails.bankName;
+            if (!val) return '';
+            // If it's a Mongo ObjectId, resolve to the bank's name for storage
+            if (/^[a-f0-9]{24}$/.test(val)) {
+              const bank = bankMasters.find(b => b._id === val);
+              return bank ? bank.bankName : val;
+            }
+            return val;
+          })(),
           branch: values.bankDetails.branch,
           ifsc: values.bankDetails.ifsc,
           micr: values.bankDetails.micr,
@@ -781,6 +820,18 @@ const FarmerForm = () => {
               <Stack gap="md" mt="md">
                 <Grid>
                   <Grid.Col span={6}>
+                    <Select
+                      label="Bank Name"
+                      placeholder="Select bank"
+                      data={bankMasters.map(b => ({ value: b._id, label: b.bankName }))}
+                      searchable
+                      clearable
+                      value={form.values.bankDetails.bankName}
+                      onChange={handleBankSelect}
+                      error={form.errors['bankDetails.bankName']}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={6}>
                     <TextInput
                       label="Account Number"
                       placeholder="Enter account number"
@@ -789,20 +840,9 @@ const FarmerForm = () => {
                     />
                   </Grid.Col>
                   <Grid.Col span={6}>
-                    <Select
-                      label="Bank Name"
-                      placeholder="Select bank"
-                      data={INDIAN_BANKS}
-                      searchable
-                      clearable
-                      {...form.getInputProps('bankDetails.bankName')}
-                      onKeyDown={focusNext}
-                    />
-                  </Grid.Col>
-                  <Grid.Col span={6}>
                     <TextInput
                       label="Branch"
-                      placeholder="Enter branch"
+                      placeholder="Auto-filled from Bank Master"
                       {...form.getInputProps('bankDetails.branch')}
                       onKeyDown={focusNext}
                     />
@@ -810,7 +850,7 @@ const FarmerForm = () => {
                   <Grid.Col span={6}>
                     <TextInput
                       label="IFSC Code"
-                      placeholder="Enter IFSC code"
+                      placeholder="Auto-filled from Bank Master"
                       maxLength={11}
                       {...form.getInputProps('bankDetails.ifsc')}
                       onChange={(e) => form.setFieldValue('bankDetails.ifsc', e.target.value.toUpperCase())}
@@ -820,7 +860,7 @@ const FarmerForm = () => {
                   <Grid.Col span={6}>
                     <TextInput
                       label="MICR Code"
-                      placeholder="Enter MICR code"
+                      placeholder="Auto-filled from Bank Master"
                       maxLength={9}
                       {...form.getInputProps('bankDetails.micr')}
                       onKeyDown={focusNext}
@@ -829,7 +869,7 @@ const FarmerForm = () => {
                   <Grid.Col span={6}>
                     <Select
                       label="Select Bank Ledger"
-                      placeholder="Choose bank ledger"
+                      placeholder="Auto-filled from Bank Master"
                       data={bankLedgerOptions}
                       searchable
                       clearable
