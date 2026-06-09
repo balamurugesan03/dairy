@@ -96,7 +96,7 @@ const StockRegister = () => {
       ...(mode === 'day' ? { Date: fmtDate(r.date) } : {}),
       ...(mode === 'month' ? { Month: r.month } : {}),
       Item: r.itemName, Unit: r.unit, Rate: r.rate,
-      Opening: r.ob, Purchase: r.purchase, 'Sale Return': r.salesReturn,
+      Opening: r.ob, 'Stock Opening': r.openingEntry, Purchase: r.purchase, 'Sale Return': r.salesReturn,
       Total: r.total, Sales: r.sales, 'Purch. Return': r.purchaseReturn,
       Closing: r.closingStock, 'Stock Value': r.stockValue,
     }));
@@ -135,7 +135,7 @@ const StockRegister = () => {
       // Group header
       result.push(
         <Table.Tr key={`hdr-${key}`} style={{ background: '#dbeafe' }}>
-          <Table.Td colSpan={12} style={{ padding: '5px 12px', fontWeight: 800, color: '#1d4ed8', fontSize: 12 }}>
+          <Table.Td colSpan={13} style={{ padding: '5px 12px', fontWeight: 800, color: '#1d4ed8', fontSize: 12 }}>
             <Group gap="xs">
               <IconBox size={14} />
               <span>{key}</span>
@@ -161,6 +161,7 @@ const StockRegister = () => {
             </Table.Td>
             <Table.Td style={{ ...tdStyle, textAlign: 'right' }}>₹{row.rate}</Table.Td>
             <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#1d4ed8', fontWeight: 600 }}>{fmt3(row.ob)}</Table.Td>
+            <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#0369a1', fontWeight: 600 }}>{fmt3(row.openingEntry)}</Table.Td>
             <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#166534' }}>{fmt3(row.purchase)}</Table.Td>
             <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#92400e' }}>{fmt3(row.salesReturn)}</Table.Td>
             <Table.Td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{fmt3(row.total)}</Table.Td>
@@ -185,6 +186,7 @@ const StockRegister = () => {
         </Table.Td>
         <Table.Td style={{ ...tdStyle, textAlign: 'right' }}>₹{row.rate}</Table.Td>
         <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#1d4ed8', fontWeight: 600 }}>{fmt3(row.ob)}</Table.Td>
+        <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#0369a1', fontWeight: 600 }}>{fmt3(row.openingEntry)}</Table.Td>
         <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#166534' }}>{fmt3(row.purchase)}</Table.Td>
         <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#92400e' }}>{fmt3(row.salesReturn)}</Table.Td>
         <Table.Td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{fmt3(row.total)}</Table.Td>
@@ -196,18 +198,19 @@ const StockRegister = () => {
     ));
 
   const COL_HEADERS = [
-    { label: '#',             style: thStyle },
-    { label: 'Item Name',     style: thStyle },
-    { label: 'Unit',          style: { ...thStyle, textAlign: 'center' } },
-    { label: 'Rate',          style: thStyleR },
-    { label: 'Opening',       style: thStyleR },
-    { label: 'Purchase',      style: thStyleR },
-    { label: 'Sale Return',   style: thStyleR },
-    { label: 'Total',         style: thStyleR },
-    { label: 'Sales',         style: thStyleR },
-    { label: 'Purch. Return', style: thStyleR },
-    { label: 'Closing',       style: thStyleR },
-    { label: 'Stock Value',   style: thStyleR },
+    { label: '#',              style: thStyle },
+    { label: 'Item Name',      style: thStyle },
+    { label: 'Unit',           style: { ...thStyle, textAlign: 'center' } },
+    { label: 'Rate',           style: thStyleR },
+    { label: 'Opening',        style: thStyleR },
+    { label: 'Stock Opening',  style: thStyleR },
+    { label: 'Purchase',       style: thStyleR },
+    { label: 'Sale Return',    style: thStyleR },
+    { label: 'Total',          style: thStyleR },
+    { label: 'Sales',          style: thStyleR },
+    { label: 'Purch. Return',  style: thStyleR },
+    { label: 'Closing',        style: thStyleR },
+    { label: 'Stock Value',    style: thStyleR },
   ];
 
   return (
@@ -366,6 +369,7 @@ const StockRegister = () => {
                       Grand Total
                     </Table.Td>
                     <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#1d4ed8' }}>{fmt3(gt.ob)}</Table.Td>
+                    <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#0369a1' }}>{fmt3(gt.openingEntry)}</Table.Td>
                     <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#166534' }}>{fmt3(gt.purchase)}</Table.Td>
                     <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#92400e' }}>{fmt3(gt.salesReturn)}</Table.Td>
                     <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800 }}>{fmt3(gt.total)}</Table.Td>
@@ -384,7 +388,8 @@ const StockRegister = () => {
           <Box p="sm" style={{ borderTop: '1px solid #e5e7eb', background: '#f9fafb' }}>
             <Group gap="xl">
               <Text size="xs" c="dimmed">Opening (OB) = Balance at start of period</Text>
-              <Text size="xs" c="dimmed">Total = OB + Purchase + Sale Return</Text>
+              <Text size="xs" c="dimmed">Stock Opening = Opening stock entries added within period</Text>
+              <Text size="xs" c="dimmed">Total = OB + Stock Opening + Purchase + Sale Return</Text>
               <Text size="xs" c="dimmed">Closing = Total − Sales − Purchase Return</Text>
             </Group>
           </Box>

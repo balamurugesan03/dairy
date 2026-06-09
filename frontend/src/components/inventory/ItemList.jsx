@@ -56,7 +56,8 @@ import {
   IconChevronDown,
   IconSettings,
   IconRefresh,
-  IconScale
+  IconScale,
+  IconPackageImport,
 } from '@tabler/icons-react';
 import { useForm } from '@mantine/form';
 import { useDisclosure } from '@mantine/hooks';
@@ -64,7 +65,7 @@ import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { DataTable } from 'mantine-datatable';
 import { DateInput } from '@mantine/dates';
-import { itemAPI, ledgerAPI, supplierAPI } from '../../services/api';
+import { itemAPI, ledgerAPI, supplierAPI, openingStockAPI, collectionCenterAPI } from '../../services/api';
 import { localDateStr } from '../../utils/dateUtils';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -81,9 +82,15 @@ const ItemList = () => {
   const [itemModalOpened, { open: openItemModal, close: closeItemModal }] = useDisclosure(false);
   const [openingBalanceModalOpened, { open: openOpeningBalanceModal, close: closeOpeningBalanceModal }] = useDisclosure(false);
   const [standaloneObModalOpened, { open: openStandaloneObModal, close: closeStandaloneObModal }] = useDisclosure(false);
+  const [openingStockModalOpened, { open: openOpeningStockModal, close: closeOpeningStockModal }] = useDisclosure(false);
 
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedItemForBalance, setSelectedItemForBalance] = useState(null);
+  const [openingStockItem, setOpeningStockItem] = useState(null);
+  const [openingStocks, setOpeningStocks] = useState([]);
+  const [openingStockEditRow, setOpeningStockEditRow] = useState(null);
+  const [centers, setCenters] = useState([]);
+  const [openingStockLoading, setOpeningStockLoading] = useState(false);
   
   // Column visibility
   const [visibleColumns, setVisibleColumns] = useState({
@@ -170,6 +177,22 @@ const ItemList = () => {
     }
   });
 
+  const openingStockForm = useForm({
+    initialValues: {
+      centerId: '',
+      date: new Date(),
+      qty: '',
+      purchaseRate: '',
+      salesRate: '',
+    },
+    validate: {
+      date: (v) => !v ? 'Date is required' : null,
+      qty: (v) => (!v && v !== 0) ? 'Qty is required' : parseFloat(v) <= 0 ? 'Qty must be > 0' : null,
+      purchaseRate: (v) => (!v && v !== 0) ? 'Purchase rate is required' : null,
+      salesRate: (v) => (!v && v !== 0) ? 'Sales rate is required' : null,
+    },
+  });
+
   // Measurement custom input state
   const [showCustomMeasurement, setShowCustomMeasurement] = useState(false);
 
@@ -177,6 +200,7 @@ const ItemList = () => {
     fetchItems();
     fetchLedgers();
     fetchSuppliers();
+    fetchCenters();
   }, []);
 
   const fetchLedgers = async () => {
@@ -195,6 +219,91 @@ const ItemList = () => {
     } catch (error) {
       console.error('Failed to fetch suppliers:', error);
     }
+  };
+
+  const fetchCenters = async () => {
+    try {
+      const res = await collectionCenterAPI.getAll();
+      setCenters(res.data || []);
+    } catch { }
+  };
+
+  const fetchOpeningStocksForItem = async (itemId) => {
+    setOpeningStockLoading(true);
+    try {
+      const res = await openingStockAPI.getAll({ itemId });
+      setOpeningStocks(res.data || []);
+    } catch { } finally {
+      setOpeningStockLoading(false);
+    }
+  };
+
+  const handleOpenOpeningStock = (item) => {
+    setOpeningStockItem(item);
+    setOpeningStockEditRow(null);
+    openingStockForm.reset();
+    openingStockForm.setValues({ centerId: '', date: new Date(), qty: '', purchaseRate: '', salesRate: '' });
+    fetchOpeningStocksForItem(item._id);
+    openOpeningStockModal();
+  };
+
+  const handleOpeningStockSave = async (values) => {
+    try {
+      const payload = {
+        itemId: openingStockItem._id,
+        centerId: values.centerId || null,
+        date: values.date,
+        qty: parseFloat(values.qty),
+        purchaseRate: parseFloat(values.purchaseRate) || 0,
+        salesRate: parseFloat(values.salesRate) || 0,
+      };
+
+      if (openingStockEditRow) {
+        await openingStockAPI.update(openingStockEditRow._id, payload);
+        notifications.show({ title: 'Updated', message: 'Opening stock updated', color: 'green' });
+      } else {
+        await openingStockAPI.create(payload);
+        notifications.show({ title: 'Saved', message: 'Opening stock added', color: 'green' });
+      }
+
+      openingStockForm.reset();
+      openingStockForm.setValues({ centerId: '', date: new Date(), qty: '', purchaseRate: '', salesRate: '' });
+      setOpeningStockEditRow(null);
+      fetchOpeningStocksForItem(openingStockItem._id);
+      fetchItems();
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message || 'Failed to save', color: 'red' });
+    }
+  };
+
+  const handleOpeningStockEdit = (row) => {
+    setOpeningStockEditRow(row);
+    openingStockForm.setValues({
+      centerId: row.issueCentre?._id || '',
+      date: row.date ? new Date(row.date) : new Date(),
+      qty: row.quantity,
+      purchaseRate: row.rate,
+      salesRate: row.salesRate,
+    });
+  };
+
+  const handleOpeningStockDelete = (row) => {
+    modals.openConfirmModal({
+      title: 'Delete Opening Stock',
+      children: <Text size="sm">Delete opening stock entry of {row.quantity} {openingStockItem?.measurement}?</Text>,
+      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          await openingStockAPI.delete(row._id);
+          notifications.show({ title: 'Deleted', message: 'Opening stock deleted', color: 'green' });
+          fetchOpeningStocksForItem(openingStockItem._id);
+          fetchItems();
+        } catch (err) {
+          notifications.show({ title: 'Error', message: err.message || 'Failed to delete', color: 'red' });
+        }
+      },
+    });
   };
 
   const fetchItems = async () => {
@@ -678,6 +787,14 @@ const ItemList = () => {
             title="Edit"
           >
             <IconEdit size={16} />
+          </ActionIcon>
+          <ActionIcon
+            variant="subtle"
+            color="teal"
+            onClick={() => handleOpenOpeningStock(item)}
+            title="Opening Stock"
+          >
+            <IconPackageImport size={16} />
           </ActionIcon>
           <ActionIcon
             variant="subtle"
@@ -1174,6 +1291,141 @@ const ItemList = () => {
             </Group>
           </Stack>
         </form>
+      </Modal>
+
+      {/* Opening Stock Modal */}
+      <Modal
+        opened={openingStockModalOpened}
+        onClose={() => { closeOpeningStockModal(); setOpeningStockEditRow(null); openingStockForm.reset(); }}
+        title={`Opening Stock — ${openingStockItem?.itemName || ''}`}
+        size="lg"
+        centered
+      >
+        <form onSubmit={openingStockForm.onSubmit(handleOpeningStockSave)}>
+          <Stack gap="sm">
+            <Grid>
+              <Grid.Col span={6}>
+                <Select
+                  label="Center"
+                  placeholder="Select center (optional)"
+                  data={centers.map(c => ({ value: c._id, label: c.centerName }))}
+                  value={openingStockForm.values.centerId}
+                  onChange={(v) => openingStockForm.setFieldValue('centerId', v || '')}
+                  clearable
+                  searchable
+                  size="sm"
+                />
+              </Grid.Col>
+              <Grid.Col span={6}>
+                <DateInput
+                  label="Date"
+                  withAsterisk
+                  valueFormat="DD/MM/YYYY"
+                  value={openingStockForm.values.date}
+                  onChange={(v) => openingStockForm.setFieldValue('date', v)}
+                  error={openingStockForm.errors.date}
+                  size="sm"
+                />
+              </Grid.Col>
+              <Grid.Col span={4}>
+                <NumberInput
+                  label="Qty"
+                  withAsterisk
+                  min={0}
+                  allowDecimal
+                  decimalScale={3}
+                  placeholder="0"
+                  value={openingStockForm.values.qty}
+                  onChange={(v) => openingStockForm.setFieldValue('qty', v ?? '')}
+                  error={openingStockForm.errors.qty}
+                  size="sm"
+                />
+              </Grid.Col>
+              <Grid.Col span={4}>
+                <NumberInput
+                  label="Purchase Rate"
+                  withAsterisk
+                  min={0}
+                  allowDecimal
+                  decimalScale={2}
+                  placeholder="0.00"
+                  value={openingStockForm.values.purchaseRate}
+                  onChange={(v) => openingStockForm.setFieldValue('purchaseRate', v ?? '')}
+                  error={openingStockForm.errors.purchaseRate}
+                  size="sm"
+                />
+              </Grid.Col>
+              <Grid.Col span={4}>
+                <NumberInput
+                  label="Sales Rate"
+                  withAsterisk
+                  min={0}
+                  allowDecimal
+                  decimalScale={2}
+                  placeholder="0.00"
+                  value={openingStockForm.values.salesRate}
+                  onChange={(v) => openingStockForm.setFieldValue('salesRate', v ?? '')}
+                  error={openingStockForm.errors.salesRate}
+                  size="sm"
+                />
+              </Grid.Col>
+            </Grid>
+            <Group justify="flex-end">
+              <Button variant="default" size="sm" onClick={() => { openingStockForm.reset(); setOpeningStockEditRow(null); }}>
+                Cancel
+              </Button>
+              <Button type="submit" color="teal" size="sm">
+                {openingStockEditRow ? 'Update' : 'Save'}
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+
+        <Divider my="md" label="Opening Stock Entries" labelPosition="center" />
+
+        {openingStockLoading ? (
+          <Center py="md"><Loader size="sm" /></Center>
+        ) : openingStocks.length === 0 ? (
+          <Text c="dimmed" ta="center" size="sm" py="md">No opening stock entries yet</Text>
+        ) : (
+          <ScrollArea>
+            <Table striped withTableBorder withColumnBorders fz="sm">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>#</Table.Th>
+                  <Table.Th>Center</Table.Th>
+                  <Table.Th>Date</Table.Th>
+                  <Table.Th>Qty</Table.Th>
+                  <Table.Th>Purchase Rate</Table.Th>
+                  <Table.Th>Sales Rate</Table.Th>
+                  <Table.Th>Actions</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {openingStocks.map((row, idx) => (
+                  <Table.Tr key={row._id} bg={openingStockEditRow?._id === row._id ? 'var(--mantine-color-teal-0)' : undefined}>
+                    <Table.Td>{idx + 1}</Table.Td>
+                    <Table.Td>{row.issueCentre?.centerName || '—'}</Table.Td>
+                    <Table.Td>{row.date ? new Date(row.date).toLocaleDateString('en-IN') : '—'}</Table.Td>
+                    <Table.Td>{row.quantity} {openingStockItem?.measurement}</Table.Td>
+                    <Table.Td>₹{(row.rate || 0).toFixed(2)}</Table.Td>
+                    <Table.Td>₹{(row.salesRate || 0).toFixed(2)}</Table.Td>
+                    <Table.Td>
+                      <Group gap={4}>
+                        <ActionIcon size="sm" variant="subtle" color="blue" onClick={() => handleOpeningStockEdit(row)}>
+                          <IconEdit size={14} />
+                        </ActionIcon>
+                        <ActionIcon size="sm" variant="subtle" color="red" onClick={() => handleOpeningStockDelete(row)}>
+                          <IconTrash size={14} />
+                        </ActionIcon>
+                      </Group>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </ScrollArea>
+        )}
       </Modal>
 
       {/* Opening Balance Modal */}

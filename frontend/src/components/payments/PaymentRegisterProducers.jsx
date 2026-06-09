@@ -23,9 +23,15 @@ const fmt = (v) =>
 
 const n = (v) => parseFloat(v) || 0;
 
-// Net Payable = Milk Value − Welfare − C/F Rec − Loan Adv − Cash Pocket + Previous Balance
-const calcNet = (r) =>
-  n(r.milkValue) - n(r.welfare) - n(r.cfRec) - n(r.loanAdv) - n(r.cashPocket) + n(r.previousBalance);
+// Net Payable — priority order: Welfare → CF Rec → Cash Advance → Loan Advance
+const calcNet = (r) => {
+  let rem = Math.max(0, n(r.milkValue) + n(r.previousBalance));
+  rem -= Math.min(n(r.welfare),    rem);
+  rem -= Math.min(n(r.cfRec),      rem);
+  rem -= Math.min(n(r.cashPocket), rem);
+  rem -= Math.min(n(r.loanAdv),    rem);
+  return rem;
+};
 
 const emptyRow = (slNo = 1) => ({
   _localId:        Date.now() + slNo + Math.random(),

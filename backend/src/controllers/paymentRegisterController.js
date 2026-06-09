@@ -888,24 +888,24 @@ export const saveAndPostProducersRegister = async (req, res) => {
     const fd = new Date(fromDate);
     const td = new Date(toDate);
 
-    // ── Proportional deduction cap ─────────────────────────────────────────────
-    // If total deductions > (milkValue + previousBalance) and earnings > 0,
-    // scale deductions proportionally so netPayable >= 0.
+    // ── Priority-based deduction cap ───────────────────────────────────────────
+    // Order: Welfare (full) → CF Recovery (full) → Cash Advance (full) → Loan Advance (remaining)
     const cappedEntries = (entries || []).map(e => {
-      const earnings = (e.milkValue || 0) + (e.previousBalance || 0);
-      const totalDed = (e.welfare || 0) + (e.cfRec || 0) + (e.loanAdv || 0) + (e.cashPocket || 0);
-      if (totalDed > earnings && earnings > 0) {
-        const factor = earnings / totalDed;
-        return {
-          ...e,
-          welfare:    Math.round((e.welfare    || 0) * factor * 100) / 100,
-          cfRec:      Math.round((e.cfRec      || 0) * factor * 100) / 100,
-          loanAdv:    Math.round((e.loanAdv    || 0) * factor * 100) / 100,
-          cashPocket: Math.round((e.cashPocket || 0) * factor * 100) / 100,
-          netPay:     0,
-        };
-      }
-      return e;
+      let remaining = Math.max(0, (e.milkValue || 0) + (e.previousBalance || 0));
+
+      const welfareActual    = Math.min(e.welfare    || 0, remaining); remaining -= welfareActual;
+      const cfRecActual      = Math.min(e.cfRec      || 0, remaining); remaining -= cfRecActual;
+      const cashPocketActual = Math.min(e.cashPocket || 0, remaining); remaining -= cashPocketActual;
+      const loanAdvActual    = Math.min(e.loanAdv    || 0, remaining); remaining -= loanAdvActual;
+
+      return {
+        ...e,
+        welfare:    Math.round(welfareActual    * 100) / 100,
+        cfRec:      Math.round(cfRecActual      * 100) / 100,
+        cashPocket: Math.round(cashPocketActual * 100) / 100,
+        loanAdv:    Math.round(loanAdvActual    * 100) / 100,
+        netPay:     Math.round(remaining        * 100) / 100,
+      };
     });
 
     // ── Find existing register by registerId or date range match ───────────────
@@ -972,21 +972,24 @@ export const saveAndPostProducersRegister = async (req, res) => {
     const fdStr = fd.toLocaleDateString('en-IN');
     const tdStr = td.toLocaleDateString('en-IN');
 
+    // Consolidated totals for single voucher posting on cycle's last date
+    let totalWelfare = 0, totalCFRec = 0, totalCashAdv = 0, totalLoanAdv = 0, totalNetPay = 0;
+    const narrationLines = [];
+
     for (const e of cappedEntries) {
       if (!e.farmerId) continue;
       const netPay = typeof e.netPay === 'number' ? e.netPay : (e.netPayable || 0);
 
-      // Build deductions array (matches FarmerPayment enum)
+      // Build deductions array in priority order
       const deductions = [];
       if ((e.welfare    || 0) > 0) deductions.push({ type: 'Welfare Recovery', amount: e.welfare,    description: 'Welfare' });
-      if ((e.cfRec      || 0) > 0) deductions.push({ type: 'CF Advance',       amount: e.cfRec,      description: 'CF Advance' });
-      if ((e.loanAdv    || 0) > 0) deductions.push({ type: 'Loan Advance',     amount: e.loanAdv,    description: 'Loan Advance' });
+      if ((e.cfRec      || 0) > 0) deductions.push({ type: 'CF Advance',       amount: e.cfRec,      description: 'CF Recovery' });
       if ((e.cashPocket || 0) > 0) deductions.push({ type: 'Cash Advance',     amount: e.cashPocket, description: 'Cash Advance' });
+      if ((e.loanAdv    || 0) > 0) deductions.push({ type: 'Loan Advance',     amount: e.loanAdv,    description: 'Loan Advance' });
 
-      // Create FarmerPayment record
-      let fp;
+      // Create individual FarmerPayment record for history / tracking
       try {
-        fp = await saveWithUniqueNumber({
+        await saveWithUniqueNumber({
           Model:       FarmerPayment,
           companyId,
           prefix:      'PAY',
@@ -1014,34 +1017,71 @@ export const saveAndPostProducersRegister = async (req, res) => {
         continue;
       }
 
-      // Create recovery voucher for deductions (CF/Cash/Loan/Welfare → ledger)
-      if (deductions.length > 0) {
-        try {
-          await createRecoveryVoucher(fp, null);
-        } catch (err) {
-          warnings.push(`Recovery voucher failed for ${e.productName}: ${err.message}`);
-        }
-      }
+      // Accumulate consolidated totals
+      totalWelfare  += (e.welfare    || 0);
+      totalCFRec    += (e.cfRec      || 0);
+      totalCashAdv  += (e.cashPocket || 0);
+      totalLoanAdv  += (e.loanAdv    || 0);
+      if (netPay > 0) totalNetPay += netPay;
 
-      // Create payment voucher if farmer is owed money (Dr PRODUCERS DUES / Cr Cash)
-      if (netPay > 0) {
-        try {
-          await createProducerDuesPaymentVoucher({
-            amount:        netPay,
-            paymentDate:   td,
-            paymentMode:   'Cash',
-            companyId,
-            narration:     `Producers Dues — ${e.productName || ''} | ${fdStr}–${tdStr}`,
-            referenceType: 'FarmerPayment',
-            referenceId:   fp._id,
-            createdBy:     req.user?._id,
-          }, null);
-        } catch (err) {
-          warnings.push(`Payment voucher failed for ${e.productName}: ${err.message}`);
-        }
-      }
+      // Per-farmer narration detail
+      const line = `${e.productId}|${e.productName}|Milk:₹${(e.milkValue||0).toFixed(2)}|Net:₹${(netPay||0).toFixed(2)}`
+        + ((e.welfare    ||0) > 0 ? `|Welf:₹${e.welfare}`    : '')
+        + ((e.cfRec      ||0) > 0 ? `|CF:₹${e.cfRec}`        : '')
+        + ((e.cashPocket ||0) > 0 ? `|Cash:₹${e.cashPocket}` : '')
+        + ((e.loanAdv    ||0) > 0 ? `|Loan:₹${e.loanAdv}`    : '');
+      narrationLines.push(line);
 
       postedCount++;
+    }
+
+    // ── Consolidated narration: period + summary + per-farmer details ──────────
+    const periodLabel  = `Payment Register (Producers) ${fdStr}–${tdStr} | ${postedCount} farmers`;
+    const summaryLabel = `Welfare:₹${totalWelfare.toFixed(2)} CF:₹${totalCFRec.toFixed(2)} Cash:₹${totalCashAdv.toFixed(2)} Loan:₹${totalLoanAdv.toFixed(2)} NetPay:₹${totalNetPay.toFixed(2)}`;
+    const detailNarration = `${periodLabel} | ${summaryLabel} | ${narrationLines.join('; ')}`;
+
+    // ── Single consolidated recovery voucher on cycle's last date ─────────────
+    // Dr PRODUCERS DUES / Cr Welfare + CF + Cash + Loan ledgers (all in one voucher)
+    const consolidatedDeductions = [];
+    if (totalWelfare > 0) consolidatedDeductions.push({ type: 'Welfare Recovery', amount: Math.round(totalWelfare * 100) / 100, description: 'Welfare' });
+    if (totalCFRec   > 0) consolidatedDeductions.push({ type: 'CF Advance',       amount: Math.round(totalCFRec   * 100) / 100, description: 'CF Recovery' });
+    if (totalCashAdv > 0) consolidatedDeductions.push({ type: 'Cash Advance',     amount: Math.round(totalCashAdv * 100) / 100, description: 'Cash Advance' });
+    if (totalLoanAdv > 0) consolidatedDeductions.push({ type: 'Loan Advance',     amount: Math.round(totalLoanAdv * 100) / 100, description: 'Loan Advance' });
+
+    if (consolidatedDeductions.length > 0) {
+      try {
+        // Zero ObjectId → no farmer-linked ledger found → falls back to PRODUCERS DUES ledger
+        await createRecoveryVoucher({
+          farmerId:      new mongoose.Types.ObjectId('000000000000000000000000'),
+          companyId,
+          paymentDate:   td,
+          deductions:    consolidatedDeductions,
+          paymentNumber: detailNarration,
+          _id:           reg._id,
+        }, null);
+      } catch (err) {
+        warnings.push(`Consolidated recovery voucher failed: ${err.message}`);
+      }
+    }
+
+    // ── Single consolidated payment voucher on cycle's last date ──────────────
+    // Dr PRODUCERS DUES / Cr Cash — total net payable across all farmers
+    const consolidatedNetPay = Math.round(totalNetPay * 100) / 100;
+    if (consolidatedNetPay > 0) {
+      try {
+        await createProducerDuesPaymentVoucher({
+          amount:        consolidatedNetPay,
+          paymentDate:   td,
+          paymentMode:   'Cash',
+          companyId,
+          narration:     detailNarration,
+          referenceType: 'PaymentRegister',
+          referenceId:   reg._id,
+          createdBy:     req.user?._id,
+        }, null);
+      } catch (err) {
+        warnings.push(`Consolidated payment voucher failed: ${err.message}`);
+      }
     }
 
     reg.autoPosted = true;

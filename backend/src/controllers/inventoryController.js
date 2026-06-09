@@ -652,6 +652,119 @@ export const updateOpeningBalance = async (req, res) => {
   }
 };
 
+// ─── OPENING STOCK CRUD ────────────────────────────────────────────────────────
+
+export const addOpeningStock = async (req, res) => {
+  try {
+    const { itemId, centerId, date, qty, purchaseRate, salesRate } = req.body;
+    const companyId = req.companyId;
+
+    if (!itemId || !qty || parseFloat(qty) <= 0) {
+      return res.status(400).json({ success: false, message: 'itemId and qty are required' });
+    }
+
+    const txnDate = date ? new Date(date) : new Date();
+    const txn = await createStockTransaction({
+      itemId,
+      transactionType: 'Stock In',
+      quantity: parseFloat(qty),
+      rate: parseFloat(purchaseRate) || 0,
+      salesRate: parseFloat(salesRate) || 0,
+      referenceType: 'Opening',
+      issueCentre: centerId || null,
+      date: txnDate,
+      purchaseDate: txnDate,
+      notes: 'Opening Stock',
+      companyId,
+    });
+
+    const populated = await StockTransaction.findById(txn._id)
+      .populate('itemId', 'itemName itemCode measurement')
+      .populate('issueCentre', 'centerName');
+
+    res.status(201).json({ success: true, data: populated });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const getOpeningStocks = async (req, res) => {
+  try {
+    const { itemId } = req.query;
+    const companyId = req.companyId;
+
+    const filter = { companyId, referenceType: 'Opening' };
+    if (itemId) filter.itemId = itemId;
+
+    const txns = await StockTransaction.find(filter)
+      .populate('itemId', 'itemName itemCode measurement')
+      .populate('issueCentre', 'centerName')
+      .sort({ date: -1 });
+
+    res.json({ success: true, data: txns });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const updateOpeningStock = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { centerId, date, qty, purchaseRate, salesRate } = req.body;
+    const companyId = req.companyId;
+
+    const txn = await StockTransaction.findOne({ _id: id, companyId, referenceType: 'Opening' });
+    if (!txn) return res.status(404).json({ success: false, message: 'Opening stock entry not found' });
+
+    const item = await Item.findById(txn.itemId);
+    if (!item) return res.status(404).json({ success: false, message: 'Item not found' });
+
+    const oldQty = txn.quantity;
+    const newQty = parseFloat(qty);
+    const diff = newQty - oldQty;
+
+    item.currentBalance = Math.max(0, item.currentBalance + diff);
+    await item.save();
+
+    txn.quantity = newQty;
+    txn.rate = parseFloat(purchaseRate) || txn.rate;
+    txn.salesRate = parseFloat(salesRate) || txn.salesRate;
+    if (centerId !== undefined) txn.issueCentre = centerId || null;
+    if (date) { txn.date = new Date(date); txn.purchaseDate = new Date(date); }
+    txn.balanceAfter = item.currentBalance;
+    await txn.save();
+
+    const populated = await StockTransaction.findById(txn._id)
+      .populate('itemId', 'itemName itemCode measurement')
+      .populate('issueCentre', 'centerName');
+
+    res.json({ success: true, data: populated });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const deleteOpeningStock = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const companyId = req.companyId;
+
+    const txn = await StockTransaction.findOne({ _id: id, companyId, referenceType: 'Opening' });
+    if (!txn) return res.status(404).json({ success: false, message: 'Opening stock entry not found' });
+
+    const item = await Item.findById(txn.itemId);
+    if (item) {
+      item.currentBalance = Math.max(0, item.currentBalance - txn.quantity);
+      await item.save();
+    }
+
+    await txn.deleteOne();
+    res.json({ success: true, message: 'Opening stock entry deleted' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // Get stock transaction by ID
 export const getStockTransactionById = async (req, res) => {
   try {

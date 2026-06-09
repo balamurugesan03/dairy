@@ -165,6 +165,14 @@ export const itemAPI = {
   updateSalesPrice: (id, data) => api.patch(`/items/${id}/sales-price`, data).then(res => res.data).catch(handleError)
 };
 
+// OPENING STOCK APIs
+export const openingStockAPI = {
+  getAll: (params) => api.get('/stock/opening', { params }).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/stock/opening', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/stock/opening/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/stock/opening/${id}`).then(res => res.data).catch(handleError),
+};
+
 // STOCK APIs
 export const stockAPI = {
   stockIn: (data) => api.post('/stock/in', data).then(res => res.data).catch(handleError),

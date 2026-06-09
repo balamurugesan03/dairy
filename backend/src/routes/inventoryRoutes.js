@@ -19,7 +19,11 @@ import {
   getInventorySales,
   createSale,
   updateSale,
-  deleteSale
+  deleteSale,
+  addOpeningStock,
+  getOpeningStocks,
+  updateOpeningStock,
+  deleteOpeningStock,
 } from '../controllers/inventoryController.js';
 import { protect, addCompanyFilter } from '../middleware/auth.js';
 
@@ -34,6 +38,12 @@ router.put('/items/:id', updateItem);
 router.delete('/items/:id', deleteItem);
 router.patch('/items/:id/opening-balance', updateOpeningBalance);
 router.patch('/items/:id/sales-price', updateSalesPrice);
+
+// Opening stock routes (before generic /stock/transactions to avoid param collision)
+router.get('/stock/opening', getOpeningStocks);
+router.post('/stock/opening', addOpeningStock);
+router.put('/stock/opening/:id', updateOpeningStock);
+router.delete('/stock/opening/:id', deleteOpeningStock);
 
 // Stock transaction routes
 router.post('/stock/in', stockIn);
