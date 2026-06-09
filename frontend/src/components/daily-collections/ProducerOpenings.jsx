@@ -1,9 +1,9 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Container, Group, Title, Button, NumberInput,
+  Container, Group, Title, Button, NumberInput, TextInput,
   Paper, Table, Box, Divider, Grid, Text, Stack, ThemeIcon,
-  ActionIcon, Tooltip, Pagination, Badge, Select, Loader,
+  ActionIcon, Tooltip, Pagination, Badge, Loader,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
@@ -55,10 +55,13 @@ export default function ProducerOpenings() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
 
-  // farmer search
-  const [farmers, setFarmers]         = useState([]);
-  const [farmerLoading, setFarmerLoading] = useState(false);
-  const [selectedFarmer, setSelectedFarmer] = useState(null);
+  // farmer lookup by number
+  const [farmerNumberInput, setFarmerNumberInput] = useState('');
+  const [farmerLoading, setFarmerLoading]         = useState(false);
+  const [selectedFarmer, setSelectedFarmer]       = useState(null);
+
+  const farmerInputRef  = useRef(null);
+  const dueAmountRef    = useRef(null);
 
   const setField = (key, val) => setForm((prev) => ({ ...prev, [key]: val }));
 
@@ -85,59 +88,60 @@ export default function ProducerOpenings() {
 
   useEffect(() => { fetchRecords(page); }, [page, fetchRecords]);
 
-  // ── Farmer search ────────────────────────────────────────────────
-  const searchFarmers = async (query) => {
+  // ── Farmer lookup: Enter / Tab on farmer number field ───────────
+  const handleFarmerNumberKeyDown = async (e) => {
+    if (e.key !== 'Enter' && e.key !== 'Tab') return;
+    e.preventDefault();
+    const query = farmerNumberInput.trim();
+    if (!query) return;
+
+    setFarmerLoading(true);
     try {
-      setFarmerLoading(true);
-      let response;
-      if (query && query.trim().length > 0) {
-        response = await farmerAPI.search(query.trim());
-      } else {
-        response = await farmerAPI.getAll({ status: 'Active', limit: 50 });
+      const res    = await farmerAPI.search(query);
+      const found  = res?.data || [];
+
+      if (found.length === 0) {
+        notifications.show({ color: 'orange', title: 'Not Found', message: `No farmer found with ID "${query}"` });
+        setSelectedFarmer(null);
+        setField('farmerId', null);
+        return;
       }
-      setFarmers(response.data || []);
-    } catch {
-      setFarmers([]);
+
+      // Prefer exact farmerNumber match, fall back to first result
+      const farmer = found.find((f) => f.farmerNumber === query) || found[0];
+      setFarmerNumberInput(farmer.farmerNumber);
+      setSelectedFarmer(farmer);
+      setField('farmerId', farmer._id);
+
+      // Auto-load existing opening for this farmer
+      try {
+        const opening = await producerOpeningAPI.getByFarmer(farmer._id);
+        const existing = opening?.data;
+        if (existing) {
+          setEditId(existing._id);
+          setForm({
+            date:          existing.date ? new Date(existing.date) : null,
+            farmerId:      farmer._id,
+            dueAmount:     existing.dueAmount     ?? '',
+            cfAdvance:     existing.cfAdvance     ?? '',
+            loanAdvance:   existing.loanAdvance   ?? '',
+            cashAdvance:   existing.cashAdvance   ?? '',
+            revolvingFund: existing.revolvingFund ?? '',
+          });
+          notifications.show({ color: 'blue', title: 'Opening Loaded', message: 'Existing opening loaded — make changes and click Update', autoClose: 3000 });
+        } else {
+          setEditId(null);
+          setForm((prev) => ({ ...EMPTY_FORM, farmerId: farmer._id, date: prev.date }));
+        }
+      } catch { /* ignore — let user fill manually */ }
+
+      // Move focus to Due Amount after farmer is selected
+      setTimeout(() => dueAmountRef.current?.querySelector('input')?.focus(), 50);
+    } catch (err) {
+      notifications.show({ color: 'red', title: 'Error', message: err.message || 'Failed to search farmer' });
     } finally {
       setFarmerLoading(false);
     }
-  };
-
-  useEffect(() => { searchFarmers(''); }, []);
-
-  const farmerOptions = farmers.map((f) => ({
-    value: f._id,
-    label: `${f.farmerNumber} - ${f.personalDetails?.name || ''}`,
-  }));
-
-  const handleFarmerSelect = async (val) => {
-    const farmer = farmers.find((f) => f._id === val);
-    setSelectedFarmer(farmer || null);
-    setField('farmerId', val);
-    if (!val) { setEditId(null); return; }
-
-    // Auto-fetch existing opening for this farmer and pre-fill the form
-    try {
-      const res = await producerOpeningAPI.getByFarmer(val);
-      const existing = res?.data;
-      if (existing) {
-        setEditId(existing._id);
-        setForm({
-          date:          existing.date ? new Date(existing.date) : null,
-          farmerId:      val,
-          dueAmount:     existing.dueAmount     ?? '',
-          cfAdvance:     existing.cfAdvance     ?? '',
-          loanAdvance:   existing.loanAdvance   ?? '',
-          cashAdvance:   existing.cashAdvance   ?? '',
-          revolvingFund: existing.revolvingFund ?? '',
-        });
-        notifications.show({ color: 'blue', title: 'Opening Loaded', message: 'Existing opening loaded — make changes and click Update', autoClose: 3000 });
-      } else {
-        // No existing opening — keep form fresh (only farmerId set)
-        setEditId(null);
-        setForm((prev) => ({ ...EMPTY_FORM, farmerId: val, date: prev.date }));
-      }
-    } catch { /* ignore — let user fill manually */ }
   };
 
   // ── Validation ─────────────────────────────────────────────────
@@ -178,6 +182,7 @@ export default function ProducerOpenings() {
 
       setForm(EMPTY_FORM);
       setSelectedFarmer(null);
+      setFarmerNumberInput('');
       setEditId(null);
       const goPage = editId ? page : 1;
       setPage(goPage);
@@ -193,6 +198,7 @@ export default function ProducerOpenings() {
   const handleCancel = () => {
     setForm(EMPTY_FORM);
     setSelectedFarmer(null);
+    setFarmerNumberInput('');
     setEditId(null);
   };
 
@@ -204,12 +210,12 @@ export default function ProducerOpenings() {
       children: <Text size="sm">Any unsaved changes will be lost. Continue?</Text>,
       labels: { confirm: 'Close', cancel: 'Stay' },
       confirmProps: { color: 'red' },
-      onConfirm: () => { setForm(EMPTY_FORM); setSelectedFarmer(null); setEditId(null); },
+      onConfirm: () => { setForm(EMPTY_FORM); setSelectedFarmer(null); setFarmerNumberInput(''); setEditId(null); },
     });
   };
 
   // ── Edit row ───────────────────────────────────────────────────
-  const openEdit = async (rec) => {
+  const openEdit = (rec) => {
     setEditId(rec._id);
     setForm({
       date:          rec.date ? new Date(rec.date) : null,
@@ -220,15 +226,10 @@ export default function ProducerOpenings() {
       cashAdvance:   rec.cashAdvance,
       revolvingFund: rec.revolvingFund,
     });
-    // Ensure this farmer is in the dropdown
     const farmer = rec.farmerId;
     if (farmer?._id) {
-      setFarmers((prev) => {
-        const exists = prev.find((f) => f._id === farmer._id);
-        if (!exists) return [farmer, ...prev];
-        return prev;
-      });
       setSelectedFarmer(farmer);
+      setFarmerNumberInput(rec.producerNumber || farmer.farmerNumber || '');
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -346,21 +347,18 @@ export default function ProducerOpenings() {
               </Grid>
             </Paper>
 
-            {/* ROW 2 : Producer Select */}
+            {/* ROW 2 : Producer lookup by farmer number */}
             <Paper withBorder radius="xs" bg="white" px="md" py="sm">
               <Grid gutter="md" align="flex-end">
                 <Grid.Col span={{ base: 12, sm: 6 }}>
-                  <FieldLabel>Producer (Farmer)</FieldLabel>
-                  <Select
-                    placeholder="Search by farmer number or name"
-                    value={form.farmerId}
-                    onChange={handleFarmerSelect}
-                    data={farmerOptions}
-                    searchable
-                    clearable
-                    onSearchChange={searchFarmers}
+                  <FieldLabel>Producer (Farmer Number)</FieldLabel>
+                  <TextInput
+                    ref={farmerInputRef}
+                    placeholder="Type farmer number and press Enter"
+                    value={farmerNumberInput}
+                    onChange={(e) => setFarmerNumberInput(e.currentTarget.value)}
+                    onKeyDown={handleFarmerNumberKeyDown}
                     rightSection={farmerLoading ? <Loader size={14} /> : undefined}
-                    nothingFoundMessage={farmerLoading ? 'Searching...' : 'No farmers found'}
                     size="sm" radius="sm"
                   />
                 </Grid.Col>
@@ -407,6 +405,7 @@ export default function ProducerOpenings() {
                 <Grid.Col span={{ base: 12, sm: 4 }}>
                   <FieldLabel>Producers Due Amount</FieldLabel>
                   <NumberInput
+                    ref={dueAmountRef}
                     placeholder="0.00"
                     value={form.dueAmount}
                     onChange={(val) => setField('dueAmount', val)}
