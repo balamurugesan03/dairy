@@ -147,6 +147,10 @@ export default function PaymentToProducer() {
   const detailPrintRef = useRef();
   const voucherPrintRef = useRef();
   const amountPaidWrapRef = useRef(null);
+  const producerIdRef    = useRef(null);
+  const saveButtonRef    = useRef(null);
+  // Prevents onBlur double-fetch when Enter/Tab already triggered the lookup
+  const keydownFetchedRef = useRef(false);
 
   // ─── Load collection centers + cycles + bank ledgers on mount ────────────────
   useEffect(() => {
@@ -251,6 +255,8 @@ export default function PaymentToProducer() {
       return;
     }
     setPeriodConfirmed(true);
+    // Move cursor to Producer ID field after confirming
+    setTimeout(() => producerIdRef.current?.focus(), 150);
   };
 
   const handleCancel = () => {
@@ -337,22 +343,27 @@ export default function PaymentToProducer() {
     return null;
   }, [producerIdInput, selectedCycle]);
 
-  // ─── Enter key on producer ID → fetch balance → focus amount paid ────────────
+  // ─── Enter / Tab on producer ID ─────────────────────────────────────────────
+  // Settlement: fetch balance → focus Save button (Amount Paid is read-only)
+  // Partial:    fetch balance → focus Amount Paid
   const handleProducerIdKeyDown = async (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const result = await fetchProducerBalance();
-      if (result && !result.bankTransferPaid && !result.alreadyPaidCash) {
-        setTimeout(() => {
-          amountPaidWrapRef.current?.querySelector('input')?.focus();
-        }, 50);
+    if (e.key !== 'Enter' && e.key !== 'Tab') return;
+    e.preventDefault();
+    keydownFetchedRef.current = true;
+    const result = await fetchProducerBalance();
+    if (!result || result.bankTransferPaid || result.alreadyPaidCash) return;
+    setTimeout(() => {
+      if (isPartial) {
+        amountPaidWrapRef.current?.querySelector('input')?.focus();
+      } else {
+        saveButtonRef.current?.focus();
       }
-    }
+    }, 50);
   };
 
-  // ─── Enter key on amount paid → save ────────────────────────────────────────
+  // ─── Enter / Tab on amount paid → save ──────────────────────────────────────
   const handleAmountPaidKeyDown = (e) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
       handleSave();
     }
@@ -768,8 +779,9 @@ export default function PaymentToProducer() {
 
                 <Box pos="relative">
                   <TextInput
+                    ref={producerIdRef}
                     label="Producer ID"
-                    placeholder="Enter Producer ID and press Enter"
+                    placeholder="Enter Producer ID and press Enter / Tab"
                     value={producerIdInput}
                     onChange={(e) => {
                       setProducerIdInput(e.currentTarget.value);
@@ -778,7 +790,14 @@ export default function PaymentToProducer() {
                       setAbstractBalance(0);
                       setAmountPaid('');
                     }}
-                    onBlur={fetchProducerBalance}
+                    onBlur={() => {
+                      // Skip if Enter/Tab already triggered the fetch
+                      if (keydownFetchedRef.current) {
+                        keydownFetchedRef.current = false;
+                        return;
+                      }
+                      fetchProducerBalance();
+                    }}
                     onKeyDown={handleProducerIdKeyDown}
                     rightSection={balanceLoading ? <Loader size="xs" /> : null}
                   />
@@ -835,7 +854,10 @@ export default function PaymentToProducer() {
                     min={0}
                     decimalScale={2}
                     prefix="₹ "
+                    // Settlement mode: always read-only (amount is auto-filled from abstract balance)
+                    readOnly={!isPartial}
                     disabled={!isPartial && (bankTransferPaid || (alreadyPaidCash && !editingId))}
+                    styles={!isPartial ? { input: { backgroundColor: '#f8f9fa', color: '#495057', cursor: 'default' } } : undefined}
                   />
                 </Box>
 
@@ -887,6 +909,7 @@ export default function PaymentToProducer() {
 
                 <Group justify="flex-start" mt="xs">
                   <Button
+                    ref={saveButtonRef}
                     color={isPartial ? 'orange' : 'blue'}
                     loading={saving}
                     onClick={handleSave}
