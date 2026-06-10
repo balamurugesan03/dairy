@@ -32,6 +32,17 @@ export const CompanyProvider = ({ children }) => {
 
   const loadCompanyForUser = async () => {
     try {
+      // Sub-centre login: company info comes from centreInfo
+      if (user?.loginType === 'centre' && user?.companyInfo) {
+        const ci = user.companyInfo;
+        setSelectedCompany({ _id: ci._id, companyName: ci.companyName, businessTypes: ci.businessTypes });
+        setSelectedBusinessType('Dairy Cooperative Society');
+        localStorage.setItem('selectedCompanyId', ci._id);
+        localStorage.setItem('selectedBusinessType', 'Dairy Cooperative Society');
+        setLoading(false);
+        return;
+      }
+
       // Check if user is a company (logged in via Company model)
       // Company users have companyName directly on the user object
       if (user?.companyName) {

@@ -261,6 +261,46 @@ export const bulkImportCollectionCenters = async (req, res) => {
   }
 };
 
+// Set or update login credentials for a sub-centre
+export const setCentreCredentials = async (req, res) => {
+  try {
+    const { username, password, isLoginEnabled, allowedModules } = req.body;
+    const centre = await CollectionCenter.findOne({ _id: req.params.id, companyId: req.companyId });
+    if (!centre) return res.status(404).json({ success: false, message: 'Centre not found' });
+
+    if (username) {
+      // Check username uniqueness
+      const conflict = await CollectionCenter.findOne({ username: username.toLowerCase(), _id: { $ne: centre._id } });
+      if (conflict) return res.status(400).json({ success: false, message: 'Username already taken' });
+      centre.username = username.toLowerCase();
+    }
+    if (password) centre.password = password;
+    if (typeof isLoginEnabled === 'boolean') centre.isLoginEnabled = isLoginEnabled;
+    if (allowedModules && Array.isArray(allowedModules)) centre.allowedModules = allowedModules;
+
+    await centre.save();
+
+    const result = centre.toObject();
+    delete result.password;
+    res.status(200).json({ success: true, message: 'Credentials updated', data: result });
+  } catch (error) {
+    console.error('setCentreCredentials error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Get credential info (no password) for a sub-centre
+export const getCentreCredentials = async (req, res) => {
+  try {
+    const centre = await CollectionCenter.findOne({ _id: req.params.id, companyId: req.companyId })
+      .select('username isLoginEnabled allowedModules centerName');
+    if (!centre) return res.status(404).json({ success: false, message: 'Centre not found' });
+    res.status(200).json({ success: true, data: centre });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export default {
   createCollectionCenter,
   getAllCollectionCenters,
@@ -268,5 +308,7 @@ export default {
   updateCollectionCenter,
   deleteCollectionCenter,
   toggleStatus,
-  bulkImportCollectionCenters
+  bulkImportCollectionCenters,
+  setCentreCredentials,
+  getCentreCredentials
 };

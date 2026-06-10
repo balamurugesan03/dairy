@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
 
 const collectionCenterSchema = new mongoose.Schema({
   centerName: {
@@ -66,6 +67,26 @@ const collectionCenterSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Company',
     required: true
+  },
+  // Sub-centre login credentials
+  username: {
+    type: String,
+    trim: true,
+    lowercase: true,
+    sparse: true,
+    unique: true
+  },
+  password: {
+    type: String,
+    select: false
+  },
+  isLoginEnabled: {
+    type: Boolean,
+    default: false
+  },
+  allowedModules: {
+    type: [String],
+    default: ['milkCollection', 'milkSales']
   }
 }, {
   timestamps: true
@@ -76,6 +97,17 @@ collectionCenterSchema.index({ centerName: 1 });
 collectionCenterSchema.index({ status: 1 });
 collectionCenterSchema.index({ centerType: 1 });
 collectionCenterSchema.index({ companyId: 1 });
+
+// Hash password before saving
+collectionCenterSchema.pre('save', async function s() {
+  if (!this.isModified('password') || !this.password) return next();
+  this.password = await bcrypt.hash(this.password, 12);
+  next();
+});
+
+collectionCenterSchema.methods.comparePassword = async function (candidatePassword) {
+  return bcrypt.compare(candidatePassword, this.password);
+};
 
 const CollectionCenter = mongoose.model('CollectionCenter', collectionCenterSchema);
 

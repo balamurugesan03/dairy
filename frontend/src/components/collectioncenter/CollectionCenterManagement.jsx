@@ -18,7 +18,11 @@ import {
   Text,
   Box,
   Card,
-  SimpleGrid
+  SimpleGrid,
+  Switch,
+  PasswordInput,
+  Divider,
+  Tooltip
 } from '@mantine/core';
 import { DataTable } from 'mantine-datatable';
 import {
@@ -34,7 +38,8 @@ import {
   IconColumns,
   IconClearAll,
   IconX,
-  IconUpload
+  IconUpload,
+  IconKey
 } from '@tabler/icons-react';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
@@ -83,6 +88,9 @@ const CollectionCenterManagement = () => {
   const [selectedCenterId, setSelectedCenterId] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [sortStatus, setSortStatus] = useState({ columnAccessor: '', direction: 'asc' });
+  const [credModal, setCredModal] = useState({ open: false, centreId: null, centreName: '' });
+  const [credForm, setCredForm] = useState({ username: '', password: '', isLoginEnabled: false });
+  const [credLoading, setCredLoading] = useState(false);
 
   useEffect(() => {
     fetchCenters();
@@ -353,6 +361,41 @@ const CollectionCenterManagement = () => {
     fetchCenters();
   };
 
+  const openCredModal = async (centre) => {
+    setCredModal({ open: true, centreId: centre._id, centreName: centre.centerName });
+    setCredForm({ username: '', password: '', isLoginEnabled: false });
+    try {
+      const res = await collectionCenterAPI.getCredentials(centre._id);
+      if (res.success) {
+        setCredForm({ username: res.data.username || '', password: '', isLoginEnabled: res.data.isLoginEnabled || false });
+      }
+    } catch {}
+  };
+
+  const saveCredentials = async () => {
+    if (!credForm.username) {
+      notifications.show({ title: 'Validation', message: 'Username is required', color: 'red' });
+      return;
+    }
+    setCredLoading(true);
+    try {
+      const payload = { username: credForm.username, isLoginEnabled: credForm.isLoginEnabled };
+      if (credForm.password) payload.password = credForm.password;
+      const res = await collectionCenterAPI.setCredentials(credModal.centreId, payload);
+      if (res.success) {
+        notifications.show({ title: 'Saved', message: 'Login credentials updated', color: 'green' });
+        setCredModal({ open: false, centreId: null, centreName: '' });
+        fetchCenters();
+      } else {
+        notifications.show({ title: 'Error', message: res.message, color: 'red' });
+      }
+    } catch (e) {
+      notifications.show({ title: 'Error', message: e.message, color: 'red' });
+    } finally {
+      setCredLoading(false);
+    }
+  };
+
   const getSortedCenters = () => {
     const { columnAccessor: col, direction: dir } = sortStatus;
     if (!col) return centers;
@@ -426,11 +469,29 @@ const CollectionCenterManagement = () => {
       )
     },
     {
+      accessor: 'loginStatus',
+      title: 'Login',
+      render: (center) => (
+        <Badge color={center.isLoginEnabled ? 'teal' : 'gray'} variant="light">
+          {center.isLoginEnabled ? 'Enabled' : 'Disabled'}
+        </Badge>
+      )
+    },
+    {
       accessor: 'actions',
       title: 'Actions',
       textAlign: 'right',
       render: (center) => (
         <Group gap="xs" justify="flex-end">
+          <Tooltip label="Set Login Credentials">
+            <ActionIcon
+              variant="subtle"
+              color="teal"
+              onClick={() => openCredModal(center)}
+            >
+              <IconKey size={16} />
+            </ActionIcon>
+          </Tooltip>
           <ActionIcon
             variant="subtle"
             color="green"
@@ -697,6 +758,49 @@ const CollectionCenterManagement = () => {
         entityType="Collection Centers (OpenLyssa)"
         requiredFields={['center_name']}
       />
+
+      <Modal
+        opened={credModal.open}
+        onClose={() => setCredModal({ open: false, centreId: null, centreName: '' })}
+        title={`Login Credentials — ${credModal.centreName}`}
+        size="sm"
+      >
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            Set login username and password for this sub-centre. The centre staff can log in with these credentials and access only Milk Collection and Milk Sales.
+          </Text>
+          <Divider />
+          <Switch
+            label="Enable Login"
+            checked={credForm.isLoginEnabled}
+            onChange={(e) => {
+              const checked = e.currentTarget.checked;
+              setCredForm(p => ({ ...p, isLoginEnabled: checked }));
+            }}
+          />
+          <TextInput
+            label="Username"
+            placeholder="e.g. centre01"
+            value={credForm.username}
+            onChange={(e) => setCredForm(p => ({ ...p, username: e.target.value }))}
+            required
+          />
+          <PasswordInput
+            label="Password"
+            placeholder="Leave blank to keep existing password"
+            value={credForm.password}
+            onChange={(e) => setCredForm(p => ({ ...p, password: e.target.value }))}
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setCredModal({ open: false, centreId: null, centreName: '' })}>
+              Cancel
+            </Button>
+            <Button onClick={saveCredentials} loading={credLoading} color="teal">
+              Save
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Box>
   );
 };

@@ -871,10 +871,8 @@ export const getStockRegister = async (req, res) => {
     const applyTxn = (group, txn) => {
       if (txn.transactionType === 'Stock In') {
         if (txn.referenceType === 'Return') group.salesReturn += txn.quantity;
-        else if (txn.referenceType === 'Opening') group.openingEntry += txn.quantity;
         else {
           group.purchase += txn.quantity;
-          // Aggregate earnings only on actual purchases (not returns)
           const e = computeEarnings(txn);
           group.cattleFeedCommission += e.commission;
           group.inspectionFee        += e.inspection;
@@ -889,12 +887,11 @@ export const getStockRegister = async (req, res) => {
     const newGroup = (base) => ({
       ...base,
       purchase: 0, salesReturn: 0, sales: 0, purchaseReturn: 0,
-      openingEntry: 0,
       cattleFeedCommission: 0, inspectionFee: 0, totalEarnings: 0,
     });
 
     const buildRow = (group, ob, extra = {}) => {
-      const total = ob + group.openingEntry + group.purchase + group.salesReturn;
+      const total = ob + group.purchase + group.salesReturn;
       const closing = total - group.sales - group.purchaseReturn;
       const rate = group.rate || 0;
       return {
@@ -903,7 +900,6 @@ export const getStockRegister = async (req, res) => {
         unit: group.unit || group.measurement || 'Nos',
         rate: parseFloat(rate).toFixed(2),
         ob: parseFloat(ob).toFixed(3),
-        openingEntry: parseFloat(group.openingEntry).toFixed(3),
         purchase: parseFloat(group.purchase).toFixed(3),
         salesReturn: parseFloat(group.salesReturn).toFixed(3),
         total: parseFloat(total).toFixed(3),
@@ -1030,7 +1026,6 @@ export const getStockRegister = async (req, res) => {
     const sumField = (key) => reportData.reduce((s, r) => s + parseFloat(r[key] || 0), 0);
     const grandTotal = {
       ob: sumField('ob').toFixed(3),
-      openingEntry: sumField('openingEntry').toFixed(3),
       purchase: sumField('purchase').toFixed(3),
       salesReturn: sumField('salesReturn').toFixed(3),
       total: sumField('total').toFixed(3),

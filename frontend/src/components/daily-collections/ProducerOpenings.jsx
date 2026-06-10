@@ -60,8 +60,24 @@ export default function ProducerOpenings() {
   const [farmerLoading, setFarmerLoading]         = useState(false);
   const [selectedFarmer, setSelectedFarmer]       = useState(null);
 
-  const farmerInputRef = useRef(null);
-  const dueAmountRef   = useRef(null);
+  const farmerInputRef  = useRef(null);
+  const dueAmountRef    = useRef(null);
+  const cfAdvanceRef    = useRef(null);
+  const loanAdvanceRef  = useRef(null);
+  const cashAdvanceRef  = useRef(null);
+  const revolvingRef    = useRef(null);
+  const saveButtonRef   = useRef(null);
+
+  const focusRef = (ref) => {
+    const el = ref?.current;
+    if (!el) return;
+    const input = el.tagName === 'INPUT' ? el : el.querySelector('input');
+    input?.focus();
+  };
+
+  const tabTo = (nextRef) => (e) => {
+    if (e.key === 'Tab') { e.preventDefault(); focusRef(nextRef); }
+  };
 
   const setField = (key, val) => setForm((prev) => ({ ...prev, [key]: val }));
 
@@ -408,6 +424,7 @@ export default function ProducerOpenings() {
                     placeholder="0.00"
                     value={form.dueAmount}
                     onChange={(val) => setField('dueAmount', val)}
+                    onKeyDown={tabTo(cfAdvanceRef)}
                     decimalScale={2} min={0} hideControls prefix="₹ "
                     size="sm" radius="sm"
                     styles={{ input: { fontWeight: 600, color: '#c92a2a', textAlign: 'right' } }}
@@ -429,8 +446,10 @@ export default function ProducerOpenings() {
                       <Box>
                         <FieldLabel>CF Advance</FieldLabel>
                         <NumberInput
+                          ref={cfAdvanceRef}
                           placeholder="0.00" value={form.cfAdvance}
                           onChange={(val) => setField('cfAdvance', val)}
+                          onKeyDown={tabTo(loanAdvanceRef)}
                           decimalScale={2} min={0} hideControls prefix="₹ "
                           size="sm" radius="sm"
                           styles={{ input: { textAlign: 'right' } }}
@@ -439,8 +458,10 @@ export default function ProducerOpenings() {
                       <Box>
                         <FieldLabel>Loan Advance</FieldLabel>
                         <NumberInput
+                          ref={loanAdvanceRef}
                           placeholder="0.00" value={form.loanAdvance}
                           onChange={(val) => setField('loanAdvance', val)}
+                          onKeyDown={tabTo(cashAdvanceRef)}
                           decimalScale={2} min={0} hideControls prefix="₹ "
                           size="sm" radius="sm"
                           styles={{ input: { textAlign: 'right' } }}
@@ -458,8 +479,10 @@ export default function ProducerOpenings() {
                       <Box>
                         <FieldLabel>Cash Advance</FieldLabel>
                         <NumberInput
+                          ref={cashAdvanceRef}
                           placeholder="0.00" value={form.cashAdvance}
                           onChange={(val) => setField('cashAdvance', val)}
+                          onKeyDown={tabTo(revolvingRef)}
                           decimalScale={2} min={0} hideControls prefix="₹ "
                           size="sm" radius="sm"
                           styles={{ input: { textAlign: 'right' } }}
@@ -468,8 +491,10 @@ export default function ProducerOpenings() {
                       <Box>
                         <FieldLabel>Revolving Fund</FieldLabel>
                         <NumberInput
+                          ref={revolvingRef}
                           placeholder="0.00" value={form.revolvingFund}
                           onChange={(val) => setField('revolvingFund', val)}
+                          onKeyDown={(e) => { if (e.key === 'Tab') { e.preventDefault(); saveButtonRef.current?.focus(); } }}
                           decimalScale={2} min={0} hideControls prefix="₹ "
                           size="sm" radius="sm"
                           styles={{ input: { textAlign: 'right' } }}
@@ -494,6 +519,7 @@ export default function ProducerOpenings() {
             <Paper withBorder radius="xs" bg="white" px="md" py="sm">
               <Group gap="sm">
                 <Button
+                  ref={saveButtonRef}
                   color="blue" radius="sm" size="sm" loading={saving}
                   leftSection={<IconDeviceFloppy size={16} />}
                   onClick={handleSave}

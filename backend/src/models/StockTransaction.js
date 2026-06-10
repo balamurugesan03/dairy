@@ -33,7 +33,7 @@ const stockTransactionSchema = new mongoose.Schema({
   },
   referenceType: {
     type: String,
-    enum: ['Purchase', 'Sale', 'Opening', 'Adjustment', 'Return'],
+    enum: ['Purchase', 'Sale', 'Opening', 'Adjustment', 'Return', 'Opening Balance Adjustment'],
     required: true
   },
   referenceId: {

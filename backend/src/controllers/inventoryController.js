@@ -82,15 +82,17 @@ export const createItem = async (req, res) => {
     const item = new Item(itemData);
     await item.save();
 
-    // Create opening stock transaction if opening balance > 0
+    // Create opening balance adjustment transaction if opening balance > 0.
+    // Use 'Opening Balance Adjustment' so the stock register doesn't double-count
+    // it alongside item.openingBalance in the OB calculation.
     if (itemData.openingBalance > 0) {
       await createStockTransaction({
         itemId: item._id,
         transactionType: 'Stock In',
         quantity: itemData.openingBalance,
-        rate: itemData.salesRate || 0,
-        referenceType: 'Opening',
-        notes: 'Opening Stock'
+        rate: itemData.purchaseRate || itemData.salesRate || 0,
+        referenceType: 'Opening Balance Adjustment',
+        notes: 'Opening balance set at item creation'
       });
     }
 

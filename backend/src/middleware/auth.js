@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import Company from '../models/Company.js';
+import CollectionCenter from '../models/CollectionCenter.js';
 
 // Protect routes - verify JWT token
 export const protect = async (req, res, next) => {
@@ -70,8 +71,19 @@ export const protect = async (req, res, next) => {
 
       req.userType = 'company';
       req.user = currentUser;
-      // For company users, set their role as admin
       req.user.role = 'admin';
+    } else if (tokenType === 'centre') {
+      // Token is for a CollectionCenter (sub-centre login)
+      currentUser = await CollectionCenter.findById(decoded.id);
+      if (!currentUser) {
+        return res.status(401).json({ success: false, message: 'Centre not found.' });
+      }
+      if (!currentUser.isLoginEnabled || currentUser.status !== 'Active') {
+        return res.status(401).json({ success: false, message: 'Centre login has been disabled.' });
+      }
+      req.userType = 'centre';
+      req.user = currentUser;
+      req.user.role = 'centre';
     } else {
       // Token is for a User (superadmin or admin)
       currentUser = await User.findById(decoded.id);
@@ -160,6 +172,11 @@ export const addCompanyFilter = (req, res, next) => {
     // Company user - filter by their own company ID
     req.companyFilter = { company: req.user._id };
     req.userCompany = req.user._id;
+  } else if (req.userType === 'centre') {
+    // Sub-centre login - uses parent company's companyId so data is shared with main centre
+    req.companyFilter = { companyId: req.user.companyId };
+    req.userCompany = req.user.companyId;
+    req.centreId = req.user._id;
   } else {
     // Regular admin user with company reference
     if (!req.user || !req.user.company) {
@@ -214,6 +231,13 @@ export const checkPermission = (moduleName, action) => {
     // For company login (direct company login), treat as admin
     if (req.userType === 'company') {
       return next();
+    }
+
+    // For centre login, check allowedModules
+    if (req.userType === 'centre') {
+      const allowed = req.user.allowedModules || [];
+      if (allowed.includes(moduleName)) return next();
+      return res.status(403).json({ success: false, message: `No access to ${moduleName} module` });
     }
 
     // Check user permissions

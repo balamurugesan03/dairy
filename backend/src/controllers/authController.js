@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import Company from '../models/Company.js';
+import CollectionCenter from '../models/CollectionCenter.js';
 
 // Generate JWT token
 const signToken = (id, type = 'user') => {
@@ -18,8 +19,8 @@ const createSendToken = (user, statusCode, res, type = 'user', companyData = nul
 
   const userData = {
     ...user.toObject(),
-    role: type === 'company' ? 'admin' : user.role,
-    loginType: type  // 'company' | 'user'
+    role: type === 'company' ? 'admin' : (type === 'centre' ? 'centre' : user.role),
+    loginType: type  // 'company' | 'user' | 'centre'
   };
 
   // Add permissions object for easy frontend access
@@ -92,7 +93,32 @@ export const login = async (req, res) => {
       });
     }
 
-    // If not found in Company, try User model
+    // If not found in Company, try CollectionCenter (sub-centre login)
+    const centre = await CollectionCenter.findOne({ username: username.toLowerCase(), isLoginEnabled: true })
+      .select('+password');
+
+    if (centre) {
+      if (!(await centre.comparePassword(password))) {
+        return res.status(401).json({ success: false, message: 'Incorrect username or password' });
+      }
+      if (centre.status !== 'Active') {
+        return res.status(401).json({ success: false, message: 'This centre has been deactivated.' });
+      }
+      const parentCompany = await Company.findById(centre.companyId).select('companyName businessTypes status');
+      if (!parentCompany || parentCompany.status !== 'Active') {
+        return res.status(401).json({ success: false, message: 'Parent company is inactive.' });
+      }
+      return createSendToken(centre, 200, res, 'centre', {
+        _id: parentCompany._id,
+        companyName: parentCompany.companyName,
+        businessTypes: parentCompany.businessTypes,
+        centreId: centre._id,
+        centreName: centre.centerName,
+        allowedModules: centre.allowedModules
+      });
+    }
+
+    // If not found in Company or CollectionCenter, try User model
     let user = await User.findOne({ username: username.toLowerCase() })
       .select('+password')
       .populate('company', 'companyName businessTypes status');
@@ -164,8 +190,8 @@ export const getMe = async (req, res) => {
 
     const userObj = {
       ...userData.toObject(),
-      role: req.userType === 'company' ? 'admin' : userData.role,
-      loginType: req.userType  // 'company' | 'user'
+      role: req.userType === 'company' ? 'admin' : (req.userType === 'centre' ? 'centre' : userData.role),
+      loginType: req.userType  // 'company' | 'user' | 'centre'
     };
 
     // Add permissions object for easy frontend access
@@ -189,6 +215,18 @@ export const getMe = async (req, res) => {
         companyName: userData.companyName,
         businessTypes: userData.businessTypes
       };
+    } else if (req.userType === 'centre') {
+      const parentCompany = await Company.findById(userData.companyId).select('companyName businessTypes');
+      if (parentCompany) {
+        userObj.companyInfo = {
+          _id: parentCompany._id,
+          companyName: parentCompany.companyName,
+          businessTypes: parentCompany.businessTypes,
+          centreId: userData._id,
+          centreName: userData.centerName,
+          allowedModules: userData.allowedModules
+        };
+      }
     } else if (userData.company) {
       // If it's a user with a company, fetch company details
       const companyData = await Company.findById(userData.company)

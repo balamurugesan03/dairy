@@ -204,10 +204,13 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated: !!token && !!user,
     isSuperAdmin: user?.role === 'superadmin',
     isCompanyAdmin: user?.loginType === 'company',  // logged in via Company credentials
+    isCentreLogin: user?.loginType === 'centre',     // logged in as a sub-centre
     isAdmin: user?.role === 'admin' || user?.role === 'superadmin',
     isUser: user?.role === 'user',
     userCompany: user?.company || user?.companyInfo?._id,
     companyInfo: user?.companyInfo,
+    centreInfo: user?.loginType === 'centre' ? user?.companyInfo : null,
+    allowedModules: user?.loginType === 'centre' ? (user?.companyInfo?.allowedModules || []) : null,
     designation: user?.designation,
     permissions: user?.permissionsObject || {},
     // Permission helper functions

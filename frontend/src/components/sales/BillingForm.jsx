@@ -79,6 +79,7 @@ import { useCompany } from '../../context/CompanyContext';
 const BillingForm = () => {
   const navigate = useNavigate();
   const printRef = useRef();
+  const itemSelectRef = useRef(null);
   const { selectedCompany } = useCompany();
 
   const [saving, setSaving] = useState(false);
@@ -797,6 +798,7 @@ const BillingForm = () => {
                           if (e.key === 'Enter' && filteredFarmerOptions.length === 1) {
                             handleFarmerSelect(filteredFarmerOptions[0].value);
                             setFarmerSearch('');
+                            setTimeout(() => itemSelectRef.current?.focus(), 100);
                           }
                         }}
                       />
@@ -941,6 +943,7 @@ const BillingForm = () => {
                     })()}
                   >
                     <Select
+                      ref={itemSelectRef}
                       label="Item"
                       placeholder="Search item..."
                       value={form.values.itemId}

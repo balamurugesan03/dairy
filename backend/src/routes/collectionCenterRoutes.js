@@ -6,12 +6,12 @@ import {
   updateCollectionCenter,
   deleteCollectionCenter,
   toggleStatus,
-  bulkImportCollectionCenters
+  bulkImportCollectionCenters,
+  setCentreCredentials,
+  getCentreCredentials
 } from '../controllers/collectionCenterController.js';
-import { protect, addCompanyFilter } from '../middleware/auth.js';
 
 const router = express.Router();
-router.use(protect, addCompanyFilter);
 
 // Bulk import from OpenLyssa (must be before /:id routes)
 router.post('/bulk-import', bulkImportCollectionCenters);
@@ -21,6 +21,10 @@ router.post('/', createCollectionCenter);
 
 // Get all collection centers (with pagination and filters)
 router.get('/', getAllCollectionCenters);
+
+// Sub-centre login credentials (must be before /:id)
+router.put('/:id/credentials', setCentreCredentials);
+router.get('/:id/credentials', getCentreCredentials);
 
 // Get collection center by ID
 router.get('/:id', getCollectionCenterById);

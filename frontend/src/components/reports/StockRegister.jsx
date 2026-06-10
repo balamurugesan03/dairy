@@ -1,13 +1,13 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Box, Paper, Group, Text, Title, Button, Select, SegmentedControl,
+  Box, Paper, Group, Text, Title, Button, Select,
   Table, ScrollArea, Stack, SimpleGrid, ThemeIcon, Loader, Center, Badge
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import {
   IconPackages, IconCalendar, IconRefresh, IconPrinter,
-  IconFileExport, IconInbox, IconBox, IconX
+  IconFileExport, IconInbox, IconX
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import * as XLSX from 'xlsx';
@@ -61,7 +61,6 @@ const StockRegister = () => {
   const [reportData, setReportData] = useState(null);
   const [preset, setPreset] = useState('thisMonth');
   const [dateRange, setDateRange] = useState(getPresetRange('thisMonth'));
-  const [mode, setMode] = useState('day');
   const printRef = useRef(null);
 
   const handlePresetChange = (val) => {
@@ -80,7 +79,7 @@ const StockRegister = () => {
       const res = await reportAPI.stockRegister({
         startDate: dayjs(start).format('YYYY-MM-DD'),
         endDate: dayjs(end).format('YYYY-MM-DD'),
-        mode
+        mode: 'item'
       });
       setReportData(res.data || res);
     } catch (err) {
@@ -93,88 +92,20 @@ const StockRegister = () => {
   const handleExport = () => {
     if (!rows.length) return;
     const data = rows.map(r => ({
-      ...(mode === 'day' ? { Date: fmtDate(r.date) } : {}),
-      ...(mode === 'month' ? { Month: r.month } : {}),
       Item: r.itemName, Unit: r.unit, Rate: r.rate,
-      Opening: r.ob, 'Stock Opening': r.openingEntry, Purchase: r.purchase, 'Sale Return': r.salesReturn,
+      Opening: r.ob, Purchase: r.purchase, 'Sale Return': r.salesReturn,
       Total: r.total, Sales: r.sales, 'Purch. Return': r.purchaseReturn,
       Closing: r.closingStock, 'Stock Value': r.stockValue,
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Stock Register');
-    XLSX.writeFile(wb, `stock_register_${mode}_${dayjs().format('YYYY-MM-DD')}.xlsx`);
+    XLSX.writeFile(wb, `stock_register_${dayjs().format('YYYY-MM-DD')}.xlsx`);
     notifications.show({ title: 'Exported', message: 'Stock register exported to Excel', color: 'green' });
   };
 
   const rows = reportData?.rows || [];
   const gt = reportData?.grandTotal;
-
-  // Build grouped rows for day/month modes
-  const buildGroupedRows = () => {
-    const groups = {};
-    const keys = [];
-    rows.forEach(row => {
-      const key = mode === 'day' ? fmtDate(row.date) : row.month;
-      if (!groups[key]) { groups[key] = []; keys.push(key); }
-      groups[key].push(row);
-    });
-
-    const result = [];
-    keys.forEach(key => {
-      const grpRows = groups[key];
-      // Compute group subtotals
-      const sub = grpRows.reduce((acc, r) => ({
-        purchase: acc.purchase + parseFloat(r.purchase || 0),
-        salesReturn: acc.salesReturn + parseFloat(r.salesReturn || 0),
-        sales: acc.sales + parseFloat(r.sales || 0),
-        purchaseReturn: acc.purchaseReturn + parseFloat(r.purchaseReturn || 0),
-        stockValue: acc.stockValue + parseFloat(r.stockValue || 0)
-      }), { purchase: 0, salesReturn: 0, sales: 0, purchaseReturn: 0, stockValue: 0 });
-
-      // Group header
-      result.push(
-        <Table.Tr key={`hdr-${key}`} style={{ background: '#dbeafe' }}>
-          <Table.Td colSpan={13} style={{ padding: '5px 12px', fontWeight: 800, color: '#1d4ed8', fontSize: 12 }}>
-            <Group gap="xs">
-              <IconBox size={14} />
-              <span>{key}</span>
-              <Text span size="xs" c="dimmed" fw={400}>
-                — {grpRows.length} item{grpRows.length !== 1 ? 's' : ''} &nbsp;|&nbsp;
-                Purchase: {fmt3(sub.purchase)} &nbsp;|&nbsp;
-                Sales: {fmt3(sub.sales)} &nbsp;|&nbsp;
-                Value: ₹{fmt2(sub.stockValue)}
-              </Text>
-            </Group>
-          </Table.Td>
-        </Table.Tr>
-      );
-
-      // Item rows under this group
-      grpRows.forEach((row, ri) => {
-        result.push(
-          <Table.Tr key={`${key}-${ri}`} style={{ background: ri % 2 === 0 ? '#ffffff' : '#f9fafb' }}>
-            <Table.Td style={{ ...tdStyle, color: '#6b7280' }}>{ri + 1}</Table.Td>
-            <Table.Td style={{ ...tdStyle, fontWeight: 600 }}>{row.itemName}</Table.Td>
-            <Table.Td style={{ ...tdStyle, textAlign: 'center' }}>
-              <Badge size="xs" variant="light" color="gray">{row.unit}</Badge>
-            </Table.Td>
-            <Table.Td style={{ ...tdStyle, textAlign: 'right' }}>₹{row.rate}</Table.Td>
-            <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#1d4ed8', fontWeight: 600 }}>{fmt3(row.ob)}</Table.Td>
-            <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#0369a1', fontWeight: 600 }}>{fmt3(row.openingEntry)}</Table.Td>
-            <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#166534' }}>{fmt3(row.purchase)}</Table.Td>
-            <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#92400e' }}>{fmt3(row.salesReturn)}</Table.Td>
-            <Table.Td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{fmt3(row.total)}</Table.Td>
-            <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#7c3aed' }}>{fmt3(row.sales)}</Table.Td>
-            <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#be185d' }}>{fmt3(row.purchaseReturn)}</Table.Td>
-            <Table.Td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: '#065f46' }}>{fmt3(row.closingStock)}</Table.Td>
-            <Table.Td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>₹{fmt2(row.stockValue)}</Table.Td>
-          </Table.Tr>
-        );
-      });
-    });
-    return result;
-  };
 
   const buildItemRows = () =>
     rows.map((row, idx) => (
@@ -186,7 +117,6 @@ const StockRegister = () => {
         </Table.Td>
         <Table.Td style={{ ...tdStyle, textAlign: 'right' }}>₹{row.rate}</Table.Td>
         <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#1d4ed8', fontWeight: 600 }}>{fmt3(row.ob)}</Table.Td>
-        <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#0369a1', fontWeight: 600 }}>{fmt3(row.openingEntry)}</Table.Td>
         <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#166534' }}>{fmt3(row.purchase)}</Table.Td>
         <Table.Td style={{ ...tdStyle, textAlign: 'right', color: '#92400e' }}>{fmt3(row.salesReturn)}</Table.Td>
         <Table.Td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{fmt3(row.total)}</Table.Td>
@@ -198,19 +128,18 @@ const StockRegister = () => {
     ));
 
   const COL_HEADERS = [
-    { label: '#',              style: thStyle },
-    { label: 'Item Name',      style: thStyle },
-    { label: 'Unit',           style: { ...thStyle, textAlign: 'center' } },
-    { label: 'Rate',           style: thStyleR },
-    { label: 'Opening',        style: thStyleR },
-    { label: 'Stock Opening',  style: thStyleR },
-    { label: 'Purchase',       style: thStyleR },
-    { label: 'Sale Return',    style: thStyleR },
-    { label: 'Total',          style: thStyleR },
-    { label: 'Sales',          style: thStyleR },
-    { label: 'Purch. Return',  style: thStyleR },
-    { label: 'Closing',        style: thStyleR },
-    { label: 'Stock Value',    style: thStyleR },
+    { label: '#',             style: thStyle },
+    { label: 'Item Name',     style: thStyle },
+    { label: 'Unit',          style: { ...thStyle, textAlign: 'center' } },
+    { label: 'Rate',          style: thStyleR },
+    { label: 'Opening',       style: thStyleR },
+    { label: 'Purchase',      style: thStyleR },
+    { label: 'Sale Return',   style: thStyleR },
+    { label: 'Total',         style: thStyleR },
+    { label: 'Sales',         style: thStyleR },
+    { label: 'Purch. Return', style: thStyleR },
+    { label: 'Closing',       style: thStyleR },
+    { label: 'Stock Value',   style: thStyleR },
   ];
 
   return (
@@ -226,9 +155,7 @@ const StockRegister = () => {
               <Box>
                 <Title order={4} c="white" style={{ lineHeight: 1.1 }}>Stock Register</Title>
                 <Text size="xs" c="rgba(255,255,255,0.8)">
-                  {mode === 'day' ? 'Daily stock flow — opening to closing per item per day' :
-                   mode === 'month' ? 'Monthly stock flow — per item per month' :
-                   'Item-wise consolidated stock summary'}
+                  Item-wise consolidated stock summary
                 </Text>
               </Box>
             </Group>
@@ -251,10 +178,9 @@ const StockRegister = () => {
 
         {reportData && gt && (
           <Box px="xl" py="sm" style={{ background: 'linear-gradient(135deg, #e8f5e9 0%, #f0fdf4 100%)' }}>
-            <SimpleGrid cols={{ base: 2, sm: 5 }} spacing="sm">
+            <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
               {[
                 { label: 'Total Rows', value: rows.length, color: 'green.8' },
-                { label: 'Opening Stock', value: fmt3(gt.ob), color: 'blue.8' },
                 { label: 'Total Purchase', value: fmt3(gt.purchase), color: 'teal.8' },
                 { label: 'Total Sales', value: fmt3(gt.sales), color: 'violet.8' },
                 { label: 'Stock Value', value: `₹${fmt2(gt.stockValue)}`, color: 'orange.8' }
@@ -289,19 +215,6 @@ const StockRegister = () => {
             style={{ flex: '2 1 240px' }}
             size="sm"
           />
-          <Box>
-            <Text size="xs" fw={600} c="dimmed" mb={4}>View Mode</Text>
-            <SegmentedControl
-              value={mode}
-              onChange={setMode}
-              data={[
-                { value: 'item', label: 'Item-wise' },
-                { value: 'day', label: 'Day-wise' },
-                { value: 'month', label: 'Month-wise' }
-              ]}
-              size="sm"
-            />
-          </Box>
           <Button leftSection={<IconRefresh size={16} />} onClick={fetchReport} loading={loading} size="sm" color="green">
             Generate
           </Button>
@@ -322,9 +235,7 @@ const StockRegister = () => {
       <Paper radius="md" withBorder style={{ overflow: 'hidden' }}>
         <Box style={{ background: `linear-gradient(90deg, ${GREEN} 0%, #15803d 100%)`, padding: '10px 16px' }}>
           <Group justify="space-between">
-            <Text fw={700} size="sm" c="white">
-              {mode === 'day' ? 'Daily Stock Flow Register' : mode === 'month' ? 'Monthly Stock Flow Register' : 'Item-wise Stock Summary'}
-            </Text>
+            <Text fw={700} size="sm" c="white">Item-wise Stock Summary</Text>
             {dateRange[0] && dateRange[1] && (
               <Text size="xs" c="rgba(255,255,255,0.8)">
                 {fmtDate(dateRange[0])} — {fmtDate(dateRange[1])}
@@ -360,7 +271,7 @@ const StockRegister = () => {
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {mode === 'item' ? buildItemRows() : buildGroupedRows()}
+                {buildItemRows()}
               </Table.Tbody>
               {gt && (
                 <Table.Tfoot>
@@ -369,7 +280,6 @@ const StockRegister = () => {
                       Grand Total
                     </Table.Td>
                     <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#1d4ed8' }}>{fmt3(gt.ob)}</Table.Td>
-                    <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#0369a1' }}>{fmt3(gt.openingEntry)}</Table.Td>
                     <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#166534' }}>{fmt3(gt.purchase)}</Table.Td>
                     <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#92400e' }}>{fmt3(gt.salesReturn)}</Table.Td>
                     <Table.Td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800 }}>{fmt3(gt.total)}</Table.Td>
@@ -387,9 +297,8 @@ const StockRegister = () => {
         {rows.length > 0 && (
           <Box p="sm" style={{ borderTop: '1px solid #e5e7eb', background: '#f9fafb' }}>
             <Group gap="xl">
-              <Text size="xs" c="dimmed">Opening (OB) = Balance at start of period</Text>
-              <Text size="xs" c="dimmed">Stock Opening = Opening stock entries added within period</Text>
-              <Text size="xs" c="dimmed">Total = OB + Stock Opening + Purchase + Sale Return</Text>
+              <Text size="xs" c="dimmed">Opening = Balance at start of period</Text>
+              <Text size="xs" c="dimmed">Total = Opening + Purchase + Sale Return</Text>
               <Text size="xs" c="dimmed">Closing = Total − Sales − Purchase Return</Text>
             </Group>
           </Box>

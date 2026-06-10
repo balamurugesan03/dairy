@@ -162,8 +162,8 @@ export const itemAPI = {
   create: (data) => api.post('/items', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/items/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/items/${id}`).then(res => res.data).catch(handleError),
-  updateOpeningBalance: (id, data) => api.patch(`/items/${id}/opening-balance`, data).then(res => res.data).catch(handleError),
-  updateSalesPrice: (id, data) => api.patch(`/items/${id}/sales-price`, data).then(res => res.data).catch(handleError)
+  updateSalesPrice: (id, data) => api.patch(`/items/${id}/sales-price`, data).then(res => res.data).catch(handleError),
+  updateOpeningBalance: (id, data) => api.patch(`/items/${id}/opening-balance`, data).then(res => res.data).catch(handleError)
 };
 
 // OPENING STOCK APIs
@@ -426,7 +426,9 @@ export const collectionCenterAPI = {
   update: (id, data) => api.put(`/collection-centers/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/collection-centers/${id}`).then(res => res.data).catch(handleError),
   toggleStatus: (id) => api.patch(`/collection-centers/${id}/status`).then(res => res.data).catch(handleError),
-  bulkImport: (centers) => api.post('/collection-centers/bulk-import', { centers }).then(res => res.data).catch(handleError)
+  bulkImport: (centers) => api.post('/collection-centers/bulk-import', { centers }).then(res => res.data).catch(handleError),
+  setCredentials: (id, data) => api.put(`/collection-centers/${id}/credentials`, data).then(res => res.data).catch(handleError),
+  getCredentials: (id) => api.get(`/collection-centers/${id}/credentials`).then(res => res.data).catch(handleError)
 };
 
 // MILK COLLECTION APIs

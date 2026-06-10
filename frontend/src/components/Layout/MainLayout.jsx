@@ -65,7 +65,7 @@ const MainLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { selectedCompany, selectedBusinessType } = useCompany();
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isAdmin, isCentreLogin } = useAuth();
   const { colorScheme, currentThemeConfig } = useTheme();
 
   const isDark = colorScheme === 'dark';
@@ -526,6 +526,20 @@ const MainLayout = () => {
       ]
     }] : [])
     ];
+
+    // Sub-centre login: only Milk Collection + Milk Sales
+    if (isCentreLogin) {
+      return allMenuItems.filter(item => ['/', 'sales-menu'].includes(item.key)).map(item => {
+        if (item.key !== 'sales-menu') return item;
+        // Restrict sales-menu children to milk purchase, list, and milk sales only
+        return {
+          ...item,
+          children: (item.children || []).filter(c =>
+            ['/daily-collections/milk-purchase', '/daily-collections/list', '/daily-collections/milk-sales'].includes(c.key)
+          )
+        };
+      });
+    }
 
     // Filter menu items based on selected business type
     if (selectedBusinessType === 'Dairy Cooperative Society') {

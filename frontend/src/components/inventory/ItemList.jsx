@@ -834,7 +834,7 @@ const ItemList = () => {
           >
             Add Item
           </Button>
-          <Button
+          {/* <Button
             variant="light"
             color="teal"
             leftSection={<IconScale size={16} />}
@@ -846,7 +846,7 @@ const ItemList = () => {
             }}
           >
             Opening Balance
-          </Button>
+          </Button> */}
           <Button
             variant="default"
             leftSection={<IconX size={16} />}
