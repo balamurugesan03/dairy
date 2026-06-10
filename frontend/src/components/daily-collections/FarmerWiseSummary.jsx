@@ -143,11 +143,11 @@ const FarmerWiseSummary = () => {
     }
   }, [fromDate, toDate]);
 
-  // ── Client-side search filter ─────────────────────────────────────────────
+  // ── Client-side search filter — exact match on farmerNumber, partial on name
   const filteredData = searchFarmer.trim()
     ? data.filter(f =>
-        f.farmerNumber?.toLowerCase().includes(searchFarmer.toLowerCase()) ||
-        f.farmerName?.toLowerCase().includes(searchFarmer.toLowerCase())
+        f.farmerNumber === searchFarmer.trim() ||
+        f.farmerName?.toLowerCase().includes(searchFarmer.trim().toLowerCase())
       )
     : data;
 
