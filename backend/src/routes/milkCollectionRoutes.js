@@ -12,6 +12,7 @@ import {
   getFarmerHistory,
   getFarmerStats,
   getFarmerWiseSummary,
+  getFarmerWiseStatement,
   getDateWiseSummary,
   bulkImportCollections,
   fileUploadImportCollections,
@@ -25,6 +26,7 @@ const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 500 * 1024 * 1024
 
 // Summary / aggregate routes — BEFORE /:id
 router.get('/summary/farmer-wise',         getFarmerWiseSummary);
+router.get('/statement/farmer-wise',       getFarmerWiseStatement);
 router.get('/summary/date-wise',           getDateWiseSummary);
 router.get('/farmer/:farmerNumber/stats',  getFarmerStats);
 router.get('/farmer/:farmerNumber',        getFarmerHistory);

@@ -12,7 +12,8 @@ import {
   terminateFarmer,
   bulkImportFarmers,
   bulkImportShares,
-  bulkDeleteFarmers
+  bulkDeleteFarmers,
+  getFarmerReport
 } from '../controllers/farmerController.js';
 import { protect, addCompanyFilter } from '../middleware/auth.js';
 
@@ -36,6 +37,9 @@ router.get('/', getAllFarmers);
 
 // Search farmer by farmer number or mobile
 router.get('/search', searchFarmer);
+
+// Farmer report — member/caste/gender/centre aggregations
+router.get('/report', getFarmerReport);
 
 // Get farmer by ID
 router.get('/:id', getFarmerById);

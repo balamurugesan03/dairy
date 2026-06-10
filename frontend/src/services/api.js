@@ -95,7 +95,8 @@ export const farmerAPI = {
   terminate: (id, data) => api.post(`/farmers/${id}/terminate`, data).then(res => res.data).catch(handleError),
   bulkImport: (farmers) => api.post('/farmers/bulk-import', { farmers }).then(res => res.data).catch(handleError),
   bulkImportShares: (shares) => api.post('/farmers/bulk-import-shares', { shares }).then(res => res.data).catch(handleError),
-  bulkDelete: (ids) => api.post('/farmers/bulk-delete', { ids }).then(res => res.data).catch(handleError)
+  bulkDelete: (ids) => api.post('/farmers/bulk-delete', { ids }).then(res => res.data).catch(handleError),
+  getReport: () => api.get('/farmers/report').then(res => res.data).catch(handleError)
 };
 
 // CUSTOMER APIs
@@ -452,8 +453,9 @@ export const milkCollectionAPI = {
   },
   getFarmerHistory: (farmerNumber, params) => api.get(`/milk-collections/farmer/${farmerNumber}`, { params }).then(res => res.data).catch(handleError),
   getFarmerStats: (farmerNumber, params) => api.get(`/milk-collections/farmer/${farmerNumber}/stats`, { params }).then(res => res.data).catch(handleError),
-  getFarmerWiseSummary: (params) => api.get('/milk-collections/summary/farmer-wise', { params }).then(res => res.data).catch(handleError),
-  getDateWiseSummary:   (params) => api.get('/milk-collections/summary/date-wise',   { params }).then(res => res.data).catch(handleError),
+  getFarmerWiseSummary:   (params) => api.get('/milk-collections/summary/farmer-wise',  { params }).then(res => res.data).catch(handleError),
+  getFarmerWiseStatement: (params) => api.get('/milk-collections/statement/farmer-wise',{ params }).then(res => res.data).catch(handleError),
+  getDateWiseSummary:     (params) => api.get('/milk-collections/summary/date-wise',    { params }).then(res => res.data).catch(handleError),
 };
 
 // MILK SALES APIs

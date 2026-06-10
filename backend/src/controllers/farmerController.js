@@ -150,6 +150,7 @@ export const getAllFarmers = async (req, res) => {
       post = '',
       isMembership = '',
       collectionCenter = '',
+      gender = '',
       admissionDateFrom = '',
       admissionDateTo = '',
       minShares = '',
@@ -198,6 +199,17 @@ export const getAllFarmers = async (req, res) => {
     // Collection center filter
     if (collectionCenter) {
       query.collectionCenter = collectionCenter;
+    }
+
+    // Gender filter
+    if (gender) {
+      query['personalDetails.gender'] = gender;
+    }
+
+    // Caste filter — 'casteFilter' param; empty string means "no caste assigned"
+    if ('casteFilter' in req.query) {
+      const casteVal = req.query.casteFilter;
+      query['personalDetails.caste'] = casteVal === '' ? { $in: [null, ''] } : { $regex: casteVal, $options: 'i' };
     }
 
     // Date range filter for admission date
@@ -1017,6 +1029,111 @@ export const bulkDeleteFarmers = async (req, res) => {
   }
 };
 
+// Farmer Report — member/non-member, caste, gender, centre aggregations
+export const getFarmerReport = async (req, res) => {
+  try {
+    const companyId = new mongoose.Types.ObjectId(req.companyId);
+
+    const [facetResult] = await Farmer.aggregate([
+      { $match: { companyId } },
+      {
+        $facet: {
+          summary: [
+            {
+              $group: {
+                _id: null,
+                total: { $sum: 1 },
+                members: { $sum: { $cond: ['$isMembership', 1, 0] } },
+                nonMembers: { $sum: { $cond: ['$isMembership', 0, 1] } },
+                active: { $sum: { $cond: [{ $eq: ['$status', 'Active'] }, 1, 0] } },
+                male: { $sum: { $cond: [{ $eq: ['$personalDetails.gender', 'Male'] }, 1, 0] } },
+                female: { $sum: { $cond: [{ $eq: ['$personalDetails.gender', 'Female'] }, 1, 0] } }
+              }
+            }
+          ],
+          memberReport: [
+            {
+              $group: {
+                _id: '$isMembership',
+                count: { $sum: 1 },
+                male: { $sum: { $cond: [{ $eq: ['$personalDetails.gender', 'Male'] }, 1, 0] } },
+                female: { $sum: { $cond: [{ $eq: ['$personalDetails.gender', 'Female'] }, 1, 0] } },
+                active: { $sum: { $cond: [{ $eq: ['$status', 'Active'] }, 1, 0] } }
+              }
+            },
+            { $sort: { _id: -1 } }
+          ],
+          casteReport: [
+            {
+              $group: {
+                _id: '$personalDetails.caste',
+                count: { $sum: 1 },
+                members: { $sum: { $cond: ['$isMembership', 1, 0] } },
+                nonMembers: { $sum: { $cond: ['$isMembership', 0, 1] } },
+                male: { $sum: { $cond: [{ $eq: ['$personalDetails.gender', 'Male'] }, 1, 0] } },
+                female: { $sum: { $cond: [{ $eq: ['$personalDetails.gender', 'Female'] }, 1, 0] } }
+              }
+            },
+            { $sort: { count: -1 } }
+          ],
+          genderReport: [
+            {
+              $group: {
+                _id: '$personalDetails.gender',
+                count: { $sum: 1 },
+                members: { $sum: { $cond: ['$isMembership', 1, 0] } },
+                nonMembers: { $sum: { $cond: ['$isMembership', 0, 1] } }
+              }
+            },
+            { $sort: { count: -1 } }
+          ]
+        }
+      }
+    ]);
+
+    const centreReport = await Farmer.aggregate([
+      { $match: { companyId } },
+      {
+        $lookup: {
+          from: 'collectioncenters',
+          localField: 'collectionCenter',
+          foreignField: '_id',
+          as: 'center'
+        }
+      },
+      { $unwind: { path: '$center', preserveNullAndEmptyArrays: true } },
+      {
+        $group: {
+          _id: {
+            centreId: '$collectionCenter',
+            centreName: { $ifNull: ['$center.centerName', 'No Centre Assigned'] }
+          },
+          count: { $sum: 1 },
+          members: { $sum: { $cond: ['$isMembership', 1, 0] } },
+          nonMembers: { $sum: { $cond: ['$isMembership', 0, 1] } },
+          male: { $sum: { $cond: [{ $eq: ['$personalDetails.gender', 'Male'] }, 1, 0] } },
+          female: { $sum: { $cond: [{ $eq: ['$personalDetails.gender', 'Female'] }, 1, 0] } }
+        }
+      },
+      { $sort: { '_id.centreName': 1 } }
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        summary: facetResult?.summary?.[0] || { total: 0, members: 0, nonMembers: 0, active: 0, male: 0, female: 0 },
+        memberReport: facetResult?.memberReport || [],
+        casteReport: facetResult?.casteReport || [],
+        genderReport: facetResult?.genderReport || [],
+        centreReport
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching farmer report:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error fetching farmer report' });
+  }
+};
+
 export default {
   createFarmer,
   getAllFarmers,
@@ -1030,5 +1147,6 @@ export default {
   terminateFarmer,
   bulkImportFarmers,
   bulkImportShares,
-  bulkDeleteFarmers
+  bulkDeleteFarmers,
+  getFarmerReport
 };

@@ -882,6 +882,94 @@ export const getFarmerWiseSummary = async (req, res) => {
   }
 };
 
+// ── FARMER-WISE STATEMENT (date-wise AM/PM detail per farmer) ─────────────────
+export const getFarmerWiseStatement = async (req, res) => {
+  try {
+    const { farmerSearch, fromDate, toDate } = req.query;
+    const match = { companyId: req.companyId };
+
+    if (fromDate || toDate) {
+      match.date = {};
+      if (fromDate) match.date.$gte = new Date(fromDate);
+      if (toDate) { const d = new Date(toDate); d.setHours(23, 59, 59, 999); match.date.$lte = d; }
+    }
+    if (farmerSearch) {
+      match.$or = [
+        { farmerNumber: { $regex: farmerSearch, $options: 'i' } },
+        { farmerName:   { $regex: farmerSearch, $options: 'i' } }
+      ];
+    }
+
+    const records = await MilkCollection.find(match)
+      .sort({ farmerNumber: 1, date: 1, shift: 1 })
+      .lean();
+
+    const f2 = v => +Number(v || 0).toFixed(2);
+    const f1 = v => +Number(v || 0).toFixed(1);
+
+    // Group: farmerNumber → dateKey → AM/PM
+    const farmerMap = new Map();
+    for (const rec of records) {
+      const fn = rec.farmerNumber;
+      if (!farmerMap.has(fn)) farmerMap.set(fn, { farmerNumber: fn, farmerName: rec.farmerName || '', dateMap: new Map() });
+      const farmer = farmerMap.get(fn);
+      const d = rec.date;
+      const dateKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      if (!farmer.dateMap.has(dateKey)) farmer.dateMap.set(dateKey, { date: dateKey, am: null, pm: null });
+      const sess = { qty: rec.qty||0, clr: rec.clr||0, fat: rec.fat||0, snf: rec.snf||0, rate: rec.rate||0, incentive: rec.incentive||0, value: rec.amount||0 };
+      if (rec.shift === 'AM') farmer.dateMap.get(dateKey).am = sess;
+      else farmer.dateMap.get(dateKey).pm = sess;
+    }
+
+    const result = [];
+    for (const [, farmer] of farmerMap) {
+      const rows = [...farmer.dateMap.values()].map(day => ({
+        date: day.date,
+        am: day.am,
+        pm: day.pm,
+        totalQty:   f2((day.am?.qty||0) + (day.pm?.qty||0)),
+        totalValue: f2((day.am?.value||0) + (day.pm?.value||0))
+      }));
+
+      const amR = rows.filter(r => r.am);
+      const pmR = rows.filter(r => r.pm);
+      const amAvg = (key) => amR.length ? f2(amR.reduce((s,r)=>s+r.am[key],0)/amR.length) : 0;
+      const pmAvg = (key) => pmR.length ? f2(pmR.reduce((s,r)=>s+r.pm[key],0)/pmR.length) : 0;
+
+      result.push({
+        farmerNumber: farmer.farmerNumber,
+        farmerName:   farmer.farmerName,
+        rows,
+        totals: {
+          amQty:       f2(amR.reduce((s,r)=>s+r.am.qty,0)),
+          amClr:       amR.length ? f1(amR.reduce((s,r)=>s+r.am.clr,0)/amR.length) : 0,
+          amFat:       amAvg('fat'),
+          amSnf:       amAvg('snf'),
+          amRate:      amAvg('rate'),
+          amIncentive: f2(amR.reduce((s,r)=>s+r.am.incentive,0)),
+          amValue:     f2(amR.reduce((s,r)=>s+r.am.value,0)),
+          pmQty:       f2(pmR.reduce((s,r)=>s+r.pm.qty,0)),
+          pmClr:       pmR.length ? f1(pmR.reduce((s,r)=>s+r.pm.clr,0)/pmR.length) : 0,
+          pmFat:       pmAvg('fat'),
+          pmSnf:       pmAvg('snf'),
+          pmRate:      pmAvg('rate'),
+          pmIncentive: f2(pmR.reduce((s,r)=>s+r.pm.incentive,0)),
+          pmValue:     f2(pmR.reduce((s,r)=>s+r.pm.value,0)),
+          totalQty:    f2(amR.reduce((s,r)=>s+r.am.qty,0) + pmR.reduce((s,r)=>s+r.pm.qty,0)),
+          totalValue:  f2(amR.reduce((s,r)=>s+r.am.value,0) + pmR.reduce((s,r)=>s+r.pm.value,0)),
+          amCount:     amR.length,
+          pmCount:     pmR.length
+        }
+      });
+    }
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error in farmer-wise statement:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // ── DATE-WISE SUMMARY ─────────────────────────────────────────────────────────
 export const getDateWiseSummary = async (req, res) => {
   try {

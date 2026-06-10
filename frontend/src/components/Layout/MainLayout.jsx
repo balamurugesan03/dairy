@@ -149,6 +149,7 @@ const MainLayout = () => {
         { key: '/agents', label: 'Agent Management' },
         { key: '/customers', label: 'Customer' },
         { key: '/farmer-bank-details', label: 'Farmer Bank Details' },
+        { key: '/farmers/report', label: 'Producer Report' },
       ]
     }] : []),
     // PRIVATE FIRM - Customer Module Only
@@ -297,13 +298,15 @@ const MainLayout = () => {
           key: 'payments-sub',
           label: 'Payments',
           children: [
-             { key: '/payments/producer-payment', label: 'Payment Register (Producers)' },
-            // { key: '/payments/register', label: 'Individual Payment' },
+            { key: '/payments/creditor-bill', label: 'Payment Register ' },
             { key: '/payments/register-ledger', label: 'Payment Register Detailed' },
+            { key: '/payments/producer-payment', label: 'Payment Register (setteled)' },
+            // { key: '/payments/register', label: 'Individual Payment' },
+           
             { key: '/payments/bank-transfer', label: 'Bank Transfer' },
             { key: '/payments/ledger-history',  label: 'Ledger Payment History' },
             { key: '/payments/individual', label: 'Individual Payment' },
-            { key: '/payments/creditor-bill', label: 'Payment Register ' },
+           
            
             { key: '/payments/payment-to-producer', label: 'Payment to Producer' },
           ]
