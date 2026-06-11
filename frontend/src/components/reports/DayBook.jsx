@@ -2,7 +2,7 @@ import { useState, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { message } from '../../utils/toast';
 import dayjs from 'dayjs';
-import { dayBookAPI, voucherAPI } from '../../services/api';
+import { dayBookAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 import {
   Container, Paper, Text, Group, LoadingOverlay, Button,
@@ -99,20 +99,25 @@ const DayBook = () => {
     fetchDayBook(fromDate, toDate);
   };
 
-  const handleDeleteVoucher = (voucherId, description) => {
+  const handleDeleteEntry = (entry) => {
+    const key = entry.voucherId || `${entry.voucherType}-${entry.entryDate}`;
     modals.openConfirmModal({
       title: 'Delete Entry',
       children: (
         <Text size="sm">
-          Delete &ldquo;{description}&rdquo;? This action cannot be undone.
+          Delete &ldquo;{entry.description}&rdquo;? This will permanently remove the underlying data and cannot be undone.
         </Text>
       ),
       labels: { confirm: 'Delete', cancel: 'Cancel' },
       confirmProps: { color: 'red' },
       onConfirm: async () => {
-        setDeletingId(voucherId);
+        setDeletingId(key);
         try {
-          await voucherAPI.delete(voucherId);
+          await dayBookAPI.deleteEntry({
+            voucherId: entry.voucherId || undefined,
+            voucherType: entry.voucherType,
+            date: entry.entryDate
+          });
           notifications.show({ title: 'Deleted', message: 'Entry deleted successfully', color: 'teal' });
           fetchDayBook(fromDate, toDate);
         } catch (err) {
@@ -183,7 +188,9 @@ const DayBook = () => {
             adjustment: isAdjustment ? entry.amount : 0,
             total: entry.amount,
             isMilkEntry: isAdjustment,
-            voucherId: entry.voucherId || null
+            voucherId: entry.voucherId || null,
+            voucherType: entry.voucherType || null,
+            entryDate: entry.date ? new Date(entry.date).toISOString().split('T')[0] : null
           };
         };
 
@@ -275,17 +282,16 @@ const DayBook = () => {
                     <td className="db-cell-amt">{fmt(entry.adjustment)}</td>
                     <td className="db-cell-total">{fmt(entry.total)}</td>
                     <td className="db-cell-del db-no-print">
-                      {entry.voucherId && (
-                        <ActionIcon
-                          size="xs"
-                          color="red"
-                          variant="subtle"
-                          loading={deletingId === entry.voucherId}
-                          onClick={() => handleDeleteVoucher(entry.voucherId, entry.description)}
-                        >
-                          <IconTrash size={12} />
-                        </ActionIcon>
-                      )}
+                      <ActionIcon
+                        size="xs"
+                        color="red"
+                        variant="light"
+                        loading={deletingId === (entry.voucherId || `${entry.voucherType}-${entry.entryDate}`)}
+                        onClick={() => handleDeleteEntry(entry)}
+                        title="Delete entry"
+                      >
+                        <IconTrash size={12} />
+                      </ActionIcon>
                     </td>
                   </tr>
                 ))

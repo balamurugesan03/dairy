@@ -339,7 +339,8 @@ export const reportAPI = {
 
 // DAY BOOK API
 export const dayBookAPI = {
-  get: (params) => api.get('/reports/day-book', { params }).then(res => res.data).catch(handleError)
+  get: (params) => api.get('/reports/day-book', { params }).then(res => res.data).catch(handleError),
+  deleteEntry: (data) => api.delete('/reports/day-book-entry', { data }).then(res => res.data).catch(handleError)
 };
 
 

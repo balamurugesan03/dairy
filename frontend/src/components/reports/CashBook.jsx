@@ -2,17 +2,19 @@ import { useState, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { message } from '../../utils/toast';
 import dayjs from 'dayjs';
-import { reportAPI } from '../../services/api';
+import { reportAPI, dayBookAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 import {
   Container, Paper, Text, Group, LoadingOverlay, Button,
-  Title, Divider, Menu, Badge, Stack, Box, Table, Center, Select
+  Title, Divider, Menu, Badge, Stack, Box, Table, Center, Select, ActionIcon
 } from '@mantine/core';
+import { modals } from '@mantine/modals';
+import { notifications } from '@mantine/notifications';
 import { DatePickerInput } from '@mantine/dates';
 import {
   IconCash, IconPrinter, IconFileTypePdf,
   IconFileSpreadsheet, IconCalendar,
-  IconDownload, IconSearch, IconX
+  IconDownload, IconSearch, IconX, IconTrash
 } from '@tabler/icons-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -53,6 +55,7 @@ const CashBook = () => {
   const [dateMode,   setDateMode]   = useState('range');   // 'range' | 'single'
   const [singleDate, setSingleDate] = useState(new Date());
   const [reportData, setReportData] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
   const printRef = useRef();
 
   const [fromDate, toDate] = dateRange;
@@ -90,6 +93,32 @@ const CashBook = () => {
 
   const handleGenerate = () => fetchCashBook(fromDate, toDate);
 
+  const handleDeleteEntry = (entry) => {
+    const key = entry.voucherId || `${entry.voucherType}-${entry.entryDate}`;
+    modals.openConfirmModal({
+      title: 'Delete Entry',
+      children: <Text size="sm">Delete &ldquo;{entry.description}&rdquo;? This will permanently remove the underlying data and cannot be undone.</Text>,
+      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        setDeletingId(key);
+        try {
+          await dayBookAPI.deleteEntry({
+            voucherId: entry.voucherId || undefined,
+            voucherType: entry.voucherType,
+            date: entry.entryDate
+          });
+          notifications.show({ title: 'Deleted', message: 'Entry deleted successfully', color: 'teal' });
+          fetchCashBook(fromDate, toDate);
+        } catch (err) {
+          notifications.show({ title: 'Error', message: err.message || 'Failed to delete', color: 'red' });
+        } finally {
+          setDeletingId(null);
+        }
+      }
+    });
+  };
+
   const fmt = (amount) => {
     const num = parseFloat(amount || 0);
     if (num === 0) return '';
@@ -114,7 +143,10 @@ const CashBook = () => {
           description: txn.particulars || 'Cash Receipt',
           voucherNumber: txn.voucherNumber || '',
           amount: txn.debit,
-          narration: txn.narration || ''
+          narration: txn.narration || '',
+          voucherId: txn.voucherId || null,
+          voucherType: txn.voucherType || null,
+          entryDate: dateKey
         });
       }
       if (txn.credit > 0) {
@@ -122,7 +154,10 @@ const CashBook = () => {
           description: txn.particulars || 'Cash Payment',
           voucherNumber: txn.voucherNumber || '',
           amount: txn.credit,
-          narration: txn.narration || ''
+          narration: txn.narration || '',
+          voucherId: txn.voucherId || null,
+          voucherType: txn.voucherType || null,
+          entryDate: dateKey
         });
       }
     }
@@ -198,21 +233,22 @@ const CashBook = () => {
           <Table withColumnBorders striped highlightOnHover style={{ tableLayout: 'fixed' }}>
             <Table.Thead>
               <Table.Tr>
-                <Table.Th style={{ textAlign: 'left', width: '50%', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                <Table.Th style={{ textAlign: 'left', width: '46%', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>
                   Description
                 </Table.Th>
                 <Table.Th style={{ textAlign: 'center', width: '20%', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>
                   {isReceipt ? 'Receipt No' : 'Voucher No'}
                 </Table.Th>
-                <Table.Th style={{ textAlign: 'right', width: '30%', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                <Table.Th style={{ textAlign: 'right', width: '28%', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>
                   Cash (₹)
                 </Table.Th>
+                <Table.Th className="cb-no-print" style={{ width: '6%', textAlign: 'center', padding: 0 }} />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {entries.length === 0 ? (
                 <Table.Tr>
-                  <Table.Td colSpan={3} style={{ border: 'none' }}>
+                  <Table.Td colSpan={4} style={{ border: 'none' }}>
                     <Center py={30}>
                       <Text c="dimmed" fz={13} fs="italic">No transactions</Text>
                     </Center>
@@ -233,6 +269,18 @@ const CashBook = () => {
                     <Table.Td style={{ textAlign: 'right', fontFamily: 'Consolas, monospace', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
                       {fmt(entry.amount)}
                     </Table.Td>
+                    <Table.Td className="cb-no-print" style={{ textAlign: 'center', padding: 2 }}>
+                      <ActionIcon
+                        size="xs"
+                        color="red"
+                        variant="light"
+                        loading={deletingId === (entry.voucherId || `${entry.voucherType}-${entry.entryDate}`)}
+                        onClick={() => handleDeleteEntry(entry)}
+                        title="Delete entry"
+                      >
+                        <IconTrash size={13} />
+                      </ActionIcon>
+                    </Table.Td>
                   </Table.Tr>
                 ))
               )}
@@ -245,11 +293,12 @@ const CashBook = () => {
           <Table withColumnBorders style={{ tableLayout: 'fixed' }}>
             <Table.Tbody>
               <Table.Tr style={{ background: totalBg }}>
-                <Table.Td style={{ textAlign: 'left', fontWeight: 600, width: '50%' }}>Day Total</Table.Td>
+                <Table.Td style={{ textAlign: 'left', fontWeight: 600, width: '46%' }}>Day Total</Table.Td>
                 <Table.Td style={{ width: '20%' }}></Table.Td>
-                <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'Consolas, monospace', fontVariantNumeric: 'tabular-nums', width: '30%' }}>
+                <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'Consolas, monospace', fontVariantNumeric: 'tabular-nums', width: '28%' }}>
                   {fmtAlways(total)}
                 </Table.Td>
+                <Table.Td className="cb-no-print" style={{ width: '6%' }}></Table.Td>
               </Table.Tr>
               <Table.Tr style={{ background: 'var(--mantine-color-gray-0)' }}>
                 <Table.Td style={{ textAlign: 'left', fontWeight: 600 }}>
@@ -259,6 +308,7 @@ const CashBook = () => {
                 <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'Consolas, monospace', fontVariantNumeric: 'tabular-nums' }}>
                   {fmtAlways(isReceipt ? openBal : closeBal)}
                 </Table.Td>
+                <Table.Td className="cb-no-print"></Table.Td>
               </Table.Tr>
               <Table.Tr style={{ background: closingBg, borderTop: '2px solid var(--mantine-color-dark-4)', borderBottom: '3px double var(--mantine-color-dark-4)' }}>
                 <Table.Td style={{ textAlign: 'left', fontWeight: 700 }}>Closing Balance</Table.Td>
@@ -266,6 +316,7 @@ const CashBook = () => {
                 <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'Consolas, monospace', fontVariantNumeric: 'tabular-nums' }}>
                   {fmtAlways(closeBal)}
                 </Table.Td>
+                <Table.Td className="cb-no-print"></Table.Td>
               </Table.Tr>
             </Table.Tbody>
           </Table>
@@ -359,6 +410,7 @@ const CashBook = () => {
     th, td { border: 1px solid #ccc; padding: 3px 5px; font-size: 9.5px; }
     th { background: #f5f5fa; font-weight: 700; font-size: 8.5px; text-transform: uppercase; }
     @page { size: A4 portrait; margin: 6mm; }
+    .cb-no-print { display: none !important; }
   </style>
 </head>
 <body>${content.innerHTML}</body>

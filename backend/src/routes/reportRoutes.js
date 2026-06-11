@@ -23,7 +23,7 @@ import {
   getCooperativeRDReport,
   getMISReport
 } from '../controllers/reportController.js';
-import { getDayBook } from '../controllers/dayBookController.js';
+import { getDayBook, deleteDayBookEntry } from '../controllers/dayBookController.js';
 import {
   getCashBook,
   getGeneralLedger,
@@ -70,6 +70,7 @@ router.get('/sales', getSalesReport);
 router.get('/stock', getStockReport);
 router.get('/subsidy', getSubsidyReport);
 router.get('/day-book', getDayBook);
+router.delete('/day-book-entry', deleteDayBookEntry);
 router.get('/stock-register', getStockRegister);
 router.get('/inventory-purchase-register', getInventoryPurchaseRegister);
 router.get('/sales-register', getSalesRegister);

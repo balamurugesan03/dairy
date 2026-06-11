@@ -130,10 +130,10 @@ export const getVoucherById = async (req, res) => {
   }
 };
 
-// Delete voucher
+// Delete voucher — reverses ledger balances then removes the document
 export const deleteVoucher = async (req, res) => {
   try {
-    const voucher = await Voucher.findOneAndDelete({ _id: req.params.id, companyId: req.companyId });
+    const voucher = await Voucher.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!voucher) {
       return res.status(404).json({
@@ -142,9 +142,19 @@ export const deleteVoucher = async (req, res) => {
       });
     }
 
+    // Reverse ledger balances: swap debit ↔ credit for each entry
+    const reversedEntries = voucher.entries.map(e => ({
+      ledgerId: e.ledgerId,
+      debitAmount:  e.creditAmount || 0,
+      creditAmount: e.debitAmount  || 0
+    }));
+    await updateLedgerBalances(reversedEntries, null, req.companyId);
+
+    await voucher.deleteOne();
+
     res.status(200).json({
       success: true,
-      message: 'Voucher deleted successfully'
+      message: 'Voucher deleted and ledger balances reversed'
     });
   } catch (error) {
     console.error('Error deleting voucher:', error);

@@ -8,6 +8,7 @@ import Advance from '../models/Advance.js';
 import ProducerReceipt from '../models/ProducerReceipt.js';
 import ProducerPayment from '../models/ProducerPayment.js';
 import Sales from '../models/Sales.js';
+import { updateLedgerBalances } from '../utils/accountingHelper.js';
 
 // Get Day Book report with date-wise grouping
 export const getDayBook = async (req, res) => {
@@ -1094,6 +1095,82 @@ export const getDayBook = async (req, res) => {
       success: false,
       message: error.message || 'Error generating day book'
     });
+  }
+};
+
+// Delete a Day Book entry — handles all entry types
+export const deleteDayBookEntry = async (req, res) => {
+  const { voucherType, voucherId, date } = req.body;
+  const companyId = req.companyId;
+
+  try {
+    // Helper: reverse ledger balances then delete each matched voucher
+    const reverseAndDeleteVouchers = async (filter) => {
+      const docs = await Voucher.find({ companyId, ...filter });
+      for (const v of docs) {
+        const rev = v.entries.map(e => ({
+          ledgerId: e.ledgerId,
+          debitAmount: e.creditAmount || 0,
+          creditAmount: e.debitAmount || 0
+        }));
+        await updateLedgerBalances(rev, null, companyId);
+        await v.deleteOne();
+      }
+    };
+
+    // ── Case 1: voucher-backed entry (Payment, Receipt, Journal, InventoryPurchase…) ──
+    if (voucherId) {
+      const voucher = await Voucher.findOne({ _id: voucherId, companyId });
+      if (!voucher) return res.status(404).json({ success: false, message: 'Voucher not found' });
+      const rev = voucher.entries.map(e => ({
+        ledgerId: e.ledgerId,
+        debitAmount: e.creditAmount || 0,
+        creditAmount: e.debitAmount || 0
+      }));
+      await updateLedgerBalances(rev, null, companyId);
+      await voucher.deleteOne();
+      return res.json({ success: true, message: 'Entry deleted' });
+    }
+
+    if (!date) return res.status(400).json({ success: false, message: 'Date required for this entry type' });
+
+    const start = new Date(date); start.setHours(0, 0, 0, 0);
+    const end   = new Date(date); end.setHours(23, 59, 59, 999);
+    const dateFilter = { $gte: start, $lte: end };
+
+    // ── Case 2: Milk Purchase (PRODUCERS DUES / MILK PURCHASE rows) ──
+    if (voucherType === 'MilkPurchase') {
+      await reverseAndDeleteVouchers({ voucherType: 'MilkPurchase', voucherDate: dateFilter });
+      await reverseAndDeleteVouchers({ voucherType: 'Journal', referenceType: 'Purchase', voucherDate: dateFilter });
+      await MilkCollection.deleteMany({ companyId, date: dateFilter });
+      return res.json({ success: true, message: 'Milk collection data deleted' });
+    }
+
+    // ── Case 3: Union Sales (UNION SALES / MILMA UNION rows) ──
+    if (voucherType === 'UnionSales') {
+      await reverseAndDeleteVouchers({ voucherType: 'Journal', referenceType: 'UnionSales', voucherDate: dateFilter });
+      await UnionSalesSlip.deleteMany({ companyId, date: dateFilter });
+      return res.json({ success: true, message: 'Union sales data deleted' });
+    }
+
+    // ── Case 4: Local / Sample Milk Sales ──
+    if (voucherType === 'MilkSales') {
+      await reverseAndDeleteVouchers({ referenceType: 'MilkSales', voucherDate: dateFilter });
+      await MilkSales.deleteMany({ companyId, date: dateFilter, saleMode: { $in: ['LOCAL', 'SAMPLE'] } });
+      return res.json({ success: true, message: 'Milk sales data deleted' });
+    }
+
+    // ── Case 5: Credit Milk Sales ──
+    if (voucherType === 'MilkCreditSales') {
+      await reverseAndDeleteVouchers({ referenceType: 'MilkSales', voucherDate: dateFilter });
+      await MilkSales.deleteMany({ companyId, date: dateFilter, saleMode: 'CREDIT' });
+      return res.json({ success: true, message: 'Milk credit sales data deleted' });
+    }
+
+    res.status(400).json({ success: false, message: `Cannot delete entry type: ${voucherType}` });
+  } catch (error) {
+    console.error('Delete day book entry error:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
