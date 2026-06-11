@@ -27,7 +27,7 @@ const entrySchema = new mongoose.Schema({
   otherDed:        { type: Number, default: 0 },
   totalEarnings:   { type: Number, default: 0 },
   totalDed:        { type: Number, default: 0 },
-  payStatus:       { type: String, enum: ['Payable', 'Receivable', ''], default: '' },
+  payStatus:       { type: String, enum: ['Payable', 'Receivable', 'Settled', ''], default: '' },
   netPay:          { type: Number, default: 0 },
   // Payment applied fields
   paid:            { type: Boolean, default: false },
@@ -78,7 +78,7 @@ paymentRegisterSchema.pre('save', function () {
     } else if (this.registerType === 'Producers') {
       // Net Payable = Milk Value − Welfare − C/F Rec − Loan Adv − Cash Pocket + Previous Balance
       e.netPay = (e.milkValue || 0) - (e.welfare || 0) - (e.cfRec || 0) - (e.loanAdv || 0) - (e.cashPocket || 0) + (e.previousBalance || 0);
-      e.payStatus = e.netPay > 0 ? 'Payable' : e.netPay < 0 ? 'Receivable' : '';
+      e.payStatus = e.netPay > 0 ? 'Payable' : e.netPay < 0 ? 'Receivable' : 'Settled';
     } else {
       // Creditor Bill: Net Pay = Milk Value + Previous Balance + Other Earnings − Welfare − Deductions
       e.netPay = (e.milkValue || 0) + (e.previousBalance || 0) + (e.otherEarnings || 0) - (e.welfare || 0) - (e.deductions || 0);

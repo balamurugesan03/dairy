@@ -1028,6 +1028,8 @@ export const societyInfoAPI = {
 export const milkBillAPI = {
   get: (farmerId, params) =>
     api.get(`/milk-bill/${farmerId}`, { params }).then(r => r.data).catch(handleError),
+  getByCycle: (farmerId, params) =>
+    api.get(`/milk-bill/${farmerId}/cycle`, { params }).then(r => r.data).catch(handleError),
 };
 
 // ── Payment Register API ───────────────────────────────────────────────────────

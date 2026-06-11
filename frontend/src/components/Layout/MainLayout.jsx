@@ -100,6 +100,7 @@ const MainLayout = () => {
       // F2 / F3 work everywhere (even inside inputs)
       if (e.key === 'F2') { e.preventDefault(); navigate('/daily-collections/milk-purchase'); return; }
       if (e.key === 'F3') { e.preventDefault(); navigate('/daily-collections/milk-sales'); return; }
+      if (e.key === 'F4') { e.preventDefault(); navigate('/sales/new'); return; }
 
       // Other shortcuts: ignore when typing inside an input / textarea / select
       const tag = document.activeElement?.tagName;

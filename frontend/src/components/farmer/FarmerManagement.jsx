@@ -46,7 +46,9 @@ import {
   IconPaw,
   IconUsers,
   IconCoinRupee,
-  IconX
+  IconX,
+  IconEye,
+  IconFileText
 } from '@tabler/icons-react';
 import { DataTable } from 'mantine-datatable';
 import { farmerAPI, collectionCenterAPI } from '../../services/api';
@@ -853,56 +855,111 @@ const FarmerManagement = () => {
       )
     },
     {
+      accessor: 'documents',
+      title: (
+        <Group gap="xs">
+          <IconFileText size={14} />
+          <span>Documents</span>
+        </Group>
+      ),
+      width: 130,
+      render: (farmer) => {
+        const docLabels = {
+          aadhaar:      'Aadhaar',
+          bankPassbook: 'Bank',
+          rationCard:   'Ration',
+          incomeProof:  'Income',
+        };
+        const uploaded = Object.entries(docLabels).filter(([key]) => farmer.documents?.[key]);
+        const missing  = Object.entries(docLabels).filter(([key]) => !farmer.documents?.[key]);
+        return (
+          <Box>
+            {uploaded.length === 0 ? (
+              <Text size="xs" c="dimmed">No docs</Text>
+            ) : (
+              <Group gap={3} wrap="wrap">
+                {uploaded.map(([key, label]) => (
+                  <Badge key={key} size="xs" color="green" variant="light">{label}</Badge>
+                ))}
+                {missing.map(([key, label]) => (
+                  <Badge key={key} size="xs" color="gray" variant="outline">{label}</Badge>
+                ))}
+              </Group>
+            )}
+          </Box>
+        );
+      }
+    },
+    {
       accessor: 'actions',
       title: 'Actions',
-      width: 80,
+      width: 100,
       textAlign: 'center',
       render: (farmer) => (
-        <Menu shadow="md" width={200} position="bottom-end">
-          <Menu.Target>
-            <ActionIcon variant="light" color="gray" size="md">
-              <IconDots size={18} />
+        <Group gap={4} justify="center" wrap="nowrap">
+          <Tooltip label="View Details" withArrow position="top">
+            <ActionIcon
+              variant="light"
+              color="blue"
+              size="md"
+              onClick={() => navigate(`/farmers/view/${farmer._id}`)}
+            >
+              <IconEye size={16} />
             </ActionIcon>
-          </Menu.Target>
-          <Menu.Dropdown>
-            <Menu.Label>Farmer Actions</Menu.Label>
-            <Menu.Item
-              leftSection={<IconEdit size={16} />}
-              onClick={() => handleEdit(farmer._id)}
-              disabled={!canEdit('farmers')}
-            >
-              Edit Details
-            </Menu.Item>
-            <Menu.Item
-              leftSection={farmer.isMembership ? <IconUserMinus size={16} /> : <IconUserPlus size={16} />}
-              onClick={() => handleMembershipToggle(farmer._id, farmer.isMembership)}
-              color={farmer.isMembership ? 'orange' : 'blue'}
-              disabled={!canEdit('farmers')}
-            >
-              {farmer.isMembership ? 'Remove Membership' : 'Add Membership'}
-            </Menu.Item>
-            {farmer.isMembership && (
+          </Tooltip>
+          <Menu shadow="md" width={200} position="bottom-end">
+            <Menu.Target>
+              <ActionIcon variant="light" color="gray" size="md">
+                <IconDots size={18} />
+              </ActionIcon>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Label>Farmer Actions</Menu.Label>
               <Menu.Item
-                leftSection={<IconCoin size={16} />}
-                onClick={() => handleAddShare(farmer)}
-                color="green"
+                leftSection={<IconEye size={16} />}
+                onClick={() => navigate(`/farmers/view/${farmer._id}`)}
+                color="blue"
+              >
+                View Details
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<IconEdit size={16} />}
+                onClick={() => handleEdit(farmer._id)}
                 disabled={!canEdit('farmers')}
               >
-                Add Share
+                Edit Details
               </Menu.Item>
-            )}
-            <Menu.Divider />
-            <Menu.Label>Danger Zone</Menu.Label>
-            <Menu.Item
-              color="red"
-              leftSection={<IconTrash size={16} />}
-              onClick={() => handleDelete(farmer._id)}
-              disabled={!canDelete('farmers')}
-            >
-              Deactivate Farmer
-            </Menu.Item>
-          </Menu.Dropdown>
-        </Menu>
+              <Menu.Item
+                leftSection={farmer.isMembership ? <IconUserMinus size={16} /> : <IconUserPlus size={16} />}
+                onClick={() => handleMembershipToggle(farmer._id, farmer.isMembership)}
+                color={farmer.isMembership ? 'orange' : 'blue'}
+                disabled={!canEdit('farmers')}
+              >
+                {farmer.isMembership ? 'Remove Membership' : 'Add Membership'}
+              </Menu.Item>
+              {farmer.isMembership && (
+                <Menu.Item
+                  leftSection={<IconCoin size={16} />}
+                  onClick={() => handleAddShare(farmer)}
+                  color="green"
+                  disabled={!canEdit('farmers')}
+                >
+                  Add Share
+                </Menu.Item>
+              )}
+              <Menu.Divider />
+              <Menu.Label>Danger Zone</Menu.Label>
+              <Menu.Item
+                color="red"
+                leftSection={<IconTrash size={16} />}
+                onClick={() => handleDelete(farmer._id)}
+                disabled={!canDelete('farmers')}
+              >
+                Deactivate Farmer
+              </Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
+        </Group>
       )
     }
   ];
@@ -1476,6 +1533,19 @@ const FarmerManagement = () => {
                       </Table.Td>
                       <Table.Td style={{ padding: '12px 14px', borderBottom: '1px solid #f0f0f0' }}>
                         <Group gap="xs">
+                          <Tooltip label="View Details">
+                            <ActionIcon
+                              variant="light"
+                              color="blue"
+                              size="sm"
+                              onClick={() => {
+                                setShowMembersModal(false);
+                                navigate(`/farmers/${member._id}`);
+                              }}
+                            >
+                              <IconEye size={14} />
+                            </ActionIcon>
+                          </Tooltip>
                           <Tooltip label="Add Share">
                             <ActionIcon
                               variant="light"
@@ -1493,7 +1563,7 @@ const FarmerManagement = () => {
                           <Tooltip label="Edit">
                             <ActionIcon
                               variant="light"
-                              color="blue"
+                              color="teal"
                               size="sm"
                               onClick={() => {
                                 setShowMembersModal(false);

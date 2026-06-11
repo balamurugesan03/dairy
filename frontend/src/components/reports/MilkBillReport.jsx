@@ -2,43 +2,43 @@ import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react'
 import {
   Box, Group, Text, Button, Select, Paper, Container, Loader, Center, Alert,
 } from '@mantine/core';
-import { MonthPickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import { IconPrinter, IconRefresh, IconAlertCircle } from '@tabler/icons-react';
 import { useReactToPrint } from 'react-to-print';
 import dayjs from 'dayjs';
-import { milkBillAPI, farmerAPI } from '../../services/api';
+import { milkBillAPI, farmerAPI, paymentRegisterAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 
-/* ── Formatting ────────────────────────────────────────────────────────────── */
+/* ── Helpers ────────────────────────────────────────────────────────────────── */
 const f1  = (v) => (v == null || v === 0) ? '' : (+v).toFixed(1);
 const f2  = (v) => (v == null || v === 0) ? '' : (+v).toFixed(2);
-const fN  = (v) => (+(v || 0)).toFixed(2);   // always show two decimals
-const fI  = (v) => (v == null || v === 0) ? '' : Math.round(+v); // integer (CLR)
+const fN  = (v) => (+(v || 0)).toFixed(2);
+const fI  = (v) => (v == null || v === 0) ? '' : Math.round(+v);
+const fD  = (d) => dayjs(d).format('DD/MM/YYYY');
 
-/* ── Style constants (grayscale / print-like) ──────────────────────────────── */
+/* ── Print-clean styles ─────────────────────────────────────────────────────── */
 const FONT = "'Courier New', Courier, monospace";
 const B    = '1px solid #555';
-const BH   = '1.5px solid #111';
-const BL   = '1px solid #aaa';
+const BH   = '1.5px solid #000';
+const BL   = '1px solid #bbb';
 const FS   = 9;
 
 const thSec = (extra = {}) => ({
-  background:    '#c8c8c8',
+  background:    '#ddd',
   color:         '#000',
   fontWeight:    700,
   fontSize:      FS + 0.5,
   textAlign:     'center',
   border:        BH,
   padding:       '3px 2px',
-  letterSpacing: 0.8,
+  letterSpacing: 0.6,
   fontFamily:    FONT,
   ...extra,
 });
 
 const thCol = (extra = {}) => ({
-  background:  '#e4e4e4',
-  color:       '#111',
+  background:  '#eee',
+  color:       '#000',
   fontWeight:  700,
   fontSize:    FS,
   textAlign:   'center',
@@ -56,61 +56,33 @@ const td = (extra = {}) => ({
   fontFamily:    FONT,
   textAlign:     'right',
   verticalAlign: 'middle',
-  height:        17,
-  lineHeight:    '17px',
+  height:        16,
+  lineHeight:    '16px',
   ...extra,
 });
 
-const tdDay = {
-  ...td(),
-  textAlign:  'center',
-  fontWeight: 600,
-  background: '#f0f0f0',
-  border:     B,
-  width:      22,
-};
-
-const tdTot = {
-  ...td(),
-  fontWeight:  700,
-  background:  '#ddd',
-  border:      BH,
-  fontSize:    FS + 0.5,
-};
+const tdDay = { ...td(), textAlign: 'center', fontWeight: 600, background: '#f5f5f5', border: B, width: 32 };
+const tdTot = { ...td(), fontWeight: 700, background: '#ddd', border: BH, fontSize: FS + 0.5 };
 
 const sumLbl = (bold) => ({
-  fontFamily: FONT,
-  fontSize:   FS + 0.5,
-  fontWeight: bold ? 700 : 400,
-  color:      '#000',
-  padding:    '2px 4px 2px 0',
-  textAlign:  'left',
-  whiteSpace: 'nowrap',
+  fontFamily: FONT, fontSize: FS + 0.5, fontWeight: bold ? 700 : 400,
+  color: '#000', padding: '2px 4px 2px 0', textAlign: 'left', whiteSpace: 'nowrap',
 });
-
 const sumVal = (bold) => ({
-  fontFamily: FONT,
-  fontSize:   FS + 0.5,
-  fontWeight: bold ? 700 : 400,
-  color:      '#000',
-  padding:    '2px 0 2px 8px',
-  textAlign:  'right',
-  whiteSpace: 'nowrap',
-  minWidth:   80,
+  fontFamily: FONT, fontSize: FS + 0.5, fontWeight: bold ? 700 : 400,
+  color: '#000', padding: '2px 0 2px 8px', textAlign: 'right', whiteSpace: 'nowrap', minWidth: 80,
 });
 
-/* ── Print CSS ─────────────────────────────────────────────────────────────── */
 const PRINT_CSS = `
   @media print {
     body * { visibility: hidden !important; }
     #milk-bill-print, #milk-bill-print * { visibility: visible !important; }
-    #milk-bill-print { position: fixed; inset: 0; padding: 5mm; }
+    #milk-bill-print { position: fixed; inset: 0; padding: 5mm; background: #fff !important; }
     .no-print { display: none !important; }
-    .show-on-print { display: block !important; }
-    @page { size: A4 landscape; margin: 5mm; }
+    @page { size: A4 portrait; margin: 6mm; }
     table { border-collapse: collapse !important; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
-  .show-on-print { display: none; }
 `;
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -120,29 +92,29 @@ const MilkBillReport = () => {
   const { selectedCompany } = useCompany();
   const printRef = useRef();
 
-  /* ── controls ────────────────────────────────────────────────────────────── */
-  const [month,      setMonth]      = useState(dayjs().startOf('month').toDate());
   const [farmers,    setFarmers]    = useState([]);
+  const [cycles,     setCycles]     = useState([]);
   const [farmerId,   setFarmerId]   = useState(null);
+  const [cycleId,    setCycleId]    = useState(null);
   const [loadingF,   setLoadingF]   = useState(false);
+  const [loadingC,   setLoadingC]   = useState(false);
   const [loading,    setLoading]    = useState(false);
   const [billData,   setBillData]   = useState(null);
   const [error,      setError]      = useState('');
 
-  /* ── load farmers on mount ───────────────────────────────────────────────── */
+  /* ── Load farmers ────────────────────────────────────────────────────────── */
   useEffect(() => {
     const load = async () => {
       setLoadingF(true);
       try {
-        const res = await farmerAPI.getAll({ status: 'Active', limit: 1000 });
-        const list = res.farmers || res.data?.farmers || res.data || [];
-        setFarmers(
-          list.map((f) => ({
-            value: f._id,
-            label: `${f.farmerNumber} — ${f.personalDetails?.name || ''}`,
-          }))
-        );
-      } catch (e) {
+        const res = await farmerAPI.getAll({ status: 'Active', limit: 2000 });
+        const list = res.data || [];
+        setFarmers(list.map((f) => ({
+          value: f._id,
+          label: `${f.farmerNumber} — ${f.personalDetails?.name || ''}`,
+          farmerNumber: f.farmerNumber,
+        })));
+      } catch {
         notifications.show({ title: 'Error', message: 'Could not load farmers', color: 'red' });
       } finally {
         setLoadingF(false);
@@ -151,19 +123,60 @@ const MilkBillReport = () => {
     load();
   }, []);
 
-  /* ── fetch bill ──────────────────────────────────────────────────────────── */
+  /* ── Load saved Producers cycles ─────────────────────────────────────────── */
+  useEffect(() => {
+    const load = async () => {
+      setLoadingC(true);
+      try {
+        // Load both Saved and Printed cycles
+        const [savedRes, printedRes] = await Promise.all([
+          paymentRegisterAPI.getAll({ registerType: 'Producers', status: 'Saved',   limit: 200 }),
+          paymentRegisterAPI.getAll({ registerType: 'Producers', status: 'Printed', limit: 200 }),
+        ]);
+        const res = { data: [...(savedRes.data || []), ...(printedRes.data || [])] };
+        res.data.sort((a, b) => new Date(b.fromDate) - new Date(a.fromDate));
+        const list = res.data || [];
+        setCycles(
+          list.map((c) => ({
+            value: c._id,
+            label: `${fD(c.fromDate)} – ${fD(c.toDate)}`,
+            fromDate: c.fromDate,
+            toDate:   c.toDate,
+          }))
+        );
+      } catch {
+        notifications.show({ title: 'Error', message: 'Could not load cycles', color: 'red' });
+      } finally {
+        setLoadingC(false);
+      }
+    };
+    load();
+  }, []);
+
+  /* ── Selected cycle object ───────────────────────────────────────────────── */
+  const selectedCycle = useMemo(
+    () => cycles.find((c) => c.value === cycleId) || null,
+    [cycles, cycleId]
+  );
+
+  /* ── Fetch bill ──────────────────────────────────────────────────────────── */
   const handleFetch = useCallback(async () => {
     if (!farmerId) {
-      notifications.show({ title: 'Select farmer', message: 'Choose a producer first', color: 'orange' });
+      notifications.show({ title: 'Select producer', message: 'Choose a producer first', color: 'orange' });
+      return;
+    }
+    if (!selectedCycle) {
+      notifications.show({ title: 'Select cycle', message: 'Choose a payment cycle', color: 'orange' });
       return;
     }
     setLoading(true);
     setError('');
     setBillData(null);
     try {
-      const m = dayjs(month).month() + 1;
-      const y = dayjs(month).year();
-      const res = await milkBillAPI.get(farmerId, { month: m, year: y });
+      const res = await milkBillAPI.getByCycle(farmerId, {
+        fromDate: selectedCycle.fromDate,
+        toDate:   selectedCycle.toDate,
+      });
       if (!res.success) throw new Error(res.message || 'Failed');
       setBillData(res);
     } catch (e) {
@@ -171,45 +184,35 @@ const MilkBillReport = () => {
     } finally {
       setLoading(false);
     }
-  }, [farmerId, month]);
+  }, [farmerId, selectedCycle]);
 
-  /* ── print ────────────────────────────────────────────────────────────────── */
+  /* ── Print ────────────────────────────────────────────────────────────────── */
   const handlePrint = useReactToPrint({
     content:       () => printRef.current,
     documentTitle: billData
-      ? `MilkBill_${billData.farmer.number}_${dayjs(month).format('MMYYYY')}`
+      ? `MilkBill_${billData.farmer.number}_${fD(selectedCycle?.fromDate)}`
       : 'MilkBill',
   });
 
-  /* ── compute totals from billData.days ──────────────────────────────────── */
-  const totals = useMemo(() => {
-    if (!billData) return null;
-    let mQty = 0, mAmt = 0, eQty = 0, eAmt = 0;
-    billData.days.forEach(({ am, pm }) => {
-      if (am) { mQty += am.qty; mAmt += am.amount; }
-      if (pm) { eQty += pm.qty; eAmt += pm.amount; }
-    });
-    const totQty = mQty + eQty;
-    const totAmt = mAmt + eAmt;
-    const avgRate = totQty > 0 ? totAmt / totQty : 0;
-    return { mQty, mAmt, eQty, eAmt, totQty, totAmt, avgRate };
-  }, [billData]);
-
-  /* ── summary calculations ────────────────────────────────────────────────── */
-  const summary = useMemo(() => {
-    if (!billData || !totals) return null;
-    const { openingBalance, cattleFeed, paymentBank } = billData;
-    const milkTotal  = totals.totAmt;
-    const grossTotal = milkTotal + (openingBalance > 0 ? openingBalance : 0);
-    const prevOwed   = openingBalance < 0 ? Math.abs(openingBalance) : 0;
-    const totalDeduct = paymentBank + cattleFeed + prevOwed;
-    const finalDue    = milkTotal + openingBalance - paymentBank - cattleFeed;
-    return { milkTotal, grossTotal, openingBalance, totalDeduct, paymentBank, cattleFeed, prevOwed, finalDue };
-  }, [billData, totals]);
-
-  const monthLabel = dayjs(month).format('MMMM YYYY').toUpperCase();
-  const lastDay    = dayjs(month).endOf('month').format('DD/MM/YYYY');
   const societyName = selectedCompany?.companyName?.toUpperCase() || 'DAIRY COOPERATIVE SOCIETY';
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     Derived data from billData
+  ───────────────────────────────────────────────────────────────────────── */
+  const { days = [], cattleFeedRows = [], deductionRows = [], paymentRows = [], summary = {}, farmer = {} } = billData || {};
+
+  // Group cattle feed by date for inline display in milk table
+  const cattleByDate = useMemo(() => {
+    const m = {};
+    cattleFeedRows.forEach((r) => {
+      if (!m[r.date]) m[r.date] = [];
+      m[r.date].push(r);
+    });
+    return m;
+  }, [cattleFeedRows]);
+
+  // Day label: just the DD portion of YYYY-MM-DD
+  const dayLabel = (dateStr) => dateStr?.slice(8) || '';
 
   /* ═══════════════════════════════════════════════════════════════════════════
      RENDER
@@ -218,20 +221,18 @@ const MilkBillReport = () => {
     <Container fluid px="md" py="sm">
       <style>{PRINT_CSS}</style>
 
-      {/* ── Controls ──────────────────────────────────────────────────── */}
-      <Paper withBorder p="sm" radius="md" mb="md" className="no-print"
-        style={{ background: '#f8f9fa' }}>
+      {/* ── Controls ───────────────────────────────────────────────────── */}
+      <Paper withBorder p="sm" radius="md" mb="md" className="no-print" style={{ background: '#f8f9fa' }}>
         <Group wrap="wrap" gap="sm" align="flex-end">
 
           <Box>
-            <Text size="xs" fw={600} c="dimmed" mb={4}>Producer</Text>
+            <Text size="xs" fw={600} c="dimmed" mb={4}>Producer Number</Text>
             <Select
               data={farmers}
               value={farmerId}
-              onChange={setFarmerId}
-              placeholder={loadingF ? 'Loading...' : 'Select producer...'}
-              searchable
-              clearable
+              onChange={(v) => { setFarmerId(v); setBillData(null); }}
+              placeholder={loadingF ? 'Loading...' : 'Search producer...'}
+              searchable clearable
               style={{ minWidth: 280 }}
               size="sm"
               disabled={loadingF}
@@ -240,13 +241,18 @@ const MilkBillReport = () => {
           </Box>
 
           <Box>
-            <Text size="xs" fw={600} c="dimmed" mb={4}>Month</Text>
-            <MonthPickerInput
-              value={month}
-              onChange={setMonth}
-              valueFormat="MMMM YYYY"
-              style={{ minWidth: 160 }}
+            <Text size="xs" fw={600} c="dimmed" mb={4}>Cycle</Text>
+            <Select
+              data={cycles}
+              value={cycleId}
+              onChange={(v) => { setCycleId(v); setBillData(null); }}
+              placeholder={loadingC ? 'Loading...' : 'Select cycle...'}
+              searchable clearable
+              style={{ minWidth: 220 }}
               size="sm"
+              disabled={loadingC}
+              rightSection={loadingC ? <Loader size={14} /> : undefined}
+              nothingFoundMessage="No saved cycles found"
             />
           </Box>
 
@@ -257,7 +263,7 @@ const MilkBillReport = () => {
             loading={loading}
             onClick={handleFetch}
           >
-            Load Bill
+            Generate Report
           </Button>
 
           <Button
@@ -279,102 +285,82 @@ const MilkBillReport = () => {
         </Alert>
       )}
 
-      {/* ── Loading ───────────────────────────────────────────────────── */}
       {loading && (
-        <Center py="xl" className="no-print">
-          <Loader size="md" />
-        </Center>
+        <Center py="xl" className="no-print"><Loader size="md" /></Center>
       )}
 
-      {/* ── No data placeholder ───────────────────────────────────────── */}
       {!loading && !billData && !error && (
         <Center py="xl" className="no-print">
-          <Text c="dimmed" size="sm">Select a producer and month, then click <strong>Load Bill</strong>.</Text>
+          <Text c="dimmed" size="sm">
+            Select a producer and a payment cycle, then click <strong>Generate Report</strong>.
+          </Text>
         </Center>
       )}
 
       {/* ══ BILL AREA ══════════════════════════════════════════════════ */}
-      {billData && totals && summary && (
-        <Paper
-          withBorder p={0} radius={0}
-          style={{ background: '#fff', border: '2px solid #333', maxWidth: 1060, margin: '0 auto' }}
-        >
-          <Box id="milk-bill-print" ref={printRef} p="xs"
-            style={{ background: '#fff', minWidth: 860 }}>
+      {billData && (
+        <Paper withBorder p={0} radius={0}
+          style={{ background: '#fff', border: '1px solid #999', maxWidth: 820, margin: '0 auto' }}>
+          <Box id="milk-bill-print" ref={printRef} p="xs" style={{ background: '#fff' }}>
 
             {/* ── HEADER ── */}
-            <Box ta="center" mb={5}>
-              <Text fw={900} style={{ fontSize: 15, letterSpacing: 2, fontFamily: FONT, color: '#000', textDecoration: 'underline' }}>
+            <Box ta="center" mb={4} style={{ borderBottom: BH, paddingBottom: 4 }}>
+              <Text fw={900} style={{ fontSize: 14, letterSpacing: 2, fontFamily: FONT, color: '#000', textDecoration: 'underline' }}>
                 {societyName}
               </Text>
               <Text fw={700} style={{ fontSize: 12, fontFamily: FONT, color: '#000', letterSpacing: 1 }}>
-                MILK BILL
-              </Text>
-              <Text fw={600} style={{ fontSize: 10.5, fontFamily: FONT, color: '#000' }}>
-                {monthLabel}
+                MILK BILL — PRODUCER STATEMENT
               </Text>
             </Box>
 
-            {/* ── MEMBER INFO BAR ── */}
-            <Box style={{
-              border:          BH,
-              padding:         '3px 8px',
-              background:      '#f0f0f0',
-              marginBottom:    5,
-              display:         'flex',
-              justifyContent:  'space-between',
-              alignItems:      'center',
-              flexWrap:        'wrap',
-              gap:             6,
-            }}>
-              <Text style={{ fontSize: 10, fontFamily: FONT, fontWeight: 700, color: '#000' }}>
-                PRODUCERS DUES,&nbsp;&nbsp;
-                {billData.farmer.name.toUpperCase()}
-                {billData.farmer.house ? `, ${billData.farmer.house.toUpperCase()}` : ''}
+            {/* ── PRODUCER INFO BAR ── */}
+            <Box style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap',
+              gap: 4, borderBottom: B, paddingBottom: 4, marginBottom: 6 }}>
+              <Text style={{ fontSize: 9.5, fontFamily: FONT, fontWeight: 700, color: '#000' }}>
+                Name: {farmer.name?.toUpperCase()}
               </Text>
-              <Group gap="xl">
-                <Text style={{ fontSize: 10, fontFamily: FONT, color: '#000' }}>
-                  Depot Name :&nbsp;<strong>{societyName}</strong>
-                </Text>
-                <Text style={{ fontSize: 10, fontFamily: FONT, color: '#000' }}>
-                  Member No :&nbsp;<strong>{billData.farmer.memberId || billData.farmer.number}</strong>
-                </Text>
-              </Group>
+              <Text style={{ fontSize: 9.5, fontFamily: FONT, color: '#000' }}>
+                Producer No: <strong>{farmer.number}</strong>
+                {farmer.memberId && farmer.memberId !== farmer.number
+                  ? `  |  Member No: ${farmer.memberId}` : ''}
+              </Text>
+              <Text style={{ fontSize: 9.5, fontFamily: FONT, color: '#000' }}>
+                Cycle: <strong>{fD(selectedCycle?.fromDate)} to {fD(selectedCycle?.toDate)}</strong>
+              </Text>
             </Box>
 
-            {/* ── MAIN TABLE ── */}
-            <Box style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 820 }}>
+            {/* ══ SECTION 1: MILK COLLECTION ══ */}
+            <Text style={{ fontFamily: FONT, fontSize: FS, fontWeight: 700, color: '#000',
+              borderBottom: BH, paddingBottom: 2, marginBottom: 4, textTransform: 'uppercase',
+              letterSpacing: 1 }}>
+              1. Milk Collection Details
+            </Text>
+
+            <Box style={{ overflowX: 'auto', marginBottom: 6 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                 <colgroup>
-                  <col style={{ width: 24 }} />   {/* Date */}
-                  {/* Morning: Qty CLR FAT SNF Rate */}
-                  <col style={{ width: 48 }} />
-                  <col style={{ width: 28 }} />
-                  <col style={{ width: 34 }} />
-                  <col style={{ width: 34 }} />
-                  <col style={{ width: 42 }} />
-                  {/* Evening: Qty CLR FAT SNF Rate */}
-                  <col style={{ width: 48 }} />
-                  <col style={{ width: 28 }} />
-                  <col style={{ width: 34 }} />
-                  <col style={{ width: 34 }} />
-                  <col style={{ width: 42 }} />
-                  {/* Total: Qty Rate Amt Feed */}
-                  <col style={{ width: 54 }} />
-                  <col style={{ width: 42 }} />
-                  <col style={{ width: 66 }} />
-                  <col style={{ width: 58 }} />
+                  <col style={{ width: 32 }} />
+                  <col style={{ width: 50 }} />
+                  <col style={{ width: 26 }} />
+                  <col style={{ width: 30 }} />
+                  <col style={{ width: 30 }} />
+                  <col style={{ width: 40 }} />
+                  <col style={{ width: 50 }} />
+                  <col style={{ width: 26 }} />
+                  <col style={{ width: 30 }} />
+                  <col style={{ width: 30 }} />
+                  <col style={{ width: 40 }} />
+                  <col style={{ width: 50 }} />
+                  <col style={{ width: 40 }} />
+                  <col style={{ width: 62 }} />
                 </colgroup>
-
                 <thead>
-                  {/* Section headers */}
                   <tr>
-                    <th style={thSec({ border: BH })} rowSpan={2}></th>
-                    <th style={thSec()} colSpan={5}>MORNING</th>
-                    <th style={thSec()} colSpan={5}>EVENING</th>
-                    <th style={thSec()} colSpan={4}>TOTAL</th>
+                    <th style={thSec({ border: BH })} rowSpan={2}>Date</th>
+                    <th style={thSec()} colSpan={5}>MORNING (AM)</th>
+                    <th style={thSec()} colSpan={5}>EVENING (PM)</th>
+                    <th style={thSec()} colSpan={3}>TOTAL</th>
                   </tr>
-                  {/* Column sub-headers */}
                   <tr>
                     <th style={thCol()}>Ltr</th>
                     <th style={thCol()}>CLR</th>
@@ -388,180 +374,299 @@ const MilkBillReport = () => {
                     <th style={thCol()}>Rate</th>
                     <th style={thCol()}>Ltr</th>
                     <th style={thCol()}>Rate</th>
-                    <th style={thCol()}>Amt</th>
-                    <th style={thCol()}>Cattle Feed</th>
+                    <th style={thCol()}>Amount</th>
                   </tr>
                 </thead>
-
                 <tbody>
-                  {billData.days.map(({ day, am, pm }) => {
+                  {days.map(({ date, am, pm }) => {
                     const totQty = (am?.qty || 0) + (pm?.qty || 0);
                     const totAmt = (am?.amount || 0) + (pm?.amount || 0);
                     const avgR   = totQty > 0 ? totAmt / totQty : 0;
-                    const isEven = day % 2 === 0;
-                    const rowBg  = isEven ? '#fafafa' : '#fff';
-
                     return (
-                      <tr key={day} style={{ background: rowBg }}>
-                        {/* Day */}
-                        <td style={tdDay}>{day}</td>
-
-                        {/* Morning */}
+                      <tr key={date} style={{ background: '#fff' }}>
+                        <td style={tdDay}>{fD(date)}</td>
                         <td style={td()}>{f1(am?.qty)}</td>
                         <td style={td({ textAlign: 'center' })}>{fI(am?.clr)}</td>
                         <td style={td({ textAlign: 'center' })}>{f1(am?.fat)}</td>
                         <td style={td({ textAlign: 'center' })}>{f1(am?.snf)}</td>
                         <td style={td()}>{f2(am?.rate)}</td>
-
-                        {/* Evening */}
                         <td style={td()}>{f1(pm?.qty)}</td>
                         <td style={td({ textAlign: 'center' })}>{fI(pm?.clr)}</td>
                         <td style={td({ textAlign: 'center' })}>{f1(pm?.fat)}</td>
                         <td style={td({ textAlign: 'center' })}>{f1(pm?.snf)}</td>
                         <td style={td()}>{f2(pm?.rate)}</td>
-
-                        {/* Day total */}
                         <td style={td({ fontWeight: totQty ? 600 : 400 })}>{f1(totQty || null)}</td>
                         <td style={td()}>{totQty ? f2(avgR) : ''}</td>
                         <td style={td({ fontWeight: totQty ? 600 : 400 })}>{totAmt ? fN(totAmt) : ''}</td>
-                        <td style={td()}></td>
                       </tr>
                     );
                   })}
                 </tbody>
-
-                {/* ── Totals row ── */}
                 <tfoot>
                   <tr>
-                    <td style={{ ...tdTot, textAlign: 'center', background: '#bbb', fontSize: FS }}>
-                      TOTAL
-                    </td>
-                    {/* Morning */}
-                    <td style={{ ...tdTot, borderLeft: BH }}>{fN(totals.mQty)}</td>
+                    <td style={{ ...tdTot, textAlign: 'center' }}>TOTAL</td>
+                    <td style={tdTot}>{fN(summary.amQty)}</td>
                     <td style={tdTot}></td>
                     <td style={tdTot}></td>
                     <td style={tdTot}></td>
                     <td style={tdTot}></td>
-                    {/* Evening */}
-                    <td style={{ ...tdTot, borderLeft: BH }}>{fN(totals.eQty)}</td>
+                    <td style={tdTot}>{fN(summary.pmQty)}</td>
                     <td style={tdTot}></td>
                     <td style={tdTot}></td>
                     <td style={tdTot}></td>
                     <td style={tdTot}></td>
-                    {/* Grand */}
-                    <td style={{ ...tdTot, borderLeft: BH }}>{fN(totals.totQty)}</td>
-                    <td style={tdTot}>{fN(totals.avgRate)}</td>
-                    <td style={{ ...tdTot, fontSize: FS + 1 }}>{fN(totals.totAmt)}</td>
-                    <td style={tdTot}>{summary.cattleFeed > 0 ? fN(summary.cattleFeed) : ''}</td>
+                    <td style={tdTot}>{fN(summary.totalMilkQty)}</td>
+                    <td style={tdTot}>{summary.totalMilkQty > 0 ? f2(summary.totalMilkAmt / summary.totalMilkQty) : ''}</td>
+                    <td style={{ ...tdTot, fontSize: FS + 1 }}>{fN(summary.totalMilkAmt)}</td>
                   </tr>
                 </tfoot>
               </table>
             </Box>
 
-            {/* ── SUMMARY SECTION ── */}
-            <Box mt={6} style={{ display: 'flex', gap: 0, border: BH }}>
-
-              {/* Left: Milk Qty & Amount */}
-              <Box style={{ flex: 1, borderRight: BH, padding: '5px 8px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <tbody>
-                    <tr>
-                      <td style={sumLbl()}>Total Milk Quantity</td>
-                      <td style={sumVal()}>{fN(totals.totQty)}&nbsp;Ltr</td>
-                    </tr>
-                    <tr>
-                      <td style={sumLbl()}>Total Amount</td>
-                      <td style={sumVal()}>{fN(totals.totAmt)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </Box>
-
-              {/* Middle: Earnings */}
-              <Box style={{ flex: 1.2, borderRight: BH, padding: '5px 8px' }}>
-                <Text style={{ fontFamily: FONT, fontSize: FS, fontWeight: 700, color: '#000', marginBottom: 3, textDecoration: 'underline', textTransform: 'uppercase' }}>
-                  Earnings
+            {/* ══ SECTION 2: CATTLE FEED ══ */}
+            {cattleFeedRows.length > 0 && (
+              <>
+                <Text style={{ fontFamily: FONT, fontSize: FS, fontWeight: 700, color: '#000',
+                  borderBottom: BH, paddingBottom: 2, marginBottom: 4, textTransform: 'uppercase',
+                  letterSpacing: 1, marginTop: 8 }}>
+                  2. Cattle Feed Purchase Details
                 </Text>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <tbody>
-                    <tr>
-                      <td style={sumLbl()}>Previous Balance</td>
-                      <td style={sumVal()}>
-                        {fN(Math.abs(summary.openingBalance))}
-                        {summary.openingBalance < 0 ? ' (Dr)' : summary.openingBalance > 0 ? ' (Cr)' : ''}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style={sumLbl()}>Milk Total</td>
-                      <td style={sumVal()}>{fN(summary.milkTotal)}</td>
-                    </tr>
-                    <tr style={{ borderTop: B }}>
-                      <td style={sumLbl(true)}>Total</td>
-                      <td style={sumVal(true)}>{fN(summary.milkTotal + Math.max(0, summary.openingBalance))}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </Box>
-
-              {/* Right: Deductions & Due */}
-              <Box style={{ flex: 1.4, padding: '5px 8px' }}>
-                <Text style={{ fontFamily: FONT, fontSize: FS, fontWeight: 700, color: '#000', marginBottom: 3, textDecoration: 'underline', textTransform: 'uppercase' }}>
-                  Deductions
-                </Text>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <tbody>
-                    <tr>
-                      <td style={sumLbl()}>Payment / Bank</td>
-                      <td style={sumVal()}>{fN(summary.paymentBank)}</td>
-                    </tr>
-                    <tr>
-                      <td style={sumLbl()}>Cattle Feed</td>
-                      <td style={sumVal()}>{fN(summary.cattleFeed)}</td>
-                    </tr>
-                    {summary.prevOwed > 0 && (
+                <Box style={{ overflowX: 'auto', marginBottom: 6 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
                       <tr>
-                        <td style={sumLbl()}>Previous Balance (Dr)</td>
-                        <td style={sumVal()}>{fN(summary.prevOwed)}</td>
+                        <th style={thCol({ textAlign: 'left', width: 80 })}>Date</th>
+                        <th style={thCol({ textAlign: 'left' })}>Item</th>
+                        <th style={thCol({ width: 50 })}>Bill No</th>
+                        <th style={thCol({ width: 50 })}>Qty</th>
+                        <th style={thCol({ width: 50 })}>Rate</th>
+                        <th style={thCol({ width: 72 })}>Amount</th>
                       </tr>
-                    )}
-                    <tr style={{ borderTop: B }}>
-                      <td style={sumLbl(true)}>Total Deduction</td>
-                      <td style={sumVal(true)}>{fN(summary.totalDeduct)}</td>
-                    </tr>
-                    <tr style={{
-                      borderTop: BH,
-                      background: summary.finalDue >= 0 ? '#d8f0d8' : '#f0d8d8',
-                    }}>
-                      <td style={{ ...sumLbl(true), fontSize: FS + 1.5 }}>
-                        {summary.finalDue >= 0 ? 'Amount Due (Payable)' : 'Amount Due (Receivable)'}
-                      </td>
-                      <td style={{ ...sumVal(true), fontSize: FS + 2 }}>
-                        Rs.&nbsp;{fN(Math.abs(summary.finalDue))}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {cattleFeedRows.map((row, i) => (
+                        <tr key={i} style={{ background: '#fff' }}>
+                          <td style={td({ textAlign: 'left' })}>{fD(row.date)}</td>
+                          <td style={td({ textAlign: 'left' })}>{row.itemName}</td>
+                          <td style={td({ textAlign: 'center' })}>{row.billNumber}</td>
+                          <td style={td()}>{row.quantity}</td>
+                          <td style={td()}>{f2(row.rate)}</td>
+                          <td style={td({ fontWeight: 600 })}>{fN(row.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan={5} style={{ ...tdTot, textAlign: 'right' }}>Total Cattle Feed</td>
+                        <td style={{ ...tdTot, fontSize: FS + 1 }}>{fN(summary.totalCattleFeed)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </Box>
+              </>
+            )}
+
+            {/* ══ SECTION 3: DEDUCTIONS ══ */}
+            {deductionRows.length > 0 && (
+              <>
+                <Text style={{ fontFamily: FONT, fontSize: FS, fontWeight: 700, color: '#000',
+                  borderBottom: BH, paddingBottom: 2, marginBottom: 4, textTransform: 'uppercase',
+                  letterSpacing: 1, marginTop: 8 }}>
+                  {cattleFeedRows.length > 0 ? '3.' : '2.'} Other Deductions
+                </Text>
+                <Box style={{ overflowX: 'auto', marginBottom: 6 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={thCol({ textAlign: 'left', width: 80 })}>Date</th>
+                        <th style={thCol({ textAlign: 'left' })}>Description</th>
+                        <th style={thCol({ width: 80 })}>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deductionRows.map((row, i) => (
+                        <tr key={i} style={{ background: '#fff' }}>
+                          <td style={td({ textAlign: 'left' })}>{fD(row.date)}</td>
+                          <td style={td({ textAlign: 'left' })}>{row.itemName}</td>
+                          <td style={td({ fontWeight: 600 })}>{fN(row.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan={2} style={{ ...tdTot, textAlign: 'right' }}>Total Deductions</td>
+                        <td style={{ ...tdTot, fontSize: FS + 1 }}>{fN(summary.totalDeductions)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </Box>
+              </>
+            )}
+
+            {/* ══ SECTION 4: PAYMENTS ══ */}
+            {paymentRows.length > 0 && (
+              <>
+                <Text style={{ fontFamily: FONT, fontSize: FS, fontWeight: 700, color: '#000',
+                  borderBottom: BH, paddingBottom: 2, marginBottom: 4, textTransform: 'uppercase',
+                  letterSpacing: 1, marginTop: 8 }}>
+                  {2 + (cattleFeedRows.length > 0 ? 1 : 0) + (deductionRows.length > 0 ? 1 : 0)}. Payments Made
+                </Text>
+                <Box style={{ overflowX: 'auto', marginBottom: 6 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={thCol({ textAlign: 'left', width: 80 })}>Date</th>
+                        <th style={thCol({ textAlign: 'left' })}>Mode</th>
+                        <th style={thCol({ textAlign: 'left' })}>Reference</th>
+                        <th style={thCol({ width: 80 })}>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paymentRows.map((row, i) => (
+                        <tr key={i} style={{ background: '#fff' }}>
+                          <td style={td({ textAlign: 'left' })}>{fD(row.date)}</td>
+                          <td style={td({ textAlign: 'left' })}>{row.mode}</td>
+                          <td style={td({ textAlign: 'left' })}>{row.refNo}</td>
+                          <td style={td({ fontWeight: 600 })}>{fN(row.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan={3} style={{ ...tdTot, textAlign: 'right' }}>Total Payments</td>
+                        <td style={{ ...tdTot, fontSize: FS + 1 }}>{fN(summary.totalPayments)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </Box>
+              </>
+            )}
+
+            {/* ══ SUMMARY ══ */}
+            <Box mt={8} style={{ border: BH }}>
+              <Box style={{ background: '#ddd', padding: '3px 6px', borderBottom: BH }}>
+                <Text style={{ fontFamily: FONT, fontSize: FS + 1, fontWeight: 700, color: '#000',
+                  textTransform: 'uppercase', letterSpacing: 1 }}>
+                  Summary
+                </Text>
+              </Box>
+
+              <Box style={{ display: 'flex', gap: 0 }}>
+                {/* Left: Earnings */}
+                <Box style={{ flex: 1, borderRight: BH, padding: '5px 8px' }}>
+                  <Text style={{ fontFamily: FONT, fontSize: FS, fontWeight: 700, color: '#000',
+                    marginBottom: 3, textDecoration: 'underline' }}>
+                    EARNINGS
+                  </Text>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <tbody>
+                      <tr>
+                        <td style={sumLbl()}>Milk Total ({fN(summary.totalMilkQty)} Ltr)</td>
+                        <td style={sumVal()}>{fN(summary.totalMilkAmt)}</td>
+                      </tr>
+                      {summary.previousBalance !== 0 && (
+                        <tr>
+                          <td style={sumLbl()}>
+                            Previous Balance {summary.previousBalance > 0 ? '(Cr)' : '(Dr)'}
+                          </td>
+                          <td style={sumVal()}>
+                            {summary.previousBalance < 0 ? '− ' : '+ '}
+                            {fN(Math.abs(summary.previousBalance))}
+                          </td>
+                        </tr>
+                      )}
+                      <tr style={{ borderTop: B }}>
+                        <td style={sumLbl(true)}>Gross Total</td>
+                        <td style={sumVal(true)}>
+                          {fN(summary.totalMilkAmt + Math.max(0, summary.previousBalance))}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </Box>
+
+                {/* Right: Deductions & Net */}
+                <Box style={{ flex: 1.2, padding: '5px 8px' }}>
+                  <Text style={{ fontFamily: FONT, fontSize: FS, fontWeight: 700, color: '#000',
+                    marginBottom: 3, textDecoration: 'underline' }}>
+                    DEDUCTIONS & PAYMENTS
+                  </Text>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <tbody>
+                      {summary.previousBalance < 0 && (
+                        <tr>
+                          <td style={sumLbl()}>Previous Due (Dr)</td>
+                          <td style={sumVal()}>{fN(Math.abs(summary.previousBalance))}</td>
+                        </tr>
+                      )}
+                      {summary.totalCattleFeed > 0 && (
+                        <tr>
+                          <td style={sumLbl()}>Cattle Feed</td>
+                          <td style={sumVal()}>{fN(summary.totalCattleFeed)}</td>
+                        </tr>
+                      )}
+                      {summary.totalDeductions > 0 && (
+                        <tr>
+                          <td style={sumLbl()}>Other Deductions</td>
+                          <td style={sumVal()}>{fN(summary.totalDeductions)}</td>
+                        </tr>
+                      )}
+                      {summary.totalBankPay > 0 && (
+                        <tr>
+                          <td style={sumLbl()}>Bank Payment</td>
+                          <td style={sumVal()}>{fN(summary.totalBankPay)}</td>
+                        </tr>
+                      )}
+                      {summary.totalCashPay > 0 && (
+                        <tr>
+                          <td style={sumLbl()}>Cash Payment</td>
+                          <td style={sumVal()}>{fN(summary.totalCashPay)}</td>
+                        </tr>
+                      )}
+                      <tr style={{ borderTop: B }}>
+                        <td style={sumLbl(true)}>Total Deductions</td>
+                        <td style={sumVal(true)}>
+                          {fN((summary.previousBalance < 0 ? Math.abs(summary.previousBalance) : 0)
+                            + summary.totalCattleFeed + summary.totalDeductions + summary.totalPayments)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  {/* Net amount row */}
+                  <Box style={{
+                    marginTop: 4,
+                    borderTop: BH,
+                    padding: '4px 0',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: summary.netAmount >= 0 ? '#e8f5e9' : '#fce4ec',
+                  }}>
+                    <Text style={{ fontFamily: FONT, fontSize: FS + 2, fontWeight: 700, color: '#000', paddingLeft: 4 }}>
+                      {summary.netAmount >= 0 ? 'Net Payable (To Producer)' : 'Net Due (From Producer)'}
+                    </Text>
+                    <Text style={{ fontFamily: FONT, fontSize: FS + 3, fontWeight: 900, color: '#000', paddingRight: 4 }}>
+                      Rs.&nbsp;{fN(Math.abs(summary.netAmount))}
+                    </Text>
+                  </Box>
+                </Box>
               </Box>
             </Box>
 
             {/* ── FOOTER ── */}
-            <Box mt={5} style={{
-              display:        'flex',
-              justifyContent: 'space-between',
-              alignItems:     'flex-end',
-              borderTop:      BH,
-              paddingTop:     5,
-              paddingLeft:    4,
-              paddingRight:   4,
-            }}>
-              <Text style={{ fontSize: 9.5, fontFamily: FONT, color: '#000' }}>
-                Date: {lastDay}
+            <Box mt={6} style={{ display: 'flex', justifyContent: 'space-between',
+              alignItems: 'flex-end', borderTop: BH, paddingTop: 5 }}>
+              <Text style={{ fontSize: 9, fontFamily: FONT, color: '#000' }}>
+                Statement Date: {dayjs().format('DD/MM/YYYY')}
               </Text>
               <Box ta="center">
-                <Box style={{ width: 160, borderBottom: B, marginBottom: 2 }} />
-                <Text style={{ fontSize: 9.5, fontFamily: FONT, color: '#000' }}>
-                  Clerk / Secretary
-                </Text>
+                <Box style={{ width: 140, borderBottom: B, marginBottom: 2 }} />
+                <Text style={{ fontSize: 9, fontFamily: FONT, color: '#000' }}>Clerk / Secretary</Text>
+              </Box>
+              <Box ta="center">
+                <Box style={{ width: 140, borderBottom: B, marginBottom: 2 }} />
+                <Text style={{ fontSize: 9, fontFamily: FONT, color: '#000' }}>Producer Signature</Text>
               </Box>
             </Box>
 

@@ -26,6 +26,9 @@ const n = (v) => parseFloat(v) || 0;
 const calcNet = (r) =>
   n(r.milkValue) + n(r.previousBalance) - n(r.welfare) - n(r.cfRec) - n(r.cashPocket) - n(r.loanAdv);
 
+const deriveStatus = (net) =>
+  net > 0 ? 'Payable' : net < 0 ? 'Receivable' : 'Settled';
+
 const emptyRow = (slNo = 1) => ({
   _localId:        Date.now() + slNo + Math.random(),
   slNo,
@@ -139,9 +142,7 @@ const PaymentRegisterProducers = () => {
         if (r._localId !== localId) return r;
         const updated      = { ...r, [field]: value };
         updated.netPayable = calcNet(updated);
-        updated.payStatus  =
-          updated.netPayable > 0 ? 'Payable' :
-          updated.netPayable < 0 ? 'Receivable' : '';
+        updated.payStatus  = deriveStatus(updated.netPayable);
         return updated;
       })
     );
@@ -212,7 +213,7 @@ const PaymentRegisterProducers = () => {
         farmerId:    farmer._id,
       };
       updated.netPayable = calcNet(updated);
-      updated.payStatus  = updated.netPayable > 0 ? 'Payable' : updated.netPayable < 0 ? 'Receivable' : '';
+      updated.payStatus  = deriveStatus(updated.netPayable);
       return updated;
     }));
     setRowSearch(prev => ({ ...prev, [localId]: { query: '', results: [], open: false } }));
@@ -259,25 +260,28 @@ const PaymentRegisterProducers = () => {
       });
       if (!res.success) throw new Error(res.message || 'Generate failed');
 
-      const generated = (res.data.entries || []).map((e, i) => ({
-        _localId:        Date.now() + i,
-        slNo:            i + 1,
-        productId:       e.productId       || '',
-        productName:     e.productName     || '',
-        previousBalance: e.previousBalance ?? 0,
-        qty:             e.qty             ?? 0,
-        milkValue:       e.milkValue       ?? 0,
-        welfare:         e.welfare         ?? 0,
-        cfRec:           e.cfRec           ?? 0,
-        loanAdv:         e.loanAdv         ?? 0,
-        cashPocket:      e.cashPocket      ?? 0,
-        netPayable:      calcNet(e),
-        payStatus:       e.payStatus       || '',
-        farmerId:        e.farmerId,
-        _cfZero:         !e.cfRec,
-        _loanZero:       !e.loanAdv,
-        _cashZero:       !e.cashPocket,
-      }));
+      const generated = (res.data.entries || [])
+        .map((e, i) => ({
+          _localId:        Date.now() + i,
+          slNo:            i + 1,
+          productId:       e.productId       || '',
+          productName:     e.productName     || '',
+          previousBalance: e.previousBalance ?? 0,
+          qty:             e.qty             ?? 0,
+          milkValue:       e.milkValue       ?? 0,
+          welfare:         e.welfare         ?? 0,
+          cfRec:           e.cfRec           ?? 0,
+          loanAdv:         e.loanAdv         ?? 0,
+          cashPocket:      e.cashPocket      ?? 0,
+          netPayable:      calcNet(e),
+          payStatus:       deriveStatus(calcNet(e)),
+          farmerId:        e.farmerId,
+          _cfZero:         !e.cfRec,
+          _loanZero:       !e.loanAdv,
+          _cashZero:       !e.cashPocket,
+        }))
+        .sort((a, b) => (parseInt(a.productId, 10) || 0) - (parseInt(b.productId, 10) || 0))
+        .map((e, i) => ({ ...e, slNo: i + 1 }));
 
       setRows(generated.length > 0 ? generated : [emptyRow(1)]);
       setSavedId(null);
@@ -366,22 +370,25 @@ const PaymentRegisterProducers = () => {
     const res = await paymentRegisterAPI.getById(reg._id);
     if (!res?.success) return;
     const savedReg = res.data;
-    const loaded = (savedReg.entries || []).map((e, i) => ({
-      _localId:        Date.now() + i + Math.random(),
-      slNo:            i + 1,
-      productId:       e.productId       || '',
-      productName:     e.productName     || '',
-      farmerId:        e.farmerId,
-      previousBalance: e.previousBalance ?? 0,
-      qty:             e.qty             ?? 0,
-      milkValue:       e.milkValue       ?? 0,
-      welfare:         e.welfare         ?? 0,
-      cfRec:           e.cfRec           ?? 0,
-      loanAdv:         e.loanAdv         ?? 0,
-      cashPocket:      e.cashPocket      ?? 0,
-      netPayable:      e.netPay          ?? 0,
-      payStatus:       e.payStatus       || '',
-    }));
+    const loaded = (savedReg.entries || [])
+      .map((e, i) => ({
+        _localId:        Date.now() + i + Math.random(),
+        slNo:            i + 1,
+        productId:       e.productId       || '',
+        productName:     e.productName     || '',
+        farmerId:        e.farmerId,
+        previousBalance: e.previousBalance ?? 0,
+        qty:             e.qty             ?? 0,
+        milkValue:       e.milkValue       ?? 0,
+        welfare:         e.welfare         ?? 0,
+        cfRec:           e.cfRec           ?? 0,
+        loanAdv:         e.loanAdv         ?? 0,
+        cashPocket:      e.cashPocket      ?? 0,
+        netPayable:      calcNet(e),
+        payStatus:       deriveStatus(calcNet(e)),
+      }))
+      .sort((a, b) => (parseInt(a.productId, 10) || 0) - (parseInt(b.productId, 10) || 0))
+      .map((e, i) => ({ ...e, slNo: i + 1 }));
     setFromDate(new Date(savedReg.fromDate));
     setToDate(new Date(savedReg.toDate));
     setRows(loaded.length > 0 ? loaded : [emptyRow(1)]);
@@ -898,21 +905,28 @@ const PaymentRegisterProducers = () => {
 
                       {/* Pay Status badge */}
                       <td style={{ ...TD_CENTER, padding: '2px 4px' }}>
-                        {row.payStatus && (
-                          <span style={{
-                            display:      'inline-block',
-                            fontSize:     10,
-                            fontWeight:   700,
-                            letterSpacing: 0.4,
-                            color:        row.payStatus === 'Payable' ? '#155724' : '#721c24',
-                            background:   row.payStatus === 'Payable' ? '#d4edda' : '#f8d7da',
-                            border:       `1px solid ${row.payStatus === 'Payable' ? '#c3e6cb' : '#f5c6cb'}`,
-                            padding:      '2px 7px',
-                            borderRadius: 4,
-                          }}>
-                            {row.payStatus}
-                          </span>
-                        )}
+                        {row.payStatus && (() => {
+                          const isPayable    = row.payStatus === 'Payable';
+                          const isReceivable = row.payStatus === 'Receivable';
+                          const color      = isPayable ? '#155724' : isReceivable ? '#721c24' : '#555';
+                          const background = isPayable ? '#d4edda' : isReceivable ? '#f8d7da' : '#e2e3e5';
+                          const border     = isPayable ? '#c3e6cb' : isReceivable ? '#f5c6cb' : '#ccc';
+                          return (
+                            <span style={{
+                              display:       'inline-block',
+                              fontSize:      10,
+                              fontWeight:    700,
+                              letterSpacing: 0.4,
+                              color,
+                              background,
+                              border:        `1px solid ${border}`,
+                              padding:       '2px 7px',
+                              borderRadius:  4,
+                            }}>
+                              {row.payStatus}
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       {/* Sign */}

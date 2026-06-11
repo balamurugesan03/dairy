@@ -1,12 +1,14 @@
 import { useState, useCallback } from 'react';
 import {
   Container, Title, Text, Button, Group, Paper, TextInput,
-  Box, Stack, ScrollArea, Table, Loader, Center, Divider, Badge
+  Box, Stack, ScrollArea, Table, Loader, Center, Divider, Badge,
+  SegmentedControl
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import {
-  IconSearch, IconCalendar, IconPrinter, IconFileTypePdf, IconX, IconRefresh
+  IconSearch, IconCalendar, IconPrinter, IconFileTypePdf, IconX, IconRefresh,
+  IconUser, IconUsers
 } from '@tabler/icons-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -117,6 +119,7 @@ const FarmerWiseSummary = () => {
 
   const [fromDate,     setFromDate]     = useState(new Date());
   const [toDate,       setToDate]       = useState(new Date());
+  const [reportMode,   setReportMode]   = useState('all'); // 'all' | 'individual'
   const [searchFarmer, setSearchFarmer] = useState('');
   const [data,         setData]         = useState([]);
   const [loading,      setLoading]      = useState(false);
@@ -127,6 +130,10 @@ const FarmerWiseSummary = () => {
 
   // ── Generate ──────────────────────────────────────────────────────────────
   const handleGenerate = useCallback(async () => {
+    if (reportMode === 'individual' && !searchFarmer.trim()) {
+      notifications.show({ message: 'Please enter a Farmer Number or Name', color: 'orange' });
+      return;
+    }
     setLoading(true);
     try {
       const res = await milkCollectionAPI.getFarmerWiseStatement({
@@ -141,10 +148,10 @@ const FarmerWiseSummary = () => {
     } finally {
       setLoading(false);
     }
-  }, [fromDate, toDate]);
+  }, [fromDate, toDate, reportMode, searchFarmer]);
 
-  // ── Client-side search filter — exact match on farmerNumber, partial on name
-  const filteredData = searchFarmer.trim()
+  // ── Filter: Individual shows only matching farmer, All shows everyone
+  const filteredData = (reportMode === 'individual' && searchFarmer.trim())
     ? data.filter(f =>
         f.farmerNumber === searchFarmer.trim() ||
         f.farmerName?.toLowerCase().includes(searchFarmer.trim().toLowerCase())
@@ -164,7 +171,7 @@ const FarmerWiseSummary = () => {
   }), { amQty:0, amIncentive:0, amValue:0, pmQty:0, pmIncentive:0, pmValue:0, totalQty:0, totalValue:0 });
 
   // ── Cancel ────────────────────────────────────────────────────────────────
-  const handleCancel = () => { setData([]); setGenerated(false); setSearchFarmer(''); };
+  const handleCancel = () => { setData([]); setGenerated(false); setSearchFarmer(''); setReportMode('all'); };
 
   // ── Print ─────────────────────────────────────────────────────────────────
   const handlePrint = () => {
@@ -477,7 +484,7 @@ const FarmerWiseSummary = () => {
           <DatePickerInput
             label="From Date"
             value={fromDate}
-            onChange={v => v && setFromDate(v)}
+            onChange={v => { if (v) { setFromDate(v); setData([]); setGenerated(false); } }}
             leftSection={<IconCalendar size={14} />}
             valueFormat="DD/MM/YYYY"
             size="sm"
@@ -487,30 +494,52 @@ const FarmerWiseSummary = () => {
           <DatePickerInput
             label="To Date"
             value={toDate}
-            onChange={v => v && setToDate(v)}
+            onChange={v => { if (v) { setToDate(v); setData([]); setGenerated(false); } }}
             leftSection={<IconCalendar size={14} />}
             valueFormat="DD/MM/YYYY"
             size="sm"
             style={{ width: 155 }}
           />
 
-          <TextInput
-            label="Search Farmer"
-            placeholder="Name or Farmer No."
-            leftSection={<IconSearch size={14} />}
-            value={searchFarmer}
-            onChange={e => setSearchFarmer(e.currentTarget.value)}
-            size="sm"
-            style={{ width: 200 }}
-          />
+          <Box>
+            <Text size="xs" fw={500} mb={4}>Report Type</Text>
+            <SegmentedControl
+              value={reportMode}
+              onChange={(val) => {
+                setReportMode(val);
+                setSearchFarmer('');
+                setData([]);
+                setGenerated(false);
+              }}
+              size="sm"
+              data={[
+                { value: 'all',        label: <Group gap={4} wrap="nowrap"><IconUsers size={14} /><span>All Farmers</span></Group> },
+                { value: 'individual', label: <Group gap={4} wrap="nowrap"><IconUser  size={14} /><span>Individual Farmer</span></Group> },
+              ]}
+            />
+          </Box>
+
+          {reportMode === 'individual' && (
+            <TextInput
+              label="Farmer Number / Name"
+              placeholder="Enter Farmer No. or Name"
+              leftSection={<IconSearch size={14} />}
+              value={searchFarmer}
+              onChange={e => { setSearchFarmer(e.currentTarget.value); setData([]); setGenerated(false); }}
+              size="sm"
+              style={{ width: 210 }}
+              required
+            />
+          )}
 
           <Button
             leftSection={<IconRefresh size={14} />}
             size="sm"
             onClick={handleGenerate}
             loading={loading}
+            color={reportMode === 'individual' ? 'blue' : 'teal'}
           >
-            Generate
+            {reportMode === 'individual' ? 'Generate for Farmer' : 'Generate All'}
           </Button>
 
           <Button
@@ -543,7 +572,7 @@ const FarmerWiseSummary = () => {
               size="sm"
               onClick={handleCancel}
             >
-              Cancel
+              Clear
             </Button>
           )}
         </Group>

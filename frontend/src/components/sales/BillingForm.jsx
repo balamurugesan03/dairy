@@ -5,7 +5,7 @@
  * Same design layout as BusinessBillingForm
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useReactToPrint } from 'react-to-print';
 import dayjs from 'dayjs';
@@ -80,6 +80,10 @@ const BillingForm = () => {
   const navigate = useNavigate();
   const printRef = useRef();
   const itemSelectRef = useRef(null);
+  const farmerSelectRef = useRef(null);
+  const quantityRef = useRef(null);
+  const addButtonRef = useRef(null);
+  const saveButtonRef = useRef(null);
   const { selectedCompany } = useCompany();
 
   const [saving, setSaving] = useState(false);
@@ -153,10 +157,15 @@ const BillingForm = () => {
     fetchCollectionCenters();
     fetchSubsidies();
     fetchCycleBounds();
-    // Auto-activate today's date so the form is usable immediately on open
     if (form.values.billDate) {
       handleDateChange(form.values.billDate);
     }
+  }, []);
+
+  // Auto-focus farmer select on mount
+  useEffect(() => {
+    const timer = setTimeout(() => farmerSelectRef.current?.focus(), 300);
+    return () => clearTimeout(timer);
   }, []);
 
   const fetchCycleBounds = async () => {
@@ -217,7 +226,7 @@ const BillingForm = () => {
       const endDate = dayjs(date).endOf('day').toISOString();
       const response = await salesAPI.getAll({ startDate, endDate, limit: 100 });
       const bills = response?.data || response || [];
-      setDateBills(Array.isArray(bills) ? bills : []);
+      setDateBills(Array.isArray(bills) ? [...bills].reverse() : []);
     } catch (error) {
       console.error('Error fetching bills by date:', error);
       setDateBills([]);
@@ -450,6 +459,7 @@ const BillingForm = () => {
     form.setFieldValue('quantity', 1);
     form.setFieldValue('rate', '');
     setBarcodeInput('');
+    setTimeout(() => itemSelectRef.current?.focus(), 100);
   };
 
   const handleRemoveItem = (index) => {
@@ -631,109 +641,80 @@ const BillingForm = () => {
     setDateBills([]);
   };
 
-  const itemOptions = items.map(item => ({
+  const itemOptions = useMemo(() => items.map(item => ({
     value: item._id,
     label: `${item.itemCode} - ${item.itemName} (Stock: ${item.currentBalance} ${item.unit})`
-  }));
+  })), [items]);
 
-  const farmerOptions = farmers.map(farmer => ({
+  const farmerOptions = useMemo(() => farmers.map(farmer => ({
     value: farmer._id,
     label: `${farmer.farmerNumber || ''} - ${farmer.personalDetails?.name || 'N/A'} ${farmer.memberId ? ` | ${farmer.memberId}` : ''}`
-  }));
+  })), [farmers]);
 
-  const filteredFarmerOptions = (() => {
+  const filteredFarmerOptions = useMemo(() => {
     const search = farmerSearch.trim();
     if (!search) return farmerOptions;
     if (/^\d+$/.test(search)) {
       return farmerOptions.filter(opt => opt.label.split(' - ')[0]?.trim() === search);
     }
     return farmerOptions.filter(opt => opt.label.toLowerCase().includes(search.toLowerCase()));
-  })();
+  }, [farmerOptions, farmerSearch]);
 
-  const customerOptions = customers.map(customer => ({
+  const customerOptions = useMemo(() => customers.map(customer => ({
     value: customer._id,
     label: `${customer.customerId || ''} - ${customer.name} ${customer.phone ? `| ${customer.phone}` : ''}`
-  }));
+  })), [customers]);
 
   const paidAmount = parseFloat(form.values.paidAmount) || 0;
   const changeAmount = paidAmount - calculations.totalDue;
 
   return (
-    <Container size="xl" py="md">
+    <Container size="xl" pt="xs" pb="md">
       {/* ============ HEADER ============ */}
-      <Paper withBorder p="md" mb="md" radius="md">
-        <Group justify="space-between" align="center">
-          <Group>
-            <ThemeIcon size={40} radius="md" variant="light" color="blue">
-              <IconFileInvoice size={24} />
-            </ThemeIcon>
-            <div>
-              <Title order={3}>Inventory Sales</Title>
-              <Text size="sm" c="dimmed">{billNumber}</Text>
-            </div>
-            <Group>
-               
-          
-                  <Select
-                    label="Collection Center"
-                    placeholder="Select center..."
-                    value={form.values.collectionCenterId}
-                    onChange={(value) => form.setFieldValue('collectionCenterId', value)}
-                    data={collectionCenters.map(c => ({ value: c._id, label: c.centerName || 'Unnamed Center' }))}
-                    clearable
-                    leftSection={<IconBuilding size={16} />}
-                  />
-                
-               
-   
-            
-           <DateInput
-  value={form.values.billDate}
-  onChange={handleDateChange}
-  leftSection={checkingDate ? <Loader size={14} /> : <IconCalendar size={16} />}
-  placeholder="Select bill date first"
-  size="xs"
-  w={185}
-  minDate={lastCycleEnd ? dayjs(lastCycleEnd).add(1, 'day').startOf('day').toDate() : undefined}
-  maxDate={new Date(new Date().setHours(23, 59, 59, 999))}
-  error={!!dateError}
-  styles={{
-    input: {
-      textAlign: 'center',
-      paddingLeft: 32,
-      paddingRight: 8,
-      borderColor: dateError
-        ? 'var(--mantine-color-red-6)'
-        : formReady ? 'var(--mantine-color-green-6)' : undefined,
-    },
-  }}
-/>
-{formReady && <IconCircleCheck size={20} color="var(--mantine-color-green-6)" />}
-{dateError && <IconAlertCircle size={20} color="var(--mantine-color-red-6)" />}
-
-            {/* <Button
-              variant="light"
-              leftSection={<IconReceipt2 size={16} />}
-              onClick={resetForm}
-            >
-              New Bill
-            </Button> */}
-           
-          </Group>
-          </Group>
-          <Button
-            variant="default"
-            leftSection={<IconX size={16} />}
-            onClick={() => navigate('/')}
-          >
-            Close
-          </Button>
+      <Paper withBorder p="xs" mb="sm" radius="md">
+        <Group gap="sm" align="center">
+          <ThemeIcon size={32} radius="md" variant="light" color="blue">
+            <IconFileInvoice size={18} />
+          </ThemeIcon>
+          <div>
+            <Title order={4} lh={1.2}>Inventory Sales</Title>
+            <Text size="xs" c="dimmed">{billNumber}</Text>
+          </div>
+          <Select
+            placeholder="Collection Center"
+            value={form.values.collectionCenterId}
+            onChange={(value) => form.setFieldValue('collectionCenterId', value)}
+            data={collectionCenters.map(c => ({ value: c._id, label: c.centerName || 'Unnamed Center' }))}
+            clearable
+            size="xs"
+            leftSection={<IconBuilding size={14} />}
+            style={{ minWidth: 160 }}
+          />
+          <DateInput
+            value={form.values.billDate}
+            onChange={handleDateChange}
+            leftSection={checkingDate ? <Loader size={14} /> : <IconCalendar size={14} />}
+            placeholder="Select bill date"
+            size="xs"
+            w={160}
+            minDate={lastCycleEnd ? dayjs(lastCycleEnd).add(1, 'day').startOf('day').toDate() : undefined}
+            maxDate={new Date(new Date().setHours(23, 59, 59, 999))}
+            error={!!dateError}
+            styles={{
+              input: {
+                textAlign: 'center',
+                paddingLeft: 28,
+                paddingRight: 6,
+                borderColor: dateError
+                  ? 'var(--mantine-color-red-6)'
+                  : formReady ? 'var(--mantine-color-green-6)' : undefined,
+              },
+            }}
+          />
+          {formReady && <IconCircleCheck size={18} color="var(--mantine-color-green-6)" />}
+          {dateError && <IconAlertCircle size={18} color="var(--mantine-color-red-6)" />}
         </Group>
       </Paper>
-
-
-   
-     
 
       {/* ============ DATE STATUS ALERTS ============ */}
       {!form.values.billDate && (
@@ -748,7 +729,7 @@ const BillingForm = () => {
       )}
 
       {/* ============ TWO-COLUMN GRID ============ */}
-      <Grid gutter="md" style={{ opacity: formReady ? 1 : 0.45, pointerEvents: formReady ? 'auto' : 'none' }}>
+      <Grid gutter="md">
 
         {/* ======== LEFT PANEL (span 8) ======== */}
         <Grid.Col span={{ base: 12, md: 8 }}>
@@ -783,10 +764,15 @@ const BillingForm = () => {
                   <>
                     <Grid.Col span={6}>
                       <Select
+                        ref={farmerSelectRef}
                         label="Select Farmer"
                         placeholder="Search farmer number or name..."
                         value={form.values.customerId}
-                        onChange={(val) => { handleFarmerSelect(val); setFarmerSearch(''); }}
+                        onChange={(val) => {
+                          handleFarmerSelect(val);
+                          setFarmerSearch('');
+                          if (val) setTimeout(() => itemSelectRef.current?.focus(), 150);
+                        }}
                         data={filteredFarmerOptions}
                         searchValue={farmerSearch}
                         onSearchChange={setFarmerSearch}
@@ -795,9 +781,8 @@ const BillingForm = () => {
                         clearable
                         leftSection={<IconSearch size={16} />}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' && filteredFarmerOptions.length === 1) {
-                            handleFarmerSelect(filteredFarmerOptions[0].value);
-                            setFarmerSearch('');
+                          if (e.key === 'Enter' && form.values.customerId) {
+                            e.preventDefault();
                             setTimeout(() => itemSelectRef.current?.focus(), 100);
                           }
                         }}
@@ -944,25 +929,41 @@ const BillingForm = () => {
                   >
                     <Select
                       ref={itemSelectRef}
-                      label="Item"
+                      label="Search Items"
                       placeholder="Search item..."
                       value={form.values.itemId}
-                      onChange={handleItemSelect}
+                      onChange={(itemId) => {
+                        handleItemSelect(itemId);
+                        if (itemId) setTimeout(() => quantityRef.current?.focus(), 150);
+                      }}
                       data={itemOptions}
                       searchable
                       clearable
                       leftSection={<IconPackage size={16} />}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && form.values.itemId) {
+                          e.preventDefault();
+                          setTimeout(() => quantityRef.current?.focus(), 100);
+                        }
+                      }}
                     />
                   </Tooltip>
                 </Grid.Col>
                 <Grid.Col span={2}>
                   <NumberInput
-                    label="Qty"
+                    ref={quantityRef}
+                    label="Add Quantity"
                     value={form.values.quantity}
                     onChange={(value) => form.setFieldValue('quantity', value)}
                     min={0.01}
                     step={1}
                     decimalScale={2}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addButtonRef.current?.focus();
+                      }
+                    }}
                   />
                 </Grid.Col>
                 <Grid.Col span={3}>
@@ -977,9 +978,16 @@ const BillingForm = () => {
                 </Grid.Col>
                 <Grid.Col span={2}>
                   <Button
+                    ref={addButtonRef}
                     fullWidth
                     leftSection={<IconPlus size={16} />}
                     onClick={handleAddItem}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddItem();
+                      }
+                    }}
                     color="green"
                   >
                     Add
@@ -1380,9 +1388,9 @@ const BillingForm = () => {
                 decimalScale={2}
                 leftSection={<IconCurrencyRupee size={16} />}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && billItems.length > 0 && !saving) {
+                  if (e.key === 'Enter') {
                     e.preventDefault();
-                    handleSubmit();
+                    saveButtonRef.current?.focus();
                   }
                 }}
               />
@@ -1402,12 +1410,13 @@ const BillingForm = () => {
 
               {/* Action Buttons */}
               <Button
+                ref={saveButtonRef}
                 size="lg"
                 fullWidth
                 leftSection={<IconDeviceFloppy size={20} />}
                 onClick={handleSubmit}
                 loading={saving}
-                disabled={billItems.length === 0}
+                disabled={billItems.length === 0 || !!dateError}
                 color="green"
               >
                 Save & Print Bill
