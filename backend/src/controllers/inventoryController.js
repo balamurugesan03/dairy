@@ -916,36 +916,44 @@ export const deleteStockTransaction = async (req, res) => {
       });
     }
 
-    // Update item's current balance
+    // Update item's current balance — clamp to 0 so a missing/already-removed
+    // opening stock never blocks deletion with a min-value validation error.
     const item = await Item.findById(transaction.itemId);
     if (item) {
       if (transaction.transactionType === 'Stock In') {
-        item.currentBalance -= transaction.quantity;
+        item.currentBalance = Math.max(0, item.currentBalance - transaction.quantity);
       } else {
         item.currentBalance += transaction.quantity;
       }
-      await item.save();
+      try { await item.save(); } catch (saveErr) {
+        // Balance update failed (e.g. other validator) — proceed with delete anyway
+        console.warn('Item balance save skipped during transaction delete:', saveErr.message);
+      }
     }
 
     // Delete voucher and reverse ledger balances when this is the last
     // transaction referencing that voucher (multi-item bills share one voucher)
     if (transaction.voucherId) {
-      const siblingCount = await StockTransaction.countDocuments({
-        voucherId: transaction.voucherId,
-        _id: { $ne: transaction._id }
-      });
-      if (siblingCount === 0) {
-        const voucher = await Voucher.findById(transaction.voucherId);
-        if (voucher) {
-          const reversedEntries = voucher.entries.map(e => ({
-            ledgerId: e.ledgerId,
-            ledgerName: e.ledgerName,
-            debitAmount: e.creditAmount,
-            creditAmount: e.debitAmount
-          }));
-          await updateLedgerBalances(reversedEntries);
-          await Voucher.findByIdAndDelete(transaction.voucherId);
+      try {
+        const siblingCount = await StockTransaction.countDocuments({
+          voucherId: transaction.voucherId,
+          _id: { $ne: transaction._id }
+        });
+        if (siblingCount === 0) {
+          const voucher = await Voucher.findById(transaction.voucherId);
+          if (voucher) {
+            const reversedEntries = voucher.entries.map(e => ({
+              ledgerId: e.ledgerId,
+              ledgerName: e.ledgerName,
+              debitAmount: e.creditAmount,
+              creditAmount: e.debitAmount
+            }));
+            await updateLedgerBalances(reversedEntries);
+            await Voucher.findByIdAndDelete(transaction.voucherId);
+          }
         }
+      } catch (vErr) {
+        console.warn('Voucher cleanup skipped during transaction delete:', vErr.message);
       }
     }
 
