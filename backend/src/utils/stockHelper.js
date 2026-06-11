@@ -200,13 +200,19 @@ export const getItemStockHistory = async (itemId, startDate = null, endDate = nu
 // purchaseRate is taken from the item field (set via Opening Balance entry),
 // with a fallback to the most recent actual Stock In transaction rate.
 export const getStockReport = async (category = null, status = 'Active', companyId = null) => {
-  const query = { status };
-  if (category) {
-    query.category = category;
-  }
-  if (companyId) {
-    query.companyId = companyId;
-  }
+  // Only include items that appear in the Stock Register:
+  //   - items with at least one StockTransaction, OR
+  //   - items with openingBalance > 0 (set at creation, no transaction)
+  const txnFilter = {};
+  if (companyId) txnFilter.companyId = companyId;
+  const itemIdsWithTxn = await StockTransaction.distinct('itemId', txnFilter);
+
+  const query = {
+    status,
+    $or: [{ _id: { $in: itemIdsWithTxn } }, { openingBalance: { $gt: 0 } }],
+  };
+  if (category) query.category = category;
+  if (companyId) query.companyId = companyId;
 
   const items = await Item.find(query)
     .sort({ itemName: 1 })
@@ -233,21 +239,55 @@ export const getStockReport = async (category = null, status = 'Active', company
   const latestTxnRateMap = {};
   for (const p of latestPurchases) latestTxnRateMap[p._id.toString()] = p.rate || 0;
 
+  // Compute live balance from StockTransaction to stay in sync with the Stock Register.
+  // - Exclude 'Opening Balance Adjustment' transactions: their effect is already stored in item.openingBalance.
+  // - item.openingBalance is added as the base to account for stock set at item creation (no transaction).
+  const balanceAgg = itemIds.length
+    ? await StockTransaction.aggregate([
+        {
+          $match: {
+            ...(companyId && { companyId }),
+            itemId: { $in: itemIds },
+            referenceType: { $ne: 'Opening Balance Adjustment' },
+          },
+        },
+        {
+          $group: {
+            _id: '$itemId',
+            balance: {
+              $sum: {
+                $cond: [
+                  { $eq: ['$transactionType', 'Stock In'] },
+                  '$quantity',
+                  { $multiply: ['$quantity', -1] },
+                ],
+              },
+            },
+          },
+        },
+      ])
+    : [];
+
+  const liveBalanceMap = {};
+  for (const b of balanceAgg) liveBalanceMap[b._id.toString()] = b.balance || 0;
+
   return items.map(item => {
-    // Prefer item.purchaseRate (set via Opening Balance); fall back to latest transaction rate
     const purchaseRate = item.purchaseRate || latestTxnRateMap[item._id.toString()] || 0;
+    // Base = item.openingBalance (set at creation, no transaction) + transaction aggregate (excl. OBA)
+    const txnBalance = liveBalanceMap[item._id.toString()] ?? 0;
+    const currentBalance = (item.openingBalance || 0) + txnBalance;
     return {
       _id: item._id,
       itemCode: item.itemCode,
       itemName: item.itemName,
       category: item.category,
       unit: item.unit,
-      currentBalance: item.currentBalance,
+      currentBalance,
       openingBalance: item.openingBalance,
       openingDate: item.openingDate,
       purchaseRate,
       salesRate: item.salesRate,
-      stockValue: (item.currentBalance || 0) * purchaseRate,
+      stockValue: currentBalance * purchaseRate,
     };
   });
 };

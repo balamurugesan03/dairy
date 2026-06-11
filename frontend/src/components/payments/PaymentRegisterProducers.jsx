@@ -14,7 +14,7 @@ import {
 import * as XLSX from 'xlsx';
 import { printReport } from '../../utils/printReport';
 import dayjs from 'dayjs';
-import { paymentRegisterAPI, farmerAPI, dairySettingsAPI, periodicalRuleAPI } from '../../services/api';
+import { paymentRegisterAPI, farmerAPI, dairySettingsAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
@@ -23,15 +23,8 @@ const fmt = (v) =>
 
 const n = (v) => parseFloat(v) || 0;
 
-// Net Payable — priority order: Welfare → CF Rec → Cash Advance → Loan Advance
-const calcNet = (r) => {
-  let rem = Math.max(0, n(r.milkValue) + n(r.previousBalance));
-  rem -= Math.min(n(r.welfare),    rem);
-  rem -= Math.min(n(r.cfRec),      rem);
-  rem -= Math.min(n(r.cashPocket), rem);
-  rem -= Math.min(n(r.loanAdv),    rem);
-  return rem;
-};
+const calcNet = (r) =>
+  n(r.milkValue) + n(r.previousBalance) - n(r.welfare) - n(r.cfRec) - n(r.cashPocket) - n(r.loanAdv);
 
 const emptyRow = (slNo = 1) => ({
   _localId:        Date.now() + slNo + Math.random(),
@@ -88,7 +81,6 @@ const PaymentRegisterProducers = () => {
   const [rows,        setRows]        = useState([emptyRow(1)]);
   const [generating,  setGenerating]  = useState(false);
   const [savedId,       setSavedId]       = useState(null);
-  const [fillingWelfare, setFillingWelfare] = useState(false);
   const [page,          setPage]          = useState(1);
   const [cycleGenerated, setCycleGenerated] = useState(false);
   const [saving,        setSaving]        = useState(false);
@@ -305,34 +297,6 @@ const PaymentRegisterProducers = () => {
       setGenerating(false);
     }
   };
-
-  /* ── Auto-fill Welfare ──────────────────────────────────────────────────── */
-  const handleFillWelfare = async () => {
-    setFillingWelfare(true);
-    try {
-      const res = await periodicalRuleAPI.getAll({ component: 'DEDUCTIONS', basedOn: 'FIXED_AMOUNT' });
-      const rules = res?.data || [];
-      const activeRule = rules.find(r => r.active);
-      const welfareFixed = activeRule?.fixedRate || 0;
-      if (!welfareFixed) {
-        notifications.show({ title: 'No Welfare Rule', message: 'No active welfare fixed-rate rule found.', color: 'orange' });
-        return;
-      }
-      setRows(prev => prev.map(r => {
-        if (!n(r.milkValue)) return r;
-        const updated = { ...r, welfare: welfareFixed };
-        updated.netPayable = calcNet(updated);
-        updated.payStatus  = updated.netPayable > 0 ? 'Payable' : updated.netPayable < 0 ? 'Receivable' : '';
-        return updated;
-      }));
-      notifications.show({ title: 'Welfare Applied', message: `₹ ${welfareFixed} welfare applied to all rows with milk value.`, color: 'teal', icon: <IconCheck size={16} /> });
-    } catch (err) {
-      notifications.show({ title: 'Error', message: err.message, color: 'red' });
-    } finally {
-      setFillingWelfare(false);
-    }
-  };
-
 
   /* ── Save & Post ────────────────────────────────────────────────────────── */
   const handleSave = async () => {
@@ -642,17 +606,6 @@ const PaymentRegisterProducers = () => {
           >
             Save &amp; Post
           </Button>
-
-          <Button
-            leftSection={<IconCheck size={15} />}
-            variant="light" color="orange" size="sm"
-            loading={fillingWelfare}
-            onClick={handleFillWelfare}
-            title="Auto-fill Welfare deduction for all rows with milk value"
-          >
-            Fill Welfare
-          </Button>
-
           <Button
             leftSection={<IconHistory size={15} />}
             variant="light" color="violet" size="sm"
@@ -688,7 +641,7 @@ const PaymentRegisterProducers = () => {
 
       {/* ── Table ──────────────────────────────────────────────────────── */}
       <Paper withBorder shadow="sm" radius="md" style={{ position: 'relative', overflow: 'hidden' }}>
-        <LoadingOverlay visible={generating || fillingWelfare} />
+        <LoadingOverlay visible={generating} />
 
         <ScrollArea type="always" scrollbarSize={12}>
           <Box id="prp-print-area" ref={printRef} p="md">
@@ -741,7 +694,6 @@ const PaymentRegisterProducers = () => {
                 <col style={{ width: 112 }} />  {/* Net Payable */}
                 <col style={{ width: 80 }} />   {/* Status */}
                 <col style={{ width: 88 }} />   {/* Sign */}
-                <col style={{ width: 62 }} />   {/* Skip */}
               </colgroup>
 
               {/* ── STICKY THEAD ── */}
@@ -764,7 +716,6 @@ const PaymentRegisterProducers = () => {
                     NET PAYABLE
                   </th>
                   <th style={{ ...TH_BASE, background: '#2d3748' }} rowSpan={2}>Sign</th>
-                  <th style={{ ...TH_BASE, background: '#2d3748', textAlign: 'center' }} rowSpan={2} className="no-print">Skip</th>
                 </tr>
 
                 <tr style={{ background: '#1c4e80', color: '#e8f1ff' }}>
@@ -804,11 +755,6 @@ const PaymentRegisterProducers = () => {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 6px', height: 30 }}>
                             <span style={{ fontSize: 11, color: '#1a365d', fontWeight: 700, minWidth: 70 }}>{row.productId}</span>
                             <span style={{ fontSize: 11, color: '#2d3748', flex: 1 }}>{row.productName}</span>
-                            <button
-                              onClick={() => { updateRow(row._localId, 'productId', ''); updateRow(row._localId, 'productName', ''); updateRow(row._localId, 'farmerId', ''); }}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e53e3e', fontSize: 13, lineHeight: 1, padding: '0 2px' }}
-                              title="Clear farmer"
-                            >✕</button>
                           </div>
                         ) : (
                           /* Search mode */
@@ -972,20 +918,6 @@ const PaymentRegisterProducers = () => {
                       {/* Sign */}
                       <td style={{ ...TD_CENTER, minWidth: 80 }}>&nbsp;</td>
 
-                      {/* Skip */}
-                      <td style={{ ...TD_CENTER, padding: 2 }} className="no-print">
-                        <Button
-                          size="xs"
-                          variant="subtle"
-                          color="orange"
-                          onClick={() => setRows(prev =>
-                            prev.filter(r => r._localId !== row._localId).map((r, i) => ({ ...r, slNo: i + 1 }))
-                          )}
-                        >
-                          Skip
-                        </Button>
-                      </td>
-
                     </tr>
                   );
                 })}
@@ -993,7 +925,7 @@ const PaymentRegisterProducers = () => {
                 {/* Empty state */}
                 {paginatedRows.length === 0 && (
                   <tr>
-                    <td colSpan={14} style={{ textAlign: 'center', padding: '24px', color: '#adb5bd', fontStyle: 'italic', fontSize: 13 }}>
+                    <td colSpan={13} style={{ textAlign: 'center', padding: '24px', color: '#adb5bd', fontStyle: 'italic', fontSize: 13 }}>
                       No records found. Click <strong>Generate</strong> to load producer data.
                     </td>
                   </tr>
@@ -1021,7 +953,6 @@ const PaymentRegisterProducers = () => {
                     <div style={{ color: '#ff9a9a' }}>Rec: {totals.receivableCount}</div>
                   </td>
                   <td style={TF} />
-                  <td style={TF} className="no-print" />
                 </tr>
               </tfoot>
             </table>

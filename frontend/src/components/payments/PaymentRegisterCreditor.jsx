@@ -14,7 +14,7 @@ import {
 } from '@tabler/icons-react';
 import { useReactToPrint } from 'react-to-print';
 import dayjs from 'dayjs';
-import { paymentRegisterAPI, dairySettingsAPI, milkPurchaseSettingsAPI, paymentAPI } from '../../services/api';
+import { paymentRegisterAPI, dairySettingsAPI, milkPurchaseSettingsAPI, paymentAPI, periodicalRuleAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 
 /* ─── helpers ────────────────────────────────────────────────────────────────── */
@@ -67,9 +67,10 @@ const PaymentRegisterCreditor = () => {
   const [toDate,   setToDate]   = useState(dayjs().startOf('month').add(14, 'day').toDate());
   const [search,   setSearch]   = useState('');
   const [rows,     setRows]     = useState([emptyRow(1)]);
-  const [saving,   setSaving]   = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [savedId,  setSavedId]  = useState(null);
+  const [saving,        setSaving]        = useState(false);
+  const [generating,    setGenerating]    = useState(false);
+  const [savedId,       setSavedId]       = useState(null);
+  const [fillingWelfare, setFillingWelfare] = useState(false);
 
   /* ── Load dairy settings, milk purchase settings, and auto-advance cycle ──── */
   useEffect(() => {
@@ -147,6 +148,32 @@ const PaymentRegisterCreditor = () => {
       const next = prev.filter((r) => r._localId !== localId);
       return next.map((r, i) => ({ ...r, slNo: i + 1 }));
     });
+  };
+
+  /* ── Apply Welfare ───────────────────────────────────────────────────────── */
+  const handleFillWelfare = async () => {
+    setFillingWelfare(true);
+    try {
+      const res = await periodicalRuleAPI.getAll({ component: 'DEDUCTIONS', basedOn: 'FIXED_AMOUNT' });
+      const rules = res?.data || [];
+      const activeRule = rules.find(r => r.active);
+      const welfareFixed = activeRule?.fixedRate || 0;
+      if (!welfareFixed) {
+        notifications.show({ title: 'No Welfare Rule', message: 'No active welfare fixed-rate rule found.', color: 'orange' });
+        return;
+      }
+      setRows(prev => prev.map(r => {
+        if (!n(r.milkValue)) return r;
+        const updated = { ...r, welfare: welfareFixed };
+        updated.netPay = calcNet(updated);
+        return updated;
+      }));
+      notifications.show({ title: 'Welfare Applied', message: `₹ ${welfareFixed} applied to all rows with milk value.`, color: 'teal', icon: <IconCheck size={16} /> });
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
+    } finally {
+      setFillingWelfare(false);
+    }
   };
 
   /* ── Generate from milk collections ─────────────────────────────────────── */
@@ -241,8 +268,13 @@ const PaymentRegisterCreditor = () => {
      RENDER
   ══════════════════════════════════════════════════════════════════════════ */
   return (
-    <Container fluid px="md" py="sm">
+    <Container fluid px="md" py="sm" id="prc-root">
       <style>{PRINT_STYLE}</style>
+      <style>{`
+        #prc-root input[type=number]::-webkit-outer-spin-button,
+        #prc-root input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        #prc-root input[type=number] { -moz-appearance: textfield; }
+      `}</style>
 
       {/* ── Page Header ──────────────────────────────────────────────────── */}
       <Box mb="md">
@@ -327,6 +359,18 @@ const PaymentRegisterCreditor = () => {
             Generate
           </Button>
 
+          <Button
+            leftSection={<IconCheck size={15} />}
+            variant="light"
+            color="orange"
+            size="sm"
+            loading={fillingWelfare}
+            onClick={handleFillWelfare}
+            title="Apply welfare deduction to all rows with milk value"
+          >
+            Apply Welfare
+          </Button>
+
           {/* <Button
             leftSection={<IconPlus size={15} />}
             variant="light"
@@ -365,7 +409,7 @@ const PaymentRegisterCreditor = () => {
 
       {/* ── Register Table ───────────────────────────────────────────────── */}
       <Paper withBorder shadow="sm" radius="md" style={{ position: 'relative', overflow: 'hidden' }}>
-        <LoadingOverlay visible={generating || saving} />
+        <LoadingOverlay visible={generating || saving || fillingWelfare} />
 
         <ScrollArea>
           <Box id="pr-print-area" ref={printRef} p="md">

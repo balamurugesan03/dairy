@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Container, Title, Button, Group, Modal, TextInput, Select,
-  Table, ActionIcon, Text, Box, Stack, Loader, Center,
+  Table, ActionIcon, Text, Box, Stack, Loader, Center, Autocomplete,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { IconPlus, IconEdit, IconTrash, IconBuildingBank } from '@tabler/icons-react';
 import { bankMasterAPI, ledgerAPI } from '../../services/api';
+import { INDIAN_BANKS } from '../../utils/indianBanks';
 
 const emptyForm = { bankName: '', branch: '', ifsc: '', micr: '', bankLedgerId: '' };
 
@@ -191,11 +192,14 @@ export default function BankMasterList() {
       >
         <form onSubmit={form.onSubmit(handleSave)}>
           <Stack gap="sm">
-            <TextInput
+            <Autocomplete
               label="Bank Name"
-              placeholder="e.g. State Bank of India"
+              placeholder="Select or type bank name"
               required
-              {...form.getInputProps('bankName')}
+              data={INDIAN_BANKS}
+              value={form.values.bankName}
+              onChange={(val) => form.setFieldValue('bankName', val)}
+              error={form.errors.bankName}
             />
             <TextInput
               label="Branch"

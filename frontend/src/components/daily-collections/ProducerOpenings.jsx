@@ -151,7 +151,7 @@ export default function ProducerOpenings() {
         }
       } catch { /* ignore */ }
 
-      setTimeout(() => dueAmountRef.current?.querySelector('input')?.focus(), 50);
+      setTimeout(() => focusRef(dueAmountRef), 150);
     } catch (err) {
       notifications.show({ color: 'red', title: 'Error', message: err.message || 'Failed to search farmer' });
     } finally {

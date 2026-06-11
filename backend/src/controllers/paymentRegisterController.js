@@ -1004,11 +1004,11 @@ export const saveAndPostProducersRegister = async (req, res) => {
             previousBalance: e.previousBalance  || 0,
             deductions,
             netPayable:      netPay,
-            paidAmount:      netPay > 0 ? netPay : 0,
-            balanceAmount:   0,
+            paidAmount:      0,
+            balanceAmount:   netPay > 0 ? netPay : 0,
             paymentMode:     'Cash',
             paymentSource:   'PaymentRegister',
-            status:          netPay > 0 ? 'Paid' : 'Pending',
+            status:          'Pending',
             remarks:         `Payment Register — ${fdStr}–${tdStr}`,
           }),
         });
@@ -1064,25 +1064,8 @@ export const saveAndPostProducersRegister = async (req, res) => {
       }
     }
 
-    // ── Single consolidated payment voucher on cycle's last date ──────────────
-    // Dr PRODUCERS DUES / Cr Cash — total net payable across all farmers
-    const consolidatedNetPay = Math.round(totalNetPay * 100) / 100;
-    if (consolidatedNetPay > 0) {
-      try {
-        await createProducerDuesPaymentVoucher({
-          amount:        consolidatedNetPay,
-          paymentDate:   td,
-          paymentMode:   'Cash',
-          companyId,
-          narration:     detailNarration,
-          referenceType: 'PaymentRegister',
-          referenceId:   reg._id,
-          createdBy:     req.user?._id,
-        }, null);
-      } catch (err) {
-        warnings.push(`Consolidated payment voucher failed: ${err.message}`);
-      }
-    }
+    // Payment voucher (Dr PRODUCERS DUES / Cr Cash) is intentionally NOT posted here.
+    // Actual payment will be processed and posted through the Bank Transfer module.
 
     reg.autoPosted = true;
     await reg.save();

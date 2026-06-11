@@ -99,10 +99,9 @@ collectionCenterSchema.index({ centerType: 1 });
 collectionCenterSchema.index({ companyId: 1 });
 
 // Hash password before saving
-collectionCenterSchema.pre('save', async function s() {
-  if (!this.isModified('password') || !this.password) return next();
+collectionCenterSchema.pre('save', async function () {
+  if (!this.isModified('password') || !this.password) return;
   this.password = await bcrypt.hash(this.password, 12);
-  next();
 });
 
 collectionCenterSchema.methods.comparePassword = async function (candidatePassword) {

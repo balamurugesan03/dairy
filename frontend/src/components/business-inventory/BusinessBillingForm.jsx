@@ -789,7 +789,7 @@ const BusinessBillingForm = () => {
     setSelectedSalesman(null);
   };
 
-  const itemOptions = items.map(item => ({
+  const itemOptions = items.filter(item => (item.currentBalance || 0) > 0).map(item => ({
     value: item._id,
     label: `${item.itemCode} - ${item.itemName} (Stock: ${item.currentBalance} ${item.unit})`
   }));

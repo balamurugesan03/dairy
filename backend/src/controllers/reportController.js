@@ -12,6 +12,7 @@ import UnionSalesSlip from '../models/UnionSalesSlip.js';
 import Farmer from '../models/Farmer.js';
 import Subsidy from '../models/Subsidy.js';
 import { getDateRange } from '../utils/dateFilters.js';
+import { getStockReport as getStockReportHelper } from '../utils/stockHelper.js';
 
 // Helper function to get financial year string (e.g., "2024-25")
 const getFinancialYear = (date) => {
@@ -503,21 +504,10 @@ export const getSalesReport = async (req, res) => {
 // Stock Report
 export const getStockReport = async (req, res) => {
   try {
-    const items = await Item.find({ status: 'Active', companyId: req.companyId }).sort({ itemName: 1 });
+    const { category, status } = req.query;
+    const report = await getStockReportHelper(category || null, status || 'Active', req.companyId);
 
-    const report = items.map(item => ({
-      _id: item._id,
-      itemCode: item.itemCode,
-      itemName: item.itemName,
-      category: item.category,
-      unit: item.unit,
-      currentBalance: item.currentBalance,
-      purchaseRate: item.purchaseRate,
-      salesRate: item.salesRate,
-      stockValue: item.currentBalance * item.purchaseRate
-    }));
-
-    const totalStockValue = report.reduce((sum, r) => sum + r.stockValue, 0);
+    const totalStockValue = report.reduce((sum, r) => sum + (r.stockValue || 0), 0);
 
     res.status(200).json({
       success: true,

@@ -23,8 +23,7 @@ import {
 import { DatePickerInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { IconX, IconDeviceFloppy, IconUpload, IconTrash, IconCamera } from '@tabler/icons-react';
-import { farmerAPI, collectionCenterAPI, ledgerAPI, bankMasterAPI } from '../../services/api';
-import { INDIAN_BANKS } from '../../utils/indianBanks';
+import { farmerAPI, collectionCenterAPI, bankMasterAPI } from '../../services/api';
 import { message } from '../../utils/toast';
 
 const FarmerForm = () => {
@@ -36,7 +35,6 @@ const FarmerForm = () => {
   const [additionalDocs, setAdditionalDocs] = useState([]);
   const [pincodeLoading, setPincodeLoading] = useState(false);
   const [pincodeOptions, setPincodeOptions] = useState([]);
-  const [bankLedgerOptions, setBankLedgerOptions] = useState([]);
   const [bankMasters, setBankMasters] = useState([]);
 
   const isEditMode = Boolean(id);
@@ -133,38 +131,11 @@ const FarmerForm = () => {
 
   useEffect(() => {
     fetchCollectionCenters();
-    fetchBankLedgers();
     fetchBankMasters();
     if (isEditMode) {
       fetchFarmer();
     }
   }, [id]);
-
-  const fetchBankLedgers = async () => {
-    try {
-      // Lists ledgers under the "Bank Accounts" group in Ledger Management.
-      // Also accepts legacy 'Bank' ledgerType for older companies.
-      const [primary, legacy] = await Promise.all([
-        ledgerAPI.getAll({ ledgerType: 'Bank Accounts', status: 'Active' }).catch(() => ({})),
-        ledgerAPI.getAll({ ledgerType: 'Bank',          status: 'Active' }).catch(() => ({})),
-      ]);
-      const flat = (r) => {
-        const list = r?.data || r || [];
-        return Array.isArray(list) ? list : (list.ledgers || list.data || []);
-      };
-      const merged = [...flat(primary), ...flat(legacy)];
-      const seen = new Set();
-      const opts = [];
-      merged.forEach(l => {
-        if (!l?._id || seen.has(l._id)) return;
-        seen.add(l._id);
-        opts.push({ value: l._id, label: l.ledgerName });
-      });
-      setBankLedgerOptions(opts);
-    } catch (err) {
-      console.error('Failed to fetch bank ledgers:', err);
-    }
-  };
 
   const fetchBankMasters = async () => {
     try {
@@ -486,6 +457,18 @@ const FarmerForm = () => {
     }
     focusNext(e);
   };
+
+  // Derive ledger options from the bankMasters that have a linked ledger
+  const bankLedgerOptions = bankMasters
+    .filter(b => b.bankLedgerId)
+    .reduce((acc, b) => {
+      const id = b.bankLedgerId?._id || b.bankLedgerId;
+      const name = b.bankLedgerId?.ledgerName || '';
+      if (id && !acc.find(x => x.value === id)) {
+        acc.push({ value: id, label: name });
+      }
+      return acc;
+    }, []);
 
   return (
     <Container fluid>
