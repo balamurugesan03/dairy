@@ -19,12 +19,14 @@ import {
   zibittBrowserImportCollections,
   linzaImportCollections,
   openLyssaImportCollections,
+  getCentreSummary,
 } from '../controllers/milkCollectionController.js';
 
 const router = express.Router();
 const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 500 * 1024 * 1024 } }); // 500 MB
 
 // Summary / aggregate routes — BEFORE /:id
+router.get('/centre-summary',              getCentreSummary);
 router.get('/summary/farmer-wise',         getFarmerWiseSummary);
 router.get('/statement/farmer-wise',       getFarmerWiseStatement);
 router.get('/summary/date-wise',           getDateWiseSummary);

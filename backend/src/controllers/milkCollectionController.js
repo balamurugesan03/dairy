@@ -1121,3 +1121,50 @@ export const getFarmerStats = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// Per-centre entry count for a given date (used by main centre indicator)
+export const getCentreSummary = async (req, res) => {
+  try {
+    const { date } = req.query;
+    const start = new Date(date || new Date());
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(23, 59, 59, 999);
+
+    const rows = await MilkCollection.aggregate([
+      { $match: { companyId: req.companyId, date: { $gte: start, $lte: end } } },
+      {
+        $group: {
+          _id: '$collectionCenter',
+          count:       { $sum: 1 },
+          totalQty:    { $sum: '$qty' },
+          totalAmount: { $sum: '$amount' }
+        }
+      },
+      {
+        $lookup: {
+          from: 'collectioncenters',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'centre'
+        }
+      },
+      { $unwind: { path: '$centre', preserveNullAndEmpty: true } },
+      {
+        $project: {
+          centreId:    '$_id',
+          centreName:  { $ifNull: ['$centre.centerName', 'Main Centre'] },
+          count:       1,
+          totalQty:    1,
+          totalAmount: 1
+        }
+      },
+      { $sort: { centreName: 1 } }
+    ]);
+
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+

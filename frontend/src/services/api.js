@@ -459,6 +459,7 @@ export const milkCollectionAPI = {
   getFarmerWiseSummary:   (params) => api.get('/milk-collections/summary/farmer-wise',  { params }).then(res => res.data).catch(handleError),
   getFarmerWiseStatement: (params) => api.get('/milk-collections/statement/farmer-wise',{ params }).then(res => res.data).catch(handleError),
   getDateWiseSummary:     (params) => api.get('/milk-collections/summary/date-wise',    { params }).then(res => res.data).catch(handleError),
+  getCentreSummary:       (params) => api.get('/milk-collections/centre-summary',       { params }).then(res => res.data).catch(handleError),
 };
 
 // MILK SALES APIs

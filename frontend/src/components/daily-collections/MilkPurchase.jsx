@@ -31,6 +31,7 @@ import {
   milmaChartAPI, whatsappAPI,
 } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import dayjs from 'dayjs';
 import ImportModal from '../common/ImportModal';
 import { offlineQueue } from '../../utils/offlineQueue';
 import { localDateStr } from '../../utils/dateUtils';
@@ -204,8 +205,9 @@ const toDate = (d) => {
 };
 
 const MilkPurchase = () => {
-  const { isSuperAdmin, isCompanyAdmin } = useAuth();
+  const { isSuperAdmin, isCompanyAdmin, isCentreLogin, centreInfo } = useAuth();
   const [centersData, setCentersData] = useState([]);
+  const [centreSummary, setCentreSummary] = useState([]);
   const [agentsData,  setAgentsData]  = useState([]);
   const [date,   setDate]   = useState(() => {
     try {
@@ -842,8 +844,21 @@ const MilkPurchase = () => {
         ]);
         const cl = (centerRes.data || []).map(c => ({ value: c._id, label: c.centerName }));
         setCentersData(cl);
-        const firstCenter = cl[0]?.value || '';
-        if (firstCenter) { setCenter(firstCenter); centerNameRef.current = cl[0].label; }
+        // Sub-centre login: lock to own centre; main centre: default to first
+        if (isCentreLogin && centreInfo?.centreId) {
+          const myId = centreInfo.centreId.toString();
+          setCenter(myId);
+          const mine = cl.find(c => c.value === myId);
+          if (mine) centerNameRef.current = mine.label;
+        } else {
+          const firstCenter = cl[0]?.value || '';
+          if (firstCenter) { setCenter(firstCenter); centerNameRef.current = cl[0].label; }
+          // Main centre: fetch today's sub-centre summary
+          try {
+            const sumRes = await milkCollectionAPI.getCentreSummary({ date: dayjs().format('YYYY-MM-DD') });
+            setCentreSummary(sumRes.data || []);
+          } catch { /* non-critical */ }
+        }
         const al = (agentRes.data || []).map(a => ({ value: a._id, label: a.agentName, centerId: a.collectionCenterId?._id || a.collectionCenterId }));
         setAgentsData(al);
         if (al.length) setAgent(al[0].value);
@@ -1715,6 +1730,26 @@ const MilkPurchase = () => {
     `}</style>
     <Box className="mp-root" style={{ height: 'calc(100vh - 120px)', margin: 'calc(-1 * var(--mantine-spacing-md))', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#eef4fb' }}>
 
+      {/* ══ SUB-CENTRE SUMMARY INDICATOR (main centre only) ════════════════ */}
+      {!isCentreLogin && centreSummary.length > 0 && (
+        <Box style={{ background: '#f0f9ff', borderBottom: '1px solid #bae6fd', padding: '4px 16px', flexShrink: 0 }}>
+          <Group gap={8} wrap="wrap" align="center">
+            <Text size="10px" fw={700} c="#0369a1" style={{ whiteSpace: 'nowrap' }}>Sub-Centre Today:</Text>
+            {centreSummary.map(s => (
+              <Box
+                key={s.centreId}
+                onClick={() => setCenter(s.centreId?.toString())}
+                style={{ cursor: 'pointer', background: '#e0f2fe', border: '1px solid #7dd3fc', borderRadius: 6, padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 5 }}
+              >
+                <Text size="11px" fw={600} c="#0c4a6e">{s.centreName}</Text>
+                <Badge size="xs" color="blue" variant="filled">{s.count} entries</Badge>
+                <Text size="10px" c="#0369a1">{parseFloat(s.totalQty || 0).toFixed(1)} L</Text>
+              </Box>
+            ))}
+          </Group>
+        </Box>
+      )}
+
       {/* ══ HEADER ══════════════════════════════════════════════════════════ */}
       <Box style={{ background: 'white', borderBottom: '1px solid #dbeafe', padding: '5px 16px', flexShrink: 0, boxShadow: '0 1px 6px rgba(37,99,235,0.08)' }}>
         <Group className="mp-header-group" align="center" gap={12} wrap="wrap">
@@ -1747,11 +1782,12 @@ const MilkPurchase = () => {
           <Group gap={4} align="center" wrap="nowrap">
             <Text size="11px" fw={700} c="#1e3a8a" style={{ whiteSpace: 'nowrap' }}>Center</Text>
             <Select
-              value={center} onChange={v => { setCenter(v); setAgent(''); }}
+              value={center} onChange={v => { if (!isCentreLogin) { setCenter(v); setAgent(''); } }}
               data={centersData} placeholder="Center..." searchable
               leftSection={<IconBuilding size={14} color="#2563eb" />}
               size="sm" radius="md" style={{ width: 160 }}
-              styles={{ input: { fontWeight: 600, border: '1.5px solid #bfdbfe' } }}
+              readOnly={isCentreLogin}
+              styles={{ input: { fontWeight: 600, border: isCentreLogin ? '1.5px solid #86efac' : '1.5px solid #bfdbfe', background: isCentreLogin ? '#f0fdf4' : undefined } }}
             />
           </Group>
           <Group gap={4} align="center" wrap="nowrap">
