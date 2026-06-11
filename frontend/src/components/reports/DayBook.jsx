@@ -2,18 +2,21 @@ import { useState, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { message } from '../../utils/toast';
 import dayjs from 'dayjs';
-import { dayBookAPI } from '../../services/api';
+import { dayBookAPI, voucherAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 import {
   Container, Paper, Text, Group, LoadingOverlay, Button,
-  Title, Divider, Menu, Badge, Select
+  Title, Divider, Menu, Badge, Select, ActionIcon
 } from '@mantine/core';
+import { modals } from '@mantine/modals';
+import { notifications } from '@mantine/notifications';
 import { DatePickerInput } from '@mantine/dates';
 import {
   IconBook, IconPrinter, IconFileTypePdf,
   IconFileSpreadsheet, IconCalendar,
   IconDownload, IconArrowDown, IconArrowUp,
-  IconSearch, IconRectangle, IconRectangleVertical, IconX
+  IconSearch, IconRectangle, IconRectangleVertical, IconX,
+  IconTrash
 } from '@tabler/icons-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -55,6 +58,7 @@ const DayBook = () => {
   const [dateMode,  setDateMode]  = useState('range');   // 'range' | 'single'
   const [singleDate,setSingleDate]= useState(new Date());
   const [dayBookData, setDayBookData] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
   const printRef = useRef();
 
   const [fromDate, toDate] = dateRange;
@@ -93,6 +97,31 @@ const DayBook = () => {
 
   const handleGenerate = () => {
     fetchDayBook(fromDate, toDate);
+  };
+
+  const handleDeleteVoucher = (voucherId, description) => {
+    modals.openConfirmModal({
+      title: 'Delete Entry',
+      children: (
+        <Text size="sm">
+          Delete &ldquo;{description}&rdquo;? This action cannot be undone.
+        </Text>
+      ),
+      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        setDeletingId(voucherId);
+        try {
+          await voucherAPI.delete(voucherId);
+          notifications.show({ title: 'Deleted', message: 'Entry deleted successfully', color: 'teal' });
+          fetchDayBook(fromDate, toDate);
+        } catch (err) {
+          notifications.show({ title: 'Error', message: err.message || 'Failed to delete', color: 'red' });
+        } finally {
+          setDeletingId(null);
+        }
+      }
+    });
   };
 
   // --- Format helpers ---
@@ -153,7 +182,8 @@ const DayBook = () => {
             cash: isAdjustment ? 0 : entry.amount,
             adjustment: isAdjustment ? entry.amount : 0,
             total: entry.amount,
-            isMilkEntry: isAdjustment
+            isMilkEntry: isAdjustment,
+            voucherId: entry.voucherId || null
           };
         };
 
@@ -223,12 +253,13 @@ const DayBook = () => {
                 <th className="db-col-amt">Cash</th>
                 <th className="db-col-amt">Adjustment</th>
                 <th className="db-col-total">Total</th>
+                <th className="db-col-del db-no-print"></th>
               </tr>
             </thead>
             <tbody>
               {entries.length === 0 ? (
                 <tr className="db-empty-row">
-                  <td colSpan={5}>
+                  <td colSpan={6}>
                     <div className="db-no-data">No transactions</div>
                   </td>
                 </tr>
@@ -243,6 +274,19 @@ const DayBook = () => {
                     <td className="db-cell-amt">{fmt(entry.cash)}</td>
                     <td className="db-cell-amt">{fmt(entry.adjustment)}</td>
                     <td className="db-cell-total">{fmt(entry.total)}</td>
+                    <td className="db-cell-del db-no-print">
+                      {entry.voucherId && (
+                        <ActionIcon
+                          size="xs"
+                          color="red"
+                          variant="subtle"
+                          loading={deletingId === entry.voucherId}
+                          onClick={() => handleDeleteVoucher(entry.voucherId, entry.description)}
+                        >
+                          <IconTrash size={12} />
+                        </ActionIcon>
+                      )}
+                    </td>
                   </tr>
                 ))
               )}
@@ -260,6 +304,7 @@ const DayBook = () => {
                 <td className="db-footer-amt">{fmtAlways(totals.cash)}</td>
                 <td className="db-footer-amt">{fmtAlways(totals.adj)}</td>
                 <td className="db-footer-total">{fmtAlways(totals.total)}</td>
+                <td className="db-no-print"></td>
               </tr>
               <tr className="db-summary-row db-balance-row">
                 <td className="db-footer-label">{balanceLabel}</td>
@@ -267,6 +312,7 @@ const DayBook = () => {
                 <td className="db-footer-amt">{fmtAlways(balanceAmount)}</td>
                 <td className="db-footer-amt"></td>
                 <td className="db-footer-total">{fmtAlways(balanceAmount)}</td>
+                <td className="db-no-print"></td>
               </tr>
               <tr className="db-summary-row db-closing-row">
                 <td className="db-footer-label">Closing Balance</td>
@@ -274,6 +320,7 @@ const DayBook = () => {
                 <td className="db-footer-amt">{fmtAlways(closeBal)}</td>
                 <td className="db-footer-amt"></td>
                 <td className="db-footer-total">{fmtAlways(closeBal)}</td>
+                <td className="db-no-print"></td>
               </tr>
             </tbody>
           </table>
@@ -373,6 +420,7 @@ const DayBook = () => {
 
     .db-no-data { text-align: center; padding: 20px; color: #999; font-style: italic; font-size: 10px; }
     .db-empty-row td { border: none !important; }
+    .db-no-print { display: none !important; }
 
     @page { size: A4 ${orientation}; margin: 6mm; }
   </style>

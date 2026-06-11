@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import PaymentRegister from '../models/PaymentRegister.js';
 import MilkCollection from '../models/MilkCollection.js';
 import FarmerPayment from '../models/FarmerPayment.js';
+import Voucher from '../models/Voucher.js';
 import ProducerPayment from '../models/ProducerPayment.js';
 import Advance from '../models/Advance.js';
 import Farmer from '../models/Farmer.js';
@@ -717,6 +718,13 @@ export const reversePaymentRegister = async (req, res) => {
       }
     }
 
+    // Delete the consolidated recovery voucher posted for this register
+    try {
+      await Voucher.deleteMany({ companyId: req.companyId, referenceType: 'FarmerPayment', referenceId: reg._id });
+    } catch (vErr) {
+      console.warn('Consolidated voucher cleanup skipped:', vErr.message);
+    }
+
     // Finally, delete the register log so the cycle re-opens in Detailed Ledger
     await reg.deleteOne();
 
@@ -1050,6 +1058,9 @@ export const saveAndPostProducersRegister = async (req, res) => {
 
     if (consolidatedDeductions.length > 0) {
       try {
+        // Remove any previous consolidated recovery voucher for this register (re-save guard)
+        await Voucher.deleteMany({ companyId, referenceType: 'FarmerPayment', referenceId: reg._id });
+
         // Zero ObjectId → no farmer-linked ledger found → falls back to PRODUCERS DUES ledger
         await createRecoveryVoucher({
           farmerId:      new mongoose.Types.ObjectId('000000000000000000000000'),

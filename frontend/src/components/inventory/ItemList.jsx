@@ -668,21 +668,21 @@ const ItemList = () => {
       accessor: 'itemCode',
       title: 'Code',
       render: (item) => (
-        <Badge color="blue" variant="light" radius="sm">
+        <Badge color="blue" variant="light" radius="sm" size="sm">
           {item.itemCode}
         </Badge>
       ),
-      width: 100
+      width: 90
     },
     visibleColumns.name && {
       accessor: 'itemName',
       title: 'Item Name',
       render: (item) => (
-        <Text fw={500} size="sm">
+        <Text fw={500} size="xs">
           {item.itemName}
         </Text>
       ),
-      width: 200
+      width: 180
     },
     visibleColumns.category && {
       accessor: 'category',
@@ -706,12 +706,12 @@ const ItemList = () => {
             item.currentBalance < 50 ? 'yellow' : 'green'
           }
           variant="light"
-          size="md"
+          size="sm"
         >
           {item.currentBalance} {item.measurement}
         </Badge>
       ),
-      width: 120
+      width: 110
     },
     visibleColumns.supplier && {
       accessor: 'supplier',
@@ -769,59 +769,55 @@ const ItemList = () => {
           color={item.status === 'Active' ? 'green' : 'red'}
           variant="light"
           radius="sm"
+          size="sm"
         >
           {item.status}
         </Badge>
       ),
-      width: 100
+      width: 80
     },
     {
       accessor: 'actions',
       title: 'Actions',
       render: (item) => (
-        <Group gap="xs" wrap="nowrap">
+        <Group gap={4} wrap="nowrap">
           <ActionIcon
+            size="sm"
             variant="subtle"
             color="blue"
             onClick={() => handleEdit(item)}
             title="Edit"
           >
-            <IconEdit size={16} />
+            <IconEdit size={13} />
           </ActionIcon>
           <ActionIcon
+            size="sm"
             variant="subtle"
             color="teal"
             onClick={() => handleOpenOpeningStock(item)}
             title="Opening Stock"
           >
-            <IconPackageImport size={16} />
+            <IconPackageImport size={13} />
           </ActionIcon>
           <ActionIcon
-            variant="subtle"
-            color="green"
-            onClick={() => handleOpeningBalanceClick(item)}
-            title="Update Balance"
-          >
-            <IconCoin size={16} />
-          </ActionIcon>
-          <ActionIcon
+            size="sm"
             variant="subtle"
             color="red"
             onClick={() => handleDelete(item._id)}
             title="Delete"
           >
-            <IconTrash size={16} />
+            <IconTrash size={13} />
           </ActionIcon>
         </Group>
       ),
-      width: 140
+      width: 100
     }
   ].filter(Boolean);
 
   return (
-    <Container size="xl" py="md">
+    <Container size="xl" py="xs" style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <Group justify="space-between" mb="xl">
+      <Group justify="space-between" mb="xs">
         <div>
           <Title order={2}>Item Master</Title>
           <Text c="dimmed" size="sm">Manage your inventory items</Text>
@@ -859,7 +855,7 @@ const ItemList = () => {
       </Group>
 
       {/* Stats */}
-      <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} mb="lg">
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} mb="xs">
         <StatCard
           icon={<IconBuildingWarehouse size={24} />}
           label="Total Items"
@@ -887,7 +883,7 @@ const ItemList = () => {
       </SimpleGrid>
 
       {/* Search & Filters */}
-      <Paper p="md" withBorder mb="md">
+      <Paper p="xs" withBorder mb="xs">
         <Stack>
           <Group justify="space-between">
             <TextInput
@@ -1041,7 +1037,7 @@ const ItemList = () => {
       </Paper>
 
       {/* Table */}
-      <Paper withBorder radius="md">
+      <Paper withBorder radius="md" style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
         <DataTable
           columns={tableColumns}
           records={paginatedItems}
@@ -1053,10 +1049,11 @@ const ItemList = () => {
           recordsPerPageOptions={[10, 25, 50, 100]}
           onRecordsPerPageChange={(pageSize) => setPagination(prev => ({ ...prev, pageSize, current: 1 }))}
           highlightOnHover
-          minHeight={300}
+          height="100%"
+          minHeight={200}
           noRecordsText="No items found"
-          verticalSpacing="sm"
-          fontSize="sm"
+          verticalSpacing="xs"
+          fontSize="xs"
         />
       </Paper>
 
