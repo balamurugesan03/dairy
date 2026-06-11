@@ -860,8 +860,12 @@ export const getStockRegister = async (req, res) => {
 
     const applyTxn = (group, txn) => {
       if (txn.transactionType === 'Stock In') {
-        if (txn.referenceType === 'Return') group.salesReturn += txn.quantity;
-        else {
+        if (txn.referenceType === 'Return') {
+          group.salesReturn += txn.quantity;
+        } else if (txn.referenceType === 'Opening') {
+          // Opening stock entries belong in the Opening column, not Purchase
+          group.openingAdj += txn.quantity;
+        } else {
           group.purchase += txn.quantity;
           const e = computeEarnings(txn);
           group.cattleFeedCommission += e.commission;
@@ -876,12 +880,13 @@ export const getStockRegister = async (req, res) => {
 
     const newGroup = (base) => ({
       ...base,
-      purchase: 0, salesReturn: 0, sales: 0, purchaseReturn: 0,
+      openingAdj: 0, purchase: 0, salesReturn: 0, sales: 0, purchaseReturn: 0,
       cattleFeedCommission: 0, inspectionFee: 0, totalEarnings: 0,
     });
 
     const buildRow = (group, ob, extra = {}) => {
-      const total = ob + group.purchase + group.salesReturn;
+      const effectiveOb = ob + (group.openingAdj || 0);
+      const total = effectiveOb + group.purchase + group.salesReturn;
       const closing = total - group.sales - group.purchaseReturn;
       const rate = group.rate || 0;
       return {
@@ -889,7 +894,7 @@ export const getStockRegister = async (req, res) => {
         itemName: group.itemName,
         unit: group.unit || group.measurement || 'Nos',
         rate: parseFloat(rate).toFixed(2),
-        ob: parseFloat(ob).toFixed(3),
+        ob: parseFloat(effectiveOb).toFixed(3),
         purchase: parseFloat(group.purchase).toFixed(3),
         salesReturn: parseFloat(group.salesReturn).toFixed(3),
         total: parseFloat(total).toFixed(3),
