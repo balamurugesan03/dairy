@@ -214,7 +214,7 @@ const ItemList = () => {
 
   const fetchSuppliers = async () => {
     try {
-      const response = await supplierAPI.getAll({ active: 'true' });
+      const response = await supplierAPI.getAll({ active: 'true', limit: 1000 });
       setSuppliers(response.data || []);
     } catch (error) {
       console.error('Failed to fetch suppliers:', error);
