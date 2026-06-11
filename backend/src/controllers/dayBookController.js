@@ -660,6 +660,7 @@ export const getDayBook = async (req, res) => {
           date: voucher.voucherDate,
           voucherNumber: voucher.voucherNumber,
           voucherType: 'InventoryPurchase',
+          voucherId: voucher._id,
           ledgerName: purchaseLedgerName,
           narration: `${purchaseLedgerName} :- Qty ${fmt2(totalQty)}, Sales Rate ${fmt2(salesRate)}`,
           amount: totalDr
@@ -682,8 +683,6 @@ export const getDayBook = async (req, res) => {
 
         let displayName, narration;
         if (isSupplier) {
-          // Show the actual supplier ledger name (e.g. "ABC Cattle Feed Suppliers"),
-          // not a generic "Supplier Purchased" tag.
           displayName = ledgerName || 'Supplier';
           narration = `${displayName} :- Qty ${fmt2(totalQty)}, Purchase Rate ${fmt2(purchaseRate)}`;
         } else {
@@ -696,6 +695,7 @@ export const getDayBook = async (req, res) => {
           date: voucher.voucherDate,
           voucherNumber: voucher.voucherNumber,
           voucherType: 'InventoryPurchase',
+          voucherId: voucher._id,
           ledgerName: displayName,
           narration,
           amount: entry.creditAmount
