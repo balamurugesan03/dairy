@@ -337,6 +337,15 @@ export const reportAPI = {
   updateInspectionReport: (id, data)   => api.put(`/inspection-report/${id}`, data).then(res => res.data).catch(handleError),
 };
 
+// BMCC OPERATING COST APIs
+export const bmccAPI = {
+  getMonthlySummary: (params)     => api.get('/bmcc-operating-cost/monthly-summary', { params }).then(res => res.data).catch(handleError),
+  getReport:         (params)     => api.get('/bmcc-operating-cost/report',          { params }).then(res => res.data).catch(handleError),
+  saveReport:        (data)       => api.post('/bmcc-operating-cost/save',           data).then(res => res.data).catch(handleError),
+  updateReport:      (id, data)   => api.put(`/bmcc-operating-cost/update/${id}`,   data).then(res => res.data).catch(handleError),
+  deleteReport:      (id)         => api.delete(`/bmcc-operating-cost/delete/${id}`).then(res => res.data).catch(handleError),
+};
+
 // DAY BOOK API
 export const dayBookAPI = {
   get: (params) => api.get('/reports/day-book', { params }).then(res => res.data).catch(handleError),
@@ -460,6 +469,12 @@ export const milkCollectionAPI = {
   getFarmerWiseStatement: (params) => api.get('/milk-collections/statement/farmer-wise',{ params }).then(res => res.data).catch(handleError),
   getDateWiseSummary:     (params) => api.get('/milk-collections/summary/date-wise',    { params }).then(res => res.data).catch(handleError),
   getCentreSummary:       (params) => api.get('/milk-collections/centre-summary',       { params }).then(res => res.data).catch(handleError),
+};
+
+// INTELLIGENT QUERY APIs
+export const intelligentQueryAPI = {
+  getReport:         (params) => api.get('/intelligent-query',                          { params }).then(res => res.data).catch(handleError),
+  getProducerDetail: (farmerNumber) => api.get(`/intelligent-query/producer/${farmerNumber}`).then(res => res.data).catch(handleError),
 };
 
 // MILK SALES APIs

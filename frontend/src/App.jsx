@@ -116,6 +116,7 @@ const MilkSalesRateList      = lazy(() => import('./components/daily-collections
 const ShiftIncentiveList     = lazy(() => import('./components/daily-collections/ShiftIncentiveList'));
 const TimeIncentiveList      = lazy(() => import('./components/daily-collections/TimeIncentiveList'));
 const ProducerOpenings       = lazy(() => import('./components/daily-collections/ProducerOpenings'));
+const IntelligentQuery       = lazy(() => import('./components/daily-collections/IntelligentQuery'));
 
 // Payment Components
 const IndividualMilkPayment = lazy(() => import('./components/payments/IndividualMilkPayment'));
@@ -174,7 +175,8 @@ const DDDMISReport        = lazy(() => import('./components/reports/DDDMISReport
 const MonthlyMISReport    = lazy(() => import('./components/reports/MonthlyMISReport'));
 const InspectionReport    = lazy(() => import('./components/reports/InspectionReport'));
 const MilkPurchaseReport  = lazy(() => import('./components/reports/MilkPurchaseReport'));
-const MilkStatementReport = lazy(() => import('./components/reports/MilkStatementReport'));
+const MilkStatementReport        = lazy(() => import('./components/reports/MilkStatementReport'));
+const BMCCOperatingCostReport    = lazy(() => import('./components/reports/BMCCOperatingCostReport'));
 
 // Vyapar Report Components - Private Firm
 const VyaparReportsHub = lazy(() => import('./components/reports/vyapar/VyaparReportsHub'));
@@ -441,6 +443,7 @@ const AppContent = () => {
                 <Route path="shift-incentive"        element={<ShiftIncentiveList />} />
                 <Route path="time-incentive"         element={<TimeIncentiveList />} />
                 <Route path="producer-openings"      element={<ProducerOpenings />} />
+                <Route path="intelligent-query"      element={<IntelligentQuery />} />
               </Route>
 
               {/* Farmer Payments Routes */}
@@ -534,6 +537,7 @@ const AppContent = () => {
                 <Route path="inspection-report"       element={<InspectionReport />} />
                 <Route path="milk-purchase-report"  element={<MilkPurchaseReport />} />
                 <Route path="milk-statement"        element={<MilkStatementReport />} />
+                <Route path="cc-operating-cost"     element={<BMCCOperatingCostReport />} />
               </Route>
 
               {/* MIS Report Department — Standalone Module */}

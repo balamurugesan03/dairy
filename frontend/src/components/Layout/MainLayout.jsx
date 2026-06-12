@@ -186,6 +186,7 @@ const MainLayout = () => {
         { key: '/daily-collections/milk-sales',     label: 'Milk Sales' },
         { key: '/daily-collections/union-sales-slip', label: 'Union Sales' },
         { key: '/daily-collections/farmer-wise-summary', label: 'Farmer-Wise Summary' },
+        { key: '/daily-collections/intelligent-query',   label: 'Intelligent Query'   },
         { key: '/reports/salesman-balance', label: 'Salesman/Customer Ledger' },
         {
           key: 'milk-settings-sub',
@@ -419,6 +420,7 @@ const MainLayout = () => {
         { key: '/reports/inspection-report',     label: 'Inspection Report' },
         { key: '/reports/milk-purchase-report', label: 'Milk Purchase Report' },
         { key: '/reports/milk-statement',       label: 'Milk Statement' },
+        { key: '/reports/cc-operating-cost',  label: 'CC Operating Cost'      },
         { key: '/farmers/crop-statements',   label: 'Crop Damage Statements' },
         { key: '/farmers/agri-stats',        label: 'Monthly Agri Statistics' },
       ]

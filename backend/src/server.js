@@ -262,6 +262,9 @@ import milkPurchaseSettingsRoutes from './routes/milkPurchaseSettingsRoutes.js';
 // Milk Collection routes
 import milkCollectionRoutes from './routes/milkCollectionRoutes.js';
 
+// Intelligent Query routes
+import intelligentQueryRoutes from './routes/intelligentQueryRoutes.js';
+
 // Agent routes
 import agentRoutes from './routes/agentRoutes.js';
 
@@ -336,6 +339,9 @@ import cattleFeedAdvanceRoutes from './routes/cattleFeedAdvanceRoutes.js';
 import cropStatementRoutes from './routes/cropStatementRoutes.js';
 import agriStatsRoutes from './routes/agriStatsRoutes.js';
 import inspectionReportRoutes from './routes/inspectionReportRoutes.js';
+
+// BMCC Operating Cost routes
+import bmccReportRoutes from './routes/bmccReportRoutes.js';
 
 // Bank Master routes
 import bankMasterRoutes from './routes/bankMasterRoutes.js';
@@ -467,6 +473,9 @@ app.use('/api/milk-purchase-settings', protect, addCompanyFilter, milkPurchaseSe
 // Milk Collection routes
 app.use('/api/milk-collections', protect, addCompanyFilter, milkCollectionRoutes);
 
+// Intelligent Query routes
+app.use('/api/intelligent-query', protect, addCompanyFilter, intelligentQueryRoutes);
+
 // Agent routes
 app.use('/api/agents', protect, addCompanyFilter, agentRoutes);
 
@@ -539,7 +548,8 @@ app.use('/api', protect, addCompanyFilter, producerOpeningRoutes);
 app.use('/api/cattle-feed-advance', protect, addCompanyFilter, cattleFeedAdvanceRoutes);
 app.use('/api/crop-statements',    protect, addCompanyFilter, cropStatementRoutes);
 app.use('/api/agri-stats',         protect, addCompanyFilter, agriStatsRoutes);
-app.use('/api/inspection-report',  protect, addCompanyFilter, inspectionReportRoutes);
+app.use('/api/inspection-report',    protect, addCompanyFilter, inspectionReportRoutes);
+app.use('/api/bmcc-operating-cost', protect, addCompanyFilter, bmccReportRoutes);
 
 // Bank Master routes
 app.use('/api/bank-master', protect, addCompanyFilter, bankMasterRoutes);
