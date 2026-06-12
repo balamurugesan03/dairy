@@ -136,10 +136,14 @@ const FarmerWiseSummary = () => {
     }
     setLoading(true);
     try {
-      const res = await milkCollectionAPI.getFarmerWiseStatement({
+      const params = {
         fromDate: dayjs(fromDate).format('YYYY-MM-DD'),
         toDate:   dayjs(toDate).format('YYYY-MM-DD')
-      });
+      };
+      if (reportMode === 'individual' && searchFarmer.trim()) {
+        params.farmerSearch = searchFarmer.trim();
+      }
+      const res = await milkCollectionAPI.getFarmerWiseStatement(params);
       setData(res?.data || []);
       setGenerated(true);
       if (!res?.data?.length) notifications.show({ message: 'No records found for selected period', color: 'yellow' });

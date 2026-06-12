@@ -1111,21 +1111,24 @@ export const producerOpeningAPI = {
 
 // ── Cattle Feed Advance API ────────────────────────────────────────────────────
 export const cattleFeedAdvanceAPI = {
-  getFarmers: ()       => api.get('/cattle-feed-advance/farmers').then(r => r.data).catch(handleError),
-  getLedger:  (params) => api.get('/cattle-feed-advance/ledger',  { params }).then(r => r.data).catch(handleError),
-  getSummary: (params) => api.get('/cattle-feed-advance/summary', { params }).then(r => r.data).catch(handleError),
+  getFarmers:  ()       => api.get('/cattle-feed-advance/farmers').then(r => r.data).catch(handleError),
+  getLedger:   (params) => api.get('/cattle-feed-advance/ledger',    { params }).then(r => r.data).catch(handleError),
+  getSummary:  (params) => api.get('/cattle-feed-advance/summary',   { params }).then(r => r.data).catch(handleError),
+  getRegister: (params) => api.get('/cattle-feed-advance/register',  { params }).then(r => r.data).catch(handleError),
 };
 
 // ── Loan Advance API (mirrors Cattle Feed Advance) ─────────────────────────────
 export const loanAdvanceAPI = {
-  getSummary: (params) => api.get('/advances/loan-summary', { params }).then(r => r.data).catch(handleError),
-  getLedger:  (params) => api.get('/advances/loan-ledger',  { params }).then(r => r.data).catch(handleError),
+  getSummary:  (params) => api.get('/advances/loan-summary',   { params }).then(r => r.data).catch(handleError),
+  getLedger:   (params) => api.get('/advances/loan-ledger',    { params }).then(r => r.data).catch(handleError),
+  getRegister: (params) => api.get('/advances/loan-register',  { params }).then(r => r.data).catch(handleError),
 };
 
 // ── Cash Advance API (mirrors Cattle Feed Advance) ─────────────────────────────
 export const cashAdvanceAPI = {
-  getSummary: (params) => api.get('/advances/cash-summary', { params }).then(r => r.data).catch(handleError),
-  getLedger:  (params) => api.get('/advances/cash-ledger',  { params }).then(r => r.data).catch(handleError),
+  getSummary:  (params) => api.get('/advances/cash-summary',   { params }).then(r => r.data).catch(handleError),
+  getLedger:   (params) => api.get('/advances/cash-ledger',    { params }).then(r => r.data).catch(handleError),
+  getRegister: (params) => api.get('/advances/cash-register',  { params }).then(r => r.data).catch(handleError),
 };
 
 // ── Agricultural Statistics Report API ────────────────────────────────────────

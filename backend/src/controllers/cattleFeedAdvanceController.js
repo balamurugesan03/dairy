@@ -419,6 +419,113 @@ export const getCFAdvanceSummary = async (req, res) => {
   }
 };
 
+// ─── GET Register: all CF advance transactions for all farmers ───────────────
+export const getCFAdvanceRegister = async (req, res) => {
+  try {
+    const { fromDate, toDate } = req.query;
+    const companyId = req.companyId;
+    const cObjId    = new mongoose.Types.ObjectId(companyId);
+
+    const start = fromDate ? new Date(fromDate) : new Date('2000-01-01');
+    const end   = toDate   ? new Date(toDate)   : new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const cfDedTypes = ['CF Advance', 'Cattle Feed', 'CF Recovery'];
+    const entries    = [];
+
+    // 1. Credit entries — Inventory Credit Sales to farmers
+    const sales = await Sales.find({
+      companyId:    cObjId,
+      customerType: 'Farmer',
+      billDate:     { $gte: start, $lte: end },
+      paymentMode:  { $ne: 'Cash' },
+    }).populate('customerId', 'farmerNumber personalDetails').lean();
+
+    for (const sale of sales) {
+      const f         = sale.customerId;
+      const itemNames = (sale.items || []).map(i => i.itemName).join(', ');
+      entries.push({
+        date:         sale.billDate,
+        farmerId:     f?._id?.toString(),
+        producerId:   f?.farmerNumber || '',
+        producerName: f?.personalDetails?.name || '',
+        type:         'SALE',
+        refNo:        sale.billNumber,
+        description:  `Inventory Sale${itemNames ? ' — ' + itemNames : ''}`,
+        itemName:     itemNames,
+        debit:        0,
+        credit:       r2(sale.grandTotal || sale.totalDue || 0),
+      });
+    }
+
+    // 2. Debit entries — FarmerPayment CF deductions
+    const payments = await FarmerPayment.find({
+      companyId:         cObjId,
+      status:            { $ne: 'Cancelled' },
+      'deductions.type': { $in: cfDedTypes },
+      paymentDate:       { $gte: start, $lte: end },
+    }).populate('farmerId', 'farmerNumber personalDetails').lean();
+
+    for (const pmt of payments) {
+      const f      = pmt.farmerId;
+      const cfDeds = (pmt.deductions || []).filter(d => cfDedTypes.includes(d.type));
+      for (const ded of cfDeds) {
+        if (!ded.amount) continue;
+        entries.push({
+          date:         pmt.paymentDate,
+          farmerId:     f?._id?.toString(),
+          producerId:   f?.farmerNumber || '',
+          producerName: f?.personalDetails?.name || '',
+          type:         'PAYMENT_DEDUCTION',
+          refNo:        pmt.paymentNumber,
+          description:  `CF Recovery — ${ded.description || ded.type}`,
+          itemName:     '',
+          debit:        r2(ded.amount),
+          credit:       0,
+        });
+      }
+    }
+
+    // 3. Debit entries — ProducerReceipt CF Advance
+    const receipts = await ProducerReceipt.find({
+      companyId:   cObjId,
+      receiptType: 'CF Advance',
+      receiptDate: { $gte: start, $lte: end },
+      status:      { $ne: 'Cancelled' },
+    }).populate('farmerId', 'farmerNumber personalDetails').lean();
+
+    for (const rct of receipts) {
+      const f = rct.farmerId;
+      entries.push({
+        date:         rct.receiptDate,
+        farmerId:     f?._id?.toString(),
+        producerId:   f?.farmerNumber || '',
+        producerName: f?.personalDetails?.name || '',
+        type:         'RECEIPT',
+        refNo:        rct.receiptNumber,
+        description:  `CF Advance Receipt (${rct.paymentMode || 'Cash'})`,
+        itemName:     '',
+        debit:        r2(rct.amount),
+        credit:       0,
+      });
+    }
+
+    entries.sort((a, b) => {
+      const d = new Date(a.date) - new Date(b.date);
+      return d !== 0 ? d : (a.producerId || '').localeCompare(b.producerId || '');
+    });
+    entries.forEach((e, i) => { e.slNo = i + 1; });
+
+    const totalDebit  = r2(entries.reduce((s, e) => s + e.debit,  0));
+    const totalCredit = r2(entries.reduce((s, e) => s + e.credit, 0));
+
+    res.json({ success: true, data: { entries, totalDebit, totalCredit } });
+  } catch (err) {
+    console.error('getCFAdvanceRegister error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // ─── GET farmer list (for autocomplete) ──────────────────────────────────────
 export const getCFFarmers = async (req, res) => {
   try {

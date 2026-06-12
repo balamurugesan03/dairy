@@ -22,7 +22,9 @@ import {
   cancelAdvance,
   getAdvanceStats,
   getCashAdvanceSummary,
+  getCashAdvanceRegister,
   getLoanAdvanceSummary,
+  getLoanAdvanceRegister,
   getLoanAdvanceLedger,
   getCashAdvanceLedger,
 } from '../controllers/paymentController.js';
@@ -104,8 +106,14 @@ router.get('/advances/cash-summary', getCashAdvanceSummary);
 // Cash advance ledger for a single farmer
 router.get('/advances/cash-ledger', getCashAdvanceLedger);
 
+// Cash advance register — all transactions for all farmers in a date range
+router.get('/advances/cash-register', getCashAdvanceRegister);
+
 // Loan advance summary report (producer-wise) — same shape as cash-summary
 router.get('/advances/loan-summary', getLoanAdvanceSummary);
+
+// Loan advance register — all transactions for all farmers in a date range
+router.get('/advances/loan-register', getLoanAdvanceRegister);
 
 // Loan advance ledger for a single farmer
 router.get('/advances/loan-ledger', getLoanAdvanceLedger);

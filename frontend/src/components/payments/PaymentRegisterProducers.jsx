@@ -280,7 +280,7 @@ const PaymentRegisterProducers = () => {
           _loanZero:       !e.loanAdv,
           _cashZero:       !e.cashPocket,
         }))
-        .sort((a, b) => (parseInt(a.productId, 10) || 0) - (parseInt(b.productId, 10) || 0))
+        .sort((a, b) => (a.productId || '').localeCompare(b.productId || '', undefined, { numeric: true }))
         .map((e, i) => ({ ...e, slNo: i + 1 }));
 
       setRows(generated.length > 0 ? generated : [emptyRow(1)]);
@@ -387,7 +387,7 @@ const PaymentRegisterProducers = () => {
         netPayable:      calcNet(e),
         payStatus:       deriveStatus(calcNet(e)),
       }))
-      .sort((a, b) => (parseInt(a.productId, 10) || 0) - (parseInt(b.productId, 10) || 0))
+      .sort((a, b) => (a.productId || '').localeCompare(b.productId || '', undefined, { numeric: true }))
       .map((e, i) => ({ ...e, slNo: i + 1 }));
     setFromDate(new Date(savedReg.fromDate));
     setToDate(new Date(savedReg.toDate));

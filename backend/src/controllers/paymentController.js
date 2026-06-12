@@ -1592,6 +1592,212 @@ export const getCashAdvanceLedger = async (req, res) => {
   }
 };
 
+// ─── GET Cash Advance Register (all farmers, all transactions) ───────────────
+export const getCashAdvanceRegister = async (req, res) => {
+  try {
+    const { fromDate, toDate } = req.query;
+    const companyId = req.userCompany;
+    const cObjId    = new mongoose.Types.ObjectId(companyId);
+    const r2 = (v) => Math.round((v || 0) * 100) / 100;
+
+    const start = fromDate ? new Date(fromDate) : new Date('2000-01-01');
+    const end   = toDate   ? new Date(toDate)   : new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const cashDedTypes = ['Cash Advance', 'Cash Recovery'];
+    const entries      = [];
+
+    // 1. Credit entries — Cash Advance disbursements
+    const advances = await Advance.find({
+      companyId:       cObjId,
+      advanceCategory: 'Cash Advance',
+      advanceDate:     { $gte: start, $lte: end },
+      status:          { $ne: 'Cancelled' },
+    }).populate('farmerId', 'farmerNumber personalDetails').lean();
+
+    for (const a of advances) {
+      const f = a.farmerId;
+      entries.push({
+        date:         a.advanceDate,
+        farmerId:     f?._id?.toString(),
+        producerId:   f?.farmerNumber || '',
+        producerName: f?.personalDetails?.name || '',
+        type:         'ADVANCE',
+        refNo:        a.advanceNumber || '',
+        description:  `Cash Advance${a.purpose ? ' — ' + a.purpose : ''}`,
+        debit:        0,
+        credit:       r2(a.advanceAmount || 0),
+      });
+    }
+
+    // 2. Debit entries — FarmerPayment Cash deductions
+    const payments = await FarmerPayment.find({
+      companyId:         cObjId,
+      status:            { $ne: 'Cancelled' },
+      'deductions.type': { $in: cashDedTypes },
+      paymentDate:       { $gte: start, $lte: end },
+    }).populate('farmerId', 'farmerNumber personalDetails').lean();
+
+    for (const p of payments) {
+      const f = p.farmerId;
+      for (const d of (p.deductions || [])) {
+        if (!cashDedTypes.includes(d.type) || !d.amount) continue;
+        entries.push({
+          date:         p.paymentDate,
+          farmerId:     f?._id?.toString(),
+          producerId:   f?.farmerNumber || '',
+          producerName: f?.personalDetails?.name || '',
+          type:         'RECOVERY',
+          refNo:        p.paymentNumber,
+          description:  `Cash Recovery — ${d.description || d.type}`,
+          debit:        r2(d.amount),
+          credit:       0,
+        });
+      }
+    }
+
+    // 3. Debit entries — ProducerReceipt Cash Advance manual recoveries
+    const receipts = await ProducerReceipt.find({
+      companyId:   cObjId,
+      receiptType: 'Cash Advance',
+      status:      { $ne: 'Cancelled' },
+      receiptDate: { $gte: start, $lte: end },
+    }).populate('farmerId', 'farmerNumber personalDetails').lean();
+
+    for (const rct of receipts) {
+      const f = rct.farmerId;
+      entries.push({
+        date:         rct.receiptDate,
+        farmerId:     f?._id?.toString(),
+        producerId:   f?.farmerNumber || '',
+        producerName: f?.personalDetails?.name || '',
+        type:         'RECOVERY',
+        refNo:        rct.receiptNumber,
+        description:  `Cash Advance Recovery — Manual Receipt`,
+        debit:        r2(rct.amount || 0),
+        credit:       0,
+      });
+    }
+
+    entries.sort((a, b) => {
+      const d = new Date(a.date) - new Date(b.date);
+      return d !== 0 ? d : (a.producerId || '').localeCompare(b.producerId || '');
+    });
+    entries.forEach((e, i) => { e.slNo = i + 1; });
+
+    const totalDebit  = r2(entries.reduce((s, e) => s + e.debit,  0));
+    const totalCredit = r2(entries.reduce((s, e) => s + e.credit, 0));
+
+    res.json({ success: true, data: { entries, totalDebit, totalCredit } });
+  } catch (err) {
+    console.error('getCashAdvanceRegister error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── GET Loan Advance Register (all farmers, all transactions) ───────────────
+export const getLoanAdvanceRegister = async (req, res) => {
+  try {
+    const { fromDate, toDate } = req.query;
+    const companyId = req.userCompany;
+    const cObjId    = new mongoose.Types.ObjectId(companyId);
+    const r2 = (v) => Math.round((v || 0) * 100) / 100;
+
+    const start = fromDate ? new Date(fromDate) : new Date('2000-01-01');
+    const end   = toDate   ? new Date(toDate)   : new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const loanDedTypes = ['Loan Advance', 'Loan Recovery', 'Loan EMI'];
+    const entries      = [];
+
+    // 1. Credit entries — Loan disbursements
+    const advances = await Advance.find({
+      companyId:       cObjId,
+      advanceCategory: 'Loan Advance',
+      advanceDate:     { $gte: start, $lte: end },
+      status:          { $ne: 'Cancelled' },
+    }).populate('farmerId', 'farmerNumber personalDetails').lean();
+
+    for (const a of advances) {
+      const f = a.farmerId;
+      entries.push({
+        date:         a.advanceDate,
+        farmerId:     f?._id?.toString(),
+        producerId:   f?.farmerNumber || '',
+        producerName: f?.personalDetails?.name || '',
+        type:         'ADVANCE',
+        refNo:        a.advanceNumber || '',
+        description:  `Loan Disbursement${a.purpose ? ' — ' + a.purpose : ''}`,
+        debit:        0,
+        credit:       r2(a.advanceAmount || 0),
+      });
+    }
+
+    // 2. Debit entries — FarmerPayment loan deductions
+    const payments = await FarmerPayment.find({
+      companyId:         cObjId,
+      status:            { $ne: 'Cancelled' },
+      'deductions.type': { $in: loanDedTypes },
+      paymentDate:       { $gte: start, $lte: end },
+    }).populate('farmerId', 'farmerNumber personalDetails').lean();
+
+    for (const p of payments) {
+      const f = p.farmerId;
+      for (const d of (p.deductions || [])) {
+        if (!loanDedTypes.includes(d.type) || !d.amount) continue;
+        entries.push({
+          date:         p.paymentDate,
+          farmerId:     f?._id?.toString(),
+          producerId:   f?.farmerNumber || '',
+          producerName: f?.personalDetails?.name || '',
+          type:         'RECOVERY',
+          refNo:        p.paymentNumber,
+          description:  `Loan Recovery — ${d.description || d.type}`,
+          debit:        r2(d.amount),
+          credit:       0,
+        });
+      }
+    }
+
+    // 3. Debit entries — ProducerReceipt Loan Advance manual recoveries
+    const receipts = await ProducerReceipt.find({
+      companyId:   cObjId,
+      receiptType: 'Loan Advance',
+      status:      { $ne: 'Cancelled' },
+      receiptDate: { $gte: start, $lte: end },
+    }).populate('farmerId', 'farmerNumber personalDetails').lean();
+
+    for (const rct of receipts) {
+      const f = rct.farmerId;
+      entries.push({
+        date:         rct.receiptDate,
+        farmerId:     f?._id?.toString(),
+        producerId:   f?.farmerNumber || '',
+        producerName: f?.personalDetails?.name || '',
+        type:         'RECOVERY',
+        refNo:        rct.receiptNumber,
+        description:  `Loan Recovery — Manual Receipt`,
+        debit:        r2(rct.amount || 0),
+        credit:       0,
+      });
+    }
+
+    entries.sort((a, b) => {
+      const d = new Date(a.date) - new Date(b.date);
+      return d !== 0 ? d : (a.producerId || '').localeCompare(b.producerId || '');
+    });
+    entries.forEach((e, i) => { e.slNo = i + 1; });
+
+    const totalDebit  = r2(entries.reduce((s, e) => s + e.debit,  0));
+    const totalCredit = r2(entries.reduce((s, e) => s + e.credit, 0));
+
+    res.json({ success: true, data: { entries, totalDebit, totalCredit } });
+  } catch (err) {
+    console.error('getLoanAdvanceRegister error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // ─── GET Loan Advance Ledger (single farmer) ─────────────────────────────────
 // Mirrors getCFAdvanceLedger: opening = baseOpening + (advances disbursed before
 // start) − (recoveries before start). Period entries are loan disbursals
@@ -1932,7 +2138,9 @@ export default {
   cancelAdvance,
   getAdvanceStats,
   getCashAdvanceSummary,
+  getCashAdvanceRegister,
   getLoanAdvanceSummary,
+  getLoanAdvanceRegister,
   getLoanAdvanceLedger,
   getCashAdvanceLedger,
 };

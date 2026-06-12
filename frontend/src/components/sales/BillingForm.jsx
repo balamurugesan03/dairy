@@ -105,6 +105,7 @@ const BillingForm = () => {
   const [dateError, setDateError] = useState('');
   const [checkingDate, setCheckingDate] = useState(false);
   const [farmerSearch, setFarmerSearch] = useState('');
+  const [itemSearch, setItemSearch] = useState('');
   const [lastCycleEnd, setLastCycleEnd] = useState(null);
   const [deletingBillId, setDeletingBillId] = useState(null);
 
@@ -459,6 +460,7 @@ const BillingForm = () => {
     form.setFieldValue('quantity', 1);
     form.setFieldValue('rate', '');
     setBarcodeInput('');
+    setItemSearch('');
     setTimeout(() => itemSelectRef.current?.focus(), 100);
   };
 
@@ -645,6 +647,24 @@ const BillingForm = () => {
     value: item._id,
     label: `${item.itemCode} - ${item.itemName} (Stock: ${item.currentBalance} ${item.unit})`
   })), [items]);
+
+  const filteredItemOptions = useMemo(() => {
+    const search = itemSearch.trim().toLowerCase();
+    if (!search) return itemOptions;
+    return itemOptions.filter(opt => {
+      const item = items.find(i => i._id === opt.value);
+      return item && (
+        item.itemCode?.toLowerCase().includes(search) ||
+        item.itemName?.toLowerCase().includes(search)
+      );
+    });
+  }, [itemOptions, itemSearch, items]);
+
+  const selectedItem = useMemo(() =>
+    form.values.itemId ? items.find(i => i._id === form.values.itemId) : null
+  , [form.values.itemId, items]);
+
+  const itemHasStock = selectedItem != null && selectedItem.currentBalance > 0;
 
   const farmerOptions = useMemo(() => farmers.map(farmer => ({
     value: farmer._id,
@@ -934,9 +954,12 @@ const BillingForm = () => {
                       value={form.values.itemId}
                       onChange={(itemId) => {
                         handleItemSelect(itemId);
+                        setItemSearch('');
                         if (itemId) setTimeout(() => quantityRef.current?.focus(), 150);
                       }}
-                      data={itemOptions}
+                      data={filteredItemOptions}
+                      searchValue={itemSearch}
+                      onSearchChange={setItemSearch}
                       searchable
                       clearable
                       leftSection={<IconPackage size={16} />}
@@ -950,21 +973,28 @@ const BillingForm = () => {
                   </Tooltip>
                 </Grid.Col>
                 <Grid.Col span={2}>
-                  <NumberInput
-                    ref={quantityRef}
-                    label="Add Quantity"
-                    value={form.values.quantity}
-                    onChange={(value) => form.setFieldValue('quantity', value)}
-                    min={0.01}
-                    step={1}
-                    decimalScale={2}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        addButtonRef.current?.focus();
-                      }
-                    }}
-                  />
+                  <Tooltip
+                    label={!form.values.itemId ? 'Select an item first' : 'Item is out of stock'}
+                    disabled={!form.values.itemId || itemHasStock}
+                    withArrow
+                  >
+                    <NumberInput
+                      ref={quantityRef}
+                      label="Add Quantity"
+                      value={form.values.quantity}
+                      onChange={(value) => form.setFieldValue('quantity', value)}
+                      min={0.01}
+                      step={1}
+                      decimalScale={2}
+                      disabled={!form.values.itemId || !itemHasStock}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addButtonRef.current?.focus();
+                        }
+                      }}
+                    />
+                  </Tooltip>
                 </Grid.Col>
                 <Grid.Col span={3}>
                   <NumberInput

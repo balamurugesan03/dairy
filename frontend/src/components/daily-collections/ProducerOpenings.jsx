@@ -496,7 +496,7 @@ export default function ProducerOpenings() {
                           onChange={(val) => setField('revolvingFund', val)}
                           onKeyDown={(e) => { if (e.key === 'Tab') { e.preventDefault(); saveButtonRef.current?.focus(); } }}
                           decimalScale={2} min={0} hideControls prefix="₹ "
-                          size="sm" radius="sm"
+                          size="sm" radius="sm" disabled
                           styles={{ input: { textAlign: 'right' } }}
                         />
                       </Box>

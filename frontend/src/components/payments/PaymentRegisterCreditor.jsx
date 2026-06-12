@@ -200,7 +200,9 @@ const PaymentRegisterCreditor = () => {
         deductions:      e.deductions      || 0,
         netPay:          calcNet(e),
         farmerId:        e.farmerId,
-      }));
+      })).sort((a, b) =>
+        (a.productId || '').localeCompare(b.productId || '', undefined, { numeric: true })
+      ).map((r, i) => ({ ...r, slNo: i + 1 }));
 
       setRows(generated.length > 0 ? generated : [emptyRow(1)]);
       setSavedId(null);
@@ -464,7 +466,6 @@ const PaymentRegisterCreditor = () => {
                       {h}
                     </th>
                   ))}
-                  <th style={{ border: '1px solid #1a4070', padding: '7px 4px', textAlign: 'center', width: 36 }} />
                 </tr>
               </thead>
 
@@ -598,18 +599,6 @@ const PaymentRegisterCreditor = () => {
                       {/* Signature */}
                       <td style={{ ...tdStyle('center'), minWidth: 90 }}>&nbsp;</td>
 
-                      {/* Delete */}
-                      <td style={{ ...tdStyle('center'), padding: 2 }}>
-                        <ActionIcon
-                          size="sm"
-                          color="red"
-                          variant="subtle"
-                          onClick={() => deleteRow(row._localId)}
-                          title="Delete row"
-                        >
-                          <IconTrash size={13} />
-                        </ActionIcon>
-                      </td>
                     </tr>
                   );
                 })}

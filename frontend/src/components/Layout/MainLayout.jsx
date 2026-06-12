@@ -221,6 +221,7 @@ const MainLayout = () => {
         { key: '/inventory/items', label: 'Add Items' },
         { key: '/inventory/stock-in', label: 'Inventory Purchase' },
         { key: '/sales/new', label: 'Inventory Sales' },
+        { key: '/sales/list', label: 'Sales List' },
         { key: '/inventory/stock-out', label: 'Stock Returns' },
         { key: '/inventory/purchase-returns/new', label: 'Purchase Return (Debit Note)' },
         { key: '/inventory/purchase-returns/list', label: 'Purchase Return List' },
@@ -232,7 +233,7 @@ const MainLayout = () => {
           label: 'Reports',
           children: [
             { key: '/reports/purchase-register', label: 'Purchase Report' },
-            { key: '/sales/list',                label: 'Sales Report' },
+            { key: '/reports/sales',             label: 'Sales Report' },
             { key: '/inventory/report',          label: 'Stock Report' },
             { key: '/reports/stock-register',    label: 'Stock Register' },
             { key: '/reports/subsidy',           label: 'Subsidy Register' },

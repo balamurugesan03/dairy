@@ -73,6 +73,8 @@ const LoanAdvanceSummary = () => {
   const [summaryTotals, setSummaryTotals] = useState(null);
   const [ledgerData,    setLedgerData]    = useState(null);
   const [newOpen,       setNewOpen]       = useState(false);
+  const [registerRows,   setRegisterRows]   = useState([]);
+  const [registerTotals, setRegisterTotals] = useState(null);
 
   /* ── Load farmer list once ── */
   useEffect(() => {
@@ -123,13 +125,33 @@ const LoanAdvanceSummary = () => {
     } finally { setLoading(false); }
   };
 
+  const fetchRegister = async () => {
+    setLoading(true);
+    try {
+      const res = await loanAdvanceAPI.getRegister({
+        fromDate: dayjs(fromDate).format('YYYY-MM-DD'),
+        toDate:   dayjs(toDate).format('YYYY-MM-DD'),
+      });
+      if (!res.success) throw new Error(res.message || 'Failed');
+      setRegisterRows(res.data.entries || []);
+      setRegisterTotals({ debit: res.data.totalDebit, credit: res.data.totalCredit });
+      notifications.show({
+        title: 'Loaded', color: 'teal', icon: <IconCheck size={14} />,
+        message: `${res.data.entries?.length || 0} transaction(s) loaded`,
+      });
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message, color: 'red' });
+    } finally { setLoading(false); }
+  };
+
   const openLedger = (row) => {
     setFarmerId(row.farmerId);
     setActiveTab('ledger');
   };
 
   useEffect(() => {
-    if (activeTab === 'summary') fetchSummary();
+    if (activeTab === 'summary')  fetchSummary();
+    if (activeTab === 'register') fetchRegister();
   }, [activeTab]);
 
   useEffect(() => {
@@ -158,6 +180,32 @@ const LoanAdvanceSummary = () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Loan Advance');
     XLSX.writeFile(wb, `Loan_Advance_${dayjs(fromDate).format('MMYYYY')}.xlsx`);
+  };
+
+  const exportRegister = () => {
+    if (registerRows.length === 0) return;
+    const data = registerRows.map(r => ({
+      'SN':                  r.slNo,
+      'Date':                dayjs(r.date).format('DD/MM/YYYY'),
+      'Producer ID':         r.producerId,
+      'Producer Name':       r.producerName,
+      'Ref No':              r.refNo || '',
+      'Transaction Type':    TYPE_LABEL[r.type]?.label || r.type,
+      'Description':         r.description,
+      'Debit (Recovery)':    r.debit,
+      'Credit (Disbursal)':  r.credit,
+    }));
+    if (registerTotals) {
+      data.push({
+        'SN': '', 'Date': '', 'Producer ID': '', 'Producer Name': 'TOTAL',
+        'Ref No': '', 'Transaction Type': '', 'Description': '',
+        'Debit (Recovery)':   registerTotals.debit,
+        'Credit (Disbursal)': registerTotals.credit,
+      });
+    }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Loan Register');
+    XLSX.writeFile(wb, `Loan_Register_${dayjs(fromDate).format('MMYYYY')}.xlsx`);
   };
 
   const exportLedger = () => {
@@ -227,7 +275,11 @@ const LoanAdvanceSummary = () => {
           </Button>
           <Button
             leftSection={<IconSearch size={15} />} size="sm"
-            onClick={activeTab === 'summary' ? fetchSummary : fetchLedger}
+            onClick={
+              activeTab === 'summary'  ? fetchSummary  :
+              activeTab === 'register' ? fetchRegister :
+              fetchLedger
+            }
             loading={loading} color="blue" variant="light"
           >
             Generate
@@ -235,8 +287,16 @@ const LoanAdvanceSummary = () => {
           <Button
             leftSection={<IconFileSpreadsheet size={15} />} size="sm"
             variant="light" color="teal"
-            onClick={activeTab === 'summary' ? exportSummary : exportLedger}
-            disabled={activeTab === 'summary' ? summaryRows.length === 0 : !ledgerData}
+            onClick={
+              activeTab === 'summary'  ? exportSummary  :
+              activeTab === 'register' ? exportRegister :
+              exportLedger
+            }
+            disabled={
+              activeTab === 'summary'  ? summaryRows.length === 0  :
+              activeTab === 'register' ? registerRows.length === 0 :
+              !ledgerData
+            }
           >
             Export Excel
           </Button>
@@ -249,7 +309,7 @@ const LoanAdvanceSummary = () => {
           </Button>
           <Tooltip label="Refresh">
             <ActionIcon variant="subtle" color="gray" size="lg"
-              onClick={() => { setSummaryRows([]); setLedgerData(null); }}>
+              onClick={() => { setSummaryRows([]); setRegisterRows([]); setRegisterTotals(null); setLedgerData(null); }}>
               <IconRefresh size={16} />
             </ActionIcon>
           </Tooltip>
@@ -267,8 +327,9 @@ const LoanAdvanceSummary = () => {
 
         <Tabs value={activeTab} onChange={setActiveTab}>
           <Tabs.List px="sm" pt="xs" className="no-print">
-            <Tabs.Tab value="summary" fw={600}>All Producers — Summary</Tabs.Tab>
-            <Tabs.Tab value="ledger"  fw={600}>Producer Ledger</Tabs.Tab>
+            <Tabs.Tab value="summary"  fw={600}>Loan Balance Report</Tabs.Tab>
+            <Tabs.Tab value="register" fw={600}>Loan Advance Register</Tabs.Tab>
+            <Tabs.Tab value="ledger"   fw={600}>Producer Ledger</Tabs.Tab>
           </Tabs.List>
 
           {/* ── SUMMARY TAB ── */}
@@ -356,6 +417,101 @@ const LoanAdvanceSummary = () => {
                         <td style={TD_NUM({ fontWeight: 700, color: '#7b341e', background: '#fff5eb' })}>₹ {fmt(summaryTotals.recovery)}</td>
                         <td style={TD_NUM({ fontWeight: 700, background: '#b2f5ea' })}>₹ {fmt(summaryTotals.balance)}</td>
                         <td className="no-print" />
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </ScrollArea>
+            </div>
+          </Tabs.Panel>
+
+          {/* ── REGISTER TAB ── */}
+          <Tabs.Panel value="register" p="md">
+            <div id="la-print" ref={activeTab === 'register' ? printRef : undefined}>
+              <Box ta="center" mb="sm" style={{ display: 'none' }} className="print-header">
+                <Text fw={700} size="lg">{selectedCompany?.companyName || 'Dairy Cooperative Society'}</Text>
+                <Text fw={600} size="md">LOAN ADVANCE — REGISTER</Text>
+                <Text size="sm">
+                  Period: {dayjs(fromDate).format('DD/MM/YYYY')} to {dayjs(toDate).format('DD/MM/YYYY')}
+                </Text>
+                <Divider my="xs" />
+              </Box>
+
+              <Group justify="space-between" mb="xs" className="no-print">
+                <Text size="sm" fw={600} c="dimmed">
+                  Period: {dayjs(fromDate).format('DD MMM YYYY')} – {dayjs(toDate).format('DD MMM YYYY')}
+                </Text>
+                <Badge variant="light" color="teal">{registerRows.length} Transactions</Badge>
+              </Group>
+
+              <ScrollArea type="hover" scrollbarSize={6}>
+                <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 960 }}>
+                  <colgroup>
+                    <col style={{ width: 44 }} />
+                    <col style={{ width: 92 }} />
+                    <col style={{ width: 90 }} />
+                    <col style={{ width: 190 }} />
+                    <col style={{ width: 90 }} />
+                    <col style={{ width: 140 }} />
+                    <col style={{ width: 260 }} />
+                    <col style={{ width: 120 }} />
+                    <col style={{ width: 120 }} />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th style={TH()}>SN</th>
+                      <th style={TH()}>Date</th>
+                      <th style={{ ...TH(), textAlign: 'left' }}>Producer ID</th>
+                      <th style={{ ...TH(), textAlign: 'left' }}>Producer Name</th>
+                      <th style={TH()}>Ref No</th>
+                      <th style={TH()}>Type</th>
+                      <th style={{ ...TH(), textAlign: 'left' }}>Description</th>
+                      <th style={TH('#6e2c00')}>Debit (Recovery)</th>
+                      <th style={TH('#155724')}>Credit (Disbursal)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {registerRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} style={{ ...TD({ textAlign: 'center', color: '#999', padding: '24px' }) }}>
+                          Click Generate to load data
+                        </td>
+                      </tr>
+                    ) : (
+                      registerRows.map((row, idx) => {
+                        const isCredit = row.credit > 0;
+                        const rowBg    = isCredit ? '#fffbeb' : (idx % 2 === 0 ? '#fff' : '#f5f9ff');
+                        const typeInfo = TYPE_LABEL[row.type] || { label: row.type, color: '#555' };
+                        return (
+                          <tr key={idx} style={{ background: rowBg }}>
+                            <td style={TD({ textAlign: 'center', color: '#666' })}>{row.slNo}</td>
+                            <td style={TD({ textAlign: 'center' })}>{dayjs(row.date).format('DD/MM/YYYY')}</td>
+                            <td style={TD()}>{row.producerId}</td>
+                            <td style={TD({ fontWeight: 600 })}>{row.producerName}</td>
+                            <td style={TD({ textAlign: 'center', fontSize: 10, color: '#718096' })}>{row.refNo || '—'}</td>
+                            <td style={TD({ textAlign: 'center' })}>
+                              <Badge size="xs" variant="dot" color={isCredit ? 'orange' : 'green'}>
+                                {typeInfo.label}
+                              </Badge>
+                            </td>
+                            <td style={TD({ fontSize: 10 })}>{row.description}</td>
+                            <td style={TD_NUM({ color: row.debit > 0 ? '#276749' : '#999' })}>
+                              {row.debit > 0 ? `₹ ${fmt(row.debit)}` : '—'}
+                            </td>
+                            <td style={TD_NUM({ color: row.credit > 0 ? '#7b341e' : '#999' })}>
+                              {row.credit > 0 ? `₹ ${fmt(row.credit)}` : '—'}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                    {registerTotals && registerRows.length > 0 && (
+                      <tr style={{ borderTop: '2px solid #0d3b6e', background: '#edf2f7' }}>
+                        <td colSpan={7} style={{ ...TD({ fontWeight: 700, textAlign: 'center', background: '#2d3748', color: '#fff', letterSpacing: 1 }) }}>
+                          TOTAL
+                        </td>
+                        <td style={TD_NUM({ fontWeight: 700, color: '#276749', background: '#f0fff4' })}>₹ {fmt(registerTotals.debit)}</td>
+                        <td style={TD_NUM({ fontWeight: 700, color: '#7b341e', background: '#fff5eb' })}>₹ {fmt(registerTotals.credit)}</td>
                       </tr>
                     )}
                   </tbody>
