@@ -102,9 +102,9 @@ export const createSlip = async (req, res) => {
 
     // Duplicate check: same date + time for this company
     const dateObj = new Date(date);
-    dateObj.setHours(0, 0, 0, 0);
+    dateObj.setUTCHours(0, 0, 0, 0);
     const nextDay = new Date(dateObj);
-    nextDay.setDate(nextDay.getDate() + 1);
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
 
     const existing = await UnionSalesSlip.findOne({
       companyId: req.companyId,
@@ -261,9 +261,9 @@ export const updateSlip = async (req, res) => {
     // Duplicate check: same date + time (exclude self)
     if (date && time) {
       const dateObj = new Date(date);
-      dateObj.setHours(0, 0, 0, 0);
+      dateObj.setUTCHours(0, 0, 0, 0);
       const nextDay = new Date(dateObj);
-      nextDay.setDate(nextDay.getDate() + 1);
+      nextDay.setUTCDate(nextDay.getUTCDate() + 1);
 
       const duplicate = await UnionSalesSlip.findOne({
         companyId: req.companyId,
@@ -292,7 +292,7 @@ export const updateSlip = async (req, res) => {
     // Normalize date
     if (updates.date) {
       const d = new Date(updates.date);
-      d.setHours(0, 0, 0, 0);
+      d.setUTCHours(0, 0, 0, 0);
       updates.date = d;
     }
 
@@ -505,7 +505,7 @@ const processImportSlips = async (rows, companyId, userId) => {
       const qty = Number(row.qty) || 0;
       if (qty <= 0) { addSkip('Zero qty'); continue; }
 
-      const d = new Date(row.date); d.setHours(0, 0, 0, 0);
+      const d = new Date(row.date); d.setUTCHours(0, 0, 0, 0);
       const nextD = new Date(d); nextD.setDate(nextD.getDate() + 1);
 
       const amount                = Number(row.amount) || parseFloat((qty * (Number(row.rate) || 0)).toFixed(2));
