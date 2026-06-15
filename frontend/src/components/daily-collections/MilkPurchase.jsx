@@ -1709,23 +1709,58 @@ const MilkPurchase = () => {
     <>
     <style>{`
       @media (max-width: 768px) {
-        .mp-root { height: auto !important; min-height: calc(100vh - 60px); overflow-y: auto !important; }
-        .mp-header-group { flex-wrap: wrap !important; gap: 6px !important; padding: 6px 10px !important; }
-        .mp-header-title { display: none !important; }
+        .mp-root { height: auto !important; min-height: calc(100dvh - 60px); overflow-y: auto !important; }
+
+        .mp-header-group { flex-wrap: wrap !important; gap: 8px !important; padding: 10px !important; }
+        .mp-header-title { display: block !important; width: 100% !important; text-align: center !important; margin-bottom: 8px !important; }
+        .mp-header-group .mantine-DatePickerInput-root,
+        .mp-header-group .mantine-Select-root { flex: 1 1 calc(50% - 8px) !important; min-width: 140px !important; }
+        .mp-header-group .mantine-DatePickerInput-input,
+        .mp-header-group .mantine-Select-input { font-size: 12px !important; height: 34px !important; }
+        .mp-header-group button { flex: 1 1 auto !important; min-width: 80px !important; }
+
         .mp-main-row { flex-direction: column !important; overflow: visible !important; }
         .mp-left-col { overflow: visible !important; min-height: 0; }
-        .mp-right-panel { width: 100% !important; border-left: none !important; border-top: 2px solid #80deea !important; flex-direction: row !important; flex-wrap: wrap !important; align-items: flex-start !important; overflow-y: visible !important; }
+
+        .mp-right-panel { width: 100% !important; border-left: none !important; border-top: 2px solid #80deea !important; border-bottom: 2px solid #80deea !important; flex-direction: row !important; flex-wrap: wrap !important; align-items: flex-start !important; overflow-y: visible !important; padding: 12px !important; gap: 12px !important; }
+        .mp-right-panel > div { flex: 1 1 auto !important; min-width: 140px !important; }
+
         .mp-cards-group { flex-wrap: wrap !important; }
-        .mp-cards-group > * { flex: 1 1 100% !important; min-width: 0 !important; }
-        .mp-entry-inputs { flex-wrap: wrap !important; }
-        .mp-entry-inputs > * { flex: 1 1 40% !important; min-width: 80px !important; }
-        .mp-calc-row { flex-wrap: wrap !important; }
-        .mp-calc-row > * { flex: 1 1 30% !important; min-width: 80px !important; }
-        .mp-footer-strip { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; padding: 8px !important; }
+        .mp-cards-group > * { flex: 1 1 100% !important; min-width: 0 !important; margin-bottom: 8px !important; }
+
+        .mp-entry-inputs { flex-wrap: wrap !important; gap: 6px !important; }
+        .mp-entry-inputs > * { flex: 1 1 calc(50% - 6px) !important; min-width: 100px !important; }
+
+        .mp-calc-row { flex-wrap: wrap !important; gap: 6px !important; }
+        .mp-calc-row > * { flex: 1 1 calc(33% - 6px) !important; min-width: 80px !important; }
+
+        .mp-table-bar { flex-wrap: wrap !important; gap: 12px !important; padding: 10px !important; }
+        .mp-table-bar .mantine-Group-root:first-child { flex-wrap: wrap !important; width: 100% !important; gap: 8px !important; justify-content: flex-start !important; }
+        .mp-table-bar .mantine-Select-root { min-width: 100px !important; flex: 1 1 auto !important; }
+        .mp-table-bar .mantine-Select-input { font-size: 12px !important; height: 32px !important; min-height: 32px !important; padding: 0 24px 0 10px !important; }
+        .mp-table-bar button { min-width: 70px !important; padding: 0 14px !important; height: 32px !important; font-size: 12px !important; font-weight: 600 !important; }
+        .mp-table-bar .mantine-Badge-root { font-size: 10px !important; padding: 0 8px !important; height: 22px !important; }
+        .mp-table-bar .mantine-Group-root:last-child { flex-wrap: wrap !important; justify-content: flex-start !important; width: 100% !important; gap: 6px !important; margin-top: 4px !important; }
+        .mp-table-bar .mantine-Group-root:last-child button { flex: 1 1 auto !important; min-width: 65px !important; padding: 0 8px !important; height: 30px !important; font-size: 10px !important; }
+        .mp-table-bar .mantine-TextInput-root { width: 100% !important; min-width: 100% !important; margin-bottom: 6px !important; }
+        .mp-table-bar .mantine-TextInput-input { font-size: 11px !important; height: 30px !important; }
+        .mp-table-bar-right { flex-wrap: wrap !important; justify-content: flex-start !important; }
+
+        .mp-col-hide-mobile { display: none !important; }
+        .mp-tbl { min-width: 550px !important; }
+        .mp-tbl td, .mp-tbl th { padding: 6px 8px !important; font-size: 11px !important; }
+
+        .mp-footer-strip { display: grid !important; grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; padding: 10px !important; }
         .mp-footer-divider { display: none !important; }
         .mp-footer-strip > * { flex-shrink: 0; text-align: center; }
-        .mp-table-bar { flex-wrap: wrap !important; gap: 4px !important; }
-        .mp-table-bar-right { flex-wrap: wrap !important; }
+      }
+
+      @media (max-width: 480px) {
+        .mp-table-bar .mantine-Select-root { min-width: 85px !important; }
+        .mp-table-bar .mantine-Select-input { font-size: 11px !important; height: 30px !important; }
+        .mp-table-bar button { min-width: 60px !important; padding: 0 8px !important; height: 30px !important; font-size: 10px !important; }
+        .mp-table-bar .mantine-Group-root:last-child button { min-width: 55px !important; font-size: 9px !important; }
+        .mp-calc-row > * { flex: 1 1 100% !important; }
       }
     `}</style>
     <Box className="mp-root" style={{ height: 'calc(100vh - 120px)', margin: 'calc(-1 * var(--mantine-spacing-md))', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#eef4fb' }}>
@@ -2416,28 +2451,32 @@ const MilkPurchase = () => {
                 </Button>
               )}
 
-              {/* DELETE ALL */}
-              <Button
-                leftSection={<IconTrash size={12} />}
-                onClick={() => setBulkDeleteOpen(true)}
-                size="compact-xs" radius="sm"
-                style={{ background: '#991b1b', border: '1px solid #f87171', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}
-              >
-                Delete All
-              </Button>
-
             </Group>
           </Group>
         </Box>
 
         {/* Table */}
-        <Box style={{ flex: 1, overflow: 'hidden', background: 'white', borderRadius: '0 0 10px 10px', border: '1px solid #bfdbfe', borderTop: 'none' }}>
+        <Box style={{ flex: 1, overflowY: 'hidden', overflowX: 'auto', background: 'white', borderRadius: '0 0 10px 10px', border: '1px solid #bfdbfe', borderTop: 'none' }}>
           <ScrollArea h="100%" type="auto" viewportRef={tableScrollRef}>
-            <Table striped highlightOnHover stickyHeader withColumnBorders style={{ fontSize: 12 }}>
+            <Table className="mp-tbl" striped highlightOnHover stickyHeader withColumnBorders style={{ fontSize: 12 }}>
               <Table.Thead style={{ background: 'linear-gradient(180deg,#dbeafe 0%,#bfdbfe 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
                 <Table.Tr>
-                  {['#', 'Bill No', 'Far. No', 'Date', 'Shift', 'Litres', 'KG', 'FAT %', 'CLR', 'SNF %', 'Incentive', 'Rate/L', 'Amount'].map(col => (
-                    <Table.Th key={col} style={{ fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#1e40af', whiteSpace: 'nowrap', padding: '9px 12px', borderBottom: '2px solid #93c5fd' }}>
+                  {[
+                    { col: '#',         hide: true  },
+                    { col: 'Bill No',   hide: true  },
+                    { col: 'Far. No',   hide: false },
+                    { col: 'Date',      hide: false },
+                    { col: 'Shift',     hide: false },
+                    { col: 'Litres',    hide: false },
+                    { col: 'KG',        hide: true  },
+                    { col: 'FAT %',     hide: false },
+                    { col: 'CLR',       hide: false },
+                    { col: 'SNF %',     hide: true  },
+                    { col: 'Incentive', hide: true  },
+                    { col: 'Rate/L',    hide: true  },
+                    { col: 'Amount',    hide: false },
+                  ].map(({ col, hide }) => (
+                    <Table.Th key={col} className={hide ? 'mp-col-hide-mobile' : ''} style={{ fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#1e40af', whiteSpace: 'nowrap', padding: '9px 12px', borderBottom: '2px solid #93c5fd' }}>
                       {col}
                     </Table.Th>
                   ))}
@@ -2467,18 +2506,18 @@ const MilkPurchase = () => {
                   return (
                     <Table.Tr key={entry.id} onClick={() => setSelectedRow(isSel ? null : entry)}
                       style={{ cursor: 'pointer', fontSize: 13, background: isEditing ? '#fffbeb' : isSel ? '#eff6ff' : undefined, borderLeft: isEditing ? '3px solid #d97706' : isSel ? '3px solid #2563eb' : '3px solid transparent', transition: 'background 0.1s' }}>
-                      <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#94a3b8', width: 32, fontSize: 13 }}>{entry.sl}</Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#1e40af', whiteSpace: 'nowrap' }}>{entry.billNo}</Table.Td>
+                      <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', fontWeight: 700, color: '#94a3b8', width: 32, fontSize: 13 }}>{entry.sl}</Table.Td>
+                      <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', fontWeight: 700, color: '#1e40af', whiteSpace: 'nowrap' }}>{entry.billNo}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px' }}><Badge size="sm" color="blue" variant="light" radius="sm">{entry.producerNo}</Badge></Table.Td>
                       <Table.Td style={{ padding: '6px 8px', color: '#475569', fontSize: 13, whiteSpace: 'nowrap' }}>{entry.date ? new Date(entry.date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit' }) : '—'}</Table.Td>
                       <Table.Td style={{ padding: '6px 8px' }}><Badge size="xs" color={entry.shift === 'AM' ? 'orange' : 'indigo'} variant="light" radius="sm">{entry.shift || '—'}</Badge></Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0369a1', textAlign: 'right' }}>{(entry.ltr ?? entry.qty).toFixed(2)}</Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0284c7', textAlign: 'right' }}>{((entry.ltr ?? entry.qty) * (1 + (entry.clr || 26) / 1000)).toFixed(2)}</Table.Td>
+                      <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', fontWeight: 800, color: '#0284c7', textAlign: 'right' }}>{((entry.ltr ?? entry.qty) * (1 + (entry.clr || 26) / 1000)).toFixed(2)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#c2410c', textAlign: 'right' }}>{entry.fat.toFixed(1)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', color: '#6d28d9', textAlign: 'right' }}>{entry.clr.toFixed(1)}</Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', color: '#166534', textAlign: 'right' }}>{entry.snf.toFixed(2)}</Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', textAlign: 'right' }}>&#8377;{entry.incentive.toFixed(2)}</Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', fontWeight: 600, textAlign: 'right' }}>&#8377;{entry.rate.toFixed(2)}</Table.Td>
+                      <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', color: '#166534', textAlign: 'right' }}>{entry.snf.toFixed(2)}</Table.Td>
+                      <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', textAlign: 'right' }}>&#8377;{entry.incentive.toFixed(2)}</Table.Td>
+                      <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', fontWeight: 600, textAlign: 'right' }}>&#8377;{entry.rate.toFixed(2)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', textAlign: 'right' }}><Text size="15px" fw={800} c="blue.7">&#8377;{entry.amount.toFixed(2)}</Text></Table.Td>
                     </Table.Tr>
                   );
@@ -2488,16 +2527,17 @@ const MilkPurchase = () => {
               {entries.length > 0 && (
                 <Table.Tfoot>
                   <Table.Tr style={{ background: '#1e3a8a' }}>
-                    <Table.Td colSpan={5} style={{ padding: '8px 12px', fontWeight: 700, color: '#93c5fd', fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
+                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px' }} />
+                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px' }} />
+                    <Table.Td colSpan={3} style={{ padding: '8px 12px', fontWeight: 700, color: '#93c5fd', fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#7dd3fc', textAlign: 'right', fontSize: 15 }}>{totalLtr.toFixed(2)}</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#38bdf8', textAlign: 'right', fontSize: 15 }}>{totalKg.toFixed(2)}</Table.Td>
+                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px', fontWeight: 900, color: '#38bdf8', textAlign: 'right', fontSize: 15 }}>{totalKg.toFixed(2)}</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#fdba74', textAlign: 'right', fontSize: 14 }}>{avgFat.toFixed(1)}</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#a78bfa', textAlign: 'right', fontSize: 14 }}>{avgClr.toFixed(1)}</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#4ade80', textAlign: 'right', fontSize: 14 }}>{avgSnf.toFixed(2)}</Table.Td>
-                    <Table.Td />
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#e2e8f0', textAlign: 'right', fontSize: 14 }}>&#8377;{avgRate.toFixed(2)}</Table.Td>
+                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px', fontWeight: 700, color: '#4ade80', textAlign: 'right', fontSize: 14 }}>{avgSnf.toFixed(2)}</Table.Td>
+                    <Table.Td className="mp-col-hide-mobile" />
+                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px', fontWeight: 700, color: '#e2e8f0', textAlign: 'right', fontSize: 14 }}>&#8377;{avgRate.toFixed(2)}</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', textAlign: 'right' }}><Text size="16px" fw={900} c="white">&#8377;{totalAmt.toFixed(2)}</Text></Table.Td>
-                    <Table.Td />
                   </Table.Tr>
                 </Table.Tfoot>
               )}
@@ -2505,8 +2545,8 @@ const MilkPurchase = () => {
           </ScrollArea>
         </Box>
 
-        {/* Footer summary strip */}
-        <Box className="mp-footer-box" style={{ background: 'white', border: '1px solid #bfdbfe', borderTop: '2px solid #dbeafe', borderRadius: '0 0 10px 10px', padding: '4px 12px' }}>
+        {/* Footer summary strip — hidden for sub-centre login */}
+        {!isCentreLogin && <Box className="mp-footer-box" style={{ background: 'white', border: '1px solid #bfdbfe', borderTop: '2px solid #dbeafe', borderRadius: '0 0 10px 10px', padding: '4px 12px' }}>
           <style>{`@media(max-width:768px){.mp-footer-box{padding:6px 8px !important;}}`}</style>
           <Group className="mp-footer-strip" gap={10} wrap="nowrap" align="center">
             <Box style={{ flexShrink: 0 }}>
@@ -2571,7 +2611,7 @@ const MilkPurchase = () => {
               );
             })()}
           </Group>
-        </Box>
+        </Box>}
       </Box>
 
       {/* ── End left column ── */}

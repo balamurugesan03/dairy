@@ -788,7 +788,7 @@ const MainLayout = () => {
   };
 
   return (
-    <AppShell header={{ height: 120 }} padding="md">
+    <AppShell header={{ height: { base: 60, md: 120 } }} padding="md">
       <AppShell.Header style={{ border: 'none' }}>
         {/* Top Header - Gradient Background */}
         <Box
@@ -834,10 +834,11 @@ const MainLayout = () => {
             </Group>
 
             {/* Right Section */}
-            <Group gap="md">
-              <CompanySwitcher />
+            <Group gap="md" wrap="nowrap">
+              <Box visibleFrom="md"><CompanySwitcher /></Box>
 
               <Box
+                visibleFrom="md"
                 style={{
                   background: 'rgba(255,255,255,0.15)',
                   borderRadius: '10px',
@@ -910,8 +911,9 @@ const MainLayout = () => {
           </Group>
         </Box>
 
-        {/* Menu Bar - Colorful Gradient Background */}
+        {/* Menu Bar - Colorful Gradient Background — desktop only */}
         <Box
+          visibleFrom="md"
           style={{
             background: menuBarBg,
             borderBottom: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(102, 126, 234, 0.15)',

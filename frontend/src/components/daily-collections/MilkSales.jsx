@@ -822,21 +822,51 @@ export default function MilkSales() {
     <Box className="ms-root" style={{ height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#eef4fb' }}>
       <style>{`
         @media (max-width: 768px) {
-          .ms-root { height: auto !important; min-height: calc(100vh - 60px); overflow-y: auto !important; }
+          .ms-root { height: auto !important; min-height: calc(100dvh - 60px); overflow-y: auto !important; }
+
+          /* Header */
           .ms-header-box { padding: 6px 10px !important; }
           .ms-header-group { flex-wrap: wrap !important; gap: 6px !important; }
           .ms-header-left { flex-wrap: wrap !important; gap: 6px !important; }
           .ms-header-title { display: none !important; }
           .ms-header-sep { display: none !important; }
+
+          /* Cards */
           .ms-card-row { padding: 6px 8px 0 !important; }
           .ms-card-group > * { flex: 1 1 100% !important; min-width: 0 !important; }
-          .ms-table-section { padding: 8px 8px 8px !important; overflow: visible !important; }
-          .ms-table-bar { flex-wrap: wrap !important; gap: 4px !important; }
-          .ms-table-bar-right { flex-wrap: wrap !important; gap: 3px !important; }
+
+          /* Table section */
+          .ms-table-section { padding: 6px 6px 6px !important; overflow: visible !important; }
+
+          /* Table bar — stack left and right */
+          .ms-table-bar { flex-direction: column !important; align-items: flex-start !important; gap: 6px !important; padding: 8px 10px !important; }
+
+          /* Left group: title + badges + month controls — wrap */
+          .ms-table-bar-left { flex-wrap: wrap !important; flex-shrink: 1 !important; width: 100% !important; gap: 5px !important; }
+
+          /* Month/Year selects + GO button */
+          .ms-month-group { flex-wrap: wrap !important; width: 100% !important; gap: 5px !important; }
+          .ms-month-group .mantine-Select-root { flex: 1 1 90px !important; min-width: 80px !important; }
+          .ms-month-group .mantine-Select-input { font-size: 11px !important; height: 28px !important; color: white !important; }
+          .ms-month-group button { flex: 0 0 auto !important; height: 28px !important; padding: 0 12px !important; font-size: 11px !important; }
+
+          /* Right group: action buttons */
+          .ms-table-bar-right { flex-wrap: wrap !important; gap: 4px !important; width: 100% !important; justify-content: flex-start !important; }
+          .ms-table-bar-right .mantine-TextInput-root { width: 100% !important; min-width: 100% !important; margin-bottom: 4px !important; }
+          .ms-table-bar-right .mantine-TextInput-input { font-size: 11px !important; height: 26px !important; }
+          .ms-table-bar-right button { font-size: 10px !important; height: 26px !important; padding: 0 9px !important; }
+
+          /* Footer */
           .ms-footer-box { padding: 6px 10px !important; }
           .ms-footer-strip { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; }
           .ms-summary-label { grid-column: 1 / -1 !important; }
           .ms-footer-divider { display: none !important; }
+        }
+
+        @media (max-width: 480px) {
+          .ms-footer-strip { grid-template-columns: repeat(2, 1fr) !important; }
+          .ms-month-group .mantine-Select-root { min-width: 72px !important; }
+          .ms-table-bar-right button { font-size: 9px !important; padding: 0 7px !important; }
         }
       `}</style>
 
@@ -1153,7 +1183,7 @@ export default function MilkSales() {
         {/* Table header bar */}
         <Box style={{ background: '#14532d', borderRadius: '10px 10px 0 0', padding: '7px 14px' }}>
           <Group className="ms-table-bar" justify="space-between" align="center" wrap="wrap">
-            <Group gap={8} style={{ flexShrink: 0 }}>
+            <Group className="ms-table-bar-left" gap={8} style={{ flexShrink: 0 }}>
               <Text fw={700} size="12px" c="white" style={{ letterSpacing: '0.3px' }}>Sales Register</Text>
               <Badge size="sm" style={{ background: 'rgba(255,255,255,0.12)', color: '#86efac', border: '1px solid rgba(255,255,255,0.2)' }}>
                 {loading ? <Loader size={10} color="white" /> : `${filteredEntries.length}${historySearch ? ` / ${entries.length}` : ''} records`}
@@ -1162,7 +1192,7 @@ export default function MilkSales() {
               {monthMode && <Badge size="sm" color="violet" variant="filled" radius="sm">{MONTHS.find(m => m.value === filterMonth)?.label} {filterYear}</Badge>}
 
               {/* Month / Year filter */}
-              <Group gap={4} wrap="nowrap">
+              <Group className="ms-month-group" gap={4} wrap="nowrap">
                 <Select
                   data={MONTHS} value={filterMonth} onChange={v => v && setFilterMonth(v)}
                   size="xs" radius="md" style={{ width: 108 }}
@@ -1249,33 +1279,6 @@ export default function MilkSales() {
               <Button leftSection={<IconRefresh size={12} />} onClick={loadEntries} size="compact-xs" radius="sm"
                 style={{ background: '#0891b2', border: '1px solid #67e8f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Refresh
-              </Button>
-              {/* Import LinZA — green */}
-              <Button leftSection={<IconUpload size={12} />} onClick={() => setLinzaImportOpen(true)} size="compact-xs" radius="sm"
-                style={{ background: '#15803d', border: '1px solid #4ade80', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                Import LinZA
-              </Button>
-              {/* Import Zibitt Local Sales CSV — violet */}
-              <Button leftSection={<IconUpload size={12} />} onClick={() => setImportOpen(true)} size="compact-xs" radius="sm"
-                style={{ background: '#7c3aed', border: '1px solid #a78bfa', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                Zibbit
-              </Button>
-              {/* Import Zibitt Raw DB — fuchsia */}
-              {/* <Button leftSection={<IconUpload size={12} />} onClick={() => setRawImportOpen(true)} size="compact-xs" radius="sm"
-                style={{ background: '#a21caf', border: '1px solid #e879f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                Import DB
-              </Button> */}
-              {/* Import OpenLyssa merged Excel — orange */}
-              <Button leftSection={<IconUpload size={12} />} onClick={() => setOlImportOpen(true)} size="compact-xs" radius="sm"
-                style={{ background: '#c2410c', border: '1px solid #fb923c', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                 OpenLyssa
-              </Button>
-              {/* Sync to Day Book — back-posts journal/receipt vouchers for legacy + imported sales */}
-              <Button leftSection={backfilling ? <Loader size={10} color="white" /> : <IconBook size={12} />}
-                onClick={handleBackfillVouchers} disabled={backfilling}
-                size="compact-xs" radius="sm" title="Post Day Book / Cash Book vouchers for sales saved before auto-post or via import"
-                style={{ background: '#0369a1', border: '1px solid #38bdf8', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                Sync Day Book
               </Button>
 
               {/* WhatsApp Bulk Send */}
