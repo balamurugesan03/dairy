@@ -105,6 +105,8 @@ const BusinessBillingForm = () => {
   const [salesmen, setSalesmen] = useState([]);
   const [selectedSalesman, setSelectedSalesman] = useState(null);
 
+  const itemSelectRef = useRef(null);
+
   const form = useForm({
     initialValues: {
       invoiceDate: new Date(),
@@ -190,9 +192,9 @@ const BusinessBillingForm = () => {
 
   const fetchItems = async () => {
     try {
-      const response = await businessItemAPI.getAll();
+      const response = await businessItemAPI.getAll({ limit: 9999, status: 'Active' });
       const itemsData = response?.data || response || [];
-      setItems(Array.isArray(itemsData) ? itemsData.filter(item => item.status === 'Active') : []);
+      setItems(Array.isArray(itemsData) ? itemsData : []);
     } catch (error) {
       notifications.show({
         title: 'Error',
@@ -356,6 +358,9 @@ const BusinessBillingForm = () => {
           previousBalance: 0
         }));
       }
+
+      // Move focus to item select
+      setTimeout(() => itemSelectRef.current?.focus(), 150);
     }
   };
 
@@ -1039,6 +1044,7 @@ const BusinessBillingForm = () => {
               <Grid gutter="sm" align="flex-end">
                 <Grid.Col span={4}>
                   <Select
+                    ref={itemSelectRef}
                     label="Item"
                     placeholder="Search item..."
                     value={form.values.itemId}

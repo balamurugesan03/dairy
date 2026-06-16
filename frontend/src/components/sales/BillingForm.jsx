@@ -643,10 +643,12 @@ const BillingForm = () => {
     setDateBills([]);
   };
 
-  const itemOptions = useMemo(() => items.map(item => ({
-    value: item._id,
-    label: `${item.itemCode} - ${item.itemName} (Stock: ${item.currentBalance} ${item.unit})`
-  })), [items]);
+  const itemOptions = useMemo(() => items
+    .filter(item => (item.currentBalance || 0) > 0)
+    .map(item => ({
+      value: item._id,
+      label: `${item.itemCode} - ${item.itemName} (Stock: ${item.currentBalance} ${item.unit})`
+    })), [items]);
 
   const filteredItemOptions = useMemo(() => {
     const search = itemSearch.trim().toLowerCase();
@@ -801,9 +803,20 @@ const BillingForm = () => {
                         clearable
                         leftSection={<IconSearch size={16} />}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' && form.values.customerId) {
+                          if (e.key !== 'Enter') return;
+                          // Already selected → move focus to item
+                          if (form.values.customerId) {
                             e.preventDefault();
                             setTimeout(() => itemSelectRef.current?.focus(), 100);
+                            return;
+                          }
+                          // Not yet selected → auto-pick first matching farmer
+                          if (filteredFarmerOptions.length > 0) {
+                            e.preventDefault();
+                            const first = filteredFarmerOptions[0];
+                            handleFarmerSelect(first.value);
+                            setFarmerSearch('');
+                            setTimeout(() => itemSelectRef.current?.focus(), 200);
                           }
                         }}
                       />
@@ -832,7 +845,10 @@ const BillingForm = () => {
                         label="Select Customer"
                         placeholder="Search customer..."
                         value={form.values.customerId}
-                        onChange={handleCustomerSelect}
+                        onChange={(val) => {
+                          handleCustomerSelect(val);
+                          if (val) setTimeout(() => itemSelectRef.current?.focus(), 150);
+                        }}
                         data={customerOptions}
                         error={form.errors.customerId}
                         searchable
