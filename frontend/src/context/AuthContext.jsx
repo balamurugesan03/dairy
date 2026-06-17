@@ -213,6 +213,8 @@ export const AuthProvider = ({ children }) => {
     allowedModules: user?.loginType === 'centre' ? (user?.companyInfo?.allowedModules || []) : null,
     designation: user?.designation,
     permissions: user?.permissionsObject || {},
+    userCenter: user?.collectionCenter || null,
+    userAgent: user?.agentId || null,
     // Permission helper functions
     hasPermission,
     canRead,

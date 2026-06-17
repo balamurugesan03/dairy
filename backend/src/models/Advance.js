@@ -82,7 +82,7 @@ const advanceSchema = new mongoose.Schema({
   // Repayment settings
   repaymentType: {
     type: String,
-    enum: ['Lump Sum', 'Monthly Deduction', 'Per Payment Deduction', 'Custom'],
+    enum: ['Lump Sum', 'Monthly Deduction', 'Per Payment Deduction', 'Custom', 'EMI'],
     default: 'Per Payment Deduction'
   },
   monthlyDeductionAmount: {
@@ -95,6 +95,22 @@ const advanceSchema = new mongoose.Schema({
     default: 0,
     min: 0,
     max: 100
+  },
+  // EMI repayment settings
+  emiCount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  emiAmount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  emiFrequency: {
+    type: String,
+    enum: ['Monthly', 'Per Payment Cycle'],
+    default: 'Monthly'
   },
   expectedRepaymentDate: Date,
   // Adjustment history

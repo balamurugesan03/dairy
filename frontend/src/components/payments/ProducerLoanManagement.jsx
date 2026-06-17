@@ -74,6 +74,13 @@ const ProducerLoanManagement = () => {
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [selectedLoan, setSelectedLoan] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
+  const [loanTypes, setLoanTypes] = useState([]);
+
+  useEffect(() => {
+    producerLoanAPI.getLoanTypes()
+      .then(res => setLoanTypes(res?.data || []))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetchLoans();
@@ -174,14 +181,7 @@ const ProducerLoanManagement = () => {
     }
   };
 
-  const getLoanTypeColor = (type) => {
-    switch (type) {
-      case 'Loan Advance': return 'violet';
-      case 'CF Advance': return 'orange';
-      case 'Cash Advance': return 'cyan';
-      default: return 'gray';
-    }
-  };
+  const getLoanTypeColor = () => 'violet';
 
   const statusOptions = [
     { value: '', label: 'All Status' },
@@ -193,9 +193,7 @@ const ProducerLoanManagement = () => {
 
   const loanTypeOptions = [
     { value: '', label: 'All Types' },
-    { value: 'Cash Advance', label: 'Cash Advance' },
-    { value: 'CF Advance', label: 'CF Advance' },
-    { value: 'Loan Advance', label: 'Loan Advance' }
+    ...loanTypes,
   ];
 
   return (

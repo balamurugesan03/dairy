@@ -936,27 +936,34 @@ export const getFarmerWiseStatement = async (req, res) => {
       const amAvg = (key) => amR.length ? f2(amR.reduce((s,r)=>s+r.am[key],0)/amR.length) : 0;
       const pmAvg = (key) => pmR.length ? f2(pmR.reduce((s,r)=>s+r.pm[key],0)/pmR.length) : 0;
 
+      const amQty   = f2(amR.reduce((s,r)=>s+r.am.qty,0));
+      const amInc   = f2(amR.reduce((s,r)=>s+r.am.incentive,0));
+      const amValue = f2(amR.reduce((s,r)=>s+r.am.value,0));
+      const pmQty   = f2(pmR.reduce((s,r)=>s+r.pm.qty,0));
+      const pmInc   = f2(pmR.reduce((s,r)=>s+r.pm.incentive,0));
+      const pmValue = f2(pmR.reduce((s,r)=>s+r.pm.value,0));
+
       result.push({
         farmerNumber: farmer.farmerNumber,
         farmerName:   farmer.farmerName,
         rows,
         totals: {
-          amQty:       f2(amR.reduce((s,r)=>s+r.am.qty,0)),
+          amQty,
           amClr:       amR.length ? f1(amR.reduce((s,r)=>s+r.am.clr,0)/amR.length) : 0,
           amFat:       amAvg('fat'),
           amSnf:       amAvg('snf'),
           amRate:      amAvg('rate'),
-          amIncentive: f2(amR.reduce((s,r)=>s+r.am.incentive,0)),
-          amValue:     f2(amR.reduce((s,r)=>s+r.am.value,0)),
-          pmQty:       f2(pmR.reduce((s,r)=>s+r.pm.qty,0)),
+          amIncentive: amInc,
+          amValue,
+          pmQty,
           pmClr:       pmR.length ? f1(pmR.reduce((s,r)=>s+r.pm.clr,0)/pmR.length) : 0,
           pmFat:       pmAvg('fat'),
           pmSnf:       pmAvg('snf'),
           pmRate:      pmAvg('rate'),
-          pmIncentive: f2(pmR.reduce((s,r)=>s+r.pm.incentive,0)),
-          pmValue:     f2(pmR.reduce((s,r)=>s+r.pm.value,0)),
-          totalQty:    f2(amR.reduce((s,r)=>s+r.am.qty,0) + pmR.reduce((s,r)=>s+r.pm.qty,0)),
-          totalValue:  f2(amR.reduce((s,r)=>s+r.am.value,0) + pmR.reduce((s,r)=>s+r.pm.value,0)),
+          pmIncentive: pmInc,
+          pmValue,
+          totalQty:    f2(amQty + pmQty),
+          totalValue:  f2(amValue + pmValue),
           amCount:     amR.length,
           pmCount:     pmR.length
         }

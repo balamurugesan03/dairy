@@ -12,6 +12,9 @@ import {
 import dayjs from 'dayjs';
 import { farmerAPI, producerLoanAPI } from '../../services/api';
 
+const LOAN_SCHEMES = ['Monthly', 'Weekly', 'Custom'];
+const PAY_MODES    = ['Cash', 'Bank', 'UPI', 'Cheque', 'NEFT', 'RTGS'];
+
 const BORDER     = '1px solid #E5E7EB';
 const TEXT_DARK  = '#111827';
 const TEXT_MUTED = '#6B7280';
@@ -21,15 +24,10 @@ const iStyles = {
   label:  { fontSize: 12, fontWeight: 600, color: TEXT_DARK, marginBottom: 4 },
 };
 
-const LOAN_TYPES   = ['Cash Advance', 'CF Advance', 'Loan Advance'];
-const LOAN_SCHEMES = ['Monthly', 'Weekly', 'Custom'];
-const PAY_MODES    = ['Cash', 'Bank', 'UPI', 'Cheque', 'NEFT', 'RTGS'];
-const typeColor    = { 'Cash Advance': 'cyan', 'CF Advance': 'orange', 'Loan Advance': 'violet' };
-
 const BLANK = {
   loanDate:        new Date(),
   farmerId:        null,
-  loanType:        'Cash Advance',
+  loanType:        null,
   loanScheme:      'Monthly',
   principalAmount: '',
   interestType:    'Percentage',
@@ -51,14 +49,26 @@ export default function ProducerLoanFormModal({ opened, onClose, onSaved }) {
   const [form,       setForm]       = useState(BLANK);
   const [farmer,     setFarmer]     = useState(null);
   const [farmers,    setFarmers]    = useState([]);
+  const [loanTypes,  setLoanTypes]  = useState([]);
   const [searching,  setSearching]  = useState(false);
   const [saving,     setSaving]     = useState(false);
   const [calc,       setCalc]       = useState({ interest: 0, total: 0, emi: 0 });
   const searchTimer = useRef(null);
 
   useEffect(() => {
-    if (opened) { setForm(BLANK); setFarmer(null); setCalc({ interest: 0, total: 0, emi: 0 }); }
-  }, [opened]);
+    producerLoanAPI.getLoanTypes()
+      .then(res => {
+        const types = res?.data || [];
+        setLoanTypes(types);
+        // Auto-select first type when modal opens if form hasn't been touched yet
+        if (types.length > 0) setForm(prev => ({ ...prev, loanType: prev.loanType || types[0].value }));
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (opened) { setForm(prev => ({ ...BLANK, loanType: loanTypes[0]?.value || null })); setFarmer(null); setCalc({ interest: 0, total: 0, emi: 0 }); }
+  }, [opened]); // eslint-disable-line
 
   useEffect(() => {
     farmerAPI.getAll({ status: 'Active', limit: 100 })
@@ -157,7 +167,7 @@ export default function ProducerLoanFormModal({ opened, onClose, onSaved }) {
             <Box>
               <Group gap={8}>
                 <Text fw={800} size="15px" c="#14532d">New Loan / Advance</Text>
-                <Badge color={typeColor[form.loanType] || 'gray'} size="sm" variant="filled">{form.loanType}</Badge>
+                <Badge color="violet" size="sm" variant="filled">{form.loanType || 'Loan'}</Badge>
               </Group>
               <Text size="10px" c={TEXT_MUTED}>Producer Loan — EMI-based</Text>
             </Box>
@@ -178,8 +188,10 @@ export default function ProducerLoanFormModal({ opened, onClose, onSaved }) {
               valueFormat="DD/MM/YYYY" size="sm" styles={iStyles} />
           </Grid.Col>
           <Grid.Col span={3}>
-            <Select label="Loan Type" data={LOAN_TYPES} value={form.loanType}
-              onChange={v => set('loanType')(v || 'Cash Advance')} size="sm" styles={iStyles} />
+            <Select label="Loan Type" data={loanTypes} value={form.loanType}
+              onChange={v => set('loanType')(v)} size="sm" styles={iStyles}
+              placeholder={loanTypes.length === 0 ? 'No loan types — add in Earning Master' : 'Select loan type'}
+              nothingFoundMessage="No Loan Scheme types found" />
           </Grid.Col>
           <Grid.Col span={3}>
             <Select label="Scheme" data={LOAN_SCHEMES} value={form.loanScheme}

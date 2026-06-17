@@ -66,7 +66,7 @@ const userSchema = new mongoose.Schema({
   },
   userType: {
     type: String,
-    enum: ['auditor', 'dairy_department', 'society', 'milma', 'president', 'superuser', 'admin', 'ordinary'],
+    enum: ['auditor', 'dairy_department', 'society', 'milma', 'president', 'superuser', 'admin', 'ordinary', 'agent'],
     default: 'ordinary'
   },
   designation: {
@@ -129,6 +129,16 @@ const userSchema = new mongoose.Schema({
     type: String,
     enum: ['active', 'inactive'],
     default: 'active'
+  },
+  collectionCenter: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CollectionCenter',
+    default: null
+  },
+  agentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Agent',
+    default: null
   },
   passwordChangedAt: Date,
   lastLogin: Date

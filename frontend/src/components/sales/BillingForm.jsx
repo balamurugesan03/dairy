@@ -75,9 +75,11 @@ import {
 import { modals } from '@mantine/modals';
 import { farmerAPI, itemAPI, salesAPI, customerAPI, collectionCenterAPI, subsidyAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
+import { useAuth } from '../../context/AuthContext';
 
 const BillingForm = () => {
   const navigate = useNavigate();
+  const { userCenter } = useAuth();
   const printRef = useRef();
   const itemSelectRef = useRef(null);
   const farmerSelectRef = useRef(null);
@@ -220,6 +222,29 @@ const BillingForm = () => {
     calculateTotals();
   }, [billItems, form.values.discount, form.values.discountPercent]);
 
+  // Auto-fill paidAmount with grandTotal for Customer/Other when grand total changes
+  useEffect(() => {
+    if (calculations.grandTotal <= 0) return;
+    if (form.values.customerType === 'Customer' || form.values.customerType === 'Other') {
+      form.setFieldValue('paidAmount', calculations.grandTotal);
+      setTimeout(() => saveButtonRef.current?.focus(), 100);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calculations.grandTotal]);
+
+  // When switching to Customer/Other: enforce Cash/UPI only and auto-fill paidAmount
+  useEffect(() => {
+    if (form.values.customerType === 'Customer' || form.values.customerType === 'Other') {
+      if (form.values.paymentMode === 'Credit') {
+        form.setFieldValue('paymentMode', 'Cash');
+      }
+      if (calculations.grandTotal > 0) {
+        form.setFieldValue('paidAmount', calculations.grandTotal);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.values.customerType]);
+
 
   const fetchBillsByDate = async (date) => {
     try {
@@ -277,7 +302,9 @@ const BillingForm = () => {
       const active = Array.isArray(centersData) ? centersData.filter(c => c.status === 'Active') : [];
       setCollectionCenters(active);
       if (active.length && !form.values.collectionCenterId) {
-        form.setFieldValue('collectionCenterId', active[0]._id);
+        const userCentreId = userCenter?._id?.toString() || userCenter?.toString();
+        const preferred = userCentreId && active.find(c => c._id.toString() === userCentreId);
+        form.setFieldValue('collectionCenterId', preferred ? preferred._id : active[0]._id);
       }
     } catch (error) {
       setCollectionCenters([]);
@@ -462,7 +489,9 @@ const BillingForm = () => {
     form.setFieldValue('rate', '');
     setBarcodeInput('');
     setItemSearch('');
-    setTimeout(() => paidAmountRef.current?.focus(), 100);
+    if (form.values.customerType !== 'Customer' && form.values.customerType !== 'Other') {
+      setTimeout(() => paidAmountRef.current?.focus(), 100);
+    }
   };
 
   const handleRemoveItem = (index) => {
@@ -1431,22 +1460,31 @@ const BillingForm = () => {
                 onChange={(value) => form.setFieldValue('paymentMode', value)}
                 fullWidth
                 size="xs"
-                data={[
-                  { value: 'Cash', label: (
-                    <Center style={{ gap: 4 }}><IconCash size={14} /><Text size="xs">Cash</Text></Center>
-                  )},
-                     { value: 'Credit', label: (
-                    <Center style={{ gap: 4 }}><IconCoin size={14} /><Text size="xs">Credit</Text></Center>
-                  )},
-                    { value: 'UPI', label: (
-                    <Center style={{ gap: 4 }}><IconQrcode size={14} /><Text size="xs">UPI</Text></Center>
-                  )},
-                  { value: 'Card', label: (
-                    <Center style={{ gap: 4 }}><IconCreditCard size={14} /><Text size="xs">Card</Text></Center>
-                  )}
-                
-               
-                ]}
+                data={
+                  (form.values.customerType === 'Customer' || form.values.customerType === 'Other')
+                    ? [
+                        { value: 'Cash', label: (
+                          <Center style={{ gap: 4 }}><IconCash size={14} /><Text size="xs">Cash</Text></Center>
+                        )},
+                        { value: 'UPI', label: (
+                          <Center style={{ gap: 4 }}><IconQrcode size={14} /><Text size="xs">UPI</Text></Center>
+                        )}
+                      ]
+                    : [
+                        { value: 'Cash', label: (
+                          <Center style={{ gap: 4 }}><IconCash size={14} /><Text size="xs">Cash</Text></Center>
+                        )},
+                        { value: 'Credit', label: (
+                          <Center style={{ gap: 4 }}><IconCoin size={14} /><Text size="xs">Credit</Text></Center>
+                        )},
+                        { value: 'UPI', label: (
+                          <Center style={{ gap: 4 }}><IconQrcode size={14} /><Text size="xs">UPI</Text></Center>
+                        )},
+                        { value: 'Card', label: (
+                          <Center style={{ gap: 4 }}><IconCreditCard size={14} /><Text size="xs">Card</Text></Center>
+                        )}
+                      ]
+                }
               />
 
               <NumberInput

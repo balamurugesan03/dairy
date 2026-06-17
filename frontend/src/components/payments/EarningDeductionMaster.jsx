@@ -20,7 +20,7 @@ const CATEGORIES = [
   { value: 'HISTORICAL_DEDUCTIONS',      label: 'HISTORICAL DEDUCTIONS'          },
   { value: 'INDIVIDUAL_DEDUCTIONS',      label: 'INDIVIDUAL DEDUCTIONS'          },
   { value: 'INDIVIDUAL_EARNINGS',        label: 'INDIVIDUAL EARNINGS'            },
-  { value: 'LOAN_RECOVERY',             label: 'LOAN RECOVERY'                  },
+  { value: 'LOAN_RECOVERY',             label: 'LOAN SCHEME'                    },
   { value: 'PERIODICAL_DEDUCTIONS',      label: 'PERIODICAL DEDUCTIONS'          },
   { value: 'PERIODICAL_EARNINGS',        label: 'PERIODICAL EARNINGS'            },
 ];

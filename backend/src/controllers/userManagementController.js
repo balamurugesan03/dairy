@@ -100,7 +100,9 @@ export const createCompanyUser = async (req, res) => {
       email,
       permissions,
       joiningDate,
-      expireDate
+      expireDate,
+      collectionCenter,
+      agentId
     } = req.body;
 
     // Validate required fields
@@ -145,6 +147,8 @@ export const createCompanyUser = async (req, res) => {
       permissions: userPermissions,
       joiningDate: joiningDate || null,
       expireDate: expireDate || null,
+      collectionCenter: collectionCenter || null,
+      agentId: agentId || null,
       status: 'active'
     });
 
@@ -194,7 +198,9 @@ export const updateCompanyUser = async (req, res) => {
       permissions,
       status,
       joiningDate,
-      expireDate
+      expireDate,
+      collectionCenter,
+      agentId
     } = req.body;
 
     // Check if new username already exists
@@ -231,6 +237,8 @@ export const updateCompanyUser = async (req, res) => {
     if (status) user.status = status;
     if (joiningDate !== undefined) user.joiningDate = joiningDate || null;
     if (expireDate !== undefined) user.expireDate = expireDate || null;
+    if (collectionCenter !== undefined) user.collectionCenter = collectionCenter || null;
+    if (agentId !== undefined) user.agentId = agentId || null;
 
     await user.save({ validateBeforeSave: false });
 
@@ -408,6 +416,7 @@ export const getUserTypesList = async (req, res) => {
       { value: 'superuser', label: 'Superuser' },
       { value: 'admin', label: 'Admin' },
       { value: 'ordinary', label: 'Ordinary' },
+      { value: 'agent', label: 'Agent' },
       { value: 'agent', label: 'Agent' }
     ];
 

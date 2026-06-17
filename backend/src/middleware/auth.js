@@ -86,7 +86,9 @@ export const protect = async (req, res, next) => {
       req.user.role = 'centre';
     } else {
       // Token is for a User (superadmin or admin)
-      currentUser = await User.findById(decoded.id);
+      currentUser = await User.findById(decoded.id)
+        .populate('collectionCenter', 'centerName')
+        .populate('agentId', 'agentName agentCode');
       if (!currentUser) {
         return res.status(401).json({
           success: false,

@@ -561,7 +561,7 @@ export const getLoanTypes = async (req, res) => {
   try {
     const items = await EarningDeduction.find({
       companyId: req.userCompany,
-      category: { $in: ['LOAN_RECOVERY', 'DEPOSIT_SCHEME'] },
+      category: 'LOAN_RECOVERY',
       active: true,
     }).sort({ name: 1 }).select('name shortName');
 

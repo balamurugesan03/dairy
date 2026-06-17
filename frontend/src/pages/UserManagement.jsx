@@ -40,7 +40,7 @@ import {
   IconAlertCircle
 } from '@tabler/icons-react';
 import { useAuth } from '../context/AuthContext';
-import { userManagementAPI, agentAPI } from '../services/api';
+import { userManagementAPI, agentAPI, collectionCenterAPI } from '../services/api';
 import { message } from '../utils/toast';
 import PageHeader from '../components/common/PageHeader';
 
@@ -214,11 +214,15 @@ const MODULE_GROUPS = [
   },
 ];
 
+const BUSINESS_ONLY_GROUPS = new Set(['businessInventory', 'businessReports', 'quotations', 'machines', 'warranty', 'promotions']);
+
 // Flat list of ALL module keys (main + sub) for permission initialisation
 const MODULES = MODULE_GROUPS.flatMap(g => [g.key, ...g.subModules.map(s => s.key)]);
 
 const UserManagement = () => {
   const { isAdmin, companyInfo } = useAuth();
+  const isDairy = companyInfo?.businessTypes?.includes('Dairy Cooperative Society');
+  const visibleGroups = isDairy ? MODULE_GROUPS.filter(g => !BUSINESS_ONLY_GROUPS.has(g.key)) : MODULE_GROUPS;
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(false);
@@ -227,11 +231,13 @@ const UserManagement = () => {
   const [designations, setDesignations] = useState([]);
   const [userTypes, setUserTypes] = useState([]);
   const [agents, setAgents] = useState([]);
+  const [centers, setCenters] = useState([]);
 
   // Modal states
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [selectedAgentId, setSelectedAgentId] = useState(null);
+  const [selectedCenterId, setSelectedCenterId] = useState(null);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState(null);
 
@@ -264,6 +270,7 @@ const UserManagement = () => {
     fetchDesignations();
     fetchUserTypes();
     fetchAgents();
+    fetchCenters();
   }, []);
 
   const fetchUsers = async () => {
@@ -305,6 +312,15 @@ const UserManagement = () => {
     }
   };
 
+  const fetchCenters = async () => {
+    try {
+      const response = await collectionCenterAPI.getAll({ limit: 200 });
+      setCenters(response.data || []);
+    } catch (error) {
+      console.error('Failed to fetch centers:', error);
+    }
+  };
+
   // Initialize permissions for new user
   const initializePermissions = () => {
     return MODULES.map(module => ({
@@ -334,6 +350,7 @@ const UserManagement = () => {
   const handleAddUser = () => {
     setEditingUser(null);
     setSelectedAgentId(null);
+    setSelectedCenterId(null);
     setFormData({
       displayName: '',
       username: '',
@@ -352,7 +369,8 @@ const UserManagement = () => {
   // Open modal for editing user
   const handleEditUser = (user) => {
     setEditingUser(user);
-    setSelectedAgentId(null);
+    setSelectedAgentId(user.agentId?._id || user.agentId || null);
+    setSelectedCenterId(user.collectionCenter?._id || user.collectionCenter || null);
 
     // Merge existing permissions with all modules
     const existingPerms = user.permissions || [];
@@ -410,7 +428,9 @@ const UserManagement = () => {
         email: formData.email,
         joiningDate: formData.joiningDate,
         expireDate: formData.expireDate,
-        permissions: formData.permissions
+        permissions: formData.permissions,
+        collectionCenter: selectedCenterId || null,
+        agentId: formData.userType === 'agent' ? (selectedAgentId || null) : null
       };
 
       if (!editingUser) {
@@ -741,6 +761,15 @@ const UserManagement = () => {
               />
             )}
             <Select
+              label="Center"
+              placeholder="Select collection center"
+              clearable
+              searchable
+              data={centers.map(c => ({ value: c._id, label: c.centerName }))}
+              value={selectedCenterId}
+              onChange={setSelectedCenterId}
+            />
+            <Select
               label="Designation"
               placeholder="Select designation"
               data={designations}
@@ -815,7 +844,7 @@ const UserManagement = () => {
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                  {MODULE_GROUPS.map(group => {
+                  {visibleGroups.map(group => {
                     const allKeys = [group.key, ...group.subModules.map(s => s.key)];
                     const allPerms = allKeys.map(k => formData.permissions.find(p => p.module === k) || { module: k, read: false, write: false, edit: false, delete: false });
                     const groupAllChecked = allPerms.every(p => p.read && p.write && p.edit && p.delete);

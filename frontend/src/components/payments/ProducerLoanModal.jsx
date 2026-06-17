@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { message } from '../../utils/toast';
-import { farmerAPI, producerLoanAPI, producerOpeningAPI } from '../../services/api';
+import { farmerAPI, producerLoanAPI } from '../../services/api';
 import {
   Modal,
   Stack,
@@ -17,27 +17,25 @@ import {
   Loader,
   Divider,
   Box,
-  Alert,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import {
   IconSearch,
   IconCalendar,
   IconCurrencyRupee,
-  IconInfoCircle,
 } from '@tabler/icons-react';
 
 const ProducerLoanModal = ({ opened, onClose, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [farmers, setFarmers] = useState([]);
+  const [loanTypes, setLoanTypes] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [selectedFarmer, setSelectedFarmer] = useState(null);
-  const [openingBalance, setOpeningBalance] = useState(null); // { loanAdvance, cfAdvance, cashAdvance }
 
   const [formData, setFormData] = useState({
     farmerId: '',
     loanDate: new Date(),
-    loanType: 'Cash Advance',
+    loanType: '',
     loanScheme: 'Monthly',
     principalAmount: '',
     interestType: 'Percentage',
@@ -56,6 +54,16 @@ const ProducerLoanModal = ({ opened, onClose, onSuccess }) => {
     totalLoanAmount: 0,
     emiAmount: 0
   });
+
+  useEffect(() => {
+    producerLoanAPI.getLoanTypes()
+      .then(res => {
+        const types = res?.data || [];
+        setLoanTypes(types);
+        if (types.length > 0) setFormData(prev => ({ ...prev, loanType: prev.loanType || types[0].value }));
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (opened) {
@@ -105,49 +113,17 @@ const ProducerLoanModal = ({ opened, onClose, onSuccess }) => {
     const farmer = farmers.find(f => f._id === farmerId);
     setSelectedFarmer(farmer);
     setFormData(prev => ({ ...prev, farmerId, principalAmount: '' }));
-    setOpeningBalance(null);
-
-    if (!farmerId) return;
-    try {
-      const res = await producerOpeningAPI.getByFarmer(farmerId);
-      const opening = res?.data;
-      if (opening) {
-        setOpeningBalance({
-          loanAdvance: opening.loanAdvance || 0,
-          cfAdvance:   opening.cfAdvance   || 0,
-          cashAdvance: opening.cashAdvance || 0,
-        });
-        // Pre-fill principalAmount based on current loanType
-        const loanType = formData.loanType;
-        const amt =
-          loanType === 'Loan Advance' ? (opening.loanAdvance || 0) :
-          loanType === 'CF Advance'   ? (opening.cfAdvance   || 0) :
-          loanType === 'Cash Advance' ? (opening.cashAdvance || 0) : 0;
-        if (amt > 0) setFormData(prev => ({ ...prev, farmerId, principalAmount: amt }));
-      }
-    } catch { /* ignore */ }
   };
 
   const handleInputChange = (field, value) => {
-    setFormData(prev => {
-      const updated = { ...prev, [field]: value };
-      // When loanType changes and we have an opening, auto-fill the amount
-      if (field === 'loanType' && openingBalance) {
-        const amt =
-          value === 'Loan Advance' ? openingBalance.loanAdvance :
-          value === 'CF Advance'   ? openingBalance.cfAdvance   :
-          value === 'Cash Advance' ? openingBalance.cashAdvance : 0;
-        if (amt > 0) updated.principalAmount = amt;
-      }
-      return updated;
-    });
+    setFormData(prev => ({ ...prev, [field]: value }));
   };
 
   const resetForm = () => {
     setFormData({
       farmerId: '',
       loanDate: new Date(),
-      loanType: 'Cash Advance',
+      loanType: loanTypes[0]?.value || '',
       loanScheme: 'Monthly',
       principalAmount: '',
       interestType: 'Percentage',
@@ -162,7 +138,6 @@ const ProducerLoanModal = ({ opened, onClose, onSuccess }) => {
       guarantorPhone: ''
     });
     setSelectedFarmer(null);
-    setOpeningBalance(null);
     setCalculations({ totalLoanAmount: 0, emiAmount: 0 });
   };
 
@@ -215,11 +190,6 @@ const ProducerLoanModal = ({ opened, onClose, onSuccess }) => {
     label: `${farmer.farmerNumber} - ${farmer.personalDetails?.name} (${farmer.personalDetails?.phone || 'No phone'})`
   }));
 
-  const loanTypeOptions = [
-    { value: 'Cash Advance', label: 'Cash Advance' },
-    { value: 'CF Advance', label: 'CF Advance (Cattle Feed)' },
-    { value: 'Loan Advance', label: 'Loan Advance' }
-  ];
 
   const loanSchemeOptions = [
     { value: 'Monthly', label: 'Monthly' },
@@ -316,7 +286,9 @@ const ProducerLoanModal = ({ opened, onClose, onSuccess }) => {
                 label="Loan Type"
                 value={formData.loanType}
                 onChange={(value) => handleInputChange('loanType', value)}
-                data={loanTypeOptions}
+                data={loanTypes}
+                placeholder={loanTypes.length === 0 ? 'No loan types — add in Earning Master' : 'Select loan type'}
+                nothingFoundMessage="No Loan Scheme types found"
                 required
               />
             </Grid.Col>
@@ -335,20 +307,7 @@ const ProducerLoanModal = ({ opened, onClose, onSuccess }) => {
           <Grid>
             <Grid.Col span={4}>
               <NumberInput
-                label={
-                  <Group gap={6} align="center">
-                    <span>Principal Amount</span>
-                    {openingBalance && (() => {
-                      const openingAmt =
-                        formData.loanType === 'Loan Advance' ? openingBalance.loanAdvance :
-                        formData.loanType === 'CF Advance'   ? openingBalance.cfAdvance   :
-                        formData.loanType === 'Cash Advance' ? openingBalance.cashAdvance : 0;
-                      return openingAmt > 0
-                        ? <Text size="xs" c="teal" fw={600}>(Opening: ₹{openingAmt.toFixed(2)})</Text>
-                        : null;
-                    })()}
-                  </Group>
-                }
+                label="Principal Amount"
                 value={formData.principalAmount}
                 onChange={(value) => handleInputChange('principalAmount', value)}
                 placeholder="Enter amount"

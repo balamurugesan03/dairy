@@ -22,6 +22,7 @@ import {
   IconAlertCircle, IconCash, IconCreditCard, IconUpload, IconFilter, IconBook, IconBrandWhatsapp,
 } from '@tabler/icons-react';
 import { customerAPI, collectionCenterAPI, milkSalesAPI, agentAPI, milkSalesRateAPI, thermalPrintAPI, whatsappAPI } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 import ImportModal from '../common/ImportModal';
 
 // ── Zibitt Local Sales → MilkSales schema ────────────────────────────────────
@@ -152,6 +153,7 @@ const toDate = (d) => {
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 export default function MilkSales() {
   const navigate = useNavigate();
+  const { userCenter, userAgent } = useAuth();
 
   // Keyboard swap:
   //   • Ctrl/⌘ + S | plain S → Milk Sales (this page)
@@ -383,10 +385,20 @@ export default function MilkSales() {
       const agentList  = (ag?.data || []).map(x => ({ value: x._id, label: x.agentName || '—' }));
       setCenters(centerList);
       setAgents(agentList);
-      // Auto-select first center & agent for LOCAL mode on initial load
+      // Auto-select user's assigned center/agent (or first) for LOCAL/SAMPLE mode
       if (formRef.current.mode === 'LOCAL' || formRef.current.mode === 'SAMPLE') {
-        if (!formRef.current.center && centerList.length) setCenter(centerList[0].value);
-        if (!formRef.current.agent  && agentList.length)  setAgent(agentList[0].value);
+        if (!formRef.current.center) {
+          const userCentreId = userCenter?._id?.toString() || userCenter?.toString();
+          const preferred = userCentreId && centerList.find(c => c.value === userCentreId);
+          if (preferred) setCenter(preferred.value);
+          else if (centerList.length) setCenter(centerList[0].value);
+        }
+        if (!formRef.current.agent) {
+          const userAgentId = userAgent?._id?.toString() || userAgent?.toString();
+          const preferred = userAgentId && agentList.find(a => a.value === userAgentId);
+          if (preferred) setAgent(preferred.value);
+          else if (agentList.length) setAgent(agentList[0].value);
+        }
       }
     } catch { /* silent */ }
   };

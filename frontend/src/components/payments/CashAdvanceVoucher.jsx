@@ -4,7 +4,7 @@ import {
   Container, Paper, Group, Text, Title, Box, Badge,
   Button, Select, ScrollArea, LoadingOverlay,
   ActionIcon, Tooltip, Stack, Modal, NumberInput,
-  Textarea, TextInput, SimpleGrid, Divider, ThemeIcon,
+  Textarea, TextInput, SimpleGrid, Divider, ThemeIcon, SegmentedControl,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
@@ -13,7 +13,7 @@ import {
   IconPrinter, IconFileSpreadsheet, IconCheck,
   IconPlus, IconCurrencyRupee, IconUser,
   IconCash, IconArrowUpRight, IconAlertCircle,
-  IconClipboardText, IconBuildingBank,
+  IconClipboardText, IconBuildingBank, IconHash, IconRepeat,
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { useReactToPrint } from 'react-to-print';
@@ -105,6 +105,9 @@ const CashAdvanceVoucher = () => {
     paymentMode:            'Cash',
     repaymentType:          'Per Payment Deduction',
     monthlyDeductionAmount: '',
+    emiCount:               '',
+    emiAmount:              '',
+    emiFrequency:           'Monthly',
     purpose:                '',
     remarks:                '',
   });
@@ -193,7 +196,16 @@ const CashAdvanceVoucher = () => {
 
   /* ── Form helpers ── */
   const setField = (key, val) => {
-    setForm(prev => ({ ...prev, [key]: val }));
+    setForm(prev => {
+      const next = { ...prev, [key]: val };
+      if (key === 'emiCount' || key === 'advanceAmount') {
+        const amt   = key === 'advanceAmount' ? Number(val) : Number(next.advanceAmount);
+        const count = key === 'emiCount'       ? Number(val) : Number(next.emiCount);
+        if (amt > 0 && count > 0) next.emiAmount = parseFloat((amt / count).toFixed(2));
+        else next.emiAmount = '';
+      }
+      return next;
+    });
     setErrors(prev => ({ ...prev, [key]: undefined }));
   };
 
@@ -202,6 +214,10 @@ const CashAdvanceVoucher = () => {
     if (!form.farmerId)     e.farmerId     = 'Select a producer';
     if (!form.advanceAmount || Number(form.advanceAmount) <= 0)
                             e.advanceAmount = 'Enter a valid amount';
+    if (form.repaymentType === 'EMI') {
+      if (!form.emiCount  || Number(form.emiCount)  < 1)  e.emiCount  = 'Enter number of EMIs';
+      if (!form.emiAmount || Number(form.emiAmount) <= 0)  e.emiAmount = 'Enter EMI amount';
+    }
     return e;
   };
 
@@ -223,6 +239,11 @@ const CashAdvanceVoucher = () => {
         purpose:        form.purpose,
         remarks:        form.remarks,
       };
+      if (form.repaymentType === 'EMI') {
+        payload.emiCount     = Number(form.emiCount);
+        payload.emiAmount    = Number(form.emiAmount);
+        payload.emiFrequency = form.emiFrequency;
+      }
       const res = await advanceAPI.create(payload);
       if (!res.success) throw new Error(res.message || 'Failed to save');
       notifications.show({
@@ -553,7 +574,7 @@ const CashAdvanceVoucher = () => {
             />
             <Select
               label="Repayment Type"
-              data={['Lump Sum','Monthly Deduction','Per Payment Deduction','Custom']}
+              data={['Lump Sum','Monthly Deduction','Per Payment Deduction','Custom','EMI']}
               value={form.repaymentType}
               onChange={v => setField('repaymentType', v)}
               styles={{ input: { borderRadius: 8 } }}
@@ -573,6 +594,90 @@ const CashAdvanceVoucher = () => {
               thousandSeparator=","
               styles={{ input: { borderRadius: 8 } }}
             />
+          )}
+
+          {/* ── EMI Configuration (conditional) ── */}
+          {form.repaymentType === 'EMI' && (
+            <Box
+              style={{
+                background: '#EFF6FF',
+                border: '1px solid #BFDBFE',
+                borderRadius: 10,
+                padding: '14px 16px',
+              }}
+            >
+              <Group gap={6} mb={10}>
+                <IconRepeat size={15} color="#1D4ED8" />
+                <Text size="xs" fw={700} c="#1D4ED8" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                  EMI Configuration
+                </Text>
+              </Group>
+              <Stack gap="sm">
+                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                  <NumberInput
+                    label="Number of EMIs"
+                    placeholder="e.g. 6"
+                    value={form.emiCount}
+                    onChange={v => setField('emiCount', v)}
+                    min={1}
+                    step={1}
+                    allowDecimal={false}
+                    leftSection={<IconHash size={15} color="#666" />}
+                    error={errors.emiCount}
+                    required
+                    styles={{ input: { borderRadius: 8 } }}
+                  />
+                  <NumberInput
+                    label="EMI Amount (₹)"
+                    placeholder="Auto-calculated"
+                    value={form.emiAmount}
+                    onChange={v => setField('emiAmount', v)}
+                    min={0.01}
+                    decimalScale={2}
+                    thousandSeparator=","
+                    leftSection={<IconCurrencyRupee size={15} color="#666" />}
+                    description="Auto-calculated. You can override."
+                    error={errors.emiAmount}
+                    required
+                    styles={{ input: { borderRadius: 8 } }}
+                  />
+                </SimpleGrid>
+                <Box>
+                  <Text size="13px" fw={600} c="#111827" mb={6}>Repayment Frequency</Text>
+                  <SegmentedControl
+                    fullWidth
+                    value={form.emiFrequency}
+                    onChange={v => setField('emiFrequency', v)}
+                    data={[
+                      { value: 'Monthly',           label: 'Monthly' },
+                      { value: 'Per Payment Cycle', label: 'Per Payment Cycle' },
+                    ]}
+                    styles={{
+                      root:      { background: '#E0E7FF', borderRadius: 8 },
+                      label:     { fontSize: 13, fontWeight: 600 },
+                      indicator: { borderRadius: 6 },
+                    }}
+                  />
+                </Box>
+                {Number(form.emiCount) > 0 && Number(form.emiAmount) > 0 && (
+                  <Box
+                    style={{
+                      background: '#FFFFFF', border: '1px solid #C7D2FE',
+                      borderRadius: 8, padding: '8px 12px',
+                      display: 'flex', alignItems: 'center', gap: 8,
+                    }}
+                  >
+                    <IconRepeat size={15} color="#4F46E5" />
+                    <Text size="sm" c="#1E40AF">
+                      <strong>₹{fmt(form.emiAmount)}</strong> × <strong>{form.emiCount}</strong> installments — <strong>{form.emiFrequency}</strong>
+                    </Text>
+                    <Badge ml="auto" color="indigo" variant="light" size="sm">
+                      Total: ₹{fmt(Number(form.emiAmount) * Number(form.emiCount))}
+                    </Badge>
+                  </Box>
+                )}
+              </Stack>
+            </Box>
           )}
 
           {/* ── Purpose & Remarks ── */}

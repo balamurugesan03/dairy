@@ -205,7 +205,7 @@ const toDate = (d) => {
 };
 
 const MilkPurchase = () => {
-  const { isSuperAdmin, isCompanyAdmin, isCentreLogin, centreInfo } = useAuth();
+  const { isSuperAdmin, isCompanyAdmin, isCentreLogin, centreInfo, userCenter, userAgent } = useAuth();
   const [centersData, setCentersData] = useState([]);
   const [centreSummary, setCentreSummary] = useState([]);
   const [agentsData,  setAgentsData]  = useState([]);
@@ -844,15 +844,17 @@ const MilkPurchase = () => {
         ]);
         const cl = (centerRes.data || []).map(c => ({ value: c._id, label: c.centerName }));
         setCentersData(cl);
-        // Sub-centre login: lock to own centre; main centre: default to first
+        // Sub-centre login: lock to own centre; user with assigned centre: auto-select; else default to first
         if (isCentreLogin && centreInfo?.centreId) {
           const myId = centreInfo.centreId.toString();
           setCenter(myId);
           const mine = cl.find(c => c.value === myId);
           if (mine) centerNameRef.current = mine.label;
         } else {
-          const firstCenter = cl[0]?.value || '';
-          if (firstCenter) { setCenter(firstCenter); centerNameRef.current = cl[0].label; }
+          const userCentreId = userCenter?._id?.toString() || userCenter?.toString();
+          const preferred = userCentreId && cl.find(c => c.value === userCentreId);
+          const picked = preferred || cl[0];
+          if (picked) { setCenter(picked.value); centerNameRef.current = picked.label; }
           // Main centre: fetch today's sub-centre summary
           try {
             const sumRes = await milkCollectionAPI.getCentreSummary({ date: dayjs().format('YYYY-MM-DD') });
@@ -861,7 +863,10 @@ const MilkPurchase = () => {
         }
         const al = (agentRes.data || []).map(a => ({ value: a._id, label: a.agentName, centerId: a.collectionCenterId?._id || a.collectionCenterId }));
         setAgentsData(al);
-        if (al.length) setAgent(al[0].value);
+        const userAgentId = userAgent?._id?.toString() || userAgent?.toString();
+        const preferredAgent = userAgentId && al.find(a => a.value === userAgentId);
+        if (preferredAgent) setAgent(preferredAgent.value);
+        else if (al.length) setAgent(al[0].value);
         const chartType = settingsRes?.data?.activeRateChartType || 'ApplyFormula';
         setActiveChart(chartType);
         await loadChartData(chartType);
@@ -1065,20 +1070,15 @@ const MilkPurchase = () => {
   }, [ltr]); // eslint-disable-line
 
   // Async Milma chart lookup — runs when FAT/CLR/SNF change in MilmaChart mode
+  // Always looks up using FAT + SNF. In CLR-FAT mode SNF is auto-calculated from
+  // CLR + FAT by the SNF effect above, so the lookup naturally uses the derived SNF.
   useEffect(() => {
     if (activeChart !== 'MilmaChart') { setMilmaLookedUpRate(null); return; }
     const fatVal = parseFloat(fat);
-    const clrVal = parseFloat(clr);
     const snfVal = parseFloat(snf);
-    if (!fatVal) { setMilmaLookedUpRate(null); return; }
-    const isFatSnf = paramCombo === 'FAT-SNF';
-    if (isFatSnf && !snfVal) { setMilmaLookedUpRate(null); return; }
-    if (!isFatSnf && !clrVal) { setMilmaLookedUpRate(null); return; }
+    if (!fatVal || !snfVal) { setMilmaLookedUpRate(null); return; }
     const lookupDate = localDateStr(date instanceof Date ? date : new Date());
-    const body = isFatSnf
-      ? { date: lookupDate, fat: fatVal, snf: snfVal }
-      : { date: lookupDate, fat: fatVal, clr: clrVal };
-    milmaChartAPI.lookup(body).then(res => {
+    milmaChartAPI.lookup({ date: lookupDate, fat: fatVal, snf: snfVal }).then(res => {
       setMilmaLookedUpRate(res?.success ? (res.rate ?? null) : null);
     }).catch(() => setMilmaLookedUpRate(null));
   }, [fat, clr, snf, activeChart, date, paramCombo]); // eslint-disable-line
@@ -1256,15 +1256,12 @@ const MilkPurchase = () => {
 
     // For MilmaChart: always do a fresh lookup at save time to avoid the race condition
     // where the user pressed Enter before the async lookup effect completed.
+    // Always uses FAT + SNF (in CLR-FAT mode, SNF is already auto-calculated in state).
     let milmaRate = milmaRateRef;
-    if (chart === 'MilmaChart' && parseFloat(f)) {
+    if (chart === 'MilmaChart' && parseFloat(f) && parseFloat(s)) {
       try {
-        const isFatSnf = combo === 'FAT-SNF';
         const lookupDate = localDateStr(toDate(d));
-        const body = isFatSnf
-          ? { date: lookupDate, fat: parseFloat(f), snf: parseFloat(s) }
-          : { date: lookupDate, fat: parseFloat(f), clr: parseFloat(c) };
-        const res = await milmaChartAPI.lookup(body);
+        const res = await milmaChartAPI.lookup({ date: lookupDate, fat: parseFloat(f), snf: parseFloat(s) });
         if (res?.success) {
           milmaRate = res.rate ?? null;
           setMilmaLookedUpRate(milmaRate);

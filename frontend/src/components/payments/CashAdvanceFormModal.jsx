@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import {
   Modal, Stack, Group, Text, Title, Box, Grid, Select, NumberInput, TextInput,
-  Textarea, Button, ActionIcon, Divider,
+  Textarea, Button, ActionIcon, Divider, SegmentedControl, Badge,
 } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import {
   IconX, IconCheck, IconUser, IconCalendar, IconCurrencyRupee,
-  IconCreditCard, IconRepeat, IconFileText,
+  IconCreditCard, IconRepeat, IconFileText, IconHash,
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { advanceAPI, farmerAPI } from '../../services/api';
@@ -56,6 +56,7 @@ const PAYMENT_MODES = [
 const REPAYMENT_TYPES = [
   { value: 'Per Payment Deduction', label: 'Per Payment Deduction' },
   { value: 'Monthly Deduction',     label: 'Monthly Deduction' },
+  { value: 'EMI',                   label: 'EMI' },
   { value: 'Lump Sum',              label: 'Lump Sum' },
   { value: 'Custom',                label: 'Custom' },
 ];
@@ -67,6 +68,9 @@ const emptyForm = {
   advanceAmount:  '',
   paymentMode:    'Cash',
   repaymentType:  'Per Payment Deduction',
+  emiCount:       '',
+  emiAmount:      '',
+  emiFrequency:   'Monthly',
   purpose:        '',
   remarks:        '',
 };
@@ -96,7 +100,20 @@ const CashAdvanceFormModal = ({ opened, onClose, onSaved }) => {
   }, []);
 
   const setField = (k, v) => {
-    setForm(prev => ({ ...prev, [k]: v }));
+    setForm(prev => {
+      const next = { ...prev, [k]: v };
+      // Auto-calculate EMI amount when count or advance amount changes
+      if (k === 'emiCount' || k === 'advanceAmount') {
+        const amt   = k === 'advanceAmount' ? Number(v) : Number(next.advanceAmount);
+        const count = k === 'emiCount'       ? Number(v) : Number(next.emiCount);
+        if (amt > 0 && count > 0) {
+          next.emiAmount = parseFloat((amt / count).toFixed(2));
+        } else {
+          next.emiAmount = '';
+        }
+      }
+      return next;
+    });
     setErrors(prev => ({ ...prev, [k]: undefined }));
   };
 
@@ -106,6 +123,10 @@ const CashAdvanceFormModal = ({ opened, onClose, onSaved }) => {
     if (!form.advanceDate)  e.advanceDate  = 'Date is required';
     if (!form.advanceAmount || Number(form.advanceAmount) <= 0)
                             e.advanceAmount = 'Enter a valid amount';
+    if (form.repaymentType === 'EMI') {
+      if (!form.emiCount || Number(form.emiCount) < 1) e.emiCount  = 'Enter number of EMIs';
+      if (!form.emiAmount || Number(form.emiAmount) <= 0) e.emiAmount = 'Enter EMI amount';
+    }
     return e;
   };
 
@@ -126,6 +147,11 @@ const CashAdvanceFormModal = ({ opened, onClose, onSaved }) => {
         purpose:         form.purpose,
         remarks:         form.remarks,
       };
+      if (form.repaymentType === 'EMI') {
+        payload.emiCount     = Number(form.emiCount);
+        payload.emiAmount    = Number(form.emiAmount);
+        payload.emiFrequency = form.emiFrequency;
+      }
       const res = await advanceAPI.create(payload);
       if (res?.success === false) throw new Error(res.message || 'Save failed');
       notifications.show({
@@ -147,7 +173,9 @@ const CashAdvanceFormModal = ({ opened, onClose, onSaved }) => {
     }
   };
 
-  /* Custom header / footer — Mantine Modal lets us swap the title node */
+  const isEMI = form.repaymentType === 'EMI';
+  const emiSummaryValid = isEMI && Number(form.emiCount) > 0 && Number(form.emiAmount) > 0;
+
   return (
     <Modal
       opened={opened}
@@ -260,6 +288,102 @@ const CashAdvanceFormModal = ({ opened, onClose, onSaved }) => {
               styles={inputStyles}
             />
           </Grid.Col>
+
+          {/* ─── EMI Fields (conditional) ─────────────────────── */}
+          {isEMI && (
+            <>
+              <Grid.Col span={12}>
+                <Box
+                  style={{
+                    background: '#EFF6FF',
+                    border: '1px solid #BFDBFE',
+                    borderRadius: 10,
+                    padding: '14px 16px',
+                  }}
+                >
+                  <Text size="xs" fw={700} c="#1D4ED8" mb={10} tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                    EMI Configuration
+                  </Text>
+                  <Grid gutter="md">
+                    <Grid.Col span={{ base: 12, sm: 6 }}>
+                      <NumberInput
+                        label={<span>Number of EMIs <span style={{ color: '#DC2626' }}>*</span></span>}
+                        placeholder="e.g. 6"
+                        value={form.emiCount}
+                        onChange={v => setField('emiCount', v)}
+                        min={1}
+                        step={1}
+                        allowDecimal={false}
+                        leftSection={<IconHash size={15} color={TEXT_MUTED} />}
+                        error={errors.emiCount}
+                        styles={inputStyles}
+                      />
+                    </Grid.Col>
+
+                    <Grid.Col span={{ base: 12, sm: 6 }}>
+                      <NumberInput
+                        label={<span>EMI Amount (₹) <span style={{ color: '#DC2626' }}>*</span></span>}
+                        placeholder="Auto-calculated"
+                        value={form.emiAmount}
+                        onChange={v => setField('emiAmount', v)}
+                        min={0.01}
+                        decimalScale={2}
+                        thousandSeparator=","
+                        leftSection={<IconCurrencyRupee size={15} color={TEXT_MUTED} />}
+                        description="Auto-calculated from Amount ÷ EMIs. You can override."
+                        error={errors.emiAmount}
+                        styles={inputStyles}
+                      />
+                    </Grid.Col>
+
+                    <Grid.Col span={12}>
+                      <Text size="13px" fw={600} c={TEXT_DARK} mb={8}>Repayment Frequency</Text>
+                      <SegmentedControl
+                        fullWidth
+                        value={form.emiFrequency}
+                        onChange={v => setField('emiFrequency', v)}
+                        data={[
+                          { value: 'Monthly',           label: 'Monthly' },
+                          { value: 'Per Payment Cycle', label: 'Per Payment Cycle' },
+                        ]}
+                        styles={{
+                          root:     { background: '#E0E7FF', borderRadius: 8 },
+                          label:    { fontSize: 13, fontWeight: 600 },
+                          indicator:{ borderRadius: 6 },
+                        }}
+                      />
+                    </Grid.Col>
+
+                    {emiSummaryValid && (
+                      <Grid.Col span={12}>
+                        <Box
+                          style={{
+                            background: '#FFFFFF',
+                            border: '1px solid #C7D2FE',
+                            borderRadius: 8,
+                            padding: '10px 14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                          }}
+                        >
+                          <IconRepeat size={16} color="#4F46E5" />
+                          <Text size="sm" c="#1E40AF">
+                            <strong>₹{Number(form.emiAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                            {' × '}<strong>{form.emiCount}</strong> installments
+                            {' — '}<strong>{form.emiFrequency}</strong>
+                          </Text>
+                          <Badge ml="auto" color="indigo" variant="light" size="sm">
+                            Total: ₹{(Number(form.emiAmount) * Number(form.emiCount)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </Badge>
+                        </Box>
+                      </Grid.Col>
+                    )}
+                  </Grid>
+                </Box>
+              </Grid.Col>
+            </>
+          )}
 
           <Grid.Col span={12}>
             <TextInput
