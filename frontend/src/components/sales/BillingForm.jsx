@@ -83,6 +83,7 @@ const BillingForm = () => {
   const farmerSelectRef = useRef(null);
   const quantityRef = useRef(null);
   const addButtonRef = useRef(null);
+  const paidAmountRef = useRef(null);
   const saveButtonRef = useRef(null);
   const { selectedCompany } = useCompany();
 
@@ -461,7 +462,7 @@ const BillingForm = () => {
     form.setFieldValue('rate', '');
     setBarcodeInput('');
     setItemSearch('');
-    setTimeout(() => itemSelectRef.current?.focus(), 100);
+    setTimeout(() => paidAmountRef.current?.focus(), 100);
   };
 
   const handleRemoveItem = (index) => {
@@ -623,7 +624,25 @@ const BillingForm = () => {
   };
 
   const resetForm = () => {
-    form.reset();
+    const currentDate = form.values.billDate;
+    const currentCenter = form.values.collectionCenterId;
+    form.setValues({
+      billDate: currentDate,
+      customerType: 'Farmer',
+      customerId: null,
+      customerName: '',
+      customerPhone: '',
+      itemId: null,
+      quantity: 1,
+      rate: '',
+      collectionCenterId: currentCenter,
+      subsidyId: null,
+      paymentMode: 'Cash',
+      paidAmount: '',
+      discount: 0,
+      discountPercent: 0,
+      roundOff: 0
+    });
     setBillItems([]);
     setSelectedCustomer(null);
     setSelectedFarmerNumber('');
@@ -638,16 +657,15 @@ const BillingForm = () => {
       totalDue: 0
     });
     setBarcodeInput('');
-    setFormReady(false);
-    setDateError('');
-    setDateBills([]);
+    // formReady, dateError, dateBills intentionally preserved — date has not changed
+    setTimeout(() => farmerSelectRef.current?.focus(), 100);
   };
 
   const itemOptions = useMemo(() => items
     .filter(item => (item.currentBalance || 0) > 0)
     .map(item => ({
       value: item._id,
-      label: `${item.itemCode} - ${item.itemName} (Stock: ${item.currentBalance} ${item.unit})`
+      label: `${item.itemCode} - ${item.itemName} | Rs.${item.salesRate || 0} | Stock: ${item.currentBalance} ${item.unit}`
     })), [items]);
 
   const filteredItemOptions = useMemo(() => {
@@ -657,7 +675,8 @@ const BillingForm = () => {
       const item = items.find(i => i._id === opt.value);
       return item && (
         item.itemCode?.toLowerCase().includes(search) ||
-        item.itemName?.toLowerCase().includes(search)
+        item.itemName?.toLowerCase().includes(search) ||
+        String(item.salesRate ?? '').includes(search)
       );
     });
   }, [itemOptions, itemSearch, items]);
@@ -980,9 +999,14 @@ const BillingForm = () => {
                       clearable
                       leftSection={<IconPackage size={16} />}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' && form.values.itemId) {
+                        if (e.key !== 'Enter') return;
+                        if (form.values.itemId) {
                           e.preventDefault();
                           setTimeout(() => quantityRef.current?.focus(), 100);
+                        } else if (!itemSearch.trim() && billItems.length > 0) {
+                          // No item selected, empty search, items already added → jump to paid amount
+                          e.preventDefault();
+                          setTimeout(() => paidAmountRef.current?.focus(), 100);
                         }
                       }}
                     />
@@ -1426,6 +1450,7 @@ const BillingForm = () => {
               />
 
               <NumberInput
+                ref={paidAmountRef}
                 label="Paid Amount"
                 placeholder="Amount received"
                 value={form.values.paidAmount}

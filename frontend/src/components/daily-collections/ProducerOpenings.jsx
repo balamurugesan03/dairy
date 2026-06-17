@@ -76,7 +76,7 @@ export default function ProducerOpenings() {
   };
 
   const tabTo = (nextRef) => (e) => {
-    if (e.key === 'Tab') { e.preventDefault(); focusRef(nextRef); }
+    if (e.key === 'Tab' || e.key === 'Enter') { e.preventDefault(); focusRef(nextRef); }
   };
 
   const setField = (key, val) => setForm((prev) => ({ ...prev, [key]: val }));
@@ -449,7 +449,7 @@ export default function ProducerOpenings() {
                           ref={cfAdvanceRef}
                           placeholder="0.00" value={form.cfAdvance}
                           onChange={(val) => setField('cfAdvance', val)}
-                          onKeyDown={tabTo(loanAdvanceRef)}
+                          onKeyDown={tabTo(cashAdvanceRef)}
                           decimalScale={2} min={0} hideControls prefix="₹ "
                           size="sm" radius="sm"
                           styles={{ input: { textAlign: 'right' } }}
@@ -461,7 +461,7 @@ export default function ProducerOpenings() {
                           ref={loanAdvanceRef}
                           placeholder="0.00" value={form.loanAdvance}
                           onChange={(val) => setField('loanAdvance', val)}
-                          onKeyDown={tabTo(cashAdvanceRef)}
+                          onKeyDown={tabTo(saveButtonRef)}
                           decimalScale={2} min={0} hideControls prefix="₹ "
                           size="sm" radius="sm"
                           styles={{ input: { textAlign: 'right' } }}
@@ -482,7 +482,7 @@ export default function ProducerOpenings() {
                           ref={cashAdvanceRef}
                           placeholder="0.00" value={form.cashAdvance}
                           onChange={(val) => setField('cashAdvance', val)}
-                          onKeyDown={tabTo(revolvingRef)}
+                          onKeyDown={tabTo(loanAdvanceRef)}
                           decimalScale={2} min={0} hideControls prefix="₹ "
                           size="sm" radius="sm"
                           styles={{ input: { textAlign: 'right' } }}

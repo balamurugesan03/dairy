@@ -90,7 +90,27 @@ const ItemList = () => {
   const [openingStocks, setOpeningStocks] = useState([]);
   const [openingStockEditRow, setOpeningStockEditRow] = useState(null);
   const [centers, setCenters] = useState([]);
+  const [headOfficeCenterId, setHeadOfficeCenterId] = useState('');
   const [openingStockLoading, setOpeningStockLoading] = useState(false);
+
+  const osQtyRef          = useRef(null);
+  const osPurchaseRateRef = useRef(null);
+  const osSalesRateRef    = useRef(null);
+  const osSaveRef         = useRef(null);
+
+  const osFocusRef = (ref) => {
+    const el = ref?.current;
+    if (!el) return;
+    const input = el.tagName === 'INPUT' ? el : el.querySelector('input');
+    input?.focus();
+  };
+
+  const osTabTo = (nextRef) => (e) => {
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      osFocusRef(nextRef);
+    }
+  };
   
   // Column visibility
   const [visibleColumns, setVisibleColumns] = useState({
@@ -224,7 +244,10 @@ const ItemList = () => {
   const fetchCenters = async () => {
     try {
       const res = await collectionCenterAPI.getAll();
-      setCenters(res.data || []);
+      const data = res.data || [];
+      setCenters(data);
+      const headOffice = data.find(c => c.centerType === 'Head Office');
+      if (headOffice) setHeadOfficeCenterId(headOffice._id);
     } catch { }
   };
 
@@ -242,7 +265,7 @@ const ItemList = () => {
     setOpeningStockItem(item);
     setOpeningStockEditRow(null);
     openingStockForm.reset();
-    openingStockForm.setValues({ centerId: '', date: new Date(), qty: '', purchaseRate: '', salesRate: '' });
+    openingStockForm.setValues({ centerId: headOfficeCenterId || '', date: new Date(), qty: '', purchaseRate: '', salesRate: '' });
     fetchOpeningStocksForItem(item._id);
     openOpeningStockModal();
   };
@@ -267,7 +290,7 @@ const ItemList = () => {
       }
 
       openingStockForm.reset();
-      openingStockForm.setValues({ centerId: '', date: new Date(), qty: '', purchaseRate: '', salesRate: '' });
+      openingStockForm.setValues({ centerId: headOfficeCenterId || '', date: new Date(), qty: '', purchaseRate: '', salesRate: '' });
       setOpeningStockEditRow(null);
       fetchOpeningStocksForItem(openingStockItem._id);
       fetchItems();
@@ -1326,6 +1349,7 @@ const ItemList = () => {
               </Grid.Col>
               <Grid.Col span={4}>
                 <NumberInput
+                  ref={osQtyRef}
                   label="Qty"
                   withAsterisk
                   min={0}
@@ -1334,12 +1358,14 @@ const ItemList = () => {
                   placeholder="0"
                   value={openingStockForm.values.qty}
                   onChange={(v) => openingStockForm.setFieldValue('qty', v ?? '')}
+                  onKeyDown={osTabTo(osPurchaseRateRef)}
                   error={openingStockForm.errors.qty}
                   size="sm"
                 />
               </Grid.Col>
               <Grid.Col span={4}>
                 <NumberInput
+                  ref={osPurchaseRateRef}
                   label="Purchase Rate"
                   withAsterisk
                   min={0}
@@ -1348,12 +1374,14 @@ const ItemList = () => {
                   placeholder="0.00"
                   value={openingStockForm.values.purchaseRate}
                   onChange={(v) => openingStockForm.setFieldValue('purchaseRate', v ?? '')}
+                  onKeyDown={osTabTo(osSalesRateRef)}
                   error={openingStockForm.errors.purchaseRate}
                   size="sm"
                 />
               </Grid.Col>
               <Grid.Col span={4}>
                 <NumberInput
+                  ref={osSalesRateRef}
                   label="Sales Rate"
                   withAsterisk
                   min={0}
@@ -1362,6 +1390,7 @@ const ItemList = () => {
                   placeholder="0.00"
                   value={openingStockForm.values.salesRate}
                   onChange={(v) => openingStockForm.setFieldValue('salesRate', v ?? '')}
+                  onKeyDown={osTabTo(osSaveRef)}
                   error={openingStockForm.errors.salesRate}
                   size="sm"
                 />
@@ -1371,7 +1400,7 @@ const ItemList = () => {
               <Button variant="default" size="sm" onClick={() => { openingStockForm.reset(); setOpeningStockEditRow(null); }}>
                 Cancel
               </Button>
-              <Button type="submit" color="teal" size="sm">
+              <Button ref={osSaveRef} type="submit" color="teal" size="sm">
                 {openingStockEditRow ? 'Update' : 'Save'}
               </Button>
             </Group>
