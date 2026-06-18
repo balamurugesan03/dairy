@@ -22,7 +22,7 @@ import {
   IconAlertCircle, IconRefresh, IconId, IconReceipt,
   IconDroplet, IconFlame, IconChartBar,
   IconPlus, IconEdit, IconBan, IconHistory,
-  IconPlugConnected, IconPlugConnectedX, IconScale, IconUpload, IconFilter,
+  IconPlugConnected, IconPlugConnectedX, IconScale, IconUpload, IconFilter, IconDownload,
 } from '@tabler/icons-react';
 import {
   agentAPI, collectionCenterAPI, farmerAPI,
@@ -303,6 +303,10 @@ const MilkPurchase = () => {
   const [historySearch,  setHistorySearch]  = useState('');     // filter text
   const [showHistory,    setShowHistory]    = useState(false);  // search bar toggle
   const [linzaImportOpen,    setLinzaImportOpen]    = useState(false);
+  const [exportOpen,         setExportOpen]         = useState(false);
+  const [exportFrom,         setExportFrom]         = useState(null);
+  const [exportTo,           setExportTo]           = useState(null);
+  const [exportLoading,      setExportLoading]      = useState(false);
   const [zibittLoading,      setZibittLoading]      = useState(false);
   const [openLyssaLoading,   setOpenLyssaLoading]   = useState(false);
   const zibittFileRef    = useRef(null);
@@ -1486,6 +1490,58 @@ const MilkPurchase = () => {
     }
   };
 
+  // Export filtered entries to Excel for a given date range
+  const handleExport = async () => {
+    if (!exportFrom || !exportTo) {
+      notifications.show({ color: 'red', message: 'Please select From and To dates' });
+      return;
+    }
+    setExportLoading(true);
+    try {
+      const from = new Date(exportFrom); from.setHours(0, 0, 0, 0);
+      const to   = new Date(exportTo);   to.setHours(23, 59, 59, 999);
+      const rows = entries.filter(e => {
+        const d = new Date(e.date);
+        return d >= from && d <= to;
+      });
+      if (rows.length === 0) {
+        notifications.show({ color: 'yellow', message: 'No records found for selected date range' });
+        return;
+      }
+      const XLSX2 = await import('xlsx');
+      const sheetData = [
+        ['#', 'Bill No', 'Farmer No', 'Date', 'Shift', 'Litres', 'KG', 'FAT %', 'CLR', 'SNF %', 'Incentive (₹)', 'Rate/L (₹)', 'Amount (₹)'],
+        ...rows.map((e, i) => [
+          i + 1,
+          e.billNo,
+          e.producerNo,
+          e.date ? new Date(e.date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '',
+          e.shift,
+          parseFloat((e.ltr ?? e.qty).toFixed(2)),
+          parseFloat(((e.ltr ?? e.qty) * (1 + (e.clr || 26) / 1000)).toFixed(2)),
+          parseFloat(e.fat.toFixed(1)),
+          parseFloat(e.clr.toFixed(1)),
+          parseFloat(e.snf.toFixed(2)),
+          parseFloat(e.incentive.toFixed(2)),
+          parseFloat(e.rate.toFixed(2)),
+          parseFloat(e.amount.toFixed(2)),
+        ]),
+      ];
+      const ws = XLSX2.utils.aoa_to_sheet(sheetData);
+      const wb = XLSX2.utils.book_new();
+      XLSX2.utils.book_append_sheet(wb, ws, 'Milk Purchase');
+      const fromStr = from.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+      const toStr   = to.toLocaleDateString('en-IN',   { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+      XLSX2.writeFile(wb, `MilkPurchase_${fromStr}_to_${toStr}.xlsx`);
+      notifications.show({ color: 'green', message: `Exported ${rows.length} records` });
+      setExportOpen(false);
+    } catch (err) {
+      notifications.show({ color: 'red', message: 'Export failed: ' + err.message });
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
   // Zibitt import — parse Excel in browser (any size, no upload limit), send as JSON chunks
   const handleZibittImport = async (file) => {
     if (!file) return;
@@ -2389,6 +2445,13 @@ const MilkPurchase = () => {
                 Refresh
               </Button>
 
+              {/* EXPORT to Excel */}
+              <Button leftSection={<IconDownload size={12} />} onClick={() => setExportOpen(true)}
+                size="compact-xs" radius="sm"
+                style={{ background: '#15803d', border: '1px solid #4ade80', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                Export
+              </Button>
+
               {/* IMPORT ZIBITT — superadmin / company-admin only */}
               {(isSuperAdmin || isCompanyAdmin) && (
                 <>
@@ -3040,6 +3103,46 @@ const MilkPurchase = () => {
       {/* ══ END MAIN CONTENT ══ */}
 
     </Box>
+
+      {/* ── Export Modal ──────────────────────────────────────────────────── */}
+      <Modal
+        opened={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title={<Text fw={800} size="sm">Export Milk Purchase to Excel</Text>}
+        size="sm"
+        centered
+      >
+        <Stack gap={12}>
+          <DatePickerInput
+            label="From Date"
+            placeholder="Select start date"
+            value={exportFrom}
+            onChange={setExportFrom}
+            size="sm"
+            radius="sm"
+            valueFormat="DD MMM YYYY"
+          />
+          <DatePickerInput
+            label="To Date"
+            placeholder="Select end date"
+            value={exportTo}
+            onChange={setExportTo}
+            size="sm"
+            radius="sm"
+            valueFormat="DD MMM YYYY"
+            minDate={exportFrom || undefined}
+          />
+          <Button
+            leftSection={<IconDownload size={14} />}
+            onClick={handleExport}
+            loading={exportLoading}
+            fullWidth
+            style={{ background: '#15803d', fontWeight: 700 }}
+          >
+            Download Excel
+          </Button>
+        </Stack>
+      </Modal>
 
       {/* ── LinZA Import Modal ────────────────────────────────────────────── */}
       <ImportModal

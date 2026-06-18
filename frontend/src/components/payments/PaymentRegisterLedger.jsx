@@ -512,7 +512,7 @@ const PaymentRegisterLedger = () => {
       cashAdv:       nz(e.cashPocket),
       cashRec:       '',
       loanAdv:       nz(e.loanAdv),
-      loanRec:       '',
+      loanRec:       nz(e.suggestedLoanRec),
       otherDed:      '',
       totalDed:      '',
       netPay:        '',

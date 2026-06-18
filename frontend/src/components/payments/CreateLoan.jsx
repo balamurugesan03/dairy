@@ -25,7 +25,7 @@ const fmt = (v) =>
 const fmtD = (d) =>
   d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
-const LOAN_SCHEMES = ['Monthly', 'Weekly', 'Custom'];
+const LOAN_SCHEMES = ['Monthly', 'Cycle', 'Custom'];
 const PAY_MODES    = ['Cash', 'Bank', 'UPI', 'Cheque', 'NEFT', 'RTGS'];
 
 const BLANK = {

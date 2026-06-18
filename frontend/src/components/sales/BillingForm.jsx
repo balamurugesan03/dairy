@@ -84,6 +84,7 @@ const BillingForm = () => {
   const itemSelectRef = useRef(null);
   const farmerSelectRef = useRef(null);
   const quantityRef = useRef(null);
+  const rateRef = useRef(null);
   const addButtonRef = useRef(null);
   const paidAmountRef = useRef(null);
   const saveButtonRef = useRef(null);
@@ -98,8 +99,8 @@ const BillingForm = () => {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [selectedFarmerNumber, setSelectedFarmerNumber] = useState('');
   const [billItems, setBillItems] = useState([]);
-  const [printModalOpened, setPrintModalOpened] = useState(false);
-  const [printSize, setPrintSize] = useState('3'); // '2' = 58mm, '3' = 80mm
+  const [billSlip, setBillSlip] = useState(false);
+  const [printSize] = useState('3'); // fixed 80mm
   const [barcodeInput, setBarcodeInput] = useState('');
   const [dateBills, setDateBills] = useState([]);
   const [loadingDateBills, setLoadingDateBills] = useState(false);
@@ -589,7 +590,6 @@ const BillingForm = () => {
   const handlePrint = useReactToPrint({
     contentRef: printRef,
     onAfterPrint: () => {
-      setPrintModalOpened(false);
       resetForm();
     }
   });
@@ -638,8 +638,12 @@ const BillingForm = () => {
       await salesAPI.create(payload);
 
       notifications.show({ title: 'Success', message: 'Bill created successfully', color: 'green' });
-      setPrintModalOpened(true);
       fetchNextBillNumber();
+      if (billSlip) {
+        handlePrint();
+      } else {
+        resetForm();
+      }
       if (form.values.billDate) fetchBillsByDate(form.values.billDate);
     } catch (error) {
       notifications.show({
@@ -783,6 +787,12 @@ const BillingForm = () => {
           />
           {formReady && <IconCircleCheck size={18} color="var(--mantine-color-green-6)" />}
           {dateError && <IconAlertCircle size={18} color="var(--mantine-color-red-6)" />}
+          <Checkbox
+            label="Bill Slip"
+            size="xs"
+            checked={billSlip}
+            onChange={(e) => setBillSlip(e.currentTarget.checked)}
+          />
         </Group>
       </Paper>
 
@@ -1019,7 +1029,7 @@ const BillingForm = () => {
                       onChange={(itemId) => {
                         handleItemSelect(itemId);
                         setItemSearch('');
-                        if (itemId) setTimeout(() => quantityRef.current?.focus(), 150);
+                        if (itemId) setTimeout(() => rateRef.current?.focus(), 150);
                       }}
                       data={filteredItemOptions}
                       searchValue={itemSearch}
@@ -1059,7 +1069,8 @@ const BillingForm = () => {
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
-                          addButtonRef.current?.focus();
+                          handleAddItem();
+                          setTimeout(() => itemSelectRef.current?.focus(), 100);
                         }
                       }}
                     />
@@ -1067,12 +1078,19 @@ const BillingForm = () => {
                 </Grid.Col>
                 <Grid.Col span={3}>
                   <NumberInput
+                    ref={rateRef}
                     label="Rate"
                     value={form.values.rate}
                     onChange={(value) => form.setFieldValue('rate', value)}
                     min={0}
                     decimalScale={2}
                     leftSection={<IconCurrencyRupee size={14} />}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        setTimeout(() => quantityRef.current?.focus(), 50);
+                      }
+                    }}
                   />
                 </Grid.Col>
                 <Grid.Col span={2}>
@@ -1564,51 +1582,6 @@ const BillingForm = () => {
           </Paper>
         </Grid.Col>
       </Grid>
-
-      {/* Print Success Modal */}
-      <Modal
-        opened={printModalOpened}
-        onClose={() => {
-          setPrintModalOpened(false);
-          resetForm();
-        }}
-        title="Bill Created Successfully"
-        centered
-      >
-        <Stack>
-          <Alert color="green" icon={<IconCheck size={16} />}>
-            <Text size="sm">Bill has been saved successfully!</Text>
-          </Alert>
-          <SegmentedControl
-            value={printSize}
-            onChange={setPrintSize}
-            fullWidth
-            data={[
-              { value: '2', label: '2 inch (58mm)' },
-              { value: '3', label: '3 inch (80mm)' },
-            ]}
-          />
-          <Group justify="flex-end">
-            <Button
-              variant="light"
-              onClick={() => {
-                setPrintModalOpened(false);
-                resetForm();
-              }}
-            >
-              Create New
-            </Button>
-            <Button
-              data-autofocus
-              leftSection={<IconPrinter size={16} />}
-              onClick={handlePrint}
-              color="green"
-            >
-              Print Bill
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
 
       {/* Hidden Thermal Print Section */}
       <div style={{ display: 'none' }}>

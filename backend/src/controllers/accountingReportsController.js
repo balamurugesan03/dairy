@@ -12,6 +12,7 @@ import PaymentRegister from '../models/PaymentRegister.js';
 import StockTransaction from '../models/StockTransaction.js';
 import ProducerLoan from '../models/ProducerLoan.js';
 import { getDateRange } from '../utils/dateFilters.js';
+import { findOrCreateLedger } from '../utils/accountingHelper.js';
 import {
   calculateOpeningBalance,
   calculateClosingBalance,
@@ -534,8 +535,8 @@ export const getGeneralLedger = async (req, res) => {
           voucherNumber: s.billNo,
           voucherType:   'MilkSales',
           particulars:   s.creditorName || s.centerName || 'Customer',
-          debit:         s.amount || 0,
-          credit:        0,
+          debit:         0,
+          credit:        s.amount || 0, // income ledger → Cr side (receipt)
           narration:     `${s.session || ''} | ${s.litre || 0} L @ ${s.rate || 0}`,
         });
       });
@@ -601,7 +602,8 @@ export const getGeneralLedger = async (req, res) => {
       });
     }
 
-    // ── 5. CATTLE FEED ADVANCE ledger → payment (credit) side ──
+    // ── 5. CATTLE FEED ADVANCE ledger → receipt (debit) side ──
+    // Asset ledger — advance given to farmer increases asset (Dr)
     const isCfAdvanceLedger =
       /cattle\s*feed\s*adv|cf\s*adv/i.test(ledger.ledgerName) ||
       (/cattle\s*feed/i.test(ledger.ledgerName) && /advanc/i.test(ledger.ledgerName));
@@ -612,16 +614,20 @@ export const getGeneralLedger = async (req, res) => {
         advanceCategory: 'CF Advance',
         advanceDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
         status: { $ne: 'Cancelled' }
-      }).select('advanceDate advanceAmount farmerName referenceNumber').lean();
+      })
+        .select('advanceDate advanceAmount advanceNumber farmerId')
+        .populate('farmerId', 'personalDetails.name farmerNumber')
+        .lean();
 
       cfAdvTxns.forEach(t => {
+        const farmerName = t.farmerId?.personalDetails?.name || t.farmerId?.farmerNumber || 'Producer';
         rawTxns.push({
           date:          t.advanceDate,
-          voucherNumber: t.referenceNumber || `CFA-${new Date(t.advanceDate).toISOString().slice(0,10)}`,
+          voucherNumber: t.advanceNumber || `CFA-${new Date(t.advanceDate).toISOString().slice(0,10)}`,
           voucherType:   'CFAdvance',
-          particulars:   t.farmerName || 'Producer',
-          debit:         0,
-          credit:        t.advanceAmount || 0,
+          particulars:   farmerName,
+          debit:         t.advanceAmount || 0,
+          credit:        0,
           narration:     'Cattle Feed Advance',
         });
       });
@@ -652,9 +658,10 @@ export const getGeneralLedger = async (req, res) => {
       });
     }
 
-    // ── 7. CASH ADVANCE ledger → payment (credit) side ──
+    // ── 7. CASH ADVANCE ledger → receipt (debit) side ──
+    // Asset ledger — advance given to farmer increases asset (Dr)
     const isCashAdvanceLedger =
-      /cash\s*advanc/i.test(ledger.ledgerName);
+      /cash\s*advanc|farmer.*cash.*adv|farmers.*cash.*adv/i.test(ledger.ledgerName);
 
     if (isCashAdvanceLedger) {
       const cashAdvTxns = await Advance.find({
@@ -662,40 +669,49 @@ export const getGeneralLedger = async (req, res) => {
         advanceCategory: 'Cash Advance',
         advanceDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
         status: { $ne: 'Cancelled' }
-      }).select('advanceDate advanceAmount farmerName referenceNumber').lean();
+      })
+        .select('advanceDate advanceAmount advanceNumber farmerId')
+        .populate('farmerId', 'personalDetails.name farmerNumber')
+        .lean();
 
       cashAdvTxns.forEach(t => {
+        const farmerName = t.farmerId?.personalDetails?.name || t.farmerId?.farmerNumber || 'Producer';
         rawTxns.push({
           date:          t.advanceDate,
-          voucherNumber: t.referenceNumber || `CA-${new Date(t.advanceDate).toISOString().slice(0,10)}`,
+          voucherNumber: t.advanceNumber || `CA-${new Date(t.advanceDate).toISOString().slice(0,10)}`,
           voucherType:   'CashAdvance',
-          particulars:   t.farmerName || 'Producer',
-          debit:         0,
-          credit:        t.advanceAmount || 0,
+          particulars:   farmerName,
+          debit:         t.advanceAmount || 0,
+          credit:        0,
           narration:     'Cash Advance',
         });
       });
     }
 
-    // ── 8. LOAN ADVANCE ledger → payment (credit) side ──
+    // ── 8. LOAN ADVANCE ledger → receipt (debit) side ──
+    // Asset ledger — loan given to farmer increases asset (Dr)
     const isLoanAdvanceLedger =
-      /loan\s*advanc|producer\s*loan/i.test(ledger.ledgerName);
+      /loan\s*advanc|producer\s*loan|farmer.*loan/i.test(ledger.ledgerName);
 
     if (isLoanAdvanceLedger) {
       const loanTxns = await ProducerLoan.find({
         companyId: req.companyId,
         loanDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
         status: { $ne: 'Cancelled' }
-      }).select('loanDate principalAmount farmerName loanNumber').lean();
+      })
+        .select('loanDate principalAmount loanNumber farmerId')
+        .populate('farmerId', 'personalDetails.name farmerNumber')
+        .lean();
 
       loanTxns.forEach(t => {
+        const farmerName = t.farmerId?.personalDetails?.name || t.farmerId?.farmerNumber || 'Producer';
         rawTxns.push({
           date:          t.loanDate,
           voucherNumber: t.loanNumber || `LA-${new Date(t.loanDate).toISOString().slice(0,10)}`,
           voucherType:   'LoanAdvance',
-          particulars:   t.farmerName || 'Producer',
-          debit:         0,
-          credit:        t.principalAmount || 0,
+          particulars:   farmerName,
+          debit:         t.principalAmount || 0,
+          credit:        0,
           narration:     'Loan Advance',
         });
       });
@@ -730,10 +746,12 @@ export const getGeneralLedger = async (req, res) => {
       /cattle\s*feed\s*comm|cf\s*comm/i.test(ledger.ledgerName);
 
     if (isCfCommissionLedger) {
+      // Only pull from StockTransaction for entries NOT already covered by a Voucher
       const cfCommTxns = await StockTransaction.find({
         companyId: req.companyId,
         transactionType: 'Stock In',
         referenceType: { $nin: ['Return', 'Opening Balance Adjustment'] },
+        $or: [{ voucherId: { $exists: false } }, { voucherId: null }],
         $expr: { $and: [
           { $gte: [{ $ifNull: ['$purchaseDate', '$date'] }, dateFilter.startDate] },
           { $lte: [{ $ifNull: ['$purchaseDate', '$date'] }, dateFilter.endDate] }
@@ -746,15 +764,15 @@ export const getGeneralLedger = async (req, res) => {
         (t.ledgerEntries || []).forEach(le => {
           const name = (le.ledgerId?.ledgerName || '').toLowerCase();
           if (!name.includes('cattle feed commission') && !name.includes('cf commission')) return;
-          const amt = (le.amount || 0) * (t.quantity || 0);
+          const amt = le.amount || 0; // le.amount is already total — do NOT multiply by quantity
           if (amt <= 0) return;
           rawTxns.push({
             date:          txDate,
             voucherNumber: t.invoiceNumber || `CFCO-${new Date(txDate).toISOString().slice(0,10)}`,
             voucherType:   'CFCommission',
             particulars:   'Cattle Feed Commission',
-            debit:         amt,
-            credit:        0,
+            debit:         0,
+            credit:        amt, // commission is INCOME → credit side
             narration:     `Qty: ${t.quantity || 0}`,
           });
         });
@@ -1508,7 +1526,15 @@ export const getLedgersForDropdown = async (req, res) => {
   try {
     const { type } = req.query;
 
-    const query = { status: 'Active', companyId: req.companyId };
+    // Ensure key dairy ledgers always exist so they appear in the dropdown
+    // even before any transaction has auto-created them.
+    await Promise.all([
+      findOrCreateLedger('Cattle Feed Advance',  'Other Receivable', 'Assets', 'Dr', req.companyId),
+      findOrCreateLedger('Farmers Cash Advance',  'Other Receivable', 'Assets', 'Dr', req.companyId),
+      findOrCreateLedger('Farmers Loan A/c',      'Other Receivable', 'Assets', 'Dr', req.companyId),
+    ]).catch(() => {}); // non-fatal if creation fails
+
+    const query = { status: 'Active', companyId: req.companyId, 'linkedEntity.entityType': { $ne: 'Farmer' } };
     if (type) query.ledgerType = type;
 
     const ledgers = await Ledger.find(query)

@@ -55,7 +55,8 @@ const DailyCollectionList = () => {
     sample: { qty: 0, amt: 0 },
   });
 
-  const [date,   setDate]   = useState(new Date());
+  const [fromDate, setFromDate] = useState(new Date());
+  const [toDate,   setToDate]   = useState(new Date());
   const [shift,  setShift]  = useState('');
   const [center, setCenter] = useState('');
   const [search, setSearch] = useState('');
@@ -72,12 +73,13 @@ const DailyCollectionList = () => {
   const fetchRecords = useCallback(async () => {
     setLoading(true);
     try {
-      const dateStr = date ? dayjs(date).format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD');
-      const params = { limit: 2000, date: dateStr };
+      const from = fromDate ? dayjs(fromDate).format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD');
+      const to   = toDate   ? dayjs(toDate).format('YYYY-MM-DD')   : from;
+      const params = { limit: 5000, fromDate: from, toDate: to };
       if (shift)  params.shift            = shift;
       if (center) params.collectionCenter = center;
 
-      const salesParams = { limit: 1000, date: dateStr };
+      const salesParams = { limit: 2000, fromDate: from, toDate: to };
       if (shift) salesParams.session = shift;
 
       const [collRes, salesRes] = await Promise.all([
@@ -107,7 +109,7 @@ const DailyCollectionList = () => {
     } finally {
       setLoading(false);
     }
-  }, [date, shift, center]);
+  }, [fromDate, toDate, shift, center]);
 
   useEffect(() => { fetchRecords(); }, [fetchRecords]);
 
@@ -190,7 +192,9 @@ const DailyCollectionList = () => {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   const companyName = selectedCompany?.name || 'Dairy Cooperative Society';
-  const dateLabel   = dayjs(date).format('DD MMM YYYY');
+  const fromLabel   = fromDate ? dayjs(fromDate).format('DD MMM YYYY') : '';
+  const toLabel     = toDate   ? dayjs(toDate).format('DD MMM YYYY')   : '';
+  const dateLabel   = fromLabel === toLabel ? fromLabel : `${fromLabel} – ${toLabel}`;
   const shiftLabel  = shift ? `${shift} Shift` : 'All Shifts';
   const centerLabel = centers.find(c => c.value === center)?.label || 'All Centers';
 
@@ -264,7 +268,9 @@ const DailyCollectionList = () => {
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Daily Collections');
-    XLSX.writeFile(wb, `Daily_Collection_${dayjs(date).format('YYYY-MM-DD')}_${shift || 'ALL'}.xlsx`);
+    const fStr = fromDate ? dayjs(fromDate).format('YYYY-MM-DD') : 'start';
+    const tStr = toDate   ? dayjs(toDate).format('YYYY-MM-DD')   : 'end';
+    XLSX.writeFile(wb, `Daily_Collection_${fStr}_to_${tStr}_${shift || 'ALL'}.xlsx`);
     notifications.show({ message: 'Excel exported successfully', color: 'green' });
   };
 
@@ -668,11 +674,20 @@ const DailyCollectionList = () => {
       <Paper withBorder p="sm" mb="md" radius="md">
         <Group gap="sm" wrap="wrap" align="flex-end">
           <DatePickerInput
-            label="Date"
-            value={date}
-            onChange={v => { setDate(v); setPage(1); }}
+            label="From Date"
+            value={fromDate}
+            onChange={v => { setFromDate(v); setPage(1); }}
             leftSection={<IconCalendar size={14} />}
             valueFormat="DD MMM YYYY"
+            size="sm" style={{ width: 150 }}
+          />
+          <DatePickerInput
+            label="To Date"
+            value={toDate}
+            onChange={v => { setToDate(v); setPage(1); }}
+            leftSection={<IconCalendar size={14} />}
+            valueFormat="DD MMM YYYY"
+            minDate={fromDate || undefined}
             size="sm" style={{ width: 150 }}
           />
           <Select

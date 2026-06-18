@@ -27,8 +27,7 @@ import {
   Divider,
   ScrollArea,
   Box,
-  Input,
-  UnstyledButton
+  Input
 } from '@mantine/core';
 import {
   IconSearch,
@@ -566,15 +565,7 @@ const ItemList = () => {
     setVisibleColumns(prev => ({ ...prev, [columnKey]: !prev[columnKey] }));
   };
 
-  const handleLedgerClick = (item, ledgerType) => {
-    const ledger = ledgerType === 'purchase' ? item.purchaseLedger : item.salesLedger;
-    if (ledger) {
-      const categoryName = item.category;
-      const ledgerTypeName = ledgerType === 'purchase' ? 'Purchase Ledger' : 'Sales Ledger';
-      const displayName = `${categoryName} ${ledgerTypeName}`;
-      navigate(`/ledgers/${ledger._id}?name=${encodeURIComponent(displayName)}`);
-    }
-  };
+
 
   const handleExportExcel = () => {
     const exportData = sortedItems.map(item => ({
@@ -747,15 +738,7 @@ const ItemList = () => {
       title: 'Purchase Ledger',
       render: (item) => (
         item.purchaseLedger ? (
-          <UnstyledButton
-            onClick={(e) => {
-              e.stopPropagation();
-              handleLedgerClick(item, 'purchase');
-            }}
-            style={{ textDecoration: 'underline', color: 'blue' }}
-          >
-            {item.purchaseLedger.ledgerName}
-          </UnstyledButton>
+          <Text size="sm">{item.purchaseLedger.ledgerName}</Text>
         ) : '-'
       ),
       width: 180
@@ -765,15 +748,7 @@ const ItemList = () => {
       title: 'Sales Ledger',
       render: (item) => (
         item.salesLedger ? (
-          <UnstyledButton
-            onClick={(e) => {
-              e.stopPropagation();
-              handleLedgerClick(item, 'sales');
-            }}
-            style={{ textDecoration: 'underline', color: 'green' }}
-          >
-            {item.salesLedger.ledgerName}
-          </UnstyledButton>
+          <Text size="sm">{item.salesLedger.ledgerName}</Text>
         ) : '-'
       ),
       width: 180

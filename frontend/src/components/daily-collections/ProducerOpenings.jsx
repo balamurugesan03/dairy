@@ -72,7 +72,7 @@ export default function ProducerOpenings() {
     const el = ref?.current;
     if (!el) return;
     const input = el.tagName === 'INPUT' ? el : el.querySelector('input');
-    input?.focus();
+    (input || el).focus();
   };
 
   const tabTo = (nextRef) => (e) => {

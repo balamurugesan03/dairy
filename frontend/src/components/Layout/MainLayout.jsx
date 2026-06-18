@@ -204,8 +204,9 @@ const MainLayout = () => {
           key: 'Reports',
           label: 'Reports',
           children: [
-             { key: '/reports/dairy-register', label: 'Dairy Register' },
-             { key: '/reports/dairy-abstract', label: 'Dairy Abstract' },
+             { key: '/reports/dairy-register',      label: 'Dairy Register' },
+             { key: '/reports/dairy-abstract',      label: 'Dairy Abstract' },
+             { key: '/reports/milk-purchase-report', label: 'Milk Purchase Report' },
           ]
         },
       ]
@@ -419,7 +420,6 @@ const MainLayout = () => {
         // { key: '/reports/ddd-mis-report',   label: 'DDD MIS Report' },
         { key: '/mis-department/report',      label: 'MIS Report Department' },
         { key: '/reports/inspection-report',     label: 'Inspection Report' },
-        { key: '/reports/milk-purchase-report', label: 'Milk Purchase Report' },
         { key: '/reports/milk-statement',       label: 'Milk Statement' },
         { key: '/reports/cc-operating-cost',  label: 'CC Operating Cost'      },
         { key: '/farmers/crop-statements',   label: 'Crop Damage Statements' },

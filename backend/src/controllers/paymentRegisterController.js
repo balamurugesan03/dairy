@@ -11,6 +11,7 @@ import ProducerReceipt from '../models/ProducerReceipt.js';
 import Sales from '../models/Sales.js';
 import IndividualDeductionEarning from '../models/IndividualDeductionEarning.js';
 import PeriodicalRule from '../models/PeriodicalRule.js';
+import ProducerLoan from '../models/ProducerLoan.js';
 import { purgeFarmerPaymentSideEffects } from './paymentController.js';
 import { saveWithUniqueNumber } from '../models/Counter.js';
 import { createRecoveryVoucher, createProducerDuesPaymentVoucher } from '../utils/accountingHelper.js';
@@ -345,6 +346,64 @@ export const generateProducerPaymentRegister = async (req, res) => {
       { $group: { _id: '$farmerId', total: { $sum: '$deductions.amount' } } },
     ]));
 
+    // ── Loan EMI suggestion per farmer based on loanScheme ─────────────────────
+    // Cycle  : suggest emiAmount every cycle
+    // Monthly: suggest emiAmount only in the first cycle of this calendar month
+    //          (if first cycle had insufficient balance, allow second cycle too)
+    // Custom : 0 — user enters manually
+
+    // For Monthly: find loan deductions already made THIS calendar month before `start`
+    const monthStart = new Date(start.getFullYear(), start.getMonth(), 1);
+    const thisMonthLoanRec = sumByFarmer(await FarmerPayment.aggregate([
+      {
+        $match: {
+          companyId,
+          status: { $ne: 'Cancelled' },
+          'deductions.type': { $in: ['Loan Recovery', 'Loan EMI'] },
+          $or: [
+            { 'paymentPeriod.toDate': { $gte: monthStart, $lt: start } },
+            { 'paymentPeriod.toDate': { $exists: false }, paymentDate: { $gte: monthStart, $lt: start } },
+          ],
+        },
+      },
+      { $unwind: '$deductions' },
+      { $match: { 'deductions.type': { $in: ['Loan Recovery', 'Loan EMI'] } } },
+      { $group: { _id: '$farmerId', total: { $sum: '$deductions.amount' } } },
+    ]));
+
+    // Active loans grouped by farmer
+    const activeLoans = await ProducerLoan.find({
+      companyId,
+      status: { $in: ['Active', 'Overdue'] },
+      outstandingAmount: { $gt: 0 },
+    }).select('farmerId loanScheme emiAmount outstandingAmount').lean();
+
+    // suggestedLoanRecMap[farmerId] = total suggested EMI for this cycle
+    const suggestedLoanRecMap = {};
+    activeLoans.forEach(loan => {
+      const fid = loan.farmerId?.toString();
+      if (!fid) return;
+      const outstanding = loan.outstandingAmount || 0;
+      const emi = loan.emiAmount || 0;
+      let suggest = 0;
+
+      if (loan.loanScheme === 'Cycle') {
+        suggest = Math.min(emi, outstanding);
+      } else if (loan.loanScheme === 'Monthly') {
+        const alreadyDeducted = thisMonthLoanRec[fid] || 0;
+        if (alreadyDeducted < emi) {
+          // First cycle of month OR first cycle had insufficient balance
+          suggest = Math.min(emi - alreadyDeducted, outstanding);
+        }
+      }
+      // Custom: suggest remains 0
+
+      if (suggest > 0) {
+        suggestedLoanRecMap[fid] = Math.round(((suggestedLoanRecMap[fid] || 0) + suggest) * 100) / 100;
+      }
+    });
+    // ────────────────────────────────────────────────────────────────────────────
+
     // hasLedgerHistory = true if there is ANY prior Ledger register, used purely
     // to flag rows for the frontend so the CF Advance summary override is bypassed.
     const lastRegister = await PaymentRegister.findOne({
@@ -524,6 +583,7 @@ export const generateProducerPaymentRegister = async (req, res) => {
         cfRec:           Math.round(cfAdv               * 100) / 100,
         cashPocket:      Math.round(cashAdv             * 100) / 100,
         loanAdv:         Math.round(loanAdv             * 100) / 100,
+        suggestedLoanRec: Math.round((suggestedLoanRecMap[fid] || 0) * 100) / 100,
         netPay:          Math.round(netPayable          * 100) / 100,
         payStatus:       netPayable > 0 ? 'Payable' : netPayable < 0 ? 'Receivable' : '',
         // cf/cash/loan are authoritative date-ledger carry values (lifetime

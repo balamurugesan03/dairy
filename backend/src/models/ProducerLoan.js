@@ -62,7 +62,7 @@ const producerLoanSchema = new mongoose.Schema({
   // Loan scheme for EMI calculation
   loanScheme: {
     type: String,
-    enum: ['Monthly', 'Weekly', 'Custom'],
+    enum: ['Monthly', 'Cycle', 'Custom'],
     default: 'Monthly'
   },
   // Principal amount
@@ -234,10 +234,11 @@ producerLoanSchema.pre('save', async function() {
 
       if (this.loanScheme === 'Monthly') {
         dueDate.setMonth(dueDate.getMonth() + i);
-      } else if (this.loanScheme === 'Weekly') {
-        dueDate.setDate(dueDate.getDate() + (i * 7));
+      } else if (this.loanScheme === 'Cycle') {
+        // No fixed calendar date — deducted each payment cycle; leave dueDate as loanDate
+        // (sequence number `i` is what matters, not the date)
       } else {
-        // Custom - default to monthly
+        // Custom — no auto-schedule; user configures manually
         dueDate.setMonth(dueDate.getMonth() + i);
       }
 

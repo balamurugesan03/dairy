@@ -1292,6 +1292,28 @@ export default function MilkSales() {
                 style={{ background: '#0891b2', border: '1px solid #67e8f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Refresh
               </Button>
+              {/* Import LinZA — green */}
+              <Button leftSection={<IconUpload size={12} />} onClick={() => setLinzaImportOpen(true)} size="compact-xs" radius="sm"
+                style={{ background: '#15803d', border: '1px solid #4ade80', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                Import LinZA
+              </Button>
+              {/* Import Zibitt Local Sales — violet */}
+              <Button leftSection={<IconUpload size={12} />} onClick={() => setImportOpen(true)} size="compact-xs" radius="sm"
+                style={{ background: '#7c3aed', border: '1px solid #a78bfa', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                Zibbit
+              </Button>
+              {/* Import OpenLyssa — orange */}
+              <Button leftSection={<IconUpload size={12} />} onClick={() => setOlImportOpen(true)} size="compact-xs" radius="sm"
+                style={{ background: '#c2410c', border: '1px solid #fb923c', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                OpenLyssa
+              </Button>
+              {/* Sync to Day Book */}
+              <Button leftSection={backfilling ? <Loader size={10} color="white" /> : <IconBook size={12} />}
+                onClick={handleBackfillVouchers} disabled={backfilling}
+                size="compact-xs" radius="sm"
+                style={{ background: '#0f172a', border: '1px solid #475569', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                {backfilling ? 'Syncing…' : 'Sync Day Book'}
+              </Button>
 
               {/* WhatsApp Bulk Send */}
               {waEnabled && waStatus.connected && (

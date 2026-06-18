@@ -140,7 +140,7 @@ export const getNextBillNo = async (req, res) => {
 // ────────────────────────────────────────────────────────────────
 export const getMilkSales = async (req, res) => {
   try {
-    const { date, month, year, session, saleMode, page = 1, limit = 500 } = req.query;
+    const { date, fromDate, toDate, month, year, session, saleMode, page = 1, limit = 500 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const filter = { companyId: req.companyId };
@@ -149,6 +149,10 @@ export const getMilkSales = async (req, res) => {
       const start = new Date(parseInt(year), parseInt(month) - 1, 1);
       const end   = new Date(parseInt(year), parseInt(month), 0, 23, 59, 59, 999);
       filter.date = { $gte: start, $lte: end };
+    } else if (fromDate || toDate) {
+      filter.date = {};
+      if (fromDate) { const d = new Date(fromDate); d.setHours(0, 0, 0, 0); filter.date.$gte = d; }
+      if (toDate)   { const d = new Date(toDate);   d.setHours(23, 59, 59, 999); filter.date.$lte = d; }
     } else if (date) {
       const start = new Date(date); start.setHours(0, 0, 0, 0);
       const end   = new Date(date); end.setHours(23, 59, 59, 999);

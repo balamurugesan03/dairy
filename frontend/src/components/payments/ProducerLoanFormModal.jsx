@@ -12,7 +12,7 @@ import {
 import dayjs from 'dayjs';
 import { farmerAPI, producerLoanAPI } from '../../services/api';
 
-const LOAN_SCHEMES = ['Monthly', 'Weekly', 'Custom'];
+const LOAN_SCHEMES = ['Monthly', 'Cycle', 'Custom'];
 const PAY_MODES    = ['Cash', 'Bank', 'UPI', 'Cheque', 'NEFT', 'RTGS'];
 
 const BORDER     = '1px solid #E5E7EB';
