@@ -90,6 +90,7 @@ export const generatePaymentRegister = async (req, res) => {
     }
 
     const start = new Date(fromDate);
+    start.setHours(0, 0, 0, 0);
     const end   = new Date(toDate);
     end.setHours(23, 59, 59, 999);
 
@@ -180,6 +181,7 @@ export const generateProducerPaymentRegister = async (req, res) => {
     }
 
     const start = new Date(fromDate);
+    start.setHours(0, 0, 0, 0);
     const end   = new Date(toDate);
     end.setHours(23, 59, 59, 999);
 

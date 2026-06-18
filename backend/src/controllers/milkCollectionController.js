@@ -825,7 +825,7 @@ export const getFarmerWiseSummary = async (req, res) => {
     const match = { companyId: req.companyId };
     if (fromDate || toDate) {
       match.date = {};
-      if (fromDate) match.date.$gte = new Date(fromDate);
+      if (fromDate) { const s = new Date(fromDate); s.setHours(0, 0, 0, 0); match.date.$gte = s; }
       if (toDate) { const to = new Date(toDate); to.setHours(23, 59, 59, 999); match.date.$lte = to; }
     }
     if (shift)            match.shift            = shift;
@@ -890,7 +890,7 @@ export const getFarmerWiseStatement = async (req, res) => {
 
     if (fromDate || toDate) {
       match.date = {};
-      if (fromDate) match.date.$gte = new Date(fromDate);
+      if (fromDate) { const s = new Date(fromDate); s.setHours(0, 0, 0, 0); match.date.$gte = s; }
       if (toDate) { const d = new Date(toDate); d.setHours(23, 59, 59, 999); match.date.$lte = d; }
     }
     if (farmerSearch) {
@@ -986,7 +986,7 @@ export const getDateWiseSummary = async (req, res) => {
     const f3 = v => +Number(v || 0).toFixed(3);
 
     const dateFilter = {};
-    if (fromDate) dateFilter.$gte = new Date(fromDate);
+    if (fromDate) { const s = new Date(fromDate); s.setHours(0,0,0,0); dateFilter.$gte = s; }
     if (toDate)   { const t = new Date(toDate); t.setHours(23,59,59,999); dateFilter.$lte = t; }
     const dateMatch = Object.keys(dateFilter).length ? { date: dateFilter } : {};
 
