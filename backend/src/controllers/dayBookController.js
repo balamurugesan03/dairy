@@ -731,6 +731,15 @@ export const getDayBook = async (req, res) => {
       billDate: { $gte: start, $lte: end }
     }).populate('items.subsidyId', 'subsidyName').lean();
 
+    // Pre-fetch customer ledger names so partial/credit sales show the right advance ledger
+    const custLedgerIds = [...new Set(
+      salesRecords.filter(s => s.customerLedgerId).map(s => s.customerLedgerId.toString())
+    )];
+    const custLedgerDocs = custLedgerIds.length
+      ? await Ledger.find({ _id: { $in: custLedgerIds }, companyId }).lean()
+      : [];
+    const custLedgerNameMap = new Map(custLedgerDocs.map(l => [l._id.toString(), l.ledgerName]));
+
     for (const sale of salesRecords) {
       const dateKey = sale.billDate.toISOString().split('T')[0];
       if (!dateMap[dateKey]) {
@@ -738,8 +747,10 @@ export const getDayBook = async (req, res) => {
       }
 
       const isCash     = sale.paymentMode === 'Cash';
-      const grandTotal = sale.grandTotal  || 0;
+      const grandTotal = sale.grandTotal   || 0;
       const totalSub   = sale.totalSubsidy || 0;
+      const paidAmt    = sale.paidAmount   || 0;
+      const balanceAmt = sale.balanceAmount || 0;
 
       const itemNarration = (sale.items || [])
         .map(i => `${i.itemName} Qty:${i.quantity || 0} @ Rs.${i.rate || 0}`)
@@ -762,14 +773,32 @@ export const getDayBook = async (req, res) => {
         return m;
       };
 
+      // Advance ledger: prefer the customer's own ledger, else CATTLE FEED ADVANCE
+      const advanceName = (sale.customerLedgerId && custLedgerNameMap.get(sale.customerLedgerId.toString()))
+        || cfAdvanceName;
+
       if (isCash) {
-        // ── Cash sale: income in CASH column ──────────────────────────────
-        if (grandTotal > 0) {
-          const e = { ...base, voucherType: 'Sales', ledgerName: cfSalesName, amount: grandTotal };
+        // ── Cash sale: paid portion → CASH column; balance → ADJUSTMENT column ──
+        if (paidAmt > 0) {
+          const e = { ...base, voucherType: 'Sales', ledgerName: cfSalesName, amount: paidAmt };
           dateMap[dateKey].receiptSide.push(e);
-          dateMap[dateKey].totalReceipts += grandTotal;
+          dateMap[dateKey].totalReceipts += paidAmt;
           receiptSide.push(e);
         }
+
+        // Unpaid balance (partial cash payment) → ADJUSTMENT column
+        if (balanceAmt > 0) {
+          const incomeE = { ...base, voucherType: 'InventorySale', ledgerName: cfSalesName, amount: balanceAmt };
+          dateMap[dateKey].receiptSide.push(incomeE);
+          dateMap[dateKey].totalReceipts += balanceAmt;
+          receiptSide.push(incomeE);
+
+          const advE = { ...base, voucherType: 'InventorySale', ledgerName: advanceName, amount: balanceAmt };
+          dateMap[dateKey].paymentSide.push(advE);
+          dateMap[dateKey].totalPayments += balanceAmt;
+          paymentSide.push(advE);
+        }
+
         // Subsidy portion → ADJUSTMENT column in Day Book only
         if (totalSub > 0) {
           const subIncome = { ...base, voucherType: 'InventorySale', ledgerName: cfSalesName, amount: totalSub };
@@ -793,9 +822,9 @@ export const getDayBook = async (req, res) => {
           dateMap[dateKey].totalReceipts += incomeAmt;
           receiptSide.push(e);
         }
-        // Customer owes → CATTLE FEED ADVANCE
+        // Customer owes → advance ledger (customer's own or CATTLE FEED ADVANCE)
         if (grandTotal > 0) {
-          const e = { ...base, voucherType: 'InventorySale', ledgerName: cfAdvanceName, amount: grandTotal };
+          const e = { ...base, voucherType: 'InventorySale', ledgerName: advanceName, amount: grandTotal };
           dateMap[dateKey].paymentSide.push(e);
           dateMap[dateKey].totalPayments += grandTotal;
           paymentSide.push(e);

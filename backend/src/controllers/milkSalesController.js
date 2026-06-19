@@ -7,6 +7,7 @@ import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances, fin
 
 // Resolve a ledger from the user's Ledger Management, tolerating case + whitespace.
 // Falls back to creating one only if no matching ledger exists at all.
+// Also handles a one-time rename of 'CREDIT SALES' → 'MILK CREDIT SALES'.
 async function resolveLedger(name, ledgerType, parentGroup, balanceType, companyId) {
   const escaped = name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const existing = await Ledger.findOne({
@@ -14,6 +15,20 @@ async function resolveLedger(name, ledgerType, parentGroup, balanceType, company
     ledgerName: { $regex: `^\\s*${escaped}\\s*$`, $options: 'i' },
   });
   if (existing) return existing;
+
+  // Transparent migration: if looking for MILK CREDIT SALES and old 'CREDIT SALES' exists, rename it
+  if (/milk\s*credit\s*sales?/i.test(name)) {
+    const oldLedger = await Ledger.findOne({
+      companyId,
+      ledgerName: { $regex: /^\s*credit\s*sales?\s*$/i },
+    });
+    if (oldLedger) {
+      oldLedger.ledgerName = name;
+      await oldLedger.save();
+      return oldLedger;
+    }
+  }
+
   return findOrCreateLedger(name, ledgerType, parentGroup, balanceType, companyId);
 }
 
@@ -77,17 +92,28 @@ async function createMilkSaleVoucher(sale, companyId) {
   }
 
   if (saleMode === 'CREDIT') {
-    // Adjustment (Journal) voucher — Day Book only:
-    //   Dr CUSTOMER       (expenditure / payment side)
-    //   Cr CREDIT SALES   (income / receipt side)
-    // No cash leg, so nothing shows in Cash Book.
+    // Adjustment (Journal) voucher:
+    //   Dr [Customer's own ledger]  (payment side — amount owed by customer)
+    //   Cr MILK CREDIT SALES        (receipt side — income)
     const customer = creditorId ? await Customer.findById(creditorId).lean() : null;
     const customerName = customer?.name || sale.creditorName || '';
 
-    const [customerLedger, saleLedger] = await Promise.all([
-      resolveLedger('CUSTOMER',     'Other Receivable', 'Current Assets', 'Dr', companyId),
-      resolveLedger('CREDIT SALES', 'Sales',            'INCOME',         'Cr', companyId),
-    ]);
+    // Prefer the customer's own ledger (type 'Advance due to Society' → Dr = Payment side in GL)
+    let customerLedger = null;
+    if (customer?.ledgerId) {
+      customerLedger = await Ledger.findById(customer.ledgerId);
+    }
+    if (!customerLedger) {
+      customerLedger = await resolveLedger(
+        customerName || 'CUSTOMER',
+        'Advance due to Society',
+        'Advance due to Society',
+        'Dr',
+        companyId
+      );
+    }
+
+    const saleLedger = await resolveLedger('MILK CREDIT SALES', 'Sales', 'INCOME', 'Cr', companyId);
 
     const entries = [
       { ledgerId: customerLedger._id, ledgerName: customerLedger.ledgerName, debitAmount: amount, creditAmount: 0,      narration: customerName ? `${customerName}${shiftNote}`.trim() : shiftNote.trim() },

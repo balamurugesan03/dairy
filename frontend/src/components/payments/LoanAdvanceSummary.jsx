@@ -164,8 +164,8 @@ const LoanAdvanceSummary = () => {
       'Producer ID':          r.farmerNumber,
       'Producer Name':        r.farmerName,
       'Opening Balance':      r.opening,
-      'Disbursement (Credit)': r.advanced,
       'Recovery (Debit)':     r.recovery,
+      'Disbursement (Credit)': r.advanced,
       'Balance':              r.balance,
     }));
     if (summaryTotals) {
@@ -369,8 +369,8 @@ const LoanAdvanceSummary = () => {
                       <th style={{ ...TH(), textAlign: 'left' }}>Producer ID</th>
                       <th style={{ ...TH(), textAlign: 'left' }}>Producer Name</th>
                       <th style={TH('#174a7c')}>Opening Balance</th>
-                      <th style={TH('#155724')}>Credit (Disbursement)</th>
                       <th style={TH('#6e2c00')}>Debit (Recovery)</th>
+                      <th style={TH('#155724')}>Credit (Disbursement)</th>
                       <th style={TH('#0e5e3f')}>Balance</th>
                       <th style={{ ...TH('#2d3748') }} className="no-print">View</th>
                     </tr>
@@ -392,8 +392,8 @@ const LoanAdvanceSummary = () => {
                             <td style={TD()}>{row.farmerNumber}</td>
                             <td style={TD({ fontWeight: 600 })}>{row.farmerName}</td>
                             <td style={TD_NUM({ color: '#2b6cb0' })}>₹ {fmt(row.opening)}</td>
-                            <td style={TD_NUM({ color: '#276749' })}>₹ {fmt(row.advanced)}</td>
                             <td style={TD_NUM({ color: '#7b341e' })}>₹ {fmt(row.recovery)}</td>
+                            <td style={TD_NUM({ color: '#276749' })}>₹ {fmt(row.advanced)}</td>
                             <td style={TD_NUM({ fontWeight: 700, color: balClr })}>₹ {fmt(row.balance)}</td>
                             <td style={{ ...TD({ textAlign: 'center', padding: '2px 4px' }) }} className="no-print">
                               <Tooltip label="View Ledger">
@@ -413,8 +413,8 @@ const LoanAdvanceSummary = () => {
                           TOTAL
                         </td>
                         <td style={TD_NUM({ fontWeight: 700, color: '#2b6cb0', background: '#ebf8ff' })}>₹ {fmt(summaryTotals.opening)}</td>
-                        <td style={TD_NUM({ fontWeight: 700, color: '#276749', background: '#f0fff4' })}>₹ {fmt(summaryTotals.advanced)}</td>
                         <td style={TD_NUM({ fontWeight: 700, color: '#7b341e', background: '#fff5eb' })}>₹ {fmt(summaryTotals.recovery)}</td>
+                        <td style={TD_NUM({ fontWeight: 700, color: '#276749', background: '#f0fff4' })}>₹ {fmt(summaryTotals.advanced)}</td>
                         <td style={TD_NUM({ fontWeight: 700, background: '#b2f5ea' })}>₹ {fmt(summaryTotals.balance)}</td>
                         <td className="no-print" />
                       </tr>
@@ -548,8 +548,8 @@ const LoanAdvanceSummary = () => {
                   <Group gap="sm" mb="md" className="no-print">
                     {[
                       { label: 'Opening Balance',          value: ledgerData.openingBalance, color: 'blue' },
-                      { label: 'Total Credit (Disbursal)', value: ledgerData.totalCredit,    color: 'orange' },
                       { label: 'Total Debit (Recovery)',   value: ledgerData.totalDebit,     color: 'green' },
+                      { label: 'Total Credit (Disbursal)', value: ledgerData.totalCredit,    color: 'orange' },
                       { label: 'Closing Balance',          value: ledgerData.closingBalance,
                         color: ledgerData.closingBalance > 0 ? 'red' : 'teal' },
                     ].map(card => (
@@ -577,8 +577,8 @@ const LoanAdvanceSummary = () => {
                           <th style={TH()}>Date</th>
                           <th style={TH()}>Ref No</th>
                           <th style={{ ...TH(), textAlign: 'left' }}>Description</th>
-                          <th style={TH('#155724')}>Credit (Disbursal)</th>
                           <th style={TH('#6e2c00')}>Debit (Recovery)</th>
+                          <th style={TH('#155724')}>Credit (Disbursal)</th>
                           <th style={TH('#0e5e3f')}>Balance</th>
                         </tr>
                       </thead>
@@ -620,11 +620,11 @@ const LoanAdvanceSummary = () => {
                                     <Text size="xs">{entry.description}</Text>
                                   </Group>
                                 </td>
-                                <td style={TD_NUM({ color: entry.credit > 0 ? '#7b341e' : '#999' })}>
-                                  {entry.credit > 0 ? `₹ ${fmt(entry.credit)}` : '—'}
-                                </td>
                                 <td style={TD_NUM({ color: entry.debit > 0 ? '#276749' : '#999' })}>
                                   {entry.debit > 0 ? `₹ ${fmt(entry.debit)}` : '—'}
+                                </td>
+                                <td style={TD_NUM({ color: entry.credit > 0 ? '#7b341e' : '#999' })}>
+                                  {entry.credit > 0 ? `₹ ${fmt(entry.credit)}` : '—'}
                                 </td>
                                 <td style={TD_NUM({ fontWeight: 700, color: balClr })}>
                                   ₹ {fmt(entry.balance)}
@@ -638,8 +638,8 @@ const LoanAdvanceSummary = () => {
                           <td colSpan={4} style={{ ...TD({ fontWeight: 700, textAlign: 'center', background: '#2d3748', color: '#fff', letterSpacing: 1 }) }}>
                             CLOSING BALANCE
                           </td>
-                          <td style={TD_NUM({ fontWeight: 700, color: '#7b341e', background: '#fff5eb' })}>₹ {fmt(ledgerData.totalCredit)}</td>
                           <td style={TD_NUM({ fontWeight: 700, color: '#276749', background: '#f0fff4' })}>₹ {fmt(ledgerData.totalDebit)}</td>
+                          <td style={TD_NUM({ fontWeight: 700, color: '#7b341e', background: '#fff5eb' })}>₹ {fmt(ledgerData.totalCredit)}</td>
                           <td style={TD_NUM({
                             fontWeight: 800, background: '#b2f5ea',
                             color: ledgerData.closingBalance > 0 ? '#721c24' : '#276749',

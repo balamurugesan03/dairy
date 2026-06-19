@@ -195,12 +195,12 @@ const JournalVoucher = () => {
   const [viewModalOpened, setViewModalOpened] = useState(false);
   const [selectedVoucher, setSelectedVoucher] = useState(null);
 
-  // Receipt (Debit) entries
+  // Payment (Dr / Debit) entries — expense / asset side
   const [receiptEntries, setReceiptEntries] = useState([
     { ledgerId: '', amount: '', narration: '' }
   ]);
 
-  // Payment (Credit) entries
+  // Receipt (Cr / Credit) entries — income / liability side
   const [paymentEntries, setPaymentEntries] = useState([
     { ledgerId: '', amount: '', narration: '' }
   ]);
@@ -322,11 +322,11 @@ const JournalVoucher = () => {
     const validPayments = paymentEntries.filter(e => e.ledgerId && parseFloat(e.amount) > 0);
 
     if (validReceipts.length === 0) {
-      message.error('Please add at least one receipt entry');
+      message.error('Please add at least one Payment (Dr) entry');
       return;
     }
     if (validPayments.length === 0) {
-      message.error('Please add at least one payment entry');
+      message.error('Please add at least one Receipt (Cr) entry');
       return;
     }
 
@@ -467,12 +467,12 @@ const JournalVoucher = () => {
 
       {/* =============== MAIN ENTRY AREA - SPLIT PANELS =============== */}
       <Grid gutter="sm" mb="sm">
-        {/* LEFT PANEL - RECEIPT (Debit) */}
+        {/* LEFT PANEL - PAYMENT (Debit) */}
         <Grid.Col span={6}>
           <EntryPanel
-            title="Receipt (Dr)"
-            icon={<IconReceipt size={16} color="#2e7d32" />}
-            color="green"
+            title="Payment (Dr)"
+            icon={<IconCreditCard size={16} color="#e65100" />}
+            color="orange"
             entries={receiptEntries}
             onAdd={addReceiptRow}
             onRemove={removeReceiptRow}
@@ -482,12 +482,12 @@ const JournalVoucher = () => {
           />
         </Grid.Col>
 
-        {/* RIGHT PANEL - PAYMENT (Credit) */}
+        {/* RIGHT PANEL - RECEIPT (Credit) */}
         <Grid.Col span={6}>
           <EntryPanel
-            title="Payment (Cr)"
-            icon={<IconCreditCard size={16} color="#e65100" />}
-            color="orange"
+            title="Receipt (Cr)"
+            icon={<IconReceipt size={16} color="#2e7d32" />}
+            color="green"
             entries={paymentEntries}
             onAdd={addPaymentRow}
             onRemove={removePaymentRow}

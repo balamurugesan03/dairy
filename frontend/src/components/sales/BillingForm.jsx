@@ -842,7 +842,7 @@ const BillingForm = () => {
 
                 {form.values.customerType === 'Farmer' ? (
                   <>
-                    <Grid.Col span={6}>
+                    <Grid.Col span={form.values.customerId ? 6 : 12}>
                       <Select
                         ref={farmerSelectRef}
                         label="Select Farmer"
@@ -879,22 +879,26 @@ const BillingForm = () => {
                         }}
                       />
                     </Grid.Col>
-                    <Grid.Col span={3}>
-                      <TextInput
-                        label="Farmer Name"
-                        value={form.values.customerName}
-                        readOnly
-                        leftSection={<IconUser size={16} />}
-                      />
-                    </Grid.Col>
-                    <Grid.Col span={3}>
-                      <TextInput
-                        label="Phone"
-                        value={form.values.customerPhone}
-                        readOnly
-                        leftSection={<IconPhone size={16} />}
-                      />
-                    </Grid.Col>
+                    {form.values.customerId && (
+                      <>
+                        <Grid.Col span={3}>
+                          <TextInput
+                            label="Farmer Name"
+                            value={form.values.customerName}
+                            readOnly
+                            leftSection={<IconUser size={16} />}
+                          />
+                        </Grid.Col>
+                        <Grid.Col span={3}>
+                          <TextInput
+                            label="Phone"
+                            value={form.values.customerPhone}
+                            readOnly
+                            leftSection={<IconPhone size={16} />}
+                          />
+                        </Grid.Col>
+                      </>
+                    )}
                   </>
                 ) : form.values.customerType === 'Customer' ? (
                   <>
@@ -1029,7 +1033,7 @@ const BillingForm = () => {
                       onChange={(itemId) => {
                         handleItemSelect(itemId);
                         setItemSearch('');
-                        if (itemId) setTimeout(() => rateRef.current?.focus(), 150);
+                        if (itemId) setTimeout(() => addButtonRef.current?.focus(), 150);
                       }}
                       data={filteredItemOptions}
                       searchValue={itemSearch}
@@ -1040,10 +1044,18 @@ const BillingForm = () => {
                       onKeyDown={(e) => {
                         if (e.key !== 'Enter') return;
                         if (form.values.itemId) {
+                          // Item already selected → go to Add button
                           e.preventDefault();
-                          setTimeout(() => quantityRef.current?.focus(), 100);
+                          setTimeout(() => addButtonRef.current?.focus(), 100);
+                        } else if (filteredItemOptions.length > 0) {
+                          // Auto-select first match → go to Add button
+                          e.preventDefault();
+                          const first = filteredItemOptions[0];
+                          handleItemSelect(first.value);
+                          setItemSearch('');
+                          setTimeout(() => addButtonRef.current?.focus(), 200);
                         } else if (!itemSearch.trim() && billItems.length > 0) {
-                          // No item selected, empty search, items already added → jump to paid amount
+                          // No item, empty search, items already added → jump to paid amount
                           e.preventDefault();
                           setTimeout(() => paidAmountRef.current?.focus(), 100);
                         }
@@ -1070,7 +1082,6 @@ const BillingForm = () => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
                           handleAddItem();
-                          setTimeout(() => itemSelectRef.current?.focus(), 100);
                         }
                       }}
                     />
@@ -1088,7 +1099,7 @@ const BillingForm = () => {
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
-                        setTimeout(() => quantityRef.current?.focus(), 50);
+                        setTimeout(() => addButtonRef.current?.focus(), 50);
                       }
                     }}
                   />

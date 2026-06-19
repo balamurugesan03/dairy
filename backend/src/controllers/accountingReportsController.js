@@ -460,8 +460,10 @@ export const getGeneralLedger = async (req, res) => {
     const lType = ledger.ledgerType;
 
     // ── 1. MILK PURCHASE ledger: Dr side of every milk collection ──
+    // Match only by ledger name — type-based matching is too broad and would
+    // incorrectly pull milk-collection data into Purchase Returns and other
+    // Purchases-type ledgers that share the same ledger type.
     const isMilkPurchaseLedger =
-      ['Purchases', 'Purchases A/c', 'Trade Expenses'].includes(lType) ||
       /milk\s*(purchase|procure|collection)/i.test(ledger.ledgerName);
 
     // ── 2. PRODUCERS DUES ledger: Cr side of milk collection + Dr side of farmer payments ──
@@ -499,10 +501,10 @@ export const getGeneralLedger = async (req, res) => {
           date:          new Date(day + 'T00:00:00.000Z'),
           voucherNumber: `MKP-${day.replace(/-/g, '')}-${shift}`,
           voucherType:   'MilkPurchase',
-          // Milk Purchase = payment (credit side); Producers Dues = credit (liability increases)
+          // Dr Milk Purchase / Cr Producers Dues — expense increases, liability increases
           particulars:   isMilkPurchaseLedger ? 'PRODUCERS DUES' : 'MILK PURCHASE',
-          debit:         isProducersDuesLedger ? c.totalAmount : 0,
-          credit:        isMilkPurchaseLedger  ? c.totalAmount : 0,
+          debit:         isMilkPurchaseLedger  ? c.totalAmount : 0,
+          credit:        isProducersDuesLedger ? c.totalAmount : 0,
           narration:     `${shift} | Qty: ${c.totalQty.toFixed(2)} L | ${c.farmerCount} farmers`,
         });
       });
@@ -542,7 +544,10 @@ export const getGeneralLedger = async (req, res) => {
       });
     }
 
-    // ── 3. CATTLE FEED PURCHASE ledger → payment (credit) side ──
+    // ── 3. CATTLE FEED PURCHASE ledger — fallback for un-vouchered purchases ──
+    // Only pulls transactions without a voucher so formal Purchase vouchers
+    // (created by accountingHelper.createSalesVoucher) are not double-counted.
+    // Dr to a Purchases A/c ledger (debit-normal) → debit field → Receipt side in GL.
     const isCfPurchaseLedger =
       /cattle\s*feed\s*purchase|cf\s*purchase/i.test(ledger.ledgerName) ||
       (/cattle\s*feed/i.test(ledger.ledgerName) && lType === 'Purchases');
@@ -552,6 +557,7 @@ export const getGeneralLedger = async (req, res) => {
         companyId: req.companyId,
         transactionType: 'Stock In',
         referenceType: { $nin: ['Return', 'Opening Balance Adjustment'] },
+        $or: [{ voucherId: { $exists: false } }, { voucherId: null }],
         $expr: { $and: [
           { $gte: [{ $ifNull: ['$purchaseDate', '$date'] }, dateFilter.startDate] },
           { $lte: [{ $ifNull: ['$purchaseDate', '$date'] }, dateFilter.endDate] }
@@ -565,14 +571,17 @@ export const getGeneralLedger = async (req, res) => {
           voucherNumber: t.invoiceNumber || `CFP-${new Date(txDate).toISOString().slice(0,10)}`,
           voucherType:   'CFPurchase',
           particulars:   t.supplierName || 'Cattle Feed Supplier',
-          debit:         0,
-          credit:        (t.quantity || 0) * (t.rate || 0),
+          debit:         (t.quantity || 0) * (t.rate || 0),
+          credit:        0,
           narration:     `Qty: ${t.quantity || 0} @ ${t.rate || 0}`,
         });
       });
     }
 
-    // ── 4. CATTLE FEED SALES ledger → receipt (debit) side ──
+    // ── 4. CATTLE FEED SALES ledger — fallback for un-vouchered sales ──
+    // Only pulls transactions without a voucher so Sales vouchers
+    // (created by accountingHelper.createSalesVoucher) are not double-counted.
+    // Cr to a Sales ledger (credit-normal) → credit field → Receipt side in GL.
     const isCfSalesLedger =
       /cattle\s*feed\s*sales?|cf\s*sales?/i.test(ledger.ledgerName) ||
       (/cattle\s*feed/i.test(ledger.ledgerName) && lType === 'Sales');
@@ -582,6 +591,7 @@ export const getGeneralLedger = async (req, res) => {
         companyId: req.companyId,
         transactionType: 'Stock Out',
         referenceType: { $nin: ['Return', 'Opening Balance Adjustment'] },
+        $or: [{ voucherId: { $exists: false } }, { voucherId: null }],
         $expr: { $and: [
           { $gte: [{ $ifNull: ['$purchaseDate', '$date'] }, dateFilter.startDate] },
           { $lte: [{ $ifNull: ['$purchaseDate', '$date'] }, dateFilter.endDate] }
@@ -595,8 +605,8 @@ export const getGeneralLedger = async (req, res) => {
           voucherNumber: t.invoiceNumber || `CFS-${new Date(txDate).toISOString().slice(0,10)}`,
           voucherType:   'CFSales',
           particulars:   t.customerName || 'Cattle Feed Customer',
-          debit:         (t.quantity || 0) * (t.rate || 0),
-          credit:        0,
+          debit:         0,
+          credit:        (t.quantity || 0) * (t.rate || 0),
           narration:     `Qty: ${t.quantity || 0} @ ${t.rate || 0}`,
         });
       });
@@ -801,6 +811,7 @@ export const getGeneralLedger = async (req, res) => {
       success: true,
       data: {
         ledger:              { id: ledger._id, name: ledger.ledgerName, type: ledger.ledgerType },
+        isDebitNature,
         startDate:           dateFilter.startDate,
         endDate:             dateFilter.endDate,
         openingBalance:      Math.abs(openingBalance),
@@ -883,6 +894,67 @@ export const getGeneralLedgerAbstract = async (req, res) => {
             }
           });
         });
+
+        // ── Un-vouchered MilkSales (Local / Sample / Credit Sales ledgers) ────
+        // The regular GL picks these up via a special path; the Abstract must do
+        // the same, otherwise milk-sales ledgers show zero activity.
+        const isMilkSalesAbstract =
+          /local\s*sales?|sample\s*sales?|credit\s*sales?/i.test(ledger.ledgerName) ||
+          (ledger.ledgerType === 'Sales' && /milk|local|credit|sample/i.test(ledger.ledgerName));
+
+        if (isMilkSalesAbstract) {
+          const saleModeFilter = /local/i.test(ledger.ledgerName)  ? 'LOCAL'
+            : /sample/i.test(ledger.ledgerName) ? 'SAMPLE'
+            : /credit/i.test(ledger.ledgerName) ? 'CREDIT'
+            : null;
+
+          const msBase = {
+            companyId: req.companyId,
+            amount:    { $gt: 0 },
+            $or:       [{ voucherId: { $exists: false } }, { voucherId: null }],
+          };
+          if (saleModeFilter) msBase.saleMode = saleModeFilter;
+
+          const [priorAgg, periodAgg] = await Promise.all([
+            MilkSales.aggregate([
+              { $match: { ...msBase, date: { $lt: dateFilter.startDate } } },
+              { $group: { _id: null, total: { $sum: '$amount' } } },
+            ]),
+            MilkSales.aggregate([
+              { $match: { ...msBase, date: { $gte: dateFilter.startDate, $lte: dateFilter.endDate } } },
+              { $group: { _id: null, total: { $sum: '$amount' } } },
+            ]),
+          ]);
+
+          // For a credit-normal (income) ledger:
+          //   opening += prior sales credits
+          //   period  += current period sales credits
+          const priorSales  = priorAgg[0]?.total  || 0;
+          const periodSales = periodAgg[0]?.total || 0;
+          // Signed convention: credit-normal positive = Cr balance
+          // calculateOpeningBalance already returns a signed value (positive = Cr normal)
+          // so adding prior credits increases the Cr balance:
+          // We recompute openingBalance inline — reassign the const via a let shadow
+          // eslint-disable-next-line no-shadow
+          const adjustedOpeningBalance = openingBalance + priorSales;
+          totalCredits += periodSales;
+
+          const isDebitNature = isDebitNatureLedger(ledger.ledgerType);
+          const closingBalance = calculateClosingBalance(adjustedOpeningBalance, totalDebits, totalCredits, isDebitNature);
+
+          return {
+            ledgerId: ledger._id,
+            ledgerName: ledger.ledgerName,
+            ledgerType: ledger.ledgerType,
+            category: getLedgerCategory(ledger.ledgerType),
+            openingBalance: Math.abs(adjustedOpeningBalance),
+            openingBalanceType: getBalanceType(adjustedOpeningBalance, isDebitNature),
+            totalDebits,
+            totalCredits,
+            closingBalance: Math.abs(closingBalance),
+            closingBalanceType: getBalanceType(closingBalance, isDebitNature),
+          };
+        }
 
         const isDebitNature = isDebitNatureLedger(ledger.ledgerType);
         const closingBalance = calculateClosingBalance(openingBalance, totalDebits, totalCredits, isDebitNature);

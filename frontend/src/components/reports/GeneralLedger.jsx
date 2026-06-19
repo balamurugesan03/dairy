@@ -119,7 +119,12 @@ const GeneralLedger = () => {
     const openBal     = reportData.openingBalance || 0;
     const openBalType = reportData.openingBalanceType || 'Dr';
     const txns        = reportData.transactions || [];
-    const isDebit     = openBalType === 'Dr';
+    // Use the explicit isDebitNature flag from backend when available — avoids
+    // edge cases where openingBalanceType is 'Dr' on a credit-normal ledger
+    // (e.g. zero opening balance, or unusual negative balance).
+    const isDebit = reportData.isDebitNature !== undefined
+      ? reportData.isDebitNature
+      : openBalType === 'Dr';
 
     let progR = 0, progP = 0;
     const months = [];
@@ -127,8 +132,8 @@ const GeneralLedger = () => {
 
     txns.forEach(t => {
       const mKey   = dayjs(t.date).format('MMM-YYYY');
-      const receipt = isDebit ? (t.debit || 0) : (t.credit || 0);
-      const payment = isDebit ? (t.credit || 0) : (t.debit || 0);
+      const receipt = t.debit  || 0;   // Debit column — always raw Dr amount
+      const payment = t.credit || 0;   // Credit column — always raw Cr amount
       progR += receipt;
       progP += payment;
 
@@ -276,7 +281,7 @@ const GeneralLedger = () => {
     ]);
 
     autoTable(doc, {
-      head: [['Day', 'Receipt', 'Prog. Rcpt', 'Payment', 'Prog. Pymt', 'Balance', 'Description']],
+      head: [['Day', 'Debit', 'Prog. Debit', 'Credit', 'Prog. Credit', 'Balance', 'Description']],
       body,
       startY: 32,
       margin: { left: mg, right: mg },
@@ -298,7 +303,7 @@ const GeneralLedger = () => {
       [`Head of Account: ${processedData.ledgerName}`, '', '', '', '', '', `F.Y.: ${getFinancialYear()}`],
       [`Period: ${formatDate(fromDate)} to ${formatDate(toDate)}`],
       [],
-      ['Day', 'Receipt', 'Prog. Receipt', 'Payment', 'Prog. Payment', 'Balance', 'Description'],
+      ['Day', 'Debit', 'Prog. Debit', 'Credit', 'Prog. Credit', 'Balance', 'Description'],
       ['', '', '', '', '', `${fmtA(processedData.openBal)} ${processedData.openBalType}`, 'Opening Balance - B/F'],
     ];
 
@@ -434,9 +439,9 @@ const GeneralLedger = () => {
             <thead style={{ position: 'sticky', top: 0, zIndex: 2 }}>
               <tr>
                 <th style={thBase}>Day</th>
-                <th style={thBase}>Receipt</th>
+                <th style={thBase}>Debit</th>
                 <th style={thBase}>Progressive</th>
-                <th style={thBase}>Payment</th>
+                <th style={thBase}>Credit</th>
                 <th style={thBase}>Progressive</th>
                 <th style={thBase}>Balance</th>
                 <th style={{ ...thBase, textAlign: 'left', paddingLeft: 10 }}>Description</th>

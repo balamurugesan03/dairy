@@ -231,10 +231,18 @@ export const createSalesVoucher = async (saleData, session = null) => {
     entries.push({ ledgerId: paymentLedger._id, ledgerName: paymentLedger.ledgerName, debitAmount: paidAmount, creditAmount: 0 });
   }
 
-  // ── Debit: CATTLE FEED ADVANCE for the unpaid balance (credit / debt sale only) ─
-  // Cash sales are fully settled at point of sale — never post to CATTLE FEED ADVANCE.
-  if (balanceAmount > 0 && saleData.paymentMode !== 'Cash') {
-    const advanceLedger = await getAdvanceLedger();
+  // ── Debit: customer ledger or CATTLE FEED ADVANCE for the unpaid balance ──
+  // Post any unpaid balance as an adjustment entry regardless of payment mode.
+  // A partial cash payment leaves a balance; that remainder goes to the receivable ledger.
+  // For Customer-type sales, use the customer's own ledger so GL shows real name.
+  if (balanceAmount > 0) {
+    let advanceLedger = null;
+    if (saleData.customerLedgerId) {
+      advanceLedger = await Ledger.findById(saleData.customerLedgerId);
+    }
+    if (!advanceLedger) {
+      advanceLedger = await getAdvanceLedger();
+    }
     entries.push({
       ledgerId: advanceLedger._id,
       ledgerName: advanceLedger.ledgerName,

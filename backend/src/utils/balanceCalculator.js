@@ -122,7 +122,7 @@ export const isDebitNatureLedger = (ledgerType) => {
  * @returns {string} 'Dr' or 'Cr'
  */
 export const getBalanceType = (balance, isDebitNature) => {
-  if (balance === 0) return 'Dr'; // Zero balance defaults to Dr
+  if (balance === 0) return isDebitNature ? 'Dr' : 'Cr';
 
   if (isDebitNature) {
     return balance >= 0 ? 'Dr' : 'Cr';
@@ -192,12 +192,14 @@ export const getLedgerCategory = (ledgerType) => {
     'Share Capital': 'CAPITAL',
 
     'Income': 'INCOME',
+    'Sales': 'INCOME',
     'Sales A/c': 'INCOME',
     'Trade Income': 'INCOME',
     'Miscellaneous Income': 'INCOME',
     'Other Revenue': 'INCOME',
     'Grants & Aid': 'INCOME',
     'Subsidies': 'INCOME',
+    'Advance due to Society': 'ASSETS',
 
     'Expense': 'EXPENSES',
     'Purchases A/c': 'EXPENSES',

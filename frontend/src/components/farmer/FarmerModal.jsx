@@ -24,11 +24,12 @@ import { IconInfoCircle } from '@tabler/icons-react';
 import { DatePickerInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { IconUpload, IconTrash } from '@tabler/icons-react';
-import { farmerAPI, collectionCenterAPI, ledgerAPI } from '../../services/api';
+import { farmerAPI, collectionCenterAPI, ledgerAPI, bankMasterAPI } from '../../services/api';
 import { message } from '../../utils/toast';
-import { INDIAN_BANKS } from '../../utils/indianBanks';
+import { useAuth } from '../../context/AuthContext';
 
 const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
+  const { isCentreLogin, centreInfo } = useAuth();
   const [loading, setLoading] = useState(false);
   const [active, setActive] = useState(0);
   const [collectionCenters, setCollectionCenters] = useState([]);
@@ -36,6 +37,8 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
   const [pincodeLoading, setPincodeLoading] = useState(false);
   const [pincodeOptions, setPincodeOptions] = useState([]);
   const [bankLedgerOptions, setBankLedgerOptions] = useState([]);
+  const [bankMasterList, setBankMasterList] = useState([]);
+  const [selectedBankMasterId, setSelectedBankMasterId] = useState('');
 
   const isEditMode = Boolean(farmerId);
 
@@ -137,6 +140,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
     if (isOpen) {
       fetchCollectionCenters();
       fetchBankLedgers();
+      fetchBankMasterList();
       if (isEditMode) {
         fetchFarmer();
       } else {
@@ -146,10 +150,18 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
     }
   }, [isOpen, farmerId]);
 
+  useEffect(() => {
+    if (isEditMode && bankMasterList.length > 0 && form.values.bankDetails.bankName) {
+      const match = bankMasterList.find(b => b.bankName === form.values.bankDetails.bankName);
+      if (match) setSelectedBankMasterId(match._id);
+    }
+  }, [bankMasterList]);
+
   const resetForm = () => {
     form.reset();
     setActive(0);
     setAdditionalDocs([]);
+    setSelectedBankMasterId('');
   };
 
   const fetchNextFarmerNumber = async () => {
@@ -200,6 +212,27 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
     } catch (err) {
       console.error('Failed to fetch bank ledgers:', err);
     }
+  };
+
+  const fetchBankMasterList = async () => {
+    try {
+      const res = await bankMasterAPI.getAll();
+      setBankMasterList(res?.data || []);
+    } catch {
+      // non-fatal
+    }
+  };
+
+  const handleBankMasterSelect = (bankId) => {
+    setSelectedBankMasterId(bankId || '');
+    if (!bankId) return;
+    const bank = bankMasterList.find(b => b._id === bankId);
+    if (!bank) return;
+    form.setFieldValue('bankDetails.bankName', bank.bankName || '');
+    form.setFieldValue('bankDetails.branch', bank.branch || '');
+    form.setFieldValue('bankDetails.ifsc', bank.ifsc || '');
+    form.setFieldValue('bankDetails.micr', bank.micr || '');
+    form.setFieldValue('bankDetails.bankLedgerId', bank.bankLedgerId?._id || bank.bankLedgerId || '');
   };
 
   const fetchFarmer = async () => {
@@ -503,6 +536,63 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
     }
     focusNext(e);
   };
+
+  const handleSimpleSubmit = async () => {
+    const values = form.values;
+    if (!values.farmerNumber) { message.error('Farmer number is required'); return; }
+    if (!values.personalDetails.name) { message.error('Name is required'); return; }
+    if (values.personalDetails.phone && !/^[0-9]{10}$/.test(values.personalDetails.phone)) {
+      message.error('Please enter valid 10-digit phone number'); return;
+    }
+    setLoading(true);
+    try {
+      const payload = {
+        farmerNumber: values.farmerNumber,
+        personalDetails: { name: values.personalDetails.name, phone: values.personalDetails.phone },
+        collectionCenter: centreInfo?._id || null,
+      };
+      await farmerAPI.create(payload);
+      message.success('Farmer added successfully');
+      onSuccess();
+      onClose();
+      resetForm();
+    } catch (error) {
+      message.error(error.message || 'Failed to save farmer');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (isCentreLogin && !isEditMode) {
+    return (
+      <Modal opened={isOpen} onClose={onClose} title="Add Farmer" size="sm" padding="lg">
+        <Stack gap="md">
+          <TextInput
+            label="Farmer Number"
+            placeholder="Enter farmer number"
+            required
+            {...form.getInputProps('farmerNumber')}
+          />
+          <TextInput
+            label="Name"
+            placeholder="Enter farmer name"
+            required
+            {...form.getInputProps('personalDetails.name')}
+          />
+          <TextInput
+            label="Phone"
+            placeholder="Enter phone number"
+            maxLength={10}
+            {...form.getInputProps('personalDetails.phone')}
+          />
+          <Group justify="flex-end" mt="sm">
+            <Button variant="default" onClick={onClose}>Cancel</Button>
+            <Button onClick={handleSimpleSubmit} loading={loading}>Save</Button>
+          </Group>
+        </Stack>
+      </Modal>
+    );
+  }
 
   return (
     <Modal
@@ -875,6 +965,16 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
             <Stack gap="md" mt="md">
               <Grid>
                 <Grid.Col span={6}>
+                  <Select
+                    label="Bank Name"
+                    placeholder="Select bank"
+                    data={bankMasterList.map(b => ({ value: b._id, label: b.bankName }))}
+                    value={selectedBankMasterId || null}
+                    onChange={handleBankMasterSelect}
+                    clearable
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
                   <TextInput
                     label="Account Number"
                     placeholder="Enter account number"
@@ -883,50 +983,35 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
                   />
                 </Grid.Col>
                 <Grid.Col span={6}>
-                  <Select
-                    label="Bank Name"
-                    placeholder="Select bank"
-                    data={INDIAN_BANKS}
-                    searchable
-                    clearable
-                    {...form.getInputProps('bankDetails.bankName')}
-                    onKeyDown={focusNext}
-                  />
-                </Grid.Col>
-                <Grid.Col span={6}>
                   <TextInput
                     label="Branch"
-                    placeholder="Enter branch"
+                    placeholder="Auto-filled from Bank Name"
+                    readOnly
                     {...form.getInputProps('bankDetails.branch')}
-                    onKeyDown={focusNext}
                   />
                 </Grid.Col>
                 <Grid.Col span={6}>
                   <TextInput
                     label="IFSC Code"
-                    placeholder="Enter IFSC code"
-                    maxLength={11}
+                    placeholder="Auto-filled from Bank Name"
+                    readOnly
                     {...form.getInputProps('bankDetails.ifsc')}
-                    onChange={(e) => form.setFieldValue('bankDetails.ifsc', e.target.value.toUpperCase())}
-                    onKeyDown={focusNext}
                   />
                 </Grid.Col>
                 <Grid.Col span={6}>
                   <TextInput
                     label="MICR Code"
-                    placeholder="Enter MICR code"
-                    maxLength={9}
+                    placeholder="Auto-filled from Bank Name"
+                    readOnly
                     {...form.getInputProps('bankDetails.micr')}
-                    onKeyDown={focusNext}
                   />
                 </Grid.Col>
                 <Grid.Col span={6}>
                   <Select
                     label="Select Bank Ledger"
-                    placeholder="Choose bank ledger"
+                    placeholder="Auto-filled from Bank Name"
                     data={bankLedgerOptions}
-                    searchable
-                    clearable
+                    readOnly
                     {...form.getInputProps('bankDetails.bankLedgerId')}
                   />
                 </Grid.Col>

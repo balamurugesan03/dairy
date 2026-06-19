@@ -61,6 +61,7 @@ export const createSale = async (req, res) => {
           saleData.oldBalance = customer.openingBalance || 0;
           saleData.customerName = customer.name;
           saleData.customerPhone = customer.phone;
+          saleData.customerLedgerId = customer.ledgerId || null;
         }
       }
     }
