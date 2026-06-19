@@ -175,6 +175,8 @@ const DDDMISReport        = lazy(() => import('./components/reports/DDDMISReport
 const MonthlyMISReport    = lazy(() => import('./components/reports/MonthlyMISReport'));
 const InspectionReport    = lazy(() => import('./components/reports/InspectionReport'));
 const MilkPurchaseReport  = lazy(() => import('./components/reports/MilkPurchaseReport'));
+const MilkSalesReport     = lazy(() => import('./components/reports/MilkSalesReport'));
+const UnionSalesReport    = lazy(() => import('./components/reports/UnionSalesReport'));
 const MilkStatementReport        = lazy(() => import('./components/reports/MilkStatementReport'));
 const BMCCOperatingCostReport    = lazy(() => import('./components/reports/BMCCOperatingCostReport'));
 
@@ -536,6 +538,8 @@ const AppContent = () => {
                 <Route path="monthly-mis-report"    element={<MonthlyMISReport />} />
                 <Route path="inspection-report"       element={<InspectionReport />} />
                 <Route path="milk-purchase-report"  element={<MilkPurchaseReport />} />
+                <Route path="milk-sales-report"     element={<MilkSalesReport />} />
+                <Route path="union-sales-report"    element={<UnionSalesReport />} />
                 <Route path="milk-statement"        element={<MilkStatementReport />} />
                 <Route path="cc-operating-cost"     element={<BMCCOperatingCostReport />} />
               </Route>

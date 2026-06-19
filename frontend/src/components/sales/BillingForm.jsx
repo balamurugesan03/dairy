@@ -121,7 +121,7 @@ const BillingForm = () => {
       customerName: '',
       customerPhone: '',
       itemId: null,
-      quantity: 1,
+      quantity: '',
       rate: '',
       collectionCenterId: null,
       subsidyId: null,
@@ -486,7 +486,7 @@ const BillingForm = () => {
     }
 
     form.setFieldValue('itemId', null);
-    form.setFieldValue('quantity', 1);
+    form.setFieldValue('quantity', '');
     form.setFieldValue('rate', '');
     setBarcodeInput('');
     setItemSearch('');
@@ -666,7 +666,7 @@ const BillingForm = () => {
       customerName: '',
       customerPhone: '',
       itemId: null,
-      quantity: 1,
+      quantity: '',
       rate: '',
       collectionCenterId: currentCenter,
       subsidyId: null,
@@ -1033,7 +1033,7 @@ const BillingForm = () => {
                       onChange={(itemId) => {
                         handleItemSelect(itemId);
                         setItemSearch('');
-                        if (itemId) setTimeout(() => addButtonRef.current?.focus(), 150);
+                        if (itemId) setTimeout(() => quantityRef.current?.focus(), 150);
                       }}
                       data={filteredItemOptions}
                       searchValue={itemSearch}
@@ -1044,16 +1044,16 @@ const BillingForm = () => {
                       onKeyDown={(e) => {
                         if (e.key !== 'Enter') return;
                         if (form.values.itemId) {
-                          // Item already selected → go to Add button
+                          // Item already selected → go to quantity
                           e.preventDefault();
-                          setTimeout(() => addButtonRef.current?.focus(), 100);
+                          setTimeout(() => quantityRef.current?.focus(), 100);
                         } else if (filteredItemOptions.length > 0) {
-                          // Auto-select first match → go to Add button
+                          // Auto-select first match → go to quantity
                           e.preventDefault();
                           const first = filteredItemOptions[0];
                           handleItemSelect(first.value);
                           setItemSearch('');
-                          setTimeout(() => addButtonRef.current?.focus(), 200);
+                          setTimeout(() => quantityRef.current?.focus(), 200);
                         } else if (!itemSearch.trim() && billItems.length > 0) {
                           // No item, empty search, items already added → jump to paid amount
                           e.preventDefault();

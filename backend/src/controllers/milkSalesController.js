@@ -804,6 +804,82 @@ export const getBalanceReport = async (req, res) => {
 };
 
 // ────────────────────────────────────────────────────────────────
+//  MILK SALES REPORT
+//  GET /report?fromDate=&toDate=&saleMode=&session=&centerId=&agentId=
+//  Returns raw records + summaries grouped by date / agent / center / creditor
+// ────────────────────────────────────────────────────────────────
+export const getMilkSalesReport = async (req, res) => {
+  try {
+    const { fromDate, toDate, saleMode, session, centerId, agentId } = req.query;
+    if (!fromDate || !toDate) {
+      return res.status(400).json({ success: false, message: 'fromDate and toDate are required' });
+    }
+
+    const start = new Date(fromDate); start.setHours(0, 0, 0, 0);
+    const end   = new Date(toDate);   end.setHours(23, 59, 59, 999);
+
+    const filter = { companyId: req.companyId, date: { $gte: start, $lte: end } };
+    if (saleMode) filter.saleMode = saleMode;
+    if (session)  filter.session  = session;
+    if (centerId) filter.centerId = new mongoose.Types.ObjectId(centerId);
+    if (agentId)  filter.agentId  = new mongoose.Types.ObjectId(agentId);
+
+    const records = await MilkSales.find(filter).sort({ date: 1, session: 1 }).lean();
+
+    const addRow = (acc, r) => {
+      acc.totalLitre  += r.litre  || 0;
+      acc.totalAmount += r.amount || 0;
+      acc.count++;
+      if (r.session === 'AM') { acc.amLitre += r.litre || 0; acc.amAmount += r.amount || 0; }
+      else                    { acc.pmLitre += r.litre || 0; acc.pmAmount += r.amount || 0; }
+    };
+    const emptyAcc = () => ({ totalLitre: 0, totalAmount: 0, count: 0, amLitre: 0, amAmount: 0, pmLitre: 0, pmAmount: 0 });
+
+    const summary = emptyAcc();
+    const dateMap    = {};
+    const agentMap   = {};
+    const centerMap  = {};
+    const creditorMap = {};
+
+    records.forEach(r => {
+      addRow(summary, r);
+
+      const dk = new Date(r.date).toISOString().split('T')[0];
+      if (!dateMap[dk]) dateMap[dk] = { date: dk, ...emptyAcc() };
+      addRow(dateMap[dk], r);
+
+      const ak = r.agentId?.toString() || '__none';
+      if (!agentMap[ak]) agentMap[ak] = { agentId: r.agentId, agentName: r.agentName || 'Direct', ...emptyAcc() };
+      addRow(agentMap[ak], r);
+
+      const ck = r.centerId?.toString() || '__none';
+      if (!centerMap[ck]) centerMap[ck] = { centerId: r.centerId, centerName: r.centerName || 'Main Centre', ...emptyAcc() };
+      addRow(centerMap[ck], r);
+
+      const crk = r.creditorId?.toString() || '__none';
+      if (!creditorMap[crk]) creditorMap[crk] = { creditorId: r.creditorId, creditorName: r.creditorName || 'Unknown', ...emptyAcc() };
+      addRow(creditorMap[crk], r);
+    });
+
+    const sort = (obj, key) => Object.values(obj).sort((a, b) => (a[key] || '').toString().localeCompare((b[key] || '').toString()));
+
+    res.json({
+      success: true,
+      data: {
+        summary,
+        records,
+        byDate:     sort(dateMap,     'date'),
+        byAgent:    sort(agentMap,    'agentName'),
+        byCenter:   sort(centerMap,   'centerName'),
+        byCreditor: sort(creditorMap, 'creditorName'),
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────
 //  CREDITOR OUTSTANDING BALANCE
 //  GET /creditor-balance?creditorId=&date=
 //  Returns cumulative (sales − receipts) for a creditor up to (not including) date

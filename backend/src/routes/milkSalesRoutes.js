@@ -13,6 +13,7 @@ import {
   zibittRawImport,
   openLyssaImport,
   backfillMilkSaleVouchers,
+  getMilkSalesReport,
 } from '../controllers/milkSalesController.js';
 
 const router = express.Router();
@@ -20,6 +21,7 @@ const router = express.Router();
 router.get('/',               getMilkSales);
 router.get('/next-bill-no',   getNextBillNo);
 router.get('/summary/daily',  getDailySummary);
+router.get('/report',         getMilkSalesReport);
 router.get('/balance-report',    getBalanceReport);
 router.get('/creditor-balance',  getCreditorBalance);
 router.get('/:id',            getMilkSaleById);

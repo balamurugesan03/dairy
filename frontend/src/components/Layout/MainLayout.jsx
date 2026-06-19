@@ -207,6 +207,8 @@ const MainLayout = () => {
              { key: '/reports/dairy-register',      label: 'Dairy Register' },
              { key: '/reports/dairy-abstract',      label: 'Dairy Abstract' },
              { key: '/reports/milk-purchase-report', label: 'Milk Purchase Report' },
+             { key: '/reports/milk-sales-report',    label: 'Milk Sales Report'    },
+             { key: '/reports/union-sales-report',   label: 'Union Sales Report'   },
           ]
         },
       ]

@@ -492,6 +492,7 @@ export const milkSalesAPI = {
   openLyssaImport: (records) => api.post('/milk-sales/openlyssa-import',  { records }).then(res => res.data).catch(handleError),
   backfillVouchers:    ()                   => api.post('/milk-sales/backfill-vouchers', {}, { timeout: 5 * 60 * 1000 }).then(res => res.data).catch(handleError),
   getCreditorBalance:  (creditorId, date)   => api.get('/milk-sales/creditor-balance', { params: { creditorId, date } }).then(res => res.data).catch(handleError),
+  getReport:           (params)             => api.get('/milk-sales/report', { params }).then(res => res.data).catch(handleError),
 };
 
 // UNION SALES SLIP APIs
@@ -504,6 +505,7 @@ export const unionSalesSlipAPI = {
   bulkImport:      (records) => api.post('/union-sales-slips/bulk-import',       { records }).then(res => res.data).catch(handleError),
   zibittRawImport: (records) => api.post('/union-sales-slips/zibitt-raw-import', { records }).then(res => res.data).catch(handleError),
   backfillVouchers: ()       => api.post('/union-sales-slips/backfill-vouchers', {}, { timeout: 5 * 60 * 1000 }).then(res => res.data).catch(handleError),
+  getReport:        (params) => api.get('/union-sales-slips/report', { params }).then(res => res.data).catch(handleError),
   fileImport: (file, onUploadProgress) => {
     const form = new FormData();
     form.append('file', file);

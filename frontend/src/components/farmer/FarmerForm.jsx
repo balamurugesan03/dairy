@@ -806,7 +806,7 @@ const FarmerForm = () => {
                     <Select
                       label="Bank Name"
                       placeholder="Select bank"
-                      data={bankMasters.map(b => ({ value: b._id, label: b.bankName }))}
+                      data={bankMasters.map(b => ({ value: b._id, label: b.branch ? `${b.bankName} (${b.branch})` : b.bankName }))}
                       searchable
                       clearable
                       value={form.values.bankDetails.bankName}

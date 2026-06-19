@@ -752,3 +752,87 @@ export const fileUploadImportSlips = async (req, res) => {
     if (filePath) fs.unlink(filePath, () => {});
   }
 };
+
+// ── UNION SALES REPORT ─────────────────────────────────────────────────────
+//  GET /report?fromDate=&toDate=&time=
+//  Returns raw records + pre-grouped summaries (byDate / byMonth / byYear)
+export const getUnionSalesReport = async (req, res) => {
+  try {
+    const { fromDate, toDate, time } = req.query;
+    if (!fromDate || !toDate) {
+      return res.status(400).json({ success: false, message: 'fromDate and toDate are required' });
+    }
+
+    const start = new Date(fromDate); start.setHours(0, 0, 0, 0);
+    const end   = new Date(toDate);   end.setHours(23, 59, 59, 999);
+
+    const match = { companyId: req.companyId, date: { $gte: start, $lte: end } };
+    if (time) match.time = time;
+
+    const records = await UnionSalesSlip.find(match).sort({ date: 1, time: 1 }).lean();
+
+    // ── In-memory grouping helpers ───────────────────────────────
+    const emptyBucket = () => ({
+      amQty: 0, amAmount: 0, pmQty: 0, pmAmount: 0,
+      totalQty: 0, totalAmount: 0,
+      unionSpoilage: 0, transportSpoilage: 0, count: 0,
+      fatSum: 0, snfSum: 0, fatCount: 0,
+    });
+
+    const addTo = (bucket, r) => {
+      bucket.totalQty    += r.qty    || 0;
+      bucket.totalAmount += r.amount || 0;
+      bucket.unionSpoilage      += r.unionSpoilage      || 0;
+      bucket.transportSpoilage  += r.transportationSpoilage || 0;
+      bucket.count++;
+      if (r.fat > 0) { bucket.fatSum += r.fat; bucket.snfSum += r.snf || 0; bucket.fatCount++; }
+      if (r.time === 'AM') { bucket.amQty += r.qty || 0; bucket.amAmount += r.amount || 0; }
+      else                 { bucket.pmQty += r.qty || 0; bucket.pmAmount += r.amount || 0; }
+    };
+
+    const summary  = emptyBucket();
+    const dateMap  = {};
+    const monthMap = {};
+    const yearMap  = {};
+
+    records.forEach(r => {
+      addTo(summary, r);
+
+      const d  = new Date(r.date);
+      const dk = d.toISOString().split('T')[0];          // YYYY-MM-DD
+      const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; // YYYY-MM
+      const yk = String(d.getFullYear());                 // YYYY
+
+      if (!dateMap[dk])  { dateMap[dk]  = { date: dk, ...emptyBucket() }; }
+      if (!monthMap[mk]) { monthMap[mk] = { month: mk, year: d.getFullYear(), monthNum: d.getMonth() + 1, ...emptyBucket() }; }
+      if (!yearMap[yk])  { yearMap[yk]  = { year: yk, ...emptyBucket() }; }
+
+      addTo(dateMap[dk],  r);
+      addTo(monthMap[mk], r);
+      addTo(yearMap[yk],  r);
+    });
+
+    const finalize = (obj) => ({
+      ...obj,
+      avgFat: obj.fatCount > 0 ? +(obj.fatSum / obj.fatCount).toFixed(2) : 0,
+      avgSnf: obj.fatCount > 0 ? +(obj.snfSum / obj.fatCount).toFixed(2) : 0,
+    });
+
+    const sortedDate  = Object.values(dateMap).sort((a, b) => a.date.localeCompare(b.date)).map(finalize);
+    const sortedMonth = Object.values(monthMap).sort((a, b) => a.month.localeCompare(b.month)).map(finalize);
+    const sortedYear  = Object.values(yearMap).sort((a, b) => a.year.localeCompare(b.year)).map(finalize);
+
+    res.json({
+      success: true,
+      data: {
+        summary: finalize(summary),
+        records,
+        byDate:  sortedDate,
+        byMonth: sortedMonth,
+        byYear:  sortedYear,
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};

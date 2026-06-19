@@ -11,6 +11,7 @@ import {
   fileUploadImportSlips,
   zibittRawImportSlips,
   backfillVouchers,
+  getUnionSalesReport,
 } from '../controllers/unionSalesSlipController.js';
 
 const router = express.Router();
@@ -24,6 +25,9 @@ router.post('/zibitt-raw-import', zibittRawImportSlips);
 
 // Backfill missing Day Book vouchers for legacy slips — before /:id
 router.post('/backfill-vouchers', backfillVouchers);
+
+// Report — before /:id
+router.get('/report', getUnionSalesReport);
 
 // Main CRUD
 router.post('/',      createSlip);

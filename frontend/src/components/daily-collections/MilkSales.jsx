@@ -183,7 +183,7 @@ export default function MilkSales() {
   // Saved form fields helper (lazy — only parsed once per mount)
   const _msf = () => { try { return JSON.parse(sessionStorage.getItem('milkSales_form') || 'null') || {}; } catch { return {}; } };
 
-  const [mode,    setMode]    = useState(() => _msf().mode    || 'LOCAL');
+  const [mode,    setMode]    = useState('LOCAL');
   const [session, setSession] = useState(() => _msf().session || (new Date().getHours() < 12 ? 'AM' : 'PM'));
   const [date,    setDate]    = useState(() => {
     try {
@@ -338,13 +338,11 @@ export default function MilkSales() {
     whatsAppSettingsRef.current = { ...whatsAppSettingsRef.current, enabled: waEnabled, sendType: waSendType, groupId: waGroupId };
   }, [waEnabled, waSendType, waGroupId]);
 
-  // Auto-select first center/agent when switching to LOCAL or SAMPLE
+  // Auto-select first center/agent for all modes when none is selected
   useEffect(() => {
-    if (mode === 'LOCAL' || mode === 'SAMPLE') {
-      if (!center && centers.length) setCenter(centers[0].value);
-      if (!agent  && agents.length)  setAgent(agents[0].value);
-    }
-  }, [mode]); // eslint-disable-line
+    if (!center && centers.length) setCenter(centers[0].value);
+    if (!agent  && agents.length)  setAgent(agents[0].value);
+  }, [mode, centers, agents]); // eslint-disable-line
 
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -385,20 +383,18 @@ export default function MilkSales() {
       const agentList  = (ag?.data || []).map(x => ({ value: x._id, label: x.agentName || '—' }));
       setCenters(centerList);
       setAgents(agentList);
-      // Auto-select user's assigned center/agent (or first) for LOCAL/SAMPLE mode
-      if (formRef.current.mode === 'LOCAL' || formRef.current.mode === 'SAMPLE') {
-        if (!formRef.current.center) {
-          const userCentreId = userCenter?._id?.toString() || userCenter?.toString();
-          const preferred = userCentreId && centerList.find(c => c.value === userCentreId);
-          if (preferred) setCenter(preferred.value);
-          else if (centerList.length) setCenter(centerList[0].value);
-        }
-        if (!formRef.current.agent) {
-          const userAgentId = userAgent?._id?.toString() || userAgent?.toString();
-          const preferred = userAgentId && agentList.find(a => a.value === userAgentId);
-          if (preferred) setAgent(preferred.value);
-          else if (agentList.length) setAgent(agentList[0].value);
-        }
+      // Auto-select user's assigned center/agent (or first) for all modes
+      if (!formRef.current.center) {
+        const userCentreId = userCenter?._id?.toString() || userCenter?.toString();
+        const preferred = userCentreId && centerList.find(c => c.value === userCentreId);
+        if (preferred) setCenter(preferred.value);
+        else if (centerList.length) setCenter(centerList[0].value);
+      }
+      if (!formRef.current.agent) {
+        const userAgentId = userAgent?._id?.toString() || userAgent?.toString();
+        const preferred = userAgentId && agentList.find(a => a.value === userAgentId);
+        if (preferred) setAgent(preferred.value);
+        else if (agentList.length) setAgent(agentList[0].value);
       }
     } catch { /* silent */ }
   };
@@ -431,9 +427,11 @@ export default function MilkSales() {
   const handleNew = () => {
     setEditingId(null); setSelRow(null);
     fetchNextBillNo();
-    setCenter(null); setAgent(null); setCategory(null); setCreditor(null);
+    const defaultCenter = centers[0]?.value || null;
+    const defaultAgent  = agents[0]?.value  || null;
+    setCenter(defaultCenter); setAgent(defaultAgent); setCategory(null); setCreditor(null);
     setOpCr(''); setLitre(''); setRate(''); setAmount(0); setPType('Cash');
-    fetchRate({ mode, creditor: null, agent: null, date });
+    fetchRate({ mode, creditor: null, agent: defaultAgent, date });
     fetchOpCr({ mode, creditor: null, date });
     setTimeout(() => litrRef.current?.focus(), 60);
   };
@@ -934,29 +932,6 @@ export default function MilkSales() {
               />
             </Box>
 
-            {/* Collection Centre & Agent (CREDIT & SAMPLE) */}
-            {(mode === 'CREDIT' || mode === 'SAMPLE') && (
-              <>
-                <Box style={{ flexShrink: 0, minWidth: 160 }}>
-                  <Text size="9px" fw={700} c="#64748b" tt="uppercase" mb={3} style={{ letterSpacing: '0.4px' }}>Collection Centre</Text>
-                  <Select
-                    data={centers} value={center} onChange={setCenter}
-                    placeholder="Select centre..." searchable clearable
-                    size="xs" radius="md"
-                    styles={{ input: { fontWeight: 600, border: '1.5px solid #c4b5fd', height: 28, fontSize: 12 } }}
-                  />
-                </Box>
-                <Box style={{ flexShrink: 0, minWidth: 160 }}>
-                  <Text size="9px" fw={700} c="#64748b" tt="uppercase" mb={3} style={{ letterSpacing: '0.4px' }}>Collection Agent</Text>
-                  <Select
-                    data={agents} value={agent} onChange={setAgent}
-                    placeholder="Select agent..." searchable clearable
-                    size="xs" radius="md"
-                    styles={{ input: { fontWeight: 600, border: '1.5px solid #c4b5fd', height: 28, fontSize: 12 } }}
-                  />
-                </Box>
-              </>
-            )}
           </Group>
 
           {/* RIGHT: Offline badge + Sync + Clear */}
@@ -1028,57 +1003,47 @@ export default function MilkSales() {
           </Card>
 
           {/* ── CARD 2: Party Info ── */}
-          <Card shadow="xs" radius="md" withBorder style={{ flex: '0 0 300px', borderColor: isLocal ? '#bbf7d0' : '#ddd6fe', borderTop: `3px solid ${modeColor}`, padding: '8px 12px' }}>
+          <Card shadow="xs" radius="md" withBorder style={{ flex: '0 0 300px', borderColor: mode === 'CREDIT' ? '#ddd6fe' : '#bbf7d0', borderTop: `3px solid ${modeColor}`, padding: '8px 12px' }}>
             <Group gap={5} mb={7}>
               <Box style={{ background: modeBg, borderRadius: 6, padding: '3px 5px' }}>
-                {isLocal ? <IconBuilding size={13} color={modeColor} /> : <IconUser size={13} color={modeColor} />}
+                <IconBuilding size={13} color={modeColor} />
               </Box>
               <Text size="11px" fw={800} style={{ color: modeColor, letterSpacing: '0.4px' }} tt="uppercase">
-                {isLocal ? 'Center Info' : 'Credit Party'}
+                {mode === 'CREDIT' ? 'Credit Party' : 'Center Info'}
               </Text>
             </Group>
 
-            {isLocal ? (
-              <Stack gap={6}>
-                <Box>
-                  <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Collection Center</Text>
-                  <Select data={centers} value={center} onChange={setCenter} placeholder="Select center..." searchable clearable
-                    size="xs" radius="sm" styles={{ input: { fontWeight: 600, border: '1.5px solid #86efac', height: 28 } }} />
-                </Box>
-                <Box>
-                  <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Agent</Text>
-                  <Select data={agents} value={agent} onChange={setAgent} placeholder="Select agent..." searchable clearable
-                    size="xs" radius="sm" styles={{ input: { fontWeight: 600, border: '1.5px solid #86efac', height: 28 } }} />
-                </Box>
-              </Stack>
-            ) : (
-              <Stack gap={6}>
-                <Box>
-                  <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Category</Text>
-                  <Select
-                    data={[{ value: 'School', label: 'School' }, { value: 'Anganwadi', label: 'Anganwadi' }, { value: 'Hospital', label: 'Hospital' }, { value: 'Booth', label: 'Booth' }, { value: 'Hotel', label: 'Hotel' }, { value: 'Vendor Sales', label: 'Vendor Sales' }, { value: 'Others', label: 'Others' }]}
-                    value={category} onChange={v => { setCategory(v); setCreditor(null); }}
-                    placeholder="All categories" clearable size="xs" radius="sm"
-                    styles={{ input: { fontWeight: 600, border: '1.5px solid #c4b5fd', height: 28 } }}
-                  />
-                </Box>
-                <Box>
-                  <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Creditor</Text>
-                  <Select
-                    data={category ? customers.filter(c => c.category === category) : customers}
-                    value={creditor} onChange={setCreditor}
-                    placeholder="Select creditor..." searchable clearable size="xs" radius="sm"
-                    styles={{ input: { fontWeight: 600, border: '1.5px solid #c4b5fd', height: 28 } }}
-                  />
-                </Box>
-                <Box>
-                  <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Opening Credit (&#8377;) — Auto</Text>
-                  <NumberInput value={opCr === '' ? '' : parseFloat(opCr)} readOnly
-                    min={0} decimalScale={2} placeholder="0.00" size="xs" radius="sm"
-                    styles={{ input: { fontWeight: 600, border: '1.5px solid #c4b5fd', height: 28, background: '#f5f3ff', cursor: 'default' } }} />
-                </Box>
-              </Stack>
-            )}
+            <Stack gap={6}>
+              <Box>
+                <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Collection Center</Text>
+                <Select data={centers} value={center} onChange={setCenter} placeholder="Select center..." searchable clearable
+                  size="xs" radius="sm" styles={{ input: { fontWeight: 600, border: `1.5px solid ${mode === 'CREDIT' ? '#c4b5fd' : '#86efac'}`, height: 28 } }} />
+              </Box>
+              <Box>
+                <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Collection Agent</Text>
+                <Select data={agents} value={agent} onChange={setAgent} placeholder="Select agent..." searchable clearable
+                  size="xs" radius="sm" styles={{ input: { fontWeight: 600, border: `1.5px solid ${mode === 'CREDIT' ? '#c4b5fd' : '#86efac'}`, height: 28 } }} />
+              </Box>
+              {mode === 'CREDIT' && (
+                <>
+                  <Box>
+                    <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Creditor</Text>
+                    <Select
+                      data={customers}
+                      value={creditor} onChange={setCreditor}
+                      placeholder="Select creditor..." searchable clearable size="xs" radius="sm"
+                      styles={{ input: { fontWeight: 600, border: '1.5px solid #c4b5fd', height: 28 } }}
+                    />
+                  </Box>
+                  <Box>
+                    <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Opening Credit (&#8377;) — Auto</Text>
+                    <NumberInput value={opCr === '' ? '' : parseFloat(opCr)} readOnly
+                      min={0} decimalScale={2} placeholder="0.00" size="xs" radius="sm"
+                      styles={{ input: { fontWeight: 600, border: '1.5px solid #c4b5fd', height: 28, background: '#f5f3ff', cursor: 'default' } }} />
+                  </Box>
+                </>
+              )}
+            </Stack>
           </Card>
 
           {/* ── CARD 3: Qty & Amount ── */}
@@ -1088,13 +1053,13 @@ export default function MilkSales() {
                 <Box style={{ background: '#fef9c3', borderRadius: 6, padding: '3px 5px' }}><IconMilk size={13} color="#d97706" /></Box>
                 <Text size="11px" fw={800} c="#78350f" tt="uppercase" style={{ letterSpacing: '0.4px' }}>Qty &amp; Amount</Text>
               </Group>
-              <Text size="9px" c="#94a3b8">Tab → Litre → Rate → Enter</Text>
+              <Text size="9px" c="#94a3b8">Tab → Litre → Enter → Save</Text>
             </Group>
             <Group gap={8} mb={8} align="flex-end">
               <Box style={{ flex: 1 }}>
                 <Text size="9px" fw={700} c="#0369a1" tt="uppercase" mb={2} style={{ letterSpacing: '0.4px' }}>Litres</Text>
                 <NumberInput ref={litrRef} value={litre === '' ? '' : parseFloat(litre)}
-                  onChange={v => setLitre(String(v ?? ''))} onKeyDown={focusNext(rateRef)}
+                  onChange={v => setLitre(String(v ?? ''))} onKeyDown={handleRateEnter}
                   min={0} decimalScale={2} placeholder="0.00" hideControls size="xs" radius="sm"
                   styles={{ input: { height: 36, fontSize: 16, fontWeight: 900, background: '#f0f9ff', border: '2px solid #7dd3fc', color: '#0369a1', textAlign: 'center' } }}
                 />
@@ -1102,9 +1067,9 @@ export default function MilkSales() {
               <Box style={{ flex: 1 }}>
                 <Text size="9px" fw={700} c="#c2410c" tt="uppercase" mb={2} style={{ letterSpacing: '0.4px' }}>Rate / L (&#8377;)</Text>
                 <NumberInput ref={rateRef} value={rate === '' ? '' : parseFloat(rate)}
-                  onChange={v => setRate(String(v ?? ''))} onKeyDown={handleRateEnter}
+                  readOnly onKeyDown={handleRateEnter}
                   min={0} decimalScale={2} placeholder="0.00" hideControls size="xs" radius="sm"
-                  styles={{ input: { height: 36, fontSize: 16, fontWeight: 900, background: '#fff7ed', border: '2px solid #fdba74', color: '#c2410c', textAlign: 'center' } }}
+                  styles={{ input: { height: 36, fontSize: 16, fontWeight: 900, background: '#fff7ed', border: '2px solid #fdba74', color: '#c2410c', textAlign: 'center', cursor: 'default' } }}
                 />
               </Box>
             </Group>

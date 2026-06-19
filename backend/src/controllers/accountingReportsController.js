@@ -974,21 +974,26 @@ export const getGeneralLedgerAbstract = async (req, res) => {
       })
     );
 
+    // Only include ledgers that have actual activity (opening balance, debits, or credits)
+    const activeAbstract = abstract.filter(a =>
+      a.openingBalance !== 0 || a.totalDebits !== 0 || a.totalCredits !== 0
+    );
+
     // Calculate totals
     const summary = {
-      totalLedgers: abstract.length,
-      totalOpeningDebit: abstract
+      totalLedgers: activeAbstract.length,
+      totalOpeningDebit: activeAbstract
         .filter(a => a.openingBalanceType === 'Dr')
         .reduce((sum, a) => sum + a.openingBalance, 0),
-      totalOpeningCredit: abstract
+      totalOpeningCredit: activeAbstract
         .filter(a => a.openingBalanceType === 'Cr')
         .reduce((sum, a) => sum + a.openingBalance, 0),
-      totalDebits: abstract.reduce((sum, a) => sum + a.totalDebits, 0),
-      totalCredits: abstract.reduce((sum, a) => sum + a.totalCredits, 0),
-      totalClosingDebit: abstract
+      totalDebits: activeAbstract.reduce((sum, a) => sum + a.totalDebits, 0),
+      totalCredits: activeAbstract.reduce((sum, a) => sum + a.totalCredits, 0),
+      totalClosingDebit: activeAbstract
         .filter(a => a.closingBalanceType === 'Dr')
         .reduce((sum, a) => sum + a.closingBalance, 0),
-      totalClosingCredit: abstract
+      totalClosingCredit: activeAbstract
         .filter(a => a.closingBalanceType === 'Cr')
         .reduce((sum, a) => sum + a.closingBalance, 0)
     };
@@ -998,7 +1003,7 @@ export const getGeneralLedgerAbstract = async (req, res) => {
       data: {
         startDate: dateFilter.startDate,
         endDate: dateFilter.endDate,
-        abstract,
+        abstract: activeAbstract,
         summary
       }
     });

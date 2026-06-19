@@ -1500,10 +1500,18 @@ const MilkPurchase = () => {
     try {
       const from = new Date(exportFrom); from.setHours(0, 0, 0, 0);
       const to   = new Date(exportTo);   to.setHours(23, 59, 59, 999);
-      const rows = entries.filter(e => {
-        const d = new Date(e.date);
-        return d >= from && d <= to;
-      });
+      const params = { fromDate: localDateStr(from), toDate: localDateStr(to), limit: 10000 };
+      if (center) params.collectionCenter = center;
+      const res = await milkCollectionAPI.getAll(params);
+      const fetched = res?.data || [];
+      const rows = fetched.map(r => ({
+        id: r._id, billNo: r.billNo,
+        producerNo: r.farmerNumber, producerName: r.farmerName || '',
+        qty: r.qty, ltr: r.qty,
+        clr: r.clr, fat: r.fat, snf: r.snf,
+        incentive: r.incentive, rate: r.rate, amount: r.amount,
+        date: r.date, shift: r.shift,
+      }));
       if (rows.length === 0) {
         notifications.show({ color: 'yellow', message: 'No records found for selected date range' });
         return;
