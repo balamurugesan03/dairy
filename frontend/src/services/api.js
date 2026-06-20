@@ -444,6 +444,7 @@ export const collectionCenterAPI = {
 // MILK COLLECTION APIs
 export const milkCollectionAPI = {
   getAll: (params) => api.get('/milk-collections', { params }).then(res => res.data).catch(handleError),
+  exportAll: (params) => api.get('/milk-collections', { params, timeout: 120000 }).then(res => res.data).catch(handleError),
   getById: (id) => api.get(`/milk-collections/${id}`).then(res => res.data).catch(handleError),
   create: (data) => api.post('/milk-collections', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/milk-collections/${id}`, data).then(res => res.data).catch(handleError),
@@ -454,6 +455,7 @@ export const milkCollectionAPI = {
   zibittImport:    (records) => api.post('/milk-collections/zibitt-import',    { records }).then(res => res.data).catch(handleError),
   linzaImport:     (records) => api.post('/milk-collections/linza-import',     { records }).then(res => res.data).catch(handleError),
   openLyssaImport: (records) => api.post('/milk-collections/openlyssa-import', { records }).then(res => res.data).catch(handleError),
+  dairysoftImport: (records) => api.post('/milk-collections/dairysoft-import', { records }).then(res => res.data).catch(handleError),
   fileImport: (file, onUploadProgress) => {
     const form = new FormData();
     form.append('file', file);
@@ -465,6 +467,7 @@ export const milkCollectionAPI = {
   },
   getFarmerHistory: (farmerNumber, params) => api.get(`/milk-collections/farmer/${farmerNumber}`, { params }).then(res => res.data).catch(handleError),
   getFarmerStats: (farmerNumber, params) => api.get(`/milk-collections/farmer/${farmerNumber}/stats`, { params }).then(res => res.data).catch(handleError),
+  getFarmerCriteriaSummary: (params) => api.get('/milk-collections/summary/farmer-criteria', { params }).then(res => res.data).catch(handleError),
   getFarmerWiseSummary:   (params) => api.get('/milk-collections/summary/farmer-wise',  { params }).then(res => res.data).catch(handleError),
   getFarmerWiseStatement: (params) => api.get('/milk-collections/statement/farmer-wise',{ params }).then(res => res.data).catch(handleError),
   getDateWiseSummary:     (params) => api.get('/milk-collections/summary/date-wise',    { params }).then(res => res.data).catch(handleError),

@@ -185,8 +185,9 @@ const MainLayout = () => {
         { key: '/daily-collections/list',           label: 'Daily Collection List' },
         { key: '/daily-collections/milk-sales',     label: 'Milk Sales' },
         { key: '/daily-collections/union-sales-slip', label: 'Union Sales' },
-        { key: '/daily-collections/farmer-wise-summary', label: 'Farmer-Wise Summary' },
-        { key: '/daily-collections/intelligent-query',   label: 'Intelligent Query'   },
+        { key: '/daily-collections/farmer-wise-summary',   label: 'Farmer-Wise Summary' },
+        { key: '/daily-collections/farmer-criteria-report', label: 'Farmer Criteria Report' },
+        { key: '/daily-collections/intelligent-query',     label: 'Intelligent Query'   },
         { key: '/reports/salesman-balance', label: 'Salesman/Customer Ledger' },
         {
           key: 'milk-settings-sub',

@@ -19,7 +19,9 @@ import {
   zibittBrowserImportCollections,
   linzaImportCollections,
   openLyssaImportCollections,
+  dairysoftImportCollections,
   getCentreSummary,
+  getFarmerCriteriaSummary,
 } from '../controllers/milkCollectionController.js';
 
 const router = express.Router();
@@ -27,6 +29,7 @@ const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 500 * 1024 * 1024
 
 // Summary / aggregate routes — BEFORE /:id
 router.get('/centre-summary',              getCentreSummary);
+router.get('/summary/farmer-criteria',     getFarmerCriteriaSummary);
 router.get('/summary/farmer-wise',         getFarmerWiseSummary);
 router.get('/statement/farmer-wise',       getFarmerWiseStatement);
 router.get('/summary/date-wise',           getDateWiseSummary);
@@ -44,6 +47,7 @@ router.post('/bulk-import',    bulkImportCollections);
 router.post('/zibitt-import',    zibittBrowserImportCollections);
 router.post('/linza-import',     linzaImportCollections);
 router.post('/openlyssa-import', openLyssaImportCollections);
+router.post('/dairysoft-import', dairysoftImportCollections);
 
 // Main CRUD
 router.post('/',      createCollection);

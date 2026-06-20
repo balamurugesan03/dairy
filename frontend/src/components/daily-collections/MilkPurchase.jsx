@@ -309,8 +309,10 @@ const MilkPurchase = () => {
   const [exportLoading,      setExportLoading]      = useState(false);
   const [zibittLoading,      setZibittLoading]      = useState(false);
   const [openLyssaLoading,   setOpenLyssaLoading]   = useState(false);
-  const zibittFileRef    = useRef(null);
-  const openLyssaFileRef = useRef(null);
+  const [dairysoftLoading,   setDairysoftLoading]   = useState(false);
+  const zibittFileRef     = useRef(null);
+  const openLyssaFileRef  = useRef(null);
+  const dairysoftFileRef  = useRef(null);
   const [filterMonth,    setFilterMonth]    = useState(String(new Date().getMonth() + 1));
   const [filterYear,     setFilterYear]     = useState(String(new Date().getFullYear()));
   const [monthMode,      setMonthMode]      = useState(false);  // true = showing month range, false = today's date
@@ -1501,8 +1503,7 @@ const MilkPurchase = () => {
       const from = new Date(exportFrom); from.setHours(0, 0, 0, 0);
       const to   = new Date(exportTo);   to.setHours(23, 59, 59, 999);
       const params = { fromDate: localDateStr(from), toDate: localDateStr(to), limit: 10000 };
-      if (center) params.collectionCenter = center;
-      const res = await milkCollectionAPI.getAll(params);
+      const res = await milkCollectionAPI.exportAll(params);
       const fetched = res?.data || [];
       const rows = fetched.map(r => ({
         id: r._id, billNo: r.billNo,
@@ -1518,11 +1519,12 @@ const MilkPurchase = () => {
       }
       const XLSX2 = await import('xlsx');
       const sheetData = [
-        ['#', 'Bill No', 'Farmer No', 'Date', 'Shift', 'Litres', 'KG', 'FAT %', 'CLR', 'SNF %', 'Incentive (₹)', 'Rate/L (₹)', 'Amount (₹)'],
+        ['#', 'Bill No', 'Farmer No', 'Farmer Name', 'Date', 'Shift', 'Litres', 'KG', 'FAT %', 'CLR', 'SNF %', 'Incentive (₹)', 'Rate/L (₹)', 'Amount (₹)'],
         ...rows.map((e, i) => [
           i + 1,
           e.billNo,
           e.producerNo,
+          e.producerName,
           e.date ? new Date(e.date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '',
           e.shift,
           parseFloat((e.ltr ?? e.qty).toFixed(2)),
@@ -1666,6 +1668,47 @@ const MilkPurchase = () => {
       autoClose: 4000
     });
     loadMonthEntries(filterMonth, filterYear);
+  };
+
+  // DairySoft import — parse Excel in browser, send rows to backend
+  const handleDairysoftImport = async (file) => {
+    if (!file) return;
+    setDairysoftLoading(true);
+    const nid = `dairysoft-${Date.now()}`;
+    notifications.show({ id: nid, loading: true, title: 'DairySoft Import', message: 'Reading file…', autoClose: false, withCloseButton: false });
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const XLSX2 = await import('xlsx');
+      const wb = XLSX2.read(arrayBuffer, { type: 'array', cellDates: false, sheetStubs: false, defval: '' });
+      let allRows = [];
+      for (const sheetName of wb.SheetNames) {
+        const ws = wb.Sheets[sheetName];
+        allRows = allRows.concat(XLSX2.utils.sheet_to_json(ws, { defval: '' }));
+      }
+      const rows = allRows.filter(r => Object.values(r).some(v => v !== '' && v !== null));
+      if (!rows.length) {
+        notifications.update({ id: nid, color: 'red', message: 'File is empty', loading: false, autoClose: 4000 });
+        return;
+      }
+      const CHUNK = 500;
+      let totalInserted = 0, totalSkipped = 0, totalUnmatched = 0;
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        const res = await milkCollectionAPI.dairysoftImport(rows.slice(i, i + CHUNK));
+        totalInserted  += res?.data?.inserted         ?? 0;
+        totalSkipped   += res?.data?.skipped          ?? 0;
+        totalUnmatched += res?.data?.unmatchedFarmers ?? 0;
+      }
+      let msg = `${totalInserted} imported`;
+      if (totalSkipped)   msg += `, ${totalSkipped} skipped (duplicate)`;
+      if (totalUnmatched) msg += ` | ${totalUnmatched} Farmer Nos not matched (imported with file name)`;
+      notifications.update({ id: nid, loading: false, autoClose: 10000, color: totalInserted > 0 ? 'teal' : 'orange', title: 'DairySoft Import Done', message: msg });
+      loadMonthEntries(filterMonth, filterYear);
+    } catch (err) {
+      notifications.update({ id: nid, loading: false, color: 'red', title: 'Import Failed', message: err?.message || 'Error', autoClose: 6000 });
+    } finally {
+      setDairysoftLoading(false);
+      if (dairysoftFileRef.current) dairysoftFileRef.current.value = '';
+    }
   };
 
   // ── Keyboard ──────────────────────────────────────────────────────────────
@@ -2493,6 +2536,22 @@ const MilkPurchase = () => {
                     size="compact-xs" radius="sm"
                     style={{ background: '#0369a1', border: '1px solid #7dd3fc', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                     OpenLyssa
+                  </Button>
+                  {/* DairySoft import */}
+                  <input
+                    ref={dairysoftFileRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    style={{ display: 'none' }}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleDairysoftImport(f); }}
+                  />
+                  <Button
+                    leftSection={<IconUpload size={12} />}
+                    loading={dairysoftLoading}
+                    onClick={() => dairysoftFileRef.current?.click()}
+                    size="compact-xs" radius="sm"
+                    style={{ background: '#b45309', border: '1px solid #fcd34d', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                    DairySoft
                   </Button>
                 </>
               )}

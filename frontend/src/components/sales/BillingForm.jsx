@@ -490,9 +490,7 @@ const BillingForm = () => {
     form.setFieldValue('rate', '');
     setBarcodeInput('');
     setItemSearch('');
-    if (form.values.customerType !== 'Customer' && form.values.customerType !== 'Other') {
-      setTimeout(() => paidAmountRef.current?.focus(), 100);
-    }
+    setTimeout(() => itemSelectRef.current?.focus(), 100);
   };
 
   const handleRemoveItem = (index) => {
@@ -1072,11 +1070,12 @@ const BillingForm = () => {
                     <NumberInput
                       ref={quantityRef}
                       label="Add Quantity"
+                      placeholder="Enter qty"
                       value={form.values.quantity}
                       onChange={(value) => form.setFieldValue('quantity', value)}
-                      min={0.01}
-                      step={1}
+                      min={0}
                       decimalScale={2}
+                      hideControls
                       disabled={!form.values.itemId || !itemHasStock}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -1528,7 +1527,7 @@ const BillingForm = () => {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    saveButtonRef.current?.focus();
+                    handleSubmit();
                   }
                 }}
               />

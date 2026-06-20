@@ -80,7 +80,8 @@ export const getAllCollections = async (req, res) => {
     const {
       date, shift, collectionCenter, farmerNumber,
       fromDate, toDate,
-      page = 1, limit = 200
+      page = 1, limit = 200,
+      lean,
     } = req.query;
 
     const query = { companyId: req.companyId };
@@ -103,12 +104,15 @@ export const getAllCollections = async (req, res) => {
     const skip  = (parseInt(page) - 1) * parseInt(limit);
     const total = await MilkCollection.countDocuments(query);
 
-    const records = await MilkCollection.find(query)
-      .populate('collectionCenter', 'centerName')
-      .populate('agent', 'agentName')
-      .sort({ date: -1, createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
+    // For large exports, skip populate and use lean() for much faster query
+    const isLean = lean === 'true' || parseInt(limit) >= 1000;
+    let q = MilkCollection.find(query).sort({ date: -1, createdAt: -1 }).skip(skip).limit(parseInt(limit));
+    if (isLean) {
+      q = q.lean();
+    } else {
+      q = q.populate('collectionCenter', 'centerName').populate('agent', 'agentName');
+    }
+    const records = await q;
 
     res.json({
       success: true,
@@ -817,6 +821,139 @@ export const getFarmerHistory = async (req, res) => {
   }
 };
 
+// ── FARMER CRITERIA SUMMARY ───────────────────────────────────────────────────
+// GET /milk-collections/summary/farmer-criteria
+// Params: fromDate, toDate, memberType (all|member|nonMember),
+//         minDays, minQty, minTotalSolid
+// Returns per-farmer: totalDays, totalShifts, totalQty, avgFat, avgSnf, totalSolid, totalAmount, address
+export const getFarmerCriteriaSummary = async (req, res) => {
+  try {
+    const { fromDate, toDate, memberType, minDays, minQty, minTotalSolid } = req.query;
+
+    const match = { companyId: req.companyId };
+    if (fromDate || toDate) {
+      match.date = {};
+      if (fromDate) { const s = new Date(fromDate); s.setHours(0, 0, 0, 0); match.date.$gte = s; }
+      if (toDate)   { const t = new Date(toDate);   t.setHours(23, 59, 59, 999); match.date.$lte = t; }
+    }
+
+    // Stage 1: Sum per farmer per day (to count distinct days correctly)
+    const pipeline = [
+      { $match: match },
+      {
+        $group: {
+          _id: {
+            farmerNumber: '$farmerNumber',
+            dateStr: { $dateToString: { format: '%Y-%m-%d', date: '$date', timezone: '+05:30' } }
+          },
+          farmerId:    { $first: '$farmer' },
+          farmerName:  { $first: '$farmerName' },
+          shifts:      { $sum: 1 },
+          dayQty:      { $sum: '$qty' },
+          dayFatQty:   { $sum: { $multiply: ['$qty', '$fat'] } },
+          daySnfQty:   { $sum: { $multiply: ['$qty', '$snf'] } },
+          dayAmount:   { $sum: '$amount' },
+        }
+      },
+      // Stage 2: Aggregate per farmer (each doc = 1 day)
+      {
+        $group: {
+          _id:         '$_id.farmerNumber',
+          farmerId:    { $first: '$farmerId' },
+          farmerName:  { $first: '$farmerName' },
+          totalDays:   { $sum: 1 },
+          totalShifts: { $sum: '$shifts' },
+          totalQty:    { $sum: '$dayQty' },
+          totalFatQty: { $sum: '$dayFatQty' },
+          totalSnfQty: { $sum: '$daySnfQty' },
+          totalAmount: { $sum: '$dayAmount' },
+        }
+      },
+      // Stage 3: Derived fields
+      {
+        $addFields: {
+          avgFat:     { $cond: [{ $gt: ['$totalQty', 0] }, { $divide: ['$totalFatQty', '$totalQty'] }, 0] },
+          avgSnf:     { $cond: [{ $gt: ['$totalQty', 0] }, { $divide: ['$totalSnfQty', '$totalQty'] }, 0] },
+          totalSolid: { $cond: [{ $gt: ['$totalQty', 0] }, { $divide: [{ $add: ['$totalFatQty', '$totalSnfQty'] }, '$totalQty'] }, 0] },
+        }
+      },
+    ];
+
+    // Stage 4: Apply criteria HAVING filters
+    const criteriaMatch = {};
+    if (minDays    && parseFloat(minDays)    > 0) criteriaMatch.totalDays   = { $gte: parseFloat(minDays) };
+    if (minQty     && parseFloat(minQty)     > 0) criteriaMatch.totalQty    = { $gte: parseFloat(minQty) };
+    if (minTotalSolid && parseFloat(minTotalSolid) > 0) criteriaMatch.totalSolid = { $gte: parseFloat(minTotalSolid) };
+    if (Object.keys(criteriaMatch).length) pipeline.push({ $match: criteriaMatch });
+
+    // Stage 5: Lookup farmer for address + membership
+    pipeline.push(
+      { $lookup: { from: 'farmers', localField: 'farmerId', foreignField: '_id', as: 'fd' } },
+      {
+        $addFields: {
+          farmerDoc:  { $arrayElemAt: ['$fd', 0] },
+        }
+      },
+      {
+        $addFields: {
+          isMember: { $ifNull: ['$farmerDoc.isMembership', false] },
+          address: {
+            $trim: {
+              input: {
+                $reduce: {
+                  input: [
+                    { $ifNull: ['$farmerDoc.address.place',   ''] },
+                    { $ifNull: ['$farmerDoc.address.village', ''] },
+                    { $ifNull: ['$farmerDoc.address.post',    ''] },
+                  ],
+                  initialValue: '',
+                  in: {
+                    $cond: [
+                      { $eq: ['$$value', ''] },
+                      '$$this',
+                      { $cond: [{ $eq: ['$$this', ''] }, '$$value', { $concat: ['$$value', ', ', '$$this'] }] }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      { $project: { fd: 0, farmerDoc: 0 } }
+    );
+
+    // Stage 6: Membership filter
+    if (memberType === 'member')    pipeline.push({ $match: { isMember: true } });
+    if (memberType === 'nonMember') pipeline.push({ $match: { isMember: { $ne: true } } });
+
+    pipeline.push({ $sort: { _id: 1 } });
+
+    const rows = await MilkCollection.aggregate(pipeline);
+
+    const f2 = v => parseFloat(Number(v || 0).toFixed(2));
+    const f3 = v => parseFloat(Number(v || 0).toFixed(3));
+    const result = rows.map(r => ({
+      farmerNumber: r._id,
+      farmerName:   r.farmerName || '',
+      address:      r.address    || '',
+      isMember:     r.isMember   || false,
+      totalDays:    r.totalDays  || 0,
+      totalShifts:  r.totalShifts || 0,
+      totalQty:     f3(r.totalQty),
+      avgFat:       f2(r.avgFat),
+      avgSnf:       f2(r.avgSnf),
+      totalSolid:   f2(r.totalSolid),
+      totalAmount:  f2(r.totalAmount),
+    }));
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    console.error('Farmer criteria summary error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // ── FARMER-WISE SUMMARY (aggregation) ────────────────────────────────────────
 export const getFarmerWiseSummary = async (req, res) => {
   try {
@@ -1126,6 +1263,107 @@ export const getFarmerStats = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ── DAIRYSOFT IMPORT ─────────────────────────────────────────────────────────
+// Accepts rows from DairySoft export Excel with columns:
+// Bill No, Farmer No, Farmer Name, Date (DD/MM/YYYY), Shift, Litres, KG, FAT %, CLR, SNF %, Incentive (₹), Rate/L (₹), Amount (₹)
+// Records with unmatched farmer numbers are imported with farmer=null (name taken from file).
+export const dairysoftImportCollections = async (req, res) => {
+  try {
+    const { records } = req.body;
+    if (!Array.isArray(records) || records.length === 0)
+      return res.status(400).json({ success: false, message: 'No records provided' });
+
+    const companyId = req.companyId;
+
+    const allFarmers = await Farmer.find({ companyId }, 'farmerNumber memberId personalDetails.name _id').lean();
+    const farmerMap = {};
+    const addToMap = (key, val) => {
+      const k = String(key).trim();
+      if (!k) return;
+      farmerMap[k] = val;
+      const numeric = String(parseInt(k, 10));
+      if (numeric !== k && numeric !== 'NaN') farmerMap[numeric] = val;
+    };
+    for (const f of allFarmers) {
+      if (f.farmerNumber) addToMap(f.farmerNumber, { id: f._id, name: f.personalDetails?.name || '' });
+    }
+    for (const f of allFarmers) {
+      if (f.memberId && !farmerMap[String(f.memberId)])
+        addToMap(f.memberId, { id: f._id, name: f.personalDetails?.name || '' });
+    }
+
+    const parseDSDate = (val) => {
+      if (!val) return new Date();
+      if (val instanceof Date) return isNaN(val.getTime()) ? new Date() : val;
+      if (typeof val === 'number') return new Date(Math.round((val - 25569) * 86400000));
+      const str = String(val).trim();
+      const m = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+      if (m) return new Date(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`);
+      const d = new Date(str);
+      return isNaN(d.getTime()) ? new Date() : d;
+    };
+
+    const docs = [];
+    const unmatched = [];
+
+    for (const row of records) {
+      const farmerNo = String(row['Farmer No'] ?? row['FarmerNo'] ?? row['farmer_no'] ?? row['farmerNo'] ?? '').trim();
+      const farmerNoNum = String(parseInt(farmerNo, 10));
+      const fm = farmerMap[farmerNo] ?? farmerMap[farmerNoNum];
+      if (!fm && farmerNo) unmatched.push(farmerNo);
+
+      const farmerNameFromFile = String(row['Farmer Name'] ?? row['FarmerName'] ?? row['farmerName'] ?? '').trim();
+      const billNo = String(row['Bill No'] ?? row['BillNo'] ?? row['billNo'] ?? '').trim();
+      const shift = (() => {
+        const s = String(row['Shift'] ?? row['shift'] ?? 'AM').toUpperCase().trim();
+        return (s === 'AM' || s === 'PM') ? s : 'AM';
+      })();
+
+      docs.push({
+        billNo:       billNo ? `DS-${billNo}` : `DS-${farmerNo}-${docs.length + 1}`,
+        date:         parseDSDate(row['Date'] ?? row['date']),
+        shift,
+        farmer:       fm ? fm.id : null,
+        farmerNumber: farmerNo,
+        farmerName:   fm ? fm.name : farmerNameFromFile,
+        qty:          Number(row['Litres'] ?? row['litres'] ?? row['Qty'] ?? row['qty'] ?? 0) || 0,
+        fat:          Number(row['FAT %'] ?? row['Fat %'] ?? row['fat'] ?? 0),
+        clr:          Number(row['CLR'] ?? row['clr'] ?? 0),
+        snf:          Number(row['SNF %'] ?? row['Snf %'] ?? row['snf'] ?? 0),
+        rate:         Number(row['Rate/L (₹)'] ?? row['Rate/L'] ?? row['Rate'] ?? row['rate'] ?? 0),
+        incentive:    Number(row['Incentive (₹)'] ?? row['Incentive'] ?? row['incentive'] ?? 0),
+        amount:       Number(row['Amount (₹)'] ?? row['Amount'] ?? row['amount'] ?? 0),
+        companyId,
+      });
+    }
+
+    if (!docs.length)
+      return res.status(400).json({ success: false, message: 'No records to import' });
+
+    const CHUNK = 1000;
+    let inserted = 0;
+    for (let i = 0; i < docs.length; i += CHUNK) {
+      try {
+        const result = await MilkCollection.insertMany(docs.slice(i, i + CHUNK), { ordered: false });
+        inserted += result.length;
+      } catch (err) {
+        if (err.name === 'MongoBulkWriteError' || err.code === 11000) inserted += err.result?.nInserted ?? 0;
+        else throw err;
+      }
+    }
+
+    const uniqueUnmatched = [...new Set(unmatched)];
+    const dupSkipped = docs.length - inserted;
+    const msg = uniqueUnmatched.length
+      ? `${inserted} imported (${uniqueUnmatched.length} Farmer Nos not in system: ${uniqueUnmatched.slice(0, 5).join(', ')}${uniqueUnmatched.length > 5 ? '…' : ''} — imported with file name)`
+      : `${inserted} records imported`;
+
+    res.status(201).json({ success: true, data: { inserted, skipped: dupSkipped, unmatchedFarmers: uniqueUnmatched.length }, message: msg });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
   }
 };
 

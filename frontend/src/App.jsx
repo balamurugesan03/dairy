@@ -109,6 +109,7 @@ const MilkPurchase           = lazy(() => import('./components/daily-collections
 const MilkSales              = lazy(() => import('./components/daily-collections/MilkSales'));
 const DailyCollectionList    = lazy(() => import('./components/daily-collections/DailyCollectionList'));
 const FarmerWiseSummary      = lazy(() => import('./components/daily-collections/FarmerWiseSummary'));
+const FarmerCriteriaReport   = lazy(() => import('./components/daily-collections/FarmerCriteriaReport'));
 const RateChartSettings      = lazy(() => import('./components/daily-collections/RateChartSettings'));
 const MilkPurchaseSettings   = lazy(() => import('./components/daily-collections/MilkPurchaseSettings'));
 const UnionSalesSlip         = lazy(() => import('./components/daily-collections/UnionSalesSlip'));
@@ -438,6 +439,7 @@ const AppContent = () => {
                 <Route path="milk-sales"             element={<MilkSales />} />
                 <Route path="list"                   element={<DailyCollectionList />} />
                 <Route path="farmer-wise-summary"    element={<FarmerWiseSummary />} />
+                <Route path="farmer-criteria-report" element={<FarmerCriteriaReport />} />
                 <Route path="rate-chart-settings"    element={<RateChartSettings />} />
                 <Route path="milk-purchase-settings" element={<MilkPurchaseSettings />} />
                 <Route path="union-sales-slip"       element={<UnionSalesSlip />} />

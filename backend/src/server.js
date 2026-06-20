@@ -39,8 +39,15 @@ app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
+// Increase Mongoose buffer timeout so auth middleware doesn't fail during heavy export queries
+mongoose.set('bufferTimeoutMS', 60000);
+
 // MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI)
+mongoose.connect(process.env.MONGODB_URI, {
+  maxPoolSize: 20,
+  serverSelectionTimeoutMS: 30000,
+  socketTimeoutMS: 120000,
+})
   .then(async () => {
     console.log('MongoDB connected successfully');
     // Drop old global unique indexes (replaced by compound indexes per companyId)
