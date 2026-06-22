@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import { farmerAPI, advanceAPI, producerOpeningAPI } from '../../services/api';
 import {
   Container, Paper, Group, Text, Title, Box, Badge,
@@ -77,7 +77,7 @@ const CashAdvanceVoucher = () => {
   const printRef = useRef();
 
   const handlePrint = useReactToPrint({
-    content: () => printRef.current,
+    contentRef: printRef,
     documentTitle: `Cash_Advance_${dayjs().format('DDMMYYYY')}`,
   });
 
@@ -725,3 +725,4 @@ const CashAdvanceVoucher = () => {
 };
 
 export default CashAdvanceVoucher;
+

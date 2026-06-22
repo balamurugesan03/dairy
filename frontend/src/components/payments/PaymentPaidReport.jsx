@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Payment Paid Report — Producer-wise summary
  * Shows amounts paid via Bank Transfer, Pay to Producer (Cash), and Individual Payment
  * for the selected cycle.
@@ -97,7 +97,7 @@ export default function PaymentPaidReport() {
   };
 
   const handlePrint = useReactToPrint({
-    content: () => printRef.current,
+    contentRef: printRef,
     documentTitle: `PaymentPaidReport_${fromDate}_${toDate}`,
   });
 
@@ -297,3 +297,4 @@ export default function PaymentPaidReport() {
     </Box>
   );
 }
+

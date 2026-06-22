@@ -1,7 +1,8 @@
-import { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Alert, Badge, Box, Button, Card, Divider, Grid, Group,
-  Loader, Paper, Stack, Table, Tabs, Text, Title, ActionIcon, Tooltip
+  Loader, Paper, Stack, Table, Tabs, Text, Title, ActionIcon, Tooltip,
+  SegmentedControl
 } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
@@ -409,22 +410,282 @@ const BalanceSheetSection = ({ data }) => {
 };
 
 /* ══════════════════════════════════════════════════════════════
+   V2 — TRADING ACCOUNT (grouped by account_group)
+══════════════════════════════════════════════════════════════ */
+const TradingAccountV2 = ({ data, period }) => {
+  if (!data) return null;
+  const { debitSide, creditSide, totals } = data;
+  const periodLabel = period
+    ? `${dayjs(period.startDate).format('DD-MMM-YYYY')} to ${dayjs(period.endDate).format('DD-MMM-YYYY')}`
+    : '';
+
+  const BaseTable = ({ children }) => (
+    <Table withColumnBorders style={{ fontSize: 13 }}>
+      <Table.Thead bg="gray.0">
+        <Table.Tr>
+          <Table.Th w={32} ta="center" style={{ fontSize: 11 }}>#</Table.Th>
+          <Table.Th>Particulars</Table.Th>
+          <Table.Th w={130} ta="right">Amount (₹)</Table.Th>
+        </Table.Tr>
+      </Table.Thead>
+      <Table.Tbody>{children}</Table.Tbody>
+    </Table>
+  );
+
+  let grpNo = 0;
+  return (
+    <Stack gap="sm">
+      <Box ta="center">
+        <Text fw={700} size="md">TRADING ACCOUNT (Dynamic)</Text>
+        {periodLabel && <Text size="sm" c="dimmed">Period: {periodLabel}</Text>}
+      </Box>
+      <TwoCol
+        left={
+          <SideCard title="Dr. — Expenditure / Purchases" color="blue">
+            <BaseTable>
+              <GroupHeader no={++grpNo} label="Opening Stock" />
+              <ItemRow label="Total Opening Stock" amount={debitSide?.openingStock?.total || 0} />
+              <SubtotalRow label="Total Opening Stock" amount={debitSide?.openingStock?.total || 0} />
+
+              <GroupHeader no={++grpNo} label="Milk Purchase (Dairy)" />
+              <ItemRow
+                label={`Milk Purchase — ${debitSide?.milkPurchase?.farmerCount || 0} Farmers (${(debitSide?.milkPurchase?.qty || 0).toFixed(2)} L)`}
+                amount={debitSide?.milkPurchase?.total || 0}
+                indent
+              />
+              <SubtotalRow label="Total Milk Purchase" amount={debitSide?.milkPurchase?.total || 0} />
+
+              {(debitSide?.purchaseGroups || []).map((g, gi) => (
+                <React.Fragment key={gi}>
+                  <GroupHeader no={++grpNo} label={g.accountGroup} />
+                  {(g.items || []).map((it, i) => <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />)}
+                  <SubtotalRow label={`Total ${g.accountGroup}`} amount={g.total} />
+                </React.Fragment>
+              ))}
+
+              {parseFloat(debitSide?.grossProfit || 0) > 0 && (
+                <SpecialRow label="Gross Profit c/o to P&L A/c" amount={debitSide.grossProfit} color="green" />
+              )}
+              <GrandTotalRow label="GRAND TOTAL" amount={totals?.debitTotal || 0} />
+            </BaseTable>
+          </SideCard>
+        }
+        right={
+          <SideCard title="Cr. — Sales / Income" color="teal">
+            <BaseTable>
+              {(() => { grpNo = 0; return null; })()}
+              <GroupHeader no={++grpNo} label="Milk Sales (Dairy)" />
+              <ItemRow label="Milk Sales to Customers / Local" amount={creditSide?.milkSales?.total || 0} indent />
+              <SubtotalRow label="Total Milk Sales" amount={creditSide?.milkSales?.total || 0} />
+
+              {(creditSide?.unionSales?.total || 0) > 0 && (
+                <>
+                  <GroupHeader no={++grpNo} label="Union / Society Sales Slips" />
+                  <ItemRow label="Union Sales Slips" amount={creditSide.unionSales.total} indent />
+                  <SubtotalRow label="Total Union Sales" amount={creditSide.unionSales.total} />
+                </>
+              )}
+
+              {(creditSide?.salesGroups || []).map((g, gi) => (
+                <React.Fragment key={gi}>
+                  <GroupHeader no={++grpNo} label={g.accountGroup} />
+                  {(g.items || []).map((it, i) => <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />)}
+                  <SubtotalRow label={`Total ${g.accountGroup}`} amount={g.total} />
+                </React.Fragment>
+              ))}
+
+              <GroupHeader no={++grpNo} label="Closing Stock" />
+              {(creditSide?.closingStock?.items || []).map((it, i) => (
+                <ItemRow key={i} label={it.category} amount={it.amount} indent />
+              ))}
+              <SubtotalRow label="Total Closing Stock" amount={creditSide?.closingStock?.total || 0} />
+
+              {parseFloat(creditSide?.grossLoss || 0) > 0 && (
+                <SpecialRow label="Gross Loss c/o to P&L A/c" amount={creditSide.grossLoss} color="red" />
+              )}
+              <GrandTotalRow label="GRAND TOTAL" amount={totals?.creditTotal || 0} />
+            </BaseTable>
+          </SideCard>
+        }
+      />
+    </Stack>
+  );
+};
+
+/* ══════════════════════════════════════════════════════════════
+   V2 — PROFIT & LOSS (grouped by account_group)
+══════════════════════════════════════════════════════════════ */
+const ProfitLossV2 = ({ data }) => {
+  if (!data) return null;
+  const { incomeGroups, expenseGroups, totalIncome, totalExpense, netProfit } = data;
+  const isProfit = (netProfit || 0) >= 0;
+
+  const BaseTable = ({ children }) => (
+    <Table withColumnBorders style={{ fontSize: 13 }}>
+      <Table.Thead bg="gray.0">
+        <Table.Tr>
+          <Table.Th w={32} ta="center" style={{ fontSize: 11 }}>#</Table.Th>
+          <Table.Th>Particulars</Table.Th>
+          <Table.Th w={130} ta="right">Amount (₹)</Table.Th>
+        </Table.Tr>
+      </Table.Thead>
+      <Table.Tbody>{children}</Table.Tbody>
+    </Table>
+  );
+
+  return (
+    <Stack gap="sm">
+      <Box ta="center">
+        <Text fw={700} size="md">PROFIT & LOSS ACCOUNT (Dynamic)</Text>
+        <Text size="sm" c="dimmed">Based on ac_ledgers account groups</Text>
+      </Box>
+      <TwoCol
+        left={
+          <SideCard title="Dr. — Expenses" color="red.7">
+            <BaseTable>
+              {(expenseGroups || []).map((g, gi) => (
+                <React.Fragment key={gi}>
+                  <GroupHeader no={gi + 1} label={g.accountGroup} />
+                  {(g.ledgers || []).map((it, i) => <ItemRow key={i} label={it.name} amount={it.amount} indent />)}
+                  <SubtotalRow label={`Total ${g.accountGroup}`} amount={g.total} />
+                </React.Fragment>
+              ))}
+              <SubtotalRow label="Total Expenses" amount={totalExpense} />
+              {isProfit && <SpecialRow label="Net Profit (c/o to Balance Sheet)" amount={netProfit} color="green" />}
+              <GrandTotalRow label="GRAND TOTAL" amount={isProfit ? (totalExpense + netProfit) : totalExpense} />
+            </BaseTable>
+          </SideCard>
+        }
+        right={
+          <SideCard title="Cr. — Income" color="green.7">
+            <BaseTable>
+              {(incomeGroups || []).map((g, gi) => (
+                <React.Fragment key={gi}>
+                  <GroupHeader no={gi + 1} label={g.accountGroup} />
+                  {(g.ledgers || []).map((it, i) => <ItemRow key={i} label={it.name} amount={it.amount} indent />)}
+                  <SubtotalRow label={`Total ${g.accountGroup}`} amount={g.total} />
+                </React.Fragment>
+              ))}
+              <SubtotalRow label="Total Income" amount={totalIncome} />
+              {!isProfit && <SpecialRow label="Net Loss (c/o to Balance Sheet)" amount={Math.abs(netProfit)} color="red" />}
+              <GrandTotalRow label="GRAND TOTAL" amount={!isProfit ? (totalIncome + Math.abs(netProfit)) : totalIncome} />
+            </BaseTable>
+          </SideCard>
+        }
+      />
+      <Card withBorder radius="md" p="sm" bg={isProfit ? 'green.0' : 'red.0'}>
+        <Group justify="center" gap="xl">
+          <Text fw={700} c={isProfit ? 'green' : 'red'} size="lg">
+            {isProfit ? 'NET PROFIT' : 'NET LOSS'}: ₹ {fmt(netProfit)}
+          </Text>
+          <Badge color={isProfit ? 'green' : 'red'} size="lg">{isProfit ? 'Profitable' : 'Loss-Making'}</Badge>
+        </Group>
+      </Card>
+    </Stack>
+  );
+};
+
+/* ══════════════════════════════════════════════════════════════
+   V2 — BALANCE SHEET (grouped by account_group)
+══════════════════════════════════════════════════════════════ */
+const BalanceSheetV2 = ({ data }) => {
+  if (!data) return null;
+  const { assetGroups, liabilityGroups, totalAssets, totalLiabilities, closingStock, isTallied } = data;
+
+  const BaseTable = ({ children }) => (
+    <Table withColumnBorders style={{ fontSize: 13 }}>
+      <Table.Thead bg="gray.0">
+        <Table.Tr>
+          <Table.Th w={32} ta="center" style={{ fontSize: 11 }}>#</Table.Th>
+          <Table.Th>Particulars</Table.Th>
+          <Table.Th w={130} ta="right">Amount (₹)</Table.Th>
+        </Table.Tr>
+      </Table.Thead>
+      <Table.Tbody>{children}</Table.Tbody>
+    </Table>
+  );
+
+  const grandAssets = (totalAssets || 0) + (closingStock || 0);
+
+  return (
+    <Stack gap="sm">
+      <Box ta="center">
+        <Text fw={700} size="md">BALANCE SHEET (Dynamic)</Text>
+        <Text size="sm" c="dimmed">As on {dayjs().format('DD MMMM YYYY')}</Text>
+      </Box>
+      {!isTallied && (
+        <Alert icon={<IconAlertCircle size={16} />} color="orange" title="Not Balanced">
+          Liabilities (₹ {fmt(totalLiabilities)}) ≠ Assets (₹ {fmt(grandAssets)}) |
+          Difference: ₹ {fmt(Math.abs((totalLiabilities || 0) - grandAssets))}
+        </Alert>
+      )}
+      <TwoCol
+        left={
+          <SideCard title="Liabilities" color="blue">
+            <BaseTable>
+              {(liabilityGroups || []).map((g, gi) => (
+                <React.Fragment key={gi}>
+                  <GroupHeader no={gi + 1} label={g.accountGroup} />
+                  {(g.ledgers || []).map((it, i) => <ItemRow key={i} label={it.name} amount={it.balance} indent />)}
+                  <SubtotalRow label={`Total ${g.accountGroup}`} amount={g.total} />
+                </React.Fragment>
+              ))}
+              <GrandTotalRow label="GRAND TOTAL" amount={totalLiabilities} />
+            </BaseTable>
+          </SideCard>
+        }
+        right={
+          <SideCard title="Assets" color="teal">
+            <BaseTable>
+              {(assetGroups || []).map((g, gi) => (
+                <React.Fragment key={gi}>
+                  <GroupHeader no={gi + 1} label={g.accountGroup} />
+                  {(g.ledgers || []).map((it, i) => <ItemRow key={i} label={it.name} amount={it.balance} indent />)}
+                  <SubtotalRow label={`Total ${g.accountGroup}`} amount={g.total} />
+                </React.Fragment>
+              ))}
+              {(closingStock || 0) > 0 && (
+                <>
+                  <GroupHeader no={(assetGroups || []).length + 1} label="Closing Stock" />
+                  <ItemRow label="Total Closing Stock" amount={closingStock} indent />
+                  <SubtotalRow label="Total Closing Stock" amount={closingStock} />
+                </>
+              )}
+              <GrandTotalRow label="GRAND TOTAL" amount={grandAssets} />
+            </BaseTable>
+          </SideCard>
+        }
+      />
+      {isTallied && (
+        <Alert icon={<IconScale size={16} />} color="green" title="Balance Sheet Tallied">
+          Total Liabilities = Total Assets = ₹ {fmt(grandAssets)}
+        </Alert>
+      )}
+    </Stack>
+  );
+};
+
+/* ══════════════════════════════════════════════════════════════
    MAIN COMPONENT
 ══════════════════════════════════════════════════════════════ */
 const FinalAccounts = () => {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('trading');
+  const [dataSource, setDataSource] = useState('standard'); // 'standard' | 'dynamic'
   const printRef = useRef(null);
   const [startDate, setStartDate] = useState(() => {
     const now = new Date();
     const fy = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
-    return new Date(fy, 3, 1); // 1 April
+    return new Date(fy, 3, 1);
   });
   const [endDate, setEndDate] = useState(new Date());
 
   const [tradingData, setTradingData] = useState(null);
   const [plData, setPlData] = useState(null);
   const [bsData, setBsData] = useState(null);
+  const [tradingDataV2, setTradingDataV2] = useState(null);
+  const [plDataV2, setPlDataV2] = useState(null);
+  const [bsDataV2, setBsDataV2] = useState(null);
 
   const fy = getFinancialYear(startDate);
 
@@ -436,15 +697,21 @@ const FinalAccounts = () => {
         endDate: dayjs(endDate).format('YYYY-MM-DD')
       };
 
-      const [trading, pl, bs] = await Promise.all([
+      const [trading, pl, bs, tradingV2, plV2, bsV2] = await Promise.all([
         reportAPI.tradingAccount(params),
         reportAPI.profitLoss(params),
-        reportAPI.balanceSheet(params)
+        reportAPI.balanceSheet(params),
+        reportAPI.tradingAccountV2(params),
+        reportAPI.profitLossV2(params),
+        reportAPI.balanceSheetV2(params)
       ]);
 
       setTradingData(trading?.data || null);
       setPlData(pl?.data || null);
       setBsData(bs?.data || null);
+      setTradingDataV2(tradingV2?.data || null);
+      setPlDataV2(plV2?.data || null);
+      setBsDataV2(bsV2?.data || null);
 
       notifications.show({ title: 'Done', message: 'Final accounts loaded', color: 'green' });
     } catch (err) {
@@ -454,7 +721,10 @@ const FinalAccounts = () => {
     }
   };
 
-  const hasData = tradingData || plData || bsData;
+  const hasData = tradingData || plData || bsData || tradingDataV2 || plDataV2 || bsDataV2;
+  const activeTradingData = dataSource === 'dynamic' ? tradingDataV2 : tradingData;
+  const activePlData      = dataSource === 'dynamic' ? plDataV2      : plData;
+  const activeBsData      = dataSource === 'dynamic' ? bsDataV2      : bsData;
 
   return (
     <Stack gap="md" p="md">
@@ -504,6 +774,18 @@ const FinalAccounts = () => {
           >
             Generate All
           </Button>
+          <Box>
+            <Text size="xs" c="dimmed" mb={4}>Data Source</Text>
+            <SegmentedControl
+              size="xs"
+              value={dataSource}
+              onChange={setDataSource}
+              data={[
+                { value: 'standard', label: 'Standard' },
+                { value: 'dynamic',  label: 'Dynamic (ac_ledgers)' }
+              ]}
+            />
+          </Box>
         </Group>
       </Paper>
 
@@ -542,22 +824,28 @@ const FinalAccounts = () => {
           </Tabs.List>
 
           <Tabs.Panel value="trading" pt="md">
-            {tradingData
-              ? <TradingAccount data={tradingData} period={tradingData.period} />
+            {activeTradingData
+              ? dataSource === 'dynamic'
+                ? <TradingAccountV2 data={activeTradingData} period={activeTradingData.period} />
+                : <TradingAccount   data={activeTradingData} period={activeTradingData.period} />
               : <Text c="dimmed" ta="center" py="xl">No trading data available</Text>
             }
           </Tabs.Panel>
 
           <Tabs.Panel value="pl" pt="md">
-            {plData
-              ? <ProfitLoss data={plData} />
+            {activePlData
+              ? dataSource === 'dynamic'
+                ? <ProfitLossV2 data={activePlData} />
+                : <ProfitLoss   data={activePlData} />
               : <Text c="dimmed" ta="center" py="xl">No profit & loss data available</Text>
             }
           </Tabs.Panel>
 
           <Tabs.Panel value="bs" pt="md">
-            {bsData
-              ? <BalanceSheetSection data={bsData} />
+            {activeBsData
+              ? dataSource === 'dynamic'
+                ? <BalanceSheetV2      data={activeBsData} />
+                : <BalanceSheetSection data={activeBsData} />
               : <Text c="dimmed" ta="center" py="xl">No balance sheet data available</Text>
             }
           </Tabs.Panel>
@@ -566,22 +854,28 @@ const FinalAccounts = () => {
             <Stack gap="xl">
               <Box>
                 <Divider label={<Text fw={700} size="sm">TRADING ACCOUNT</Text>} labelPosition="center" mb="md" />
-                {tradingData
-                  ? <TradingAccount data={tradingData} period={tradingData.period} />
+                {activeTradingData
+                  ? dataSource === 'dynamic'
+                    ? <TradingAccountV2 data={activeTradingData} period={activeTradingData.period} />
+                    : <TradingAccount   data={activeTradingData} period={activeTradingData.period} />
                   : <Text c="dimmed" ta="center">No data</Text>
                 }
               </Box>
               <Box>
                 <Divider label={<Text fw={700} size="sm">PROFIT & LOSS ACCOUNT</Text>} labelPosition="center" mb="md" />
-                {plData
-                  ? <ProfitLoss data={plData} />
+                {activePlData
+                  ? dataSource === 'dynamic'
+                    ? <ProfitLossV2 data={activePlData} />
+                    : <ProfitLoss   data={activePlData} />
                   : <Text c="dimmed" ta="center">No data</Text>
                 }
               </Box>
               <Box>
                 <Divider label={<Text fw={700} size="sm">BALANCE SHEET</Text>} labelPosition="center" mb="md" />
-                {bsData
-                  ? <BalanceSheetSection data={bsData} />
+                {activeBsData
+                  ? dataSource === 'dynamic'
+                    ? <BalanceSheetV2      data={activeBsData} />
+                    : <BalanceSheetSection data={activeBsData} />
                   : <Text c="dimmed" ta="center">No data</Text>
                 }
               </Box>

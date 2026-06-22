@@ -92,7 +92,7 @@ const MainLayout = () => {
 
   const isOnDashboard = location.pathname === '/';
   const isBankTransferPage = location.pathname === '/payments/bank-transfer';
-  const hideBackButton = isOnDashboard || location.pathname === '/daily-collections/milk-purchase' || location.pathname === '/farmers' || location.pathname === '/collection-centers' || location.pathname === '/agents' || location.pathname === '/customers' || location.pathname === '/daily-collections/union-sales-slip' || location.pathname === '/daily-collections/milk-sales' || location.pathname === '/daily-collections/list' || location.pathname === '/reports/salesman-balance' || location.pathname === '/daily-collections/rate-chart-settings' || location.pathname === '/reports/cash-book' || location.pathname === '/reports/daybook' || location.pathname === '/reports/receipts-payments';
+  const hideBackButton = isOnDashboard || location.pathname === '/daily-collections/milk-purchase' || location.pathname === '/farmers' || location.pathname === '/collection-centers' || location.pathname === '/agents' || location.pathname === '/customers' || location.pathname === '/daily-collections/union-sales-slip' || location.pathname === '/daily-collections/milk-sales' || location.pathname === '/daily-collections/list' || location.pathname === '/reports/salesman-balance' || location.pathname === '/daily-collections/rate-chart-settings' || location.pathname === '/reports/cash-book' || location.pathname === '/reports/daybook' || location.pathname === '/reports/receipts-payments' || location.pathname === '/farmers/member-register' || location.pathname === '/daily-collections/producer-report';
 
   // ── Global hotkeys ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -146,6 +146,7 @@ const MainLayout = () => {
       color: 'green',
       children: [
         { key: '/farmers', label: 'Producer Management' },
+        { key: '/farmers/member-register', label: 'Member Register' },
         { key: '/collection-centers', label: 'Collection Centre' },
         { key: '/agents', label: 'Agent Management' },
         { key: '/customers', label: 'Customer' },
@@ -187,6 +188,7 @@ const MainLayout = () => {
         { key: '/daily-collections/union-sales-slip', label: 'Union Sales' },
         { key: '/daily-collections/farmer-wise-summary',   label: 'Farmer-Wise Summary' },
         { key: '/daily-collections/farmer-criteria-report', label: 'Farmer Criteria Report' },
+        { key: '/daily-collections/producer-report',        label: 'Producer Report' },
         { key: '/daily-collections/intelligent-query',     label: 'Intelligent Query'   },
         { key: '/reports/salesman-balance', label: 'Salesman/Customer Ledger' },
         {

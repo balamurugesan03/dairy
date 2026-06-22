@@ -251,7 +251,7 @@ const ProducerRegister = () => {
 
   // Print handler
   const handlePrint = useReactToPrint({
-    content: () => printRef.current,
+    contentRef: printRef,
     documentTitle: `Producer_Register_${selectedFarmer?.personalDetails?.name || 'Report'}`,
     pageStyle: `
       @page {

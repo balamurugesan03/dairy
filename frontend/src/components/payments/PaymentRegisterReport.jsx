@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Payment Register Report
  * Select Cycle → Generate → Print / Cancel / Close
  * Shows the saved Ledger-type PaymentRegister for the chosen cycle.
@@ -237,7 +237,7 @@ export default function PaymentRegisterReport() {
   };
 
   const handlePrint = useReactToPrint({
-    content: () => printRef.current,
+    contentRef: printRef,
     documentTitle: register ? `PaymentRegister_${fmtD(register.fromDate)}_${fmtD(register.toDate)}` : 'PaymentRegister',
   });
 
@@ -371,3 +371,4 @@ export default function PaymentRegisterReport() {
     </Box>
   );
 }
+

@@ -13,7 +13,8 @@ import {
   bulkImportFarmers,
   bulkImportShares,
   bulkDeleteFarmers,
-  getFarmerReport
+  getFarmerReport,
+  getProducerReport
 } from '../controllers/farmerController.js';
 import { protect, addCompanyFilter } from '../middleware/auth.js';
 
@@ -40,6 +41,9 @@ router.get('/search', searchFarmer);
 
 // Farmer report — member/caste/gender/centre aggregations
 router.get('/report', getFarmerReport);
+
+// Producer report — filterable list with pouring days/qty conditions
+router.get('/producer-report', getProducerReport);
 
 // Get farmer by ID
 router.get('/:id', getFarmerById);

@@ -44,11 +44,13 @@ const ReceiptsDisbursement = () => {
   const fetchReport = async (filterData) => {
     setLoading(true);
     try {
-      const response = await reportAPI.rdEnhanced({
-        ...filterData,
-        format
-      });
-      setReportData(response.data);
+      if (format === 'rdStatement') {
+        const response = await reportAPI.rdStatement(filterData);
+        setReportData(response.data || response);
+      } else {
+        const response = await reportAPI.rdEnhanced({ ...filterData, format });
+        setReportData(response.data);
+      }
     } catch (error) {
       message.error(error.message || 'Failed to fetch R&D report');
     } finally {
@@ -700,6 +702,81 @@ const ReceiptsDisbursement = () => {
     );
   };
 
+  const renderRDStatement = () => {
+    if (!reportData) return null;
+    const receipts = reportData.receipts || [];
+    const payments = reportData.payments || [];
+    const thStyle = { background: '#eef2ff', fontWeight: 700, fontSize: 11, color: '#312e81', padding: '8px 10px', border: '1px solid #c7d2fe' };
+    const tdStyle = { padding: '6px 10px', fontSize: 12, border: '1px solid #e5e7eb' };
+    const numStyle = { ...tdStyle, textAlign: 'right', fontFamily: 'monospace' };
+
+    const renderGroups = (groups, side) =>
+      groups.map((g, gi) => (
+        <React.Fragment key={gi}>
+          <Table.Tr style={{ background: side === 'receipt' ? '#dcfce7' : '#fee2e2' }}>
+            <Table.Td colSpan={2} style={{ ...tdStyle, fontWeight: 700, color: side === 'receipt' ? '#166534' : '#991b1b' }}>
+              {g.accountGroup}
+            </Table.Td>
+          </Table.Tr>
+          {(g.ledgers || []).map((l, li) => (
+            <Table.Tr key={li} style={{ background: li % 2 === 0 ? '#fff' : '#fafafa' }}>
+              <Table.Td style={{ ...tdStyle, paddingLeft: 24 }}>{l.ledgerName}</Table.Td>
+              <Table.Td style={numStyle}>₹{formatCurrency(l.amount)}</Table.Td>
+            </Table.Tr>
+          ))}
+          <Table.Tr style={{ background: '#f0fdf4' }}>
+            <Table.Td style={{ ...tdStyle, fontWeight: 600, paddingLeft: 24 }}>Sub-total</Table.Td>
+            <Table.Td style={{ ...numStyle, fontWeight: 700 }}>₹{formatCurrency(g.total)}</Table.Td>
+          </Table.Tr>
+        </React.Fragment>
+      ));
+
+    return (
+      <Group align="flex-start" grow gap="md">
+        <Paper withBorder>
+          <Box style={{ background: '#166534', padding: '8px 12px' }}>
+            <Text fw={700} c="white" size="sm" tt="uppercase">Receipts</Text>
+          </Box>
+          <Table withColumnBorders style={{ fontSize: 12 }}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th style={thStyle}>Particulars</Table.Th>
+                <Table.Th style={{ ...thStyle, textAlign: 'right', width: 130 }}>Amount (₹)</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {renderGroups(receipts, 'receipt')}
+              <Table.Tr style={{ background: '#bbf7d0', borderTop: '2px solid #16a34a' }}>
+                <Table.Td style={{ ...tdStyle, fontWeight: 800 }}>TOTAL RECEIPTS</Table.Td>
+                <Table.Td style={{ ...numStyle, fontWeight: 800 }}>₹{formatCurrency(reportData.totalReceipts)}</Table.Td>
+              </Table.Tr>
+            </Table.Tbody>
+          </Table>
+        </Paper>
+        <Paper withBorder>
+          <Box style={{ background: '#991b1b', padding: '8px 12px' }}>
+            <Text fw={700} c="white" size="sm" tt="uppercase">Payments</Text>
+          </Box>
+          <Table withColumnBorders style={{ fontSize: 12 }}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th style={thStyle}>Particulars</Table.Th>
+                <Table.Th style={{ ...thStyle, textAlign: 'right', width: 130 }}>Amount (₹)</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {renderGroups(payments, 'payment')}
+              <Table.Tr style={{ background: '#fecaca', borderTop: '2px solid #dc2626' }}>
+                <Table.Td style={{ ...tdStyle, fontWeight: 800 }}>TOTAL PAYMENTS</Table.Td>
+                <Table.Td style={{ ...numStyle, fontWeight: 800 }}>₹{formatCurrency(reportData.totalPayments)}</Table.Td>
+              </Table.Tr>
+            </Table.Tbody>
+          </Table>
+        </Paper>
+      </Group>
+    );
+  };
+
   const exportData = reportData?.receipts?.concat(reportData.payments || []).map(t => ({
     Date: formatDate(t.date),
     'Voucher No': t.voucherNumber,
@@ -725,7 +802,8 @@ const ReceiptsDisbursement = () => {
             data={[
               { label: 'Single Column Monthly', value: 'singleColumnMonthly' },
               { label: 'Two Column Side-by-Side', value: 'twoColumnMonthly' },
-              { label: 'Three Column Ledger-wise', value: 'threeColumnLedgerwise' }
+              { label: 'Three Column Ledger-wise', value: 'threeColumnLedgerwise' },
+              { label: 'R&D Statement (Dynamic)', value: 'rdStatement' }
             ]}
           />
         </Group>
@@ -811,6 +889,7 @@ const ReceiptsDisbursement = () => {
             {format === 'singleColumnMonthly' && renderSingleColumnMonthly()}
             {format === 'twoColumnMonthly' && renderTwoColumnSideBySide()}
             {format === 'threeColumnLedgerwise' && renderThreeColumnLedgerwise()}
+            {format === 'rdStatement' && renderRDStatement()}
 
             {/* Export Section */}
             <Divider my="lg" />

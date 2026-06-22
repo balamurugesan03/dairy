@@ -15,6 +15,7 @@ import dayjs from 'dayjs';
 import { unionSalesSlipAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 import { localDateStr } from '../../utils/dateUtils';
+import { printVyaparReport } from '../../utils/printReport';
 
 // ── Formatters ──────────────────────────────────────────────────
 const f2  = v => Number(v || 0).toFixed(2);
@@ -223,26 +224,18 @@ export default function UnionSalesReport() {
 
   // ── Print ─────────────────────────────────────────────────────
   const handlePrint = () => {
-    const el = printRef.current;
-    if (!el) return;
-    const pw = window.open('', '_blank');
-    if (!pw) { alert('Pop-up blocked. Please allow pop-ups.'); return; }
-    const clone = el.cloneNode(true);
-    clone.querySelectorAll('[data-no-print]').forEach(e => e.remove());
-    pw.document.write(`<!DOCTYPE html>
-<html><head><meta charset="UTF-8"/>
-<title>Union Sales Report – ${societyName}</title>
-<style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,Helvetica,sans-serif;font-size:9px;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;padding:8mm}
-table{width:100%;border-collapse:collapse}
-th,td{border:1px solid #bbb;padding:3px 5px;vertical-align:middle}
-th{background:#1a5276!important;color:#fff!important;font-weight:700;text-align:center;font-size:8px}
-.tot{background:#1a5276!important;color:#fff!important;font-weight:800}
-@page{size:A4 landscape;margin:8mm}
-</style></head><body>${clone.innerHTML}</body></html>`);
-    pw.document.close();
-    setTimeout(() => { pw.focus(); pw.print(); }, 400);
+    if (!data) return;
+    printVyaparReport(printRef, {
+      title: `Union Sales Report — ${firstColLabel} Wise`,
+      companyName: societyName,
+      period: periodLabel + shiftLabel,
+      orientation: 'landscape',
+      extraCss: `
+        @page { size: A4 landscape; margin: 8mm; }
+        table { width: 100% !important; border-collapse: collapse !important; font-size: 10px !important; }
+        th, td { border: 1px solid #ccc !important; padding: 4px 7px !important; font-size: 10px !important; }
+      `,
+    });
   };
 
   // ── Render table body ─────────────────────────────────────────
@@ -415,13 +408,6 @@ th{background:#1a5276!important;color:#fff!important;font-weight:700;text-align:
             )}
           </Group>
         </Box>
-
-        {/* Print-only header */}
-        <div style={{ textAlign: 'center', padding: '12px 0 8px', display: 'none' }} className="print-hdr">
-          <div style={{ fontSize: 15, fontWeight: 900, textTransform: 'uppercase', letterSpacing: 2 }}>{societyName}</div>
-          <div style={{ fontSize: 11, fontWeight: 700, marginTop: 4 }}>UNION SALES REPORT — {firstColLabel.toUpperCase()} WISE</div>
-          <div style={{ fontSize: 9, color: '#555', marginTop: 3 }}>Period: {periodLabel}{shiftLabel} | Printed: {fmtDate(today)}</div>
-        </div>
 
         {loading ? (
           <Center py="xl"><Loader size="md" color="blue" /></Center>

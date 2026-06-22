@@ -105,10 +105,18 @@ export const calculateClosingBalance = (openingBalance, totalDebits, totalCredit
  */
 export const isDebitNatureLedger = (ledgerType) => {
   const debitNatureTypes = [
+    // Legacy types
     'Asset', 'Fixed Assets', 'Movable Assets', 'Immovable Assets', 'Other Assets',
     'Expense', 'Purchases A/c', 'Trade Expenses', 'Establishment Charges', 'Miscellaneous Expenses',
     'Cash', 'Bank', 'Other Receivable', 'Party',
-    'Sundry Debtors', 'Customer' // Customers owe us money - debit nature
+    'Sundry Debtors', 'Customer',
+    // New ac_ledgers ASSET types
+    'Bank Accounts', 'Share in Other Institutions', 'Other Investments',
+    'Fixed Assets - Movables', 'Fixed Assets - Immovables', 'Advance due to Society',
+    'Loss', 'Cash in Hand', 'Loans & Advances to Members', 'Interest Receivable',
+    'Investment in Govt. Securities',
+    // New ac_ledgers EXPENSE types
+    'Contingencies', 'Purchases'
   ];
 
   return debitNatureTypes.includes(ledgerType);
@@ -167,48 +175,96 @@ export const calculateRunningBalance = (openingBalance, transactions, isDebitNat
  */
 export const getLedgerCategory = (ledgerType) => {
   const categories = {
-    'Asset': 'ASSETS',
-    'Fixed Assets': 'ASSETS',
-    'Movable Assets': 'ASSETS',
-    'Immovable Assets': 'ASSETS',
-    'Other Assets': 'ASSETS',
-    'Other Receivable': 'ASSETS',
-    'Cash': 'ASSETS',
-    'Bank': 'ASSETS',
-
-    'Liability': 'LIABILITIES',
-    'Other Payable': 'LIABILITIES',
-    'Other Liabilities': 'LIABILITIES',
-    'Deposit A/c': 'LIABILITIES',
-    'Contingency Fund': 'LIABILITIES',
-    'Education Fund': 'LIABILITIES',
-    'Accounts Due To (Sundry Creditors)': 'LIABILITIES',
-    'Sundry Creditors': 'LIABILITIES',
-
-    'Sundry Debtors': 'ASSETS',
-    'Customer': 'ASSETS',
-
-    'Capital': 'CAPITAL',
-    'Share Capital': 'CAPITAL',
-
-    'Income': 'INCOME',
-    'Sales': 'INCOME',
-    'Sales A/c': 'INCOME',
-    'Trade Income': 'INCOME',
-    'Miscellaneous Income': 'INCOME',
-    'Other Revenue': 'INCOME',
-    'Grants & Aid': 'INCOME',
-    'Subsidies': 'INCOME',
+    // Legacy ASSET types
+    'Asset': 'ASSETS', 'Fixed Assets': 'ASSETS', 'Movable Assets': 'ASSETS',
+    'Immovable Assets': 'ASSETS', 'Other Assets': 'ASSETS', 'Other Receivable': 'ASSETS',
+    'Cash': 'ASSETS', 'Bank': 'ASSETS', 'Sundry Debtors': 'ASSETS', 'Customer': 'ASSETS',
     'Advance due to Society': 'ASSETS',
-
-    'Expense': 'EXPENSES',
-    'Purchases A/c': 'EXPENSES',
-    'Trade Expenses': 'EXPENSES',
-    'Establishment Charges': 'EXPENSES',
-    'Miscellaneous Expenses': 'EXPENSES'
+    // New ac_ledgers ASSET types
+    'Bank Accounts': 'ASSETS', 'Share in Other Institutions': 'ASSETS',
+    'Other Investments': 'ASSETS', 'Fixed Assets - Movables': 'ASSETS',
+    'Fixed Assets - Immovables': 'ASSETS', 'Loss': 'ASSETS', 'Cash in Hand': 'ASSETS',
+    'Loans & Advances to Members': 'ASSETS', 'Interest Receivable': 'ASSETS',
+    'Investment in Govt. Securities': 'ASSETS',
+    // Legacy LIABILITY types
+    'Liability': 'LIABILITIES', 'Other Payable': 'LIABILITIES',
+    'Other Liabilities': 'LIABILITIES', 'Deposit A/c': 'LIABILITIES',
+    'Contingency Fund': 'LIABILITIES', 'Education Fund': 'LIABILITIES',
+    'Accounts Due To (Sundry Creditors)': 'LIABILITIES', 'Sundry Creditors': 'LIABILITIES',
+    // New ac_ledgers LIABILITY types
+    'Statutory Funds and Reserves': 'LIABILITIES',
+    'Other Funds, Reserves and Provisions': 'LIABILITIES',
+    'Grants and Subsidies': 'LIABILITIES', 'Advance due by Society': 'LIABILITIES',
+    'Profit': 'LIABILITIES', 'Deposits': 'LIABILITIES',
+    'Borrowings (Loans, Cash Credits)': 'LIABILITIES', 'Interest Payable': 'LIABILITIES',
+    // Capital (maps to LIABILITIES in ac_ledgers parent_group)
+    'Capital': 'CAPITAL', 'Share Capital': 'CAPITAL',
+    // INCOME types
+    'Income': 'INCOME', 'Sales': 'INCOME', 'Sales A/c': 'INCOME', 'Trade Income': 'INCOME',
+    'Miscellaneous Income': 'INCOME', 'Other Revenue': 'INCOME',
+    'Grants & Aid': 'INCOME', 'Subsidies': 'INCOME',
+    // EXPENSE types
+    'Expense': 'EXPENSES', 'Purchases A/c': 'EXPENSES', 'Purchases': 'EXPENSES',
+    'Trade Expenses': 'EXPENSES', 'Establishment Charges': 'EXPENSES',
+    'Miscellaneous Expenses': 'EXPENSES', 'Contingencies': 'EXPENSES'
   };
 
   return categories[ledgerType] || 'OTHER';
+};
+
+/**
+ * Derive ASSET|LIABILITY|INCOME|EXPENSE from ledgerType (account_group in ac_ledgers).
+ * Used when ledger.parentGroup is not explicitly set.
+ */
+export const getParentGroupFromLedgerType = (ledgerType) => {
+  const ASSET_TYPES = [
+    'Asset', 'Fixed Assets', 'Movable Assets', 'Immovable Assets', 'Other Assets',
+    'Cash', 'Bank', 'Other Receivable', 'Sundry Debtors', 'Customer', 'Party',
+    'Bank Accounts', 'Share in Other Institutions', 'Other Investments',
+    'Fixed Assets - Movables', 'Fixed Assets - Immovables', 'Advance due to Society',
+    'Loss', 'Cash in Hand', 'Loans & Advances to Members', 'Interest Receivable',
+    'Investment in Govt. Securities'
+  ];
+  const LIABILITY_TYPES = [
+    'Liability', 'Other Payable', 'Other Liabilities', 'Deposit A/c', 'Contingency Fund',
+    'Education Fund', 'Accounts Due To (Sundry Creditors)', 'Sundry Creditors',
+    'Capital', 'Share Capital',
+    'Statutory Funds and Reserves', 'Other Funds, Reserves and Provisions',
+    'Grants and Subsidies', 'Advance due by Society', 'Profit',
+    'Deposits', 'Borrowings (Loans, Cash Credits)', 'Interest Payable'
+  ];
+  const INCOME_TYPES = [
+    'Income', 'Sales', 'Sales A/c', 'Trade Income', 'Miscellaneous Income',
+    'Other Revenue', 'Grants & Aid', 'Subsidies'
+  ];
+  const EXPENSE_TYPES = [
+    'Expense', 'Purchases A/c', 'Purchases', 'Trade Expenses',
+    'Establishment Charges', 'Miscellaneous Expenses', 'Contingencies'
+  ];
+
+  if (ASSET_TYPES.includes(ledgerType)) return 'ASSET';
+  if (LIABILITY_TYPES.includes(ledgerType)) return 'LIABILITY';
+  if (INCOME_TYPES.includes(ledgerType)) return 'INCOME';
+  if (EXPENSE_TYPES.includes(ledgerType)) return 'EXPENSE';
+  return 'OTHER';
+};
+
+/**
+ * Return default voucher side (R/P/B) for a ledger type based on ac_ledgers configuration.
+ * R = Receipt side only, P = Payment side only, B = Both sides.
+ */
+export const getDefaultVoucherType = (ledgerType) => {
+  const INCOME_TYPES = [
+    'Sales', 'Trade Income', 'Sales A/c', 'Income', 'Miscellaneous Income',
+    'Other Revenue', 'Grants & Aid', 'Subsidies'
+  ];
+  const EXPENSE_TYPES = [
+    'Purchases A/c', 'Purchases', 'Trade Expenses', 'Establishment Charges',
+    'Miscellaneous Expenses', 'Contingencies', 'Expense'
+  ];
+  if (INCOME_TYPES.includes(ledgerType)) return 'R';
+  if (EXPENSE_TYPES.includes(ledgerType)) return 'P';
+  return 'B';
 };
 
 export default {
@@ -217,5 +273,7 @@ export default {
   isDebitNatureLedger,
   getBalanceType,
   calculateRunningBalance,
-  getLedgerCategory
+  getLedgerCategory,
+  getParentGroupFromLedgerType,
+  getDefaultVoucherType
 };

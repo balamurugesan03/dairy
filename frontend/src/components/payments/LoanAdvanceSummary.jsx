@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import {
   Container, Paper, Group, Text, Title, Box, Badge,
   Button, Select, Tabs, Divider, ScrollArea,
@@ -58,7 +58,7 @@ const LoanAdvanceSummary = () => {
   const printRef = useRef();
 
   const handlePrint = useReactToPrint({
-    content: () => printRef.current,
+    contentRef: printRef,
     documentTitle: `Loan_Advance_${dayjs().format('DDMMYYYY')}`,
   });
 
@@ -669,3 +669,4 @@ const LoanAdvanceSummary = () => {
 };
 
 export default LoanAdvanceSummary;
+

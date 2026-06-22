@@ -21,7 +21,10 @@ import {
   getDairyAbstractReport,
   getDairyRegisterReport,
   getCooperativeRDReport,
-  getMISReport
+  getMISReport,
+  getTradingAccountV2,
+  getProfitLossV2,
+  getBalanceSheetV2
 } from '../controllers/reportController.js';
 import { getDayBook, deleteDayBookEntry } from '../controllers/dayBookController.js';
 import {
@@ -30,7 +33,10 @@ import {
   getGeneralLedgerAbstract,
   getReceiptsDisbursementEnhanced,
   getLedgersForDropdown,
-  getReceiptsPayments
+  getReceiptsPayments,
+  getLedgerAbstractGrouped,
+  getRDStatementDynamic,
+  getReceiptsPaymentsDynamic
 } from '../controllers/accountingReportsController.js';
 import {
   getSaleReport,
@@ -98,6 +104,13 @@ router.get('/ledger-abstract', getGeneralLedgerAbstract);
 router.get('/rd-enhanced', getReceiptsDisbursementEnhanced);
 router.get('/ledgers-dropdown', getLedgersForDropdown);
 router.get('/receipts-payments', getReceiptsPayments);
+// Dynamic (ac_ledgers-driven) accounting reports
+router.get('/ledger-abstract-grouped', getLedgerAbstractGrouped);
+router.get('/rd-statement', getRDStatementDynamic);
+router.get('/receipts-payments-statement', getReceiptsPaymentsDynamic);
+router.get('/trading-account-v2', getTradingAccountV2);
+router.get('/profit-loss-v2', getProfitLossV2);
+router.get('/balance-sheet-v2', getBalanceSheetV2);
 
 // Vyapar Reports - Private Firm
 router.get('/vyapar/sale-report', getSaleReport);

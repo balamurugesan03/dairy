@@ -13,6 +13,7 @@ import Farmer from '../models/Farmer.js';
 import Subsidy from '../models/Subsidy.js';
 import { getDateRange } from '../utils/dateFilters.js';
 import { getStockReport as getStockReportHelper } from '../utils/stockHelper.js';
+import { isDebitNatureLedger, getParentGroupFromLedgerType } from '../utils/balanceCalculator.js';
 
 // Helper function to get financial year string (e.g., "2024-25")
 const getFinancialYear = (date) => {
@@ -2208,6 +2209,352 @@ export const getMISReport = async (req, res) => {
   }
 };
 
+// ─── Shared helper: 2-query voucher activity aggregation ─────────────────────
+const buildVoucherMaps = async (companyId, start, end, ledgerIds) => {
+  const baseFilter = { companyId, 'entries.ledgerId': { $in: ledgerIds } };
+  const [prior, period] = await Promise.all([
+    Voucher.find({ ...baseFilter, voucherDate: { $lt: start } }).select('entries').lean(),
+    Voucher.find({ ...baseFilter, voucherDate: { $gte: start, $lte: end } }).select('entries').lean()
+  ]);
+  const build = (vs) => {
+    const m = {};
+    vs.forEach(v => (v.entries || []).forEach(e => {
+      const lid = e.ledgerId?.toString();
+      if (!lid) return;
+      if (!m[lid]) m[lid] = { debit: 0, credit: 0 };
+      m[lid].debit  += e.debitAmount  || 0;
+      m[lid].credit += e.creditAmount || 0;
+    }));
+    return m;
+  };
+  return { priorMap: build(prior), periodMap: build(period) };
+};
+
+// ─── Compute a ledger's closing balance using prior + period maps ─────────────
+const ledgerBalance = (ledger, priorMap, periodMap) => {
+  const pg = ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'].includes(ledger.parentGroup)
+    ? ledger.parentGroup : getParentGroupFromLedgerType(ledger.ledgerType);
+  const isDebit = pg === 'ASSET' || pg === 'EXPENSE' || isDebitNatureLedger(ledger.ledgerType);
+
+  let signed = ledger.openingBalance || 0;
+  const obType = ledger.openingBalanceType || (isDebit ? 'Dr' : 'Cr');
+  const isNormal = (isDebit && obType === 'Dr') || (!isDebit && obType === 'Cr');
+  if (!isNormal && signed > 0) signed = -signed;
+
+  const lid = ledger._id.toString();
+  const pr = priorMap[lid];
+  if (pr) signed += isDebit ? (pr.debit - pr.credit) : -(pr.debit - pr.credit);
+  const pe = periodMap[lid];
+  if (pe) signed += isDebit ? (pe.debit - pe.credit) : -(pe.debit - pe.credit);
+
+  return { signed, isDebit };
+};
+
+// ─── TRADING ACCOUNT V2 — driven by ac_ledgers types ─────────────────────────
+export const getTradingAccountV2 = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ success: false, message: 'startDate and endDate are required' });
+    }
+
+    const start = new Date(startDate); start.setHours(0, 0, 0, 0);
+    const end   = new Date(endDate);   end.setHours(23, 59, 59, 999);
+    const companyId = req.companyId;
+
+    const TRADING_INC_TYPES = ['Sales', 'Trade Income', 'Sales A/c'];
+    const TRADING_EXP_TYPES = ['Purchases', 'Trade Expenses', 'Purchases A/c'];
+
+    // Fetch relevant ledgers (both new-style parentGroup AND legacy types)
+    const [incLedgers, expLedgers] = await Promise.all([
+      Ledger.find({
+        companyId, status: 'Active',
+        $or: [
+          { parentGroup: 'INCOME', ledgerType: { $in: TRADING_INC_TYPES } },
+          { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: TRADING_INC_TYPES } },
+          { parentGroup: { $exists: false }, ledgerType: { $in: TRADING_INC_TYPES } }
+        ]
+      }).lean(),
+      Ledger.find({
+        companyId, status: 'Active',
+        $or: [
+          { parentGroup: 'EXPENSE', ledgerType: { $in: TRADING_EXP_TYPES } },
+          { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: TRADING_EXP_TYPES } },
+          { parentGroup: { $exists: false }, ledgerType: { $in: TRADING_EXP_TYPES } }
+        ]
+      }).lean()
+    ]);
+
+    const allIds = [...incLedgers, ...expLedgers].map(l => l._id);
+    const { priorMap, periodMap } = await buildVoucherMaps(companyId, start, end, allIds);
+
+    // Group income ledgers by ledgerType
+    const salesGroupMap = {};
+    incLedgers.forEach(l => {
+      const act = periodMap[l._id.toString()] || {};
+      const amount = act.credit || 0;
+      if (!amount) return;
+      const key = l.ledgerType;
+      if (!salesGroupMap[key]) salesGroupMap[key] = { accountGroup: key, items: [] };
+      salesGroupMap[key].items.push({ ledgerName: l.ledgerName, amount });
+    });
+
+    // Group expense ledgers by ledgerType
+    const purchaseGroupMap = {};
+    expLedgers.forEach(l => {
+      const act = periodMap[l._id.toString()] || {};
+      const amount = act.debit || 0;
+      if (!amount) return;
+      const key = l.ledgerType;
+      if (!purchaseGroupMap[key]) purchaseGroupMap[key] = { accountGroup: key, items: [] };
+      purchaseGroupMap[key].items.push({ ledgerName: l.ledgerName, amount });
+    });
+
+    const addGroupTotals = (gm) =>
+      Object.values(gm).map(g => ({ ...g, total: g.items.reduce((s, i) => s + i.amount, 0) }));
+
+    const salesGroups    = addGroupTotals(salesGroupMap);
+    const purchaseGroups = addGroupTotals(purchaseGroupMap);
+
+    // Dairy-direct sources
+    const [mcAgg, msAgg, usAgg, items] = await Promise.all([
+      MilkCollection.aggregate([
+        { $match: { companyId, date: { $gte: start, $lte: end } } },
+        { $group: { _id: null, total: { $sum: '$amount' }, qty: { $sum: '$qty' }, farmers: { $addToSet: '$farmer' } } }
+      ]),
+      MilkSales.aggregate([
+        { $match: { companyId, date: { $gte: start, $lte: end } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      UnionSalesSlip.aggregate([
+        { $match: { companyId, date: { $gte: start, $lte: end } } },
+        { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+      ]).catch(() => []),
+      Item.find({ status: 'Active', companyId }).lean()
+    ]);
+
+    const openingStockTotal = items.reduce((s, it) => s + (it.openingBalance || 0) * (it.costPrice || it.salesRate || 0), 0);
+    const closingStockTotal = items.reduce((s, it) => s + (it.currentBalance || 0) * (it.costPrice || it.salesRate || 0), 0);
+    const closingStockGrouped = {};
+    items.forEach(it => {
+      const val = (it.currentBalance || 0) * (it.costPrice || it.salesRate || 0);
+      if (!val) return;
+      const cat = it.category || 'Others';
+      closingStockGrouped[cat] = (closingStockGrouped[cat] || 0) + val;
+    });
+
+    const milkPurchaseTotal = mcAgg[0]?.total || 0;
+    const milkSalesTotal    = msAgg[0]?.total || 0;
+    const unionSalesTotal   = usAgg[0]?.total  || 0;
+    const totalPurchased    = purchaseGroups.reduce((s, g) => s + g.total, 0);
+    const totalSales        = salesGroups.reduce((s, g) => s + g.total, 0);
+
+    const creditTotal = milkSalesTotal + unionSalesTotal + totalSales + closingStockTotal;
+    const debitTotal  = openingStockTotal + milkPurchaseTotal + totalPurchased;
+    const grossProfit = creditTotal > debitTotal ? creditTotal - debitTotal : 0;
+    const grossLoss   = debitTotal > creditTotal ? debitTotal - creditTotal : 0;
+
+    res.json({
+      success: true,
+      data: {
+        period: { startDate: start, endDate: end, financialYear: getFinancialYear(start) },
+        debitSide: {
+          openingStock: { total: openingStockTotal },
+          milkPurchase: { total: milkPurchaseTotal, qty: mcAgg[0]?.qty || 0, farmerCount: mcAgg[0]?.farmers?.length || 0 },
+          purchaseGroups,
+          grossProfit
+        },
+        creditSide: {
+          milkSales: { total: milkSalesTotal },
+          unionSales: { total: unionSalesTotal },
+          salesGroups,
+          closingStock: {
+            total: closingStockTotal,
+            items: Object.entries(closingStockGrouped).map(([category, amount]) => ({ category, amount }))
+          },
+          grossLoss
+        },
+        totals: { debitTotal: debitTotal + grossProfit, creditTotal: creditTotal + grossLoss }
+      }
+    });
+  } catch (err) {
+    console.error('getTradingAccountV2 error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── PROFIT & LOSS V2 — driven by ac_ledgers types ───────────────────────────
+export const getProfitLossV2 = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ success: false, message: 'startDate and endDate are required' });
+    }
+
+    const start = new Date(startDate); start.setHours(0, 0, 0, 0);
+    const end   = new Date(endDate);   end.setHours(23, 59, 59, 999);
+    const companyId = req.companyId;
+
+    // P&L types exclude trading account types
+    const TRADING_INC = ['Sales', 'Trade Income', 'Sales A/c'];
+    const TRADING_EXP = ['Purchases', 'Trade Expenses', 'Purchases A/c'];
+    const PL_INC_TYPES = ['Income', 'Miscellaneous Income', 'Other Revenue', 'Grants & Aid', 'Subsidies'];
+    const PL_EXP_TYPES = ['Expense', 'Establishment Charges', 'Contingencies', 'Miscellaneous Expenses'];
+
+    const [incLedgers, expLedgers] = await Promise.all([
+      Ledger.find({
+        companyId, status: 'Active',
+        $or: [
+          { parentGroup: 'INCOME', ledgerType: { $nin: TRADING_INC } },
+          { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: PL_INC_TYPES } },
+          { parentGroup: { $exists: false }, ledgerType: { $in: PL_INC_TYPES } }
+        ]
+      }).lean(),
+      Ledger.find({
+        companyId, status: 'Active',
+        $or: [
+          { parentGroup: 'EXPENSE', ledgerType: { $nin: TRADING_EXP } },
+          { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: PL_EXP_TYPES } },
+          { parentGroup: { $exists: false }, ledgerType: { $in: PL_EXP_TYPES } }
+        ]
+      }).lean()
+    ]);
+
+    const allIds = [...incLedgers, ...expLedgers].map(l => l._id);
+    const { periodMap } = await buildVoucherMaps(companyId, start, end, allIds);
+
+    const groupByType = (ledgers, amountKey) => {
+      const gm = {};
+      ledgers.forEach(l => {
+        const act = periodMap[l._id.toString()] || {};
+        const amount = act[amountKey] || 0;
+        if (!amount) return;
+        const key = l.ledgerType;
+        if (!gm[key]) gm[key] = { accountGroup: key, ledgers: [] };
+        gm[key].ledgers.push({ name: l.ledgerName, amount });
+      });
+      return Object.values(gm).map(g => ({ ...g, total: g.ledgers.reduce((s, l) => s + l.amount, 0) }));
+    };
+
+    const incomeGroups  = groupByType(incLedgers, 'credit');
+    const expenseGroups = groupByType(expLedgers, 'debit');
+    const totalIncome   = incomeGroups.reduce((s, g) => s + g.total, 0);
+    const totalExpense  = expenseGroups.reduce((s, g) => s + g.total, 0);
+    const netProfit     = totalIncome - totalExpense;
+
+    res.json({
+      success: true,
+      data: { incomeGroups, expenseGroups, totalIncome, totalExpense, netProfit, netLoss: netProfit < 0 ? Math.abs(netProfit) : 0 }
+    });
+  } catch (err) {
+    console.error('getProfitLossV2 error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── BALANCE SHEET V2 — driven by ac_ledgers types ───────────────────────────
+export const getBalanceSheetV2 = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ success: false, message: 'startDate and endDate are required' });
+    }
+
+    const start = new Date(startDate); start.setHours(0, 0, 0, 0);
+    const end   = new Date(endDate);   end.setHours(23, 59, 59, 999);
+    const companyId = req.companyId;
+
+    const ASSET_TYPES_NEW = [
+      'Bank Accounts', 'Share in Other Institutions', 'Other Investments',
+      'Fixed Assets - Movables', 'Fixed Assets - Immovables', 'Advance due to Society',
+      'Loss', 'Cash in Hand', 'Loans & Advances to Members', 'Interest Receivable',
+      'Other Assets', 'Investment in Govt. Securities'
+    ];
+    const ASSET_TYPES_LEGACY = [
+      'Asset', 'Fixed Assets', 'Movable Assets', 'Immovable Assets', 'Cash', 'Bank',
+      'Other Receivable', 'Sundry Debtors', 'Customer'
+    ];
+    const LIABILITY_TYPES_NEW = [
+      'Share Capital', 'Statutory Funds and Reserves', 'Other Funds, Reserves and Provisions',
+      'Grants and Subsidies', 'Other Liabilities', 'Advance due by Society', 'Profit',
+      'Deposits', 'Borrowings (Loans, Cash Credits)', 'Interest Payable', 'Education Fund'
+    ];
+    const LIABILITY_TYPES_LEGACY = [
+      'Liability', 'Capital', 'Other Payable', 'Deposit A/c', 'Contingency Fund',
+      'Accounts Due To (Sundry Creditors)', 'Sundry Creditors'
+    ];
+    const ALL_ASSET_TYPES = [...ASSET_TYPES_NEW, ...ASSET_TYPES_LEGACY];
+    const ALL_LIABILITY_TYPES = [...LIABILITY_TYPES_NEW, ...LIABILITY_TYPES_LEGACY];
+
+    const [assetLedgers, liabilityLedgers] = await Promise.all([
+      Ledger.find({
+        companyId, status: 'Active',
+        $or: [
+          { parentGroup: 'ASSET' },
+          { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: ALL_ASSET_TYPES } },
+          { parentGroup: { $exists: false }, ledgerType: { $in: ALL_ASSET_TYPES } }
+        ]
+      }).lean(),
+      Ledger.find({
+        companyId, status: 'Active',
+        $or: [
+          { parentGroup: 'LIABILITY' },
+          { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: ALL_LIABILITY_TYPES } },
+          { parentGroup: { $exists: false }, ledgerType: { $in: ALL_LIABILITY_TYPES } }
+        ]
+      }).lean()
+    ]);
+
+    const allIds = [...assetLedgers, ...liabilityLedgers].map(l => l._id);
+    const { priorMap, periodMap } = await buildVoucherMaps(companyId, start, end, allIds);
+
+    const groupLedgers = (ledgers, isDebitNature) => {
+      const gm = {};
+      ledgers.forEach(l => {
+        const lid = l._id.toString();
+        let signed = l.openingBalance || 0;
+        const obType = l.openingBalanceType || (isDebitNature ? 'Dr' : 'Cr');
+        const isNormal = (isDebitNature && obType === 'Dr') || (!isDebitNature && obType === 'Cr');
+        if (!isNormal && signed > 0) signed = -signed;
+        const pr = priorMap[lid];
+        if (pr) signed += isDebitNature ? (pr.debit - pr.credit) : -(pr.debit - pr.credit);
+        const pe = periodMap[lid];
+        if (pe) signed += isDebitNature ? (pe.debit - pe.credit) : -(pe.debit - pe.credit);
+
+        if (signed === 0) return;
+        const key = l.ledgerType || 'Other';
+        if (!gm[key]) gm[key] = { accountGroup: key, ledgers: [] };
+        gm[key].ledgers.push({ name: l.ledgerName, balance: Math.abs(signed), balanceType: signed >= 0 ? (isDebitNature ? 'Dr' : 'Cr') : (isDebitNature ? 'Cr' : 'Dr') });
+      });
+      return Object.values(gm).map(g => ({
+        ...g,
+        total: g.ledgers.reduce((s, l) => s + (isDebitNature ? (l.balanceType === 'Dr' ? l.balance : -l.balance) : (l.balanceType === 'Cr' ? l.balance : -l.balance)), 0)
+      }));
+    };
+
+    const assetGroups     = groupLedgers(assetLedgers, true);
+    const liabilityGroups = groupLedgers(liabilityLedgers, false);
+    const totalAssets     = assetGroups.reduce((s, g) => s + g.total, 0);
+    const totalLiabilities = liabilityGroups.reduce((s, g) => s + g.total, 0);
+
+    const closingStock = (await Item.find({ status: 'Active', companyId }).lean())
+      .reduce((s, it) => s + (it.currentBalance || 0) * (it.costPrice || it.salesRate || 0), 0);
+
+    const isTallied = Math.abs((totalAssets + closingStock) - totalLiabilities) < 1;
+
+    res.json({
+      success: true,
+      data: {
+        assetGroups, liabilityGroups,
+        totalAssets, totalLiabilities, closingStock, isTallied
+      }
+    });
+  } catch (err) {
+    console.error('getBalanceSheetV2 error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 export default {
   getReceiptsDisbursementReport,
   getTradingAccount,
@@ -2223,5 +2570,8 @@ export default {
   getDairyAbstractReport,
   getDairyRegisterReport,
   getCooperativeRDReport,
-  getMISReport
+  getMISReport,
+  getTradingAccountV2,
+  getProfitLossV2,
+  getBalanceSheetV2
 };

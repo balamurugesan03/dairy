@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Container,
   Grid,
@@ -802,7 +802,7 @@ const MilkPaymentRegister = () => {
 
   // Print voucher
   const handlePrint = useReactToPrint({
-    content: () => printRef.current,
+    contentRef: printRef,
     documentTitle: `Payment_Voucher_${savedPayment?.paymentNumber || 'draft'}`,
     onAfterPrint: () => {
       notifications.show({
@@ -1995,3 +1995,4 @@ const MilkPaymentRegister = () => {
 };
 
 export default MilkPaymentRegister;
+

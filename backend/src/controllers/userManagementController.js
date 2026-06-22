@@ -416,7 +416,6 @@ export const getUserTypesList = async (req, res) => {
       { value: 'superuser', label: 'Superuser' },
       { value: 'admin', label: 'Admin' },
       { value: 'ordinary', label: 'Ordinary' },
-      { value: 'agent', label: 'Agent' },
       { value: 'agent', label: 'Agent' }
     ];
 

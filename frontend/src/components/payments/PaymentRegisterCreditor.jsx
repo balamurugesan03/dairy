@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+﻿import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Container, Box, Group, Text, Title, Button, TextInput,
   NumberInput, Paper, Badge, Divider, ActionIcon, Tooltip,
@@ -255,7 +255,7 @@ const PaymentRegisterCreditor = () => {
 
   /* ── Print ────────────────────────────────────────────────────────────────── */
   const handlePrint = useReactToPrint({
-    content: () => printRef.current,
+    contentRef: printRef,
     documentTitle: `Payment_Register_${dayjs(fromDate).format('MMYYYY')}`,
   });
 
@@ -715,3 +715,4 @@ const inputStyle = (align = 'left') => ({
 });
 
 export default PaymentRegisterCreditor;
+

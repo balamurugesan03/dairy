@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Container, Paper, Group, Text, Title, Box, Badge,
   Button, Select, Tabs, Divider, ScrollArea,
@@ -64,7 +64,7 @@ const CattleFeedAdvance = () => {
   const printRef = useRef();
 
   const handlePrint = useReactToPrint({
-    content: () => printRef.current,
+    contentRef: printRef,
     documentTitle: `CF_Advance_${dayjs().format('DDMMYYYY')}`,
   });
 

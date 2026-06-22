@@ -52,7 +52,7 @@ const ProducerRegisterSummary = () => {
   }, [filters.fromDate, filters.toDate, filters.collectionCenter]);
 
   const handlePrint = useReactToPrint({
-    content: () => printRef.current,
+    contentRef: printRef,
     documentTitle: `Producer_Register_Summary_${dayjs().format('YYYY-MM-DD')}`,
     pageStyle: `
       @page {

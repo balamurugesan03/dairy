@@ -427,7 +427,7 @@ const DailyCollectionList = () => {
       pw / 2, sepY + 14, { align: 'center' },
     );
 
-    doc.save(`Daily_Collection_${dayjs(date).format('YYYY-MM-DD')}_${shift || 'ALL'}.pdf`);
+    doc.save(`Daily_Collection_${dayjs(fromDate).format('YYYY-MM-DD')}_${shift || 'ALL'}.pdf`);
     notifications.show({ message: 'PDF exported successfully', color: 'green' });
   };
 
@@ -550,7 +550,7 @@ const DailyCollectionList = () => {
   <div class="title-line">*** MILK PURCHASE REPORT ***</div>
   <hr class="dash"/>
   <div class="meta">
-    <span>Date : ${dayjs(date).format('DD/MM/YYYY')}</span>
+    <span>Date : ${dateLabel}</span>
     <span>Shift : ${shiftLabel}</span>
     <span>Members : ${members.length}</span>
     <span>Non-Members : ${nonMembers.length}</span>

@@ -96,7 +96,8 @@ export const farmerAPI = {
   bulkImport: (farmers) => api.post('/farmers/bulk-import', { farmers }).then(res => res.data).catch(handleError),
   bulkImportShares: (shares) => api.post('/farmers/bulk-import-shares', { shares }).then(res => res.data).catch(handleError),
   bulkDelete: (ids) => api.post('/farmers/bulk-delete', { ids }).then(res => res.data).catch(handleError),
-  getReport: () => api.get('/farmers/report').then(res => res.data).catch(handleError)
+  getReport: () => api.get('/farmers/report').then(res => res.data).catch(handleError),
+  getProducerReport: (params) => api.get('/farmers/producer-report', { params }).then(res => res.data).catch(handleError)
 };
 
 // CUSTOMER APIs
@@ -298,9 +299,15 @@ export const reportAPI = {
   cashBook: (params) => api.get('/reports/cash-book', { params }).then(res => res.data).catch(handleError),
   generalLedger: (params) => api.get('/reports/general-ledger', { params }).then(res => res.data).catch(handleError),
   ledgerAbstract: (params) => api.get('/reports/ledger-abstract', { params }).then(res => res.data).catch(handleError),
+  ledgerAbstractGrouped: (params) => api.get('/reports/ledger-abstract-grouped', { params }).then(res => res.data).catch(handleError),
   rdEnhanced: (params) => api.get('/reports/rd-enhanced', { params }).then(res => res.data).catch(handleError),
+  rdStatement: (params) => api.get('/reports/rd-statement', { params }).then(res => res.data).catch(handleError),
   receiptsPayments: (params) => api.get('/reports/receipts-payments', { params }).then(res => res.data).catch(handleError),
+  receiptsPaymentsStatement: (params) => api.get('/reports/receipts-payments-statement', { params }).then(res => res.data).catch(handleError),
   ledgersDropdown: (params) => api.get('/reports/ledgers-dropdown', { params }).then(res => res.data).catch(handleError),
+  tradingAccountV2: (params) => api.get('/reports/trading-account-v2', { params }).then(res => res.data).catch(handleError),
+  profitLossV2: (params) => api.get('/reports/profit-loss-v2', { params }).then(res => res.data).catch(handleError),
+  balanceSheetV2: (params) => api.get('/reports/balance-sheet-v2', { params }).then(res => res.data).catch(handleError),
   // Vyapar Reports - Private Firm
   vyaparSaleReport: (params) => api.get('/reports/vyapar/sale-report', { params }).then(res => res.data).catch(handleError),
   vyaparPurchaseReport: (params) => api.get('/reports/vyapar/purchase-report', { params }).then(res => res.data).catch(handleError),

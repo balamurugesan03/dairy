@@ -18,7 +18,9 @@ import {
   calculateClosingBalance,
   isDebitNatureLedger,
   getBalanceType,
-  getLedgerCategory
+  getLedgerCategory,
+  getParentGroupFromLedgerType,
+  getDefaultVoucherType
 } from '../utils/balanceCalculator.js';
 
 // 1. CASH BOOK REPORT
@@ -1778,11 +1780,313 @@ export const getReceiptsPayments = async (req, res) => {
   }
 };
 
+// ─── Shared helper: build voucher activity maps (2-query optimization) ────────
+const buildActivityMaps = async (Voucher, companyId, start, end, skipStatus = true) => {
+  const baseFilter = { companyId };
+  if (skipStatus) baseFilter.status = { $ne: 'Cancelled' };
+
+  const [priorVouchers, periodVouchers] = await Promise.all([
+    Voucher.find({ ...baseFilter, voucherDate: { $lt: start } }).select('entries').lean(),
+    Voucher.find({ ...baseFilter, voucherDate: { $gte: start, $lte: end } }).select('entries').lean()
+  ]);
+
+  const buildMap = (vouchers) => {
+    const map = {};
+    vouchers.forEach(v => {
+      (v.entries || []).forEach(e => {
+        const lid = e.ledgerId?.toString();
+        if (!lid) return;
+        if (!map[lid]) map[lid] = { debit: 0, credit: 0 };
+        map[lid].debit += e.debitAmount || 0;
+        map[lid].credit += e.creditAmount || 0;
+      });
+    });
+    return map;
+  };
+
+  return { priorMap: buildMap(priorVouchers), periodMap: buildMap(periodVouchers) };
+};
+
+// ─── Compute signed balance for a ledger using prior + period maps ─────────────
+const computeLedgerBalance = (ledger, priorMap, periodMap, addPeriod = true) => {
+  const pg = ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'].includes(ledger.parentGroup)
+    ? ledger.parentGroup
+    : getParentGroupFromLedgerType(ledger.ledgerType);
+  const isDebit = pg === 'ASSET' || pg === 'EXPENSE' || isDebitNatureLedger(ledger.ledgerType);
+
+  let signed = ledger.openingBalance || 0;
+  const obType = ledger.openingBalanceType || 'Dr';
+  const isNormal = (isDebit && obType === 'Dr') || (!isDebit && obType === 'Cr');
+  if (!isNormal && signed > 0) signed = -signed;
+
+  const lid = ledger._id.toString();
+  const prior = priorMap[lid];
+  if (prior) signed += isDebit ? (prior.debit - prior.credit) : -(prior.debit - prior.credit);
+
+  if (addPeriod) {
+    const period = periodMap[lid];
+    if (period) signed += isDebit ? (period.debit - period.credit) : -(period.debit - period.credit);
+  }
+
+  return { signed, isDebit, pg };
+};
+
+// ─── 7. LEDGER ABSTRACT — GROUPED BY ACCOUNT GROUP (ac_ledgers style) ────────
+export const getLedgerAbstractGrouped = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ success: false, message: 'startDate and endDate are required' });
+    }
+
+    const start = new Date(startDate); start.setUTCHours(0, 0, 0, 0);
+    const end   = new Date(endDate);   end.setUTCHours(23, 59, 59, 999);
+
+    const ledgers = await Ledger.find({ status: 'Active', companyId: req.companyId }).lean();
+    const { priorMap, periodMap } = await buildActivityMaps(Voucher, req.companyId, start, end);
+
+    const results = [];
+    ledgers.forEach(ledger => {
+      const lid = ledger._id.toString();
+      const { signed: obSigned, isDebit, pg } = computeLedgerBalance(ledger, priorMap, {}, false);
+      const period = periodMap[lid] || { debit: 0, credit: 0 };
+
+      if (obSigned === 0 && period.debit === 0 && period.credit === 0) return;
+
+      const closingSigned = obSigned + (isDebit ? (period.debit - period.credit) : -(period.debit - period.credit));
+
+      results.push({
+        ledgerId: ledger._id,
+        ledgerName: ledger.ledgerName,
+        ledgerType: ledger.ledgerType || 'Other',
+        parentGroup: pg,
+        openingBalance: Math.abs(obSigned),
+        openingBalanceType: obSigned >= 0 ? (isDebit ? 'Dr' : 'Cr') : (isDebit ? 'Cr' : 'Dr'),
+        debit: period.debit,
+        credit: period.credit,
+        closingBalance: Math.abs(closingSigned),
+        closingBalanceType: closingSigned >= 0 ? (isDebit ? 'Dr' : 'Cr') : (isDebit ? 'Cr' : 'Dr')
+      });
+    });
+
+    // Group by ledgerType (account_group), sorted by parentGroup then accountGroup
+    const groupMap = {};
+    results.forEach(item => {
+      const key = item.ledgerType;
+      if (!groupMap[key]) groupMap[key] = { accountGroup: key, parentGroup: item.parentGroup, ledgers: [] };
+      groupMap[key].ledgers.push(item);
+    });
+
+    const pgOrder = ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE', 'OTHER'];
+    const groups = Object.values(groupMap).map(g => ({
+      ...g,
+      totals: g.ledgers.reduce((acc, l) => ({
+        debit: acc.debit + l.debit,
+        credit: acc.credit + l.credit,
+        obDr: acc.obDr + (l.openingBalanceType === 'Dr' ? l.openingBalance : 0),
+        obCr: acc.obCr + (l.openingBalanceType === 'Cr' ? l.openingBalance : 0),
+        clDr: acc.clDr + (l.closingBalanceType === 'Dr' ? l.closingBalance : 0),
+        clCr: acc.clCr + (l.closingBalanceType === 'Cr' ? l.closingBalance : 0)
+      }), { debit: 0, credit: 0, obDr: 0, obCr: 0, clDr: 0, clCr: 0 })
+    })).sort((a, b) => {
+      const ai = pgOrder.indexOf(a.parentGroup), bi = pgOrder.indexOf(b.parentGroup);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi) || a.accountGroup.localeCompare(b.accountGroup);
+    });
+
+    res.json({ success: true, data: { startDate: start, endDate: end, groups } });
+  } catch (err) {
+    console.error('getLedgerAbstractGrouped error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── 8. R&D STATEMENT — DYNAMIC (ac_ledgers voucher_type classification) ─────
+export const getRDStatementDynamic = async (req, res) => {
+  try {
+    const { startDate, endDate, filterType, customStart, customEnd } = req.query;
+
+    let dateFilter;
+    if (filterType) {
+      dateFilter = getDateRange(filterType, customStart, customEnd);
+    } else if (startDate && endDate) {
+      const start = new Date(startDate); start.setUTCHours(0, 0, 0, 0);
+      const end   = new Date(endDate);   end.setUTCHours(23, 59, 59, 999);
+      dateFilter = { startDate: start, endDate: end };
+    } else {
+      dateFilter = getDateRange('thisMonth');
+    }
+    const start = dateFilter.startDate;
+    const end   = dateFilter.endDate;
+
+    const ledgers = await Ledger.find({ status: 'Active', companyId: req.companyId }).lean();
+    const ledgerMap = Object.fromEntries(ledgers.map(l => [l._id.toString(), l]));
+
+    const periodVouchers = await Voucher.find({
+      companyId: req.companyId,
+      voucherDate: { $gte: start, $lte: end },
+      status: { $ne: 'Cancelled' }
+    }).select('entries').lean();
+
+    const periodMap = {};
+    periodVouchers.forEach(v => {
+      (v.entries || []).forEach(e => {
+        const lid = e.ledgerId?.toString();
+        if (!lid) return;
+        if (!periodMap[lid]) periodMap[lid] = { debit: 0, credit: 0 };
+        periodMap[lid].debit  += e.debitAmount  || 0;
+        periodMap[lid].credit += e.creditAmount || 0;
+      });
+    });
+
+    const receiptGroupMap = {};
+    const paymentGroupMap = {};
+
+    Object.entries(periodMap).forEach(([lid, act]) => {
+      const ledger = ledgerMap[lid];
+      if (!ledger) return;
+
+      const vt = ['R', 'P', 'B'].includes(ledger.voucherType)
+        ? ledger.voucherType
+        : getDefaultVoucherType(ledger.ledgerType);
+      const groupKey = ledger.ledgerType || 'Other';
+      const pg = ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'].includes(ledger.parentGroup)
+        ? ledger.parentGroup : getParentGroupFromLedgerType(ledger.ledgerType);
+
+      if (['R', 'B'].includes(vt) && act.credit > 0) {
+        if (!receiptGroupMap[groupKey]) receiptGroupMap[groupKey] = { accountGroup: groupKey, parentGroup: pg, ledgers: [] };
+        receiptGroupMap[groupKey].ledgers.push({ ledgerName: ledger.ledgerName, amount: act.credit });
+      }
+      if (['P', 'B'].includes(vt) && act.debit > 0) {
+        if (!paymentGroupMap[groupKey]) paymentGroupMap[groupKey] = { accountGroup: groupKey, parentGroup: pg, ledgers: [] };
+        paymentGroupMap[groupKey].ledgers.push({ ledgerName: ledger.ledgerName, amount: act.debit });
+      }
+    });
+
+    const addTotals = (groupMap) =>
+      Object.values(groupMap).map(g => ({ ...g, total: g.ledgers.reduce((s, l) => s + l.amount, 0) }));
+
+    const receipts = addTotals(receiptGroupMap);
+    const payments = addTotals(paymentGroupMap);
+
+    res.json({
+      success: true,
+      data: {
+        startDate: start, endDate: end,
+        receipts,
+        payments,
+        totalReceipts: receipts.reduce((s, g) => s + g.total, 0),
+        totalPayments: payments.reduce((s, g) => s + g.total, 0)
+      }
+    });
+  } catch (err) {
+    console.error('getRDStatementDynamic error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── 9. RECEIPTS & PAYMENTS — DYNAMIC (with opening/closing cash balance) ────
+export const getReceiptsPaymentsDynamic = async (req, res) => {
+  try {
+    const { startDate, endDate, filterType, customStart, customEnd } = req.query;
+
+    let dateFilter;
+    if (filterType) {
+      dateFilter = getDateRange(filterType, customStart, customEnd);
+    } else if (startDate && endDate) {
+      const start = new Date(startDate); start.setUTCHours(0, 0, 0, 0);
+      const end   = new Date(endDate);   end.setUTCHours(23, 59, 59, 999);
+      dateFilter = { startDate: start, endDate: end };
+    } else {
+      dateFilter = getDateRange('thisMonth');
+    }
+    const start = dateFilter.startDate;
+    const end   = dateFilter.endDate;
+
+    const ledgers = await Ledger.find({ status: 'Active', companyId: req.companyId }).lean();
+    const ledgerMap = Object.fromEntries(ledgers.map(l => [l._id.toString(), l]));
+
+    const { priorMap, periodMap } = await buildActivityMaps(Voucher, req.companyId, start, end);
+
+    // Cash & bank ledger types (for opening/closing balance)
+    const CASH_BANK_TYPES = ['Cash', 'Bank', 'Cash in Hand', 'Bank Accounts'];
+    const cashBankLedgers = ledgers.filter(l => CASH_BANK_TYPES.includes(l.ledgerType));
+
+    const computeSigned = (ledger, map) => {
+      const lid = ledger._id.toString();
+      const act = map[lid] || { debit: 0, credit: 0 };
+      const { signed } = computeLedgerBalance(ledger, {}, {}, false);
+      // isDebit for cash = true, so net = signed + debit - credit
+      return signed + act.debit - act.credit;
+    };
+
+    const openingBalance = cashBankLedgers.reduce((s, l) => {
+      const { signed } = computeLedgerBalance(l, priorMap, {}, false);
+      return s + signed;
+    }, 0);
+
+    const closingBalance = cashBankLedgers.reduce((s, l) => {
+      const { signed } = computeLedgerBalance(l, priorMap, periodMap, true);
+      return s + signed;
+    }, 0);
+
+    // R&D groups (same as getRDStatementDynamic)
+    const receiptGroupMap = {};
+    const paymentGroupMap = {};
+
+    Object.entries(periodMap).forEach(([lid, act]) => {
+      const ledger = ledgerMap[lid];
+      if (!ledger) return;
+      if (CASH_BANK_TYPES.includes(ledger.ledgerType)) return; // exclude cash/bank from groups
+
+      const vt = ['R', 'P', 'B'].includes(ledger.voucherType)
+        ? ledger.voucherType
+        : getDefaultVoucherType(ledger.ledgerType);
+      const groupKey = ledger.ledgerType || 'Other';
+      const pg = ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'].includes(ledger.parentGroup)
+        ? ledger.parentGroup : getParentGroupFromLedgerType(ledger.ledgerType);
+
+      if (['R', 'B'].includes(vt) && act.credit > 0) {
+        if (!receiptGroupMap[groupKey]) receiptGroupMap[groupKey] = { accountGroup: groupKey, parentGroup: pg, ledgers: [] };
+        receiptGroupMap[groupKey].ledgers.push({ ledgerName: ledger.ledgerName, amount: act.credit });
+      }
+      if (['P', 'B'].includes(vt) && act.debit > 0) {
+        if (!paymentGroupMap[groupKey]) paymentGroupMap[groupKey] = { accountGroup: groupKey, parentGroup: pg, ledgers: [] };
+        paymentGroupMap[groupKey].ledgers.push({ ledgerName: ledger.ledgerName, amount: act.debit });
+      }
+    });
+
+    const addTotals = (gm) =>
+      Object.values(gm).map(g => ({ ...g, total: g.ledgers.reduce((s, l) => s + l.amount, 0) }));
+
+    const receipts = addTotals(receiptGroupMap);
+    const payments = addTotals(paymentGroupMap);
+    const totalReceipts = receipts.reduce((s, g) => s + g.total, 0);
+    const totalPayments = payments.reduce((s, g) => s + g.total, 0);
+
+    res.json({
+      success: true,
+      data: {
+        startDate: start, endDate: end,
+        openingBalance,
+        receipts, payments,
+        totalReceipts, totalPayments,
+        closingBalance
+      }
+    });
+  } catch (err) {
+    console.error('getReceiptsPaymentsDynamic error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 export default {
   getCashBook,
   getGeneralLedger,
   getGeneralLedgerAbstract,
   getReceiptsDisbursementEnhanced,
   getLedgersForDropdown,
-  getReceiptsPayments
+  getReceiptsPayments,
+  getLedgerAbstractGrouped,
+  getRDStatementDynamic,
+  getReceiptsPaymentsDynamic
 };

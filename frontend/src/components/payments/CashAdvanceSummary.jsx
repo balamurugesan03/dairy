@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import {
   Container, Paper, Group, Text, Title, Box, Badge,
   Button, Select, Tabs, Divider, ScrollArea,
@@ -58,7 +58,7 @@ const CashAdvanceSummary = () => {
   const printRef = useRef();
 
   const handlePrint = useReactToPrint({
-    content: () => printRef.current,
+    contentRef: printRef,
     documentTitle: `Cash_Advance_${dayjs().format('DDMMYYYY')}`,
   });
 
@@ -674,3 +674,4 @@ const CashAdvanceSummary = () => {
 };
 
 export default CashAdvanceSummary;
+

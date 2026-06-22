@@ -85,15 +85,25 @@ const thLeft = { ...thBase, textAlign: 'left' };
 const tdBase = { padding: '6px 10px', fontSize: 12, border: '1px solid #e5e7eb' };
 const tdRight = { ...tdBase, textAlign: 'right', fontFamily: 'monospace' };
 
+// ── Parent-group color config ──────────────────────────────────────────────
+const PG_CONFIG = {
+  ASSET:     { label: 'Assets',      color: '#1d4ed8', bg: '#dbeafe', badge: 'blue'   },
+  LIABILITY: { label: 'Liabilities', color: '#dc2626', bg: '#fee2e2', badge: 'red'    },
+  INCOME:    { label: 'Income',      color: '#166534', bg: '#dcfce7', badge: 'green'  },
+  EXPENSE:   { label: 'Expenses',    color: '#92400e', bg: '#fef3c7', badge: 'yellow' },
+  OTHER:     { label: 'Other',       color: '#374151', bg: '#f3f4f6', badge: 'gray'   }
+};
+
 // ── Main component ────────────────────────────────────────────────────────
 const LedgerAbstract = () => {
-  const [loading, setLoading]       = useState(false);
-  const [reportData, setReportData] = useState(null);
-  const [preset, setPreset]         = useState('financialYear');
-  const [dateRange, setDateRange]   = useState(getPresetRange('financialYear'));
-  const [ledgerType, setLedgerType] = useState('');
+  const [loading, setLoading]           = useState(false);
+  const [reportData, setReportData]     = useState(null);
+  const [groupedData, setGroupedData]   = useState(null);
+  const [preset, setPreset]             = useState('financialYear');
+  const [dateRange, setDateRange]       = useState(getPresetRange('financialYear'));
+  const [ledgerType, setLedgerType]     = useState('');
   const printRef = useRef(null);
-  const [view, setView]             = useState('grouped'); // grouped | flat
+  const [view, setView]                 = useState('grouped'); // grouped | flat | accountGroup
 
   const handlePresetChange = (val) => {
     setPreset(val);
@@ -113,8 +123,12 @@ const LedgerAbstract = () => {
         endDate:   dayjs(end).format('YYYY-MM-DD')
       };
       if (ledgerType) params.ledgerType = ledgerType;
-      const res = await reportAPI.ledgerAbstract(params);
+      const [res, resG] = await Promise.all([
+        reportAPI.ledgerAbstract(params),
+        reportAPI.ledgerAbstractGrouped(params)
+      ]);
       setReportData(res?.data || res);
+      setGroupedData(resG?.data || resG);
     } catch (err) {
       notifications.show({ title: 'Error', message: err.message || 'Failed to fetch', color: 'red' });
     } finally {
@@ -239,6 +253,72 @@ const LedgerAbstract = () => {
     return rows;
   };
 
+  // ── Render account-group rows (new ac_ledgers grouping) ────────────────
+  const renderAccountGroup = () => {
+    if (!groupedData?.groups?.length) return (
+      <Table.Tr><Table.Td colSpan={7} style={{ textAlign: 'center', padding: 24, color: '#888' }}>No grouped data</Table.Td></Table.Tr>
+    );
+    const rows = [];
+    let currentPG = null;
+    groupedData.groups.forEach((group, gi) => {
+      const pg     = group.parentGroup || 'OTHER';
+      const conf   = PG_CONFIG[pg] || PG_CONFIG.OTHER;
+
+      // Parent-group separator
+      if (pg !== currentPG) {
+        currentPG = pg;
+        rows.push(
+          <Table.Tr key={`pg-${pg}`} style={{ background: '#1e293b' }}>
+            <Table.Td colSpan={7} style={{ ...tdBase, fontWeight: 900, color: '#fff', fontSize: 12, paddingLeft: 10, letterSpacing: 1, textTransform: 'uppercase' }}>
+              ▸ {conf.label}
+            </Table.Td>
+          </Table.Tr>
+        );
+      }
+
+      // Account-group header
+      rows.push(
+        <Table.Tr key={`ag-${gi}`} style={{ background: conf.bg }}>
+          <Table.Td colSpan={2} style={{ ...tdBase, fontWeight: 700, color: conf.color, paddingLeft: 20 }}>
+            <Group gap={6}>
+              <Badge size="sm" color={conf.badge} variant="filled">{group.ledgers.length}</Badge>
+              {group.accountGroup}
+            </Group>
+          </Table.Td>
+          <Table.Td style={{ ...tdRight, fontWeight: 700, color: '#1d4ed8' }}>{f2(group.totals.obDr)}</Table.Td>
+          <Table.Td style={{ ...tdRight, fontWeight: 700, color: '#dc2626' }}>{f2(group.totals.obCr)}</Table.Td>
+          <Table.Td style={{ ...tdRight, fontWeight: 700 }}>{f2(group.totals.debit)}</Table.Td>
+          <Table.Td style={{ ...tdRight, fontWeight: 700 }}>{f2(group.totals.credit)}</Table.Td>
+          <Table.Td style={{ ...tdRight, fontWeight: 700, color: conf.color }}>
+            {group.totals.clDr > 0 ? f2(group.totals.clDr) + ' Dr' : group.totals.clCr > 0 ? f2(group.totals.clCr) + ' Cr' : '0.00'}
+          </Table.Td>
+        </Table.Tr>
+      );
+
+      // Ledger rows inside the group
+      group.ledgers.forEach((item, ii) => {
+        rows.push(
+          <Table.Tr key={`ag-${gi}-${ii}`} style={{ background: ii % 2 === 0 ? '#fff' : '#fafafa' }}>
+            <Table.Td style={{ ...tdBase, paddingLeft: 36, color: '#374151' }}>{item.ledgerName}</Table.Td>
+            <Table.Td style={{ ...tdBase, textAlign: 'center' }}>
+              <Badge size="xs" variant="dot" color={conf.badge} style={{ fontSize: 9 }}>{item.ledgerType}</Badge>
+            </Table.Td>
+            <Table.Td style={{ ...tdRight, color: '#1d4ed8' }}>{item.openingBalanceType === 'Dr' ? fz(item.openingBalance) : ''}</Table.Td>
+            <Table.Td style={{ ...tdRight, color: '#dc2626' }}>{item.openingBalanceType === 'Cr' ? fz(item.openingBalance) : ''}</Table.Td>
+            <Table.Td style={tdRight}>{fz(item.debit)}</Table.Td>
+            <Table.Td style={tdRight}>{fz(item.credit)}</Table.Td>
+            <Table.Td style={{ ...tdRight, fontWeight: 600, color: item.closingBalanceType === 'Dr' ? '#1d4ed8' : '#dc2626' }}>
+              {item.closingBalanceType === 'Dr'
+                ? (fz(item.closingBalance) ? fz(item.closingBalance) + ' Dr' : '')
+                : (fz(item.closingBalance) ? fz(item.closingBalance) + ' Cr' : '')}
+            </Table.Td>
+          </Table.Tr>
+        );
+      });
+    });
+    return rows;
+  };
+
   // ── Render flat table rows ──────────────────────────────────────────────
   const renderFlat = () =>
     abstract.map((item, idx) => (
@@ -360,8 +440,9 @@ const LedgerAbstract = () => {
                   value={view}
                   onChange={setView}
                   data={[
-                    { value: 'grouped', label: 'Grouped' },
-                    { value: 'flat',    label: 'All Ledgers' }
+                    { value: 'grouped',      label: 'By Category' },
+                    { value: 'flat',         label: 'All Ledgers' },
+                    { value: 'accountGroup', label: 'By Ac. Group' }
                   ]}
                   size="xs"
                   style={{ background: 'rgba(255,255,255,0.15)' }}
@@ -409,7 +490,7 @@ const LedgerAbstract = () => {
               </Table.Thead>
 
               <Table.Tbody>
-                {view === 'grouped' ? renderGrouped() : renderFlat()}
+                {view === 'grouped' ? renderGrouped() : view === 'accountGroup' ? renderAccountGroup() : renderFlat()}
               </Table.Tbody>
 
               {/* Grand total footer */}

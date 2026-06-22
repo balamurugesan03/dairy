@@ -44,6 +44,7 @@ const SocietyInfoPage = lazy(() => import('./components/society/SocietyInfoPage'
 const FarmerManagement = lazy(() => import('./components/farmer/FarmerManagement'));
 const FarmerView = lazy(() => import('./components/farmer/FarmerView'));
 const MemberList = lazy(() => import('./components/farmer/MemberList'));
+const MemberRegister = lazy(() => import('./components/farmer/MemberRegister'));
 const CropStatementList = lazy(() => import('./components/farmer/CropStatementList'));
 const AgriStatsReportList = lazy(() => import('./components/farmer/AgriStatsReportList'));
 const BankMasterList = lazy(() => import('./components/farmer/BankMasterList'));
@@ -110,6 +111,7 @@ const MilkSales              = lazy(() => import('./components/daily-collections
 const DailyCollectionList    = lazy(() => import('./components/daily-collections/DailyCollectionList'));
 const FarmerWiseSummary      = lazy(() => import('./components/daily-collections/FarmerWiseSummary'));
 const FarmerCriteriaReport   = lazy(() => import('./components/daily-collections/FarmerCriteriaReport'));
+const ProducerReport         = lazy(() => import('./components/reports/ProducerReport'));
 const RateChartSettings      = lazy(() => import('./components/daily-collections/RateChartSettings'));
 const MilkPurchaseSettings   = lazy(() => import('./components/daily-collections/MilkPurchaseSettings'));
 const UnionSalesSlip         = lazy(() => import('./components/daily-collections/UnionSalesSlip'));
@@ -331,6 +333,7 @@ const AppContent = () => {
                 <Route index element={<FarmerManagement />} />
                 <Route path="view/:id" element={<FarmerView />} />
                 <Route path="members" element={<MemberList />} />
+                <Route path="member-register" element={<MemberRegister />} />
                 <Route path="crop-statements" element={<CropStatementList />} />
                 <Route path="agri-stats" element={<AgriStatsReportList />} />
                 <Route path="report" element={<FarmerReport />} />
@@ -440,6 +443,7 @@ const AppContent = () => {
                 <Route path="list"                   element={<DailyCollectionList />} />
                 <Route path="farmer-wise-summary"    element={<FarmerWiseSummary />} />
                 <Route path="farmer-criteria-report" element={<FarmerCriteriaReport />} />
+                <Route path="producer-report"        element={<ProducerReport />} />
                 <Route path="rate-chart-settings"    element={<RateChartSettings />} />
                 <Route path="milk-purchase-settings" element={<MilkPurchaseSettings />} />
                 <Route path="union-sales-slip"       element={<UnionSalesSlip />} />

@@ -12,7 +12,8 @@ import { notifications } from '@mantine/notifications';
 import * as XLSX from 'xlsx';
 import dayjs from 'dayjs';
 import { reportAPI } from '../../services/api';
-import { printReport } from '../../utils/printReport';
+import { printVyaparReport } from '../../utils/printReport';
+import { useCompany } from '../../context/CompanyContext';
 
 // ── Formatters ───────────────────────────────────────────────────────────────
 const f3  = (n) => parseFloat(n || 0).toFixed(3);
@@ -200,6 +201,7 @@ const TOTAL_COLS = 30;
 
 // ── Main Component ────────────────────────────────────────────────────────────
 const DairyRegisterReport = () => {
+  const { selectedCompany } = useCompany();
   const [loading, setLoading]     = useState(false);
   const [reportData, setReportData] = useState(null);
   const [preset, setPreset]       = useState('thisMonth');
@@ -298,7 +300,7 @@ const DairyRegisterReport = () => {
 
       {/* ── Page Header ── */}
       <Paper radius="lg" mb="md" style={{ overflow: 'hidden' }}>
-        <Box style={{
+        <Box data-no-print style={{
           background: `linear-gradient(135deg, ${CLR.primary} 0%, #1e3a8a 60%, #1d4ed8 100%)`,
           padding: '14px 24px',
         }}>
@@ -383,27 +385,28 @@ const DairyRegisterReport = () => {
               <Button
                 size="sm" variant="outline" color="gray"
                 leftSection={<IconPrinter size={14} />}
-                onClick={() => printReport(printRef, {
-                  title: `Dairy Register — ${periodLabel}`,
+                onClick={() => printVyaparReport(printRef, {
+                  title: 'Dairy Register Report',
+                  companyName: selectedCompany?.name || '',
+                  period: periodLabel,
                   orientation: 'landscape',
                   extraCss: `
                     @page { size: A4 landscape; margin: 5mm; }
-                    body { width: 287mm; }
                     table {
-                      font-size: 6px !important;
+                      font-size: 6.5px !important;
                       border-collapse: collapse !important;
                       width: 100% !important;
                       table-layout: auto !important;
                     }
                     th, td {
-                      padding: 1px 2px !important;
+                      padding: 1px 3px !important;
                       min-width: 0 !important;
-                      font-size: 6px !important;
+                      font-size: 6.5px !important;
                       white-space: nowrap !important;
                     }
                     td[colspan="30"] {
                       font-size: 8px !important;
-                      padding: 3px 6px !important;
+                      padding: 4px 8px !important;
                       white-space: normal !important;
                     }
                   `
@@ -420,7 +423,7 @@ const DairyRegisterReport = () => {
       <Paper radius="md" withBorder style={{ overflow: 'hidden' }}>
 
         {/* Table header bar */}
-        <Box style={{
+        <Box data-no-print style={{
           background: `linear-gradient(135deg, ${CLR.primary} 0%, #1e3a8a 100%)`,
           padding: '10px 18px',
         }}>

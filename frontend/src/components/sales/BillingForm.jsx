@@ -490,7 +490,7 @@ const BillingForm = () => {
     form.setFieldValue('rate', '');
     setBarcodeInput('');
     setItemSearch('');
-    setTimeout(() => itemSelectRef.current?.focus(), 100);
+    setTimeout(() => paidAmountRef.current?.focus(), 100);
   };
 
   const handleRemoveItem = (index) => {
@@ -1080,7 +1080,7 @@ const BillingForm = () => {
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
-                          handleAddItem();
+                          setTimeout(() => addButtonRef.current?.focus(), 50);
                         }
                       }}
                     />

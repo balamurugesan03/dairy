@@ -1,5 +1,6 @@
 import Farmer from '../models/Farmer.js';
 import Ledger from '../models/Ledger.js';
+import MilkCollection from '../models/MilkCollection.js';
 import mongoose from 'mongoose';
 import { createShareCapitalVoucher, createAdmissionFeeVoucher } from '../utils/accountingHelper.js';
 
@@ -1134,6 +1135,143 @@ export const getFarmerReport = async (req, res) => {
   }
 };
 
+export const getProducerReport = async (req, res) => {
+  try {
+    const {
+      collectionCenter = '',
+      memberType = '',
+      farmerNumberFrom = '',
+      farmerNumberTo = '',
+      activeOnly = '',
+      gender = '',
+      caste = '',
+      farmerType = '',
+      dbtHas = '',
+      welfareHas = '',
+      mobileHas = '',
+      bankHas = '',
+      localBody = '',
+      ward = '',
+      fromDate = '',
+      toDate = '',
+      daysCondition = '',
+      daysValue = '',
+      qtyCondition = '',
+      qtyValue = '',
+      daysQtyLogic = 'AND',
+      page = 1,
+      limit = 50,
+    } = req.query;
+
+    const companyId = new mongoose.Types.ObjectId(req.companyId);
+    const query = { companyId };
+
+    if (collectionCenter) query.collectionCenter = new mongoose.Types.ObjectId(collectionCenter);
+    if (memberType === 'Member') query.isMembership = true;
+    else if (memberType === 'NonMember') query.isMembership = false;
+    if (activeOnly === 'true') query.status = 'Active';
+    if (gender) query['personalDetails.gender'] = gender;
+    if (caste) query['personalDetails.caste'] = { $regex: caste, $options: 'i' };
+    if (farmerType) query.farmerType = farmerType;
+    if (ward) query['address.ward'] = { $regex: ward, $options: 'i' };
+    if (localBody) query['address.panchayat'] = { $regex: localBody, $options: 'i' };
+
+    // Presence filters collected into $and
+    const andConditions = [];
+    if (dbtHas === 'yes') andConditions.push({ 'identityDetails.ksheerasreeId': { $exists: true, $nin: ['', null] } });
+    else if (dbtHas === 'no') andConditions.push({ $or: [{ 'identityDetails.ksheerasreeId': { $exists: false } }, { 'identityDetails.ksheerasreeId': '' }, { 'identityDetails.ksheerasreeId': null }] });
+
+    if (welfareHas === 'yes') andConditions.push({ 'identityDetails.welfareNo': { $exists: true, $nin: ['', null] } });
+    else if (welfareHas === 'no') andConditions.push({ $or: [{ 'identityDetails.welfareNo': { $exists: false } }, { 'identityDetails.welfareNo': '' }, { 'identityDetails.welfareNo': null }] });
+
+    if (mobileHas === 'yes') andConditions.push({ 'personalDetails.phone': { $exists: true, $nin: ['', null] } });
+    else if (mobileHas === 'no') andConditions.push({ $or: [{ 'personalDetails.phone': { $exists: false } }, { 'personalDetails.phone': '' }, { 'personalDetails.phone': null }] });
+
+    if (bankHas === 'yes') andConditions.push({ 'bankDetails.accountNumber': { $exists: true, $nin: ['', null] } });
+    else if (bankHas === 'no') andConditions.push({ $or: [{ 'bankDetails.accountNumber': { $exists: false } }, { 'bankDetails.accountNumber': '' }, { 'bankDetails.accountNumber': null }] });
+
+    if (andConditions.length > 0) query.$and = andConditions;
+
+    // Aggregate pipeline with numeric farmerNumber sorting + range filter
+    const pipeline = [
+      { $match: query },
+      { $addFields: { _farmerNum: { $convert: { input: '$farmerNumber', to: 'int', onError: 0, onNull: 0 } } } },
+    ];
+
+    if (farmerNumberFrom) pipeline.push({ $match: { _farmerNum: { $gte: parseInt(farmerNumberFrom) } } });
+    if (farmerNumberTo) pipeline.push({ $match: { _farmerNum: { $lte: parseInt(farmerNumberTo) } } });
+
+    pipeline.push(
+      { $sort: { _farmerNum: 1 } },
+      { $lookup: { from: 'collectioncenters', localField: 'collectionCenter', foreignField: '_id', as: '_center' } },
+      { $unwind: { path: '$_center', preserveNullAndEmptyArrays: true } },
+      { $project: { _farmerNum: 0 } }
+    );
+
+    let farmers = await Farmer.aggregate(pipeline);
+
+    // Pouring days / quantity filter (requires MilkCollection join)
+    const hasPouringFilter = fromDate && toDate && (
+      (daysCondition && daysValue !== '') || (qtyCondition && qtyValue !== '')
+    );
+
+    if (hasPouringFilter) {
+      const start = new Date(fromDate); start.setUTCHours(0, 0, 0, 0);
+      const end = new Date(toDate); end.setUTCHours(23, 59, 59, 999);
+      const farmerNumbers = farmers.map(f => f.farmerNumber);
+
+      const pData = await MilkCollection.aggregate([
+        { $match: { companyId, date: { $gte: start, $lte: end }, farmerNumber: { $in: farmerNumbers } } },
+        { $group: { _id: '$farmerNumber', dates: { $addToSet: { $dateToString: { format: '%Y-%m-%d', date: '$date' } } }, totalQty: { $sum: '$qty' } } },
+        { $addFields: { pouringDays: { $size: '$dates' } } }
+      ]);
+
+      const pMap = {};
+      pData.forEach(p => { pMap[p._id] = { days: p.pouringDays, qty: p.totalQty }; });
+
+      const cmp = (val, cond, thresh) => {
+        const t = parseFloat(thresh);
+        if (cond === '>') return val > t;
+        if (cond === '<') return val < t;
+        if (cond === '>=') return val >= t;
+        if (cond === '<=') return val <= t;
+        if (cond === '=') return val === t;
+        return true;
+      };
+
+      farmers = farmers.filter(f => {
+        const p = pMap[f.farmerNumber] || { days: 0, qty: 0 };
+        const hasDays = daysCondition && daysValue !== '';
+        const hasQty  = qtyCondition  && qtyValue  !== '';
+        const daysOk  = hasDays ? cmp(p.days, daysCondition, daysValue) : true;
+        const qtyOk   = hasQty  ? cmp(p.qty,  qtyCondition,  qtyValue)  : true;
+        if (hasDays && hasQty) return daysQtyLogic === 'OR' ? (daysOk || qtyOk) : (daysOk && qtyOk);
+        return daysOk && qtyOk;
+      });
+
+      farmers = farmers.map(f => ({
+        ...f,
+        _pouringDays: pMap[f.farmerNumber]?.days || 0,
+        _totalQty:    pMap[f.farmerNumber]?.qty  || 0,
+      }));
+    }
+
+    const total    = farmers.length;
+    const pageNum  = parseInt(page);
+    const limitNum = parseInt(limit);
+    const paginated = farmers.slice((pageNum - 1) * limitNum, pageNum * limitNum);
+
+    res.status(200).json({
+      success: true,
+      data: paginated,
+      pagination: { total, page: pageNum, pages: Math.ceil(total / limitNum), limit: limitNum }
+    });
+  } catch (error) {
+    console.error('Error fetching producer report:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error fetching producer report' });
+  }
+};
+
 export default {
   createFarmer,
   getAllFarmers,
@@ -1148,5 +1286,6 @@ export default {
   bulkImportFarmers,
   bulkImportShares,
   bulkDeleteFarmers,
-  getFarmerReport
+  getFarmerReport,
+  getProducerReport
 };
