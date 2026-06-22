@@ -46,7 +46,7 @@ function FieldLabel({ children }) {
 // ─────────────────────────────────────────────────────────────────
 export default function ProducerOpenings() {
   const navigate = useNavigate();
-  const [form, setForm]           = useState(EMPTY_FORM);
+  const [form, setForm]           = useState({ ...EMPTY_FORM, date: new Date() });
   const [records, setRecords]     = useState([]);
   const [editId, setEditId]       = useState(null);
   const [saving, setSaving]       = useState(false);
@@ -195,13 +195,17 @@ export default function ProducerOpenings() {
         notifications.show({ color: 'green', title: 'Saved', message: 'Producer opening saved' });
       }
 
-      setForm(EMPTY_FORM);
+      // Preserve the selected date — only reset farmer/amounts for next entry
+      const savedDate = form.date;
+      setForm({ ...EMPTY_FORM, date: savedDate });
       setSelectedFarmer(null);
       setFarmerNumberInput('');
       setEditId(null);
       const goPage = editId ? page : 1;
       setPage(goPage);
       fetchRecords(goPage);
+      // Move cursor to Farmer Number field for next record
+      setTimeout(() => focusRef(farmerInputRef), 100);
     } catch (err) {
       notifications.show({ color: 'red', title: 'Error', message: err.message || 'Failed to save' });
     } finally {
@@ -211,10 +215,12 @@ export default function ProducerOpenings() {
 
   // ── Cancel ─────────────────────────────────────────────────────
   const handleCancel = () => {
-    setForm(EMPTY_FORM);
+    const savedDate = form.date;
+    setForm({ ...EMPTY_FORM, date: savedDate });
     setSelectedFarmer(null);
     setFarmerNumberInput('');
     setEditId(null);
+    setTimeout(() => focusRef(farmerInputRef), 100);
   };
 
   // ── Close ──────────────────────────────────────────────────────
@@ -225,7 +231,7 @@ export default function ProducerOpenings() {
       children: <Text size="sm">Any unsaved changes will be lost. Continue?</Text>,
       labels: { confirm: 'Close', cancel: 'Stay' },
       confirmProps: { color: 'red' },
-      onConfirm: () => { setForm(EMPTY_FORM); setSelectedFarmer(null); setFarmerNumberInput(''); setEditId(null); },
+      onConfirm: () => { setForm({ ...EMPTY_FORM, date: new Date() }); setSelectedFarmer(null); setFarmerNumberInput(''); setEditId(null); },
     });
   };
 
