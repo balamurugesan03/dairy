@@ -1142,6 +1142,7 @@ export const getProducerReport = async (req, res) => {
       memberType = '',
       farmerNumberFrom = '',
       farmerNumberTo = '',
+      nameSearch = '',
       activeOnly = '',
       gender = '',
       caste = '',
@@ -1175,6 +1176,7 @@ export const getProducerReport = async (req, res) => {
     if (farmerType) query.farmerType = farmerType;
     if (ward) query['address.ward'] = { $regex: ward, $options: 'i' };
     if (localBody) query['address.panchayat'] = { $regex: localBody, $options: 'i' };
+    if (nameSearch) query['personalDetails.name'] = { $regex: nameSearch, $options: 'i' };
 
     // Presence filters collected into $and
     const andConditions = [];
@@ -1210,12 +1212,13 @@ export const getProducerReport = async (req, res) => {
 
     let farmers = await Farmer.aggregate(pipeline);
 
-    // Pouring days / quantity filter (requires MilkCollection join)
-    const hasPouringFilter = fromDate && toDate && (
+    // Pouring days / quantity — fetch whenever a date range is given
+    const hasDateRange = fromDate && toDate;
+    const hasDaysQtyFilter = hasDateRange && (
       (daysCondition && daysValue !== '') || (qtyCondition && qtyValue !== '')
     );
 
-    if (hasPouringFilter) {
+    if (hasDateRange) {
       const start = new Date(fromDate); start.setUTCHours(0, 0, 0, 0);
       const end = new Date(toDate); end.setUTCHours(23, 59, 59, 999);
       const farmerNumbers = farmers.map(f => f.farmerNumber);
@@ -1229,31 +1232,35 @@ export const getProducerReport = async (req, res) => {
       const pMap = {};
       pData.forEach(p => { pMap[p._id] = { days: p.pouringDays, qty: p.totalQty }; });
 
-      const cmp = (val, cond, thresh) => {
-        const t = parseFloat(thresh);
-        if (cond === '>') return val > t;
-        if (cond === '<') return val < t;
-        if (cond === '>=') return val >= t;
-        if (cond === '<=') return val <= t;
-        if (cond === '=') return val === t;
-        return true;
-      };
-
-      farmers = farmers.filter(f => {
-        const p = pMap[f.farmerNumber] || { days: 0, qty: 0 };
-        const hasDays = daysCondition && daysValue !== '';
-        const hasQty  = qtyCondition  && qtyValue  !== '';
-        const daysOk  = hasDays ? cmp(p.days, daysCondition, daysValue) : true;
-        const qtyOk   = hasQty  ? cmp(p.qty,  qtyCondition,  qtyValue)  : true;
-        if (hasDays && hasQty) return daysQtyLogic === 'OR' ? (daysOk || qtyOk) : (daysOk && qtyOk);
-        return daysOk && qtyOk;
-      });
-
+      // Attach pouring stats to every farmer in the result
       farmers = farmers.map(f => ({
         ...f,
-        _pouringDays: pMap[f.farmerNumber]?.days || 0,
-        _totalQty:    pMap[f.farmerNumber]?.qty  || 0,
+        _pouringDays: pMap[f.farmerNumber]?.days ?? 0,
+        _totalQty:    pMap[f.farmerNumber]?.qty  ?? 0,
       }));
+
+      // Apply days/qty filter conditions only when the user explicitly set them
+      if (hasDaysQtyFilter) {
+        const cmp = (val, cond, thresh) => {
+          const t = parseFloat(thresh);
+          if (cond === '>') return val > t;
+          if (cond === '<') return val < t;
+          if (cond === '>=') return val >= t;
+          if (cond === '<=') return val <= t;
+          if (cond === '=') return val === t;
+          return true;
+        };
+
+        farmers = farmers.filter(f => {
+          const p = { days: f._pouringDays, qty: f._totalQty };
+          const hasDays = daysCondition && daysValue !== '';
+          const hasQty  = qtyCondition  && qtyValue  !== '';
+          const daysOk  = hasDays ? cmp(p.days, daysCondition, daysValue) : true;
+          const qtyOk   = hasQty  ? cmp(p.qty,  qtyCondition,  qtyValue)  : true;
+          if (hasDays && hasQty) return daysQtyLogic === 'OR' ? (daysOk || qtyOk) : (daysOk && qtyOk);
+          return daysOk && qtyOk;
+        });
+      }
     }
 
     const total    = farmers.length;

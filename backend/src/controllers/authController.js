@@ -121,7 +121,8 @@ export const login = async (req, res) => {
     // If not found in Company or CollectionCenter, try User model
     let user = await User.findOne({ username: username.toLowerCase() })
       .select('+password')
-      .populate('company', 'companyName businessTypes status');
+      .populate('company', 'companyName businessTypes status')
+      .populate('collectionCenter', 'centerName');
 
     if (!user) {
       return res.status(401).json({

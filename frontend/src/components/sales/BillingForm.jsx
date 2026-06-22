@@ -167,6 +167,18 @@ const BillingForm = () => {
     }
   }, []);
 
+  // Auto-apply user's assigned center as default whenever auth or centers list becomes available
+  useEffect(() => {
+    if (!collectionCenters.length || id) return; // skip when editing an existing invoice
+    const userCentreId = userCenter?._id?.toString() || userCenter?.toString();
+    if (!userCentreId) return;
+    const preferred = collectionCenters.find(c => c._id.toString() === userCentreId);
+    if (preferred) {
+      form.setFieldValue('collectionCenterId', preferred._id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userCenter, collectionCenters]);
+
   // Auto-focus farmer select on mount
   useEffect(() => {
     const timer = setTimeout(() => farmerSelectRef.current?.focus(), 300);
@@ -769,7 +781,6 @@ const BillingForm = () => {
             placeholder="Select bill date"
             size="xs"
             w={160}
-            minDate={lastCycleEnd ? dayjs(lastCycleEnd).add(1, 'day').startOf('day').toDate() : undefined}
             maxDate={new Date(new Date().setHours(23, 59, 59, 999))}
             error={!!dateError}
             styles={{

@@ -1044,7 +1044,8 @@ export const getFarmerWiseStatement = async (req, res) => {
     const f2 = v => +Number(v || 0).toFixed(2);
     const f1 = v => +Number(v || 0).toFixed(1);
 
-    // Group: farmerNumber → dateKey → AM/PM
+    // Group: farmerNumber → dateKey → { amList[], pmList[] }
+    // Using lists so that multiple entries per shift on the same day are all preserved
     const farmerMap = new Map();
     for (const rec of records) {
       const fn = rec.farmerNumber;
@@ -1052,21 +1053,31 @@ export const getFarmerWiseStatement = async (req, res) => {
       const farmer = farmerMap.get(fn);
       const d = rec.date;
       const dateKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      if (!farmer.dateMap.has(dateKey)) farmer.dateMap.set(dateKey, { date: dateKey, am: null, pm: null });
+      if (!farmer.dateMap.has(dateKey)) farmer.dateMap.set(dateKey, { date: dateKey, amList: [], pmList: [] });
       const sess = { qty: rec.qty||0, clr: rec.clr||0, fat: rec.fat||0, snf: rec.snf||0, rate: rec.rate||0, incentive: rec.incentive||0, value: rec.amount||0 };
-      if (rec.shift === 'AM') farmer.dateMap.get(dateKey).am = sess;
-      else farmer.dateMap.get(dateKey).pm = sess;
+      if (rec.shift === 'AM') farmer.dateMap.get(dateKey).amList.push(sess);
+      else farmer.dateMap.get(dateKey).pmList.push(sess);
     }
 
     const result = [];
     for (const [, farmer] of farmerMap) {
-      const rows = [...farmer.dateMap.values()].map(day => ({
-        date: day.date,
-        am: day.am,
-        pm: day.pm,
-        totalQty:   f2((day.am?.qty||0) + (day.pm?.qty||0)),
-        totalValue: f2((day.am?.value||0) + (day.pm?.value||0))
-      }));
+      // Build one row per "slot" — when a day has 2 AM entries and 1 PM entry,
+      // produce 2 rows: row[0] = { am: amList[0], pm: pmList[0] }, row[1] = { am: amList[1], pm: null }
+      const rows = [];
+      for (const day of farmer.dateMap.values()) {
+        const slots = Math.max(day.amList.length, day.pmList.length, 1);
+        for (let i = 0; i < slots; i++) {
+          const am = day.amList[i] || null;
+          const pm = day.pmList[i] || null;
+          rows.push({
+            date: day.date,
+            am,
+            pm,
+            totalQty:   f2((am?.qty||0) + (pm?.qty||0)),
+            totalValue: f2((am?.value||0) + (pm?.value||0))
+          });
+        }
+      }
 
       const amR = rows.filter(r => r.am);
       const pmR = rows.filter(r => r.pm);

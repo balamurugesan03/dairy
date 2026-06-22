@@ -36,7 +36,7 @@ const INIT_FILTERS = {
   dbtHas: '', welfareHas: '', mobileHas: '', bankHas: '',
   localBody: '', ward: '',
   fromDate: null, toDate: null,
-  daysCondition: '', daysValue: '', qtyCondition: '', qtyValue: '', daysQtyLogic: 'AND',
+  daysCondition: '>=', daysValue: '', qtyCondition: '>=', qtyValue: '', daysQtyLogic: 'AND',
 };
 
 function SectionHeader({ label, sKey, sections, toggle, color }) {
@@ -84,8 +84,9 @@ export default function ProducerReport() {
   const setFilter = (key, val) => setFilters(prev => ({ ...prev, [key]: val }));
   const toggleSection = (key) => setSections(prev => ({ ...prev, [key]: !prev[key] }));
 
-  const buildParams = useCallback((page = 1) => {
-    const p = { page, limit: pagination.limit };
+  const buildParams = useCallback(() => {
+    // Always fetch all records — pagination handled client-side
+    const p = { page: 1, limit: 9999 };
     if (filters.collectionCenter) p.collectionCenter = filters.collectionCenter;
     if (filters.memberType) p.memberType = filters.memberType;
     if (filters.farmerNumberFrom) p.farmerNumberFrom = filters.farmerNumberFrom;
@@ -108,15 +109,16 @@ export default function ProducerReport() {
     if (filters.qtyValue !== '') p.qtyValue = filters.qtyValue;
     p.daysQtyLogic = filters.daysQtyLogic;
     return p;
-  }, [filters, pagination.limit]);
+  }, [filters]);
 
-  const handleSearch = async (page = 1) => {
+  const handleSearch = async () => {
     setLoading(true);
     setSearched(true);
     try {
-      const res = await farmerAPI.getProducerReport(buildParams(page));
-      setData(res?.data || []);
-      setPagination(res?.pagination || { total: 0, page: 1, pages: 1, limit: 50 });
+      const res = await farmerAPI.getProducerReport(buildParams());
+      const rows = res?.data || [];
+      setData(rows);
+      setPagination({ total: rows.length, page: 1, pages: 1, limit: 9999 });
     } catch (err) {
       notifications.show({ color: 'red', message: err?.message || 'Failed to load report' });
       setData([]);
@@ -132,11 +134,6 @@ export default function ProducerReport() {
     setSearch('');
   };
 
-  const handlePageChange = (page) => {
-    setPagination(prev => ({ ...prev, page }));
-    handleSearch(page);
-  };
-
   const filteredData = search
     ? data.filter(r => {
         const s = search.toLowerCase();
@@ -147,51 +144,122 @@ export default function ProducerReport() {
       })
     : data;
 
+  // Whether pouring data (Days / Qty) was returned for this fetch
+  const hasPouringCols = data.some(r => r._pouringDays != null || r._totalQty != null);
+
   const handleExport = () => {
-    if (!data.length) return;
-    const rows = data.map((r, i) => ({
-      'Sr.': i + 1,
-      'Pro No': r.farmerNumber || '',
-      'Mem No': r.memberId || '',
-      'Name': r.personalDetails?.name || '',
-      'Father/Husband Name': r.personalDetails?.fatherName || '',
-      'House Name': r.address?.houseName || '',
-      'Post': r.address?.post || '',
-      'Place': r.address?.place || '',
-      'Sex': r.personalDetails?.gender || '',
-      'Mobile No': r.personalDetails?.phone || '',
-      'DBT Enroll No': r.identityDetails?.ksheerasreeId || '',
-      'Collection Centre': r._center?.centerName || '',
-      'Panchayat': r.address?.panchayat || '',
-      'Ward': r.address?.ward || '',
-      'Status': r.status || '',
-    }));
+    if (!data.length) return notifications.show({ message: 'No data to export', color: 'yellow' });
+
+    const rows = data.map((r, i) => {
+      const row = {
+        'Sr.':                 i + 1,
+        'Status':              r.status || 'Active',
+        'Pro No':              r.farmerNumber || '',
+        'Mem No':              r.memberId || '',
+        'Name':                r.personalDetails?.name || '',
+        'Father/Husband Name': r.personalDetails?.fatherName || '',
+        'House Name':          r.address?.houseName || '',
+        'Post':                r.address?.post || '',
+        'Place':               r.address?.place || '',
+        'Panchayat':           r.address?.panchayat || '',
+        'Ward':                r.address?.ward || '',
+        'Sex':                 r.personalDetails?.gender || '',
+        'Mobile No':           r.personalDetails?.phone || '',
+        'DBT Enroll No':       r.identityDetails?.ksheerasreeId || '',
+        'Collection Centre':   r._center?.centerName || '',
+      };
+      if (hasPouringCols) {
+        row['Pouring Days']   = r._pouringDays ?? '';
+        row['Total Qty (L)']  = r._totalQty != null ? Number(r._totalQty).toFixed(2) : '';
+      }
+      return row;
+    });
+
     const ws = XLSX.utils.json_to_sheet(rows);
+    // Auto column widths
+    const colWidths = Object.keys(rows[0] || {}).map(k => ({ wch: Math.max(k.length, 12) }));
+    ws['!cols'] = colWidths;
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Producer Report');
     XLSX.writeFile(wb, `producer_report_${dayjs().format('YYYYMMDD_HHmm')}.xlsx`);
+    notifications.show({ title: 'Exported', message: 'Excel file downloaded successfully', color: 'green' });
   };
 
   const handlePrint = () => {
-    const el = document.getElementById('producer-print-table');
-    if (!el) return;
+    if (!data.length) return notifications.show({ message: 'No data to print', color: 'yellow' });
+
+    const companyName = selectedCompany?.companyName || selectedCompany?.name || 'Dairy Cooperative Society';
+    const today = dayjs().format('DD/MM/YYYY HH:mm');
+    const dateRange = filters.fromDate && filters.toDate
+      ? `${dayjs(filters.fromDate).format('DD/MM/YYYY')} – ${dayjs(filters.toDate).format('DD/MM/YYYY')}`
+      : '';
+
+    const extraCols = hasPouringCols ? '<th>Days</th><th>Qty (L)</th>' : '';
+
+    const rows = filteredData.map((r, i) => {
+      const extra = hasPouringCols
+        ? `<td style="text-align:center">${r._pouringDays ?? '—'}</td>
+           <td style="text-align:right">${r._totalQty != null ? Number(r._totalQty).toFixed(2) : '—'}</td>`
+        : '';
+      return `<tr>
+        <td style="text-align:center">${i + 1}</td>
+        <td style="color:${r.status === 'Active' ? '#166534' : '#991b1b'};font-weight:700">${r.status || 'Active'}</td>
+        <td>${r.farmerNumber || '—'}</td>
+        <td>${r.memberId || '—'}</td>
+        <td>${r.personalDetails?.name || '—'}</td>
+        <td>${r.personalDetails?.fatherName || '—'}</td>
+        <td>${r.address?.houseName || '—'}</td>
+        <td>${r.address?.post || '—'}</td>
+        <td>${r.address?.place || '—'}</td>
+        <td>${r.personalDetails?.gender || '—'}</td>
+        <td>${r.personalDetails?.phone || '—'}</td>
+        <td>${r.identityDetails?.ksheerasreeId || '—'}</td>
+        ${extra}
+      </tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Producer Report</title>
+    <style>
+      @page { size: A4 portrait; margin: 10mm; }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: Arial, sans-serif; font-size: 8px; color: #111;
+             -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .hdr { text-align: center; border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 10px; }
+      .hdr h1 { font-size: 14px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+      .hdr h2 { font-size: 10px; font-weight: 600; margin-top: 3px; letter-spacing: 2px; text-transform: uppercase; }
+      .hdr p  { font-size: 8px; color: #555; margin-top: 3px; }
+      table { width: 100%; border-collapse: collapse; }
+      th { background: #1a237e; color: #fff; padding: 3px 4px; font-size: 7.5px;
+           text-align: left; border: 0.5pt solid #666; text-transform: uppercase; }
+      td { padding: 2.5px 4px; border: 0.5pt solid #ccc; font-size: 8px; }
+      tr:nth-child(even) td { background: #f5f7ff; }
+    </style>
+    </head><body>
+    <div class="hdr">
+      <h1>${companyName}</h1>
+      <h2>Producer Report</h2>
+      ${dateRange ? `<p>Period: ${dateRange}</p>` : ''}
+      <p>Total: ${filteredData.length} producers &nbsp;|&nbsp; Printed: ${today}</p>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Sr.</th><th>Status</th><th>Pro No</th><th>Mem No</th><th>Name</th>
+          <th>Father/Husband</th><th>House Name</th><th>Post</th><th>Place</th>
+          <th>Sex</th><th>Mobile</th><th>DBT No</th>
+          ${extraCols}
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <script>window.onload=function(){window.print();setTimeout(function(){window.close();},1500);}</script>
+    </body></html>`;
+
     const w = window.open('', '_blank');
-    w.document.write(`<html><head><title>Producer Report</title><style>
-      body{font-family:Arial,sans-serif;font-size:11px;margin:10px}
-      h3{text-align:center;margin:0 0 4px}
-      p{text-align:center;margin:0 0 8px;color:#555}
-      table{border-collapse:collapse;width:100%}
-      th,td{border:1px solid #ccc;padding:3px 7px;text-align:left}
-      th{background:#1a237e;color:#fff;font-weight:bold}
-      tr:nth-child(even){background:#f5f5f5}
-      @media print{body{margin:0}}
-    </style></head><body>
-    <h3>Producer Report</h3>
-    <p>Total: ${pagination.total} producers &nbsp;|&nbsp; Generated: ${dayjs().format('DD/MM/YYYY HH:mm')}</p>
-    ${el.outerHTML}</body></html>`);
+    if (!w) { alert('Pop-up blocked — please allow pop-ups and try again.'); return; }
+    w.document.write(html);
     w.document.close();
-    w.print();
-    w.close();
   };
 
   const inputSz = 'xs';
@@ -415,7 +483,7 @@ export default function ProducerReport() {
           {/* Action buttons */}
           <Box style={{ borderTop: '1px solid #e8eaf0', padding: '10px 12px', background: '#fafafa' }}>
             <Stack gap={6}>
-              <Button fullWidth leftSection={<IconSearch size={14} />} onClick={() => handleSearch(1)} loading={loading} size="sm">
+              <Button fullWidth leftSection={<IconSearch size={14} />} onClick={() => handleSearch()} loading={loading} size="sm">
                 Generate Report
               </Button>
               <Button fullWidth variant="light" color="gray" leftSection={<IconRefresh size={14} />} onClick={handleReset} size="sm">
@@ -525,32 +593,41 @@ export default function ProducerReport() {
                     <Table.Th style={{ color: '#fff', padding: '8px 10px' }}>Sex</Table.Th>
                     <Table.Th style={{ color: '#fff', minWidth: 110, padding: '8px 10px' }}>Mobile No</Table.Th>
                     <Table.Th style={{ color: '#fff', minWidth: 130, padding: '8px 10px' }}>DBT Enroll No</Table.Th>
+                    {hasPouringCols && <>
+                      <Table.Th style={{ color: '#fff', width: 70, textAlign: 'right', padding: '8px 10px' }}>Days</Table.Th>
+                      <Table.Th style={{ color: '#fff', width: 90, textAlign: 'right', padding: '8px 10px' }}>Qty (L)</Table.Th>
+                    </>}
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                  {filteredData.map((r, i) => {
-                    const offset = (pagination.page - 1) * pagination.limit;
-                    return (
-                      <Table.Tr key={r._id || i}>
-                        <Table.Td ta="center" c="dimmed" style={{ padding: '6px', fontSize: 11 }}>{offset + i + 1}</Table.Td>
-                        <Table.Td style={{ padding: '6px 8px' }}>
-                          <Badge size="xs" color={r.status === 'Active' ? 'teal' : 'red'} variant="light" radius="sm">
-                            {r.status || 'Active'}
-                          </Badge>
+                  {filteredData.map((r, i) => (
+                    <Table.Tr key={r._id || i}>
+                      <Table.Td ta="center" c="dimmed" style={{ padding: '6px', fontSize: 11 }}>{i + 1}</Table.Td>
+                      <Table.Td style={{ padding: '6px 8px' }}>
+                        <Badge size="xs" color={r.status === 'Active' ? 'teal' : 'red'} variant="light" radius="sm">
+                          {r.status || 'Active'}
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td fw={600} c="blue.7" style={{ padding: '6px 10px' }}>{r.farmerNumber || '-'}</Table.Td>
+                      <Table.Td style={{ padding: '6px 10px' }}>{r.memberId || '-'}</Table.Td>
+                      <Table.Td fw={500} style={{ padding: '6px 10px' }}>{r.personalDetails?.name || '-'}</Table.Td>
+                      <Table.Td style={{ padding: '6px 10px' }}>{r.personalDetails?.fatherName || '-'}</Table.Td>
+                      <Table.Td style={{ padding: '6px 10px' }}>{r.address?.houseName || '-'}</Table.Td>
+                      <Table.Td style={{ padding: '6px 10px' }}>{r.address?.post || '-'}</Table.Td>
+                      <Table.Td style={{ padding: '6px 10px' }}>{r.address?.place || '-'}</Table.Td>
+                      <Table.Td style={{ padding: '6px 10px' }}>{r.personalDetails?.gender || '-'}</Table.Td>
+                      <Table.Td style={{ padding: '6px 10px' }}>{r.personalDetails?.phone || '-'}</Table.Td>
+                      <Table.Td style={{ padding: '6px 10px' }}>{r.identityDetails?.ksheerasreeId || '-'}</Table.Td>
+                      {hasPouringCols && <>
+                        <Table.Td ta="right" fw={600} c="cyan.8" style={{ padding: '6px 10px' }}>
+                          {r._pouringDays ?? '—'}
                         </Table.Td>
-                        <Table.Td fw={600} c="blue.7" style={{ padding: '6px 10px' }}>{r.farmerNumber || '-'}</Table.Td>
-                        <Table.Td style={{ padding: '6px 10px' }}>{r.memberId || '-'}</Table.Td>
-                        <Table.Td fw={500} style={{ padding: '6px 10px' }}>{r.personalDetails?.name || '-'}</Table.Td>
-                        <Table.Td style={{ padding: '6px 10px' }}>{r.personalDetails?.fatherName || '-'}</Table.Td>
-                        <Table.Td style={{ padding: '6px 10px' }}>{r.address?.houseName || '-'}</Table.Td>
-                        <Table.Td style={{ padding: '6px 10px' }}>{r.address?.post || '-'}</Table.Td>
-                        <Table.Td style={{ padding: '6px 10px' }}>{r.address?.place || '-'}</Table.Td>
-                        <Table.Td style={{ padding: '6px 10px' }}>{r.personalDetails?.gender || '-'}</Table.Td>
-                        <Table.Td style={{ padding: '6px 10px' }}>{r.personalDetails?.phone || '-'}</Table.Td>
-                        <Table.Td style={{ padding: '6px 10px' }}>{r.identityDetails?.ksheerasreeId || '-'}</Table.Td>
-                      </Table.Tr>
-                    );
-                  })}
+                        <Table.Td ta="right" fw={600} c="green.8" style={{ padding: '6px 10px' }}>
+                          {r._totalQty != null ? Number(r._totalQty).toFixed(2) : '—'}
+                        </Table.Td>
+                      </>}
+                    </Table.Tr>
+                  ))}
                 </Table.Tbody>
               </Table>
             </ScrollArea>

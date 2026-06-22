@@ -168,12 +168,17 @@ const DailyCollectionList = () => {
   const nonMemberCount = records.filter(r => r.isMembership === false).length;
 
   // ── Delete ─────────────────────────────────────────────────────────────────
-  const handleDelete = (row) => {
+  const handleDelete = (e, row) => {
+    e.stopPropagation();
     modals.openConfirmModal({
-      title: 'Delete Entry',
+      title: 'Delete Collection Entry',
+      centered: true,
+      closeOnClickOutside: false,
       children: (
         <Text size="sm">
-          Delete bill <b>{row.billNo}</b> for <b>{row.farmerName || row.farmerNumber}</b>? This cannot be undone.
+          Are you sure you want to delete bill <b>{row.billNo}</b> for <b>{row.farmerName || row.farmerNumber}</b>?
+          <br />
+          <Text size="xs" c="red" mt={4}>This action cannot be undone.</Text>
         </Text>
       ),
       labels: { confirm: 'Delete', cancel: 'Cancel' },
@@ -810,7 +815,7 @@ const DailyCollectionList = () => {
               accessor: 'actions', title: '', width: 50,
               render: r => (
                 <Tooltip label="Delete" withArrow>
-                  <ActionIcon size="sm" color="red" variant="subtle" onClick={() => handleDelete(r)}>
+                  <ActionIcon size="sm" color="red" variant="subtle" onClick={(e) => handleDelete(e, r)}>
                     <IconTrash size={14} />
                   </ActionIcon>
                 </Tooltip>
