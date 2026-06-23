@@ -503,10 +503,10 @@ export const getGeneralLedger = async (req, res) => {
           date:          new Date(day + 'T00:00:00.000Z'),
           voucherNumber: `MKP-${day.replace(/-/g, '')}-${shift}`,
           voucherType:   'MilkPurchase',
-          // Dr Milk Purchase / Cr Producers Dues — expense increases, liability increases
+          // Dr Milk Purchase / Dr Producers Dues (dairy cooperative: receipt side = amount owed to producer)
           particulars:   isMilkPurchaseLedger ? 'PRODUCERS DUES' : 'MILK PURCHASE',
-          debit:         isMilkPurchaseLedger  ? c.totalAmount : 0,
-          credit:        isProducersDuesLedger ? c.totalAmount : 0,
+          debit:         (isMilkPurchaseLedger || isProducersDuesLedger) ? c.totalAmount : 0,
+          credit:        0,
           narration:     `${shift} | Qty: ${c.totalQty.toFixed(2)} L | ${c.farmerCount} farmers`,
         });
       });
