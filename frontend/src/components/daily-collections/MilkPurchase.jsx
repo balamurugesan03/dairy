@@ -768,7 +768,9 @@ const MilkPurchase = () => {
   const loadTodayEntries = async (d, sh, ct) => {
     setLoadingEntries(true);
     try {
-      const res = await milkCollectionAPI.getAll({ date: localDateStr(toDate(d)), shift: sh, limit: 500 });
+      const params = { date: localDateStr(toDate(d)), shift: sh, limit: 500 };
+      if (ct) params.collectionCenter = ct;
+      const res = await milkCollectionAPI.getAll(params);
       const records = res?.data || [];
       setEntries(sortByProducerNo(records.map(r => {
         return {
@@ -1959,7 +1961,13 @@ const MilkPurchase = () => {
           )}
           <Button
             leftSection={<IconX size={14} />}
-            onClick={() => navigate('/')}
+            onClick={() => {
+              try {
+                sessionStorage.removeItem('milkPurchase_date');
+                sessionStorage.removeItem('milkPurchase_form');
+              } catch { /* ignore */ }
+              navigate('/');
+            }}
             size="sm" radius="md" variant="light" color="red"
             style={{ fontWeight: 700, marginLeft: 'auto' }}
           >

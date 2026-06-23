@@ -78,12 +78,23 @@ function DocumentRow({ docType, data, onChange, onSave, onDelete, saving }) {
     }
     const reader = new FileReader();
     reader.onload = (e) => {
+      const fileData = e.target.result;
       onChange(docType.key, {
         ...data,
-        fileData: e.target.result,
+        fileData,
         fileName: file.name,
         fileType: file.type,
       });
+      // Auto-preview immediately after selecting
+      const win = window.open('', '_blank');
+      if (win) {
+        if (file.type?.includes('pdf')) {
+          win.document.write(`<html><head><title>${file.name}</title></head><body style="margin:0"><iframe src="${fileData}" width="100%" height="100%" style="border:none;position:fixed;inset:0"></iframe></body></html>`);
+        } else {
+          win.document.write(`<html><head><title>${file.name}</title></head><body style="margin:0;background:#222;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="${fileData}" style="max-width:100%;max-height:100vh;display:block"/></body></html>`);
+        }
+        win.document.close();
+      }
     };
     reader.readAsDataURL(file);
   };

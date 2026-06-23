@@ -146,11 +146,14 @@ const MainLayout = () => {
       color: 'green',
       children: [
         { key: '/farmers', label: 'Producer Management' },
-        { key: '/farmers/member-register', label: 'Member Register' },
+     
         { key: '/collection-centers', label: 'Collection Centre' },
         { key: '/agents', label: 'Agent Management' },
         { key: '/customers', label: 'Customer' },
         { key: '/farmer-bank-details', label: 'Farmer Bank Details' },
+        
+        { key: '/daily-collections/producer-report',        label: 'Producer Report' },
+           { key: '/farmers/member-register', label: 'Member Register' },
         { key: '/farmers/report', label: 'Producer Report' },
       ]
     }] : []),
@@ -187,10 +190,8 @@ const MainLayout = () => {
         { key: '/daily-collections/milk-sales',     label: 'Milk Sales' },
         { key: '/daily-collections/union-sales-slip', label: 'Union Sales' },
         { key: '/daily-collections/farmer-wise-summary',   label: 'Farmer-Wise Summary' },
-        { key: '/daily-collections/farmer-criteria-report', label: 'Farmer Criteria Report' },
-        { key: '/daily-collections/collection-analysis',    label: 'Collection Analysis' },
-        { key: '/daily-collections/producer-report',        label: 'Producer Report' },
-        { key: '/daily-collections/intelligent-query',     label: 'Intelligent Query'   },
+       
+       
         { key: '/reports/salesman-balance', label: 'Salesman/Customer Ledger' },
         {
           key: 'milk-settings-sub',
@@ -419,17 +420,20 @@ const MainLayout = () => {
       label: 'Dairy Reports',
       color: 'pink',
       children: [
-        { key: '/reports/dairy-abstract',    label: 'Dairy Abstract' },
-        { key: '/reports/dairy-register',    label: 'Dairy Register' },
+       
         { key: '/reports/mis-report',          label: 'MIS Report' },
         { key: '/reports/monthly-mis-report',  label: 'Monthly MIS Report' },
         // { key: '/reports/ddd-mis-report',   label: 'DDD MIS Report' },
         { key: '/mis-department/report',      label: 'MIS Report Department' },
         { key: '/reports/inspection-report',     label: 'Inspection Report' },
         { key: '/reports/milk-statement',       label: 'Milk Statement' },
-        { key: '/reports/cc-operating-cost',  label: 'CC Operating Cost'      },
+        { key: '/reports/cc-operating-cost',  label: 'BMCC Operating Cost'      },
+         { key: '/daily-collections/farmer-criteria-report', label: 'Customized Quality Report' },
+        { key: '/daily-collections/collection-analysis',    label: 'Milk Quality  Analysis' },
+         { key: '/daily-collections/intelligent-query',     label: 'Intelligent Query'   },
         { key: '/farmers/crop-statements',   label: 'Crop Damage Statements' },
         { key: '/farmers/agri-stats',        label: 'Monthly Agri Statistics' },
+
       ]
     }] : []),
 

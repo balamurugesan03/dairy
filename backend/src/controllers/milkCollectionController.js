@@ -1,5 +1,6 @@
 import fs from 'fs';
 import XLSX from 'xlsx';
+import mongoose from 'mongoose';
 import MilkCollection from '../models/MilkCollection.js';
 import Farmer from '../models/Farmer.js';
 import Voucher from '../models/Voucher.js';
@@ -93,13 +94,16 @@ export const getAllCollections = async (req, res) => {
       query.date = { $gte: d, $lt: next };
     } else if (fromDate || toDate) {
       query.date = {};
-      if (fromDate) query.date.$gte = new Date(fromDate);
-      if (toDate)   query.date.$lte = new Date(toDate);
+      if (fromDate) { const s = new Date(fromDate); s.setHours(0, 0, 0, 0);     query.date.$gte = s; }
+      if (toDate)   { const t = new Date(toDate);   t.setHours(23, 59, 59, 999); query.date.$lte = t; }
     }
 
-    if (shift)            query.shift            = shift;
-    if (collectionCenter) query.collectionCenter = collectionCenter;
-    if (farmerNumber)     query.farmerNumber     = farmerNumber;
+    if (shift)        query.shift        = shift;
+    if (farmerNumber) query.farmerNumber = farmerNumber;
+    if (collectionCenter) {
+      try { query.collectionCenter = new mongoose.Types.ObjectId(collectionCenter); }
+      catch { query.collectionCenter = collectionCenter; }
+    }
 
     const skip  = (parseInt(page) - 1) * parseInt(limit);
     const total = await MilkCollection.countDocuments(query);
@@ -966,7 +970,7 @@ export const getFarmerWiseSummary = async (req, res) => {
       if (toDate) { const to = new Date(toDate); to.setHours(23, 59, 59, 999); match.date.$lte = to; }
     }
     if (shift)            match.shift            = shift;
-    if (collectionCenter) match.collectionCenter = new (await import('mongoose')).default.Types.ObjectId(collectionCenter);
+    if (collectionCenter) match.collectionCenter = new mongoose.Types.ObjectId(collectionCenter);
 
     const pipeline = [
       { $match: match },
@@ -1428,7 +1432,6 @@ export const getCentreSummary = async (req, res) => {
 export const getCollectionAnalysis = async (req, res) => {
   try {
     const { fromDate, toDate, shift, collectionCenter, memberType } = req.query;
-    const { default: mongoose } = await import('mongoose');
 
     const match = { companyId: req.companyId };
     if (fromDate || toDate) {

@@ -1952,19 +1952,24 @@ export const getMISReport = async (req, res) => {
       unionSpoilage += (u.unionSpoilage || 0) + (u.transportationSpoilage || 0);
     });
 
-    // Current stock as "Stock" row under disposals
+    // Item inventory for cattle feed section (kept separate)
     const allItems = await Item.find({ ...base, status: 'Active' });
     const stockQty   = allItems.reduce((s, it) => s + (it.currentBalance || 0), 0);
     const stockValue  = allItems.reduce((s, it) => s + ((it.currentBalance || 0) * (it.salesRate || it.purchasePrice || 0)), 0);
     const totalItems  = allItems.length;
 
-    const grandSalesPct = totalSalesLitre > 0 ? 100 : 0;
+    // Milk stock = Total Milk Purchase − All Milk Disposals (cannot be negative)
+    const totalDisposedQty = localQty + creditQty + sampleQty + unionQty;
+    const milkStockQty    = Math.max(0, +(totalPurch.qty - totalDisposedQty).toFixed(2));
+    const milkAvgRate     = totalPurch.qty > 0 ? totalPurch.amount / totalPurch.qty : 0;
+    const milkStockValue  = +( milkStockQty * milkAvgRate).toFixed(2);
+
     const disposals = {
       localSales:  { qty: +localQty.toFixed(2),  value: +localAmt.toFixed(2),  pct: totalSalesLitre > 0 ? +((localQty  / totalSalesLitre) * 100).toFixed(1) : 0 },
       otherSales:  { qty: +creditQty.toFixed(2), value: +creditAmt.toFixed(2), pct: totalSalesLitre > 0 ? +((creditQty / totalSalesLitre) * 100).toFixed(1) : 0 },
       products:    { qty: +sampleQty.toFixed(2), value: +sampleAmt.toFixed(2), pct: totalSalesLitre > 0 ? +((sampleQty / totalSalesLitre) * 100).toFixed(1) : 0 },
       byProduct:   { qty: 0, value: 0, pct: 0 },
-      stock:       { qty: +stockQty.toFixed(2),  value: +stockValue.toFixed(2), pct: 0 },
+      stock:       { qty: milkStockQty, value: milkStockValue, pct: 0 },
       total:       { qty: +totalSalesLitre.toFixed(2), value: +totalSalesAmount.toFixed(2), pct: 100 },
       unionDetails: {
         receivedQty: +unionQty.toFixed(2),
@@ -2053,18 +2058,20 @@ export const getMISReport = async (req, res) => {
     };
 
     // ── 5. Welfare Fund Contribution ────────────────────────────────────────
-    const WF_RATE_LOCAL  = 0.10;
-    const WF_RATE_UNION  = 0.05;
-    const WF_RATE_MEMBER = 2.00;
+    // A: Local+Credit+School sales × 10%; B: Union sales amount × 5%; C: Producers × ₹20
+    const WF_RATE_LOCAL  = 10;   // percentage
+    const WF_RATE_UNION  = 5;    // percentage
+    const WF_RATE_MEMBER = 20;   // ₹ per milk-pouring producer
     const activeMembers  = Object.keys(memberFarmerMap).length;
-    const welfareLocalAmt  = +(localAmt  * WF_RATE_LOCAL).toFixed(2);
-    const welfareUnionAmt  = +(unionAmt  * WF_RATE_UNION).toFixed(2);
-    const welfareMemberAmt = +(activeMembers * WF_RATE_MEMBER).toFixed(2);
+    const localSalesTotal  = +(localAmt + creditAmt + sampleAmt).toFixed(2);
+    const welfareLocalAmt  = +(localSalesTotal * WF_RATE_LOCAL  / 100).toFixed(2);
+    const welfareUnionAmt  = +(unionAmt        * WF_RATE_UNION  / 100).toFixed(2);
+    const welfareMemberAmt = +(activeMembers   * WF_RATE_MEMBER      ).toFixed(2);
     const welfareFund = {
-      localSales:     { value: +localAmt.toFixed(2),    wfRate: WF_RATE_LOCAL,  amount: welfareLocalAmt },
-      unionSales:     { value: +unionAmt.toFixed(2),    wfRate: WF_RATE_UNION,  amount: welfareUnionAmt },
-      memberCount:    { value: activeMembers,            wfRate: WF_RATE_MEMBER, amount: welfareMemberAmt },
-      total:          { amount: +(welfareLocalAmt + welfareUnionAmt + welfareMemberAmt).toFixed(2) }
+      localSales:  { value: localSalesTotal,          wfRate: WF_RATE_LOCAL,  amount: welfareLocalAmt },
+      unionSales:  { value: +unionAmt.toFixed(2),     wfRate: WF_RATE_UNION,  amount: welfareUnionAmt },
+      memberCount: { value: activeMembers,             wfRate: WF_RATE_MEMBER, amount: welfareMemberAmt },
+      total:       { amount: +(welfareLocalAmt + welfareUnionAmt + welfareMemberAmt).toFixed(2) }
     };
 
     // ── 6. Cattle / Feed Stock ──────────────────────────────────────────────

@@ -28,7 +28,7 @@ const exportToExcel = (data, period) => {
   const sep = '\t';
   const push = (...cols) => rows.push(cols.join(sep));
 
-  push('MIS REPORT - MILK SOCIETY');
+  push('MIS REPORT');
   push('Period:', `${period.startDate?.split('T')[0]} to ${period.endDate?.split('T')[0]}`);
   push('');
 
@@ -115,8 +115,10 @@ export default function MISReport() {
         *{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:10px;color:#000;margin:10mm;padding:0}
         .mis-hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8px}
         .mis-hdr-top{font-size:14px;font-weight:bold;letter-spacing:1px}
-        .mis-hdr-sub{font-size:11px;font-weight:bold}
-        .mis-hdr-row{display:flex;justify-content:space-between;font-size:9px;margin-top:4px}
+        .mis-hdr-addr{font-size:10px;margin-top:2px}
+        .mis-hdr-code{font-size:10px;margin-top:2px}
+        .mis-hdr-sub{font-size:12px;font-weight:bold;margin-top:4px;text-transform:uppercase}
+        .mis-hdr-row{display:flex;justify-content:center;gap:24px;font-size:9px;margin-top:4px}
         .sec-title{background:#d9d9d9;font-weight:bold;font-size:10px;padding:3px 6px;border:1px solid #999;margin-top:6px;text-transform:uppercase;text-align:center}
         table{width:100%;border-collapse:collapse;font-size:9px;margin:0}
         th{background:#e8e8e8;border:1px solid #999;padding:3px 5px;text-align:center;font-weight:bold}
@@ -193,12 +195,13 @@ export default function MISReport() {
 
           {/* ─── HEADER ─── */}
           <div className="mis-hdr">
-            <div className="mis-hdr-top">{companyInfo?.companyName || 'MUKKOLA KSS M 24 (D)'}</div>
-            <div className="mis-hdr-sub">Management Information System (MIS)</div>
+            <div className="mis-hdr-top">{companyInfo?.societyName || companyInfo?.companyName || '—'}</div>
+            {companyInfo?.address && <div className="mis-hdr-addr">{companyInfo.address}</div>}
+            <div className="mis-hdr-code">Society Code : <strong>{milkCode || companyInfo?.societyCode || '—'}</strong></div>
+            <div className="mis-hdr-sub">MIS REPORT</div>
             <div className="mis-hdr-row">
-              <span>Milk Code: <strong>{milkCode || companyInfo?.milkCode || '—'}</strong></span>
-              <span>Month &amp; Year: <strong>{monthLabel(fromDate)}</strong></span>
-              <span>Date: <strong>{reportDate ? new Date(reportDate).toLocaleDateString('en-IN') : '____________'}</strong></span>
+              <span>From Date : <strong>{fromDate ? new Date(fromDate + 'T00:00:00').toLocaleDateString('en-IN') : '—'}</strong></span>
+              <span>To Date : <strong>{toDate ? new Date(toDate + 'T00:00:00').toLocaleDateString('en-IN') : '—'}</strong></span>
             </div>
           </div>
 
@@ -294,29 +297,29 @@ export default function MISReport() {
           <table className="mis-tbl">
             <thead>
               <tr>
-                <Th>Particulars</Th>
-                <Th>Value / Rate</Th>
-                <Th>WF Rate</Th>
+                <Th>Details</Th>
+                <Th>Value</Th>
+                <Th>Rate</Th>
                 <Th>Amount (Rs)</Th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <Td>Local Sales / Direct Sales / School Sales</Td>
+                <Td>Local Sales + Credit Sales + School Sales</Td>
                 <Td r>{fmtA(d.welfareFund?.localSales?.value)}</Td>
-                <Td r>{fmtN(d.welfareFund?.localSales?.wfRate)}</Td>
+                <Td r>{fmtN(d.welfareFund?.localSales?.wfRate)}%</Td>
                 <Td r>{fmtA(d.welfareFund?.localSales?.amount)}</Td>
               </tr>
               <tr>
                 <Td>Union Sales</Td>
                 <Td r>{fmtA(d.welfareFund?.unionSales?.value)}</Td>
-                <Td r>{fmtN(d.welfareFund?.unionSales?.wfRate)}</Td>
+                <Td r>{fmtN(d.welfareFund?.unionSales?.wfRate)}%</Td>
                 <Td r>{fmtA(d.welfareFund?.unionSales?.amount)}</Td>
               </tr>
               <tr>
                 <Td>No of Milk Pouring Producers</Td>
                 <Td r>{d.welfareFund?.memberCount?.value}</Td>
-                <Td r>{fmtN(d.welfareFund?.memberCount?.wfRate)}</Td>
+                <Td r>₹{fmtN(d.welfareFund?.memberCount?.wfRate)}</Td>
                 <Td r>{fmtA(d.welfareFund?.memberCount?.amount)}</Td>
               </tr>
               <tr className="mis-total-row">

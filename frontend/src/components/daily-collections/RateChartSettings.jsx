@@ -225,8 +225,8 @@ const RateChartSettings = () => {
 
   // ── Formula live calculation ─────────────────────────────────────────────────
   const { fatRate, snfRate } = formulaForm.values;
-  const A = fatRate  ? ((28.5 / 100) * 11.5 * Number(fatRate)).toFixed(4)  : null;
-  const B = snfRate  ? ((8.7  / 100) * 11.0 * Number(snfRate)).toFixed(4)  : null;
+  const A = fatRate  ? (fat *  Number(fatRate/100)).toFixed(4)  : null;
+  const B = snfRate  ?  (snf* Number(snfRate/100)).toFixed(4)  : null;
   const formulaResult = (A && B) ? (Number(A) + Number(B)).toFixed(4) : null;
 
   // ── Data loaders ─────────────────────────────────────────────────────────────
@@ -854,7 +854,7 @@ const RateChartSettings = () => {
                 <Text size="xs" c="dimmed" mb={2}>A (Fat Component)</Text>
                 <Paper p="xs" radius="sm" style={{ background: 'white', border: '1px solid var(--mantine-color-violet-2)' }}>
                   <Text size="xs" c="dark.5" style={{ fontFamily: 'monospace' }}>
-                    A = Fat/100 × 11.5 × Fat Rate
+                    A = Fat × Fat Rate/100
                   </Text>
                   {A && (
                     <Text size="sm" fw={700} c="violet.7" mt={2}>= {A}</Text>
@@ -865,7 +865,7 @@ const RateChartSettings = () => {
                 <Text size="xs" c="dimmed" mb={2}>B (SNF Component)</Text>
                 <Paper p="xs" radius="sm" style={{ background: 'white', border: '1px solid var(--mantine-color-violet-2)' }}>
                   <Text size="xs" c="dark.5" style={{ fontFamily: 'monospace' }}>
-                    B = SNF/100 × 11.0 × SNF Rate
+                    B = SNF × SNF Rate/100
                   </Text>
                   {B && (
                     <Text size="sm" fw={700} c="violet.7" mt={2}>= {B}</Text>

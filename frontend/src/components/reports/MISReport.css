@@ -148,15 +148,25 @@
   letter-spacing: 1px;
   text-transform: uppercase;
 }
-.mis-hdr-sub {
-  font-size: 12px;
-  font-weight: 700;
+.mis-hdr-addr {
+  font-size: 11px;
   margin-top: 2px;
-  letter-spacing: 0.5px;
+}
+.mis-hdr-code {
+  font-size: 11px;
+  margin-top: 2px;
+}
+.mis-hdr-sub {
+  font-size: 13px;
+  font-weight: 800;
+  margin-top: 6px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
 }
 .mis-hdr-row {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
+  gap: 32px;
   font-size: 10px;
   margin-top: 6px;
   padding: 0 4px;
