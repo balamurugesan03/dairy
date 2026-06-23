@@ -281,7 +281,7 @@ const GeneralLedger = () => {
     ]);
 
     autoTable(doc, {
-      head: [['Day', 'Debit', 'Prog. Debit', 'Credit', 'Prog. Credit', 'Balance', 'Description']],
+      head: [['Day', 'Receipt', 'Prog. Receipt', 'Payment', 'Prog. Payment', 'Balance', 'Description']],
       body,
       startY: 32,
       margin: { left: mg, right: mg },
@@ -303,7 +303,7 @@ const GeneralLedger = () => {
       [`Head of Account: ${processedData.ledgerName}`, '', '', '', '', '', `F.Y.: ${getFinancialYear()}`],
       [`Period: ${formatDate(fromDate)} to ${formatDate(toDate)}`],
       [],
-      ['Day', 'Debit', 'Prog. Debit', 'Credit', 'Prog. Credit', 'Balance', 'Description'],
+      ['Day', 'Receipt', 'Prog. Receipt', 'Payment', 'Prog. Payment', 'Balance', 'Description'],
       ['', '', '', '', '', `${fmtA(processedData.openBal)} ${processedData.openBalType}`, 'Opening Balance - B/F'],
     ];
 
@@ -439,10 +439,10 @@ const GeneralLedger = () => {
             <thead style={{ position: 'sticky', top: 0, zIndex: 2 }}>
               <tr>
                 <th style={thBase}>Day</th>
-                <th style={thBase}>Debit</th>
-                <th style={thBase}>Progressive</th>
-                <th style={thBase}>Credit</th>
-                <th style={thBase}>Progressive</th>
+                <th style={thBase}>Receipt</th>
+                <th style={thBase}>Prog. Receipt</th>
+                <th style={thBase}>Payment</th>
+                <th style={thBase}>Prog. Payment</th>
                 <th style={thBase}>Balance</th>
                 <th style={{ ...thBase, textAlign: 'left', paddingLeft: 10 }}>Description</th>
               </tr>

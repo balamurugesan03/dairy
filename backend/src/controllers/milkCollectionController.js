@@ -1424,3 +1424,185 @@ export const getCentreSummary = async (req, res) => {
   }
 };
 
+// ── COLLECTION ANALYSIS — farmer-wise with Farmer profile join ─────────────────
+export const getCollectionAnalysis = async (req, res) => {
+  try {
+    const { fromDate, toDate, shift, collectionCenter, memberType } = req.query;
+    const { default: mongoose } = await import('mongoose');
+
+    const match = { companyId: req.companyId };
+    if (fromDate || toDate) {
+      match.date = {};
+      if (fromDate) { const s = new Date(fromDate); s.setHours(0, 0, 0, 0);   match.date.$gte = s; }
+      if (toDate)   { const t = new Date(toDate);   t.setHours(23, 59, 59, 999); match.date.$lte = t; }
+    }
+    if (shift)            match.shift            = shift;
+    if (collectionCenter) match.collectionCenter = new mongoose.Types.ObjectId(collectionCenter);
+
+    const pipeline = [
+      { $match: match },
+      {
+        $lookup: {
+          from: 'farmers',
+          localField: 'farmer',
+          foreignField: '_id',
+          as: 'farmerDoc',
+        },
+      },
+      {
+        $addFields: {
+          farmerData: { $arrayElemAt: ['$farmerDoc', 0] },
+          dateStr:    { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+          isMember:   { $ifNull: [{ $arrayElemAt: ['$farmerDoc.isMembership', 0] }, false] },
+        },
+      },
+      ...(memberType === 'member'    ? [{ $match: { isMember: true  } }] : []),
+      ...(memberType === 'nonMember' ? [{ $match: { isMember: false } }] : []),
+      {
+        $group: {
+          _id:            '$farmerNumber',
+          farmerName:     { $first: '$farmerName' },
+          memberId:       { $first: '$farmerData.memberId' },
+          houseName:      { $first: '$farmerData.address.houseName' },
+          gender:         { $first: '$farmerData.personalDetails.gender' },
+          caste:          { $first: '$farmerData.personalDetails.caste' },
+          farmerType:     { $first: '$farmerData.farmerType' },
+          cowType:        { $first: '$farmerData.cowType' },
+          isMember:       { $first: '$isMember' },
+          totalSessions:  { $sum: 1 },
+          amSessions:     { $sum: { $cond: [{ $eq: ['$shift', 'AM'] }, 1, 0] } },
+          pmSessions:     { $sum: { $cond: [{ $eq: ['$shift', 'PM'] }, 1, 0] } },
+          distinctDates:  { $addToSet: '$dateStr' },
+          totalQty:       { $sum: '$qty' },
+          avgFat:         { $avg: '$fat' },
+          avgClr:         { $avg: '$clr' },
+          avgSnf:         { $avg: '$snf' },
+          avgRate:        { $avg: '$rate' },
+          totalIncentive: { $sum: '$incentive' },
+          totalAmount:    { $sum: '$amount' },
+        },
+      },
+      { $addFields: { totalDays: { $size: '$distinctDates' } } },
+      { $sort: { _id: 1 } },
+    ];
+
+    const rows = await MilkCollection.aggregate(pipeline);
+
+    const f2 = v => parseFloat(Number(v || 0).toFixed(2));
+    const f1 = v => parseFloat(Number(v || 0).toFixed(1));
+
+    const result = rows.map(r => ({
+      farmerNumber:   r._id,
+      memberId:       r.memberId      || '',
+      farmerName:     r.farmerName    || '',
+      houseName:      r.houseName     || '',
+      gender:         r.gender        || '',
+      caste:          r.caste         || '',
+      farmerType:     r.farmerType    || '',
+      cowType:        r.cowType       || '',
+      isMember:       r.isMember      || false,
+      totalDays:      r.totalDays     || 0,
+      totalSessions:  r.totalSessions || 0,
+      amSessions:     r.amSessions    || 0,
+      pmSessions:     r.pmSessions    || 0,
+      totalQty:       f2(r.totalQty),
+      avgFat:         f2(r.avgFat),
+      avgClr:         f1(r.avgClr),
+      avgSnf:         f2(r.avgSnf),
+      avgRate:        f2(r.avgRate),
+      totalIncentive: f2(r.totalIncentive),
+      totalAmount:    f2(r.totalAmount),
+    }));
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error in collection analysis:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ── Society Report ─────────────────────────────────────────────────────────────
+export const getSocietyReport = async (req, res) => {
+  try {
+    const { fromDate, toDate, memberType } = req.query;
+    const { default: mongoose } = await import('mongoose');
+
+    const match = { companyId: req.companyId };
+    if (fromDate || toDate) {
+      match.date = {};
+      if (fromDate) { const s = new Date(fromDate); s.setHours(0, 0, 0, 0);    match.date.$gte = s; }
+      if (toDate)   { const t = new Date(toDate);   t.setHours(23, 59, 59, 999); match.date.$lte = t; }
+    }
+
+    const pipeline = [
+      { $match: match },
+      {
+        $lookup: {
+          from: 'farmers',
+          localField: 'farmer',
+          foreignField: '_id',
+          as: 'farmerDoc',
+        },
+      },
+      {
+        $addFields: {
+          farmerData: { $arrayElemAt: ['$farmerDoc', 0] },
+          dateStr:    { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+          isMember:   { $ifNull: [{ $arrayElemAt: ['$farmerDoc.isMembership', 0] }, false] },
+        },
+      },
+      ...(memberType === 'member'    ? [{ $match: { isMember: true  } }] : []),
+      ...(memberType === 'nonMember' ? [{ $match: { isMember: false } }] : []),
+      {
+        $group: {
+          _id:           '$farmerNumber',
+          farmerName:    { $first: '$farmerName' },
+          place:         { $first: '$farmerData.address.place' },
+          houseName:     { $first: '$farmerData.address.houseName' },
+          isMember:      { $first: '$isMember' },
+          totalSessions: { $sum: 1 },
+          distinctDates: { $addToSet: '$dateStr' },
+          totalQty:      { $sum: '$qty' },
+          avgFat:        { $avg: '$fat' },
+          avgSnf:        { $avg: '$snf' },
+          totalAmount:   { $sum: '$amount' },
+        },
+      },
+      {
+        $addFields: {
+          totalDays:  { $size: '$distinctDates' },
+          totalSolid: {
+            $add: [
+              { $ifNull: ['$avgFat', 0] },
+              { $ifNull: ['$avgSnf', 0] },
+            ],
+          },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ];
+
+    const rows = await MilkCollection.aggregate(pipeline);
+    const f2 = v => parseFloat(Number(v || 0).toFixed(2));
+
+    const result = rows.map(r => ({
+      farmerNumber:  r._id,
+      farmerName:    r.farmerName  || '',
+      place:         r.place       || r.houseName || '',
+      isMember:      r.isMember    || false,
+      totalSessions: r.totalSessions || 0,
+      totalDays:     r.totalDays   || 0,
+      totalQty:      f2(r.totalQty),
+      avgFat:        f2(r.avgFat),
+      avgSnf:        f2(r.avgSnf),
+      totalSolid:    f2(r.totalSolid),
+      totalAmount:   f2(r.totalAmount),
+    }));
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error in society report:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+

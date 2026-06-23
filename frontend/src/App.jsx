@@ -120,6 +120,7 @@ const ShiftIncentiveList     = lazy(() => import('./components/daily-collections
 const TimeIncentiveList      = lazy(() => import('./components/daily-collections/TimeIncentiveList'));
 const ProducerOpenings       = lazy(() => import('./components/daily-collections/ProducerOpenings'));
 const IntelligentQuery       = lazy(() => import('./components/daily-collections/IntelligentQuery'));
+const MilkCollectionAnalysis = lazy(() => import('./components/daily-collections/MilkCollectionAnalysis'));
 
 // Payment Components
 const IndividualMilkPayment = lazy(() => import('./components/payments/IndividualMilkPayment'));
@@ -452,6 +453,7 @@ const AppContent = () => {
                 <Route path="time-incentive"         element={<TimeIncentiveList />} />
                 <Route path="producer-openings"      element={<ProducerOpenings />} />
                 <Route path="intelligent-query"      element={<IntelligentQuery />} />
+                <Route path="collection-analysis"    element={<MilkCollectionAnalysis />} />
               </Route>
 
               {/* Farmer Payments Routes */}

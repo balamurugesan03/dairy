@@ -172,8 +172,8 @@ const LedgerAbstract = () => {
       'Ledger Type':       item.ledgerType,
       'Opening Dr':        item.openingBalanceType === 'Dr' ? f2(item.openingBalance) : '',
       'Opening Cr':        item.openingBalanceType === 'Cr' ? f2(item.openingBalance) : '',
-      'Total Debit':       f2(item.totalDebits),
-      'Total Credit':      f2(item.totalCredits),
+      'Total Receipt':     f2(item.totalDebits),
+      'Total Payment':     f2(item.totalCredits),
       'Closing Dr':        item.closingBalanceType === 'Dr' ? f2(item.closingBalance) : '',
       'Closing Cr':        item.closingBalanceType === 'Cr' ? f2(item.closingBalance) : ''
     }));
@@ -372,10 +372,10 @@ const LedgerAbstract = () => {
             <SimpleGrid cols={{ base: 2, sm: 5 }} spacing="sm">
               {[
                 { label: 'Total Ledgers',  value: s.totalLedgers,                              color: 'indigo.8' },
-                { label: 'Opening Debit',  value: `₹${f2(s.totalOpeningDebit)}`,               color: 'blue.8'   },
-                { label: 'Opening Credit', value: `₹${f2(s.totalOpeningCredit)}`,              color: 'red.7'    },
-                { label: 'Total Debit',    value: `₹${f2(s.totalDebits)}`,                    color: 'violet.8' },
-                { label: 'Total Credit',   value: `₹${f2(s.totalCredits)}`,                   color: 'teal.8'   }
+                { label: 'Opening Dr',     value: `₹${f2(s.totalOpeningDebit)}`,               color: 'blue.8'   },
+                { label: 'Opening Cr',     value: `₹${f2(s.totalOpeningCredit)}`,              color: 'red.7'    },
+                { label: 'Total Receipt',  value: `₹${f2(s.totalDebits)}`,                    color: 'violet.8' },
+                { label: 'Total Payment',  value: `₹${f2(s.totalCredits)}`,                   color: 'teal.8'   }
               ].map(stat => (
                 <Box key={stat.label} style={{ background: 'rgba(255,255,255,0.85)', borderRadius: 8, padding: '8px 12px', textAlign: 'center' }}>
                   <Text size="xs" c="dimmed" fw={600} tt="uppercase">{stat.label}</Text>
@@ -478,14 +478,14 @@ const LedgerAbstract = () => {
                   <Table.Th rowSpan={2} style={{ ...thLeft, minWidth: 180, verticalAlign: 'middle' }}>Ledger Name</Table.Th>
                   <Table.Th rowSpan={2} style={{ ...thBase, minWidth: 110, verticalAlign: 'middle' }}>Type</Table.Th>
                   <Table.Th colSpan={2} style={{ ...thBase, background: '#dbeafe', color: '#1d4ed8', borderBottom: '1px solid #93c5fd' }}>Opening Balance</Table.Th>
-                  <Table.Th colSpan={2} style={{ ...thBase, background: '#f3f4f6', color: '#374151', borderBottom: '1px solid #d1d5db' }}>During Period</Table.Th>
+                  <Table.Th colSpan={2} style={{ ...thBase, background: '#f3f4f6', color: '#374151', borderBottom: '1px solid #d1d5db' }}>During Period (Receipt / Payment)</Table.Th>
                   <Table.Th rowSpan={2} style={{ ...thBase, minWidth: 110, background: '#ede9fe', color: '#6d28d9', verticalAlign: 'middle' }}>Closing Balance</Table.Th>
                 </Table.Tr>
                 <Table.Tr>
                   <Table.Th style={{ ...thBase, minWidth: 95, background: '#dbeafe', color: '#1d4ed8', fontSize: 10 }}>Dr.</Table.Th>
                   <Table.Th style={{ ...thBase, minWidth: 95, background: '#fee2e2', color: '#dc2626', fontSize: 10 }}>Cr.</Table.Th>
-                  <Table.Th style={{ ...thBase, minWidth: 95, background: '#f3f4f6', color: '#374151', fontSize: 10 }}>Debit</Table.Th>
-                  <Table.Th style={{ ...thBase, minWidth: 95, background: '#f3f4f6', color: '#374151', fontSize: 10 }}>Credit</Table.Th>
+                  <Table.Th style={{ ...thBase, minWidth: 95, background: '#f3f4f6', color: '#374151', fontSize: 10 }}>Receipt</Table.Th>
+                  <Table.Th style={{ ...thBase, minWidth: 95, background: '#f3f4f6', color: '#374151', fontSize: 10 }}>Payment</Table.Th>
                 </Table.Tr>
               </Table.Thead>
 
@@ -528,7 +528,7 @@ const LedgerAbstract = () => {
             <Group gap="xl" wrap="wrap">
               <Text size="xs" c="dimmed">Dr = Debit balance (Asset/Expense nature)</Text>
               <Text size="xs" c="dimmed">Cr = Credit balance (Liability/Income nature)</Text>
-              <Text size="xs" c="dimmed">During Period = total debits and credits within selected date range</Text>
+              <Text size="xs" c="dimmed">Receipt = total debit entries during period; Payment = total credit entries during period</Text>
             </Group>
           </Box>
         )}

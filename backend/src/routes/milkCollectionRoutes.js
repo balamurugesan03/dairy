@@ -22,6 +22,8 @@ import {
   dairysoftImportCollections,
   getCentreSummary,
   getFarmerCriteriaSummary,
+  getCollectionAnalysis,
+  getSocietyReport,
 } from '../controllers/milkCollectionController.js';
 
 const router = express.Router();
@@ -30,6 +32,8 @@ const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 500 * 1024 * 1024
 // Summary / aggregate routes — BEFORE /:id
 router.get('/centre-summary',              getCentreSummary);
 router.get('/summary/farmer-criteria',     getFarmerCriteriaSummary);
+router.get('/summary/collection-analysis', getCollectionAnalysis);
+router.get('/summary/society-report',      getSocietyReport);
 router.get('/summary/farmer-wise',         getFarmerWiseSummary);
 router.get('/statement/farmer-wise',       getFarmerWiseStatement);
 router.get('/summary/date-wise',           getDateWiseSummary);

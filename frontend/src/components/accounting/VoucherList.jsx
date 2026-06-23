@@ -184,8 +184,8 @@ const VoucherList = () => {
     'Reference No': voucher.referenceNumber || '-',
     'Date': dayjs(voucher.voucherDate).format('DD-MM-YYYY'),
     'Type': voucher.voucherType,
-    'Total Debit': voucher.totalDebit,
-    'Total Credit': voucher.totalCredit,
+    'Total Receipt': voucher.totalDebit,
+    'Total Payment': voucher.totalCredit,
     'Reference Type': voucher.referenceType,
     'Narration': voucher.narration || '-'
   }));
@@ -452,7 +452,7 @@ const VoucherList = () => {
         <SimpleGrid cols={{ base: 1, sm: 3 }} gap="lg">
           <Paper p="md" withBorder>
             <Group justify="space-between">
-              <Text size="sm" c="dimmed">Total Debits</Text>
+              <Text size="sm" c="dimmed">Total Receipts</Text>
               <IconTrendingUp size={18} color="red" />
             </Group>
             <Text size="xl" fw={700} c="red" mt="xs">
@@ -462,7 +462,7 @@ const VoucherList = () => {
           
           <Paper p="md" withBorder>
             <Group justify="space-between">
-              <Text size="sm" c="dimmed">Total Credits</Text>
+              <Text size="sm" c="dimmed">Total Payments</Text>
               <IconTrendingDown size={18} color="green" />
             </Group>
             <Text size="xl" fw={700} c="green" mt="xs">
@@ -594,8 +594,8 @@ const VoucherList = () => {
                     <th style={{ width: '180px' }}>Voucher Details</th>
                     <th style={{ width: '100px' }}>Date</th>
                     <th style={{ width: '100px' }}>Type</th>
-                    <th style={{ width: '120px', textAlign: 'right' }}>Debit</th>
-                    <th style={{ width: '120px', textAlign: 'right' }}>Credit</th>
+                    <th style={{ width: '120px', textAlign: 'right' }}>Receipt</th>
+                    <th style={{ width: '120px', textAlign: 'right' }}>Payment</th>
                     <th style={{ width: '100px' }}>Ref Type</th>
                     <th style={{ width: '120px', textAlign: 'center' }}>Actions</th>
                   </tr>
@@ -643,8 +643,8 @@ const VoucherList = () => {
                 <thead>
                   <tr>
                     <th>Ledger</th>
-                    <th style={{ textAlign: 'right', color: 'red' }}>Debit (₹)</th>
-                    <th style={{ textAlign: 'right', color: 'green' }}>Credit (₹)</th>
+                    <th style={{ textAlign: 'right', color: 'red' }}>Receipt (₹)</th>
+                    <th style={{ textAlign: 'right', color: 'green' }}>Payment (₹)</th>
                   </tr>
                 </thead>
                 <tbody>

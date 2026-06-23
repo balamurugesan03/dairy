@@ -131,7 +131,7 @@ const TradingAccount = ({ data, period }) => {
 
       <TwoCol
         left={
-          <SideCard title="Dr. — Expenditure / Purchases" color="blue">
+          <SideCard title="Receipt — Expenditure / Purchases" color="blue">
             <BaseTable>
               <GroupHeader no={1} label="Opening Stock" />
               <ItemRow label="Total Opening Stock" amount={debitSide?.openingStock?.total || 0} />
@@ -169,7 +169,7 @@ const TradingAccount = ({ data, period }) => {
           </SideCard>
         }
         right={
-          <SideCard title="Cr. — Sales / Income" color="teal">
+          <SideCard title="Payment — Sales / Income" color="teal">
             <BaseTable>
               <GroupHeader no={1} label="Milk Sales (Dairy)" />
               <ItemRow label="Milk Sales to Customers / Local" amount={creditSide?.milkSales?.total || 0} indent />
@@ -251,7 +251,7 @@ const ProfitLoss = ({ data }) => {
 
       <TwoCol
         left={
-          <SideCard title="Dr. — Expenses" color="red.7">
+          <SideCard title="Receipt — Expenses" color="red.7">
             <BaseTable>
               <GroupHeader no={1} label="Expenses" />
               {(expenses || []).map((it, i) => (
@@ -272,7 +272,7 @@ const ProfitLoss = ({ data }) => {
           </SideCard>
         }
         right={
-          <SideCard title="Cr. — Income" color="green.7">
+          <SideCard title="Payment — Income" color="green.7">
             <BaseTable>
               <GroupHeader no={1} label="Income" />
               {(income || []).map((it, i) => (
@@ -441,7 +441,7 @@ const TradingAccountV2 = ({ data, period }) => {
       </Box>
       <TwoCol
         left={
-          <SideCard title="Dr. — Expenditure / Purchases" color="blue">
+          <SideCard title="Receipt — Expenditure / Purchases" color="blue">
             <BaseTable>
               <GroupHeader no={++grpNo} label="Opening Stock" />
               <ItemRow label="Total Opening Stock" amount={debitSide?.openingStock?.total || 0} />
@@ -471,7 +471,7 @@ const TradingAccountV2 = ({ data, period }) => {
           </SideCard>
         }
         right={
-          <SideCard title="Cr. — Sales / Income" color="teal">
+          <SideCard title="Payment — Sales / Income" color="teal">
             <BaseTable>
               {(() => { grpNo = 0; return null; })()}
               <GroupHeader no={++grpNo} label="Milk Sales (Dairy)" />
@@ -541,7 +541,7 @@ const ProfitLossV2 = ({ data }) => {
       </Box>
       <TwoCol
         left={
-          <SideCard title="Dr. — Expenses" color="red.7">
+          <SideCard title="Receipt — Expenses" color="red.7">
             <BaseTable>
               {(expenseGroups || []).map((g, gi) => (
                 <React.Fragment key={gi}>
@@ -557,7 +557,7 @@ const ProfitLossV2 = ({ data }) => {
           </SideCard>
         }
         right={
-          <SideCard title="Cr. — Income" color="green.7">
+          <SideCard title="Payment — Income" color="green.7">
             <BaseTable>
               {(incomeGroups || []).map((g, gi) => (
                 <React.Fragment key={gi}>

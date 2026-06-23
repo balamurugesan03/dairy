@@ -222,7 +222,7 @@ const CashBook = () => {
             userSelect: 'none',
           }}
         >
-          <Text fw={700} fz={12}>{isReceipt ? 'DEBIT (Dr)' : 'CREDIT (Cr)'}</Text>
+          <Text fw={700} fz={12}>{isReceipt ? 'RECEIPT (Dr)' : 'PAYMENT (Cr)'}</Text>
           <Text fz={10} fw={400} style={{ letterSpacing: 0.5, opacity: 0.7 }}>
             {isReceipt ? '(Income / Receipts)' : '(Expenses / Payments)'}
           </Text>

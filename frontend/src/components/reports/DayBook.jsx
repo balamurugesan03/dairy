@@ -247,7 +247,7 @@ const DayBook = () => {
           <span className={`db-side__icon db-side__icon--${side}`}>
             {isReceipt ? <IconArrowDown size={14} /> : <IconArrowUp size={14} />}
           </span>
-          <span className="db-side__title">{isReceipt ? 'DEBIT (Dr)' : 'CREDIT (Cr)'}</span>
+          <span className="db-side__title">{isReceipt ? 'RECEIPT (Dr)' : 'PAYMENT (Cr)'}</span>
           <span className="db-side__subtitle">{isReceipt ? '(Receipts / Money In)' : '(Payments / Money Out)'}</span>
         </div>
 
