@@ -169,7 +169,7 @@ const BillingForm = () => {
 
   // Auto-apply user's assigned center as default whenever auth or centers list becomes available
   useEffect(() => {
-    if (!collectionCenters.length || id) return; // skip when editing an existing invoice
+    if (!collectionCenters.length) return;
     const userCentreId = userCenter?._id?.toString() || userCenter?.toString();
     if (!userCentreId) return;
     const preferred = collectionCenters.find(c => c._id.toString() === userCentreId);

@@ -24,7 +24,6 @@ const MODULES = [
 const permissionSchema = new mongoose.Schema({
   module: {
     type: String,
-    enum: MODULES,
     required: true
   },
   read: {
