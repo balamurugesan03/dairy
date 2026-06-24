@@ -79,7 +79,7 @@ export const createCollection = async (req, res) => {
 export const getAllCollections = async (req, res) => {
   try {
     const {
-      date, shift, collectionCenter, farmerNumber,
+      date, shift, collectionCenter, centreId, farmerNumber,
       fromDate, toDate,
       page = 1, limit = 200,
       lean,
@@ -100,9 +100,10 @@ export const getAllCollections = async (req, res) => {
 
     if (shift)        query.shift        = shift;
     if (farmerNumber) query.farmerNumber = farmerNumber;
-    if (collectionCenter) {
-      try { query.collectionCenter = new mongoose.Types.ObjectId(collectionCenter); }
-      catch { query.collectionCenter = collectionCenter; }
+    const effectiveCenter = collectionCenter || centreId;
+    if (effectiveCenter) {
+      try { query.collectionCenter = new mongoose.Types.ObjectId(effectiveCenter); }
+      catch { query.collectionCenter = effectiveCenter; }
     }
 
     const skip  = (parseInt(page) - 1) * parseInt(limit);

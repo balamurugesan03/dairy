@@ -180,7 +180,8 @@ export const getAllSales = async (req, res) => {
       search = '',
       status = '',
       startDate = '',
-      endDate = ''
+      endDate = '',
+      centreId = '',
     } = req.query;
 
     const query = { companyId: req.companyId };
@@ -201,6 +202,11 @@ export const getAllSales = async (req, res) => {
       query.billDate = {};
       if (startDate) query.billDate.$gte = new Date(startDate);
       if (endDate) query.billDate.$lte = new Date(endDate);
+    }
+
+    if (centreId) {
+      try { query.collectionCenterId = new mongoose.Types.ObjectId(centreId); }
+      catch { query.collectionCenterId = centreId; }
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);

@@ -166,7 +166,7 @@ export const getNextBillNo = async (req, res) => {
 // ────────────────────────────────────────────────────────────────
 export const getMilkSales = async (req, res) => {
   try {
-    const { date, fromDate, toDate, month, year, session, saleMode, page = 1, limit = 500 } = req.query;
+    const { date, fromDate, toDate, month, year, session, saleMode, centreId, centerId, page = 1, limit = 500 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const filter = { companyId: req.companyId };
@@ -186,6 +186,11 @@ export const getMilkSales = async (req, res) => {
     }
     if (session)  filter.session  = session;
     if (saleMode) filter.saleMode = saleMode;
+    const effectiveCenterId = centreId || centerId;
+    if (effectiveCenterId) {
+      try { filter.centerId = new mongoose.Types.ObjectId(effectiveCenterId); }
+      catch { filter.centerId = effectiveCenterId; }
+    }
 
     const [sales, total] = await Promise.all([
       MilkSales.find(filter)
