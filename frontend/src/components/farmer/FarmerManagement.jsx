@@ -196,7 +196,27 @@ const FarmerManagement = () => {
       type: 'danger',
       onConfirm: async () => {
         try {
-          await farmerAPI.delete(id);
+          const res = await farmerAPI.delete(id);
+
+          if (res?.requiresConfirmation) {
+            showConfirmDialog({
+              title: 'Procurement Records Found',
+              content: res.message,
+              type: 'danger',
+              okText: 'Yes, Delete Anyway',
+              onConfirm: async () => {
+                try {
+                  await farmerAPI.delete(id, true);
+                  message.success('Farmer deactivated successfully');
+                  fetchFarmers();
+                } catch (error) {
+                  message.error(error.message || 'Failed to deactivate farmer');
+                }
+              }
+            });
+            return;
+          }
+
           message.success('Farmer deactivated successfully');
           fetchFarmers();
         } catch (error) {

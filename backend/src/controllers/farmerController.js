@@ -362,6 +362,25 @@ export const deleteFarmer = async (req, res) => {
       });
     }
 
+    // If procurement (milk collection) records already exist for this farmer,
+    // require an explicit confirmation (force=true) before deleting — do not
+    // delete outright on the first request.
+    const force = req.query.force === 'true' || req.body?.force === true;
+    if (!force) {
+      const procurementCount = await MilkCollection.countDocuments({
+        farmer: farmer._id,
+        companyId: req.companyId
+      });
+
+      if (procurementCount > 0) {
+        return res.status(200).json({
+          success: false,
+          requiresConfirmation: true,
+          message: 'This farmer already has procurement records. Are you sure you want to delete this farmer? This action may affect existing data.'
+        });
+      }
+    }
+
     // Soft delete by setting status to Inactive
     farmer.status = 'Inactive';
     await farmer.save();

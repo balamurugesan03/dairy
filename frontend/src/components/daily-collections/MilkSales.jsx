@@ -100,15 +100,15 @@ const printSlip = (entry) => {
 
     const html = `<html><head><title>Milk Sales Receipt</title>
     <style>
-      @page{size:58mm auto;margin:2mm 3mm}
+      @page{size:58mm auto;margin:1mm 3mm}
       body{font-family:'Courier New',monospace;font-size:10px;width:52mm;margin:0}
-      h3{text-align:center;margin:0 0 1px;font-size:11px;font-weight:900}
-      .sub{text-align:center;font-size:9px;color:#444;margin-bottom:4px}
-      .line{border-top:1px dashed #000;margin:3px 0}
-      .row{display:flex;justify-content:space-between;margin:2px 0}
+      h3{text-align:center;margin:0;font-size:11px;font-weight:900}
+      .sub{text-align:center;font-size:9px;color:#444;margin-bottom:2px}
+      .line{border-top:1px dashed #000;margin:1px 0}
+      .row{display:flex;justify-content:space-between;margin:1px 0;line-height:1.2}
       .val{font-weight:bold}
       .big{font-size:12px;font-weight:900}
-      .foot{text-align:center;font-size:9px;color:#666;margin-top:4px}
+      .foot{text-align:center;font-size:9px;color:#666;margin-top:2px}
     </style></head><body>
     <h3>MILK SALES</h3>
     <div class="sub">${dateStr} | ${entry.session || ''} | ${entry.saleMode || ''}</div>
@@ -121,7 +121,7 @@ const printSlip = (entry) => {
     ${!isLocal && entry.agentName  ? `<div class="row"><span>Agent</span><span>${entry.agentName}</span></div>`  : ''}
     <div class="line"></div>
     <div class="row"><span>Litres</span><span class="val">${parseFloat(entry.litre || 0).toFixed(2)} L</span></div>
-    <div class="row"><span>Rate/Ltr</span><span>Rs.${parseFloat(entry.rate || 0).toFixed(2)}</span></div>
+    <div class="row"><span>Rate/Ltr</span><span>Rs.${Math.round(parseFloat(entry.rate || 0))}</span></div>
     ${isLocal ? `<div class="row"><span>Payment</span><span>${entry.paymentType || 'Cash'}</span></div>` : ''}
     <div class="line"></div>
     <div class="row big"><span>AMOUNT</span><span>Rs.${parseFloat(entry.amount || 0).toFixed(2)}</span></div>

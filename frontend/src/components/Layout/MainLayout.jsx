@@ -101,6 +101,7 @@ const MainLayout = () => {
       if (e.key === 'F2') { e.preventDefault(); navigate('/daily-collections/milk-purchase'); return; }
       if (e.key === 'F3') { e.preventDefault(); navigate('/daily-collections/milk-sales'); return; }
       if (e.key === 'F4') { e.preventDefault(); navigate('/sales/new'); return; }
+      if (e.key === 'F5') { e.preventDefault(); navigate('/payments/cash-advance/voucher'); return; }
 
       // Other shortcuts: ignore when typing inside an input / textarea / select
       const tag = document.activeElement?.tagName;

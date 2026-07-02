@@ -81,7 +81,7 @@ export const farmerAPI = {
   getById: (id) => api.get(`/farmers/${id}`).then(res => res.data).catch(handleError),
   create: (data) => api.post('/farmers', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/farmers/${id}`, data).then(res => res.data).catch(handleError),
-  delete: (id) => api.delete(`/farmers/${id}`).then(res => res.data).catch(handleError),
+  delete: (id, force = false) => api.delete(`/farmers/${id}`, { params: force ? { force: true } : {} }).then(res => res.data).catch(handleError),
   toggleMembership: (id) => api.patch(`/farmers/${id}/membership`).then(res => res.data).catch(handleError),
   search: (query) => {
     // Validate query parameter - must be non-empty string

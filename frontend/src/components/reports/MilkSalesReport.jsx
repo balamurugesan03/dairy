@@ -286,9 +286,12 @@ export default function MilkSalesReport() {
       period: periodLabel,
       orientation: 'landscape',
       extraCss: `
-        @page { size: A4 landscape; margin: 8mm; }
+        @page { size: A4 landscape; margin: 6mm; }
+        .vpr-header { padding-bottom: 4px !important; margin-bottom: 5px !important; }
         table { width: 100% !important; border-collapse: collapse !important; font-size: 10px !important; }
-        th, td { border: 1px solid #ccc !important; padding: 4px 7px !important; font-size: 10px !important; }
+        th, td { border: 1px solid #ccc !important; padding: 2px 5px !important; font-size: 10px !important; line-height: 1.2 !important; }
+        .ms-rate-screen { display: none !important; }
+        .ms-rate-print { display: inline !important; }
       `,
     });
   };
@@ -315,7 +318,10 @@ export default function MilkSalesReport() {
                     <td style={TD}>{r.agentName  || '—'}</td>
                   </>}
               <td style={TDR}>{f3(r.litre)}</td>
-              <td style={TDR}>{f2(r.rate)}</td>
+              <td style={TDR}>
+                <span className="ms-rate-screen">{f2(r.rate)}</span>
+                <span className="ms-rate-print" style={{ display: 'none' }}>{Math.round(r.rate || 0)}</span>
+              </td>
               <td style={{ ...TDR, fontWeight: 700 }}>{f2(r.amount)}</td>
               <td style={{ ...TD, textAlign: 'center' }}>
                 <Badge size="xs" color={r.paymentType === 'Bank' ? 'teal' : 'gray'} variant="light">{r.paymentType || 'Cash'}</Badge>

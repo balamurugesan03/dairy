@@ -66,6 +66,10 @@ export const createOpening = async (req, res) => {
     const rfund   = Math.max(0, Number(revolvingFund) || 0);
     const dueAmt  = Math.max(0, Number(dueAmount)   || 0);
 
+    if (cfAdv === 0 && loanAdv === 0 && cashAdv === 0 && rfund === 0 && dueAmt === 0) {
+      return res.status(400).json({ success: false, message: 'Enter at least one amount — all amount fields cannot be 0 or blank' });
+    }
+
     const totalRecovery = cfAdv + loanAdv + cashAdv;
 
     const opening = new ProducerOpening({
@@ -130,12 +134,22 @@ export const updateOpening = async (req, res) => {
       revolvingFund: opening.revolvingFund,
     };
 
+    const dueAmt  = Math.max(0, Number(dueAmount)     || 0);
+    const cfAdv   = Math.max(0, Number(cfAdvance)     || 0);
+    const loanAdv = Math.max(0, Number(loanAdvance)   || 0);
+    const cashAdv = Math.max(0, Number(cashAdvance)   || 0);
+    const rfund   = Math.max(0, Number(revolvingFund) || 0);
+
+    if (dueAmt === 0 && cfAdv === 0 && loanAdv === 0 && cashAdv === 0 && rfund === 0) {
+      return res.status(400).json({ success: false, message: 'Enter at least one amount — all amount fields cannot be 0 or blank' });
+    }
+
     if (date) opening.date = new Date(date);
-    opening.dueAmount     = Math.max(0, Number(dueAmount)     || 0);
-    opening.cfAdvance     = Math.max(0, Number(cfAdvance)     || 0);
-    opening.loanAdvance   = Math.max(0, Number(loanAdvance)   || 0);
-    opening.cashAdvance   = Math.max(0, Number(cashAdvance)   || 0);
-    opening.revolvingFund = Math.max(0, Number(revolvingFund) || 0);
+    opening.dueAmount     = dueAmt;
+    opening.cfAdvance     = cfAdv;
+    opening.loanAdvance   = loanAdv;
+    opening.cashAdvance   = cashAdv;
+    opening.revolvingFund = rfund;
     opening.totalRecovery = opening.cfAdvance + opening.loanAdvance + opening.cashAdvance;
 
     await opening.save();

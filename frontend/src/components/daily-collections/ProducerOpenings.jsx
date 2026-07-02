@@ -169,6 +169,12 @@ export default function ProducerOpenings() {
       notifications.show({ color: 'red', title: 'Validation', message: 'Producer is required' });
       return false;
     }
+    const amountFields = [form.dueAmount, form.cfAdvance, form.loanAdvance, form.cashAdvance, form.revolvingFund];
+    const hasNonZeroAmount = amountFields.some((v) => v !== '' && v != null && Number(v) !== 0);
+    if (!hasNonZeroAmount) {
+      notifications.show({ color: 'red', title: 'Validation', message: 'Enter at least one amount — all amount fields cannot be 0 or blank' });
+      return false;
+    }
     return true;
   };
 

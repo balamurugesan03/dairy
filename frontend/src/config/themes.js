@@ -239,6 +239,19 @@ export const getMantineTheme = (themeKey = DEFAULT_THEME) => {
       [theme.primaryColor]: theme.mantineShades,
     },
     components: {
+      Modal: {
+        defaultProps: {
+          // Prevent accidental data loss: clicking outside a modal/dialog
+          // must not close it while a form is being filled in. Modals only
+          // close via explicit Close/Cancel/Save actions.
+          closeOnClickOutside: false,
+        },
+      },
+      Drawer: {
+        defaultProps: {
+          closeOnClickOutside: false,
+        },
+      },
       Button: {
         defaultProps: {
           color: theme.primaryColor,

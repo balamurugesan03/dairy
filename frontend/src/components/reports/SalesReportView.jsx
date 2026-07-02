@@ -249,27 +249,30 @@ const SalesReportView = () => {
                     </tr>
                     {expandedRows.has(sale._id) && (
                       <tr key={`${sale._id}-items`} style={{ background: '#f8f9fa' }}>
-                        <td colSpan={8} style={{ padding: '0 16px 12px 32px' }}>
+                        <td colSpan={8} style={{ padding: '10px 16px 18px 32px' }}>
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                             <thead>
                               <tr style={{ background: '#e9ecef' }}>
-                                <th style={{ padding: '6px 10px', textAlign: 'left',  fontWeight: 600 }}>#</th>
-                                <th style={{ padding: '6px 10px', textAlign: 'left',  fontWeight: 600 }}>Item Name</th>
-                                <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600 }}>Qty</th>
-                                <th style={{ padding: '6px 10px', textAlign: 'left',  fontWeight: 600 }}>Unit</th>
-                                <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600 }}>Rate</th>
-                                <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600 }}>Amount</th>
+                                <th style={{ padding: '9px 12px', textAlign: 'left',  fontWeight: 600 }}>#</th>
+                                <th style={{ padding: '9px 12px', textAlign: 'left',  fontWeight: 600 }}>Item Name</th>
+                                <th style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 600 }}>Qty</th>
+                                <th style={{ padding: '9px 12px', textAlign: 'left',  fontWeight: 600 }}>Unit</th>
+                                <th style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 600 }}>Rate</th>
+                                <th style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 600 }}>Amount</th>
                               </tr>
                             </thead>
                             <tbody>
                               {(sale.items || []).map((item, idx) => (
                                 <tr key={idx} style={{ borderBottom: '1px solid #dee2e6' }}>
-                                  <td style={{ padding: '5px 10px' }}>{idx + 1}</td>
-                                  <td style={{ padding: '5px 10px' }}>{item.itemName || item.item?.name || '-'}</td>
-                                  <td style={{ padding: '5px 10px', textAlign: 'right' }}>{item.quantity ?? item.qty ?? 0}</td>
-                                  <td style={{ padding: '5px 10px' }}>{item.unit || '-'}</td>
-                                  <td style={{ padding: '5px 10px', textAlign: 'right' }}>₹{fmt(item.rate)}</td>
-                                  <td style={{ padding: '5px 10px', textAlign: 'right' }}>₹{fmt(item.amount)}</td>
+                                  <td style={{ padding: '8px 12px' }}>{idx + 1}</td>
+                                  <td style={{ padding: '8px 12px' }}>{item.itemName || item.item?.name || '-'}</td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'right' }}>{item.quantity ?? item.qty ?? 0}</td>
+                                  <td style={{ padding: '8px 12px' }}>{item.unit || '-'}</td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'right' }}>₹{fmt(item.rate)}</td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                                    ₹{fmt(item.amount)}
+                                    <div style={{ fontSize: '11px', color: '#888', fontWeight: 400 }}>@ ₹{fmt(item.rate)}</div>
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>

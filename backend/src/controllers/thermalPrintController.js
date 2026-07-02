@@ -222,7 +222,7 @@ const buildMilkSalesReceipt = (d) => {
     !isLocal && d.agentName   ? row('Agent',  d.agentName)   : b(),
     dashes(),
     row('Litres',   Number(d.litre  || 0).toFixed(2) + ' L'),
-    row('Rate/Ltr', 'Rs.' + Number(d.rate || 0).toFixed(2)),
+    row('Rate/Ltr', 'Rs.' + Math.round(Number(d.rate || 0))),
     isLocal ? row('Payment', d.paymentType || 'Cash') : b(),
     dashes(),
     CMD.boldOn,
