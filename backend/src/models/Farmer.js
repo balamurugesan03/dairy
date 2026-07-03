@@ -263,6 +263,30 @@ const farmerSchema = new mongoose.Schema({
   membershipDate: {
     type: Date
   },
+  oldFarmerNumber: {
+    type: String,
+    trim: true
+  },
+  eligibility: {
+    totalQtySupplied: {
+      type: Number,
+      default: 0
+    },
+    firstCollectionDate: {
+      type: Date
+    },
+    isEligible: {
+      type: Boolean,
+      default: false
+    },
+    eligibleSince: {
+      type: Date
+    },
+    eligibleReason: {
+      type: String,
+      enum: ['Quantity', 'Tenure']
+    }
+  },
   ledgerId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Ledger'

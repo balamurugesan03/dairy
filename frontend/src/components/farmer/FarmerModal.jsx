@@ -23,12 +23,13 @@ import { IconCamera, IconX } from '@tabler/icons-react';
 import { IconInfoCircle } from '@tabler/icons-react';
 import { DatePickerInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
+import { modals } from '@mantine/modals';
 import { IconUpload, IconTrash } from '@tabler/icons-react';
 import { farmerAPI, collectionCenterAPI, ledgerAPI, bankMasterAPI } from '../../services/api';
 import { message } from '../../utils/toast';
 import { useAuth } from '../../context/AuthContext';
 
-const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
+const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep = 0, autoCheckMembership = false }) => {
   const { isCentreLogin, centreInfo } = useAuth();
   const [loading, setLoading] = useState(false);
   const [active, setActive] = useState(0);
@@ -39,6 +40,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
   const [bankLedgerOptions, setBankLedgerOptions] = useState([]);
   const [bankMasterList, setBankMasterList] = useState([]);
   const [selectedBankMasterId, setSelectedBankMasterId] = useState('');
+  const [initialIsMembership, setInitialIsMembership] = useState(false);
 
   const isEditMode = Boolean(farmerId);
 
@@ -90,6 +92,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
         bankLedgerId: ''
       },
       financialDetails: {
+        memberNumber: '',
         numberOfShares: 0,
         shareValue: 0,
         resolutionNo: '',
@@ -138,6 +141,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
 
   useEffect(() => {
     if (isOpen) {
+      setActive(initialStep || 0);
       fetchCollectionCenters();
       fetchBankLedgers();
       fetchBankMasterList();
@@ -148,7 +152,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
         fetchNextFarmerNumber();
       }
     }
-  }, [isOpen, farmerId]);
+  }, [isOpen, farmerId, initialStep]);
 
   useEffect(() => {
     if (isEditMode && bankMasterList.length > 0 && form.values.bankDetails.bankName) {
@@ -241,10 +245,13 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
       const response = await farmerAPI.getById(farmerId);
       const farmer = response.data;
 
+      setInitialIsMembership(farmer.isMembership || false);
+      const shouldAutoCheck = autoCheckMembership && !farmer.isMembership;
+
       form.setValues({
         farmerNumber: farmer.farmerNumber,
         memberId: farmer.memberId,
-        isMembership: farmer.isMembership || false,
+        isMembership: shouldAutoCheck || farmer.isMembership || false,
         membershipDate: farmer.membershipDate ? new Date(farmer.membershipDate) : null,
         farmerType: farmer.farmerType,
         cowType: farmer.cowType,
@@ -288,6 +295,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
           bankLedgerId: farmer.bankDetails?.bankLedgerId?._id || farmer.bankDetails?.bankLedgerId || ''
         },
         financialDetails: {
+          memberNumber: farmer.farmerNumber || '',
           numberOfShares: farmer.financialDetails?.totalShares || farmer.financialDetails?.oldShares || 0,
           shareValue: farmer.financialDetails?.shareValue || 0,
           resolutionNo: farmer.financialDetails?.resolutionNo || '',
@@ -337,6 +345,60 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
 
   const prevStep = () => setActive((current) => (current > 0 ? current - 1 : current));
 
+  // Calls the dedicated activation endpoint (separate from the general farmer
+  // update) so a brand-new membership always goes through the confirm-before-
+  // replacing-the-number flow, instead of silently flipping isMembership via
+  // the generic save.
+  const finalizeMembershipActivation = async (values, numberDecision) => {
+    setLoading(true);
+    try {
+      await farmerAPI.activateMembership(farmerId, {
+        memberNumber: String(values.financialDetails.memberNumber || values.farmerNumber).trim(),
+        membershipDate: toISOString(values.membershipDate),
+        financialDetails: {
+          numberOfShares: parseFloat(values.financialDetails.numberOfShares) || 0,
+          shareValue: parseFloat(values.financialDetails.shareValue) || 0,
+          admissionFee: parseFloat(values.financialDetails.admissionFee) || 0,
+          resolutionNo: values.financialDetails.resolutionNo,
+          resolutionDate: toISOString(values.financialDetails.resolutionDate)
+        },
+        numberDecision
+      });
+      message.success('Membership activated successfully');
+      onSuccess();
+      onClose();
+      resetForm();
+    } catch (error) {
+      message.error(error.message || 'Failed to activate membership');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runMembershipActivation = (values) => {
+    const memberNumber = String(values.financialDetails.memberNumber || values.farmerNumber).trim();
+    const numberChanging = memberNumber !== values.farmerNumber;
+
+    if (!numberChanging) {
+      return finalizeMembershipActivation(values, 'replace');
+    }
+
+    modals.openConfirmModal({
+      title: 'Confirm Farmer Number Replacement',
+      children: (
+        <Text size="sm">
+          You are about to replace the current Farmer Number with the Member Number.
+          This change will make the Member Number the active Farmer Number for all
+          future transactions and reports. Historical records will remain linked
+          automatically. Do you want to continue?
+        </Text>
+      ),
+      labels: { confirm: 'Yes', cancel: 'No' },
+      onConfirm: () => finalizeMembershipActivation(values, 'replace'),
+      onCancel: () => finalizeMembershipActivation(values, 'keep')
+    });
+  };
+
   const handleSubmit = async () => {
     const validation = form.validate();
     if (validation.hasErrors) {
@@ -344,10 +406,18 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
       return;
     }
 
+    const values = form.values;
+    // A brand-new activation (non-member -> member transition on an existing farmer)
+    // goes through the dedicated activate-membership flow instead of the plain save.
+    const isNewActivation = isEditMode && values.isMembership && !initialIsMembership;
+
+    if (isNewActivation && !String(values.financialDetails.memberNumber || '').trim()) {
+      message.error('Member Number is required to activate membership');
+      return;
+    }
+
     setLoading(true);
     try {
-      const values = form.values;
-
       const documents = {};
       for (const key in values.documents) {
         if (values.documents[key] instanceof File) {
@@ -389,8 +459,10 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
           idCardNumber: values.identityDetails.idCardNumber,
           issueDate: toISOString(values.identityDetails.issueDate)
         },
-        isMembership: values.isMembership,
-        membershipDate: values.isMembership ? toISOString(values.membershipDate) : null,
+        // A new activation is handled entirely by activateMembership below —
+        // keep this save from flipping isMembership on prematurely.
+        isMembership: isNewActivation ? false : values.isMembership,
+        membershipDate: (!isNewActivation && values.isMembership) ? toISOString(values.membershipDate) : null,
         farmerType: values.farmerType,
         cowType: values.cowType,
         collectionCenter: values.collectionCenter || null,
@@ -403,27 +475,35 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
           micr: values.bankDetails.micr,
           bankLedgerId: values.bankDetails.bankLedgerId || null
         },
-        financialDetails: {
-          oldShares: parseFloat(values.financialDetails.numberOfShares) || 0,
-          totalShares: parseFloat(values.financialDetails.numberOfShares) || 0,
-          shareValue: parseFloat(values.financialDetails.shareValue) || 0,
-          resolutionNo: values.financialDetails.resolutionNo,
-          resolutionDate: toISOString(values.financialDetails.resolutionDate),
-          admissionFee: parseFloat(values.financialDetails.admissionFee) || 0
-        },
         documents: {
           ...documents,
           additionalDocuments: additionalDocs
         }
       };
 
+      if (!isNewActivation) {
+        payload.financialDetails = {
+          oldShares: parseFloat(values.financialDetails.numberOfShares) || 0,
+          totalShares: parseFloat(values.financialDetails.numberOfShares) || 0,
+          shareValue: parseFloat(values.financialDetails.shareValue) || 0,
+          resolutionNo: values.financialDetails.resolutionNo,
+          resolutionDate: toISOString(values.financialDetails.resolutionDate),
+          admissionFee: parseFloat(values.financialDetails.admissionFee) || 0
+        };
+      }
+
       if (isEditMode) {
         await farmerAPI.update(farmerId, payload);
-        message.success('Farmer updated successfully');
       } else {
         await farmerAPI.create(payload);
-        message.success('Farmer created successfully');
       }
+
+      if (isNewActivation) {
+        runMembershipActivation(values);
+        return;
+      }
+
+      message.success(isEditMode ? 'Farmer updated successfully' : 'Farmer created successfully');
       onSuccess();
       onClose();
       resetForm();
@@ -457,11 +537,6 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
       dob.setFullYear(dob.getFullYear() - age);
       form.setFieldValue('personalDetails.dob', dob);
     }
-  };
-
-  const handleSharesChange = (value) => {
-    form.setFieldValue('financialDetails.numberOfShares', value);
-    form.setFieldValue('financialDetails.shareValue', (parseFloat(value) || 0) * 10);
   };
 
   const handlePincodeChange = async (value) => {
@@ -1040,8 +1115,9 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
                       </Group>
                     }
                     placeholder="Tick 'Is Member' to enable"
-                    disabled={!form.values.isMembership}
-                    {...form.getInputProps('memberId')}
+                    disabled={!form.values.isMembership || initialIsMembership}
+                    description={initialIsMembership ? 'Locked — the Farmer Number can only be replaced once' : undefined}
+                    {...form.getInputProps('financialDetails.memberNumber')}
                     onKeyDown={focusNext}
                   />
                 </Grid.Col>
@@ -1069,17 +1145,18 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null }) => {
                     placeholder="Enter number of shares"
                     min={0}
                     disabled={!form.values.isMembership}
-                    value={form.values.financialDetails.numberOfShares}
-                    onChange={handleSharesChange}
+                    {...form.getInputProps('financialDetails.numberOfShares')}
                     onKeyDown={focusNext}
                   />
                 </Grid.Col>
                 <Grid.Col span={6}>
                   <NumberInput
-                    label="Share Value (Auto-calculated)"
-                    value={form.values.financialDetails.shareValue}
-                    disabled
-                    description="Calculated as: Number of Shares × 10"
+                    label="Share Value"
+                    placeholder="Enter share value"
+                    min={0}
+                    disabled={!form.values.isMembership}
+                    {...form.getInputProps('financialDetails.shareValue')}
+                    onKeyDown={focusNext}
                   />
                 </Grid.Col>
                 <Grid.Col span={6}>

@@ -91,6 +91,8 @@ const FarmerManagement = () => {
 
   const [showModal, setShowModal] = useState(false);
   const [selectedFarmerId, setSelectedFarmerId] = useState(null);
+  const [modalInitialStep, setModalInitialStep] = useState(0);
+  const [modalAutoCheckMembership, setModalAutoCheckMembership] = useState(false);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showShareImportModal, setShowShareImportModal] = useState(false);
@@ -247,18 +249,27 @@ const FarmerManagement = () => {
   };
 
   const handleMembershipToggle = async (id, currentStatus) => {
-    const action = currentStatus ? 'deactivate' : 'activate';
+    if (!currentStatus) {
+      // Activation now goes through the Financial Details step (Member Number,
+      // shares, admission fee, etc.) instead of an instant flip.
+      setSelectedFarmerId(id);
+      setModalInitialStep(5);
+      setModalAutoCheckMembership(true);
+      setShowModal(true);
+      return;
+    }
+
     showConfirmDialog({
-      title: `${currentStatus ? 'Deactivate' : 'Activate'} Membership`,
-      content: `Are you sure you want to ${action} membership for this farmer?`,
-      type: currentStatus ? 'warning' : 'info',
+      title: 'Deactivate Membership',
+      content: 'Are you sure you want to deactivate membership for this farmer?',
+      type: 'warning',
       onConfirm: async () => {
         try {
           await farmerAPI.toggleMembership(id);
-          message.success(`Membership ${action}d successfully`);
+          message.success('Membership deactivated successfully');
           fetchFarmers();
         } catch (error) {
-          message.error(error.message || `Failed to ${action} membership`);
+          message.error(error.message || 'Failed to deactivate membership');
         }
       }
     });
@@ -266,11 +277,15 @@ const FarmerManagement = () => {
 
   const handleEdit = (id) => {
     setSelectedFarmerId(id);
+    setModalInitialStep(0);
+    setModalAutoCheckMembership(false);
     setShowModal(true);
   };
 
   const handleAddNew = () => {
     setSelectedFarmerId(null);
+    setModalInitialStep(0);
+    setModalAutoCheckMembership(false);
     setShowModal(true);
   };
 
@@ -1385,9 +1400,13 @@ const FarmerManagement = () => {
         onClose={() => {
           setShowModal(false);
           setSelectedFarmerId(null);
+          setModalInitialStep(0);
+          setModalAutoCheckMembership(false);
         }}
         onSuccess={handleModalSuccess}
         farmerId={selectedFarmerId}
+        initialStep={modalInitialStep}
+        autoCheckMembership={modalAutoCheckMembership}
       />
 
       <ImportModal

@@ -1,6 +1,8 @@
 import Farmer from '../models/Farmer.js';
 import Ledger from '../models/Ledger.js';
 import MilkCollection from '../models/MilkCollection.js';
+import BankTransfer from '../models/BankTransfer.js';
+import FarmerNumberHistory from '../models/FarmerNumberHistory.js';
 import mongoose from 'mongoose';
 import { createShareCapitalVoucher, createAdmissionFeeVoucher } from '../utils/accountingHelper.js';
 
@@ -472,6 +474,179 @@ export const toggleMembership = async (req, res) => {
       success: false,
       message: error.message || 'Error toggling membership'
     });
+  }
+};
+
+// Activate membership: saves financial/share details entered in the Financial
+// Details step and, if the entered Member Number differs from the farmer's
+// current Farmer Number, promotes it to become the new active Farmer Number
+// (old number preserved on the farmer + logged to FarmerNumberHistory).
+// One-time only: once isMembership is true the number can't be changed again.
+export const activateMembership = async (req, res) => {
+  try {
+    const farmer = await Farmer.findOne({ _id: req.params.id, companyId: req.companyId });
+    if (!farmer) {
+      return res.status(404).json({ success: false, message: 'Farmer not found' });
+    }
+    if (farmer.isMembership) {
+      return res.status(400).json({ success: false, message: 'Farmer is already a member; the Farmer Number cannot be changed again' });
+    }
+
+    const companyId = req.companyId;
+    const { memberNumber, membershipDate, financialDetails = {}, numberDecision } = req.body;
+
+    const newNumber = String(memberNumber || '').trim();
+    if (!newNumber) {
+      return res.status(400).json({ success: false, message: 'Member Number is required' });
+    }
+
+    const numberChanging = newNumber !== farmer.farmerNumber;
+
+    // numberDecision: 'replace' (user confirmed Yes) | 'keep' (user confirmed No).
+    // If the number differs and the frontend hasn't asked the user yet, force it to.
+    if (numberChanging && numberDecision !== 'replace' && numberDecision !== 'keep') {
+      return res.status(409).json({
+        success: false,
+        requiresConfirmation: true,
+        message: 'Replacing the Farmer Number requires confirmation'
+      });
+    }
+
+    if (numberChanging && numberDecision === 'replace') {
+      const clash = await Farmer.findOne({ companyId, farmerNumber: newNumber, _id: { $ne: farmer._id } });
+      if (clash) {
+        return res.status(400).json({ success: false, message: 'This Member Number is already in use by another farmer' });
+      }
+      const historyClash = await FarmerNumberHistory.findOne({ companyId, newNumber });
+      if (historyClash) {
+        return res.status(400).json({ success: false, message: 'This Member Number was already assigned previously and cannot be reused' });
+      }
+
+      const oldNumber = farmer.farmerNumber;
+
+      // No transactions available in this codebase — rename the denormalized copies
+      // first (idempotent, safe to retry), then update the Farmer doc last.
+      await MilkCollection.updateMany({ farmerNumber: oldNumber, companyId }, { $set: { farmerNumber: newNumber } });
+      await BankTransfer.updateMany({ producerId: oldNumber, companyId }, { $set: { producerId: newNumber } });
+
+      await FarmerNumberHistory.create({
+        farmerId: farmer._id,
+        companyId,
+        oldNumber,
+        newNumber,
+        changedBy: req.user?._id,
+        reason: 'Membership Activation'
+      });
+
+      farmer.oldFarmerNumber = oldNumber;
+      farmer.farmerNumber = newNumber;
+    }
+    // numberDecision === 'keep' (or memberNumber matches the current number): leave
+    // farmerNumber untouched, only membership/financial fields below are saved.
+
+    // Share Value entered is the TOTAL value paid for the shares (matches createFarmer's
+    // convention) — store the per-share value on the model.
+    const numberOfShares = parseInt(financialDetails.numberOfShares) || 0;
+    const totalShareValue = parseFloat(financialDetails.shareValue) || 0;
+    const perShareValue = numberOfShares > 0 ? totalShareValue / numberOfShares : 0;
+
+    farmer.isMembership = true;
+    farmer.membershipDate = membershipDate ? new Date(membershipDate) : new Date();
+    farmer.financialDetails.totalShares = numberOfShares;
+    farmer.financialDetails.oldShares = numberOfShares;
+    farmer.financialDetails.newShares = 0;
+    farmer.financialDetails.shareValue = perShareValue;
+    if (numberOfShares > 0) farmer.financialDetails.shareTakenDate = new Date();
+    farmer.financialDetails.admissionFee = parseFloat(financialDetails.admissionFee) || 0;
+    farmer.financialDetails.resolutionNo = financialDetails.resolutionNo || '';
+    if (financialDetails.resolutionDate) farmer.financialDetails.resolutionDate = new Date(financialDetails.resolutionDate);
+
+    if (numberOfShares > 0 && totalShareValue > 0) {
+      farmer.shareHistory.push({
+        transactionType: 'Allotment',
+        shares: numberOfShares,
+        shareValue: perShareValue,
+        totalValue: totalShareValue,
+        resolutionNo: financialDetails.resolutionNo || 'Membership Activation',
+        resolutionDate: financialDetails.resolutionDate ? new Date(financialDetails.resolutionDate) : new Date(),
+        oldTotal: 0,
+        newTotal: numberOfShares,
+        remarks: 'Allotment at membership activation',
+        transactionDate: new Date()
+      });
+    }
+
+    await farmer.save();
+
+    // Keep the farmer's ledger name in sync with the new active number.
+    if (numberChanging && numberDecision === 'replace' && farmer.ledgerId) {
+      try {
+        await Ledger.findByIdAndUpdate(farmer.ledgerId, {
+          ledgerName: `${farmer.personalDetails.name} (${farmer.farmerNumber})`
+        });
+      } catch (lErr) {
+        console.error('Ledger name sync error (non-fatal):', lErr.message);
+      }
+    }
+
+    // Post admission fee / share capital vouchers, same convention as createFarmer.
+    const admissionFee = farmer.financialDetails.admissionFee || 0;
+    if (admissionFee > 0) {
+      try {
+        await createAdmissionFeeVoucher({
+          farmerId: farmer._id,
+          farmerLedgerName: farmer.personalDetails.name,
+          admissionFee,
+          companyId,
+          voucherDate: new Date()
+        });
+      } catch (vErr) {
+        console.error('Admission fee voucher error (non-fatal):', vErr.message);
+      }
+    }
+    if (numberOfShares > 0 && totalShareValue > 0) {
+      try {
+        await createShareCapitalVoucher({
+          farmerId: farmer._id,
+          farmerLedgerName: farmer.personalDetails.name,
+          totalValue: totalShareValue,
+          transactionType: 'Allotment',
+          resolutionNo: financialDetails.resolutionNo || 'Membership Activation',
+          companyId,
+          voucherDate: new Date()
+        });
+      } catch (vErr) {
+        console.error('Share capital voucher error (non-fatal):', vErr.message);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Membership activated successfully',
+      data: farmer
+    });
+  } catch (error) {
+    console.error('Error activating membership:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error activating membership' });
+  }
+};
+
+// List farmers eligible for membership (500L supplied or 180-day tenure reached, not yet a member)
+export const getEligibleFarmers = async (req, res) => {
+  try {
+    const farmers = await Farmer.find({
+      companyId: req.companyId,
+      isMembership: false,
+      status: 'Active',
+      'eligibility.isEligible': true
+    }, 'farmerNumber personalDetails.name personalDetails.phone address eligibility')
+      .sort({ 'eligibility.eligibleSince': 1 })
+      .lean();
+
+    res.status(200).json({ success: true, data: farmers, count: farmers.length });
+  } catch (error) {
+    console.error('Error fetching eligible farmers:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error fetching eligible farmers' });
   }
 };
 

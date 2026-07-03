@@ -19,7 +19,9 @@ import {
   RingProgress,
   SimpleGrid,
   Divider,
-  Box
+  Box,
+  Modal,
+  Button
 } from '@mantine/core';
 import {
   IconUsers,
@@ -81,6 +83,8 @@ const Dashboard = () => {
   const [recentSales, setRecentSales] = useState([]);
   const [lowStockItems, setLowStockItems] = useState([]);
   const [salesChartData, setSalesChartData] = useState(null);
+  const [eligibleFarmers, setEligibleFarmers] = useState([]);
+  const [eligibleModalOpen, setEligibleModalOpen] = useState(false);
 
   const isDairyCooperative = selectedBusinessType === 'Dairy Cooperative Society';
 
@@ -95,7 +99,8 @@ const Dashboard = () => {
         loadMetrics(),
         loadRecentSales(),
         loadLowStockItems(),
-        loadSalesChart()
+        loadSalesChart(),
+        loadEligibleFarmers()
       ]);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
@@ -266,6 +271,54 @@ const Dashboard = () => {
     } catch (error) {
       console.error('Error loading low stock items:', error);
     }
+  };
+
+  const loadEligibleFarmers = async () => {
+    if (!isDairyCooperative) return;
+    try {
+      const response = await farmerAPI.getEligibleForMembership();
+      setEligibleFarmers(response.data || []);
+    } catch (error) {
+      console.error('Error loading eligible farmers:', error);
+    }
+  };
+
+  const printEligibleFarmers = () => {
+    const companyName = selectedCompany?.companyName || 'Dairy Cooperative Society';
+    const rows = eligibleFarmers.map((f, i) => `<tr>
+      <td style="text-align:center">${i + 1}</td>
+      <td>${f.farmerNumber || '—'}</td>
+      <td>${f.personalDetails?.name || '—'}</td>
+      <td>${f.personalDetails?.phone || '—'}</td>
+      <td style="text-align:center">${f.eligibility?.eligibleReason === 'Quantity' ? '500L Supplied' : '180 Days Tenure'}</td>
+      <td style="text-align:center">${f.eligibility?.eligibleSince ? localDateStr(f.eligibility.eligibleSince) : '—'}</td>
+    </tr>`).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Farmers Eligible for Membership</title>
+      <style>
+        @page { size: A4 portrait; margin: 10mm; }
+        body { font-family: Arial, sans-serif; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 5px 8px; border: 1px solid #888; font-size: 11px; }
+        th { background: #e8e8e8; text-align: center; }
+        tr:nth-child(even) td { background: #f7f7f7; }
+      </style></head><body>
+      <div style="text-align:center;border-bottom:2px solid #111;padding-bottom:10px;margin-bottom:14px">
+        <div style="font-size:17px;font-weight:800;text-transform:uppercase">${companyName}</div>
+        <div style="font-size:13px;font-weight:700;margin-top:4px">Farmers Eligible for Membership</div>
+        <div style="font-size:10px;margin-top:4px">Printed on: ${localDateStr(new Date())}</div>
+      </div>
+      <p style="font-size:11px">Total Eligible Farmers: <b>${eligibleFarmers.length}</b></p>
+      <table><thead><tr>
+        <th>S.No</th><th>Farmer No</th><th>Name</th><th>Phone</th><th>Reason</th><th>Eligible Since</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+      <script>window.onload=function(){window.print();setTimeout(function(){window.close();},1500);}</script>
+      </body></html>`;
+
+    const pw = window.open('', '_blank');
+    if (!pw) { alert('Pop-up blocked. Please allow pop-ups and try again.'); return; }
+    pw.document.write(html);
+    pw.document.close();
   };
 
   const loadSalesChart = async () => {
@@ -1172,9 +1225,76 @@ const Dashboard = () => {
               )}
             </Card>
           </Grid.Col>
+
+          {isDairyCooperative && (
+            <Grid.Col span={12}>
+              <Card
+                shadow="sm"
+                padding="lg"
+                radius="md"
+                withBorder
+                style={{ cursor: eligibleFarmers.length > 0 ? 'pointer' : 'default' }}
+                onClick={() => eligibleFarmers.length > 0 && setEligibleModalOpen(true)}
+              >
+                <Group justify="space-between">
+                  <Group>
+                    <ThemeIcon size="lg" variant="light" color="teal">
+                      <IconUserCheck size={20} />
+                    </ThemeIcon>
+                    <Text fw={600}>
+                      {eligibleFarmers.length > 0
+                        ? `${eligibleFarmers.length} Farmers are eligible for Membership`
+                        : 'No farmers currently eligible for Membership'}
+                    </Text>
+                  </Group>
+                  {eligibleFarmers.length > 0 && (
+                    <ActionIcon variant="subtle" onClick={() => setEligibleModalOpen(true)}>
+                      <IconArrowRight size={18} />
+                    </ActionIcon>
+                  )}
+                </Group>
+              </Card>
+            </Grid.Col>
+          )}
         </Grid>
 
       </Stack>
+
+      <Modal
+        opened={eligibleModalOpen}
+        onClose={() => setEligibleModalOpen(false)}
+        title="Farmers Eligible for Membership"
+        size="lg"
+      >
+        <Stack gap="sm">
+          <Group justify="space-between">
+            <Text size="sm" c="dimmed">Total: {eligibleFarmers.length}</Text>
+            <Button size="xs" onClick={printEligibleFarmers}>Print</Button>
+          </Group>
+          <Table striped highlightOnHover withTableBorder>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Farmer No</Table.Th>
+                <Table.Th>Name</Table.Th>
+                <Table.Th>Phone</Table.Th>
+                <Table.Th>Reason</Table.Th>
+                <Table.Th>Eligible Since</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {eligibleFarmers.map((f) => (
+                <Table.Tr key={f._id}>
+                  <Table.Td>{f.farmerNumber}</Table.Td>
+                  <Table.Td>{f.personalDetails?.name || '—'}</Table.Td>
+                  <Table.Td>{f.personalDetails?.phone || '—'}</Table.Td>
+                  <Table.Td>{f.eligibility?.eligibleReason === 'Quantity' ? '500L Supplied' : '180 Days Tenure'}</Table.Td>
+                  <Table.Td>{f.eligibility?.eligibleSince ? localDateStr(f.eligibility.eligibleSince) : '—'}</Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Stack>
+      </Modal>
     </Container>
   );
 };

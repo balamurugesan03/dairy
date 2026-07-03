@@ -6,6 +6,7 @@ import Farmer from '../models/Farmer.js';
 import Voucher from '../models/Voucher.js';
 import MilkSales from '../models/MilkSales.js';
 import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances, findOrCreateLedger } from '../utils/accountingHelper.js';
+import { recomputeFarmerEligibility, recomputeFarmersEligibility } from '../utils/farmerEligibilityHelper.js';
 
 // ── Auto-post bulk milk purchase to PRODUCERS DUES / MILK PURCHASE ────────────
 // Day Book derives the milk-purchase entry directly from MilkCollection
@@ -67,6 +68,11 @@ export const createCollection = async (req, res) => {
       .populate('collectionCenter', 'centerName')
       .populate('agent', 'agentName')
       .populate('farmer', 'farmerNumber personalDetails.name');
+
+    if (entry.farmer) {
+      try { await recomputeFarmerEligibility(entry.farmer, req.companyId); }
+      catch (elErr) { console.warn('[MilkCollection] Eligibility recompute failed (non-fatal):', elErr.message); }
+    }
 
     res.status(201).json({ success: true, data: populated });
   } catch (error) {
@@ -151,6 +157,11 @@ export const updateCollection = async (req, res) => {
   try {
     const { billNo, companyId, createdBy, ...updates } = req.body;
 
+    const existing = await MilkCollection.findOne(
+      { _id: req.params.id, companyId: req.companyId },
+      { farmer: 1 }
+    );
+
     const record = await MilkCollection.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId },
       { $set: updates },
@@ -158,6 +169,15 @@ export const updateCollection = async (req, res) => {
     );
 
     if (!record) return res.status(404).json({ success: false, message: 'Record not found' });
+
+    try {
+      const farmersToRecompute = new Set();
+      if (record.farmer) farmersToRecompute.add(String(record.farmer));
+      if (existing?.farmer) farmersToRecompute.add(String(existing.farmer));
+      await recomputeFarmersEligibility([...farmersToRecompute], req.companyId);
+    } catch (elErr) {
+      console.warn('[MilkCollection] Eligibility recompute failed (non-fatal):', elErr.message);
+    }
 
     res.json({ success: true, data: record });
   } catch (error) {
@@ -174,6 +194,11 @@ export const deleteCollection = async (req, res) => {
     });
 
     if (!record) return res.status(404).json({ success: false, message: 'Record not found' });
+
+    if (record.farmer) {
+      try { await recomputeFarmerEligibility(record.farmer, req.companyId); }
+      catch (elErr) { console.warn('[MilkCollection] Eligibility recompute failed (non-fatal):', elErr.message); }
+    }
 
     // Reverse ledger balances and delete linked voucher
     if (record.voucherId) {
@@ -344,6 +369,7 @@ export const zibittBrowserImportCollections = async (req, res) => {
     }
 
     await postBulkMilkPurchaseVouchers(docs, companyId);
+    await recomputeFarmersEligibility(docs.map(d => d.farmer), companyId);
 
     const uniqueUnlinked = [...new Set(unlinked)];
     let msg = `${inserted} imported`;
@@ -439,6 +465,7 @@ export const linzaImportCollections = async (req, res) => {
     }
 
     await postBulkMilkPurchaseVouchers(docs, companyId);
+    await recomputeFarmersEligibility(docs.map(d => d.farmer), companyId);
 
     const uniqueUnmatched = [...new Set(unmatched)];
     const dupSkipped = docs.length - inserted;
@@ -535,6 +562,7 @@ export const openLyssaImportCollections = async (req, res) => {
     }
 
     await postBulkMilkPurchaseVouchers(docs, companyId);
+    await recomputeFarmersEligibility(docs.map(d => d.farmer), companyId);
 
     const dupSkipped = docs.length - inserted;
     const um = [...unmatched];
@@ -606,6 +634,7 @@ export const bulkImportCollections = async (req, res) => {
 
     // Auto-post to PRODUCERS DUES / MILK PURCHASE
     await postBulkMilkPurchaseVouchers(docs, req.companyId);
+    await recomputeFarmersEligibility(docs.map(d => d.farmer), req.companyId);
 
     const unknown = [...new Set(skipped)].slice(0, 5).join(', ');
     const msg = skipped.length
@@ -788,6 +817,7 @@ export const fileUploadImportCollections = async (req, res) => {
     if (uniqueUnlinked.length)  msg += ` (${uniqueUnlinked.length} supplier IDs not linked to farmer — imported without farmer link)`;
 
     await postBulkMilkPurchaseVouchers(insertedDocs, req.companyId);
+    await recomputeFarmersEligibility(insertedDocs.map(d => d.farmer), req.companyId);
 
     res.json({ success: true, data: { inserted, unlinked: uniqueUnlinked.length, total: rows.length }, message: msg });
   } catch (err) {
@@ -1370,6 +1400,8 @@ export const dairysoftImportCollections = async (req, res) => {
         else throw err;
       }
     }
+
+    await recomputeFarmersEligibility(docs.map(d => d.farmer), companyId);
 
     const uniqueUnmatched = [...new Set(unmatched)];
     const dupSkipped = docs.length - inserted;

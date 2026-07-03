@@ -7,6 +7,8 @@ import {
   deleteFarmer,
   searchFarmer,
   toggleMembership,
+  activateMembership,
+  getEligibleFarmers,
   addShareToFarmer,
   getShareHistory,
   terminateFarmer,
@@ -45,6 +47,9 @@ router.get('/report', getFarmerReport);
 // Producer report — filterable list with pouring days/qty conditions
 router.get('/producer-report', getProducerReport);
 
+// Farmers eligible for membership (500L supplied or 180-day tenure reached)
+router.get('/eligible-for-membership', getEligibleFarmers);
+
 // Get farmer by ID
 router.get('/:id', getFarmerById);
 
@@ -57,8 +62,11 @@ router.post('/:id/shares', addShareToFarmer);
 // Update farmer
 router.put('/:id', updateFarmer);
 
-// Toggle membership status
+// Toggle membership status (deactivation only — activation goes through /membership/activate)
 router.patch('/:id/membership', toggleMembership);
+
+// Activate membership with financial details + optional Farmer Number replacement
+router.post('/:id/membership/activate', activateMembership);
 
 // Terminate farmer membership
 router.post('/:id/terminate', terminateFarmer);
