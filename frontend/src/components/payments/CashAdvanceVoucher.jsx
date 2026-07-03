@@ -103,7 +103,7 @@ const CashAdvanceVoucher = () => {
     advanceType:            'Cash',
     advanceAmount:          '',
     paymentMode:            'Cash',
-    repaymentType:          'Per Payment Deduction',
+    repaymentType:          'Custom',
     monthlyDeductionAmount: '',
     emiCount:               '',
     emiAmount:              '',
@@ -574,7 +574,7 @@ const CashAdvanceVoucher = () => {
             />
             <Select
               label="Repayment Type"
-              data={['Lump Sum','Monthly Deduction','Per Payment Deduction','Custom','EMI']}
+              data={['Custom','Per Cycle','Monthly Deduction','EMI']}
               value={form.repaymentType}
               onChange={v => setField('repaymentType', v)}
               styles={{ input: { borderRadius: 8 } }}

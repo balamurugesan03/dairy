@@ -54,11 +54,10 @@ const PAYMENT_MODES = [
 ];
 
 const REPAYMENT_TYPES = [
-  { value: 'Per Payment Deduction', label: 'Per Payment Deduction' },
-  { value: 'Monthly Deduction',     label: 'Monthly Deduction' },
-  { value: 'EMI',                   label: 'EMI' },
-  { value: 'Lump Sum',              label: 'Lump Sum' },
-  { value: 'Custom',                label: 'Custom' },
+  { value: 'Custom',            label: 'Custom' },
+  { value: 'Per Cycle',         label: 'Per Cycle' },
+  { value: 'Monthly Deduction', label: 'Monthly Deduction' },
+  { value: 'EMI',               label: 'EMI' },
 ];
 
 const emptyForm = {
@@ -67,7 +66,7 @@ const emptyForm = {
   advanceType:    'Cash',
   advanceAmount:  '',
   paymentMode:    'Cash',
-  repaymentType:  'Per Payment Deduction',
+  repaymentType:  'Custom',
   emiCount:       '',
   emiAmount:      '',
   emiFrequency:   'Monthly',
@@ -283,7 +282,7 @@ const CashAdvanceFormModal = ({ opened, onClose, onSaved }) => {
               label="Repayment Type"
               data={REPAYMENT_TYPES}
               value={form.repaymentType}
-              onChange={v => setField('repaymentType', v || 'Per Payment Deduction')}
+              onChange={v => setField('repaymentType', v || 'Custom')}
               leftSection={<IconRepeat size={15} color={TEXT_MUTED} />}
               styles={inputStyles}
             />
