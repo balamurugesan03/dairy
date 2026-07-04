@@ -3,6 +3,7 @@ import {
   login,
   getMe,
   changePassword,
+  verifyAdminPassword,
   createUser,
   getAllUsers,
   getUser,
@@ -22,6 +23,7 @@ router.use(protect);
 
 router.get('/me', getMe);
 router.patch('/change-password', changePassword);
+router.post('/verify-admin-password', verifyAdminPassword);
 
 // Superadmin only routes - user management
 router.use('/users', restrictTo('superadmin'));

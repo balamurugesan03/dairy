@@ -303,6 +303,49 @@ export const changePassword = async (req, res) => {
   }
 };
 
+// Verify the company (admin) login password — used to unlock password-protected
+// settings (e.g. Machine Configuration) for restricted 'user' role accounts.
+export const verifyAdminPassword = async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) {
+      return res.status(400).json({ success: false, message: 'Password is required' });
+    }
+
+    let companyId;
+    if (req.userType === 'company') {
+      companyId = req.user._id;
+    } else if (req.userType === 'centre') {
+      companyId = req.user.companyId;
+    } else {
+      companyId = req.user.company;
+    }
+
+    if (!companyId) {
+      return res.status(400).json({ success: false, message: 'No company associated with this account' });
+    }
+
+    const company = await Company.findById(companyId).select('+password');
+    if (!company || !company.password) {
+      return res.status(404).json({ success: false, message: 'Company account not found' });
+    }
+
+    const isMatch = await company.comparePassword(password);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: 'Incorrect password' });
+    }
+
+    res.status(200).json({ success: true, message: 'Password verified' });
+  } catch (error) {
+    console.error('Verify admin password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error verifying password',
+      error: error.message
+    });
+  }
+};
+
 // Create user (superadmin only)
 export const createUser = async (req, res) => {
   try {

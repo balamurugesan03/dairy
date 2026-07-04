@@ -31,15 +31,14 @@ export const createFarmer = async (req, res) => {
       farmerData.financialDetails?.totalShares ??
       farmerData.financialDetails?.oldShares
     ) || 0;
-    const totalShareValue = parseFloat(farmerData.financialDetails?.shareValue) || 0;
-    const perShareValue = numberOfShares > 0 ? totalShareValue / numberOfShares : 0;
+    const shareValue = parseFloat(farmerData.financialDetails?.shareValue) || 0;
 
     // Map form fields to Farmer model fields
     if (farmerData.financialDetails) {
       farmerData.financialDetails.totalShares = numberOfShares;
       farmerData.financialDetails.oldShares = numberOfShares;
       farmerData.financialDetails.newShares = 0;
-      farmerData.financialDetails.shareValue = perShareValue;
+      farmerData.financialDetails.shareValue = shareValue;
       if (numberOfShares > 0) {
         farmerData.financialDetails.shareTakenDate = new Date();
       }
@@ -49,12 +48,12 @@ export const createFarmer = async (req, res) => {
     const farmer = new Farmer(farmerData);
 
     // Add initial share history entry if shares are given at creation
-    if (numberOfShares > 0 && totalShareValue > 0) {
+    if (numberOfShares > 0 && shareValue > 0) {
       farmer.shareHistory.push({
         transactionType: 'Allotment',
         shares: numberOfShares,
-        shareValue: perShareValue,
-        totalValue: totalShareValue,
+        shareValue: shareValue,
+        totalValue: numberOfShares * shareValue,
         resolutionNo: farmerData.financialDetails?.resolutionNo || 'Initial',
         resolutionDate: farmerData.financialDetails?.resolutionDate || new Date(),
         oldTotal: 0,
@@ -544,29 +543,32 @@ export const activateMembership = async (req, res) => {
     // numberDecision === 'keep' (or memberNumber matches the current number): leave
     // farmerNumber untouched, only membership/financial fields below are saved.
 
-    // Share Value entered is the TOTAL value paid for the shares (matches createFarmer's
-    // convention) — store the per-share value on the model.
+    // Always record the assigned Member Number in memberId, independent of whether
+    // it also replaced the Farmer Number, so the Member ID column reflects it.
+    farmer.memberId = newNumber;
+
+    // Share Value entered is saved exactly as provided (per-share value) — no
+    // recalculation against the number of shares.
     const numberOfShares = parseInt(financialDetails.numberOfShares) || 0;
-    const totalShareValue = parseFloat(financialDetails.shareValue) || 0;
-    const perShareValue = numberOfShares > 0 ? totalShareValue / numberOfShares : 0;
+    const shareValue = parseFloat(financialDetails.shareValue) || 0;
 
     farmer.isMembership = true;
     farmer.membershipDate = membershipDate ? new Date(membershipDate) : new Date();
     farmer.financialDetails.totalShares = numberOfShares;
     farmer.financialDetails.oldShares = numberOfShares;
     farmer.financialDetails.newShares = 0;
-    farmer.financialDetails.shareValue = perShareValue;
+    farmer.financialDetails.shareValue = shareValue;
     if (numberOfShares > 0) farmer.financialDetails.shareTakenDate = new Date();
     farmer.financialDetails.admissionFee = parseFloat(financialDetails.admissionFee) || 0;
     farmer.financialDetails.resolutionNo = financialDetails.resolutionNo || '';
     if (financialDetails.resolutionDate) farmer.financialDetails.resolutionDate = new Date(financialDetails.resolutionDate);
 
-    if (numberOfShares > 0 && totalShareValue > 0) {
+    if (numberOfShares > 0 && shareValue > 0) {
       farmer.shareHistory.push({
         transactionType: 'Allotment',
         shares: numberOfShares,
-        shareValue: perShareValue,
-        totalValue: totalShareValue,
+        shareValue: shareValue,
+        totalValue: numberOfShares * shareValue,
         resolutionNo: financialDetails.resolutionNo || 'Membership Activation',
         resolutionDate: financialDetails.resolutionDate ? new Date(financialDetails.resolutionDate) : new Date(),
         oldTotal: 0,
@@ -647,6 +649,29 @@ export const getEligibleFarmers = async (req, res) => {
   } catch (error) {
     console.error('Error fetching eligible farmers:', error);
     res.status(500).json({ success: false, message: error.message || 'Error fetching eligible farmers' });
+  }
+};
+
+// Next available Member Number — continues from the highest Member Number already
+// assigned to an existing member (their farmerNumber, since activation replaces it),
+// independent of the Farmer Number sequence used for non-member farmers.
+export const getNextMemberNumber = async (req, res) => {
+  try {
+    const members = await Farmer.find(
+      { companyId: req.companyId, isMembership: true },
+      'farmerNumber'
+    ).lean();
+
+    let maxNumber = 0;
+    for (const m of members) {
+      const n = parseInt(m.farmerNumber, 10);
+      if (!isNaN(n) && n > maxNumber) maxNumber = n;
+    }
+
+    res.status(200).json({ success: true, data: { nextMemberNumber: String(maxNumber + 1) } });
+  } catch (error) {
+    console.error('Error fetching next member number:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error fetching next member number' });
   }
 };
 

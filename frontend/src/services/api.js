@@ -66,6 +66,7 @@ export const authAPI = {
   login: (username, password) => api.post('/auth/login', { username, password }).then(res => res.data).catch(handleError),
   getMe: () => api.get('/auth/me').then(res => res.data).catch(handleError),
   changePassword: (currentPassword, newPassword) => api.patch('/auth/change-password', { currentPassword, newPassword }).then(res => res.data).catch(handleError),
+  verifyAdminPassword: (password) => api.post('/auth/verify-admin-password', { password }).then(res => res.data).catch(handleError),
   // User Management (superadmin only)
   getUsers: (params) => api.get('/auth/users', { params }).then(res => res.data).catch(handleError),
   getUser: (id) => api.get(`/auth/users/${id}`).then(res => res.data).catch(handleError),
@@ -85,6 +86,7 @@ export const farmerAPI = {
   toggleMembership: (id) => api.patch(`/farmers/${id}/membership`).then(res => res.data).catch(handleError),
   activateMembership: (id, data) => api.post(`/farmers/${id}/membership/activate`, data).then(res => res.data).catch(handleError),
   getEligibleForMembership: () => api.get('/farmers/eligible-for-membership').then(res => res.data).catch(handleError),
+  getNextMemberNumber: () => api.get('/farmers/next-member-number').then(res => res.data).catch(handleError),
   search: (query) => {
     // Validate query parameter - must be non-empty string
     if (!query || typeof query !== 'string' || query.trim().length === 0) {

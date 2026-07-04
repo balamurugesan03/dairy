@@ -248,6 +248,18 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
       setInitialIsMembership(farmer.isMembership || false);
       const shouldAutoCheck = autoCheckMembership && !farmer.isMembership;
 
+      // Non-members get the next available Member Number (continuing from the
+      // last assigned Member Number) instead of defaulting to the Farmer Number.
+      let defaultMemberNumber = farmer.farmerNumber || '';
+      if (!farmer.isMembership) {
+        try {
+          const nextNumberRes = await farmerAPI.getNextMemberNumber();
+          defaultMemberNumber = nextNumberRes.data?.nextMemberNumber || defaultMemberNumber;
+        } catch (nErr) {
+          // Non-fatal — fall back to the farmer number if the lookup fails
+        }
+      }
+
       form.setValues({
         farmerNumber: farmer.farmerNumber,
         memberId: farmer.memberId,
@@ -295,7 +307,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
           bankLedgerId: farmer.bankDetails?.bankLedgerId?._id || farmer.bankDetails?.bankLedgerId || ''
         },
         financialDetails: {
-          memberNumber: farmer.farmerNumber || '',
+          memberNumber: defaultMemberNumber,
           numberOfShares: farmer.financialDetails?.totalShares || farmer.financialDetails?.oldShares || 0,
           shareValue: farmer.financialDetails?.shareValue || 0,
           resolutionNo: farmer.financialDetails?.resolutionNo || '',

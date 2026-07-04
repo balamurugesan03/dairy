@@ -19,6 +19,7 @@ import {
 import { SegmentedControl } from '@mantine/core';
 import { unionSalesSlipAPI } from '../../services/api';
 import ImportModal from '../common/ImportModal';
+import { useAuth } from '../../context/AuthContext';
 import dayjs from 'dayjs';
 
 /* ── helpers ── */
@@ -58,6 +59,7 @@ const years = Array.from({ length: currentYear - 2010 + 2 }, (_, i) => {
    MAIN COMPONENT
 ══════════════════════════════════════════════════════════════════ */
 export default function UnionSalesSlip() {
+  const { isUser } = useAuth();
 
   const initForm = () => ({
     date: new Date(), time: 'AM',
@@ -739,27 +741,29 @@ export default function UnionSalesSlip() {
 
               <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
 
-              {/* Import Dairy DB — green */}
-              <Button leftSection={<IconUpload size={12} />}
-                onClick={() => document.getElementById('union-dairy-file-input').click()}
-                size="compact-xs" radius="sm"
-                style={{ background: '#15803d', border: '1px solid #4ade80', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                Import Dairy
-              </Button>
-              <input id="union-dairy-file-input" type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleDairyFileSelect} />
-              {/* Import Zibitt Raw DB — fuchsia */}
-              <Button leftSection={<IconUpload size={12} />} onClick={() => setRawImportOpen(true)}
-                size="compact-xs" radius="sm"
-                style={{ background: '#a21caf', border: '1px solid #e879f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                Import DB
-              </Button>
-              {/* Sync to Day Book — posts missing journal vouchers for legacy slips */}
-              <Button leftSection={backfilling ? <Loader size={10} color="white" /> : <IconBook size={12} />}
-                onClick={handleBackfillVouchers} disabled={backfilling}
-                size="compact-xs" radius="sm" title="Post Day Book vouchers for slips created before auto-post"
-                style={{ background: '#0369a1', border: '1px solid #38bdf8', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                Sync Day Book
-              </Button>
+              {/* Import Dairy DB, Import DB & Sync Day Book — not available to restricted users */}
+              {!isUser && (
+                <>
+                  <Button leftSection={<IconUpload size={12} />}
+                    onClick={() => document.getElementById('union-dairy-file-input').click()}
+                    size="compact-xs" radius="sm"
+                    style={{ background: '#15803d', border: '1px solid #4ade80', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                    Import Dairy
+                  </Button>
+                  <input id="union-dairy-file-input" type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleDairyFileSelect} />
+                  <Button leftSection={<IconUpload size={12} />} onClick={() => setRawImportOpen(true)}
+                    size="compact-xs" radius="sm"
+                    style={{ background: '#a21caf', border: '1px solid #e879f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                    Import DB
+                  </Button>
+                  <Button leftSection={backfilling ? <Loader size={10} color="white" /> : <IconBook size={12} />}
+                    onClick={handleBackfillVouchers} disabled={backfilling}
+                    size="compact-xs" radius="sm" title="Post Day Book vouchers for slips created before auto-post"
+                    style={{ background: '#0369a1', border: '1px solid #38bdf8', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                    Sync Day Book
+                  </Button>
+                </>
+              )}
             </Group>
           </Group>
         </Box>

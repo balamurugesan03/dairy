@@ -7,6 +7,8 @@ import MainLayout from './components/Layout/MainLayout';
 import CompanySelection from './components/company/CompanySelection';
 import Login from './pages/Login';
 import BusinessTypeGuard from './components/common/BusinessTypeGuard';
+import AdminOnlyGuard from './components/common/AdminOnlyGuard';
+import PasswordGate from './components/common/PasswordGate';
 import './styles/theme.css';
 
 // Loading fallback component
@@ -445,8 +447,10 @@ const AppContent = () => {
                 <Route path="farmer-wise-summary"    element={<FarmerWiseSummary />} />
                 <Route path="farmer-criteria-report" element={<FarmerCriteriaReport />} />
                 <Route path="producer-report"        element={<ProducerReport />} />
-                <Route path="rate-chart-settings"    element={<RateChartSettings />} />
-                <Route path="milk-purchase-settings" element={<MilkPurchaseSettings />} />
+                <Route element={<AdminOnlyGuard />}>
+                  <Route path="rate-chart-settings"    element={<RateChartSettings />} />
+                </Route>
+                <Route path="milk-purchase-settings" element={<PasswordGate><MilkPurchaseSettings /></PasswordGate>} />
                 <Route path="union-sales-slip"       element={<UnionSalesSlip />} />
                 <Route path="milk-sales-rate"        element={<MilkSalesRateList />} />
                 <Route path="shift-incentive"        element={<ShiftIncentiveList />} />
@@ -654,20 +658,22 @@ const AppContent = () => {
                 </Route>
               </Route>
 
-              {/* Society Info & Document Management */}
-              <Route path="society-info" element={<SocietyInfoPage />} />
+              <Route element={<AdminOnlyGuard />}>
+                {/* Society Info & Document Management */}
+                <Route path="society-info" element={<SocietyInfoPage />} />
 
-              {/* User Management - Admin Only */}
-              <Route path="user-management" element={<UserManagement />} />
+                {/* User Management - Admin Only */}
+                <Route path="user-management" element={<UserManagement />} />
 
-              {/* Financial Year Management */}
-              <Route path="financial-year" element={<FinancialYearManagement />} />
+                {/* Financial Year Management */}
+                <Route path="financial-year" element={<FinancialYearManagement />} />
+
+                {/* OpenLyssa Data Merge Tool */}
+                <Route path="openlyssa-merge" element={<OpenLyssaMergeTool />} />
+              </Route>
 
               {/* Payment & Account Settings */}
               <Route path="payment-settings" element={<PaymentSettings />} />
-
-              {/* OpenLyssa Data Merge Tool */}
-              <Route path="openlyssa-merge" element={<OpenLyssaMergeTool />} />
             </Route>
 
         </Routes>

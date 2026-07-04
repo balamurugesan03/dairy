@@ -65,7 +65,7 @@ const MainLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { selectedCompany, selectedBusinessType } = useCompany();
-  const { user, logout, isAdmin, isCentreLogin } = useAuth();
+  const { user, logout, isAdmin, isUser, isCentreLogin } = useAuth();
   const { colorScheme, currentThemeConfig } = useTheme();
 
   const isDark = colorScheme === 'dark';
@@ -198,7 +198,8 @@ const MainLayout = () => {
           key: 'milk-settings-sub',
           label: 'Settings & Configuration',
           children: [
-            { key: '/daily-collections/rate-chart-settings',    label: 'Rate Chart Settings'   },
+            // Rate Chart Settings is not available to restricted (newly created) users
+            ...(isUser ? [] : [{ key: '/daily-collections/rate-chart-settings', label: 'Rate Chart Settings' }]),
             { key: '/daily-collections/milk-purchase-settings', label: 'Machine Configuration' },
             { key: '/daily-collections/milk-sales-rate',        label: 'Milk Sales Rate'        },
             { key: '/daily-collections/shift-incentive',        label: 'Shift Incentive'        },
@@ -525,21 +526,23 @@ const MainLayout = () => {
         { key: '/hrm/loans', label: 'Loans / Advance' }
       ]
     },
-    // Settings — admin only, both business types
-    ...(isAdmin ? [{
+    // Settings — visible to everyone; restricted (newly created) users only get
+    // Payment Settings, admins/superadmins see the full list.
+    {
       key: 'settings-menu',
       icon: <IconAdjustments size={18} />,
       label: 'Settings',
       color: 'violet',
-      adminOnly: true,
-      children: [
+      children: isAdmin ? [
         { key: '/society-info',     label: 'Society Info' },
         { key: '/financial-year',   label: 'Financial Year' },
         { key: '/payment-settings', label: 'Payment Settings' },
         { key: '/openlyssa-merge',  label: 'OpenLyssa Merge Tool' },
         { key: '/user-management',  label: 'User Management' },
+      ] : [
+        { key: '/payment-settings', label: 'Payment Settings' },
       ]
-    }] : [])
+    }
     ];
 
     // Sub-centre login: only Milk Collection + Milk Sales

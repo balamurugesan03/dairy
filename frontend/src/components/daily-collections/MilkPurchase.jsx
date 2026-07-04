@@ -205,7 +205,7 @@ const toDate = (d) => {
 };
 
 const MilkPurchase = () => {
-  const { isSuperAdmin, isCompanyAdmin, isCentreLogin, centreInfo, userCenter, userAgent } = useAuth();
+  const { isSuperAdmin, isCompanyAdmin, isUser, isCentreLogin, centreInfo, userCenter, userAgent } = useAuth();
   const [centersData, setCentersData] = useState([]);
   const [centreSummary, setCentreSummary] = useState([]);
   const [agentsData,  setAgentsData]  = useState([]);
@@ -2399,41 +2399,43 @@ const MilkPurchase = () => {
                 </Badge>
               )}
 
-              {/* Month / Year filter */}
-              <Group gap={4} wrap="nowrap">
-                <Select
-                  data={MONTHS} value={filterMonth} onChange={v => v && setFilterMonth(v)}
-                  size="xs" radius="md" style={{ width: 108 }}
-                  styles={{ input: { fontWeight: 600, border: '1.5px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.1)', color: 'white', height: 24, fontSize: 11, padding: '0 8px' } }}
-                />
-                <Select
-                  data={YEARS} value={filterYear} onChange={v => v && setFilterYear(v)}
-                  size="xs" radius="md" style={{ width: 68 }}
-                  styles={{ input: { fontWeight: 600, border: '1.5px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.1)', color: 'white', height: 24, fontSize: 11, padding: '0 8px' } }}
-                />
-                <Button
-                  leftSection={<IconFilter size={11} />}
-                  onClick={() => loadMonthEntries(filterMonth, filterYear)}
-                  size="xs" radius="md"
-                  style={{ height: 24, padding: '0 10px', fontSize: 10, fontWeight: 700, background: '#6d28d9', color: 'white', border: '1px solid #a78bfa' }}
-                >
-                  Go
-                </Button>
-                {monthMode && (
+              {/* Month / Year filter (month-wise search) — not available to restricted users */}
+              {!isUser && (
+                <Group gap={4} wrap="nowrap">
+                  <Select
+                    data={MONTHS} value={filterMonth} onChange={v => v && setFilterMonth(v)}
+                    size="xs" radius="md" style={{ width: 108 }}
+                    styles={{ input: { fontWeight: 600, border: '1.5px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.1)', color: 'white', height: 24, fontSize: 11, padding: '0 8px' } }}
+                  />
+                  <Select
+                    data={YEARS} value={filterYear} onChange={v => v && setFilterYear(v)}
+                    size="xs" radius="md" style={{ width: 68 }}
+                    styles={{ input: { fontWeight: 600, border: '1.5px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.1)', color: 'white', height: 24, fontSize: 11, padding: '0 8px' } }}
+                  />
                   <Button
+                    leftSection={<IconFilter size={11} />}
+                    onClick={() => loadMonthEntries(filterMonth, filterYear)}
                     size="xs" radius="md"
-                    onClick={async () => { setMonthMode(false); await loadTodayEntries(date, shift, center); setFormEnabled(true); }}
-                    style={{ height: 24, padding: '0 8px', fontSize: 10, fontWeight: 700, background: 'rgba(255,255,255,0.08)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}
+                    style={{ height: 24, padding: '0 10px', fontSize: 10, fontWeight: 700, background: '#6d28d9', color: 'white', border: '1px solid #a78bfa' }}
                   >
-                    Today
+                    Go
                   </Button>
-                )}
-              </Group>
+                  {monthMode && (
+                    <Button
+                      size="xs" radius="md"
+                      onClick={async () => { setMonthMode(false); await loadTodayEntries(date, shift, center); setFormEnabled(true); }}
+                      style={{ height: 24, padding: '0 8px', fontSize: 10, fontWeight: 700, background: 'rgba(255,255,255,0.08)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}
+                    >
+                      Today
+                    </Button>
+                  )}
+                </Group>
+              )}
             </Group>
 
             <Group className="mp-table-bar-right" gap={4} wrap="nowrap">
               {/* History search input */}
-              {showHistory && (
+              {showHistory && !isUser && (
                 <TextInput
                   placeholder="Search by name, No, bill..."
                   value={historySearch}
@@ -2489,13 +2491,15 @@ const MilkPurchase = () => {
 
               <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
 
-              {/* SEARCH / HISTORY */}
-              <Button leftSection={<IconHistory size={12} />}
-                onClick={() => { setShowHistory(v => !v); if (showHistory) setHistorySearch(''); }}
-                size="compact-xs" radius="sm"
-                style={{ background: showHistory ? '#1d4ed8' : 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                {showHistory ? 'Hide' : 'Search'}
-              </Button>
+              {/* SEARCH / HISTORY — Purchase Register search option, not available to restricted users */}
+              {!isUser && (
+                <Button leftSection={<IconHistory size={12} />}
+                  onClick={() => { setShowHistory(v => !v); if (showHistory) setHistorySearch(''); }}
+                  size="compact-xs" radius="sm"
+                  style={{ background: showHistory ? '#1d4ed8' : 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                  {showHistory ? 'Hide' : 'Search'}
+                </Button>
+              )}
 
               {/* REFRESH */}
               <Button leftSection={<IconRefresh size={12} />} onClick={async () => { await loadTodayEntries(date, shift, center); setFormEnabled(true); }}
@@ -2504,12 +2508,14 @@ const MilkPurchase = () => {
                 Refresh
               </Button>
 
-              {/* EXPORT to Excel */}
-              <Button leftSection={<IconDownload size={12} />} onClick={() => setExportOpen(true)}
-                size="compact-xs" radius="sm"
-                style={{ background: '#15803d', border: '1px solid #4ade80', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                Export
-              </Button>
+              {/* EXPORT to Excel — not available to restricted users */}
+              {!isUser && (
+                <Button leftSection={<IconDownload size={12} />} onClick={() => setExportOpen(true)}
+                  size="compact-xs" radius="sm"
+                  style={{ background: '#15803d', border: '1px solid #4ade80', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                  Export
+                </Button>
+              )}
 
               {/* IMPORT ZIBITT — superadmin / company-admin only */}
               {(isSuperAdmin || isCompanyAdmin) && (

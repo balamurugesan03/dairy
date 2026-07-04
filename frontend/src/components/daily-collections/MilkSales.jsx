@@ -153,7 +153,7 @@ const toDate = (d) => {
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 export default function MilkSales() {
   const navigate = useNavigate();
-  const { userCenter, userAgent } = useAuth();
+  const { isUser, userCenter, userAgent } = useAuth();
 
   // Keyboard swap:
   //   • Ctrl/⌘ + S | plain S → Milk Sales (this page)
@@ -1168,40 +1168,42 @@ export default function MilkSales() {
               {editingId && <Badge size="sm" color="yellow" variant="filled" radius="sm">EDIT MODE</Badge>}
               {monthMode && <Badge size="sm" color="violet" variant="filled" radius="sm">{MONTHS.find(m => m.value === filterMonth)?.label} {filterYear}</Badge>}
 
-              {/* Month / Year filter */}
-              <Group className="ms-month-group" gap={4} wrap="nowrap">
-                <Select
-                  data={MONTHS} value={filterMonth} onChange={v => v && setFilterMonth(v)}
-                  size="xs" radius="md" style={{ width: 108 }}
-                  styles={{ input: { fontWeight: 600, border: '1.5px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.1)', color: 'white', height: 26, fontSize: 11 } }}
-                />
-                <Select
-                  data={YEARS} value={filterYear} onChange={v => v && setFilterYear(v)}
-                  size="xs" radius="md" style={{ width: 70 }}
-                  styles={{ input: { fontWeight: 600, border: '1.5px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.1)', color: 'white', height: 26, fontSize: 11 } }}
-                />
-                <Button
-                  leftSection={<IconFilter size={11} />}
-                  onClick={() => loadEntries(filterMonth, filterYear)}
-                  size="xs" radius="md"
-                  style={{ height: 26, padding: '0 10px', fontSize: 10, fontWeight: 700, background: '#6d28d9', color: 'white', border: '1px solid #a78bfa' }}
-                >
-                  Go
-                </Button>
-                {monthMode && (
+              {/* Month / Year filter — not available to restricted users */}
+              {!isUser && (
+                <Group className="ms-month-group" gap={4} wrap="nowrap">
+                  <Select
+                    data={MONTHS} value={filterMonth} onChange={v => v && setFilterMonth(v)}
+                    size="xs" radius="md" style={{ width: 108 }}
+                    styles={{ input: { fontWeight: 600, border: '1.5px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.1)', color: 'white', height: 26, fontSize: 11 } }}
+                  />
+                  <Select
+                    data={YEARS} value={filterYear} onChange={v => v && setFilterYear(v)}
+                    size="xs" radius="md" style={{ width: 70 }}
+                    styles={{ input: { fontWeight: 600, border: '1.5px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.1)', color: 'white', height: 26, fontSize: 11 } }}
+                  />
                   <Button
+                    leftSection={<IconFilter size={11} />}
+                    onClick={() => loadEntries(filterMonth, filterYear)}
                     size="xs" radius="md"
-                    onClick={() => loadByDate(toDate(date), session)}
-                    style={{ height: 26, padding: '0 8px', fontSize: 10, fontWeight: 700, background: 'rgba(255,255,255,0.08)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}
+                    style={{ height: 26, padding: '0 10px', fontSize: 10, fontWeight: 700, background: '#6d28d9', color: 'white', border: '1px solid #a78bfa' }}
                   >
-                    Today
+                    Go
                   </Button>
-                )}
-              </Group>
+                  {monthMode && (
+                    <Button
+                      size="xs" radius="md"
+                      onClick={() => loadByDate(toDate(date), session)}
+                      style={{ height: 26, padding: '0 8px', fontSize: 10, fontWeight: 700, background: 'rgba(255,255,255,0.08)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}
+                    >
+                      Today
+                    </Button>
+                  )}
+                </Group>
+              )}
             </Group>
 
             <Group className="ms-table-bar-right" gap={4} wrap="wrap">
-              {showHistory && (
+              {showHistory && !isUser && (
                 <TextInput
                   placeholder="Search bill, creditor, center..."
                   value={historySearch}
@@ -1247,38 +1249,41 @@ export default function MilkSales() {
 
               <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
 
-              {/* Search — teal */}
-              <Button leftSection={<IconHistory size={12} />} onClick={() => { setShowHistory(v => !v); if (showHistory) setHistorySearch(''); }} size="compact-xs" radius="sm"
-                style={{ background: showHistory ? '#0f766e' : '#0d9488', border: '1px solid #2dd4bf', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                {showHistory ? 'Hide' : 'Search'}
-              </Button>
+              {/* Search — teal — Sales Register search, not available to restricted users */}
+              {!isUser && (
+                <Button leftSection={<IconHistory size={12} />} onClick={() => { setShowHistory(v => !v); if (showHistory) setHistorySearch(''); }} size="compact-xs" radius="sm"
+                  style={{ background: showHistory ? '#0f766e' : '#0d9488', border: '1px solid #2dd4bf', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                  {showHistory ? 'Hide' : 'Search'}
+                </Button>
+              )}
               {/* Refresh — cyan */}
               <Button leftSection={<IconRefresh size={12} />} onClick={loadEntries} size="compact-xs" radius="sm"
                 style={{ background: '#0891b2', border: '1px solid #67e8f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Refresh
               </Button>
-              {/* Import LinZA — green */}
-              <Button leftSection={<IconUpload size={12} />} onClick={() => setLinzaImportOpen(true)} size="compact-xs" radius="sm"
-                style={{ background: '#15803d', border: '1px solid #4ade80', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                Import LinZA
-              </Button>
-              {/* Import Zibitt Local Sales — violet */}
-              <Button leftSection={<IconUpload size={12} />} onClick={() => setImportOpen(true)} size="compact-xs" radius="sm"
-                style={{ background: '#7c3aed', border: '1px solid #a78bfa', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                Zibbit
-              </Button>
-              {/* Import OpenLyssa — orange */}
-              <Button leftSection={<IconUpload size={12} />} onClick={() => setOlImportOpen(true)} size="compact-xs" radius="sm"
-                style={{ background: '#c2410c', border: '1px solid #fb923c', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                OpenLyssa
-              </Button>
-              {/* Sync to Day Book */}
-              <Button leftSection={backfilling ? <Loader size={10} color="white" /> : <IconBook size={12} />}
-                onClick={handleBackfillVouchers} disabled={backfilling}
-                size="compact-xs" radius="sm"
-                style={{ background: '#0f172a', border: '1px solid #475569', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
-                {backfilling ? 'Syncing…' : 'Sync Day Book'}
-              </Button>
+              {/* Import LinZA, Zibitt, OpenLyssa & Sync Day Book — not available to restricted users */}
+              {!isUser && (
+                <>
+                  <Button leftSection={<IconUpload size={12} />} onClick={() => setLinzaImportOpen(true)} size="compact-xs" radius="sm"
+                    style={{ background: '#15803d', border: '1px solid #4ade80', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                    Import LinZA
+                  </Button>
+                  <Button leftSection={<IconUpload size={12} />} onClick={() => setImportOpen(true)} size="compact-xs" radius="sm"
+                    style={{ background: '#7c3aed', border: '1px solid #a78bfa', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                    Zibbit
+                  </Button>
+                  <Button leftSection={<IconUpload size={12} />} onClick={() => setOlImportOpen(true)} size="compact-xs" radius="sm"
+                    style={{ background: '#c2410c', border: '1px solid #fb923c', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                    OpenLyssa
+                  </Button>
+                  <Button leftSection={backfilling ? <Loader size={10} color="white" /> : <IconBook size={12} />}
+                    onClick={handleBackfillVouchers} disabled={backfilling}
+                    size="compact-xs" radius="sm"
+                    style={{ background: '#0f172a', border: '1px solid #475569', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                    {backfilling ? 'Syncing…' : 'Sync Day Book'}
+                  </Button>
+                </>
+              )}
 
               {/* WhatsApp Bulk Send */}
               {waEnabled && waStatus.connected && (

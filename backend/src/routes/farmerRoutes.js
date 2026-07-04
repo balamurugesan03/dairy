@@ -9,6 +9,7 @@ import {
   toggleMembership,
   activateMembership,
   getEligibleFarmers,
+  getNextMemberNumber,
   addShareToFarmer,
   getShareHistory,
   terminateFarmer,
@@ -49,6 +50,9 @@ router.get('/producer-report', getProducerReport);
 
 // Farmers eligible for membership (500L supplied or 180-day tenure reached)
 router.get('/eligible-for-membership', getEligibleFarmers);
+
+// Next available Member Number (continues from the last assigned Member Number)
+router.get('/next-member-number', getNextMemberNumber);
 
 // Get farmer by ID
 router.get('/:id', getFarmerById);
