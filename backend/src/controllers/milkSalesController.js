@@ -3,7 +3,20 @@ import MilkSales from '../models/MilkSales.js';
 import Voucher   from '../models/Voucher.js';
 import Customer  from '../models/Customer.js';
 import Ledger    from '../models/Ledger.js';
+import CollectionCenter from '../models/CollectionCenter.js';
 import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances, findOrCreateLedger } from '../utils/accountingHelper.js';
+import { resolveCenterFromAgent } from '../utils/resolveAgentCenter.js';
+
+// Mobile-app milk-sale submissions are entered agent-wise and may omit
+// centerId — derive it (and its display name) from the agent so the sale
+// still shows up in center/agent-filtered views.
+async function resolveSaleCenter(body) {
+  if (body.centerId || !body.agentId) return body;
+  const centerId = await resolveCenterFromAgent(body.agentId);
+  if (!centerId) return body;
+  const center = await CollectionCenter.findById(centerId).select('centerName').lean();
+  return { ...body, centerId, centerName: body.centerName || center?.centerName };
+}
 
 // Resolve a ledger from the user's Ledger Management, tolerating case + whitespace.
 // Falls back to creating one only if no matching ledger exists at all.
@@ -166,7 +179,7 @@ export const getNextBillNo = async (req, res) => {
 // ────────────────────────────────────────────────────────────────
 export const getMilkSales = async (req, res) => {
   try {
-    const { date, fromDate, toDate, month, year, session, saleMode, centreId, centerId, page = 1, limit = 500 } = req.query;
+    const { date, fromDate, toDate, month, year, session, saleMode, centreId, centerId, agentId, page = 1, limit = 500 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const filter = { companyId: req.companyId };
@@ -193,6 +206,10 @@ export const getMilkSales = async (req, res) => {
     if (effectiveCenterId) {
       try { filter.centerId = new mongoose.Types.ObjectId(effectiveCenterId); }
       catch { filter.centerId = effectiveCenterId; }
+    }
+    if (agentId) {
+      try { filter.agentId = new mongoose.Types.ObjectId(agentId); }
+      catch { filter.agentId = agentId; }
     }
 
     const [sales, total] = await Promise.all([
@@ -264,7 +281,8 @@ export const getDailySummary = async (req, res) => {
 // ────────────────────────────────────────────────────────────────
 export const createMilkSale = async (req, res) => {
   try {
-    const sale = await MilkSales.create({ ...req.body, companyId: req.companyId, createdBy: req.user?._id });
+    const body = await resolveSaleCenter(req.body);
+    const sale = await MilkSales.create({ ...body, companyId: req.companyId, createdBy: req.user?._id });
 
     // Auto-create accounting voucher
     try {
@@ -288,9 +306,10 @@ export const createMilkSale = async (req, res) => {
 // ────────────────────────────────────────────────────────────────
 export const updateMilkSale = async (req, res) => {
   try {
+    const body = await resolveSaleCenter(req.body);
     const sale = await MilkSales.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId },
-      req.body,
+      body,
       { new: true, runValidators: true }
     );
     if (!sale) return res.status(404).json({ success: false, message: 'Record not found' });

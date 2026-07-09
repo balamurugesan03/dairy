@@ -7,6 +7,7 @@ import Voucher from '../models/Voucher.js';
 import MilkSales from '../models/MilkSales.js';
 import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances, findOrCreateLedger } from '../utils/accountingHelper.js';
 import { recomputeFarmerEligibility, recomputeFarmersEligibility } from '../utils/farmerEligibilityHelper.js';
+import { resolveCenterFromAgent } from '../utils/resolveAgentCenter.js';
 
 // ── Auto-post bulk milk purchase to PRODUCERS DUES / MILK PURCHASE ────────────
 // Day Book derives the milk-purchase entry directly from MilkCollection
@@ -37,6 +38,15 @@ const generateBillNo = async (companyId) => {
 // ── CREATE ────────────────────────────────────────────────────────────────────
 export const createCollection = async (req, res) => {
   try {
+    // Mobile-app entries are submitted agent-wise and often omit
+    // collectionCenter entirely — derive it from the agent so the record
+    // still shows up in center-filtered views (Daily Collection List,
+    // Milk Purchase Form).
+    let collectionCenter = req.body.collectionCenter;
+    if (!collectionCenter && req.body.agent) {
+      collectionCenter = await resolveCenterFromAgent(req.body.agent);
+    }
+
     // Retry loop: if two requests race and grab the same billNo,
     // re-read the DB max and try the next one — guaranteed to converge.
     let entry;
@@ -44,6 +54,7 @@ export const createCollection = async (req, res) => {
       const billNo = await generateBillNo(req.companyId);
       entry = new MilkCollection({
         ...req.body,
+        collectionCenter,
         billNo,
         companyId: req.companyId,
         createdBy: req.user?._id
@@ -85,7 +96,7 @@ export const createCollection = async (req, res) => {
 export const getAllCollections = async (req, res) => {
   try {
     const {
-      date, shift, collectionCenter, centreId, farmerNumber,
+      date, shift, collectionCenter, centreId, agent, farmerNumber,
       fromDate, toDate,
       page = 1, limit = 200,
       lean,
@@ -113,6 +124,10 @@ export const getAllCollections = async (req, res) => {
     if (effectiveCenter) {
       try { query.collectionCenter = new mongoose.Types.ObjectId(effectiveCenter); }
       catch { query.collectionCenter = effectiveCenter; }
+    }
+    if (agent) {
+      try { query.agent = new mongoose.Types.ObjectId(agent); }
+      catch { query.agent = agent; }
     }
 
     const skip  = (parseInt(page) - 1) * parseInt(limit);
@@ -161,6 +176,11 @@ export const getCollectionById = async (req, res) => {
 export const updateCollection = async (req, res) => {
   try {
     const { billNo, companyId, createdBy, ...updates } = req.body;
+
+    if (!updates.collectionCenter && updates.agent) {
+      const derived = await resolveCenterFromAgent(updates.agent);
+      if (derived) updates.collectionCenter = derived;
+    }
 
     const existing = await MilkCollection.findOne(
       { _id: req.params.id, companyId: req.companyId },

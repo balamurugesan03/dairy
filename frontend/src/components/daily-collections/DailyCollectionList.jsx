@@ -13,13 +13,13 @@ import {
   IconPlus, IconSearch, IconTrash, IconRefresh,
   IconMilk, IconDroplet, IconFlame, IconScale,
   IconCurrencyRupee, IconCalendar, IconFilter,
-  IconSun, IconBuildingStore, IconPrinter,
+  IconSun, IconBuildingStore, IconUser, IconPrinter,
   IconFileTypeXls, IconFileTypePdf, IconChevronDown, IconX,
 } from '@tabler/icons-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { milkCollectionAPI, collectionCenterAPI, milkSalesAPI } from '../../services/api';
+import { milkCollectionAPI, collectionCenterAPI, milkSalesAPI, agentAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 import dayjs from 'dayjs';
 
@@ -47,6 +47,7 @@ const DailyCollectionList = () => {
   const [loading,    setLoading]    = useState(false);
   const [records,    setRecords]    = useState([]);   // ALL records for current filters
   const [centers,    setCenters]    = useState([]);
+  const [agents,     setAgents]     = useState([]);
   const [page,       setPage]       = useState(1);
   const [salesSummary, setSalesSummary] = useState({
     local:  { qty: 0, amt: 0 },
@@ -59,17 +60,24 @@ const DailyCollectionList = () => {
   const [toDate,   setToDate]   = useState(new Date());
   const [shift,  setShift]  = useState('');
   const [center, setCenter] = useState('');
+  const [agent,  setAgent]  = useState('');
   const [search, setSearch] = useState('');
   const [sortStatus, setSortStatus] = useState({ columnAccessor: 'farmer', direction: 'asc' });
 
-  // Load centers
+  // Load centers + agents
   useEffect(() => {
     collectionCenterAPI.getAll({ status: 'Active', limit: 200 })
       .then(res => setCenters((res?.data || []).map(c => ({ value: c._id, label: c.centerName }))))
       .catch(() => {});
+    agentAPI.getAllActive()
+      .then(res => setAgents((res?.data || []).map(a => ({ value: a._id, label: a.agentName, centerId: a.collectionCenterId?._id || a.collectionCenterId }))))
+      .catch(() => {});
   }, []);
 
-  // Fetch ALL records for the selected date/shift/center (no server-side pagination)
+  // Agents belonging to the selected center (falls back to all agents when none match)
+  const filteredAgents = center ? (agents.filter(a => !a.centerId || a.centerId === center)) : agents;
+
+  // Fetch ALL records for the selected date/shift/center/agent (no server-side pagination)
   const fetchRecords = useCallback(async () => {
     setLoading(true);
     try {
@@ -78,6 +86,7 @@ const DailyCollectionList = () => {
       const params = { limit: 5000, fromDate: from, toDate: to };
       if (shift)  params.shift            = shift;
       if (center) params.collectionCenter = center;
+      if (agent)  params.agent            = agent;
 
       const salesParams = { limit: 2000, fromDate: from, toDate: to };
       if (shift) salesParams.session = shift;
@@ -109,7 +118,7 @@ const DailyCollectionList = () => {
     } finally {
       setLoading(false);
     }
-  }, [fromDate, toDate, shift, center]);
+  }, [fromDate, toDate, shift, center, agent]);
 
   useEffect(() => { fetchRecords(); }, [fetchRecords]);
 
@@ -708,9 +717,18 @@ const DailyCollectionList = () => {
             placeholder="All Centers"
             data={centers}
             value={center}
-            onChange={v => { setCenter(v || ''); setPage(1); }}
+            onChange={v => { setCenter(v || ''); setAgent(''); setPage(1); }}
             leftSection={<IconBuildingStore size={14} />}
             clearable searchable size="sm" style={{ width: 180 }}
+          />
+          <Select
+            label="Agent"
+            placeholder="All Agents"
+            data={filteredAgents}
+            value={agent}
+            onChange={v => { setAgent(v || ''); setPage(1); }}
+            leftSection={<IconUser size={14} />}
+            clearable searchable size="sm" style={{ width: 160 }}
           />
           <TextInput
             label="Search Farmer"
@@ -725,10 +743,10 @@ const DailyCollectionList = () => {
               <IconRefresh size={16} />
             </ActionIcon>
           </Tooltip>
-          {(shift || center || search) && (
+          {(shift || center || agent || search) && (
             <Button
               variant="subtle" color="gray" size="sm"
-              onClick={() => { setShift(''); setCenter(''); setSearch(''); setPage(1); }}
+              onClick={() => { setShift(''); setCenter(''); setAgent(''); setSearch(''); setPage(1); }}
               leftSection={<IconFilter size={14} />}
             >
               Clear
