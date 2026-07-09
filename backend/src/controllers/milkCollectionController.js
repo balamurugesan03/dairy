@@ -92,6 +92,9 @@ export const getAllCollections = async (req, res) => {
     } = req.query;
 
     const query = { companyId: req.companyId };
+    // Staff/agent logins ('user' type) only see the entries they themselves
+    // entered — company and centre logins keep seeing everything in scope.
+    if (req.userType === 'user') query.createdBy = req.user._id;
 
     if (date) {
       const d = new Date(date);
@@ -139,7 +142,9 @@ export const getAllCollections = async (req, res) => {
 // ── GET SINGLE ────────────────────────────────────────────────────────────────
 export const getCollectionById = async (req, res) => {
   try {
-    const record = await MilkCollection.findOne({ _id: req.params.id, companyId: req.companyId })
+    const idQuery = { _id: req.params.id, companyId: req.companyId };
+    if (req.userType === 'user') idQuery.createdBy = req.user._id;
+    const record = await MilkCollection.findOne(idQuery)
       .populate('collectionCenter', 'centerName')
       .populate('agent', 'agentName')
       .populate('farmer', 'farmerNumber personalDetails.name');

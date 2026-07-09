@@ -76,6 +76,10 @@ const milkSalesSchema = new mongoose.Schema({
     ref: 'Company',
     required: true
   },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
   voucherId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Voucher'

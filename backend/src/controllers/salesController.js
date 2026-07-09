@@ -39,6 +39,7 @@ export const createSale = async (req, res) => {
     const seq = await getNextSequence(`dairy-sale-${companyId}`, 0);
     saleData.billNumber = seq.toString().padStart(2, '0');
     saleData.companyId = companyId;
+    saleData.createdBy = req.user?._id;
 
     // Set customerModel based on customerType
     if (saleData.customerType === 'Farmer') {
@@ -185,6 +186,9 @@ export const getAllSales = async (req, res) => {
     } = req.query;
 
     const query = { companyId: req.companyId };
+    // Staff/agent logins ('user' type) only see the entries they themselves
+    // entered — company and centre logins keep seeing everything in scope.
+    if (req.userType === 'user') query.createdBy = req.user._id;
 
     if (search) {
       query.$or = [
@@ -242,7 +246,9 @@ export const getAllSales = async (req, res) => {
 // Get sale by ID
 export const getSaleById = async (req, res) => {
   try {
-    const sale = await Sales.findOne({ _id: req.params.id, companyId: req.companyId })
+    const idQuery = { _id: req.params.id, companyId: req.companyId };
+    if (req.userType === 'user') idQuery.createdBy = req.user._id;
+    const sale = await Sales.findOne(idQuery)
       .populate('customerId')
       .populate('items.itemId')
       .populate('ledgerEntries')

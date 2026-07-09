@@ -170,6 +170,9 @@ export const getMilkSales = async (req, res) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const filter = { companyId: req.companyId };
+    // Staff/agent logins ('user' type) only see the entries they themselves
+    // entered — company and centre logins keep seeing everything in scope.
+    if (req.userType === 'user') filter.createdBy = req.user._id;
 
     if (month && year) {
       const start = new Date(parseInt(year), parseInt(month) - 1, 1);
@@ -212,7 +215,9 @@ export const getMilkSales = async (req, res) => {
 // ────────────────────────────────────────────────────────────────
 export const getMilkSaleById = async (req, res) => {
   try {
-    const sale = await MilkSales.findOne({ _id: req.params.id, companyId: req.companyId }).lean();
+    const idQuery = { _id: req.params.id, companyId: req.companyId };
+    if (req.userType === 'user') idQuery.createdBy = req.user._id;
+    const sale = await MilkSales.findOne(idQuery).lean();
     if (!sale) return res.status(404).json({ success: false, message: 'Record not found' });
     res.json({ success: true, data: sale });
   } catch (err) {
@@ -259,7 +264,7 @@ export const getDailySummary = async (req, res) => {
 // ────────────────────────────────────────────────────────────────
 export const createMilkSale = async (req, res) => {
   try {
-    const sale = await MilkSales.create({ ...req.body, companyId: req.companyId });
+    const sale = await MilkSales.create({ ...req.body, companyId: req.companyId, createdBy: req.user?._id });
 
     // Auto-create accounting voucher
     try {
