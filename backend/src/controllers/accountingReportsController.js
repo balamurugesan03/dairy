@@ -843,9 +843,15 @@ export const getGeneralLedger = async (req, res) => {
       // Voucher → Payment column), not raw Dr/Cr polarity for this ledger —
       // a Payment Voucher debits the head-of-account ledger it's posted
       // against, which would otherwise land it in the Receipt (Dr) column.
-      // Other voucher types keep the standard Dr = Receipt / Cr = Payment
-      // convention. This only affects display; balance math above always
-      // uses the true debit/credit values.
+      // Real Journal/Contra/etc. vouchers (t.voucherId set) follow Day Book's
+      // convention instead: Dr = Payment, Cr = Receipt (see dayBookController
+      // "Journal and other vouchers" branch) — this is what advance-recovery
+      // (FarmerPayment) Journal vouchers on PRODUCERS DUES rely on.
+      // Synthetic dairy-flow rows (no voucherId — milk purchase, CF commission,
+      // etc.) keep the original Dr = Receipt / Cr = Payment mapping; their
+      // debit/credit fields already encode the intended display side.
+      // This only affects display; balance math above always uses the true
+      // debit/credit values.
       let receiptAmount = t.debit;
       let paymentAmount = t.credit;
       if (t.voucherType === 'Receipt') {
@@ -854,6 +860,9 @@ export const getGeneralLedger = async (req, res) => {
       } else if (t.voucherType === 'Payment') {
         paymentAmount = t.debit || t.credit;
         receiptAmount = 0;
+      } else if (t.voucherId) {
+        paymentAmount = t.debit;
+        receiptAmount = t.credit;
       }
 
       return {
@@ -975,12 +984,78 @@ export const getGeneralLedgerAbstract = async (req, res) => {
               } else if (voucher.voucherType === 'Payment') {
                 totalPayment += entry.debitAmount || entry.creditAmount;
               } else {
-                totalReceipt += entry.debitAmount;
-                totalPayment += entry.creditAmount;
+                // Real Journal/Contra/etc. vouchers: match Day Book's
+                // convention (Dr = Payment, Cr = Receipt) — this is what
+                // advance-recovery (FarmerPayment) Journal vouchers on
+                // PRODUCERS DUES rely on. Every entry reaching this branch
+                // comes from a real Voucher document (no synthetic rows are
+                // mixed into this loop), so the flip is safe here.
+                totalPayment += entry.debitAmount;
+                totalReceipt += entry.creditAmount;
               }
             }
           });
         });
+
+        // ── PRODUCERS DUES / MILK PURCHASE: no real Voucher is posted for the
+        // milk-purchase accrual any more (see postBulkMilkPurchaseVouchers —
+        // intentionally a no-op since May 2026; General Ledger synthesizes
+        // these rows directly from MilkCollection instead). Mirror that here,
+        // otherwise the Receipt side of PRODUCERS DUES (and the Payment side
+        // of MILK PURCHASE) is silently empty for any period after that change.
+        const isProducersDuesAbstract =
+          /producers?\s*(dues?|payable|account)/i.test(ledger.ledgerName) ||
+          (ledger.ledgerType === 'Other Payable' && /producer|farmer|dues/i.test(ledger.ledgerName));
+        const isMilkPurchaseAbstract =
+          /milk\s*(purchase|procure|collection)/i.test(ledger.ledgerName);
+
+        if (isProducersDuesAbstract || isMilkPurchaseAbstract) {
+          const [priorMcAgg, periodMcAgg] = await Promise.all([
+            MilkCollection.aggregate([
+              { $match: { companyId: req.companyId, amount: { $gt: 0 }, date: { $lt: dateFilter.startDate } } },
+              { $group: { _id: null, total: { $sum: '$amount' } } },
+            ]),
+            MilkCollection.aggregate([
+              { $match: { companyId: req.companyId, amount: { $gt: 0 }, date: { $gte: dateFilter.startDate, $lte: dateFilter.endDate } } },
+              { $group: { _id: null, total: { $sum: '$amount' } } },
+            ]),
+          ]);
+          const priorMc  = priorMcAgg[0]?.total  || 0;
+          const periodMc = periodMcAgg[0]?.total || 0;
+
+          // Same convention as General Ledger's synthetic block: Milk
+          // Purchase → Payment (Cr) side; Producers Dues → Receipt (Dr) side.
+          if (isProducersDuesAbstract) {
+            totalDebits += periodMc;
+            totalReceipt += periodMc;
+            debitAdj += periodMc;
+          } else {
+            totalCredits += periodMc;
+            totalPayment += periodMc;
+            creditAdj += periodMc;
+          }
+
+          const isDebitNatureMc = isDebitNatureLedger(ledger.ledgerType);
+          const adjustedOpeningBalanceMc = isProducersDuesAbstract
+            ? (isDebitNatureMc ? openingBalance + priorMc : openingBalance - priorMc)
+            : (isDebitNatureMc ? openingBalance - priorMc : openingBalance + priorMc);
+          const closingBalanceMc = calculateClosingBalance(adjustedOpeningBalanceMc, totalDebits, totalCredits, isDebitNatureMc);
+
+          return {
+            ledgerId: ledger._id,
+            ledgerName: ledger.ledgerName,
+            ledgerType: ledger.ledgerType,
+            category: getLedgerCategory(ledger.ledgerType),
+            openingBalance: Math.abs(adjustedOpeningBalanceMc),
+            openingBalanceType: getBalanceType(adjustedOpeningBalanceMc, isDebitNatureMc),
+            totalDebits,
+            totalCredits,
+            totalReceipt, totalPayment,
+            debitCash, debitAdj, creditCash, creditAdj,
+            closingBalance: Math.abs(closingBalanceMc),
+            closingBalanceType: getBalanceType(closingBalanceMc, isDebitNatureMc),
+          };
+        }
 
         // ── Un-vouchered MilkSales (Local / Sample / Credit Sales ledgers) ────
         // The regular GL picks these up via a special path; the Abstract must do
@@ -1972,16 +2047,70 @@ export const getLedgerAbstractGrouped = async (req, res) => {
         }
         // Receipt/Payment display: preserve the voucher's own side rather
         // than raw Dr/Cr polarity for this ledger (same fix as General Ledger).
+        // Real Journal/Contra/etc. vouchers match Day Book's convention
+        // instead: Dr = Payment, Cr = Receipt (advance-recovery FarmerPayment
+        // Journal vouchers on PRODUCERS DUES rely on this).
         if (voucher.voucherType === 'Receipt') {
           splitMap[lid].receipt += entry.debitAmount || entry.creditAmount || 0;
         } else if (voucher.voucherType === 'Payment') {
           splitMap[lid].payment += entry.debitAmount || entry.creditAmount || 0;
         } else {
-          splitMap[lid].receipt += entry.debitAmount || 0;
-          splitMap[lid].payment += entry.creditAmount || 0;
+          splitMap[lid].payment += entry.debitAmount || 0;
+          splitMap[lid].receipt += entry.creditAmount || 0;
         }
       });
     });
+
+    // ── PRODUCERS DUES / MILK PURCHASE: no real Voucher is posted for the
+    // milk-purchase accrual any more (postBulkMilkPurchaseVouchers is a
+    // no-op since May 2026 — General Ledger synthesizes these rows directly
+    // from MilkCollection instead). Mirror that here, otherwise the Receipt
+    // side of PRODUCERS DUES (and Payment side of MILK PURCHASE) is silently
+    // empty/missing for any period after that change.
+    const mcLedgers = ledgers.filter(l =>
+      /producers?\s*(dues?|payable|account)/i.test(l.ledgerName) ||
+      (l.ledgerType === 'Other Payable' && /producer|farmer|dues/i.test(l.ledgerName)) ||
+      /milk\s*(purchase|procure|collection)/i.test(l.ledgerName)
+    );
+    if (mcLedgers.length) {
+      const [priorMcAgg, periodMcAgg] = await Promise.all([
+        MilkCollection.aggregate([
+          { $match: { companyId: req.companyId, amount: { $gt: 0 }, date: { $lt: start } } },
+          { $group: { _id: null, total: { $sum: '$amount' } } },
+        ]),
+        MilkCollection.aggregate([
+          { $match: { companyId: req.companyId, amount: { $gt: 0 }, date: { $gte: start, $lte: end } } },
+          { $group: { _id: null, total: { $sum: '$amount' } } },
+        ]),
+      ]);
+      const priorMc  = priorMcAgg[0]?.total  || 0;
+      const periodMc = periodMcAgg[0]?.total || 0;
+
+      mcLedgers.forEach(l => {
+        const lid = l._id.toString();
+        const isDues =
+          /producers?\s*(dues?|payable|account)/i.test(l.ledgerName) ||
+          (l.ledgerType === 'Other Payable' && /producer|farmer|dues/i.test(l.ledgerName));
+
+        if (!priorMap[lid])  priorMap[lid]  = { debit: 0, credit: 0 };
+        if (!periodMap[lid]) periodMap[lid] = { debit: 0, credit: 0 };
+        if (!splitMap[lid])  splitMap[lid]  = { debitCash: 0, debitAdj: 0, creditCash: 0, creditAdj: 0, receipt: 0, payment: 0 };
+
+        // Same convention as General Ledger's synthetic block: Milk Purchase
+        // → Payment (Cr) side; Producers Dues → Receipt (Dr) side.
+        if (isDues) {
+          priorMap[lid].debit    += priorMc;
+          periodMap[lid].debit   += periodMc;
+          splitMap[lid].debitAdj += periodMc;
+          splitMap[lid].receipt  += periodMc;
+        } else {
+          priorMap[lid].credit    += priorMc;
+          periodMap[lid].credit   += periodMc;
+          splitMap[lid].creditAdj += periodMc;
+          splitMap[lid].payment   += periodMc;
+        }
+      });
+    }
 
     const results = [];
     ledgers.forEach(ledger => {
@@ -2097,6 +2226,46 @@ export const getRDStatementDynamic = async (req, res) => {
         }
       });
     });
+
+    // ── PRODUCERS DUES / MILK PURCHASE: no real Voucher is posted for the
+    // milk-purchase accrual any more (postBulkMilkPurchaseVouchers is a
+    // no-op since May 2026 — General Ledger synthesizes these rows directly
+    // from MilkCollection instead). Mirror that here, otherwise neither
+    // ledger's activity shows up in this statement for any period after
+    // that change.
+    const mcLedgers = ledgers.filter(l =>
+      /producers?\s*(dues?|payable|account)/i.test(l.ledgerName) ||
+      (l.ledgerType === 'Other Payable' && /producer|farmer|dues/i.test(l.ledgerName)) ||
+      /milk\s*(purchase|procure|collection)/i.test(l.ledgerName)
+    );
+    if (mcLedgers.length) {
+      const mcAgg = await MilkCollection.aggregate([
+        { $match: { companyId: req.companyId, amount: { $gt: 0 }, date: { $gte: start, $lte: end } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]);
+      const periodMc = mcAgg[0]?.total || 0;
+
+      if (periodMc > 0) {
+        mcLedgers.forEach(l => {
+          const lid = l._id.toString();
+          const isDues =
+            /producers?\s*(dues?|payable|account)/i.test(l.ledgerName) ||
+            (l.ledgerType === 'Other Payable' && /producer|farmer|dues/i.test(l.ledgerName));
+
+          if (!periodMap[lid]) periodMap[lid] = { debit: 0, credit: 0, debitCash: 0, debitAdj: 0, creditCash: 0, creditAdj: 0 };
+
+          // Same convention as General Ledger's synthetic block: Milk
+          // Purchase → Payment (Cr) side; Producers Dues → Receipt (Dr) side.
+          if (isDues) {
+            periodMap[lid].debit    += periodMc;
+            periodMap[lid].debitAdj += periodMc;
+          } else {
+            periodMap[lid].credit    += periodMc;
+            periodMap[lid].creditAdj += periodMc;
+          }
+        });
+      }
+    }
 
     const receiptGroupMap = {};
     const paymentGroupMap = {};

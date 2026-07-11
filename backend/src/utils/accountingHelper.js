@@ -3,6 +3,7 @@ import Ledger from '../models/Ledger.js';
 import Item from '../models/Item.js';
 import Subsidy from '../models/Subsidy.js';
 import { getNextSequence } from '../models/Counter.js';
+import { getDefaultVoucherType } from './balanceCalculator.js';
 
 const VOUCHER_PREFIX_MAP = {
   'Receipt':         'RV',
@@ -583,6 +584,7 @@ export const findOrCreateLedger = async (ledgerName, ledgerType, parentGroup, ba
       openingBalance: 0,
       currentBalance: 0,
       balanceType,
+      voucherType: getDefaultVoucherType(ledgerType),
       status: 'Active',
       companyId
     });
