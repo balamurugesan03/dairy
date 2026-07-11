@@ -13,6 +13,7 @@ import StockTransaction from '../models/StockTransaction.js';
 import ProducerLoan from '../models/ProducerLoan.js';
 import { getDateRange } from '../utils/dateFilters.js';
 import { findOrCreateLedger } from '../utils/accountingHelper.js';
+import { getCashBankLedgerIds, classifyVoucherEntry } from '../utils/cashAdjustmentClassifier.js';
 import {
   calculateOpeningBalance,
   calculateClosingBalance,
@@ -348,6 +349,26 @@ export const getCashBook = async (req, res) => {
     // (Milk Purchase is a non-cash adjustment: Dr MILK PURCHASE / Cr PRODUCERS
     // DUES. It never moves cash, so it must not appear in the Cash Book.)
 
+    // Same-day Adjustment totals (Journal / Adjustment-module vouchers) — shown
+    // as a reference column alongside the cash register; does not affect the
+    // cash running balance above.
+    const journalVouchers = await Voucher.find({
+      companyId: req.companyId,
+      voucherType: 'Journal',
+      voucherDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate }
+    }).select('voucherDate totalDebit totalCredit');
+
+    const adjustmentByDate = {};
+    journalVouchers.forEach(v => {
+      const dateKey = v.voucherDate.toISOString().split('T')[0];
+      if (!adjustmentByDate[dateKey]) {
+        adjustmentByDate[dateKey] = { date: dateKey, debit: 0, credit: 0 };
+      }
+      adjustmentByDate[dateKey].debit += v.totalDebit || 0;
+      adjustmentByDate[dateKey].credit += v.totalCredit || 0;
+    });
+    const adjustmentSummary = Object.values(adjustmentByDate).sort((a, b) => a.date.localeCompare(b.date));
+
     // Sort all by date
     rawTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
 
@@ -371,6 +392,7 @@ export const getCashBook = async (req, res) => {
         openingBalance,
         closingBalance,
         transactions,
+        adjustmentSummary,
         summary: {
           totalReceipts: totalDebits,
           totalPayments: totalCredits,
@@ -420,6 +442,10 @@ export const getGeneralLedger = async (req, res) => {
 
     const isDebitNature = isDebitNatureLedger(ledger.ledgerType);
 
+    // Cash/Bank ledger ids — used to tag each row as a real cash movement
+    // ("cash" column) vs a non-cash book entry ("adjustment" column).
+    const cashBankIds = await getCashBankLedgerIds(req.companyId);
+
     // Opening balance (sum of all voucher entries before start date)
     const openingBalance = await calculateOpeningBalance(
       Ledger, Voucher, ledgerId, dateFilter.startDate, req.companyId
@@ -444,6 +470,7 @@ export const getGeneralLedger = async (req, res) => {
         const contraEntry = voucher.entries.find(
           e => e.ledgerId && e.ledgerId._id.toString() !== ledgerId.toString()
         );
+        const { column } = classifyVoucherEntry(voucher.entries, cashBankIds);
         rawTxns.push({
           date:          voucher.voucherDate,
           voucherNumber: voucher.voucherNumber,
@@ -453,6 +480,7 @@ export const getGeneralLedger = async (req, res) => {
           debit:         entry.debitAmount  || 0,
           credit:        entry.creditAmount || 0,
           narration:     entry.narration || voucher.narration || '',
+          column,
         });
       });
     });
@@ -508,6 +536,7 @@ export const getGeneralLedger = async (req, res) => {
           debit:         isProducersDuesLedger ? c.totalAmount : 0,
           credit:        isMilkPurchaseLedger  ? c.totalAmount : 0,
           narration:     `${shift} | Qty: ${c.totalQty.toFixed(2)} L | ${c.farmerCount} farmers`,
+          column:        'adjustment',
         });
       });
     }
@@ -542,6 +571,7 @@ export const getGeneralLedger = async (req, res) => {
           debit:         0,
           credit:        s.amount || 0, // income ledger → Cr side (receipt)
           narration:     `${s.session || ''} | ${s.litre || 0} L @ ${s.rate || 0}`,
+          column:        'adjustment',
         });
       });
     }
@@ -576,6 +606,7 @@ export const getGeneralLedger = async (req, res) => {
           debit:         (t.quantity || 0) * (t.rate || 0),
           credit:        0,
           narration:     `Qty: ${t.quantity || 0} @ ${t.rate || 0}`,
+          column:        'adjustment',
         });
       });
     }
@@ -610,6 +641,7 @@ export const getGeneralLedger = async (req, res) => {
           debit:         0,
           credit:        (t.quantity || 0) * (t.rate || 0),
           narration:     `Qty: ${t.quantity || 0} @ ${t.rate || 0}`,
+          column:        'adjustment',
         });
       });
     }
@@ -641,6 +673,7 @@ export const getGeneralLedger = async (req, res) => {
           debit:         t.advanceAmount || 0,
           credit:        0,
           narration:     'Cattle Feed Advance',
+          column:        'adjustment',
         });
       });
     }
@@ -666,6 +699,7 @@ export const getGeneralLedger = async (req, res) => {
           debit:         t.amount || 0,
           credit:        0,
           narration:     'Producer Receipt',
+          column:        'adjustment',
         });
       });
     }
@@ -696,6 +730,7 @@ export const getGeneralLedger = async (req, res) => {
           debit:         t.advanceAmount || 0,
           credit:        0,
           narration:     'Cash Advance',
+          column:        'adjustment',
         });
       });
     }
@@ -725,6 +760,7 @@ export const getGeneralLedger = async (req, res) => {
           debit:         t.principalAmount || 0,
           credit:        0,
           narration:     'Loan Advance',
+          column:        'adjustment',
         });
       });
     }
@@ -749,6 +785,7 @@ export const getGeneralLedger = async (req, res) => {
           debit:         t.totalWelfare || 0,
           credit:        0,
           narration:     `Period: ${new Date(t.fromDate).toLocaleDateString('en-IN')} - ${new Date(t.toDate).toLocaleDateString('en-IN')}`,
+          column:        'adjustment',
         });
       });
     }
@@ -786,6 +823,7 @@ export const getGeneralLedger = async (req, res) => {
             debit:         0,
             credit:        amt, // commission is INCOME → credit side
             narration:     `Qty: ${t.quantity || 0}`,
+            column:        'adjustment',
           });
         });
       });
@@ -799,8 +837,29 @@ export const getGeneralLedger = async (req, res) => {
       const netChange = t.debit - t.credit;
       if (isDebitNature) runningBalance += netChange;
       else               runningBalance -= netChange;
+
+      // Receipt/Payment Voucher entries must show under the column matching
+      // how they were entered (Receipt Voucher → Receipt column, Payment
+      // Voucher → Payment column), not raw Dr/Cr polarity for this ledger —
+      // a Payment Voucher debits the head-of-account ledger it's posted
+      // against, which would otherwise land it in the Receipt (Dr) column.
+      // Other voucher types keep the standard Dr = Receipt / Cr = Payment
+      // convention. This only affects display; balance math above always
+      // uses the true debit/credit values.
+      let receiptAmount = t.debit;
+      let paymentAmount = t.credit;
+      if (t.voucherType === 'Receipt') {
+        receiptAmount = t.debit || t.credit;
+        paymentAmount = 0;
+      } else if (t.voucherType === 'Payment') {
+        paymentAmount = t.debit || t.credit;
+        receiptAmount = 0;
+      }
+
       return {
         ...t,
+        receiptAmount,
+        paymentAmount,
         balance:     Math.abs(runningBalance),
         balanceType: getBalanceType(runningBalance, isDebitNature),
       };
@@ -863,6 +922,10 @@ export const getGeneralLedgerAbstract = async (req, res) => {
 
     const ledgers = await Ledger.find(query).sort({ ledgerName: 1 });
 
+    // Cash/Bank ledger ids — used to split each ledger's Dr/Cr totals into
+    // real cash movements ("Cash" columns) vs non-cash book entries ("Adjustment" columns).
+    const cashBankIds = await getCashBankLedgerIds(req.companyId);
+
     // Process each ledger
     const abstract = await Promise.all(
       ledgers.map(async ledger => {
@@ -887,12 +950,34 @@ export const getGeneralLedgerAbstract = async (req, res) => {
 
         let totalDebits = 0;
         let totalCredits = 0;
+        let debitCash = 0, debitAdj = 0, creditCash = 0, creditAdj = 0;
+        // Display-only Receipt/Payment totals — preserve the voucher's own
+        // side (Receipt Voucher → Receipt, Payment Voucher → Payment)
+        // instead of raw Dr/Cr polarity for this ledger. totalDebits/
+        // totalCredits above stay true Dr/Cr and drive the closing balance.
+        let totalReceipt = 0, totalPayment = 0;
 
         vouchers.forEach(voucher => {
+          const { column } = classifyVoucherEntry(voucher.entries, cashBankIds);
           voucher.entries.forEach(entry => {
             if (entry.ledgerId.toString() === ledger._id.toString()) {
               totalDebits += entry.debitAmount;
               totalCredits += entry.creditAmount;
+              if (column === 'cash') {
+                debitCash += entry.debitAmount;
+                creditCash += entry.creditAmount;
+              } else {
+                debitAdj += entry.debitAmount;
+                creditAdj += entry.creditAmount;
+              }
+              if (voucher.voucherType === 'Receipt') {
+                totalReceipt += entry.debitAmount || entry.creditAmount;
+              } else if (voucher.voucherType === 'Payment') {
+                totalPayment += entry.debitAmount || entry.creditAmount;
+              } else {
+                totalReceipt += entry.debitAmount;
+                totalPayment += entry.creditAmount;
+              }
             }
           });
         });
@@ -940,6 +1025,11 @@ export const getGeneralLedgerAbstract = async (req, res) => {
           // eslint-disable-next-line no-shadow
           const adjustedOpeningBalance = openingBalance + priorSales;
           totalCredits += periodSales;
+          totalPayment += periodSales;
+          // Un-vouchered milk sales never move cash directly through this path —
+          // treat as Adjustment, consistent with General Ledger's handling of the
+          // same synthetic rows.
+          creditAdj += periodSales;
 
           const isDebitNature = isDebitNatureLedger(ledger.ledgerType);
           const closingBalance = calculateClosingBalance(adjustedOpeningBalance, totalDebits, totalCredits, isDebitNature);
@@ -953,6 +1043,8 @@ export const getGeneralLedgerAbstract = async (req, res) => {
             openingBalanceType: getBalanceType(adjustedOpeningBalance, isDebitNature),
             totalDebits,
             totalCredits,
+            totalReceipt, totalPayment,
+            debitCash, debitAdj, creditCash, creditAdj,
             closingBalance: Math.abs(closingBalance),
             closingBalanceType: getBalanceType(closingBalance, isDebitNature),
           };
@@ -970,6 +1062,8 @@ export const getGeneralLedgerAbstract = async (req, res) => {
           openingBalanceType: getBalanceType(openingBalance, isDebitNature),
           totalDebits,
           totalCredits,
+          totalReceipt, totalPayment,
+          debitCash, debitAdj, creditCash, creditAdj,
           closingBalance: Math.abs(closingBalance),
           closingBalanceType: getBalanceType(closingBalance, isDebitNature)
         };
@@ -992,6 +1086,12 @@ export const getGeneralLedgerAbstract = async (req, res) => {
         .reduce((sum, a) => sum + a.openingBalance, 0),
       totalDebits: activeAbstract.reduce((sum, a) => sum + a.totalDebits, 0),
       totalCredits: activeAbstract.reduce((sum, a) => sum + a.totalCredits, 0),
+      totalReceipt: activeAbstract.reduce((sum, a) => sum + (a.totalReceipt ?? a.totalDebits), 0),
+      totalPayment: activeAbstract.reduce((sum, a) => sum + (a.totalPayment ?? a.totalCredits), 0),
+      totalDebitCash: activeAbstract.reduce((sum, a) => sum + (a.debitCash || 0), 0),
+      totalDebitAdj: activeAbstract.reduce((sum, a) => sum + (a.debitAdj || 0), 0),
+      totalCreditCash: activeAbstract.reduce((sum, a) => sum + (a.creditCash || 0), 0),
+      totalCreditAdj: activeAbstract.reduce((sum, a) => sum + (a.creditAdj || 0), 0),
       totalClosingDebit: activeAbstract
         .filter(a => a.closingBalanceType === 'Dr')
         .reduce((sum, a) => sum + a.closingBalance, 0),
@@ -1369,15 +1469,7 @@ export const getReceiptsDisbursementEnhanced = async (req, res) => {
       // Cash/Bank ledgers are the tracked accounts; contra entries form the sections.
       // Split each contra ledger by: cash (via Cash-type entry) vs adjustment (via Bank-type entry).
 
-      const cashBankLedgersAll = await Ledger.find({
-        ledgerType: { $in: ['Cash', 'Bank'] },
-        status: 'Active',
-        companyId: req.companyId
-      });
-      const cashIds  = new Set(cashBankLedgersAll.filter(l => l.ledgerType === 'Cash').map(l => l._id.toString()));
-      const bankIds  = new Set(cashBankLedgersAll.filter(l => l.ledgerType === 'Bank').map(l => l._id.toString()));
-      const allCBIds = new Set(cashBankLedgersAll.map(l => l._id.toString()));
-      const allCBObjectIds = cashBankLedgersAll.map(l => l._id);
+      const { cashIds, allIds: allCBIds, allObjectIds: allCBObjectIds } = await getCashBankLedgerIds(req.companyId);
 
       const duringVouchers2 = await Voucher.find({
         companyId: req.companyId,
@@ -1653,7 +1745,8 @@ export const getReceiptsPayments = async (req, res) => {
       cfSalesTxns, cfPurchaseTxns,
       regProducers, regCreditors,
       prAgg,
-      cfAdvAgg, cashAdvAgg, loanAgg
+      cfAdvAgg, cashAdvAgg, loanAgg,
+      journalAgg
     ] = await Promise.all([
       // Milk Purchase (payment side)
       MilkCollection.aggregate([
@@ -1720,6 +1813,12 @@ export const getReceiptsPayments = async (req, res) => {
       ProducerLoan.aggregate([
         { $match: { companyId: cid, loanDate: { $gte: start, $lte: end }, status: { $ne: 'Cancelled' } } },
         { $group: { _id: null, total: { $sum: '$principalAmount' } } }
+      ]),
+      // Adjustment module (Journal vouchers) — shown on both sides so it does
+      // not affect the net cash-flow balance, consistent with Cash Book.
+      Voucher.aggregate([
+        { $match: { companyId: cid, voucherType: 'Journal', voucherDate: { $gte: start, $lte: end } } },
+        { $group: { _id: null, total: { $sum: '$totalDebit' } } }
       ])
     ]);
 
@@ -1740,6 +1839,7 @@ export const getReceiptsPayments = async (req, res) => {
     const producersDue       = regProducers[0]?.milkValue || 0;
     const producersDueCredit = regCreditors[0]?.milkValue || 0;
     const kdwfWelfare        = (regProducers[0]?.welfare || 0) + (regCreditors[0]?.welfare || 0);
+    const journalTotal       = journalAgg[0]?.total || 0;
 
     const receiptItems = [
       { label: 'Producer Due',            amount: producersDueCredit },
@@ -1752,6 +1852,7 @@ export const getReceiptsPayments = async (req, res) => {
       { label: 'KDFW Welfare',            amount: kdwfWelfare },
       { label: 'Cattle Feed Commission',  amount: cfCommission },
       { label: 'CF Inspection Fee',       amount: cfInspectionFee },
+      { label: 'Adjustment (Journal)',    amount: journalTotal, isAdjustment: true },
     ];
 
     const paymentItems = [
@@ -1760,6 +1861,7 @@ export const getReceiptsPayments = async (req, res) => {
       { label: 'CF Advance',             amount: cfAdvAgg[0]?.total  || 0 },
       { label: 'Cash Advance',           amount: cashAdvAgg[0]?.total || 0 },
       { label: 'Loan Advance',           amount: loanAgg[0]?.total   || 0 },
+      { label: 'Adjustment (Journal)',   amount: journalTotal, isAdjustment: true },
     ];
 
     const totalReceipts = receiptItems.reduce((s, r) => s + r.amount, 0);
@@ -1845,11 +1947,48 @@ export const getLedgerAbstractGrouped = async (req, res) => {
     const ledgers = await Ledger.find({ status: 'Active', companyId: req.companyId }).lean();
     const { priorMap, periodMap } = await buildActivityMaps(Voucher, req.companyId, start, end);
 
+    // Cash/Adjustment split per ledger for the period — one pass over the
+    // period's vouchers, classified by their driving Cash/Bank leg.
+    const cashBankIds = await getCashBankLedgerIds(req.companyId);
+    const splitVouchers = await Voucher.find({
+      companyId: req.companyId,
+      voucherDate: { $gte: start, $lte: end }
+    }).select('entries voucherType').lean();
+    const splitMap = {};
+    splitVouchers.forEach(voucher => {
+      const { column } = classifyVoucherEntry(voucher.entries, cashBankIds);
+      voucher.entries.forEach(entry => {
+        if (!entry.ledgerId) return;
+        const lid = entry.ledgerId.toString();
+        if (!splitMap[lid]) {
+          splitMap[lid] = { debitCash: 0, debitAdj: 0, creditCash: 0, creditAdj: 0, receipt: 0, payment: 0 };
+        }
+        if (column === 'cash') {
+          splitMap[lid].debitCash += entry.debitAmount || 0;
+          splitMap[lid].creditCash += entry.creditAmount || 0;
+        } else {
+          splitMap[lid].debitAdj += entry.debitAmount || 0;
+          splitMap[lid].creditAdj += entry.creditAmount || 0;
+        }
+        // Receipt/Payment display: preserve the voucher's own side rather
+        // than raw Dr/Cr polarity for this ledger (same fix as General Ledger).
+        if (voucher.voucherType === 'Receipt') {
+          splitMap[lid].receipt += entry.debitAmount || entry.creditAmount || 0;
+        } else if (voucher.voucherType === 'Payment') {
+          splitMap[lid].payment += entry.debitAmount || entry.creditAmount || 0;
+        } else {
+          splitMap[lid].receipt += entry.debitAmount || 0;
+          splitMap[lid].payment += entry.creditAmount || 0;
+        }
+      });
+    });
+
     const results = [];
     ledgers.forEach(ledger => {
       const lid = ledger._id.toString();
       const { signed: obSigned, isDebit, pg } = computeLedgerBalance(ledger, priorMap, {}, false);
       const period = periodMap[lid] || { debit: 0, credit: 0 };
+      const split = splitMap[lid] || { debitCash: 0, debitAdj: 0, creditCash: 0, creditAdj: 0, receipt: 0, payment: 0 };
 
       if (obSigned === 0 && period.debit === 0 && period.credit === 0) return;
 
@@ -1864,6 +2003,9 @@ export const getLedgerAbstractGrouped = async (req, res) => {
         openingBalanceType: obSigned >= 0 ? (isDebit ? 'Dr' : 'Cr') : (isDebit ? 'Cr' : 'Dr'),
         debit: period.debit,
         credit: period.credit,
+        receipt: split.receipt, payment: split.payment,
+        debitCash: split.debitCash, debitAdj: split.debitAdj,
+        creditCash: split.creditCash, creditAdj: split.creditAdj,
         closingBalance: Math.abs(closingSigned),
         closingBalanceType: closingSigned >= 0 ? (isDebit ? 'Dr' : 'Cr') : (isDebit ? 'Cr' : 'Dr')
       });
@@ -1883,11 +2025,17 @@ export const getLedgerAbstractGrouped = async (req, res) => {
       totals: g.ledgers.reduce((acc, l) => ({
         debit: acc.debit + l.debit,
         credit: acc.credit + l.credit,
+        receipt: acc.receipt + (l.receipt || 0),
+        payment: acc.payment + (l.payment || 0),
+        debitCash: acc.debitCash + (l.debitCash || 0),
+        debitAdj: acc.debitAdj + (l.debitAdj || 0),
+        creditCash: acc.creditCash + (l.creditCash || 0),
+        creditAdj: acc.creditAdj + (l.creditAdj || 0),
         obDr: acc.obDr + (l.openingBalanceType === 'Dr' ? l.openingBalance : 0),
         obCr: acc.obCr + (l.openingBalanceType === 'Cr' ? l.openingBalance : 0),
         clDr: acc.clDr + (l.closingBalanceType === 'Dr' ? l.closingBalance : 0),
         clCr: acc.clCr + (l.closingBalanceType === 'Cr' ? l.closingBalance : 0)
-      }), { debit: 0, credit: 0, obDr: 0, obCr: 0, clDr: 0, clCr: 0 })
+      }), { debit: 0, credit: 0, receipt: 0, payment: 0, debitCash: 0, debitAdj: 0, creditCash: 0, creditAdj: 0, obDr: 0, obCr: 0, clDr: 0, clCr: 0 })
     })).sort((a, b) => {
       const ai = pgOrder.indexOf(a.parentGroup), bi = pgOrder.indexOf(b.parentGroup);
       return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi) || a.accountGroup.localeCompare(b.accountGroup);
@@ -1927,14 +2075,26 @@ export const getRDStatementDynamic = async (req, res) => {
       status: { $ne: 'Cancelled' }
     }).select('entries').lean();
 
+    // Cash/Bank ledger ids — used to split each ledger's period Dr/Cr into
+    // real cash movements vs non-cash Adjustment (Journal) entries.
+    const cashBankIds = await getCashBankLedgerIds(req.companyId);
+
     const periodMap = {};
     periodVouchers.forEach(v => {
+      const { column } = classifyVoucherEntry(v.entries, cashBankIds);
       (v.entries || []).forEach(e => {
         const lid = e.ledgerId?.toString();
         if (!lid) return;
-        if (!periodMap[lid]) periodMap[lid] = { debit: 0, credit: 0 };
+        if (!periodMap[lid]) periodMap[lid] = { debit: 0, credit: 0, debitCash: 0, debitAdj: 0, creditCash: 0, creditAdj: 0 };
         periodMap[lid].debit  += e.debitAmount  || 0;
         periodMap[lid].credit += e.creditAmount || 0;
+        if (column === 'cash') {
+          periodMap[lid].debitCash  += e.debitAmount  || 0;
+          periodMap[lid].creditCash += e.creditAmount || 0;
+        } else {
+          periodMap[lid].debitAdj  += e.debitAmount  || 0;
+          periodMap[lid].creditAdj += e.creditAmount || 0;
+        }
       });
     });
 
@@ -1954,16 +2114,21 @@ export const getRDStatementDynamic = async (req, res) => {
 
       if (['R', 'B'].includes(vt) && act.credit > 0) {
         if (!receiptGroupMap[groupKey]) receiptGroupMap[groupKey] = { accountGroup: groupKey, parentGroup: pg, ledgers: [] };
-        receiptGroupMap[groupKey].ledgers.push({ ledgerName: ledger.ledgerName, amount: act.credit });
+        receiptGroupMap[groupKey].ledgers.push({ ledgerName: ledger.ledgerName, amount: act.credit, cashAmount: act.creditCash, adjAmount: act.creditAdj });
       }
       if (['P', 'B'].includes(vt) && act.debit > 0) {
         if (!paymentGroupMap[groupKey]) paymentGroupMap[groupKey] = { accountGroup: groupKey, parentGroup: pg, ledgers: [] };
-        paymentGroupMap[groupKey].ledgers.push({ ledgerName: ledger.ledgerName, amount: act.debit });
+        paymentGroupMap[groupKey].ledgers.push({ ledgerName: ledger.ledgerName, amount: act.debit, cashAmount: act.debitCash, adjAmount: act.debitAdj });
       }
     });
 
     const addTotals = (groupMap) =>
-      Object.values(groupMap).map(g => ({ ...g, total: g.ledgers.reduce((s, l) => s + l.amount, 0) }));
+      Object.values(groupMap).map(g => ({
+        ...g,
+        total: g.ledgers.reduce((s, l) => s + l.amount, 0),
+        totalCash: g.ledgers.reduce((s, l) => s + (l.cashAmount || 0), 0),
+        totalAdj: g.ledgers.reduce((s, l) => s + (l.adjAmount || 0), 0)
+      }));
 
     const receipts = addTotals(receiptGroupMap);
     const payments = addTotals(paymentGroupMap);
@@ -1975,7 +2140,11 @@ export const getRDStatementDynamic = async (req, res) => {
         receipts,
         payments,
         totalReceipts: receipts.reduce((s, g) => s + g.total, 0),
-        totalPayments: payments.reduce((s, g) => s + g.total, 0)
+        totalPayments: payments.reduce((s, g) => s + g.total, 0),
+        totalReceiptsCash: receipts.reduce((s, g) => s + g.totalCash, 0),
+        totalReceiptsAdj: receipts.reduce((s, g) => s + g.totalAdj, 0),
+        totalPaymentsCash: payments.reduce((s, g) => s + g.totalCash, 0),
+        totalPaymentsAdj: payments.reduce((s, g) => s + g.totalAdj, 0)
       }
     });
   } catch (err) {

@@ -133,6 +133,10 @@ const CashBook = () => {
 
   const dayCards = useMemo(() => {
     if (!reportData) return [];
+    const adjustmentMap = new Map();
+    for (const adj of (reportData.adjustmentSummary || [])) {
+      adjustmentMap.set(adj.date, adj);
+    }
     const dayMap = new Map();
     for (const txn of (reportData.transactions || [])) {
       const dateKey = dayjs(txn.date).format('YYYY-MM-DD');
@@ -177,13 +181,16 @@ const CashBook = () => {
       const totalPayments = payments.reduce((s, e) => s + (e.amount || 0), 0);
       const openBal = prevClosing;
       const closeBal = openBal + totalReceipts - totalPayments;
+      const adjustment = adjustmentMap.get(dateKey);
 
       cards.push({
         date: dateKey,
-        hasData: !!dayData,
+        hasData: !!dayData || !!adjustment,
         receipts, payments,
         receiptTotal: totalReceipts,
         paymentTotal: totalPayments,
+        adjustmentReceipt: adjustment?.debit || 0,
+        adjustmentPayment: adjustment?.credit || 0,
         openingBalance: openBal,
         closingBalance: closeBal
       });
@@ -194,7 +201,7 @@ const CashBook = () => {
     return cards;
   }, [reportData, fromDate, toDate]);
 
-  const renderSideTable = (side, entries, total, openBal, closeBal) => {
+  const renderSideTable = (side, entries, total, openBal, closeBal, adjustmentTotal) => {
     const isReceipt = side === 'receipt';
     const headerBg = isReceipt
       ? 'linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%)'
@@ -293,12 +300,22 @@ const CashBook = () => {
           <Table withColumnBorders style={{ tableLayout: 'fixed' }}>
             <Table.Tbody>
               <Table.Tr style={{ background: totalBg }}>
-                <Table.Td style={{ textAlign: 'left', fontWeight: 600, width: '46%' }}>Day Total</Table.Td>
+                <Table.Td style={{ textAlign: 'left', fontWeight: 600, width: '46%' }}>Day Total (Cash)</Table.Td>
                 <Table.Td style={{ width: '20%' }}></Table.Td>
                 <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'Consolas, monospace', fontVariantNumeric: 'tabular-nums', width: '28%' }}>
                   {fmtAlways(total)}
                 </Table.Td>
                 <Table.Td className="cb-no-print" style={{ width: '6%' }}></Table.Td>
+              </Table.Tr>
+              <Table.Tr style={{ background: 'var(--mantine-color-yellow-0)' }}>
+                <Table.Td style={{ textAlign: 'left', fontWeight: 500, fontStyle: 'italic' }} title="Adjustment (Journal) entries for this date — reference only, not included in the cash balance">
+                  Adjustment (Journal)
+                </Table.Td>
+                <Table.Td></Table.Td>
+                <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontStyle: 'italic', fontFamily: 'Consolas, monospace', fontVariantNumeric: 'tabular-nums' }}>
+                  {fmtAlways(adjustmentTotal)}
+                </Table.Td>
+                <Table.Td className="cb-no-print"></Table.Td>
               </Table.Tr>
               <Table.Tr style={{ background: 'var(--mantine-color-gray-0)' }}>
                 <Table.Td style={{ textAlign: 'left', fontWeight: 600 }}>
@@ -383,10 +400,10 @@ const CashBook = () => {
       {/* Body — two side panels */}
       <Group gap={0} align="stretch" wrap="nowrap" style={{ borderTop: 0 }}>
         <Box style={{ flex: 1, borderRight: '2px solid var(--mantine-color-default-border)' }}>
-          {renderSideTable('receipt', card.receipts, card.receiptTotal, card.openingBalance, card.closingBalance)}
+          {renderSideTable('receipt', card.receipts, card.receiptTotal, card.openingBalance, card.closingBalance, card.adjustmentReceipt)}
         </Box>
         <Box style={{ flex: 1 }}>
-          {renderSideTable('payment', card.payments, card.paymentTotal, card.openingBalance, card.closingBalance)}
+          {renderSideTable('payment', card.payments, card.paymentTotal, card.openingBalance, card.closingBalance, card.adjustmentPayment)}
         </Box>
       </Group>
     </Paper>

@@ -156,12 +156,22 @@ const LedgerAbstract = () => {
     items.reduce((acc, it) => {
       if (it.openingBalanceType === 'Dr') acc.obDr += it.openingBalance;
       else                                 acc.obCr += it.openingBalance;
-      acc.debit   += it.totalDebits;
-      acc.credit  += it.totalCredits;
+      acc.debit   += it.totalReceipt ?? it.totalDebits;
+      acc.credit  += it.totalPayment ?? it.totalCredits;
+      acc.debitAdj  += it.debitAdj  || 0;
+      acc.creditAdj += it.creditAdj || 0;
       if (it.closingBalanceType === 'Dr') acc.clDr += it.closingBalance;
       else                                 acc.clCr += it.closingBalance;
       return acc;
-    }, { obDr: 0, obCr: 0, debit: 0, credit: 0, clDr: 0, clCr: 0 });
+    }, { obDr: 0, obCr: 0, debit: 0, credit: 0, debitAdj: 0, creditAdj: 0, clDr: 0, clCr: 0 });
+
+  // Small muted "Adj: n" line shown under a Receipt/Payment amount when part
+  // of it came from a non-cash Adjustment (Journal) entry.
+  const adjNote = (amt) => amt > 0 ? (
+    <Text size={9} c="orange.7" fw={600} style={{ lineHeight: 1.2, fontFamily: 'monospace' }}>
+      Adj: {f2(amt)}
+    </Text>
+  ) : null;
 
   // ── Export ──────────────────────────────────────────────────────────────
   const handleExport = () => {
@@ -172,8 +182,10 @@ const LedgerAbstract = () => {
       'Ledger Type':       item.ledgerType,
       'Opening Dr':        item.openingBalanceType === 'Dr' ? f2(item.openingBalance) : '',
       'Opening Cr':        item.openingBalanceType === 'Cr' ? f2(item.openingBalance) : '',
-      'Total Receipt':     f2(item.totalDebits),
-      'Total Payment':     f2(item.totalCredits),
+      'Total Receipt':     f2(item.totalReceipt ?? item.totalDebits),
+      'Receipt (Adj)':     f2(item.debitAdj || 0),
+      'Total Payment':     f2(item.totalPayment ?? item.totalCredits),
+      'Payment (Adj)':     f2(item.creditAdj || 0),
       'Closing Dr':        item.closingBalanceType === 'Dr' ? f2(item.closingBalance) : '',
       'Closing Cr':        item.closingBalanceType === 'Cr' ? f2(item.closingBalance) : ''
     }));
@@ -221,8 +233,8 @@ const LedgerAbstract = () => {
             <Table.Td style={{ ...tdRight, color: '#1d4ed8' }}>{item.openingBalanceType === 'Dr' ? fz(item.openingBalance) : ''}</Table.Td>
             <Table.Td style={{ ...tdRight, color: '#dc2626' }}>{item.openingBalanceType === 'Cr' ? fz(item.openingBalance) : ''}</Table.Td>
             {/* During */}
-            <Table.Td style={{ ...tdRight }}>{fz(item.totalDebits)}</Table.Td>
-            <Table.Td style={{ ...tdRight }}>{fz(item.totalCredits)}</Table.Td>
+            <Table.Td style={{ ...tdRight }}>{fz(item.totalReceipt ?? item.totalDebits)}{adjNote(item.debitAdj)}</Table.Td>
+            <Table.Td style={{ ...tdRight }}>{fz(item.totalPayment ?? item.totalCredits)}{adjNote(item.creditAdj)}</Table.Td>
             {/* Closing */}
             <Table.Td style={{ ...tdRight, fontWeight: 700, color: item.closingBalanceType === 'Dr' ? '#1d4ed8' : '#dc2626' }}>
               {item.closingBalanceType === 'Dr'
@@ -241,8 +253,8 @@ const LedgerAbstract = () => {
           </Table.Td>
           <Table.Td style={{ ...tdRight, fontWeight: 800, color: '#1d4ed8' }}>{f2(tot.obDr)}</Table.Td>
           <Table.Td style={{ ...tdRight, fontWeight: 800, color: '#dc2626' }}>{f2(tot.obCr)}</Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 800 }}>{f2(tot.debit)}</Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 800 }}>{f2(tot.credit)}</Table.Td>
+          <Table.Td style={{ ...tdRight, fontWeight: 800 }}>{f2(tot.debit)}{adjNote(tot.debitAdj)}</Table.Td>
+          <Table.Td style={{ ...tdRight, fontWeight: 800 }}>{f2(tot.credit)}{adjNote(tot.creditAdj)}</Table.Td>
           <Table.Td style={{ ...tdRight, fontWeight: 800, color: conf.color }}>
             {tot.clDr > 0 ? f2(tot.clDr) + ' Dr' : tot.clCr > 0 ? f2(tot.clCr) + ' Cr' : '0.00'}
           </Table.Td>
@@ -287,8 +299,8 @@ const LedgerAbstract = () => {
           </Table.Td>
           <Table.Td style={{ ...tdRight, fontWeight: 700, color: '#1d4ed8' }}>{f2(group.totals.obDr)}</Table.Td>
           <Table.Td style={{ ...tdRight, fontWeight: 700, color: '#dc2626' }}>{f2(group.totals.obCr)}</Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700 }}>{f2(group.totals.debit)}</Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700 }}>{f2(group.totals.credit)}</Table.Td>
+          <Table.Td style={{ ...tdRight, fontWeight: 700 }}>{f2(group.totals.receipt ?? group.totals.debit)}{adjNote(group.totals.debitAdj)}</Table.Td>
+          <Table.Td style={{ ...tdRight, fontWeight: 700 }}>{f2(group.totals.payment ?? group.totals.credit)}{adjNote(group.totals.creditAdj)}</Table.Td>
           <Table.Td style={{ ...tdRight, fontWeight: 700, color: conf.color }}>
             {group.totals.clDr > 0 ? f2(group.totals.clDr) + ' Dr' : group.totals.clCr > 0 ? f2(group.totals.clCr) + ' Cr' : '0.00'}
           </Table.Td>
@@ -305,8 +317,8 @@ const LedgerAbstract = () => {
             </Table.Td>
             <Table.Td style={{ ...tdRight, color: '#1d4ed8' }}>{item.openingBalanceType === 'Dr' ? fz(item.openingBalance) : ''}</Table.Td>
             <Table.Td style={{ ...tdRight, color: '#dc2626' }}>{item.openingBalanceType === 'Cr' ? fz(item.openingBalance) : ''}</Table.Td>
-            <Table.Td style={tdRight}>{fz(item.debit)}</Table.Td>
-            <Table.Td style={tdRight}>{fz(item.credit)}</Table.Td>
+            <Table.Td style={tdRight}>{fz(item.receipt ?? item.debit)}{adjNote(item.debitAdj)}</Table.Td>
+            <Table.Td style={tdRight}>{fz(item.payment ?? item.credit)}{adjNote(item.creditAdj)}</Table.Td>
             <Table.Td style={{ ...tdRight, fontWeight: 600, color: item.closingBalanceType === 'Dr' ? '#1d4ed8' : '#dc2626' }}>
               {item.closingBalanceType === 'Dr'
                 ? (fz(item.closingBalance) ? fz(item.closingBalance) + ' Dr' : '')
@@ -331,8 +343,8 @@ const LedgerAbstract = () => {
         </Table.Td>
         <Table.Td style={{ ...tdRight, color: '#1d4ed8' }}>{item.openingBalanceType === 'Dr' ? fz(item.openingBalance) : ''}</Table.Td>
         <Table.Td style={{ ...tdRight, color: '#dc2626' }}>{item.openingBalanceType === 'Cr' ? fz(item.openingBalance) : ''}</Table.Td>
-        <Table.Td style={tdRight}>{fz(item.totalDebits)}</Table.Td>
-        <Table.Td style={tdRight}>{fz(item.totalCredits)}</Table.Td>
+        <Table.Td style={tdRight}>{fz(item.totalReceipt ?? item.totalDebits)}{adjNote(item.debitAdj)}</Table.Td>
+        <Table.Td style={tdRight}>{fz(item.totalPayment ?? item.totalCredits)}{adjNote(item.creditAdj)}</Table.Td>
         <Table.Td style={{ ...tdRight, fontWeight: 700, color: item.closingBalanceType === 'Dr' ? '#1d4ed8' : '#dc2626' }}>
           {item.closingBalanceType === 'Dr'
             ? (fz(item.closingBalance) ? fz(item.closingBalance) + ' Dr' : '')
@@ -374,8 +386,8 @@ const LedgerAbstract = () => {
                 { label: 'Total Ledgers',  value: s.totalLedgers,                              color: 'indigo.8' },
                 { label: 'Opening Dr',     value: `₹${f2(s.totalOpeningDebit)}`,               color: 'blue.8'   },
                 { label: 'Opening Cr',     value: `₹${f2(s.totalOpeningCredit)}`,              color: 'red.7'    },
-                { label: 'Total Receipt',  value: `₹${f2(s.totalDebits)}`,                    color: 'violet.8' },
-                { label: 'Total Payment',  value: `₹${f2(s.totalCredits)}`,                   color: 'teal.8'   }
+                { label: 'Total Receipt',  value: `₹${f2(s.totalReceipt ?? s.totalDebits)}`,   color: 'violet.8' },
+                { label: 'Total Payment',  value: `₹${f2(s.totalPayment ?? s.totalCredits)}`,  color: 'teal.8'   }
               ].map(stat => (
                 <Box key={stat.label} style={{ background: 'rgba(255,255,255,0.85)', borderRadius: 8, padding: '8px 12px', textAlign: 'center' }}>
                   <Text size="xs" c="dimmed" fw={600} tt="uppercase">{stat.label}</Text>
@@ -502,8 +514,8 @@ const LedgerAbstract = () => {
                     </Table.Td>
                     <Table.Td style={{ ...tdRight, fontWeight: 900, color: '#1d4ed8', fontSize: 12 }}>{f2(s.totalOpeningDebit)}</Table.Td>
                     <Table.Td style={{ ...tdRight, fontWeight: 900, color: '#dc2626', fontSize: 12 }}>{f2(s.totalOpeningCredit)}</Table.Td>
-                    <Table.Td style={{ ...tdRight, fontWeight: 900, fontSize: 12 }}>{f2(s.totalDebits)}</Table.Td>
-                    <Table.Td style={{ ...tdRight, fontWeight: 900, fontSize: 12 }}>{f2(s.totalCredits)}</Table.Td>
+                    <Table.Td style={{ ...tdRight, fontWeight: 900, fontSize: 12 }}>{f2(s.totalReceipt ?? s.totalDebits)}{adjNote(s.totalDebitAdj)}</Table.Td>
+                    <Table.Td style={{ ...tdRight, fontWeight: 900, fontSize: 12 }}>{f2(s.totalPayment ?? s.totalCredits)}{adjNote(s.totalCreditAdj)}</Table.Td>
                     <Table.Td style={{ ...tdRight, fontWeight: 900, color: INDIGO, fontSize: 12 }}>
                       {s.totalClosingDebit > s.totalClosingCredit
                         ? f2(s.totalClosingDebit) + ' Dr'
@@ -529,6 +541,7 @@ const LedgerAbstract = () => {
               <Text size="xs" c="dimmed">Dr = Debit balance (Asset/Expense nature)</Text>
               <Text size="xs" c="dimmed">Cr = Credit balance (Liability/Income nature)</Text>
               <Text size="xs" c="dimmed">Receipt = total debit entries during period; Payment = total credit entries during period</Text>
+              <Text size="xs" c="orange.7">Adj: n = portion of Receipt/Payment from non-cash Adjustment (Journal) entries</Text>
             </Group>
           </Box>
         )}

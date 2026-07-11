@@ -710,6 +710,12 @@ const ReceiptsDisbursement = () => {
     const tdStyle = { padding: '6px 10px', fontSize: 12, border: '1px solid #e5e7eb' };
     const numStyle = { ...tdStyle, textAlign: 'right', fontFamily: 'monospace' };
 
+    const adjNote = (amt) => amt > 0 ? (
+      <Text size={9} c="orange.7" fw={600} style={{ lineHeight: 1.2, fontFamily: 'monospace' }}>
+        Adj: ₹{formatCurrency(amt)}
+      </Text>
+    ) : null;
+
     const renderGroups = (groups, side) =>
       groups.map((g, gi) => (
         <React.Fragment key={gi}>
@@ -721,12 +727,12 @@ const ReceiptsDisbursement = () => {
           {(g.ledgers || []).map((l, li) => (
             <Table.Tr key={li} style={{ background: li % 2 === 0 ? '#fff' : '#fafafa' }}>
               <Table.Td style={{ ...tdStyle, paddingLeft: 24 }}>{l.ledgerName}</Table.Td>
-              <Table.Td style={numStyle}>₹{formatCurrency(l.amount)}</Table.Td>
+              <Table.Td style={numStyle}>₹{formatCurrency(l.amount)}{adjNote(l.adjAmount)}</Table.Td>
             </Table.Tr>
           ))}
           <Table.Tr style={{ background: '#f0fdf4' }}>
             <Table.Td style={{ ...tdStyle, fontWeight: 600, paddingLeft: 24 }}>Sub-total</Table.Td>
-            <Table.Td style={{ ...numStyle, fontWeight: 700 }}>₹{formatCurrency(g.total)}</Table.Td>
+            <Table.Td style={{ ...numStyle, fontWeight: 700 }}>₹{formatCurrency(g.total)}{adjNote(g.totalAdj)}</Table.Td>
           </Table.Tr>
         </React.Fragment>
       ));
@@ -748,7 +754,7 @@ const ReceiptsDisbursement = () => {
               {renderGroups(receipts, 'receipt')}
               <Table.Tr style={{ background: '#bbf7d0', borderTop: '2px solid #16a34a' }}>
                 <Table.Td style={{ ...tdStyle, fontWeight: 800 }}>TOTAL RECEIPTS</Table.Td>
-                <Table.Td style={{ ...numStyle, fontWeight: 800 }}>₹{formatCurrency(reportData.totalReceipts)}</Table.Td>
+                <Table.Td style={{ ...numStyle, fontWeight: 800 }}>₹{formatCurrency(reportData.totalReceipts)}{adjNote(reportData.totalReceiptsAdj)}</Table.Td>
               </Table.Tr>
             </Table.Tbody>
           </Table>
@@ -768,7 +774,7 @@ const ReceiptsDisbursement = () => {
               {renderGroups(payments, 'payment')}
               <Table.Tr style={{ background: '#fecaca', borderTop: '2px solid #dc2626' }}>
                 <Table.Td style={{ ...tdStyle, fontWeight: 800 }}>TOTAL PAYMENTS</Table.Td>
-                <Table.Td style={{ ...numStyle, fontWeight: 800 }}>₹{formatCurrency(reportData.totalPayments)}</Table.Td>
+                <Table.Td style={{ ...numStyle, fontWeight: 800 }}>₹{formatCurrency(reportData.totalPayments)}{adjNote(reportData.totalPaymentsAdj)}</Table.Td>
               </Table.Tr>
             </Table.Tbody>
           </Table>

@@ -182,16 +182,16 @@ const ReceiptsPayments = () => {
       const bg = i % 2 === 0 ? '#FFFFFF' : '#FAFAFA';
       rows.push(
         <tr key={i} style={{ background: bg }}>
-          <td style={{ ...tdBase, color: '#1a4d2e', fontWeight: r ? 500 : 400 }}>
+          <td style={{ ...tdBase, color: r?.isAdjustment ? '#b45309' : '#1a4d2e', fontWeight: r ? 500 : 400, fontStyle: r?.isAdjustment ? 'italic' : 'normal' }}>
             {r ? `${i + 1}. ${r.label}` : ''}
           </td>
-          <td style={{ ...tdNum, color: '#1a4d2e' }}>
+          <td style={{ ...tdNum, color: r?.isAdjustment ? '#b45309' : '#1a4d2e' }}>
             {r && r.amount > 0 ? fmt(r.amount) : ''}
           </td>
-          <td style={{ ...tdBase, ...divider, color: '#4a1a1a', fontWeight: p ? 500 : 400 }}>
+          <td style={{ ...tdBase, ...divider, color: p?.isAdjustment ? '#b45309' : '#4a1a1a', fontWeight: p ? 500 : 400, fontStyle: p?.isAdjustment ? 'italic' : 'normal' }}>
             {p ? `${i + 1}. ${p.label}` : ''}
           </td>
-          <td style={{ ...tdNum, color: '#4a1a1a' }}>
+          <td style={{ ...tdNum, color: p?.isAdjustment ? '#b45309' : '#4a1a1a' }}>
             {p && p.amount > 0 ? fmt(p.amount) : ''}
           </td>
         </tr>
