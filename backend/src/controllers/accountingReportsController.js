@@ -494,7 +494,7 @@ export const getGeneralLedger = async (req, res) => {
     // incorrectly pull milk-collection data into Purchase Returns and other
     // Purchases-type ledgers that share the same ledger type.
     const isMilkPurchaseLedger =
-      /milk\s*(purchase|procure|collection)/i.test(ledger.ledgerName);
+      /^milk\s*(purchase|procurement|procure|collection)\s*(a\/?c\.?|account)?$/i.test(ledger.ledgerName.trim());
 
     // ── 2. PRODUCERS DUES ledger: Cr side of milk collection + Dr side of farmer payments ──
     const isProducersDuesLedger =
@@ -1007,7 +1007,7 @@ export const getGeneralLedgerAbstract = async (req, res) => {
           /producers?\s*(dues?|payable|account)/i.test(ledger.ledgerName) ||
           (ledger.ledgerType === 'Other Payable' && /producer|farmer|dues/i.test(ledger.ledgerName));
         const isMilkPurchaseAbstract =
-          /milk\s*(purchase|procure|collection)/i.test(ledger.ledgerName);
+          /^milk\s*(purchase|procurement|procure|collection)\s*(a\/?c\.?|account)?$/i.test(ledger.ledgerName.trim());
 
         if (isProducersDuesAbstract || isMilkPurchaseAbstract) {
           const [priorMcAgg, periodMcAgg] = await Promise.all([
@@ -2070,7 +2070,7 @@ export const getLedgerAbstractGrouped = async (req, res) => {
     const mcLedgers = ledgers.filter(l =>
       /producers?\s*(dues?|payable|account)/i.test(l.ledgerName) ||
       (l.ledgerType === 'Other Payable' && /producer|farmer|dues/i.test(l.ledgerName)) ||
-      /milk\s*(purchase|procure|collection)/i.test(l.ledgerName)
+      /^milk\s*(purchase|procurement|procure|collection)\s*(a\/?c\.?|account)?$/i.test(l.ledgerName.trim())
     );
     if (mcLedgers.length) {
       const [priorMcAgg, periodMcAgg] = await Promise.all([
@@ -2236,7 +2236,7 @@ export const getRDStatementDynamic = async (req, res) => {
     const mcLedgers = ledgers.filter(l =>
       /producers?\s*(dues?|payable|account)/i.test(l.ledgerName) ||
       (l.ledgerType === 'Other Payable' && /producer|farmer|dues/i.test(l.ledgerName)) ||
-      /milk\s*(purchase|procure|collection)/i.test(l.ledgerName)
+      /^milk\s*(purchase|procurement|procure|collection)\s*(a\/?c\.?|account)?$/i.test(l.ledgerName.trim())
     );
     if (mcLedgers.length) {
       const mcAgg = await MilkCollection.aggregate([
