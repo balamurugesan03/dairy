@@ -359,10 +359,19 @@ const DairyRegisterReport = () => {
             data={PRESETS}
           />
           <DatePickerInput
-            type="range" size="sm" label="Date Range" w={250}
-            value={dateRange}
-            onChange={(val) => { setDateRange(val); setPreset('custom'); }}
+            size="sm" label="From Date" w={140}
+            value={dateRange[0]}
+            onChange={(val) => { setDateRange([val, dateRange[1]]); setPreset('custom'); }}
             leftSection={<IconCalendar size={14} />}
+            valueFormat="DD-MM-YYYY"
+            clearable
+          />
+          <DatePickerInput
+            size="sm" label="To Date" w={140}
+            value={dateRange[1]}
+            onChange={(val) => { setDateRange([dateRange[0], val]); setPreset('custom'); }}
+            leftSection={<IconCalendar size={14} />}
+            valueFormat="DD-MM-YYYY"
             clearable
           />
           <Button

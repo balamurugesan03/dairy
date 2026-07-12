@@ -631,18 +631,44 @@ const DayBook = () => {
 
             {/* Range / Single toggle */}
             <Group gap={4} align="flex-end">
-              <DatePickerInput
-                type={dateMode === 'single' ? 'default' : 'range'}
-                label={dateMode === 'single' ? 'Single Date' : 'Date Range'}
-                value={dateMode === 'single' ? singleDate : dateRange}
-                onChange={dateMode === 'single' ? handleSingleDateChange : (val) => { setDateRange(val); setPreset('custom'); }}
-                valueFormat="DD/MM/YYYY"
-                size="xs"
-                leftSection={<IconCalendar size={14} />}
-                w={dateMode === 'single' ? 150 : 260}
-                radius="md"
-                clearable={false}
-              />
+              {dateMode === 'single' ? (
+                <DatePickerInput
+                  label="Single Date"
+                  value={singleDate}
+                  onChange={handleSingleDateChange}
+                  valueFormat="DD/MM/YYYY"
+                  size="xs"
+                  leftSection={<IconCalendar size={14} />}
+                  w={150}
+                  radius="md"
+                  clearable={false}
+                />
+              ) : (
+                <>
+                  <DatePickerInput
+                    label="From Date"
+                    value={fromDate}
+                    onChange={(val) => { setDateRange([val, toDate]); setPreset('custom'); }}
+                    valueFormat="DD/MM/YYYY"
+                    size="xs"
+                    leftSection={<IconCalendar size={14} />}
+                    w={130}
+                    radius="md"
+                    clearable={false}
+                  />
+                  <DatePickerInput
+                    label="To Date"
+                    value={toDate}
+                    onChange={(val) => { setDateRange([fromDate, val]); setPreset('custom'); }}
+                    valueFormat="DD/MM/YYYY"
+                    size="xs"
+                    leftSection={<IconCalendar size={14} />}
+                    w={130}
+                    radius="md"
+                    clearable={false}
+                  />
+                </>
+              )}
               <Button.Group>
                 <Button
                   size="xs" radius="md"

@@ -686,11 +686,18 @@ const MemberRegister = () => {
               </Accordion.Control>
               <Accordion.Panel>
                 <Stack gap={8}>
-                  <DatePickerInput size="xs" type="range" label="Date Range" placeholder="From – To"
-                    value={[filters.pourFrom, filters.pourTo]}
-                    onChange={([from, to]) => setFilters(f => ({ ...f, pourFrom: from, pourTo: to }))}
-                    clearable valueFormat="DD/MM/YYYY"
-                    styles={{ label: { fontSize: 10, fontWeight: 600, color: '#64748b' } }} />
+                  <Group gap={4} grow>
+                    <DatePickerInput size="xs" label="From Date" placeholder="From"
+                      value={filters.pourFrom}
+                      onChange={(from) => setFilters(f => ({ ...f, pourFrom: from }))}
+                      clearable valueFormat="DD/MM/YYYY"
+                      styles={{ label: { fontSize: 10, fontWeight: 600, color: '#64748b' } }} />
+                    <DatePickerInput size="xs" label="To Date" placeholder="To"
+                      value={filters.pourTo}
+                      onChange={(to) => setFilters(f => ({ ...f, pourTo: to }))}
+                      clearable valueFormat="DD/MM/YYYY"
+                      styles={{ label: { fontSize: 10, fontWeight: 600, color: '#64748b' } }} />
+                  </Group>
                   <Group gap={4} align="flex-end">
                     <Select size="xs" label="Days" data={DAYS_COND} value={filters.daysCond}
                       onChange={v => setFilters(f => ({ ...f, daysCond: v }))}

@@ -332,12 +332,19 @@ export default function UnionSalesReport() {
       <Paper radius="md" mb="md" withBorder p="md" data-no-print>
         <Group gap="sm" wrap="wrap" align="flex-end">
           <DatePickerInput
-            type="range"
-            label="Date Range"
-            value={[fromDate, toDate]}
-            onChange={([f, t]) => { if (f) setFromDate(f); if (t) setToDate(t); }}
+            label="From Date"
+            value={fromDate}
+            onChange={setFromDate}
             leftSection={<IconCalendar size={14} />}
-            style={{ flex: '2 1 220px' }}
+            style={{ flex: '1 1 140px' }}
+            size="sm"
+          />
+          <DatePickerInput
+            label="To Date"
+            value={toDate}
+            onChange={setToDate}
+            leftSection={<IconCalendar size={14} />}
+            style={{ flex: '1 1 140px' }}
             size="sm"
           />
           <Select

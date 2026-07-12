@@ -393,10 +393,16 @@ const LedgerAbstract = () => {
         <Group gap="md" wrap="wrap" align="flex-end">
           <Select label="Period" value={preset} onChange={handlePresetChange} data={PRESETS} style={{ flex: '1 1 140px' }} size="sm" />
           <DatePickerInput
-            type="range" label="Date Range" value={dateRange}
-            onChange={(val) => { setDateRange(val); setPreset('custom'); }}
+            label="From Date" value={dateRange[0]}
+            onChange={(val) => { setDateRange([val, dateRange[1]]); setPreset('custom'); }}
             leftSection={<IconCalendar size={16} />}
-            style={{ flex: '2 1 240px' }} size="sm"
+            style={{ flex: '1 1 140px' }} size="sm"
+          />
+          <DatePickerInput
+            label="To Date" value={dateRange[1]}
+            onChange={(val) => { setDateRange([dateRange[0], val]); setPreset('custom'); }}
+            leftSection={<IconCalendar size={16} />}
+            style={{ flex: '1 1 140px' }} size="sm"
           />
           <Select
             label="Ledger Type"

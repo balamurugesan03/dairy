@@ -431,12 +431,19 @@ const CfAbstractReport = () => {
             size="sm"
           />
           <DatePickerInput
-            type="range"
-            label="Date Range"
-            value={dateRange}
-            onChange={v => { setDateRange(v); setPreset('custom'); }}
+            label="From Date"
+            value={dateRange[0]}
+            onChange={v => { setDateRange([v, dateRange[1]]); setPreset('custom'); }}
             leftSection={<IconCalendar size={16} />}
-            style={{ flex: '2 1 250px' }}
+            style={{ flex: '1 1 140px' }}
+            size="sm"
+          />
+          <DatePickerInput
+            label="To Date"
+            value={dateRange[1]}
+            onChange={v => { setDateRange([dateRange[0], v]); setPreset('custom'); }}
+            leftSection={<IconCalendar size={16} />}
+            style={{ flex: '1 1 140px' }}
             size="sm"
           />
           <Select
