@@ -114,6 +114,18 @@ const CashAdvanceVoucher = () => {
   const [form, setForm] = useState(emptyForm());
   const [errors, setErrors] = useState({});
 
+  /* ── F5 → open New Cash Advance modal ── */
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'F5') {
+        e.preventDefault();
+        setModalOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   /* ── Load farmer list ── */
   useEffect(() => {
     farmerAPI.getAll({ status: 'Active', limit: 500 })
