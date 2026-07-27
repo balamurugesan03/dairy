@@ -8,6 +8,8 @@ import Advance from '../models/Advance.js';
 import ProducerReceipt from '../models/ProducerReceipt.js';
 import ProducerPayment from '../models/ProducerPayment.js';
 import Sales from '../models/Sales.js';
+import IncentiveRegister from '../models/IncentiveRegister.js';
+import BonusRegister from '../models/BonusRegister.js';
 import { updateLedgerBalances } from '../utils/accountingHelper.js';
 
 // Get Day Book report with date-wise grouping
@@ -104,6 +106,12 @@ export const getDayBook = async (req, res) => {
       // KDF WELFARE FUND, Cattle Feed Advance, etc.) — one voucher per farmer, so
       // they appear individually. Grouped into per-date combined entries below.
       if (voucher.voucherType === 'Journal' && voucher.referenceType === 'FarmerPayment') continue;
+      // Incentive Register postings — the Voucher only exists for ledger-balance
+      // bookkeeping; the Day Book rows are built from IncentiveRegister directly
+      // below (Cash → payment-side only, Bank → both sides, adjustment column).
+      if (voucher.referenceType === 'IncentiveRegister') continue;
+      // Bonus Register postings — same reasoning, built from BonusRegister below.
+      if (voucher.referenceType === 'BonusRegister') continue;
       // Milk LOCAL/SAMPLE sale Receipt vouchers — replaced by a single combined
       // entry per day (built below from MilkSales model).
       if (voucher.voucherType === 'Receipt' && voucher.referenceType === 'Sales') continue;
@@ -1030,6 +1038,107 @@ export const getDayBook = async (req, res) => {
       dateMap[dateKey].paymentSide.push(paymentEntry);
       dateMap[dateKey].totalPayments += pp.amountPaid;
       paymentSide.push(paymentEntry);
+    }
+
+    // --- Incentive Register postings ---
+    // Cash mode  : payment side only (Cash column) — the cash movement is implied,
+    //              same as "Cash Advances Given" above.
+    // Bank mode  : both sides, Adjustment column — bank ledger on receipt side,
+    //              incentive ledger on payment side (mirrors the Producer Payments
+    //              bank-mode block above).
+    const postedIncentiveRegisters = await IncentiveRegister.find({
+      companyId,
+      posted: true,
+      postedAt: { $gte: start, $lte: end },
+    }).lean();
+
+    for (const reg of postedIncentiveRegisters) {
+      const dateKey = localDateKey(reg.postedAt);
+      if (!dateMap[dateKey]) {
+        dateMap[dateKey] = { date: dateKey, receiptSide: [], paymentSide: [], totalReceipts: 0, totalPayments: 0 };
+      }
+      const voucherNum = reg.registerNumber;
+      const narration = `Incentive Register — ${reg.caption} (${new Date(reg.fromDate).toLocaleDateString('en-IN')}-${new Date(reg.toDate).toLocaleDateString('en-IN')})`;
+      const incentiveLedgerLabel = 'ADDL PRICE INCENTIVE TO FARMERS';
+
+      if (reg.paymentMode === 'Cash') {
+        const paymentEntry = {
+          date: reg.postedAt, voucherNumber: voucherNum,
+          voucherType: 'Payment', ledgerName: incentiveLedgerLabel,
+          narration, amount: reg.totalIncentiveAmount,
+        };
+        dateMap[dateKey].paymentSide.push(paymentEntry);
+        dateMap[dateKey].totalPayments += reg.totalIncentiveAmount;
+        paymentSide.push(paymentEntry);
+      } else if (reg.paymentMode === 'Bank') {
+        const receiptEntry = {
+          date: reg.postedAt, voucherNumber: voucherNum,
+          voucherType: 'BankTransfer', ledgerName: reg.bankLedgerName || 'Bank',
+          narration, amount: reg.totalIncentiveAmount,
+        };
+        dateMap[dateKey].receiptSide.push(receiptEntry);
+        dateMap[dateKey].totalReceipts += reg.totalIncentiveAmount;
+        receiptSide.push(receiptEntry);
+
+        const paymentEntry = {
+          date: reg.postedAt, voucherNumber: voucherNum,
+          voucherType: 'BankTransfer', ledgerName: incentiveLedgerLabel,
+          narration, amount: reg.totalIncentiveAmount,
+        };
+        dateMap[dateKey].paymentSide.push(paymentEntry);
+        dateMap[dateKey].totalPayments += reg.totalIncentiveAmount;
+        paymentSide.push(paymentEntry);
+      }
+    }
+
+    // --- Bonus Register postings ---
+    // Cash mode  : payment side only (Cash column), ledger MEMBERS BONUS.
+    // Bank mode  : both sides, Adjustment column — bank ledger on receipt side,
+    //              MEMBERS BONUS on payment side. Posts the combined
+    //              Bonus + Dividend total (totalPostAmount).
+    const postedBonusRegisters = await BonusRegister.find({
+      companyId,
+      posted: true,
+      postedAt: { $gte: start, $lte: end },
+    }).lean();
+
+    for (const reg of postedBonusRegisters) {
+      const dateKey = localDateKey(reg.postedAt);
+      if (!dateMap[dateKey]) {
+        dateMap[dateKey] = { date: dateKey, receiptSide: [], paymentSide: [], totalReceipts: 0, totalPayments: 0 };
+      }
+      const voucherNum = reg.registerNumber;
+      const narration = `Bonus Register — ${reg.caption} (${new Date(reg.fromDate).toLocaleDateString('en-IN')}-${new Date(reg.toDate).toLocaleDateString('en-IN')})`;
+      const bonusLedgerLabel = 'MEMBERS BONUS';
+
+      if (reg.paymentMode === 'Cash') {
+        const paymentEntry = {
+          date: reg.postedAt, voucherNumber: voucherNum,
+          voucherType: 'Payment', ledgerName: bonusLedgerLabel,
+          narration, amount: reg.totalPostAmount,
+        };
+        dateMap[dateKey].paymentSide.push(paymentEntry);
+        dateMap[dateKey].totalPayments += reg.totalPostAmount;
+        paymentSide.push(paymentEntry);
+      } else if (reg.paymentMode === 'Bank') {
+        const receiptEntry = {
+          date: reg.postedAt, voucherNumber: voucherNum,
+          voucherType: 'BankTransfer', ledgerName: reg.bankLedgerName || 'Bank',
+          narration, amount: reg.totalPostAmount,
+        };
+        dateMap[dateKey].receiptSide.push(receiptEntry);
+        dateMap[dateKey].totalReceipts += reg.totalPostAmount;
+        receiptSide.push(receiptEntry);
+
+        const paymentEntry = {
+          date: reg.postedAt, voucherNumber: voucherNum,
+          voucherType: 'BankTransfer', ledgerName: bonusLedgerLabel,
+          narration, amount: reg.totalPostAmount,
+        };
+        dateMap[dateKey].paymentSide.push(paymentEntry);
+        dateMap[dateKey].totalPayments += reg.totalPostAmount;
+        paymentSide.push(paymentEntry);
+      }
     }
 
     // --- FarmerPayment Advance Recovery Vouchers (CF/Cash/Loan/Welfare) ---

@@ -204,6 +204,8 @@ const MainLayout = () => {
             { key: '/daily-collections/milk-sales-rate',        label: 'Milk Sales Rate'        },
             { key: '/daily-collections/shift-incentive',        label: 'Shift Incentive'        },
             { key: '/daily-collections/time-incentive',         label: 'Time Incentive'         },
+            { key: '/daily-collections/incentive-register',     label: 'Incentive Register'     },
+            { key: '/daily-collections/bonus-register',         label: 'Bonus Register'         },
             { key: '/daily-collections/producer-openings',      label: 'Producer Openings'      },
           ]
         },

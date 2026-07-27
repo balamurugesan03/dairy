@@ -7,6 +7,8 @@ import FarmerPayment from '../models/FarmerPayment.js';
 import Advance from '../models/Advance.js';
 import ProducerReceipt from '../models/ProducerReceipt.js';
 import ProducerPayment from '../models/ProducerPayment.js';
+import IncentiveRegister from '../models/IncentiveRegister.js';
+import BonusRegister from '../models/BonusRegister.js';
 import BankTransfer from '../models/BankTransfer.js';
 import PaymentRegister from '../models/PaymentRegister.js';
 import StockTransaction from '../models/StockTransaction.js';
@@ -148,6 +150,24 @@ export const getCashBook = async (req, res) => {
       status: { $ne: 'Cancelled' }
     }).sort({ paymentDate: 1 });
 
+    // Direct cash payments — Incentive Register (Cash mode postings only;
+    // Bank mode never touches the Cash Book — it's Daybook-only, adjustment column)
+    const incentiveRegistersCash = await IncentiveRegister.find({
+      companyId: req.companyId,
+      posted: true,
+      paymentMode: 'Cash',
+      postedAt: { $gte: dateFilter.startDate, $lte: dateFilter.endDate }
+    }).sort({ postedAt: 1 });
+
+    // Direct cash payments — Bonus Register (Cash mode postings only;
+    // Bank mode never touches the Cash Book — it's Daybook-only, adjustment column)
+    const bonusRegistersCash = await BonusRegister.find({
+      companyId: req.companyId,
+      posted: true,
+      paymentMode: 'Cash',
+      postedAt: { $gte: dateFilter.startDate, $lte: dateFilter.endDate }
+    }).sort({ postedAt: 1 });
+
     // Completed Bank Transfers — Payment side
     // Skip transfers that already have a Voucher posted (avoid double-counting against the voucher loop)
     const completedBankTransfers = await BankTransfer.find({
@@ -167,6 +187,8 @@ export const getCashBook = async (req, res) => {
     vouchers.forEach(voucher => {
       if (voucher.referenceType === 'ProducerReceipt') return;
       if (voucher.referenceType === 'ProducerPayment') return;
+      if (voucher.referenceType === 'IncentiveRegister') return;
+      if (voucher.referenceType === 'BonusRegister') return;
       if (voucher.referenceType === 'Sales' && voucher.voucherType === 'Receipt') return;
       voucher.entries.forEach(entry => {
         if (entry.ledgerId._id.toString() === cashLedger._id.toString()) {
@@ -330,6 +352,32 @@ export const getCashBook = async (req, res) => {
         debit: 0,
         credit: pp.amountPaid,
         narration: `Payment to Producer — ${pp.producerName || ''}`.trim()
+      });
+    });
+
+    // Incentive Register — Cash mode postings
+    incentiveRegistersCash.forEach(reg => {
+      rawTransactions.push({
+        date: reg.postedAt,
+        voucherNumber: reg.registerNumber,
+        voucherType: 'Payment',
+        particulars: 'ADDL PRICE INCENTIVE TO FARMERS',
+        debit: 0,
+        credit: reg.totalIncentiveAmount,
+        narration: `Incentive Register — ${reg.caption}`
+      });
+    });
+
+    // Bonus Register — Cash mode postings
+    bonusRegistersCash.forEach(reg => {
+      rawTransactions.push({
+        date: reg.postedAt,
+        voucherNumber: reg.registerNumber,
+        voucherType: 'Payment',
+        particulars: 'MEMBERS BONUS',
+        debit: 0,
+        credit: reg.totalPostAmount,
+        narration: `Bonus Register — ${reg.caption}`
       });
     });
 

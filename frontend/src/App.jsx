@@ -120,6 +120,8 @@ const UnionSalesSlip         = lazy(() => import('./components/daily-collections
 const MilkSalesRateList      = lazy(() => import('./components/daily-collections/MilkSalesRateList'));
 const ShiftIncentiveList     = lazy(() => import('./components/daily-collections/ShiftIncentiveList'));
 const TimeIncentiveList      = lazy(() => import('./components/daily-collections/TimeIncentiveList'));
+const IncentiveRegister      = lazy(() => import('./components/reports/IncentiveRegister'));
+const BonusRegister          = lazy(() => import('./components/reports/BonusRegister'));
 const ProducerOpenings       = lazy(() => import('./components/daily-collections/ProducerOpenings'));
 const IntelligentQuery       = lazy(() => import('./components/daily-collections/IntelligentQuery'));
 const MilkCollectionAnalysis = lazy(() => import('./components/daily-collections/MilkCollectionAnalysis'));
@@ -455,6 +457,8 @@ const AppContent = () => {
                 <Route path="milk-sales-rate"        element={<MilkSalesRateList />} />
                 <Route path="shift-incentive"        element={<ShiftIncentiveList />} />
                 <Route path="time-incentive"         element={<TimeIncentiveList />} />
+                <Route path="incentive-register"     element={<IncentiveRegister />} />
+                <Route path="bonus-register"         element={<BonusRegister />} />
                 <Route path="producer-openings"      element={<ProducerOpenings />} />
                 <Route path="intelligent-query"      element={<IntelligentQuery />} />
                 <Route path="collection-analysis"    element={<MilkCollectionAnalysis />} />

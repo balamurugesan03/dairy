@@ -82,7 +82,8 @@ const voucherSchema = new mongoose.Schema({
       'MilkPurchase', 'MilkSales', 'FarmerPayment',
       'LoanDisbursal', 'AdvancePayment', 'Opening',
       'ShareCapital', 'AdmissionFee', 'BankTransfer',
-      'UnionSales', 'PurchaseReturn', 'SalesReturn'
+      'UnionSales', 'PurchaseReturn', 'SalesReturn',
+      'IncentiveRegister', 'BonusRegister'
     ],
     default: 'Manual'
   },

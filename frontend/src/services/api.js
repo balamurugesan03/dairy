@@ -974,6 +974,32 @@ export const timeIncentiveAPI = {
   delete:       (id)          => api.delete(`/time-incentives/${id}`).then(r => r.data).catch(handleError),
 };
 
+// ─── INCENTIVE REGISTER APIs ──────────────────────────────────────────────────
+export const incentiveRegisterAPI = {
+  generate:      (params = {})     => api.get('/incentive-register/generate', { params }).then(r => r.data).catch(handleError),
+  getBankLedgers: ()                => api.get('/incentive-register/bank-ledgers').then(r => r.data).catch(handleError),
+  getAll:        (params = {})     => api.get('/incentive-register', { params }).then(r => r.data).catch(handleError),
+  getById:       (id)               => api.get(`/incentive-register/${id}`).then(r => r.data).catch(handleError),
+  create:        (data)             => api.post('/incentive-register', data).then(r => r.data).catch(handleError),
+  update:        (id, data)         => api.put(`/incentive-register/${id}`, data).then(r => r.data).catch(handleError),
+  delete:        (id)               => api.delete(`/incentive-register/${id}`).then(r => r.data).catch(handleError),
+  postToDaybook: (id, data)         => api.post(`/incentive-register/${id}/post-to-daybook`, data).then(r => r.data).catch(handleError),
+  cancelPosting: (id)               => api.post(`/incentive-register/${id}/cancel-posting`).then(r => r.data).catch(handleError),
+};
+
+// ─── BONUS REGISTER APIs ───────────────────────────────────────────────────────
+export const bonusRegisterAPI = {
+  generate:      (params = {})     => api.get('/bonus-register/generate', { params }).then(r => r.data).catch(handleError),
+  getBankLedgers: ()                => api.get('/bonus-register/bank-ledgers').then(r => r.data).catch(handleError),
+  getAll:        (params = {})     => api.get('/bonus-register', { params }).then(r => r.data).catch(handleError),
+  getById:       (id)               => api.get(`/bonus-register/${id}`).then(r => r.data).catch(handleError),
+  create:        (data)             => api.post('/bonus-register', data).then(r => r.data).catch(handleError),
+  update:        (id, data)         => api.put(`/bonus-register/${id}`, data).then(r => r.data).catch(handleError),
+  delete:        (id)               => api.delete(`/bonus-register/${id}`).then(r => r.data).catch(handleError),
+  postToDaybook: (id, data)         => api.post(`/bonus-register/${id}/post-to-daybook`, data).then(r => r.data).catch(handleError),
+  cancelPosting: (id)               => api.post(`/bonus-register/${id}/cancel-posting`).then(r => r.data).catch(handleError),
+};
+
 // ─── EARNING / DEDUCTION MASTER APIs ─────────────────────────────────────────
 export const earningDeductionAPI = {
   getAll:       (params = {}) => api.get('/earning-deductions', { params }).then(r => r.data).catch(handleError),

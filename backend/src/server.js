@@ -293,6 +293,12 @@ import shiftIncentiveRoutes from './routes/shiftIncentiveRoutes.js';
 // Time Incentive routes
 import timeIncentiveRoutes from './routes/timeIncentiveRoutes.js';
 
+// Incentive Register routes
+import incentiveRegisterRoutes from './routes/incentiveRegisterRoutes.js';
+
+// Bonus Register routes
+import bonusRegisterRoutes from './routes/bonusRegisterRoutes.js';
+
 // Earning / Deduction Master routes
 import earningDeductionRoutes from './routes/earningDeductionRoutes.js';
 
@@ -508,6 +514,12 @@ app.use('/api/shift-incentives', protect, addCompanyFilter, shiftIncentiveRoutes
 
 // Time Incentive routes
 app.use('/api/time-incentives', protect, addCompanyFilter, timeIncentiveRoutes);
+
+// Incentive Register routes
+app.use('/api/incentive-register', protect, addCompanyFilter, incentiveRegisterRoutes);
+
+// Bonus Register routes
+app.use('/api/bonus-register', protect, addCompanyFilter, bonusRegisterRoutes);
 
 // Earning / Deduction Master routes
 app.use('/api/earning-deductions', protect, addCompanyFilter, earningDeductionRoutes);
