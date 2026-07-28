@@ -18,9 +18,14 @@ import {
   Badge,
   Divider,
   ThemeIcon,
+  ActionIcon,
+  Tooltip,
+  Pagination,
+  Loader,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
+import { modals } from '@mantine/modals';
 import {
   IconReceipt2,
   IconCalculator,
@@ -31,6 +36,8 @@ import {
   IconSend,
   IconCash,
   IconBuildingBank,
+  IconEdit,
+  IconTrash,
 } from '@tabler/icons-react';
 import { useReactToPrint } from 'react-to-print';
 import dayjs from 'dayjs';
@@ -41,6 +48,19 @@ const fmt = (v) =>
   Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const emptyTotals = { totalQty: 0, totalAmount: 0, totalIncentiveAmount: 0 };
+
+// ── print-only stylesheet — content stays in normal (non display:none) layout
+// so react-to-print's cloned document has real dimensions, then @media print
+// hides everything else and reveals just the print area. ──────────────────────
+const PRINT_CSS = `
+  @media print {
+    body * { visibility: hidden !important; }
+    .ir-print-area, .ir-print-area * { visibility: visible !important; }
+    .ir-print-area { position: fixed; inset: 0; padding: 10mm; background: #fff !important; }
+    .no-print { display: none !important; }
+    @page { size: A4 portrait; margin: 8mm; }
+  }
+`;
 
 const IncentiveRegister = () => {
   const printRef = useRef();
@@ -61,6 +81,7 @@ const IncentiveRegister = () => {
   const [posted, setPosted] = useState(false);
 
   const [activatePost, setActivatePost] = useState(false);
+  const [applyDate, setApplyDate] = useState(new Date());
   const [paymentMode, setPaymentMode] = useState('Cash');
   const [bankLedgerId, setBankLedgerId] = useState(null);
   const [bankLedgers, setBankLedgers] = useState([]);
@@ -68,6 +89,12 @@ const IncentiveRegister = () => {
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [posting, setPosting] = useState(false);
+
+  // ── Saved registers grid ────────────────────────────────────────────────
+  const [savedList, setSavedList] = useState([]);
+  const [savedPage, setSavedPage] = useState(1);
+  const [savedTotalPages, setSavedTotalPages] = useState(1);
+  const [savedLoading, setSavedLoading] = useState(false);
 
   useEffect(() => {
     collectionCenterAPI.getAll({ status: 'Active', limit: 500 })
@@ -78,6 +105,22 @@ const IncentiveRegister = () => {
       .then((res) => setBankLedgers((res.data || []).map((l) => ({ value: l._id, label: l.ledgerName }))))
       .catch(() => setBankLedgers([]));
   }, []);
+
+  const loadSaved = async (page = 1) => {
+    setSavedLoading(true);
+    try {
+      const res = await incentiveRegisterAPI.getAll({ page, limit: 10 });
+      setSavedList(res.data || []);
+      setSavedTotalPages(res.totalPages || 1);
+      setSavedPage(page);
+    } catch (err) {
+      notifications.show({ color: 'red', title: 'Error', message: err.message || 'Failed to load saved registers' });
+    } finally {
+      setSavedLoading(false);
+    }
+  };
+
+  useEffect(() => { loadSaved(1); }, []);
 
   const resetResults = () => {
     setRows([]);
@@ -95,10 +138,6 @@ const IncentiveRegister = () => {
       notifications.show({ color: 'orange', title: 'Missing rate', message: 'Please enter the Incentive Rate/Ltr' });
       return;
     }
-    if (partyFilter === 'Center' && !centerId) {
-      notifications.show({ color: 'orange', title: 'Select Center', message: 'Please select a Center for the Center-wise filter' });
-      return;
-    }
 
     setGenerating(true);
     try {
@@ -107,7 +146,7 @@ const IncentiveRegister = () => {
         toDate: dayjs(toDate).format('YYYY-MM-DD'),
         rate,
         partyFilter,
-        centerId: partyFilter === 'Center' ? centerId : undefined,
+        centerId: centerId || undefined,
         basis,
       });
       const data = res.data || {};
@@ -136,10 +175,10 @@ const IncentiveRegister = () => {
     }
     setSaving(true);
     try {
-      const centerName = partyFilter === 'Center' ? centers.find((c) => c.value === centerId)?.label : undefined;
+      const centerName = centerId ? centers.find((c) => c.value === centerId)?.label : undefined;
       const payload = {
         caption, fromDate, toDate, incentiveRate: Number(rate),
-        partyFilter, centerId: partyFilter === 'Center' ? centerId : undefined, centerName,
+        partyFilter, centerId: centerId || undefined, centerName,
         basis, rows, ...totals,
       };
       const res = registerId
@@ -147,6 +186,7 @@ const IncentiveRegister = () => {
         : await incentiveRegisterAPI.create(payload);
       setRegisterId(res.data._id);
       notifications.show({ color: 'green', title: 'Saved', message: `Register ${res.data.registerNumber} saved` });
+      loadSaved(savedPage);
     } catch (err) {
       notifications.show({ color: 'red', title: 'Error', message: err.message || 'Failed to save register' });
     } finally {
@@ -163,6 +203,7 @@ const IncentiveRegister = () => {
     setCenterId(null);
     setBasis('Qty');
     setActivatePost(false);
+    setApplyDate(new Date());
     setPaymentMode('Cash');
     setBankLedgerId(null);
     resetResults();
@@ -177,11 +218,20 @@ const IncentiveRegister = () => {
       notifications.show({ color: 'orange', title: 'Select Bank Ledger', message: 'Please select a Bank Ledger' });
       return;
     }
+    if (!applyDate) {
+      notifications.show({ color: 'orange', title: 'Select Apply Date', message: 'Please select the Apply Date' });
+      return;
+    }
     setPosting(true);
     try {
-      const res = await incentiveRegisterAPI.postToDaybook(registerId, { paymentMode, bankLedgerId: paymentMode === 'Bank' ? bankLedgerId : undefined });
+      const res = await incentiveRegisterAPI.postToDaybook(registerId, {
+        paymentMode,
+        bankLedgerId: paymentMode === 'Bank' ? bankLedgerId : undefined,
+        applyDate: dayjs(applyDate).format('YYYY-MM-DD'),
+      });
       setPosted(true);
       notifications.show({ color: 'green', title: 'Posted', message: `Posted to Daybook (${paymentMode}) — ₹${fmt(res.data.totalIncentiveAmount)}` });
+      loadSaved(savedPage);
     } catch (err) {
       notifications.show({ color: 'red', title: 'Error', message: err.message || 'Failed to post to Daybook' });
     } finally {
@@ -219,8 +269,61 @@ const IncentiveRegister = () => {
     XLSX.writeFile(wb, `Incentive_Register_${dayjs(fromDate).format('YYYY-MM-DD')}_to_${dayjs(toDate).format('YYYY-MM-DD')}.xlsx`);
   };
 
+  const handleEdit = async (id) => {
+    try {
+      const res = await incentiveRegisterAPI.getById(id);
+      const r = res.data;
+      setCaption(r.caption || 'Incentive Register');
+      setFromDate(new Date(r.fromDate));
+      setToDate(new Date(r.toDate));
+      setRate(r.incentiveRate || '');
+      setPartyFilter(r.partyFilter === 'Center' ? 'All' : (r.partyFilter || 'All'));
+      setCenterId(r.centerId || null);
+      setBasis(r.basis || 'Qty');
+      setRows(r.rows || []);
+      setTotals({
+        totalQty: r.totalQty || 0,
+        totalAmount: r.totalAmount || 0,
+        totalIncentiveAmount: r.totalIncentiveAmount || 0,
+      });
+      setRegisterId(r._id);
+      setPosted(!!r.posted);
+      setPaymentMode(r.paymentMode || 'Cash');
+      setBankLedgerId(r.bankLedgerId || null);
+      setActivatePost(false);
+      notifications.show({ color: 'blue', title: 'Loaded', message: `Register ${r.registerNumber} loaded for editing` });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      notifications.show({ color: 'red', title: 'Error', message: err.message || 'Failed to load register' });
+    }
+  };
+
+  const handleDelete = (r) => {
+    if (r.posted) {
+      notifications.show({ color: 'orange', title: 'Cannot delete', message: 'Cancel the posting before deleting a posted register' });
+      return;
+    }
+    modals.openConfirmModal({
+      title: 'Delete Incentive Register',
+      children: <Text size="sm">Delete register <b>{r.registerNumber}</b> ({r.caption})? This cannot be undone.</Text>,
+      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          await incentiveRegisterAPI.delete(r._id);
+          notifications.show({ color: 'green', title: 'Deleted', message: `Register ${r.registerNumber} deleted` });
+          if (registerId === r._id) { handleClose(); }
+          loadSaved(savedPage);
+        } catch (err) {
+          notifications.show({ color: 'red', title: 'Error', message: err.message || 'Failed to delete register' });
+        }
+      },
+    });
+  };
+
   return (
     <Container fluid>
+      <style>{PRINT_CSS}</style>
       <Box mb="lg">
         <Title order={2}>
           <IconReceipt2 size={28} style={{ marginRight: 8, verticalAlign: 'middle' }} />
@@ -251,22 +354,19 @@ const IncentiveRegister = () => {
             </Grid.Col>
             <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
               <Select
-                label="Filter"
+                label="Farmer Type"
                 data={[
                   { value: 'All', label: 'All Farmers' },
                   { value: 'Member', label: 'Member' },
                   { value: 'NonMember', label: 'Non-Member' },
-                  { value: 'Center', label: 'Center Wise' },
                 ]}
                 value={partyFilter}
                 onChange={setPartyFilter}
               />
             </Grid.Col>
-            {partyFilter === 'Center' && (
-              <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-                <Select label="Center" placeholder="Select center" data={centers} value={centerId} onChange={setCenterId} searchable clearable />
-              </Grid.Col>
-            )}
+            <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+              <Select label="Center" placeholder="All Centers" data={centers} value={centerId} onChange={setCenterId} searchable clearable />
+            </Grid.Col>
             <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
               <Text size="sm" fw={500} mb={4}>Calculation Basis</Text>
               <SegmentedControl fullWidth data={[{ value: 'Qty', label: 'By Qty' }, { value: 'Amount', label: 'By Amount' }]} value={basis} onChange={setBasis} />
@@ -311,7 +411,16 @@ const IncentiveRegister = () => {
 
           {activatePost && !posted && (
             <Grid gutter="md" align="flex-end">
-              <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
+              <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+                <DatePickerInput
+                  label="Apply Date"
+                  description="Ledger entry will be dated as of this date"
+                  value={applyDate}
+                  onChange={setApplyDate}
+                  valueFormat="DD/MM/YYYY"
+                />
+              </Grid.Col>
+              <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
                 <Text size="sm" fw={500} mb={4}>Payment Mode</Text>
                 <SegmentedControl
                   fullWidth
@@ -324,7 +433,7 @@ const IncentiveRegister = () => {
                 />
               </Grid.Col>
               {paymentMode === 'Bank' && (
-                <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
+                <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
                   <Select
                     label="Bank Ledger"
                     placeholder="Select bank ledger"
@@ -335,7 +444,7 @@ const IncentiveRegister = () => {
                   />
                 </Grid.Col>
               )}
-              <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
+              <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
                 <Button
                   fullWidth
                   color="grape"
@@ -351,7 +460,7 @@ const IncentiveRegister = () => {
         </Stack>
       </Card>
 
-      <Card withBorder shadow="sm" radius="md">
+      <Card withBorder shadow="sm" radius="md" mb="md">
         <Table striped highlightOnHover withTableBorder>
           <Table.Thead>
             <Table.Tr>
@@ -392,73 +501,130 @@ const IncentiveRegister = () => {
         </Table>
       </Card>
 
-      {/* ── Hidden print area — Cash or Bank layout, selected by paymentMode ── */}
-      <div style={{ display: 'none' }}>
-        <div ref={printRef} style={{ padding: 16 }}>
-          <h3 style={{ textAlign: 'center', marginBottom: 4 }}>{caption}</h3>
-          <p style={{ textAlign: 'center', marginTop: 0, marginBottom: 12 }}>
-            {dayjs(fromDate).format('DD/MM/YYYY')} to {dayjs(toDate).format('DD/MM/YYYY')} — Rate: ₹{fmt(rate)}/Ltr
-          </p>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-            <thead>
-              <tr>
-                <th style={thStyle}>Sl.No</th>
-                <th style={thStyle}>Member No</th>
-                <th style={thStyle}>Farmer Name</th>
+      <Card withBorder shadow="sm" radius="md" mb="md">
+        <Stack gap="sm">
+          <Group justify="space-between">
+            <Text fw={600}>Saved Registers</Text>
+            {savedLoading && <Loader size="xs" />}
+          </Group>
+          <Table striped highlightOnHover withTableBorder>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Register No</Table.Th>
+                <Table.Th>Caption</Table.Th>
+                <Table.Th>From</Table.Th>
+                <Table.Th>To</Table.Th>
+                <Table.Th ta="right">Amount</Table.Th>
+                <Table.Th>Status</Table.Th>
+                <Table.Th ta="center">Actions</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {savedList.length === 0 ? (
+                <Table.Tr>
+                  <Table.Td colSpan={7}><Text ta="center" c="dimmed" py="sm">No saved registers yet</Text></Table.Td>
+                </Table.Tr>
+              ) : savedList.map((r) => (
+                <Table.Tr key={r._id}>
+                  <Table.Td>{r.registerNumber}</Table.Td>
+                  <Table.Td>{r.caption}</Table.Td>
+                  <Table.Td>{dayjs(r.fromDate).format('DD/MM/YYYY')}</Table.Td>
+                  <Table.Td>{dayjs(r.toDate).format('DD/MM/YYYY')}</Table.Td>
+                  <Table.Td ta="right">{fmt(r.totalIncentiveAmount)}</Table.Td>
+                  <Table.Td><Badge color={r.posted ? 'green' : 'gray'} variant="light">{r.status}</Badge></Table.Td>
+                  <Table.Td ta="center">
+                    <Group gap={4} justify="center">
+                      <Tooltip label="Edit">
+                        <ActionIcon variant="light" color="blue" onClick={() => handleEdit(r._id)}>
+                          <IconEdit size={16} />
+                        </ActionIcon>
+                      </Tooltip>
+                      <Tooltip label={r.posted ? 'Cannot delete a posted register' : 'Delete'}>
+                        <ActionIcon variant="light" color="red" disabled={r.posted} onClick={() => handleDelete(r)}>
+                          <IconTrash size={16} />
+                        </ActionIcon>
+                      </Tooltip>
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+          {savedTotalPages > 1 && (
+            <Group justify="flex-end">
+              <Pagination total={savedTotalPages} value={savedPage} onChange={(p) => loadSaved(p)} size="sm" />
+            </Group>
+          )}
+        </Stack>
+      </Card>
+
+      {/* ── Print area — Cash or Bank layout, selected by paymentMode.
+             Kept in normal layout (not display:none) and hidden via
+             visibility in PRINT_CSS so react-to-print gets real dimensions. ── */}
+      <div ref={printRef} className="ir-print-area" style={{ position: 'absolute', left: -99999, top: 0, padding: 16, background: '#fff' }}>
+        <h3 style={{ textAlign: 'center', marginBottom: 4 }}>{caption}</h3>
+        <p style={{ textAlign: 'center', marginTop: 0, marginBottom: 12 }}>
+          {dayjs(fromDate).format('DD/MM/YYYY')} to {dayjs(toDate).format('DD/MM/YYYY')} — Rate: ₹{fmt(rate)}/Ltr
+        </p>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr>
+              <th style={thStyle}>Sl.No</th>
+              <th style={thStyle}>Member No</th>
+              <th style={thStyle}>Farmer Name</th>
+              {paymentMode === 'Bank' ? (
+                <>
+                  <th style={thStyle}>Account Number</th>
+                  <th style={thStyle}>Bank Name</th>
+                  <th style={thStyle}>Branch</th>
+                  <th style={thStyle}>IFSC</th>
+                  <th style={thStyle}>Milk Qty (Ltr)</th>
+                  <th style={thStyle}>Incentive Amt</th>
+                </>
+              ) : (
+                <>
+                  <th style={thStyle}>Milk Qty (Ltr)</th>
+                  <th style={thStyle}>Incentive Rate/Ltr</th>
+                  <th style={thStyle}>Incentive Amt</th>
+                  <th style={thStyle}>Signature</th>
+                </>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.farmerId}>
+                <td style={tdStyle}>{r.slNo}</td>
+                <td style={tdStyle}>{r.memberNo}</td>
+                <td style={tdStyle}>{r.farmerName}</td>
                 {paymentMode === 'Bank' ? (
                   <>
-                    <th style={thStyle}>Account Number</th>
-                    <th style={thStyle}>Bank Name</th>
-                    <th style={thStyle}>Branch</th>
-                    <th style={thStyle}>IFSC</th>
-                    <th style={thStyle}>Milk Qty (Ltr)</th>
-                    <th style={thStyle}>Incentive Amt</th>
+                    <td style={tdStyle}>{r.bankAccountNumber}</td>
+                    <td style={tdStyle}>{r.bankName}</td>
+                    <td style={tdStyle}>{r.bankBranch}</td>
+                    <td style={tdStyle}>{r.bankIfsc}</td>
+                    <td style={tdStyle}>{fmt(r.milkQty)}</td>
+                    <td style={tdStyle}>{fmt(r.incentiveAmount)}</td>
                   </>
                 ) : (
                   <>
-                    <th style={thStyle}>Milk Qty (Ltr)</th>
-                    <th style={thStyle}>Incentive Rate/Ltr</th>
-                    <th style={thStyle}>Incentive Amt</th>
-                    <th style={thStyle}>Signature</th>
+                    <td style={tdStyle}>{fmt(r.milkQty)}</td>
+                    <td style={tdStyle}>{fmt(rate)}</td>
+                    <td style={tdStyle}>{fmt(r.incentiveAmount)}</td>
+                    <td style={tdStyle}></td>
                   </>
                 )}
               </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.farmerId}>
-                  <td style={tdStyle}>{r.slNo}</td>
-                  <td style={tdStyle}>{r.memberNo}</td>
-                  <td style={tdStyle}>{r.farmerName}</td>
-                  {paymentMode === 'Bank' ? (
-                    <>
-                      <td style={tdStyle}>{r.bankAccountNumber}</td>
-                      <td style={tdStyle}>{r.bankName}</td>
-                      <td style={tdStyle}>{r.bankBranch}</td>
-                      <td style={tdStyle}>{r.bankIfsc}</td>
-                      <td style={tdStyle}>{fmt(r.milkQty)}</td>
-                      <td style={tdStyle}>{fmt(r.incentiveAmount)}</td>
-                    </>
-                  ) : (
-                    <>
-                      <td style={tdStyle}>{fmt(r.milkQty)}</td>
-                      <td style={tdStyle}>{fmt(rate)}</td>
-                      <td style={tdStyle}>{fmt(r.incentiveAmount)}</td>
-                      <td style={tdStyle}></td>
-                    </>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td style={tdStyle} colSpan={paymentMode === 'Bank' ? 8 : 5}><strong>Total</strong></td>
-                <td style={tdStyle}><strong>{fmt(totals.totalIncentiveAmount)}</strong></td>
-                {paymentMode !== 'Bank' && <td style={tdStyle}></td>}
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td style={tdStyle} colSpan={paymentMode === 'Bank' ? 8 : 5}><strong>Total</strong></td>
+              <td style={tdStyle}><strong>{fmt(totals.totalIncentiveAmount)}</strong></td>
+              {paymentMode !== 'Bank' && <td style={tdStyle}></td>}
+            </tr>
+          </tfoot>
+        </table>
       </div>
     </Container>
   );

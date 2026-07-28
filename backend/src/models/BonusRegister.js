@@ -45,7 +45,7 @@ const bonusRegisterSchema = new mongoose.Schema(
     rateMode: {
       type: String,
       enum: ['Percentage', 'Rate'],
-      default: 'Rate',
+      default: 'Percentage',
     },
     bonusRate: {
       type: Number,

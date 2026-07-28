@@ -34,9 +34,6 @@ export const generatePreview = async (req, res) => {
     if (!rate || isNaN(incentiveRate) || incentiveRate < 0) {
       return res.status(400).json({ success: false, message: 'A valid incentive rate is required' });
     }
-    if (partyFilter === 'Center' && !centerId) {
-      return res.status(400).json({ success: false, message: 'Please select a Center for the Center-wise filter' });
-    }
 
     const start = new Date(fromDate); start.setHours(0, 0, 0, 0);
     const end = new Date(toDate); end.setHours(23, 59, 59, 999);
@@ -79,9 +76,10 @@ export const generatePreview = async (req, res) => {
       })
       .filter(Boolean);
 
+    // Farmer-type filter and Center filter are independent — both may apply together.
     if (partyFilter === 'Member') rows = rows.filter((r) => r.isMembership);
     else if (partyFilter === 'NonMember') rows = rows.filter((r) => !r.isMembership);
-    else if (partyFilter === 'Center') rows = rows.filter((r) => r.centerIdStr === String(centerId));
+    if (centerId) rows = rows.filter((r) => r.centerIdStr === String(centerId));
 
     rows.sort((a, b) => (a.farmerNumber || '').localeCompare(b.farmerNumber || '', undefined, { numeric: true }));
 
@@ -134,8 +132,8 @@ export const createRegister = async (req, res) => {
         toDate,
         incentiveRate,
         partyFilter,
-        centerId: partyFilter === 'Center' ? centerId : undefined,
-        centerName: partyFilter === 'Center' ? centerName : undefined,
+        centerId: centerId || undefined,
+        centerName: centerId ? centerName : undefined,
         basis,
         rows: rows || [],
         totalQty: totalQty || 0,
@@ -260,12 +258,20 @@ export const postToDaybook = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Nothing to post — total incentive amount is zero' });
     }
 
-    const { paymentMode, bankLedgerId } = req.body;
+    const { paymentMode, bankLedgerId, applyDate } = req.body;
     if (!['Cash', 'Bank'].includes(paymentMode)) {
       return res.status(400).json({ success: false, message: 'paymentMode must be Cash or Bank' });
     }
     if (paymentMode === 'Bank' && !bankLedgerId) {
       return res.status(400).json({ success: false, message: 'Please select a Bank Ledger' });
+    }
+    let effectiveDate = new Date();
+    if (applyDate) {
+      const parsed = new Date(applyDate);
+      if (isNaN(parsed.getTime())) {
+        return res.status(400).json({ success: false, message: 'Invalid Apply Date' });
+      }
+      effectiveDate = parsed;
     }
 
     const incentiveLedger = await getIncentiveLedger(companyId);
@@ -307,7 +313,7 @@ export const postToDaybook = async (req, res) => {
       { ledgerId: payLedger._id, ledgerName: payLedger.ledgerName, debitAmount: 0, creditAmount: amount, narration },
     ];
 
-    const postedAt = new Date();
+    const postedAt = effectiveDate;
     const voucher = new Voucher({
       voucherType: 'Payment',
       voucherNumber: await generateVoucherNumber('Payment', companyId),

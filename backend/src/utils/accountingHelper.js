@@ -320,6 +320,15 @@ export const updateLedgerBalances = async (entries, session = null, companyId = 
       // Credit normal: credit increases (+), debit decreases (-)
       ledger.currentBalance -= netChange;
       ledger.balanceType = ledger.currentBalance >= 0 ? 'Cr' : 'Dr';
+    } else if (ledger.parentGroup === 'ASSET' || ledger.parentGroup === 'EXPENSE') {
+      // Fallback for ledgerTypes not in the explicit lists above (e.g. 'Statutory
+      // Funds and Reserves', 'Advance due by Society', ...) — use parentGroup as
+      // the authoritative debit/credit-normal signal so balances always update.
+      ledger.currentBalance += netChange;
+      ledger.balanceType = ledger.currentBalance >= 0 ? 'Dr' : 'Cr';
+    } else if (ledger.parentGroup === 'LIABILITY' || ledger.parentGroup === 'INCOME') {
+      ledger.currentBalance -= netChange;
+      ledger.balanceType = ledger.currentBalance >= 0 ? 'Cr' : 'Dr';
     }
 
     if (session) await ledger.save({ session });
