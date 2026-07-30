@@ -56,7 +56,10 @@ const PRINT_CSS = `
   @media print {
     body * { visibility: hidden !important; }
     .ir-print-area, .ir-print-area * { visibility: visible !important; }
-    .ir-print-area { position: fixed; inset: 0; padding: 10mm; background: #fff !important; }
+    .ir-print-area {
+      position: fixed !important; inset: 0 !important; left: 0 !important; top: 0 !important;
+      padding: 10mm !important; background: #fff !important;
+    }
     .no-print { display: none !important; }
     @page { size: A4 portrait; margin: 8mm; }
   }
@@ -373,6 +376,33 @@ const IncentiveRegister = () => {
             </Grid.Col>
           </Grid>
 
+          <Grid gutter="md" align="flex-end">
+            <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+              <Text size="sm" fw={500} mb={4}>Payment Mode</Text>
+              <SegmentedControl
+                fullWidth
+                data={[
+                  { value: 'Cash', label: 'Cash' },
+                  { value: 'Bank', label: 'Bank' },
+                ]}
+                value={paymentMode}
+                onChange={setPaymentMode}
+              />
+            </Grid.Col>
+            {paymentMode === 'Bank' && (
+              <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+                <Select
+                  label="Bank Ledger"
+                  placeholder="Select bank ledger"
+                  data={bankLedgers}
+                  value={bankLedgerId}
+                  onChange={setBankLedgerId}
+                  searchable
+                />
+              </Grid.Col>
+            )}
+          </Grid>
+
           <Group>
             <Button leftSection={<IconCalculator size={16} />} onClick={handleGenerate} loading={generating}>
               Generate
@@ -420,30 +450,6 @@ const IncentiveRegister = () => {
                   valueFormat="DD/MM/YYYY"
                 />
               </Grid.Col>
-              <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-                <Text size="sm" fw={500} mb={4}>Payment Mode</Text>
-                <SegmentedControl
-                  fullWidth
-                  data={[
-                    { value: 'Cash', label: 'Cash' },
-                    { value: 'Bank', label: 'Bank' },
-                  ]}
-                  value={paymentMode}
-                  onChange={setPaymentMode}
-                />
-              </Grid.Col>
-              {paymentMode === 'Bank' && (
-                <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-                  <Select
-                    label="Bank Ledger"
-                    placeholder="Select bank ledger"
-                    data={bankLedgers}
-                    value={bankLedgerId}
-                    onChange={setBankLedgerId}
-                    searchable
-                  />
-                </Grid.Col>
-              )}
               <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
                 <Button
                   fullWidth

@@ -70,7 +70,7 @@ export const generatePreview = async (req, res) => {
     const farmerIds = agg.map((a) => a._id);
     const farmers = await Farmer.find({ _id: { $in: farmerIds }, companyId })
       .populate('collectionCenter', 'centerName')
-      .select('farmerNumber memberId personalDetails isMembership collectionCenter bankDetails')
+      .select('farmerNumber memberId personalDetails isMembership membershipDate collectionCenter bankDetails')
       .lean();
     const farmerMap = new Map(farmers.map((f) => [f._id.toString(), f]));
 
@@ -85,6 +85,7 @@ export const generatePreview = async (req, res) => {
           farmerName: f.personalDetails?.name || '',
           centerName: f.collectionCenter?.centerName || '',
           isMembership: !!f.isMembership,
+          membershipDate: f.membershipDate || null,
           centerIdStr: f.collectionCenter?._id ? f.collectionCenter._id.toString() : '',
           milkQty: round2(a.milkQty),
           milkAmount: round2(a.milkAmount),
@@ -96,9 +97,15 @@ export const generatePreview = async (req, res) => {
       })
       .filter(Boolean);
 
+    // A farmer counts as a "Member" for this report only if their membership
+    // date falls on/before the selected period's end — reflects who was
+    // actually a member during that period, not just who is a member today.
+    // Legacy records without a recorded membershipDate fall back to the flag.
+    const isMemberAsOf = (r) => (r.membershipDate ? new Date(r.membershipDate) <= end : r.isMembership);
+
     // Farmer-type filter and Center filter are independent — both may apply together.
-    if (partyFilter === 'Member') rows = rows.filter((r) => r.isMembership);
-    else if (partyFilter === 'NonMember') rows = rows.filter((r) => !r.isMembership);
+    if (partyFilter === 'Member') rows = rows.filter((r) => isMemberAsOf(r));
+    else if (partyFilter === 'NonMember') rows = rows.filter((r) => !isMemberAsOf(r));
     if (centerId) rows = rows.filter((r) => r.centerIdStr === String(centerId));
 
     rows.sort((a, b) => (a.farmerNumber || '').localeCompare(b.farmerNumber || '', undefined, { numeric: true }));
@@ -117,7 +124,7 @@ export const generatePreview = async (req, res) => {
       totalDividendAmount += dividendAmount;
       totalPostAmount += totalAmt;
 
-      const { isMembership, centerIdStr, ...row } = r; // eslint-disable-line no-unused-vars
+      const { isMembership, membershipDate, centerIdStr, ...row } = r; // eslint-disable-line no-unused-vars
       return { slNo: idx + 1, ...row, bonusAmount, dividendAmount, totalAmount: totalAmt };
     });
 

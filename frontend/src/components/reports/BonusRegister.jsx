@@ -53,7 +53,10 @@ const PRINT_CSS = `
   @media print {
     body * { visibility: hidden !important; }
     .br-print-area, .br-print-area * { visibility: visible !important; }
-    .br-print-area { position: fixed; inset: 0; padding: 10mm; background: #fff !important; }
+    .br-print-area {
+      position: fixed !important; inset: 0 !important; left: 0 !important; top: 0 !important;
+      padding: 10mm !important; background: #fff !important;
+    }
     .no-print { display: none !important; }
     @page { size: A4 portrait; margin: 8mm; }
   }
@@ -125,6 +128,11 @@ const BonusRegister = () => {
   };
 
   useEffect(() => { loadSaved(1); }, []);
+
+  // A % bonus is always a % of the milk Amount — Qty has no currency meaning there.
+  useEffect(() => {
+    if (rateMode === 'Percentage') setBasis('Amount');
+  }, [rateMode]);
 
   const resetResults = () => {
     setRows([]);
@@ -387,20 +395,24 @@ const BonusRegister = () => {
               <SegmentedControl fullWidth data={[{ value: 'Percentage', label: 'Percentage' }, { value: 'Rate', label: 'Rate/Ltr' }]} value={rateMode} onChange={setRateMode} />
             </Grid.Col>
             {rateMode === 'Rate' ? (
-              <>
-                <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-                  <NumberInput label="Bonus Rate/Ltr" placeholder="Enter rate" value={bonusRate} onChange={setBonusRate} prefix="₹ " decimalScale={2} min={0} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-                  <Text size="sm" fw={500} mb={4}>Calculation Basis</Text>
-                  <SegmentedControl fullWidth data={[{ value: 'Qty', label: 'By Qty' }, { value: 'Amount', label: 'By Amount' }]} value={basis} onChange={setBasis} />
-                </Grid.Col>
-              </>
+              <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+                <NumberInput label="Bonus Rate/Ltr" placeholder="Enter rate" value={bonusRate} onChange={setBonusRate} prefix="₹ " decimalScale={2} min={0} />
+              </Grid.Col>
             ) : (
               <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
                 <NumberInput label="Bonus %" placeholder="Enter %" value={bonusPercent} onChange={setBonusPercent} suffix=" %" decimalScale={2} min={0} max={100} />
               </Grid.Col>
             )}
+            <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+              <Text size="sm" fw={500} mb={4}>Calculation Basis</Text>
+              <SegmentedControl
+                fullWidth
+                data={[{ value: 'Qty', label: 'By Qty' }, { value: 'Amount', label: 'By Amount' }]}
+                value={basis}
+                onChange={setBasis}
+                disabled={rateMode === 'Percentage'}
+              />
+            </Grid.Col>
           </Grid>
 
           <Grid gutter="md" align="flex-end">
@@ -408,8 +420,8 @@ const BonusRegister = () => {
               <Select
                 label="Farmer Type"
                 data={[
-                  { value: 'All', label: 'All Farmers' },
                   { value: 'Member', label: 'Member' },
+                  { value: 'All', label: 'All Farmers' },
                   { value: 'NonMember', label: 'Non-Member' },
                 ]}
                 value={partyFilter}
@@ -419,6 +431,33 @@ const BonusRegister = () => {
             <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
               <Select label="Center" placeholder="All Centers" data={centers} value={centerId} onChange={setCenterId} searchable clearable />
             </Grid.Col>
+          </Grid>
+
+          <Grid gutter="md" align="flex-end">
+            <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+              <Text size="sm" fw={500} mb={4}>Payment Mode</Text>
+              <SegmentedControl
+                fullWidth
+                data={[
+                  { value: 'Cash', label: 'Cash' },
+                  { value: 'Bank', label: 'Bank' },
+                ]}
+                value={paymentMode}
+                onChange={setPaymentMode}
+              />
+            </Grid.Col>
+            {paymentMode === 'Bank' && (
+              <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+                <Select
+                  label="Bank Ledger"
+                  placeholder="Select bank ledger"
+                  data={bankLedgers}
+                  value={bankLedgerId}
+                  onChange={setBankLedgerId}
+                  searchable
+                />
+              </Grid.Col>
+            )}
           </Grid>
 
           <Group align="flex-end" gap="md">
@@ -489,30 +528,6 @@ const BonusRegister = () => {
                   valueFormat="DD/MM/YYYY"
                 />
               </Grid.Col>
-              <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-                <Text size="sm" fw={500} mb={4}>Payment Mode</Text>
-                <SegmentedControl
-                  fullWidth
-                  data={[
-                    { value: 'Cash', label: 'Cash' },
-                    { value: 'Bank', label: 'Bank' },
-                  ]}
-                  value={paymentMode}
-                  onChange={setPaymentMode}
-                />
-              </Grid.Col>
-              {paymentMode === 'Bank' && (
-                <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-                  <Select
-                    label="Bank Ledger"
-                    placeholder="Select bank ledger"
-                    data={bankLedgers}
-                    value={bankLedgerId}
-                    onChange={setBankLedgerId}
-                    searchable
-                  />
-                </Grid.Col>
-              )}
               <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
                 <Button
                   fullWidth

@@ -257,6 +257,8 @@ const MainLayout = () => {
     }] : []),
     // BUSINESS INVENTORY - Only show for Private Firm
     ...(selectedBusinessType === 'Private Firm' ? [{
+
+      
       key: 'business-inventory-menu',
       icon: <IconBox size={18} />,
       label: 'Business Inventory',
