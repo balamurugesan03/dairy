@@ -108,17 +108,39 @@ async function createMilkSaleVoucher(sale, companyId) {
     // Adjustment (Journal) voucher:
     //   Dr [Customer's own ledger]  (payment side — amount owed by customer)
     //   Cr MILK CREDIT SALES        (receipt side — income)
-    const customer = creditorId ? await Customer.findById(creditorId).lean() : null;
+    // Not .lean() — self-heals customer.ledgerId below, which needs .save().
+    const customer = creditorId ? await Customer.findById(creditorId) : null;
     const customerName = customer?.name || sale.creditorName || '';
 
-    // Prefer the customer's own ledger (type 'Advance due to Society' → Dr = Payment side in GL)
     let customerLedger = null;
-    if (customer?.ledgerId) {
-      customerLedger = await Ledger.findById(customer.ledgerId);
-    }
-    if (!customerLedger) {
+    if (customer) {
+      // Always resolve the customer's OWN ledger (same one createCustomerLedger()
+      // creates at customer sign-up, "Name (CUST0007)"), self-healing
+      // customer.ledgerId if it's unset (customer created before that
+      // auto-link existed) or points at a ledger that no longer exists —
+      // instead of trusting the FK alone and silently falling through to a
+      // generic ledger. This guarantees every credit sale for a given
+      // customer always lands on that same customer's ledger.
+      if (customer.ledgerId) {
+        customerLedger = await Ledger.findById(customer.ledgerId);
+      }
+      if (!customerLedger) {
+        customerLedger = await resolveLedger(
+          `${customer.name} (${customer.customerId})`,
+          'Advance due to Society',
+          'Advance due to Society',
+          'Dr',
+          companyId
+        );
+        customer.ledgerId = customerLedger._id;
+        await customer.save();
+      }
+    } else {
+      // No matching Customer record at all (e.g. an unlinked legacy/import
+      // row whose creditorId doesn't resolve) — fall back to a ledger keyed
+      // by the customer's saved name, never the generic literal "CUSTOMER".
       customerLedger = await resolveLedger(
-        customerName || 'CUSTOMER',
+        customerName || `Unlinked Customer — ${billNo}`,
         'Advance due to Society',
         'Advance due to Society',
         'Dr',

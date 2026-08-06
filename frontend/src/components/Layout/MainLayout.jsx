@@ -259,6 +259,7 @@ const MainLayout = () => {
     ...(selectedBusinessType === 'Private Firm' ? [{
 
       
+      
       key: 'business-inventory-menu',
       icon: <IconBox size={18} />,
       label: 'Business Inventory',
