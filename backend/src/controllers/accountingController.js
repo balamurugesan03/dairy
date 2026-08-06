@@ -25,6 +25,97 @@ export const createVoucher = async (req, res) => {
       });
     }
 
+    // ── def_voucher_type enforcement (Receipt Voucher only) ─────────────────
+    // Account Group rule: a ledger whose def_voucher_type = 'P' (Payment Side
+    // Only) may never be the head-of-account (credited) side of a Receipt
+    // Voucher — only 'R' (Receipt Side Only) and 'B' (Both) ledgers qualify.
+    // This is checked on the CREDIT leg only: that's the ledger the user
+    // actually picks as "head of account" in the Receipt Voucher screen; the
+    // Cash/Bank debit leg is the automatic counter-entry and is exempt.
+    // Without this check a P-only ledger could be credited via Receipt
+    // Voucher, which silently disappears from the R/P-driven reports
+    // (Receipts & Payments Statement, R&D Statement, Ledger Abstract —
+    // Grouped) because those only surface a 'P' ledger's DEBIT activity.
+    if (voucherData.voucherType === 'Receipt') {
+      const creditLegLedgerIds = voucherData.entries
+        .filter(e => (e.creditAmount || 0) > 0)
+        .map(e => e.ledgerId);
+
+      if (creditLegLedgerIds.length) {
+        const creditedLedgers = await Ledger.find({
+          _id: { $in: creditLegLedgerIds },
+          companyId: req.companyId
+        }).select('ledgerName voucherType');
+
+        const paymentOnlyLedger = creditedLedgers.find(l => l.voucherType === 'P');
+        if (paymentOnlyLedger) {
+          return res.status(400).json({
+            success: false,
+            message: `"${paymentOnlyLedger.ledgerName}" is a Payment-side ledger (def_voucher_type = P) and cannot be used as the head of account in a Receipt Voucher.`
+          });
+        }
+      }
+    }
+
+    // ── def_voucher_type enforcement (Payment Voucher — mirror of Receipt) ──
+    // A ledger whose def_voucher_type = 'R' (Receipt Side Only) may never be
+    // the head-of-account (debited) side of a Payment Voucher — only 'P'
+    // (Payment Side Only) and 'B' (Both) ledgers qualify. Checked on the
+    // DEBIT leg only (the ledger the user picks as "head of account" in the
+    // Payment Voucher screen); the Cash/Bank credit leg is the automatic
+    // counter-entry and is exempt.
+    if (voucherData.voucherType === 'Payment') {
+      const debitLegLedgerIds = voucherData.entries
+        .filter(e => (e.debitAmount || 0) > 0)
+        .map(e => e.ledgerId);
+
+      if (debitLegLedgerIds.length) {
+        const debitedLedgers = await Ledger.find({
+          _id: { $in: debitLegLedgerIds },
+          companyId: req.companyId
+        }).select('ledgerName voucherType');
+
+        const receiptOnlyLedger = debitedLedgers.find(l => l.voucherType === 'R');
+        if (receiptOnlyLedger) {
+          return res.status(400).json({
+            success: false,
+            message: `"${receiptOnlyLedger.ledgerName}" is a Receipt-side ledger (def_voucher_type = R) and cannot be used as the head of account in a Payment Voucher.`
+          });
+        }
+      }
+    }
+
+    // ── Journal Voucher: no Cash/Bank leg allowed ────────────────────────────
+    // def_voucher_type (R/P/B) governs which ledger may sit opposite a
+    // Cash/Bank movement in a Receipt or Payment Voucher. Journal Voucher is
+    // the general-purpose "any two ledgers" adjustment instrument (accruals,
+    // provisions, write-offs, inter-ledger transfers) and is intentionally
+    // NOT restricted by R/P/B — every automatic Journal posting in this
+    // system (advance recovery, credit-mode milk sales, purchase/sales
+    // returns, union sales) adjusts two non-cash ledgers and never touches
+    // Cash/Bank. If a user were allowed to include a Cash/Bank ledger in a
+    // manual Journal Voucher, they could pair it with a Payment-only or
+    // Receipt-only ledger and bypass the checks above entirely — so instead
+    // of restricting *which* ledger a Journal touches, we simply forbid it
+    // from ever touching Cash/Bank, which is what actually makes it a
+    // "Journal" instead of a Receipt/Payment/Contra in the first place.
+    if (voucherData.voucherType === 'Journal') {
+      const CASH_BANK_TYPES = ['Cash', 'Bank', 'Cash in Hand', 'Bank Accounts'];
+      const journalLedgerIds = voucherData.entries.map(e => e.ledgerId);
+      const journalLedgers = await Ledger.find({
+        _id: { $in: journalLedgerIds },
+        companyId: req.companyId
+      }).select('ledgerName ledgerType');
+
+      const cashOrBankLedger = journalLedgers.find(l => CASH_BANK_TYPES.includes(l.ledgerType));
+      if (cashOrBankLedger) {
+        return res.status(400).json({
+          success: false,
+          message: `"${cashOrBankLedger.ledgerName}" is a Cash/Bank ledger and cannot be used in a Journal Voucher — use Receipt, Payment, or Contra instead.`
+        });
+      }
+    }
+
     voucherData.totalDebit = totalDebit;
     voucherData.totalCredit = totalCredit;
 

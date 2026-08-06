@@ -2562,6 +2562,145 @@ export const getBalanceSheetV2 = async (req, res) => {
   }
 };
 
+// ─── TRIAL BALANCE — Dairy Cooperative, driven by Account Group structure ────
+// Lists every active ledger's closing balance split into Debit / Credit
+// columns, grouped the way the Account Group master groups them
+// (parentGroup → ledgerType, i.e. ASSET/LIABILITY/INCOME/EXPENSE → each
+// named group such as "Bank Accounts", "Sales", "Purchases"...).
+//
+// Uses fa_type territory (parentGroup / ledgerType via the shared
+// ledgerBalance() helper above — the same one Trading Account V2, P&L V2 and
+// Balance Sheet V2 already use), NEVER def_voucher_type (ledger.voucherType /
+// R-P-B). Trial Balance, Trading, P&L and Balance Sheet are fa_type-driven
+// per the Account Group spec; def_voucher_type only governs which ledger may
+// sit opposite Cash/Bank in a Receipt/Payment Voucher and which side of the
+// Receipt & Disbursement reports it prints on — it has no bearing on a
+// ledger's Dr/Cr closing balance.
+//
+// Debit Total = Credit Total is a direct, guaranteed consequence of
+// double-entry posting: every voucher's totalDebit === totalCredit is
+// enforced at creation (Voucher.pre('save') in models/Voucher.js and the
+// check in accountingController.createVoucher), so summing every ledger's
+// closing Dr balance and every ledger's closing Cr balance across the WHOLE
+// company must tally. That grand check (grandDebitTotal / grandCreditTotal /
+// isTallied) is always computed from the full, unfiltered ledger set — a
+// Group or Ledger filter only narrows what's *displayed*, exactly like Tally,
+// and a filtered subset is not expected to tally on its own.
+export const getTrialBalance = async (req, res) => {
+  try {
+    const { startDate, endDate, filterType, customStart, customEnd, group, ledgerType, ledgerId } = req.query;
+
+    let start, end;
+    if (filterType) {
+      const range = getDateRange(filterType, customStart, customEnd);
+      start = range.startDate; end = range.endDate;
+    } else if (startDate && endDate) {
+      start = new Date(startDate); start.setHours(0, 0, 0, 0);
+      end   = new Date(endDate);   end.setHours(23, 59, 59, 999);
+    } else {
+      // Default: current financial year (April–March), matching the rest of
+      // this module's date-filter convention.
+      const range = getDateRange('financialYear');
+      start = range.startDate; end = range.endDate;
+    }
+
+    if (!start || !end || isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({ success: false, message: 'Invalid date parameters provided' });
+    }
+
+    const companyId = req.companyId;
+
+    // Full, UNFILTERED ledger set — always used for the tally check below.
+    const allLedgers = await Ledger.find({ companyId, status: 'Active' }).lean();
+    const allIds = allLedgers.map(l => l._id);
+    const { priorMap, periodMap } = await buildVoucherMaps(companyId, start, end, allIds);
+
+    const rowFor = (ledger) => {
+      const pg = ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'].includes(ledger.parentGroup)
+        ? ledger.parentGroup : getParentGroupFromLedgerType(ledger.ledgerType);
+      const { signed, isDebit } = ledgerBalance(ledger, priorMap, periodMap);
+      const { signed: openingSigned } = ledgerBalance(ledger, priorMap, {});
+      const lid = ledger._id.toString();
+      const period = periodMap[lid] || { debit: 0, credit: 0 };
+
+      return {
+        ledgerId: ledger._id,
+        ledgerName: ledger.ledgerName,
+        ledgerType: ledger.ledgerType,   // Account Group name (group_name)
+        parentGroup: pg,                 // ASSET / LIABILITY / INCOME / EXPENSE
+        openingBalance: Math.abs(openingSigned),
+        openingBalanceType: openingSigned === 0 ? null : (openingSigned > 0 ? (isDebit ? 'Dr' : 'Cr') : (isDebit ? 'Cr' : 'Dr')),
+        periodDebit: period.debit,
+        periodCredit: period.credit,
+        closingBalance: Math.abs(signed),
+        closingBalanceType: signed === 0 ? null : (signed > 0 ? (isDebit ? 'Dr' : 'Cr') : (isDebit ? 'Cr' : 'Dr'))
+      };
+    };
+
+    // Trial Balance conventionally omits ledgers with a nil closing balance —
+    // same convention already used by Balance Sheet V2's groupLedgers().
+    const allRows = allLedgers.map(rowFor).filter(r => Math.abs(r.closingBalance) > 0.004);
+
+    const grandDebitTotal  = allRows.reduce((s, r) => s + (r.closingBalanceType === 'Dr' ? r.closingBalance : 0), 0);
+    const grandCreditTotal = allRows.reduce((s, r) => s + (r.closingBalanceType === 'Cr' ? r.closingBalance : 0), 0);
+    const isTallied = Math.abs(grandDebitTotal - grandCreditTotal) < 1;
+
+    // ── Display filters: Group (Account Group / ledgerType) and Ledger ──────
+    const groupFilter = (group || ledgerType || '').trim();
+    let rows = allRows;
+    if (ledgerId) {
+      rows = rows.filter(r => r.ledgerId.toString() === ledgerId);
+    } else if (groupFilter) {
+      rows = rows.filter(r => r.ledgerType === groupFilter);
+    }
+
+    // Group the (filtered) rows by parentGroup → accountGroup (ledgerType),
+    // following the Account Group structure.
+    const groupMap = {};
+    rows.forEach(r => {
+      const pgKey = r.parentGroup || 'OTHER';
+      if (!groupMap[pgKey]) groupMap[pgKey] = {};
+      const agKey = r.ledgerType || 'Other';
+      if (!groupMap[pgKey][agKey]) groupMap[pgKey][agKey] = [];
+      groupMap[pgKey][agKey].push(r);
+    });
+
+    const PARENT_GROUP_ORDER = ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE', 'STOCK', 'PL', 'OTHER'];
+    const groups = PARENT_GROUP_ORDER
+      .filter(pg => groupMap[pg])
+      .map(pg => ({
+        parentGroup: pg,
+        accountGroups: Object.entries(groupMap[pg])
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([accountGroup, ledgers]) => ({
+            accountGroup,
+            ledgers: ledgers.sort((a, b) => a.ledgerName.localeCompare(b.ledgerName)),
+            totalDebit:  ledgers.reduce((s, l) => s + (l.closingBalanceType === 'Dr' ? l.closingBalance : 0), 0),
+            totalCredit: ledgers.reduce((s, l) => s + (l.closingBalanceType === 'Cr' ? l.closingBalance : 0), 0)
+          }))
+      }));
+
+    const filteredDebitTotal  = rows.reduce((s, r) => s + (r.closingBalanceType === 'Dr' ? r.closingBalance : 0), 0);
+    const filteredCreditTotal = rows.reduce((s, r) => s + (r.closingBalanceType === 'Cr' ? r.closingBalance : 0), 0);
+
+    res.json({
+      success: true,
+      data: {
+        startDate: start, endDate: end,
+        financialYear: getFinancialYear(start),
+        filters: { group: groupFilter || null, ledgerId: ledgerId || null },
+        groups,
+        filteredDebitTotal, filteredCreditTotal,
+        // Always from the full, unfiltered ledger set (see note above).
+        grandDebitTotal, grandCreditTotal, isTallied
+      }
+    });
+  } catch (err) {
+    console.error('getTrialBalance error:', err);
+    res.status(500).json({ success: false, message: err.message || 'Failed to generate Trial Balance' });
+  }
+};
+
 export default {
   getReceiptsDisbursementReport,
   getTradingAccount,
@@ -2580,5 +2719,6 @@ export default {
   getMISReport,
   getTradingAccountV2,
   getProfitLossV2,
-  getBalanceSheetV2
+  getBalanceSheetV2,
+  getTrialBalance
 };

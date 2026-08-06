@@ -12,11 +12,34 @@ const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 // Fuzzy-matches the existing seeded ledger regardless of "MEMBER" vs
 // "MEMBERS" wording — mirrors the ADDL PRICE INCENTIVE lookup idiom used
 // for the Incentive Register.
+//
+// Auto-creates "MEMBERS BONUS" (same Account Group values as
+// seedDairyLedgers.js: Statutory Funds and Reserves / LIABILITY / def_voucher_type
+// 'B' / Cr-normal) if it isn't found — same self-healing pattern this
+// function already uses for the "Cash in Hand" ledger below. Without this,
+// posting silently 404s ("MEMBERS BONUS ledger not found") for any company
+// whose Chart of Accounts was seeded before this ledger existed, or was
+// never re-seeded — the actual root cause of Bonus Register not autoposting.
 async function getBonusLedger(companyId) {
-  return Ledger.findOne({
+  let ledger = await Ledger.findOne({
     companyId,
     ledgerName: { $regex: /^members?\s*bonus$/i },
   });
+  if (!ledger) {
+    ledger = await new Ledger({
+      ledgerName: 'MEMBERS BONUS',
+      ledgerType: 'Statutory Funds and Reserves',
+      parentGroup: 'LIABILITY',
+      voucherType: 'B',
+      openingBalance: 0,
+      currentBalance: 0,
+      balanceType: 'Cr',
+      openingBalanceType: 'Cr',
+      status: 'Active',
+      companyId,
+    }).save();
+  }
+  return ledger;
 }
 
 // ════════════════════════════════════════════════════════════════

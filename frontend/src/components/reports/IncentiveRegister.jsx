@@ -39,31 +39,15 @@ import {
   IconEdit,
   IconTrash,
 } from '@tabler/icons-react';
-import { useReactToPrint } from 'react-to-print';
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
 import { incentiveRegisterAPI, collectionCenterAPI } from '../../services/api';
+import { printReport } from '../../utils/printReport';
 
 const fmt = (v) =>
   Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const emptyTotals = { totalQty: 0, totalAmount: 0, totalIncentiveAmount: 0 };
-
-// ── print-only stylesheet — content stays in normal (non display:none) layout
-// so react-to-print's cloned document has real dimensions, then @media print
-// hides everything else and reveals just the print area. ──────────────────────
-const PRINT_CSS = `
-  @media print {
-    body * { visibility: hidden !important; }
-    .ir-print-area, .ir-print-area * { visibility: visible !important; }
-    .ir-print-area {
-      position: fixed !important; inset: 0 !important; left: 0 !important; top: 0 !important;
-      padding: 10mm !important; background: #fff !important;
-    }
-    .no-print { display: none !important; }
-    @page { size: A4 portrait; margin: 8mm; }
-  }
-`;
 
 const IncentiveRegister = () => {
   const printRef = useRef();
@@ -242,10 +226,12 @@ const IncentiveRegister = () => {
     }
   };
 
-  const handlePrint = useReactToPrint({
-    contentRef: printRef,
-    documentTitle: `Incentive_Register_${dayjs(fromDate).format('YYYYMMDD')}`,
-  });
+  // See BonusRegister.jsx's handlePrint for why this uses printReport()
+  // instead of react-to-print: react-to-print's own docs warn that content
+  // styled with `position: absolute` (needed here to keep the print area
+  // off-screen) "may result in reformatted, rotated, or re-scaled content"
+  // — the cause of the blurry printed output.
+  const handlePrint = () => printReport(printRef, { title: 'Incentive Register', orientation: 'portrait' });
 
   const handleExport = () => {
     if (rows.length === 0) {
@@ -326,7 +312,6 @@ const IncentiveRegister = () => {
 
   return (
     <Container fluid>
-      <style>{PRINT_CSS}</style>
       <Box mb="lg">
         <Title order={2}>
           <IconReceipt2 size={28} style={{ marginRight: 8, verticalAlign: 'middle' }} />
@@ -565,9 +550,9 @@ const IncentiveRegister = () => {
       </Card>
 
       {/* ── Print area — Cash or Bank layout, selected by paymentMode.
-             Kept in normal layout (not display:none) and hidden via
-             visibility in PRINT_CSS so react-to-print gets real dimensions. ── */}
-      <div ref={printRef} className="ir-print-area" style={{ position: 'absolute', left: -99999, top: 0, padding: 16, background: '#fff' }}>
+             Hidden on-screen with display:none; printReport() clones this
+             node's markup into a separate print window (see handlePrint). ── */}
+      <div ref={printRef} style={{ display: 'none', padding: 16, background: '#fff' }}>
         <h3 style={{ textAlign: 'center', marginBottom: 4 }}>{caption}</h3>
         <p style={{ textAlign: 'center', marginTop: 0, marginBottom: 12 }}>
           {dayjs(fromDate).format('DD/MM/YYYY')} to {dayjs(toDate).format('DD/MM/YYYY')} — Rate: ₹{fmt(rate)}/Ltr

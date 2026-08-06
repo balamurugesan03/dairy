@@ -312,6 +312,7 @@ export const reportAPI = {
   tradingAccountV2: (params) => api.get('/reports/trading-account-v2', { params }).then(res => res.data).catch(handleError),
   profitLossV2: (params) => api.get('/reports/profit-loss-v2', { params }).then(res => res.data).catch(handleError),
   balanceSheetV2: (params) => api.get('/reports/balance-sheet-v2', { params }).then(res => res.data).catch(handleError),
+  trialBalance: (params) => api.get('/reports/trial-balance', { params }).then(res => res.data).catch(handleError),
   // Vyapar Reports - Private Firm
   vyaparSaleReport: (params) => api.get('/reports/vyapar/sale-report', { params }).then(res => res.data).catch(handleError),
   vyaparPurchaseReport: (params) => api.get('/reports/vyapar/purchase-report', { params }).then(res => res.data).catch(handleError),

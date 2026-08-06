@@ -236,6 +236,7 @@ const StockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
         value: ledger._id,
         label: `${ledger.ledgerName} (${ledger.ledgerType})`,
         ledgerType: ledger.ledgerType,
+        voucherType: ledger.voucherType,
         currentBalance: ledger.currentBalance,
         balanceType: ledger.balanceType
       })));
@@ -856,7 +857,15 @@ const StockInModal = ({ isOpen, onClose, onSuccess, editData }) => {
                       <Table.Td>
                         <Select
                           placeholder="Select ledger"
-                          data={ledgers}
+                          // def_voucher_type enforcement: a ledger deduction row
+                          // is CREDITED in the resulting Purchase voucher (see
+                          // createPurchaseVoucher in accountingHelper.js), so —
+                          // same rule as Receipt Voucher's head-of-account — a
+                          // 'P' (Payment Side Only) ledger must never be
+                          // selectable here; only 'R' and 'B' qualify. Ledgers
+                          // with no voucherType recorded (legacy data) stay
+                          // visible. Backend enforces the same rule in stockIn.
+                          data={ledgers.filter(l => l.voucherType !== 'P')}
                           value={entry.ledgerId}
                           onChange={(value) => handleLedgerEntryChange(index, 'ledgerId', value)}
                           searchable

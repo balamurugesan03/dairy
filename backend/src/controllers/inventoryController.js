@@ -315,6 +315,33 @@ export const stockIn = async (req, res) => {
       }
     }
 
+    // ── def_voucher_type enforcement (Purchase — "Ledger Deductions") ───────
+    // Each ledgerEntries[] row is a user-picked ledger that ends up CREDITED
+    // in the resulting Purchase voucher (see createPurchaseVoucher in
+    // accountingHelper.js — "Credit: ledger deduction entries"). That's the
+    // same class of head-of-account selection as Receipt Voucher, so the same
+    // rule applies: a ledger whose def_voucher_type = 'P' (Payment Side Only)
+    // may never be credited here — only 'R' and 'B' ledgers qualify. Checked
+    // before any StockTransaction is created, so an invalid pick is rejected
+    // cleanly instead of leaving stock posted with no matching voucher entry.
+    if (Array.isArray(ledgerEntries) && ledgerEntries.length > 0) {
+      const deductionLedgerIds = ledgerEntries.map(e => e.ledgerId).filter(Boolean);
+      if (deductionLedgerIds.length) {
+        const deductionLedgers = await Ledger.find({
+          _id: { $in: deductionLedgerIds },
+          companyId: req.companyId
+        }).select('ledgerName voucherType');
+
+        const paymentOnlyLedger = deductionLedgers.find(l => l.voucherType === 'P');
+        if (paymentOnlyLedger) {
+          return res.status(400).json({
+            success: false,
+            message: `"${paymentOnlyLedger.ledgerName}" is a Payment-side ledger (def_voucher_type = P) and cannot be used as a ledger deduction on a Purchase.`
+          });
+        }
+      }
+    }
+
     // Fetch supplier details if provided
     let supplierName = '';
     if (supplierId) {
@@ -831,6 +858,23 @@ export const updateStockTransaction = async (req, res) => {
 
     // Process ledger entries if provided
     if (updateData.ledgerEntries && Array.isArray(updateData.ledgerEntries)) {
+      // ── def_voucher_type enforcement — same rule as stockIn (create) ──────
+      const deductionLedgerIds = updateData.ledgerEntries.map(e => e.ledgerId).filter(Boolean);
+      if (deductionLedgerIds.length) {
+        const deductionLedgers = await Ledger.find({
+          _id: { $in: deductionLedgerIds },
+          companyId: req.companyId
+        }).select('ledgerName voucherType');
+
+        const paymentOnlyLedger = deductionLedgers.find(l => l.voucherType === 'P');
+        if (paymentOnlyLedger) {
+          return res.status(400).json({
+            success: false,
+            message: `"${paymentOnlyLedger.ledgerName}" is a Payment-side ledger (def_voucher_type = P) and cannot be used as a ledger deduction on a Purchase.`
+          });
+        }
+      }
+
       updateData.ledgerEntries = updateData.ledgerEntries.map(entry => ({
         ledgerId: entry.ledgerId,
         amount: parseFloat(entry.amount || 0),

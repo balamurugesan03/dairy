@@ -36,31 +36,15 @@ import {
   IconEdit,
   IconTrash,
 } from '@tabler/icons-react';
-import { useReactToPrint } from 'react-to-print';
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
 import { bonusRegisterAPI, collectionCenterAPI } from '../../services/api';
+import { printReport } from '../../utils/printReport';
 
 const fmt = (v) =>
   Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const emptyTotals = { totalQty: 0, totalAmount: 0, totalBonusAmount: 0, totalDividendAmount: 0, totalPostAmount: 0 };
-
-// ── print-only stylesheet — content stays in normal (non display:none) layout
-// so react-to-print's cloned document has real dimensions, then @media print
-// hides everything else and reveals just the print area. ──────────────────────
-const PRINT_CSS = `
-  @media print {
-    body * { visibility: hidden !important; }
-    .br-print-area, .br-print-area * { visibility: visible !important; }
-    .br-print-area {
-      position: fixed !important; inset: 0 !important; left: 0 !important; top: 0 !important;
-      padding: 10mm !important; background: #fff !important;
-    }
-    .no-print { display: none !important; }
-    @page { size: A4 portrait; margin: 8mm; }
-  }
-`;
 
 const BonusRegister = () => {
   const printRef = useRef();
@@ -273,10 +257,13 @@ const BonusRegister = () => {
     }
   };
 
-  const handlePrint = useReactToPrint({
-    contentRef: printRef,
-    documentTitle: `Bonus_Register_${dayjs(fromDate).format('YYYYMMDD')}`,
-  });
+  // Opens a fresh, self-contained window and prints from there (see
+  // utils/printReport.js) instead of react-to-print's iframe-cloning
+  // approach — react-to-print's own docs warn that printing content styled
+  // with `position: absolute` (which this print area used, to keep it
+  // off-screen without collapsing to 0×0) "may result in reformatted,
+  // rotated, or re-scaled content", which is what caused the blurry output.
+  const handlePrint = () => printReport(printRef, { title: 'Bonus Register', orientation: 'portrait' });
 
   const handleExport = () => {
     if (rows.length === 0) {
@@ -364,7 +351,6 @@ const BonusRegister = () => {
 
   return (
     <Container fluid>
-      <style>{PRINT_CSS}</style>
       <Box mb="lg">
         <Title order={2}>
           <IconGift size={28} style={{ marginRight: 8, verticalAlign: 'middle' }} />
@@ -412,6 +398,11 @@ const BonusRegister = () => {
                 onChange={setBasis}
                 disabled={rateMode === 'Percentage'}
               />
+              {rateMode === 'Percentage' && (
+                <Text size="xs" c="dimmed" mt={4}>
+                  Locked to "By Amount" — a % bonus only has a currency meaning as a % of the milk bill amount, not of litres. Switch to "Rate/Ltr" to bonus by Qty.
+                </Text>
+              )}
             </Grid.Col>
           </Grid>
 
@@ -646,9 +637,9 @@ const BonusRegister = () => {
       </Card>
 
       {/* ── Print area — Cash or Bank layout, selected by paymentMode.
-             Kept in normal layout (not display:none) and hidden via
-             visibility in PRINT_CSS so react-to-print gets real dimensions. ── */}
-      <div ref={printRef} className="br-print-area" style={{ position: 'absolute', left: -99999, top: 0, padding: 16, background: '#fff' }}>
+             Hidden on-screen with display:none; printReport() clones this
+             node's markup into a separate print window (see handlePrint). ── */}
+      <div ref={printRef} style={{ display: 'none', padding: 16, background: '#fff' }}>
         <h3 style={{ textAlign: 'center', marginBottom: 4 }}>{caption}</h3>
         <p style={{ textAlign: 'center', marginTop: 0, marginBottom: 12 }}>
           {dayjs(fromDate).format('DD/MM/YYYY')} to {dayjs(toDate).format('DD/MM/YYYY')} —{' '}

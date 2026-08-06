@@ -164,6 +164,17 @@ const ReportsDashboard = () => {
       color: '#f9f0ff'
     },
     {
+      title: 'Trial Balance',
+      description: 'Every ledger\'s Dr/Cr closing balance — Debit Total = Credit Total',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="#08979c">
+          <path d="M12 3v18M5 7l7-4 7 4M3 7h4l-2 5a2.5 2.5 0 0 1-4 0l2-5zM17 7h4l-2 5a2.5 2.5 0 0 1-4 0l2-5zM7 21h10" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      ),
+      path: '/reports/trial-balance',
+      color: '#e6fffb'
+    },
+    {
       title: 'R&D Enhanced',
       description: 'Receipts & Disbursement: Single | Three Column | Classified',
       icon: (

@@ -384,6 +384,7 @@ const MainLayout = () => {
             { key: '/reports/daybook',               label: 'Day Book' },
             { key: '/reports/general-ledger',        label: 'General Ledger' },
             { key: '/reports/ledger-abstract',       label: 'Ledger Abstract' },
+            { key: '/reports/trial-balance',         label: 'Trial Balance' },
             { key: '/reports/receipts-payments',     label: 'Receipts & Payments' },
             { key: '/reports/rd-enhanced',           label: 'R&D Statement' },
             { key: '/reports/final-accounts',     label: 'Final Accounts' },

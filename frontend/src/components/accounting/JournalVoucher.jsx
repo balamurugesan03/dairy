@@ -251,11 +251,22 @@ const JournalVoucher = () => {
 
   const ledgerOptions = useMemo(() => {
     const groups = {};
-    ledgers.forEach(l => {
-      const group = getLedgerGroup(l.ledgerType);
-      if (!groups[group]) groups[group] = [];
-      groups[group].push({ value: l._id, label: `${l.ledgerName} (${l.ledgerType})` });
-    });
+    ledgers
+      // Journal Voucher is the non-cash adjustment instrument (accruals,
+      // provisions, write-offs, inter-ledger transfers) — Cash/Bank ledgers
+      // are excluded so it can never be used to simulate a Receipt or
+      // Payment and bypass their def_voucher_type (R/P/B) checks. Use
+      // Receipt, Payment, or Contra for anything that actually moves cash.
+      // Backend enforces the same rule in createVoucher. Matches all four
+      // Cash/Bank ledgerType spellings used across this codebase (legacy
+      // 'Cash'/'Bank' from auto-created ledgers, formal 'Cash in Hand'/
+      // 'Bank Accounts' from the seeded Account Groups).
+      .filter(l => !['Cash', 'Bank', 'Cash in Hand', 'Bank Accounts'].includes(l.ledgerType))
+      .forEach(l => {
+        const group = getLedgerGroup(l.ledgerType);
+        if (!groups[group]) groups[group] = [];
+        groups[group].push({ value: l._id, label: `${l.ledgerName} (${l.ledgerType})` });
+      });
     return Object.entries(groups).map(([group, items]) => ({ group, items }));
   }, [ledgers]);
 

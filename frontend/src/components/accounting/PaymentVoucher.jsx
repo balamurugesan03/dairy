@@ -113,7 +113,11 @@ const PaymentVoucher = () => {
 
       let cashLedger = ledgers.find(l => l.ledgerType === 'Cash');
       if (!cashLedger) {
-        const res = await ledgerAPI.create({ ledgerName: 'Cash in Hand', ledgerType: 'Cash', openingBalance: 0, openingBalanceType: 'Dr' });
+        // Auto-create Cash ledger if missing.
+        // voucherType: 'B' — matches the "Cash in Hand" Account Group's
+        // def_voucher_type (B = Both), so Cash is never mistaken for a
+        // Payment-only or Receipt-only ledger in the R/P reports.
+        const res = await ledgerAPI.create({ ledgerName: 'Cash in Hand', ledgerType: 'Cash', openingBalance: 0, openingBalanceType: 'Dr', voucherType: 'B' });
         cashLedger = res?.data;
         if (cashLedger) setLedgers(prev => [...prev, cashLedger]);
       }
@@ -283,7 +287,8 @@ const PaymentVoucher = () => {
   const handleSaveMultiple = async () => {
     let cashLedger = ledgers.find(l => l.ledgerType === 'Cash');
     if (!cashLedger) {
-      const res = await ledgerAPI.create({ ledgerName: 'Cash in Hand', ledgerType: 'Cash', openingBalance: 0, openingBalanceType: 'Dr' });
+      // voucherType: 'B' — see handleSubmit's Cash auto-create for rationale.
+      const res = await ledgerAPI.create({ ledgerName: 'Cash in Hand', ledgerType: 'Cash', openingBalance: 0, openingBalanceType: 'Dr', voucherType: 'B' });
       cashLedger = res?.data;
       if (cashLedger) setLedgers(prev => [...prev, cashLedger]);
     }
@@ -367,11 +372,19 @@ const PaymentVoucher = () => {
 
   const selectData = useMemo(() => {
     const groups = {};
-    ledgers.forEach(ledger => {
-      const group = getLedgerGroup(ledger.ledgerType);
-      if (!groups[group]) groups[group] = [];
-      groups[group].push({ value: ledger._id, label: `${ledger.ledgerName} (${ledger.ledgerType})` });
-    });
+    ledgers
+      // def_voucher_type enforcement: a ledger whose Account Group marks it
+      // 'R' (Receipt Side Only) must never be selectable as the head of
+      // account in a Payment Voucher — only 'P' (Payment Side Only) and 'B'
+      // (Both) ledgers qualify. Ledgers with no voucherType recorded yet
+      // (legacy data) are left visible rather than hidden. See PaymentVoucher
+      // fix notes: backend enforces the same rule in createVoucher.
+      .filter(ledger => ledger.voucherType !== 'R')
+      .forEach(ledger => {
+        const group = getLedgerGroup(ledger.ledgerType);
+        if (!groups[group]) groups[group] = [];
+        groups[group].push({ value: ledger._id, label: `${ledger.ledgerName} (${ledger.ledgerType})` });
+      });
     return Object.entries(groups).map(([group, items]) => ({ group, items }));
   }, [ledgers]);
 
