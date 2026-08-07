@@ -165,6 +165,7 @@ const CashBook = lazy(() => import('./components/reports/CashBook'));
 const GeneralLedger = lazy(() => import('./components/reports/GeneralLedger'));
 const ReceiptsPayments = lazy(() => import('./components/reports/ReceiptsPayments'));
 const LedgerAbstract = lazy(() => import('./components/reports/LedgerAbstract'));
+const TrialBalance = lazy(() => import('./components/reports/TrialBalance'));
 const ReceiptsDisbursement = lazy(() => import('./components/reports/ReceiptsDisbursement'));
 const FinalAccounts = lazy(() => import('./components/reports/FinalAccounts'));
 const BalanceSheet = lazy(() => import('./components/reports/BalanceSheet'));
@@ -529,6 +530,7 @@ const AppContent = () => {
                 <Route path="general-ledger" element={<GeneralLedger />} />
                 <Route path="receipts-payments" element={<ReceiptsPayments />} />
                 <Route path="ledger-abstract" element={<LedgerAbstract />} />
+                <Route path="trial-balance" element={<TrialBalance />} />
                 <Route path="rd-enhanced" element={<ReceiptsDisbursement />} />
                 <Route path="final-accounts" element={<FinalAccounts />} />
                 <Route path="daybook" element={<DayBook />} />

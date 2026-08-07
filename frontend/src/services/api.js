@@ -104,6 +104,14 @@ export const farmerAPI = {
   getProducerReport: (params) => api.get('/farmers/producer-report', { params }).then(res => res.data).catch(handleError)
 };
 
+// FARMER MANAGEMENT SETTINGS APIs
+export const farmerSettingsAPI = {
+  // GET full settings (auto-creates with defaults if first time)
+  getSettings: () => api.get('/farmer-settings').then(res => res.data).catch(handleError),
+  // PUT upsert – e.g. { membershipFunction: 'SubmitLinks' | 'OpenLinksAndOthers' }
+  saveSettings: (data) => api.put('/farmer-settings', data).then(res => res.data).catch(handleError)
+};
+
 // CUSTOMER APIs
 export const customerAPI = {
   getAll: (params) => api.get('/customers', { params }).then(res => res.data).catch(handleError),
@@ -312,6 +320,7 @@ export const reportAPI = {
   tradingAccountV2: (params) => api.get('/reports/trading-account-v2', { params }).then(res => res.data).catch(handleError),
   profitLossV2: (params) => api.get('/reports/profit-loss-v2', { params }).then(res => res.data).catch(handleError),
   balanceSheetV2: (params) => api.get('/reports/balance-sheet-v2', { params }).then(res => res.data).catch(handleError),
+  trialBalance: (params) => api.get('/reports/trial-balance', { params }).then(res => res.data).catch(handleError),
   // Vyapar Reports - Private Firm
   vyaparSaleReport: (params) => api.get('/reports/vyapar/sale-report', { params }).then(res => res.data).catch(handleError),
   vyaparPurchaseReport: (params) => api.get('/reports/vyapar/purchase-report', { params }).then(res => res.data).catch(handleError),

@@ -12,11 +12,34 @@ const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 // Fuzzy-matches the existing seeded ledger regardless of "FARMERS" vs
 // "PRODUCERS" wording — mirrors the cfSalesLedger/cfAdvanceLedger lookup
 // idiom already used in dayBookController.js / accountingReportsController.js.
+//
+// Auto-creates "ADDL PRICE INCENTIVE TO FARMERS" (same Account Group values
+// as seedDairyLedgers.js: Trade Expenses / EXPENSE / def_voucher_type 'P' /
+// Dr-normal) if it isn't found — same self-healing pattern this function
+// already uses for the "Cash in Hand" ledger below, and the same fix applied
+// to the Bonus Register's MEMBERS BONUS lookup (see bonusRegisterController.js)
+// for the identical latent failure mode: posting silently 404s for any
+// company whose Chart of Accounts predates this ledger or was never re-seeded.
 async function getIncentiveLedger(companyId) {
-  return Ledger.findOne({
+  let ledger = await Ledger.findOne({
     companyId,
     ledgerName: { $regex: /^addl\s*price\s*incentive\s*to\s*(farmers?|producers?)$/i },
   });
+  if (!ledger) {
+    ledger = await new Ledger({
+      ledgerName: 'ADDL PRICE INCENTIVE TO FARMERS',
+      ledgerType: 'Trade Expenses',
+      parentGroup: 'EXPENSE',
+      voucherType: 'P',
+      openingBalance: 0,
+      currentBalance: 0,
+      balanceType: 'Dr',
+      openingBalanceType: 'Dr',
+      status: 'Active',
+      companyId,
+    }).save();
+  }
+  return ledger;
 }
 
 // ════════════════════════════════════════════════════════════════

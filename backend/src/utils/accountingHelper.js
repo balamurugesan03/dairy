@@ -801,37 +801,48 @@ export const applyProducerOpeningLedgers = async (newData, oldData, companyId, s
 
   const save = (doc) => session ? doc.save({ session }) : doc.save();
 
-  // Helper to apply a signed delta to a ledger's opening + current balance
+  // Helper to apply a delta to a ledger's opening + current balance.
+  // openingBalance/currentBalance are always stored as non-negative
+  // magnitudes with a separate Dr/Cr type field (the convention used
+  // everywhere else in the app — seedDairyLedgers.js, ledgerController.js,
+  // reportController.js's ledgerBalance()) — never a raw signed number.
+  // `delta` always moves the balance further into the ledger's own normal
+  // side (Dr for debit-normal, Cr for credit-normal); re-expressing the
+  // current (magnitude, type) pair as one signed number in that normal
+  // direction first is what makes a repeated delta — e.g. a second
+  // Producer Opening edit — accumulate correctly instead of flipping sides.
   const applyDelta = async (ledger, delta, isDebitNormal) => {
     if (!ledger || delta === 0) return;
-    // debitNormal: + delta increases Dr balance; creditNormal: + delta increases Cr balance
-    const sign = isDebitNormal ? 1 : -1;
-    ledger.openingBalance  = (ledger.openingBalance  || 0) + sign * delta;
-    ledger.currentBalance  = (ledger.currentBalance  || 0) + sign * delta;
-    // Recalculate balanceType
-    if (isDebitNormal) {
-      ledger.openingBalanceType = ledger.openingBalance >= 0 ? 'Dr' : 'Cr';
-      ledger.balanceType        = ledger.currentBalance  >= 0 ? 'Dr' : 'Cr';
-    } else {
-      ledger.openingBalanceType = ledger.openingBalance >= 0 ? 'Cr' : 'Dr';
-      ledger.balanceType        = ledger.currentBalance  >= 0 ? 'Cr' : 'Dr';
-    }
+    const normalType   = isDebitNormal ? 'Dr' : 'Cr';
+    const oppositeType = isDebitNormal ? 'Cr' : 'Dr';
+    const toSigned   = (amount, type) => (type === oppositeType ? -amount : amount);
+    const fromSigned = (signed) => ({ amount: Math.abs(signed), type: signed >= 0 ? normalType : oppositeType });
+
+    const opening = fromSigned(toSigned(ledger.openingBalance || 0, ledger.openingBalanceType || normalType) + delta);
+    const current = fromSigned(toSigned(ledger.currentBalance || 0, ledger.balanceType || normalType) + delta);
+
+    ledger.openingBalance     = opening.amount;
+    ledger.openingBalanceType = opening.type;
+    ledger.currentBalance     = current.amount;
+    ledger.balanceType        = current.type;
     await save(ledger);
   };
 
-  // 1. Farmer's linked ledger → dueAmount (Credit normal — we owe the farmer)
-  const farmerId = newData?.farmerId || oldData?.farmerId;
-  if (farmerId) {
-    const farmerLedger = await Ledger.findOne({
-      'linkedEntity.entityType': 'Farmer',
-      'linkedEntity.entityId': farmerId,
-      companyId,
-    });
-    if (farmerLedger) {
-      const newAmt = newData?.dueAmount || 0;
-      const oldAmt = oldData?.dueAmount || 0;
-      const delta  = newAmt - oldAmt;
-      await applyDelta(farmerLedger, delta, false); // creditNormal
+  // 1. PRODUCERS DUES ledger (single shared ledger, not a per-farmer ledger)
+  // → dueAmount (Credit normal — we owe the farmers). Every producer's due
+  // amount rolls up into this one Account Group ledger, same as Farmer
+  // Payment recovery and Bank Transfer producer payments post against —
+  // NOT each farmer's own auto-created "Party" ledger (linkedEntity), which
+  // is a separate, unrelated per-farmer ledger created at farmer sign-up.
+  {
+    const newAmt = newData?.dueAmount || 0;
+    const oldAmt = oldData?.dueAmount || 0;
+    const delta  = newAmt - oldAmt;
+    if (delta !== 0) {
+      const producersDuesLedger = await findOrCreateLedger(
+        'PRODUCERS DUES', 'Other Payable', 'LIABILITY', 'Cr', companyId, session
+      );
+      await applyDelta(producersDuesLedger, delta, false); // creditNormal
     }
   }
 

@@ -880,37 +880,50 @@ export const getGeneralLedger = async (req, res) => {
     // ── Sort all transactions by date, then compute running balance ────────────
     rawTxns.sort((a, b) => new Date(a.date) - new Date(b.date));
 
+    // Receipt/Payment classification for real Voucher-sourced rows (t.voucherId
+    // set) is derived from THIS ledger's own def_voucher_type (ledger.voucherType:
+    // R/P/B), not from which screen posted the voucher — same rule and rationale
+    // as Ledger Abstract (getGeneralLedgerAbstract): an R-only ledger only ever
+    // shows its credit side as Receipt, a P-only ledger only its debit side as
+    // Payment, and a B ledger shows both — except Cash/Bank ledgers, which are
+    // cash itself (Dr = received, Cr = paid out), the reverse of the generic B
+    // polarity used for non-cash B ledgers like PRODUCERS DUES. This no longer
+    // depends on voucher.voucherType: the def_voucher_type guards on Receipt/
+    // Payment/Journal Voucher posting (accountingController.createVoucher)
+    // guarantee a Receipt Voucher only ever credits R/B ledgers and always
+    // debits Cash, and a Payment Voucher only ever debits P/B ledgers and
+    // always credits Cash, so this always agrees with what voucher.voucherType
+    // would have said for those two voucher types anyway — while now also
+    // correctly handling Journal/Contra/Purchase/Sales-type entries touching
+    // an R-only or P-only ledger (previously always shown via a fixed
+    // Dr=Payment/Cr=Receipt convention regardless of the ledger's own R/P/B).
+    // Synthetic dairy-flow rows (no voucherId — milk purchase, CF commission,
+    // etc.) keep the original Dr = Receipt / Cr = Payment mapping; their
+    // debit/credit fields already encode the intended display side.
+    // This only affects display; balance math below always uses the true
+    // debit/credit values.
+    const CASH_BANK_TYPES = ['Cash', 'Bank', 'Cash in Hand', 'Bank Accounts'];
+    const isCashBankLedger = CASH_BANK_TYPES.includes(ledger.ledgerType);
+    const ledgerVoucherType = ['R', 'P', 'B'].includes(ledger.voucherType)
+      ? ledger.voucherType
+      : getDefaultVoucherType(ledger.ledgerType);
+
     let runningBalance = openingBalance;
     const transactions = rawTxns.map(t => {
       const netChange = t.debit - t.credit;
       if (isDebitNature) runningBalance += netChange;
       else               runningBalance -= netChange;
 
-      // Receipt/Payment Voucher entries must show under the column matching
-      // how they were entered (Receipt Voucher → Receipt column, Payment
-      // Voucher → Payment column), not raw Dr/Cr polarity for this ledger —
-      // a Payment Voucher debits the head-of-account ledger it's posted
-      // against, which would otherwise land it in the Receipt (Dr) column.
-      // Real Journal/Contra/etc. vouchers (t.voucherId set) follow Day Book's
-      // convention instead: Dr = Payment, Cr = Receipt (see dayBookController
-      // "Journal and other vouchers" branch) — this is what advance-recovery
-      // (FarmerPayment) Journal vouchers on PRODUCERS DUES rely on.
-      // Synthetic dairy-flow rows (no voucherId — milk purchase, CF commission,
-      // etc.) keep the original Dr = Receipt / Cr = Payment mapping; their
-      // debit/credit fields already encode the intended display side.
-      // This only affects display; balance math above always uses the true
-      // debit/credit values.
       let receiptAmount = t.debit;
       let paymentAmount = t.credit;
-      if (t.voucherType === 'Receipt') {
-        receiptAmount = t.debit || t.credit;
-        paymentAmount = 0;
-      } else if (t.voucherType === 'Payment') {
-        paymentAmount = t.debit || t.credit;
-        receiptAmount = 0;
-      } else if (t.voucherId) {
-        paymentAmount = t.debit;
-        receiptAmount = t.credit;
+      if (t.voucherId) {
+        if (isCashBankLedger) {
+          receiptAmount = t.debit;
+          paymentAmount = t.credit;
+        } else {
+          receiptAmount = ['R', 'B'].includes(ledgerVoucherType) ? t.credit : 0;
+          paymentAmount = ['P', 'B'].includes(ledgerVoucherType) ? t.debit : 0;
+        }
       }
 
       return {
@@ -1008,10 +1021,40 @@ export const getGeneralLedgerAbstract = async (req, res) => {
         let totalDebits = 0;
         let totalCredits = 0;
         let debitCash = 0, debitAdj = 0, creditCash = 0, creditAdj = 0;
-        // Display-only Receipt/Payment totals — preserve the voucher's own
-        // side (Receipt Voucher → Receipt, Payment Voucher → Payment)
-        // instead of raw Dr/Cr polarity for this ledger. totalDebits/
-        // totalCredits above stay true Dr/Cr and drive the closing balance.
+        // Display-only Receipt/Payment totals. totalDebits/totalCredits above
+        // stay true Dr/Cr and drive the closing balance — these two are purely
+        // "which column does this activity print under".
+        //
+        // Derived from the ledger's own def_voucher_type (ledger.voucherType:
+        // R/P/B, set from its Account Group — see seedDairyLedgers.js) rather
+        // than voucher.voucherType (which *screen* created the entry):
+        //   R-only ledger → only its CREDIT activity counts, as Receipt.
+        //     (An R ledger can only ever be legitimately credited — see the
+        //     def_voucher_type guards in accountingController.createVoucher —
+        //     so its debit side, if any exists from stale/pre-enforcement
+        //     data, is deliberately not surfaced as a Payment.)
+        //   P-only ledger → only its DEBIT activity counts, as Payment.
+        //   B ledger       → both sides count (credit → Receipt, debit → Payment)
+        //     — EXCEPT Cash/Bank ledgers, which are cash itself: for those,
+        //     Dr literally IS money received and Cr literally IS money paid
+        //     out, the reverse of the generic B-ledger polarity above. (Every
+        //     other B ledger — Producers Dues, Cattle Feed Advance, etc. — is
+        //     a non-cash account sitting *opposite* Cash/Bank in a voucher, so
+        //     the generic polarity is what Day Book / advance-recovery
+        //     Journal entries on PRODUCERS DUES already rely on.)
+        // This makes the flat abstract numerically consistent with the R/P/B
+        // driven reports (Ledger Abstract — Grouped, Receipts & Payments
+        // Statement, R&D Statement), which already classify this way. It no
+        // longer depends on voucher.voucherType at all: the def_voucher_type
+        // guards added to Receipt/Payment/Journal Voucher posting guarantee a
+        // Receipt Voucher only ever credits R/B ledgers and always debits
+        // Cash, and a Payment Voucher only ever debits P/B ledgers and always
+        // credits Cash — so the two signals can no longer disagree.
+        const CASH_BANK_TYPES = ['Cash', 'Bank', 'Cash in Hand', 'Bank Accounts'];
+        const isCashBankLedger = CASH_BANK_TYPES.includes(ledger.ledgerType);
+        const ledgerVoucherType = ['R', 'P', 'B'].includes(ledger.voucherType)
+          ? ledger.voucherType
+          : getDefaultVoucherType(ledger.ledgerType);
         let totalReceipt = 0, totalPayment = 0;
 
         vouchers.forEach(voucher => {
@@ -1027,19 +1070,12 @@ export const getGeneralLedgerAbstract = async (req, res) => {
                 debitAdj += entry.debitAmount;
                 creditAdj += entry.creditAmount;
               }
-              if (voucher.voucherType === 'Receipt') {
-                totalReceipt += entry.debitAmount || entry.creditAmount;
-              } else if (voucher.voucherType === 'Payment') {
-                totalPayment += entry.debitAmount || entry.creditAmount;
+              if (isCashBankLedger) {
+                totalReceipt += entry.debitAmount;
+                totalPayment += entry.creditAmount;
               } else {
-                // Real Journal/Contra/etc. vouchers: match Day Book's
-                // convention (Dr = Payment, Cr = Receipt) — this is what
-                // advance-recovery (FarmerPayment) Journal vouchers on
-                // PRODUCERS DUES rely on. Every entry reaching this branch
-                // comes from a real Voucher document (no synthetic rows are
-                // mixed into this loop), so the flip is safe here.
-                totalPayment += entry.debitAmount;
-                totalReceipt += entry.creditAmount;
+                if (['R', 'B'].includes(ledgerVoucherType)) totalReceipt += entry.creditAmount;
+                if (['P', 'B'].includes(ledgerVoucherType)) totalPayment += entry.debitAmount;
               }
             }
           });
@@ -2069,6 +2105,7 @@ export const getLedgerAbstractGrouped = async (req, res) => {
 
     const ledgers = await Ledger.find({ status: 'Active', companyId: req.companyId }).lean();
     const { priorMap, periodMap } = await buildActivityMaps(Voucher, req.companyId, start, end);
+    const ledgerById = new Map(ledgers.map(l => [l._id.toString(), l]));
 
     // Cash/Adjustment split per ledger for the period — one pass over the
     // period's vouchers, classified by their driving Cash/Bank leg.
@@ -2078,6 +2115,16 @@ export const getLedgerAbstractGrouped = async (req, res) => {
       voucherDate: { $gte: start, $lte: end }
     }).select('entries voucherType').lean();
     const splitMap = {};
+    // Receipt/Payment display: derived from EACH entry's own ledger's
+    // def_voucher_type (ledger.voucherType: R/P/B), not the voucher's own
+    // type — same rule as General Ledger / the flat Ledger Abstract. An
+    // R-only ledger only ever shows its credit side as Receipt, a P-only
+    // ledger only its debit side as Payment, a B ledger shows both — except
+    // Cash/Bank, which is cash itself (Dr = received, Cr = paid out), the
+    // reverse of the generic B polarity used for non-cash B ledgers like
+    // PRODUCERS DUES (which advance-recovery FarmerPayment Journal vouchers
+    // rely on).
+    const CASH_BANK_TYPES = ['Cash', 'Bank', 'Cash in Hand', 'Bank Accounts'];
     splitVouchers.forEach(voucher => {
       const { column } = classifyVoucherEntry(voucher.entries, cashBankIds);
       voucher.entries.forEach(entry => {
@@ -2093,18 +2140,17 @@ export const getLedgerAbstractGrouped = async (req, res) => {
           splitMap[lid].debitAdj += entry.debitAmount || 0;
           splitMap[lid].creditAdj += entry.creditAmount || 0;
         }
-        // Receipt/Payment display: preserve the voucher's own side rather
-        // than raw Dr/Cr polarity for this ledger (same fix as General Ledger).
-        // Real Journal/Contra/etc. vouchers match Day Book's convention
-        // instead: Dr = Payment, Cr = Receipt (advance-recovery FarmerPayment
-        // Journal vouchers on PRODUCERS DUES rely on this).
-        if (voucher.voucherType === 'Receipt') {
-          splitMap[lid].receipt += entry.debitAmount || entry.creditAmount || 0;
-        } else if (voucher.voucherType === 'Payment') {
-          splitMap[lid].payment += entry.debitAmount || entry.creditAmount || 0;
+        const entryLedger = ledgerById.get(lid);
+        const isCashBankLedger = entryLedger && CASH_BANK_TYPES.includes(entryLedger.ledgerType);
+        const ledgerVoucherType = entryLedger && ['R', 'P', 'B'].includes(entryLedger.voucherType)
+          ? entryLedger.voucherType
+          : getDefaultVoucherType(entryLedger?.ledgerType);
+        if (isCashBankLedger) {
+          splitMap[lid].receipt += entry.debitAmount || 0;
+          splitMap[lid].payment += entry.creditAmount || 0;
         } else {
-          splitMap[lid].payment += entry.debitAmount || 0;
-          splitMap[lid].receipt += entry.creditAmount || 0;
+          if (['R', 'B'].includes(ledgerVoucherType)) splitMap[lid].receipt += entry.creditAmount || 0;
+          if (['P', 'B'].includes(ledgerVoucherType)) splitMap[lid].payment += entry.debitAmount || 0;
         }
       });
     });

@@ -23,13 +23,12 @@ import { IconCamera, IconX } from '@tabler/icons-react';
 import { IconInfoCircle } from '@tabler/icons-react';
 import { DatePickerInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
-import { modals } from '@mantine/modals';
 import { IconUpload, IconTrash } from '@tabler/icons-react';
 import { farmerAPI, collectionCenterAPI, ledgerAPI, bankMasterAPI } from '../../services/api';
 import { message } from '../../utils/toast';
 import { useAuth } from '../../context/AuthContext';
 
-const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep = 0, autoCheckMembership = false }) => {
+const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep = 0, autoCheckMembership = false, membershipFunction = 'SubmitLinks' }) => {
   const { isCentreLogin, centreInfo } = useAuth();
   const [loading, setLoading] = useState(false);
   const [active, setActive] = useState(0);
@@ -387,6 +386,11 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
     }
   };
 
+  // No confirmation dialog is asked here — the decision follows whichever
+  // Membership Function is currently selected in Farmer Management → Settings
+  // (see FarmerManagement.jsx): 'SubmitLinks' == the old "Yes" (replace the
+  // Farmer Number with the Member Number), 'OpenLinksAndOthers' == the old
+  // "No" (keep the Farmer Number, store the Member Number separately).
   const runMembershipActivation = (values) => {
     const memberNumber = String(values.financialDetails.memberNumber || values.farmerNumber).trim();
     const numberChanging = memberNumber !== values.farmerNumber;
@@ -395,20 +399,8 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
       return finalizeMembershipActivation(values, 'replace');
     }
 
-    modals.openConfirmModal({
-      title: 'Confirm Farmer Number Replacement',
-      children: (
-        <Text size="sm">
-          You are about to replace the current Farmer Number with the Member Number.
-          This change will make the Member Number the active Farmer Number for all
-          future transactions and reports. Historical records will remain linked
-          automatically. Do you want to continue?
-        </Text>
-      ),
-      labels: { confirm: 'Yes', cancel: 'No' },
-      onConfirm: () => finalizeMembershipActivation(values, 'replace'),
-      onCancel: () => finalizeMembershipActivation(values, 'keep')
-    });
+    const numberDecision = membershipFunction === 'OpenLinksAndOthers' ? 'keep' : 'replace';
+    return finalizeMembershipActivation(values, numberDecision);
   };
 
   const handleSubmit = async () => {

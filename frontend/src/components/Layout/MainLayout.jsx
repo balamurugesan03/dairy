@@ -204,8 +204,6 @@ const MainLayout = () => {
             { key: '/daily-collections/milk-sales-rate',        label: 'Milk Sales Rate'        },
             { key: '/daily-collections/shift-incentive',        label: 'Shift Incentive'        },
             { key: '/daily-collections/time-incentive',         label: 'Time Incentive'         },
-            { key: '/daily-collections/incentive-register',     label: 'Incentive Register'     },
-            { key: '/daily-collections/bonus-register',         label: 'Bonus Register'         },
             { key: '/daily-collections/producer-openings',      label: 'Producer Openings'      },
           ]
         },
@@ -257,6 +255,13 @@ const MainLayout = () => {
     }] : []),
     // BUSINESS INVENTORY - Only show for Private Firm
     ...(selectedBusinessType === 'Private Firm' ? [{
+
+      
+
+
+
+
+
 
       
       key: 'business-inventory-menu',
@@ -384,6 +389,7 @@ const MainLayout = () => {
             { key: '/reports/daybook',               label: 'Day Book' },
             { key: '/reports/general-ledger',        label: 'General Ledger' },
             { key: '/reports/ledger-abstract',       label: 'Ledger Abstract' },
+            { key: '/reports/trial-balance',         label: 'Trial Balance' },
             { key: '/reports/receipts-payments',     label: 'Receipts & Payments' },
             { key: '/reports/rd-enhanced',           label: 'R&D Statement' },
             { key: '/reports/final-accounts',     label: 'Final Accounts' },
@@ -442,6 +448,8 @@ const MainLayout = () => {
          { key: '/daily-collections/intelligent-query',     label: 'Intelligent Query'   },
         { key: '/farmers/crop-statements',   label: 'Crop Damage Statements' },
         { key: '/farmers/agri-stats',        label: 'Monthly Agri Statistics' },
+        { key: '/daily-collections/incentive-register', label: 'Incentives' },
+        { key: '/daily-collections/bonus-register',     label: 'Bonus' },
 
       ]
     }] : []),

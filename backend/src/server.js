@@ -265,6 +265,8 @@ import rateChartRoutes from './routes/rateChartRoutes.js';
 import { adminRouter as milmaAdminRoutes, userRouter as milmaUserRoutes } from './routes/milmaChartRoutes.js';
 // Milk Purchase Settings routes
 import milkPurchaseSettingsRoutes from './routes/milkPurchaseSettingsRoutes.js';
+// Farmer Management Settings routes
+import farmerSettingsRoutes from './routes/farmerSettingsRoutes.js';
 
 // Milk Collection routes
 import milkCollectionRoutes from './routes/milkCollectionRoutes.js';
@@ -482,6 +484,9 @@ app.use('/api/rate-charts', protect, addCompanyFilter, rateChartRoutes);
 
 // Milk Purchase Settings routes
 app.use('/api/milk-purchase-settings', protect, addCompanyFilter, milkPurchaseSettingsRoutes);
+
+// Farmer Management Settings routes
+app.use('/api/farmer-settings', protect, addCompanyFilter, farmerSettingsRoutes);
 
 // Milk Collection routes
 app.use('/api/milk-collections', protect, addCompanyFilter, milkCollectionRoutes);

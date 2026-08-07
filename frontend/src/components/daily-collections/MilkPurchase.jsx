@@ -221,10 +221,17 @@ const MilkPurchase = () => {
   // Keyboard swap:
   //   • Ctrl/⌘ + S | plain S → Milk Sales
   //   • Ctrl/⌘ + P | plain P → Milk Purchase (this page)
-  // Plain-letter shortcuts only fire when focus is NOT in an input/textarea/
-  // select/contenteditable element, so typing the letter in a field doesn't
-  // hijack the page.
+  // Once BOTH F2 (Milk Purchase) and F3 (Milk Sales) have been opened in this
+  // session, plain S/P also swap screens instantly from INSIDE a numeric
+  // entry field (LTR/Water/FAT/CLR/SNF) — those never accept letters anyway
+  // (Mantine's NumberInput sets inputMode="decimal"), so hijacking the key
+  // there never eats a real keystroke. Free-text fields (Farmer No / Name
+  // search, etc.) still need Ctrl, so typing a farmer's name containing
+  // 'p' or 's' isn't hijacked. Outside any form element, plain S/P have
+  // always worked with no modifier and no such prerequisite.
   useEffect(() => {
+    try { sessionStorage.setItem('milkPurchase_opened', '1'); } catch { /* ignore */ }
+
     const onKey = (e) => {
       const k = e.key?.toLowerCase();
       if (k !== 's' && k !== 'p') return;
@@ -233,7 +240,12 @@ const MilkPurchase = () => {
       const tag = ae?.tagName;
       const isFormEl = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ae?.isContentEditable;
       const withMod  = e.ctrlKey || e.metaKey;
-      if (!withMod && isFormEl) return;     // typing letters in a field
+
+      let bothOpened = false;
+      try { bothOpened = !!sessionStorage.getItem('milkPurchase_opened') && !!sessionStorage.getItem('milkSales_opened'); } catch { /* ignore */ }
+      const isNumericField = ae?.inputMode === 'decimal' || ae?.inputMode === 'numeric';
+      const canPlainSwap = !isFormEl || (bothOpened && isNumericField);
+      if (!withMod && !canPlainSwap) return;     // typing letters in a free-text field
 
       e.preventDefault();
       if (k === 's') navigate('/daily-collections/milk-sales');
@@ -327,6 +339,28 @@ const MilkPurchase = () => {
   const fatRef      = useRef(null);
   const clrRef      = useRef(null);
   const snfRef      = useRef(null);
+
+  // ── Focus the field the user was actually last working in ──────────────────
+  // Users keep both F2 (Milk Purchase) and F3 (Milk Sales) open together and
+  // swap mid-entry — e.g. type Farmer No → LTR → FAT, then jump to F3 before
+  // saving, then come back. Form values already survive that swap (restored
+  // from sessionStorage above), but focus used to always snap back to Member
+  // No. Instead, resume at whichever field — in Tab order — is the LAST one
+  // that already holds a value, so the user picks up exactly where they left
+  // off instead of retyping the Member No lookup. Falls back to Member No
+  // only when the form is genuinely empty (a fresh entry).
+  const focusLastActiveField = () => {
+    const f = formRef.current;
+    const sequence = [
+      { ref: snfRef,    value: f.snf   },
+      { ref: clrRef,    value: f.clr   },
+      { ref: fatRef,    value: f.fat   },
+      { ref: waterRef,  value: f.water },
+      { ref: ltrRef,    value: f.ltr   },
+    ];
+    const lastFilled = sequence.find(field => field.value !== '' && field.value != null);
+    (lastFilled ? lastFilled.ref : memberRef).current?.focus({ preventScroll: true });
+  };
 
   // ── Control Panel State ────────────────────────────────────────────────────
   const [salesSummary, setSalesSummary] = useState({ localLtr: 0, localAmt: 0, creditLtr: 0, creditAmt: 0, sampleLtr: 0, sampleAmt: 0 });
@@ -951,8 +985,10 @@ const MilkPurchase = () => {
         // re-click OK. The "Select date & shift … click OK" prompt only
         // appears when no center is selected yet.
         setFormEnabled(true);
-        // Auto-focus the Member No field so the cursor is ready for input
-        setTimeout(() => memberRef.current?.focus({ preventScroll: true }), 120);
+        // Auto-focus so the cursor is ready for input — resumes on the last
+        // field the user had entered a value in (e.g. after swapping to F3
+        // mid-entry and back), rather than always jumping to Member No.
+        setTimeout(focusLastActiveField, 120);
       })();
       const found = centersData.find(c => c.value === center);
       if (found) centerNameRef.current = found.label;

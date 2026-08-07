@@ -23,7 +23,8 @@ import {
   Modal,
   Table,
   Center,
-  Loader
+  Loader,
+  Radio
 } from '@mantine/core';
 import {
   IconPlus,
@@ -48,10 +49,11 @@ import {
   IconCoinRupee,
   IconX,
   IconEye,
-  IconFileText
+  IconFileText,
+  IconSettings
 } from '@tabler/icons-react';
 import { DataTable } from 'mantine-datatable';
-import { farmerAPI, collectionCenterAPI } from '../../services/api';
+import { farmerAPI, farmerSettingsAPI, collectionCenterAPI } from '../../services/api';
 import { showConfirmDialog } from '../common/ConfirmDialog';
 import { message } from '../../utils/toast';
 import FarmerModal from './FarmerModal';
@@ -88,6 +90,31 @@ const FarmerManagement = () => {
     minShares: '',
     maxShares: ''
   });
+
+  // ── Settings — Membership Function (replaces the old Yes/No confirmation
+  // dialog shown when activating membership with a different Member Number) ──
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [membershipFunction, setMembershipFunction] = useState('SubmitLinks');
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  useEffect(() => {
+    farmerSettingsAPI.getSettings()
+      .then(res => { if (res?.data?.membershipFunction) setMembershipFunction(res.data.membershipFunction); })
+      .catch(() => { /* keep default */ });
+  }, []);
+
+  const handleSaveSettings = async () => {
+    setSavingSettings(true);
+    try {
+      await farmerSettingsAPI.saveSettings({ membershipFunction });
+      message.success('Settings saved successfully');
+      setShowSettingsModal(false);
+    } catch (error) {
+      message.error(error.message || 'Failed to save settings');
+    } finally {
+      setSavingSettings(false);
+    }
+  };
 
   const [showModal, setShowModal] = useState(false);
   const [selectedFarmerId, setSelectedFarmerId] = useState(null);
@@ -1044,6 +1071,13 @@ const FarmerManagement = () => {
               )}
               <Button
                 variant="default"
+                leftSection={<IconSettings size={18} />}
+                onClick={() => setShowSettingsModal(true)}
+              >
+                Settings
+              </Button>
+              <Button
+                variant="default"
                 leftSection={<IconX size={18} />}
                 onClick={() => navigate('/')}
               >
@@ -1407,7 +1441,50 @@ const FarmerManagement = () => {
         farmerId={selectedFarmerId}
         initialStep={modalInitialStep}
         autoCheckMembership={modalAutoCheckMembership}
+        membershipFunction={membershipFunction}
       />
+
+      {/* Settings — Membership Function */}
+      <Modal
+        opened={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        title="Farmer Management Settings"
+        centered
+      >
+        <Stack gap="md">
+          <Box>
+            <Text fw={600} mb={4}>Membership Function</Text>
+            <Text size="sm" c="dimmed" mb="sm">
+              Controls what happens when a Non-Member is assigned Membership with
+              a Member Number that differs from their existing Farmer Number.
+              No confirmation will be asked — the selected option below is
+              applied automatically every time.
+            </Text>
+            <Radio.Group value={membershipFunction} onChange={setMembershipFunction}>
+              <Stack gap="sm">
+                <Radio
+                  value="SubmitLinks"
+                  label="Submit Links"
+                  description="Replace the Farmer Number with the Member Number on save."
+                />
+                <Radio
+                  value="OpenLinksAndOthers"
+                  label="Open Links & Others"
+                  description="Keep the existing Farmer Number unchanged; store the Member Number separately."
+                />
+              </Stack>
+            </Radio.Group>
+          </Box>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setShowSettingsModal(false)} disabled={savingSettings}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveSettings} loading={savingSettings}>
+              Save Settings
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       <ImportModal
         isOpen={showImportModal}

@@ -24,7 +24,8 @@ import {
   getMISReport,
   getTradingAccountV2,
   getProfitLossV2,
-  getBalanceSheetV2
+  getBalanceSheetV2,
+  getTrialBalance as getDairyTrialBalance
 } from '../controllers/reportController.js';
 import { getDayBook, deleteDayBookEntry } from '../controllers/dayBookController.js';
 import {
@@ -111,6 +112,8 @@ router.get('/receipts-payments-statement', getReceiptsPaymentsDynamic);
 router.get('/trading-account-v2', getTradingAccountV2);
 router.get('/profit-loss-v2', getProfitLossV2);
 router.get('/balance-sheet-v2', getBalanceSheetV2);
+// Dairy Cooperative Trial Balance (distinct from /vyapar/trial-balance below)
+router.get('/trial-balance', getDairyTrialBalance);
 
 // Vyapar Reports - Private Firm
 router.get('/vyapar/sale-report', getSaleReport);
