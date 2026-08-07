@@ -104,6 +104,14 @@ export const farmerAPI = {
   getProducerReport: (params) => api.get('/farmers/producer-report', { params }).then(res => res.data).catch(handleError)
 };
 
+// FARMER MANAGEMENT SETTINGS APIs
+export const farmerSettingsAPI = {
+  // GET full settings (auto-creates with defaults if first time)
+  getSettings: () => api.get('/farmer-settings').then(res => res.data).catch(handleError),
+  // PUT upsert – e.g. { membershipFunction: 'SubmitLinks' | 'OpenLinksAndOthers' }
+  saveSettings: (data) => api.put('/farmer-settings', data).then(res => res.data).catch(handleError)
+};
+
 // CUSTOMER APIs
 export const customerAPI = {
   getAll: (params) => api.get('/customers', { params }).then(res => res.data).catch(handleError),

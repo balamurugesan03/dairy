@@ -158,10 +158,16 @@ export default function MilkSales() {
   // Keyboard swap:
   //   • Ctrl/⌘ + S | plain S → Milk Sales (this page)
   //   • Ctrl/⌘ + P | plain P → Milk Purchase
-  // Plain-letter shortcuts only fire when focus is NOT in an input/textarea/
-  // select/contenteditable element, so typing the letter in a field doesn't
-  // hijack the page.
+  // Once BOTH F2 (Milk Purchase) and F3 (Milk Sales) have been opened in this
+  // session, plain S/P also swap screens instantly from INSIDE a numeric
+  // entry field (Litre/Rate) — those never accept letters anyway (Mantine's
+  // NumberInput sets inputMode="decimal"), so hijacking the key there never
+  // eats a real keystroke. Free-text fields still need Ctrl. Outside any
+  // form element, plain S/P have always worked with no modifier and no such
+  // prerequisite. See MilkPurchase.jsx for the matching half of this pair.
   useEffect(() => {
+    try { sessionStorage.setItem('milkSales_opened', '1'); } catch { /* ignore */ }
+
     const onKey = (e) => {
       const k = e.key?.toLowerCase();
       if (k !== 's' && k !== 'p') return;
@@ -170,7 +176,12 @@ export default function MilkSales() {
       const tag = ae?.tagName;
       const isFormEl = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ae?.isContentEditable;
       const withMod  = e.ctrlKey || e.metaKey;
-      if (!withMod && isFormEl) return;     // typing letters in a field
+
+      let bothOpened = false;
+      try { bothOpened = !!sessionStorage.getItem('milkPurchase_opened') && !!sessionStorage.getItem('milkSales_opened'); } catch { /* ignore */ }
+      const isNumericField = ae?.inputMode === 'decimal' || ae?.inputMode === 'numeric';
+      const canPlainSwap = !isFormEl || (bothOpened && isNumericField);
+      if (!withMod && !canPlainSwap) return;     // typing letters in a free-text field
 
       e.preventDefault();
       if (k === 's') navigate('/daily-collections/milk-sales');
@@ -256,6 +267,17 @@ export default function MilkSales() {
   const lastEntryRef = useRef(null);
   const formRef      = useRef({});
   formRef.current = { mode, session, date, billNo, center, agent, category, creditor, opCr, litre, rate, amount, pType, editingId, waEnabled, waConnected: waStatus.connected };
+
+  // ── Focus the field the user was actually last working in ──────────────────
+  // Users keep both F2 (Milk Purchase) and F3 (Milk Sales) open together and
+  // swap mid-entry — form values already survive that swap (restored from
+  // sessionStorage above), but focus used to always snap back to Litre.
+  // Resume on Rate instead when it already holds a value (the user had
+  // progressed past Litre), so they pick up where they left off.
+  const focusLastActiveField = () => {
+    const f = formRef.current;
+    (f.rate !== '' && f.rate != null ? rateRef : litrRef).current?.focus({ preventScroll: true });
+  };
 
   // ── Auto-calc amount ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -349,8 +371,9 @@ export default function MilkSales() {
     loadDropdowns();
     loadByDate(new Date(), session);
     fetchNextBillNo();
-    // Auto-focus the litres field when the page opens (e.g. via Ctrl+S navigation)
-    setTimeout(() => litrRef.current?.focus({ preventScroll: true }), 300);
+    // Auto-focus when the page opens (e.g. via F2/F3 swap) — resumes on Rate
+    // if the user had already progressed past Litre, else Litre as before.
+    setTimeout(focusLastActiveField, 300);
   }, []); // eslint-disable-line
 
   // Reload table whenever date or session changes — pass session explicitly so the
