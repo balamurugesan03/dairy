@@ -40,6 +40,7 @@ import {
   IconPlus,
   IconEye,
   IconTrash,
+  IconEdit,
   IconReceipt,
   IconPrinter
 } from '@tabler/icons-react';
@@ -52,6 +53,8 @@ const ReceiptVoucher = () => {
   const [modalOpened, setModalOpened] = useState(false);
   const [viewModalOpened, setViewModalOpened] = useState(false);
   const [selectedVoucher, setSelectedVoucher] = useState(null);
+  const [editingVoucherId, setEditingVoucherId] = useState(null);
+  const [filterDate, setFilterDate] = useState(dayjs().format('YYYY-MM-DD'));
   const printRef = useRef(null);
   const [entryMode, setEntryMode] = useState('single');
   const [multipleEntries, setMultipleEntries] = useState([
@@ -81,8 +84,14 @@ const ReceiptVoucher = () => {
 
   useEffect(() => {
     fetchLedgers();
-    fetchVouchers();
   }, []);
+
+  // Re-fetch whenever the selected date changes — the grid always shows
+  // only that date's transactions, never the full history.
+  useEffect(() => {
+    fetchVouchers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterDate]);
 
   const fetchLedgers = async () => {
     try {
@@ -96,7 +105,11 @@ const ReceiptVoucher = () => {
   const fetchVouchers = async () => {
     setFetchingVouchers(true);
     try {
-      const response = await voucherAPI.getAll({ voucherType: 'Receipt' });
+      const response = await voucherAPI.getAll({
+        voucherType: 'Receipt',
+        startDate: filterDate,
+        endDate: filterDate
+      });
       setVouchers(response.data || []);
     } catch (error) {
       message.error(error.message || 'Failed to fetch vouchers');
@@ -159,13 +172,19 @@ const ReceiptVoucher = () => {
         narration: values.narration
       };
 
-      await voucherAPI.create(payload);
-      message.success('Receipt voucher created successfully');
+      if (editingVoucherId) {
+        await voucherAPI.update(editingVoucherId, payload);
+        message.success('Receipt voucher updated successfully');
+      } else {
+        await voucherAPI.create(payload);
+        message.success('Receipt voucher created successfully');
+      }
       setModalOpened(false);
+      setEditingVoucherId(null);
       form.reset();
       fetchVouchers();
     } catch (error) {
-      message.error(error.message || 'Failed to create receipt voucher');
+      message.error(error.message || `Failed to ${editingVoucherId ? 'update' : 'create'} receipt voucher`);
     } finally {
       setLoading(false);
     }
@@ -273,10 +292,33 @@ const ReceiptVoucher = () => {
     form.reset();
     form.setFieldValue('voucherDate', dayjs().format('YYYY-MM-DD'));
     setEntryMode('single');
+    setEditingVoucherId(null);
     setMultipleEntries([
       { voucherDate: dayjs().format('YYYY-MM-DD'), ledgerId: '', amount: '', narration: '' }
     ]);
     setModalOpened(true);
+  };
+
+  // Edit — Manual entries only (enforced again server-side by updateVoucher).
+  // Prefills the single-entry form from the voucher's credit leg (the "head
+  // of account" the user originally picked — Cash is always the automatic
+  // debit leg and isn't shown as an editable field here, same as Add).
+  const openEditModal = (voucher) => {
+    const creditEntry = voucher.entries?.find(e => e.creditAmount > 0);
+    form.setValues({
+      voucherDate: dayjs(voucher.voucherDate).format('YYYY-MM-DD'),
+      ledgerId: creditEntry?.ledgerId?._id || creditEntry?.ledgerId || '',
+      amount: voucher.totalDebit || 0,
+      narration: voucher.narration || ''
+    });
+    setEntryMode('single');
+    setEditingVoucherId(voucher._id);
+    setModalOpened(true);
+  };
+
+  const closeModal = () => {
+    setModalOpened(false);
+    setEditingVoucherId(null);
   };
 
   const addMultipleRow = () => {
@@ -430,22 +472,33 @@ const ReceiptVoucher = () => {
               </Group>
             </Title>
           </Group>
-          <Badge size="lg" variant="filled" color="green">
-            {vouchers.length} Vouchers
-          </Badge>
+          <Group gap="sm">
+            <TextInput
+              type="date"
+              label="Transaction Date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              leftSection={<IconCalendar size={16} />}
+              size="sm"
+              styles={{ root: { width: 170 } }}
+            />
+            <Badge size="lg" variant="filled" color="green" mt={22}>
+              {vouchers.length} Vouchers
+            </Badge>
+          </Group>
         </Group>
 
         {vouchers.length === 0 ? (
           <Card p="xl" withBorder bg="gray.0">
             <Stack align="center" gap="md">
               <IconReceipt size={48} color="gray" />
-              <Text c="dimmed" size="lg">No receipt vouchers found</Text>
+              <Text c="dimmed" size="lg">No receipt vouchers on {dayjs(filterDate).format('DD-MM-YYYY')}</Text>
               <Button
                 variant="light"
                 leftSection={<IconPlus size={16} />}
                 onClick={openAddModal}
               >
-                Create First Receipt Voucher
+                Create Receipt Voucher
               </Button>
             </Stack>
           </Card>
@@ -460,12 +513,14 @@ const ReceiptVoucher = () => {
                   <th>Head of Account</th>
                   <th style={{ textAlign: 'right' }}>Amount</th>
                   <th>Narration</th>
+                  <th style={{ textAlign: 'center' }}>Source</th>
                   <th style={{ textAlign: 'center' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {vouchers.map((voucher, index) => {
                   const creditEntry = voucher.entries?.find(e => e.creditAmount > 0);
+                  const isManual = voucher.referenceType === 'Manual';
 
                   return (
                     <tr key={voucher._id}>
@@ -487,6 +542,11 @@ const ReceiptVoucher = () => {
                           {voucher.narration || '-'}
                         </Text>
                       </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <Badge size="sm" variant="light" color={isManual ? 'grape' : 'gray'}>
+                          {isManual ? 'Manual' : (voucher.referenceType || 'Auto')}
+                        </Badge>
+                      </td>
                       <td>
                         <Group gap="xs" justify="center">
                           <Tooltip label="View Details">
@@ -507,15 +567,32 @@ const ReceiptVoucher = () => {
                               <IconPrinter size={16} />
                             </ActionIcon>
                           </Tooltip>
-                          <Tooltip label="Delete">
-                            <ActionIcon
-                              color="red"
-                              variant="light"
-                              onClick={() => handleDelete(voucher._id)}
-                            >
-                              <IconTrash size={16} />
-                            </ActionIcon>
-                          </Tooltip>
+                          {isManual ? (
+                            <>
+                              <Tooltip label="Edit">
+                                <ActionIcon
+                                  color="orange"
+                                  variant="light"
+                                  onClick={() => openEditModal(voucher)}
+                                >
+                                  <IconEdit size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                              <Tooltip label="Delete">
+                                <ActionIcon
+                                  color="red"
+                                  variant="light"
+                                  onClick={() => handleDelete(voucher._id)}
+                                >
+                                  <IconTrash size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                            </>
+                          ) : (
+                            <Tooltip label="Auto-generated — edit/delete from its originating module">
+                              <Text size="xs" c="dimmed" fs="italic">View only</Text>
+                            </Tooltip>
+                          )}
                         </Group>
                       </td>
                     </tr>
@@ -539,14 +616,14 @@ const ReceiptVoucher = () => {
         )}
       </Paper>
 
-      {/* Add Modal */}
+      {/* Add / Edit Modal */}
       <Modal
         opened={modalOpened}
-        onClose={() => setModalOpened(false)}
+        onClose={closeModal}
         title={
           <Group gap="xs">
             <IconReceipt size={20} />
-            <Text fw={600}>Add Receipt Voucher</Text>
+            <Text fw={600}>{editingVoucherId ? 'Edit Receipt Voucher' : 'Add Receipt Voucher'}</Text>
           </Group>
         }
         size={entryMode === 'multiple' ? 'xl' : 'md'}
@@ -555,17 +632,19 @@ const ReceiptVoucher = () => {
         <LoadingOverlay visible={loading || savingMultiple} overlayProps={{ blur: 2 }} />
 
         <Stack gap="md">
-          {/* Entry Mode Selector */}
-          <SegmentedControl
-            value={entryMode}
-            onChange={setEntryMode}
-            fullWidth
-            color="green"
-            data={[
-              { label: 'Single Entry', value: 'single' },
-              { label: 'Multiple Entries', value: 'multiple' }
-            ]}
-          />
+          {/* Entry Mode Selector — hidden while editing, an edit always targets one existing voucher */}
+          {!editingVoucherId && (
+            <SegmentedControl
+              value={entryMode}
+              onChange={setEntryMode}
+              fullWidth
+              color="green"
+              data={[
+                { label: 'Single Entry', value: 'single' },
+                { label: 'Multiple Entries', value: 'multiple' }
+              ]}
+            />
+          )}
 
           {entryMode === 'single' ? (
             /* Single Entry Form */
@@ -637,7 +716,7 @@ const ReceiptVoucher = () => {
                   <Button
                     variant="default"
                     leftSection={<IconX size={16} />}
-                    onClick={() => setModalOpened(false)}
+                    onClick={closeModal}
                     disabled={loading}
                   >
                     Cancel
@@ -648,7 +727,7 @@ const ReceiptVoucher = () => {
                     loading={loading}
                     color="green"
                   >
-                    Save Receipt Voucher
+                    {editingVoucherId ? 'Update Receipt Voucher' : 'Save Receipt Voucher'}
                   </Button>
                 </Group>
               </Stack>
@@ -780,7 +859,7 @@ const ReceiptVoucher = () => {
                 <Button
                   variant="default"
                   leftSection={<IconX size={16} />}
-                  onClick={() => setModalOpened(false)}
+                  onClick={closeModal}
                   disabled={savingMultiple}
                 >
                   Cancel

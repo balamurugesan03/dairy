@@ -266,6 +266,7 @@ const MainLayout = () => {
       
       key: 'business-inventory-menu',
       icon: <IconBox size={18} />,
+      
       label: 'Business Inventory',
       color: 'orange',
       children: [
@@ -448,8 +449,8 @@ const MainLayout = () => {
          { key: '/daily-collections/intelligent-query',     label: 'Intelligent Query'   },
         { key: '/farmers/crop-statements',   label: 'Crop Damage Statements' },
         { key: '/farmers/agri-stats',        label: 'Monthly Agri Statistics' },
-        { key: '/daily-collections/incentive-register', label: 'Incentives' },
-        { key: '/daily-collections/bonus-register',     label: 'Bonus' },
+        { key: '/daily-collections/incentive-register', label: 'Incentive Register' },
+        { key: '/daily-collections/bonus-register',     label: 'Bonus Register' },
 
       ]
     }] : []),

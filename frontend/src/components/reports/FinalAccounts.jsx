@@ -226,7 +226,7 @@ const TradingAccount = ({ data, period }) => {
 ══════════════════════════════════════════════════════════════ */
 const ProfitLoss = ({ data }) => {
   if (!data) return null;
-  const { income, totalIncome, expenses, totalExpense, netProfit } = data;
+  const { income, totalIncome, expenses, totalExpense, tradeProfit = 0, tradeLoss = 0, netProfit } = data;
   const isProfit = netProfit >= 0;
 
   const BaseTable = ({ children }) => (
@@ -259,6 +259,11 @@ const ProfitLoss = ({ data }) => {
               ))}
               <SubtotalRow label="Total Expenses" amount={totalExpense} />
 
+              {/* Trading Account's Gross Loss, brought down into P&L */}
+              {tradeLoss > 0 && (
+                <SpecialRow label="Trade Loss b/f (from Trading A/c)" amount={tradeLoss} color="orange" />
+              )}
+
               {/* Net Profit carried to Balance Sheet */}
               {isProfit && (
                 <SpecialRow label="Net Profit (c/o to Balance Sheet)" amount={netProfit} color="green" />
@@ -266,7 +271,7 @@ const ProfitLoss = ({ data }) => {
 
               <GrandTotalRow
                 label="GRAND TOTAL"
-                amount={isProfit ? (totalExpense + netProfit) : totalExpense}
+                amount={(totalExpense + tradeLoss) + (isProfit ? netProfit : 0)}
               />
             </BaseTable>
           </SideCard>
@@ -280,6 +285,11 @@ const ProfitLoss = ({ data }) => {
               ))}
               <SubtotalRow label="Total Income" amount={totalIncome} />
 
+              {/* Trading Account's Gross Profit, brought down into P&L */}
+              {tradeProfit > 0 && (
+                <SpecialRow label="Trade Profit b/f (from Trading A/c)" amount={tradeProfit} color="green" />
+              )}
+
               {/* Net Loss carried to Balance Sheet */}
               {!isProfit && (
                 <SpecialRow label="Net Loss (c/o to Balance Sheet)" amount={Math.abs(netProfit)} color="red" />
@@ -287,7 +297,7 @@ const ProfitLoss = ({ data }) => {
 
               <GrandTotalRow
                 label="GRAND TOTAL"
-                amount={!isProfit ? (totalIncome + Math.abs(netProfit)) : totalIncome}
+                amount={(totalIncome + tradeProfit) + (!isProfit ? Math.abs(netProfit) : 0)}
               />
             </BaseTable>
           </SideCard>
@@ -517,7 +527,7 @@ const TradingAccountV2 = ({ data, period }) => {
 ══════════════════════════════════════════════════════════════ */
 const ProfitLossV2 = ({ data }) => {
   if (!data) return null;
-  const { incomeGroups, expenseGroups, totalIncome, totalExpense, netProfit } = data;
+  const { incomeGroups, expenseGroups, totalIncome, totalExpense, tradeProfit = 0, tradeLoss = 0, netProfit } = data;
   const isProfit = (netProfit || 0) >= 0;
 
   const BaseTable = ({ children }) => (
@@ -551,8 +561,9 @@ const ProfitLossV2 = ({ data }) => {
                 </React.Fragment>
               ))}
               <SubtotalRow label="Total Expenses" amount={totalExpense} />
+              {tradeLoss > 0 && <SpecialRow label="Trade Loss b/f (from Trading A/c)" amount={tradeLoss} color="orange" />}
               {isProfit && <SpecialRow label="Net Profit (c/o to Balance Sheet)" amount={netProfit} color="green" />}
-              <GrandTotalRow label="GRAND TOTAL" amount={isProfit ? (totalExpense + netProfit) : totalExpense} />
+              <GrandTotalRow label="GRAND TOTAL" amount={(totalExpense + tradeLoss) + (isProfit ? netProfit : 0)} />
             </BaseTable>
           </SideCard>
         }
@@ -567,8 +578,9 @@ const ProfitLossV2 = ({ data }) => {
                 </React.Fragment>
               ))}
               <SubtotalRow label="Total Income" amount={totalIncome} />
+              {tradeProfit > 0 && <SpecialRow label="Trade Profit b/f (from Trading A/c)" amount={tradeProfit} color="green" />}
               {!isProfit && <SpecialRow label="Net Loss (c/o to Balance Sheet)" amount={Math.abs(netProfit)} color="red" />}
-              <GrandTotalRow label="GRAND TOTAL" amount={!isProfit ? (totalIncome + Math.abs(netProfit)) : totalIncome} />
+              <GrandTotalRow label="GRAND TOTAL" amount={(totalIncome + tradeProfit) + (!isProfit ? Math.abs(netProfit) : 0)} />
             </BaseTable>
           </SideCard>
         }
@@ -590,7 +602,10 @@ const ProfitLossV2 = ({ data }) => {
 ══════════════════════════════════════════════════════════════ */
 const BalanceSheetV2 = ({ data }) => {
   if (!data) return null;
-  const { assetGroups, liabilityGroups, totalAssets, totalLiabilities, closingStock, isTallied } = data;
+  const {
+    assetGroups, liabilityGroups, totalAssets, totalLiabilities, closingStock,
+    netProfit = 0, totalLiabilitiesAndCapital, isTallied
+  } = data;
 
   const BaseTable = ({ children }) => (
     <Table withColumnBorders style={{ fontSize: 13 }}>
@@ -606,6 +621,7 @@ const BalanceSheetV2 = ({ data }) => {
   );
 
   const grandAssets = (totalAssets || 0) + (closingStock || 0);
+  const grandLiabilities = totalLiabilitiesAndCapital ?? ((totalLiabilities || 0) + netProfit);
 
   return (
     <Stack gap="sm">
@@ -615,8 +631,8 @@ const BalanceSheetV2 = ({ data }) => {
       </Box>
       {!isTallied && (
         <Alert icon={<IconAlertCircle size={16} />} color="orange" title="Not Balanced">
-          Liabilities (₹ {fmt(totalLiabilities)}) ≠ Assets (₹ {fmt(grandAssets)}) |
-          Difference: ₹ {fmt(Math.abs((totalLiabilities || 0) - grandAssets))}
+          Liabilities (₹ {fmt(grandLiabilities)}) ≠ Assets (₹ {fmt(grandAssets)}) |
+          Difference: ₹ {fmt(Math.abs(grandLiabilities - grandAssets))}
         </Alert>
       )}
       <TwoCol
@@ -630,7 +646,19 @@ const BalanceSheetV2 = ({ data }) => {
                   <SubtotalRow label={`Total ${g.accountGroup}`} amount={g.total} />
                 </React.Fragment>
               ))}
-              <GrandTotalRow label="GRAND TOTAL" amount={totalLiabilities} />
+              {/* Net Profit/Loss carried forward from Profit & Loss A/c */}
+              <Table.Tr bg="green.0">
+                <Table.Td />
+                <Table.Td pl={12}>
+                  <Text fw={600} size="sm" c="green">Net Profit from P&L A/c</Text>
+                </Table.Td>
+                <Table.Td ta="right" w={130}>
+                  <Text fw={700} size="sm" c={netProfit >= 0 ? 'green' : 'red'}>
+                    {netProfit < 0 ? `(${fmt(netProfit)})` : fmt(netProfit)}
+                  </Text>
+                </Table.Td>
+              </Table.Tr>
+              <GrandTotalRow label="GRAND TOTAL" amount={grandLiabilities} />
             </BaseTable>
           </SideCard>
         }
@@ -882,6 +910,7 @@ const FinalAccounts = () => {
             </Stack>
           </Tabs.Panel>
         </Tabs>
+        </Box>
       )}
 
       {/* Footer */}
@@ -893,8 +922,6 @@ const FinalAccounts = () => {
             <Text size="xs" c="dimmed">Generated: {dayjs().format('DD/MM/YYYY hh:mm A')}</Text>
           </Group>
         </Paper>
-      )}
-        </Box>
       )}
     </Stack>
   );

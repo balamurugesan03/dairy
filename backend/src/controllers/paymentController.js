@@ -1007,7 +1007,10 @@ export const getFarmerAdvances = async (req, res) => {
   }
 };
 
-// Update advance
+// Update advance — loads and re-saves (rather than findOneAndUpdate) so the
+// pre-save hook recomputes interestAmount/totalDue, and so balanceAmount is
+// kept in sync with an edited advanceAmount (findOneAndUpdate would silently
+// leave the stale balanceAmount in place since it bypasses that hook).
 export const updateAdvance = async (req, res) => {
   try {
     const advance = await Advance.findOne({ _id: req.params.id, companyId: req.companyId });
@@ -1027,31 +1030,82 @@ export const updateAdvance = async (req, res) => {
     }
 
     const updateData = req.body;
+    const amountChanged = updateData.advanceAmount !== undefined
+      && Number(updateData.advanceAmount) !== advance.advanceAmount;
 
     // Don't allow changing amount if adjustments exist
-    if (advance.adjustments.length > 0 && updateData.advanceAmount) {
+    if (advance.adjustments.length > 0 && amountChanged) {
       return res.status(400).json({
         success: false,
         message: 'Cannot change amount after adjustments have been made'
       });
     }
 
-    const updatedAdvance = await Advance.findOneAndUpdate(
-      { _id: req.params.id, companyId: req.companyId },
-      updateData,
-      { new: true, runValidators: true }
-    ).populate('farmerId', 'farmerNumber personalDetails');
+    const ALLOWED_FIELDS = [
+      'advanceDate', 'advanceType', 'advanceCategory', 'advanceAmount',
+      'paymentMode', 'interestRate', 'repaymentType', 'monthlyDeductionAmount',
+      'deductionPercentage', 'emiCount', 'emiAmount', 'emiFrequency',
+      'expectedRepaymentDate', 'purpose', 'remarks',
+    ];
+    for (const field of ALLOWED_FIELDS) {
+      if (updateData[field] !== undefined) advance[field] = updateData[field];
+    }
+
+    // Amount changed with no adjustments yet → balance tracks the new amount 1:1
+    if (amountChanged) {
+      advance.balanceAmount = advance.advanceAmount - (advance.adjustedAmount || 0);
+    }
+
+    await advance.save();
+    await advance.populate('farmerId', 'farmerNumber personalDetails');
 
     res.status(200).json({
       success: true,
       message: 'Advance updated successfully',
-      data: updatedAdvance
+      data: advance
     });
   } catch (error) {
     console.error('Error updating advance:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Error updating advance'
+    });
+  }
+};
+
+// Delete advance — only while no recovery adjustments have been posted
+// against it. Advance creation never posts a Ledger/Voucher entry itself
+// (that only happens later, when a recovery deduction is recorded via
+// createRecoveryVoucher), so a clean delete here needs no ledger reversal.
+export const deleteAdvance = async (req, res) => {
+  try {
+    const advance = await Advance.findOne({ _id: req.params.id, companyId: req.companyId });
+
+    if (!advance) {
+      return res.status(404).json({
+        success: false,
+        message: 'Advance not found'
+      });
+    }
+
+    if (advance.adjustments && advance.adjustments.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete an advance that already has recovery adjustments — cancel it instead'
+      });
+    }
+
+    await Advance.deleteOne({ _id: advance._id });
+
+    res.status(200).json({
+      success: true,
+      message: 'Advance deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting advance:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error deleting advance'
     });
   }
 };
@@ -2134,6 +2188,7 @@ export default {
   getAdvanceById,
   getFarmerAdvances,
   updateAdvance,
+  deleteAdvance,
   adjustAdvance,
   cancelAdvance,
   getAdvanceStats,

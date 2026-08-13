@@ -113,11 +113,6 @@ const BonusRegister = () => {
 
   useEffect(() => { loadSaved(1); }, []);
 
-  // A % bonus is always a % of the milk Amount — Qty has no currency meaning there.
-  useEffect(() => {
-    if (rateMode === 'Percentage') setBasis('Amount');
-  }, [rateMode]);
-
   const resetResults = () => {
     setRows([]);
     setTotals(emptyTotals);
@@ -393,16 +388,10 @@ const BonusRegister = () => {
               <Text size="sm" fw={500} mb={4}>Calculation Basis</Text>
               <SegmentedControl
                 fullWidth
-                data={[{ value: 'Qty', label: 'By Qty' }, { value: 'Amount', label: 'By Amount' }]}
+                data={[{ value: 'Qty', label: 'By Qty (Liter)' }, { value: 'Amount', label: 'By Amount' }]}
                 value={basis}
                 onChange={setBasis}
-                disabled={rateMode === 'Percentage'}
               />
-              {rateMode === 'Percentage' && (
-                <Text size="xs" c="dimmed" mt={4}>
-                  Locked to "By Amount" — a % bonus only has a currency meaning as a % of the milk bill amount, not of litres. Switch to "Rate/Ltr" to bonus by Qty.
-                </Text>
-              )}
             </Grid.Col>
           </Grid>
 

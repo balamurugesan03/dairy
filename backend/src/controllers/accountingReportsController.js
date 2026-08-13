@@ -2242,6 +2242,10 @@ export const getLedgerAbstractGrouped = async (req, res) => {
       groupMap[key].ledgers.push(item);
     });
 
+    // Ledgers within each Account Group are shown alphabetically — the
+    // report's hierarchy is strictly Account Group → its heads/ledgers.
+    Object.values(groupMap).forEach(g => g.ledgers.sort((a, b) => a.ledgerName.localeCompare(b.ledgerName)));
+
     const pgOrder = ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE', 'OTHER'];
     const groups = Object.values(groupMap).map(g => ({
       ...g,
@@ -2298,25 +2302,53 @@ export const getRDStatementDynamic = async (req, res) => {
       status: { $ne: 'Cancelled' }
     }).select('entries').lean();
 
-    // Cash/Bank ledger ids — used to split each ledger's period Dr/Cr into
-    // real cash movements vs non-cash Adjustment (Journal) entries.
+    // Cash/Bank ledger ids — used to split each ledger's period receipt/payment
+    // into real cash movements vs non-cash Adjustment (Journal) entries.
     const cashBankIds = await getCashBankLedgerIds(req.companyId);
 
-    const periodMap = {};
+    // Receipt/Payment per ledger for the period — computed with the SAME rule
+    // as Ledger Abstract (getLedgerAbstractGrouped), not a generic Dr=payment/
+    // Cr=receipt split: a Cash/Bank ledger is cash itself (Dr = received, Cr =
+    // paid out — the reverse of the generic rule), every other ledger's
+    // def_voucher_type (ledger.voucherType: R/P/B) decides which of its two
+    // sides — Cr for Receipt, Dr for Payment — actually counts. Using this
+    // per-entry rule (instead of aggregating raw debit/credit totals first and
+    // filtering by voucherType afterwards) is what makes every ledger touched
+    // in the period show up on its correct side — the previous aggregate-then-
+    // filter approach silently dropped any ledger whose only period activity
+    // landed on the side its voucherType doesn't recognise (e.g. an
+    // expense-type ledger's Dr side when voucherType defaults to 'P' but the
+    // amount was posted as a Cr, as MILK PURCHASE is below).
+    const CASH_BANK_TYPES = ['Cash', 'Bank', 'Cash in Hand', 'Bank Accounts'];
+    const periodMap = {}; // lid -> { receipt, payment, receiptCash, receiptAdj, paymentCash, paymentAdj }
+    const bump = (lid, side, amount, isCash) => {
+      if (amount <= 0) return;
+      if (!periodMap[lid]) periodMap[lid] = { receipt: 0, payment: 0, receiptCash: 0, receiptAdj: 0, paymentCash: 0, paymentAdj: 0 };
+      periodMap[lid][side] += amount;
+      periodMap[lid][side + (isCash ? 'Cash' : 'Adj')] += amount;
+    };
+
     periodVouchers.forEach(v => {
       const { column } = classifyVoucherEntry(v.entries, cashBankIds);
+      const isCash = column === 'cash';
       (v.entries || []).forEach(e => {
         const lid = e.ledgerId?.toString();
         if (!lid) return;
-        if (!periodMap[lid]) periodMap[lid] = { debit: 0, credit: 0, debitCash: 0, debitAdj: 0, creditCash: 0, creditAdj: 0 };
-        periodMap[lid].debit  += e.debitAmount  || 0;
-        periodMap[lid].credit += e.creditAmount || 0;
-        if (column === 'cash') {
-          periodMap[lid].debitCash  += e.debitAmount  || 0;
-          periodMap[lid].creditCash += e.creditAmount || 0;
+        const ledger = ledgerMap[lid];
+        if (!ledger) return;
+
+        const dr = e.debitAmount  || 0;
+        const cr = e.creditAmount || 0;
+
+        if (CASH_BANK_TYPES.includes(ledger.ledgerType)) {
+          bump(lid, 'receipt', dr, isCash);
+          bump(lid, 'payment', cr, isCash);
         } else {
-          periodMap[lid].debitAdj  += e.debitAmount  || 0;
-          periodMap[lid].creditAdj += e.creditAmount || 0;
+          const vt = ['R', 'P', 'B'].includes(ledger.voucherType)
+            ? ledger.voucherType
+            : getDefaultVoucherType(ledger.ledgerType);
+          if (['R', 'B'].includes(vt)) bump(lid, 'receipt', cr, isCash);
+          if (['P', 'B'].includes(vt)) bump(lid, 'payment', dr, isCash);
         }
       });
     });
@@ -2326,7 +2358,11 @@ export const getRDStatementDynamic = async (req, res) => {
     // no-op since May 2026 — General Ledger synthesizes these rows directly
     // from MilkCollection instead). Mirror that here, otherwise neither
     // ledger's activity shows up in this statement for any period after
-    // that change.
+    // that change. Written straight to receipt/payment (same as Ledger
+    // Abstract's synthetic block) rather than through the generic Dr/Cr +
+    // voucherType rule above — Producers Dues → Receipt, Milk Purchase →
+    // Payment is a fixed convention here regardless of either ledger's own
+    // def_voucher_type.
     const mcLedgers = ledgers.filter(l =>
       /producers?\s*(dues?|payable|account)/i.test(l.ledgerName) ||
       (l.ledgerType === 'Other Payable' && /producer|farmer|dues/i.test(l.ledgerName)) ||
@@ -2346,17 +2382,8 @@ export const getRDStatementDynamic = async (req, res) => {
             /producers?\s*(dues?|payable|account)/i.test(l.ledgerName) ||
             (l.ledgerType === 'Other Payable' && /producer|farmer|dues/i.test(l.ledgerName));
 
-          if (!periodMap[lid]) periodMap[lid] = { debit: 0, credit: 0, debitCash: 0, debitAdj: 0, creditCash: 0, creditAdj: 0 };
-
-          // Same convention as General Ledger's synthetic block: Milk
-          // Purchase → Payment (Cr) side; Producers Dues → Receipt (Dr) side.
-          if (isDues) {
-            periodMap[lid].debit    += periodMc;
-            periodMap[lid].debitAdj += periodMc;
-          } else {
-            periodMap[lid].credit    += periodMc;
-            periodMap[lid].creditAdj += periodMc;
-          }
+          if (isDues) bump(lid, 'receipt', periodMc, false);
+          else        bump(lid, 'payment', periodMc, false);
         });
       }
     }
@@ -2368,20 +2395,17 @@ export const getRDStatementDynamic = async (req, res) => {
       const ledger = ledgerMap[lid];
       if (!ledger) return;
 
-      const vt = ['R', 'P', 'B'].includes(ledger.voucherType)
-        ? ledger.voucherType
-        : getDefaultVoucherType(ledger.ledgerType);
       const groupKey = ledger.ledgerType || 'Other';
       const pg = ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'].includes(ledger.parentGroup)
         ? ledger.parentGroup : getParentGroupFromLedgerType(ledger.ledgerType);
 
-      if (['R', 'B'].includes(vt) && act.credit > 0) {
+      if (act.receipt > 0) {
         if (!receiptGroupMap[groupKey]) receiptGroupMap[groupKey] = { accountGroup: groupKey, parentGroup: pg, ledgers: [] };
-        receiptGroupMap[groupKey].ledgers.push({ ledgerName: ledger.ledgerName, amount: act.credit, cashAmount: act.creditCash, adjAmount: act.creditAdj });
+        receiptGroupMap[groupKey].ledgers.push({ ledgerName: ledger.ledgerName, amount: act.receipt, cashAmount: act.receiptCash, adjAmount: act.receiptAdj });
       }
-      if (['P', 'B'].includes(vt) && act.debit > 0) {
+      if (act.payment > 0) {
         if (!paymentGroupMap[groupKey]) paymentGroupMap[groupKey] = { accountGroup: groupKey, parentGroup: pg, ledgers: [] };
-        paymentGroupMap[groupKey].ledgers.push({ ledgerName: ledger.ledgerName, amount: act.debit, cashAmount: act.debitCash, adjAmount: act.debitAdj });
+        paymentGroupMap[groupKey].ledgers.push({ ledgerName: ledger.ledgerName, amount: act.payment, cashAmount: act.paymentCash, adjAmount: act.paymentAdj });
       }
     });
 

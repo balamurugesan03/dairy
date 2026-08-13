@@ -74,26 +74,57 @@ const emptyForm = {
   remarks:        '',
 };
 
-const CashAdvanceFormModal = ({ opened, onClose, onSaved }) => {
+const CashAdvanceFormModal = ({ opened, onClose, onSaved, editData }) => {
+  const isEdit = !!editData?._id;
   const [farmers,     setFarmers]    = useState([]);
   const [form,        setForm]       = useState(emptyForm);
   const [errors,      setErrors]     = useState({});
   const [submitting,  setSubmitting] = useState(false);
 
-  /* Reset form whenever the modal opens */
+  /* Reset (or prefill for edit) whenever the modal opens */
   useEffect(() => {
-    if (opened) { setForm(emptyForm); setErrors({}); }
-  }, [opened]);
+    if (!opened) return;
+    if (isEdit) {
+      const f = editData.farmerId;
+      setForm({
+        farmerId:       f?._id || f || null,
+        advanceDate:    editData.advanceDate ? new Date(editData.advanceDate) : new Date(),
+        advanceType:    editData.advanceType || 'Cash',
+        advanceAmount:  editData.advanceAmount ?? '',
+        paymentMode:    editData.paymentMode || 'Cash',
+        repaymentType:  editData.repaymentType || 'Custom',
+        emiCount:       editData.emiCount || '',
+        emiAmount:      editData.emiAmount || '',
+        emiFrequency:   editData.emiFrequency || 'Monthly',
+        purpose:        editData.purpose || '',
+        remarks:        editData.remarks || '',
+      });
+      if (typeof f === 'object' && f?._id) {
+        setFarmers(prev => (prev.some(x => x.value === f._id)
+          ? prev
+          : [{ value: f._id, label: `${f.farmerNumber} — ${f.personalDetails?.name || ''}` }, ...prev]));
+      }
+    } else {
+      setForm(emptyForm);
+    }
+    setErrors({});
+  }, [opened, isEdit, editData]);
 
-  /* Load farmer list once */
+  /* Load farmer list once — merges in (rather than replaces) so it never
+     drops the edit-mode farmer injected above if that farmer falls outside
+     this default 500-record page (e.g. now inactive). */
   useEffect(() => {
     farmerAPI.getAll({ status: 'Active', limit: 500 })
       .then(res => {
         const list = res?.data || [];
-        setFarmers(list.map(f => ({
+        const mapped = list.map(f => ({
           value: f._id,
           label: `${f.farmerNumber} — ${f.personalDetails?.name || ''}`,
-        })));
+        }));
+        setFarmers(prev => {
+          const extra = prev.filter(p => !mapped.some(m => m.value === p.value));
+          return [...extra, ...mapped];
+        });
       })
       .catch(() => {});
   }, []);
@@ -151,11 +182,13 @@ const CashAdvanceFormModal = ({ opened, onClose, onSaved }) => {
         payload.emiAmount    = Number(form.emiAmount);
         payload.emiFrequency = form.emiFrequency;
       }
-      const res = await advanceAPI.create(payload);
+      const res = isEdit
+        ? await advanceAPI.update(editData._id, payload)
+        : await advanceAPI.create(payload);
       if (res?.success === false) throw new Error(res.message || 'Save failed');
       notifications.show({
-        title:   'Cash Advance Added',
-        message: 'New advance recorded successfully',
+        title:   isEdit ? 'Cash Advance Updated' : 'Cash Advance Added',
+        message: isEdit ? 'Advance details updated successfully' : 'New advance recorded successfully',
         color:   'teal',
         icon:    <IconCheck size={14} />,
       });
@@ -198,9 +231,11 @@ const CashAdvanceFormModal = ({ opened, onClose, onSaved }) => {
         <Group justify="space-between" align="flex-start" wrap="nowrap">
           <Box>
             <Title order={4} fw={700} c={TEXT_DARK} style={{ letterSpacing: -0.2 }}>
-              New Cash Advance
+              {isEdit ? 'Edit Cash Advance' : 'New Cash Advance'}
             </Title>
-            <Text size="sm" c={TEXT_MUTED} mt={4}>Record advance given to producer</Text>
+            <Text size="sm" c={TEXT_MUTED} mt={4}>
+              {isEdit ? (editData?.advanceNumber || 'Update advance details') : 'Record advance given to producer'}
+            </Text>
           </Box>
           <ActionIcon
             variant="subtle" color="gray" radius="xl" size="lg"
@@ -438,7 +473,7 @@ const CashAdvanceFormModal = ({ opened, onClose, onSaved }) => {
             },
           }}
         >
-          Save Advance
+          {isEdit ? 'Update Advance' : 'Save Advance'}
         </Button>
       </Group>
     </Modal>

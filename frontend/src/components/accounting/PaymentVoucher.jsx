@@ -40,6 +40,7 @@ import {
   IconPlus,
   IconEye,
   IconTrash,
+  IconEdit,
   IconCreditCard,
   IconPrinter
 } from '@tabler/icons-react';
@@ -52,6 +53,8 @@ const PaymentVoucher = () => {
   const [modalOpened, setModalOpened] = useState(false);
   const [viewModalOpened, setViewModalOpened] = useState(false);
   const [selectedVoucher, setSelectedVoucher] = useState(null);
+  const [editingVoucherId, setEditingVoucherId] = useState(null);
+  const [filterDate, setFilterDate] = useState(dayjs().format('YYYY-MM-DD'));
   const printRef = useRef(null);
   const [entryMode, setEntryMode] = useState('single');
   const [multipleEntries, setMultipleEntries] = useState([
@@ -81,8 +84,14 @@ const PaymentVoucher = () => {
 
   useEffect(() => {
     fetchLedgers();
-    fetchVouchers();
   }, []);
+
+  // Re-fetch whenever the selected date changes — the grid always shows
+  // only that date's transactions, never the full history.
+  useEffect(() => {
+    fetchVouchers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterDate]);
 
   const fetchLedgers = async () => {
     try {
@@ -96,7 +105,11 @@ const PaymentVoucher = () => {
   const fetchVouchers = async () => {
     setFetchingVouchers(true);
     try {
-      const response = await voucherAPI.getAll({ voucherType: 'Payment' });
+      const response = await voucherAPI.getAll({
+        voucherType: 'Payment',
+        startDate: filterDate,
+        endDate: filterDate
+      });
       setVouchers(response.data || []);
     } catch (error) {
       message.error(error.message || 'Failed to fetch vouchers');
@@ -148,13 +161,19 @@ const PaymentVoucher = () => {
         narration: values.narration
       };
 
-      await voucherAPI.create(payload);
-      message.success('Payment voucher created successfully');
+      if (editingVoucherId) {
+        await voucherAPI.update(editingVoucherId, payload);
+        message.success('Payment voucher updated successfully');
+      } else {
+        await voucherAPI.create(payload);
+        message.success('Payment voucher created successfully');
+      }
       setModalOpened(false);
+      setEditingVoucherId(null);
       form.reset();
       fetchVouchers();
     } catch (error) {
-      message.error(error.message || 'Failed to create payment voucher');
+      message.error(error.message || `Failed to ${editingVoucherId ? 'update' : 'create'} payment voucher`);
     } finally {
       setLoading(false);
     }
@@ -259,10 +278,33 @@ const PaymentVoucher = () => {
     form.reset();
     form.setFieldValue('voucherDate', dayjs().format('YYYY-MM-DD'));
     setEntryMode('single');
+    setEditingVoucherId(null);
     setMultipleEntries([
       { voucherDate: dayjs().format('YYYY-MM-DD'), ledgerId: '', amount: '', narration: '' }
     ]);
     setModalOpened(true);
+  };
+
+  // Edit — Manual entries only (enforced again server-side by updateVoucher).
+  // Prefills the single-entry form from the voucher's debit leg (the "head
+  // of account" the user originally picked — Cash is always the automatic
+  // credit leg and isn't shown as an editable field here, same as Add).
+  const openEditModal = (voucher) => {
+    const debitEntry = voucher.entries?.find(e => e.debitAmount > 0);
+    form.setValues({
+      voucherDate: dayjs(voucher.voucherDate).format('YYYY-MM-DD'),
+      ledgerId: debitEntry?.ledgerId?._id || debitEntry?.ledgerId || '',
+      amount: voucher.totalDebit || 0,
+      narration: voucher.narration || ''
+    });
+    setEntryMode('single');
+    setEditingVoucherId(voucher._id);
+    setModalOpened(true);
+  };
+
+  const closeModal = () => {
+    setModalOpened(false);
+    setEditingVoucherId(null);
   };
 
   const addMultipleRow = () => {
@@ -415,22 +457,33 @@ const PaymentVoucher = () => {
               </Group>
             </Title>
           </Group>
-          <Badge size="lg" variant="filled" color="red">
-            {vouchers.length} Vouchers
-          </Badge>
+          <Group gap="sm">
+            <TextInput
+              type="date"
+              label="Transaction Date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              leftSection={<IconCalendar size={16} />}
+              size="sm"
+              styles={{ root: { width: 170 } }}
+            />
+            <Badge size="lg" variant="filled" color="red" mt={22}>
+              {vouchers.length} Vouchers
+            </Badge>
+          </Group>
         </Group>
 
         {vouchers.length === 0 ? (
           <Card p="xl" withBorder bg="gray.0">
             <Stack align="center" gap="md">
               <IconCreditCard size={48} color="gray" />
-              <Text c="dimmed" size="lg">No payment vouchers found</Text>
+              <Text c="dimmed" size="lg">No payment vouchers on {dayjs(filterDate).format('DD-MM-YYYY')}</Text>
               <Button
                 variant="light"
                 leftSection={<IconPlus size={16} />}
                 onClick={openAddModal}
               >
-                Create First Payment Voucher
+                Create Payment Voucher
               </Button>
             </Stack>
           </Card>
@@ -445,12 +498,14 @@ const PaymentVoucher = () => {
                   <th>Head of Account</th>
                   <th style={{ textAlign: 'right' }}>Amount</th>
                   <th>Narration</th>
+                  <th style={{ textAlign: 'center' }}>Source</th>
                   <th style={{ textAlign: 'center' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {vouchers.map((voucher, index) => {
                   const debitEntry = voucher.entries?.find(e => e.debitAmount > 0);
+                  const isManual = voucher.referenceType === 'Manual';
 
                   return (
                     <tr key={voucher._id}>
@@ -472,6 +527,11 @@ const PaymentVoucher = () => {
                           {voucher.narration || '-'}
                         </Text>
                       </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <Badge size="sm" variant="light" color={isManual ? 'grape' : 'gray'}>
+                          {isManual ? 'Manual' : (voucher.referenceType || 'Auto')}
+                        </Badge>
+                      </td>
                       <td>
                         <Group gap="xs" justify="center">
                           <Tooltip label="View Details">
@@ -492,15 +552,32 @@ const PaymentVoucher = () => {
                               <IconPrinter size={16} />
                             </ActionIcon>
                           </Tooltip>
-                          <Tooltip label="Delete">
-                            <ActionIcon
-                              color="red"
-                              variant="light"
-                              onClick={() => handleDelete(voucher._id)}
-                            >
-                              <IconTrash size={16} />
-                            </ActionIcon>
-                          </Tooltip>
+                          {isManual ? (
+                            <>
+                              <Tooltip label="Edit">
+                                <ActionIcon
+                                  color="orange"
+                                  variant="light"
+                                  onClick={() => openEditModal(voucher)}
+                                >
+                                  <IconEdit size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                              <Tooltip label="Delete">
+                                <ActionIcon
+                                  color="red"
+                                  variant="light"
+                                  onClick={() => handleDelete(voucher._id)}
+                                >
+                                  <IconTrash size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                            </>
+                          ) : (
+                            <Tooltip label="Auto-generated — edit/delete from its originating module">
+                              <Text size="xs" c="dimmed" fs="italic">View only</Text>
+                            </Tooltip>
+                          )}
                         </Group>
                       </td>
                     </tr>
@@ -524,14 +601,14 @@ const PaymentVoucher = () => {
         )}
       </Paper>
 
-      {/* Add Modal */}
+      {/* Add / Edit Modal */}
       <Modal
         opened={modalOpened}
-        onClose={() => setModalOpened(false)}
+        onClose={closeModal}
         title={
           <Group gap="xs">
             <IconCreditCard size={20} />
-            <Text fw={600}>Add Payment Voucher</Text>
+            <Text fw={600}>{editingVoucherId ? 'Edit Payment Voucher' : 'Add Payment Voucher'}</Text>
           </Group>
         }
         size={entryMode === 'multiple' ? 'xl' : 'md'}
@@ -540,17 +617,19 @@ const PaymentVoucher = () => {
         <LoadingOverlay visible={loading || savingMultiple} overlayProps={{ blur: 2 }} />
 
         <Stack gap="md">
-          {/* Entry Mode Selector */}
-          <SegmentedControl
-            value={entryMode}
-            onChange={setEntryMode}
-            fullWidth
-            color="red"
-            data={[
-              { label: 'Single Entry', value: 'single' },
-              { label: 'Multiple Entries', value: 'multiple' }
-            ]}
-          />
+          {/* Entry Mode Selector — hidden while editing, an edit always targets one existing voucher */}
+          {!editingVoucherId && (
+            <SegmentedControl
+              value={entryMode}
+              onChange={setEntryMode}
+              fullWidth
+              color="red"
+              data={[
+                { label: 'Single Entry', value: 'single' },
+                { label: 'Multiple Entries', value: 'multiple' }
+              ]}
+            />
+          )}
 
           {entryMode === 'single' ? (
             /* Single Entry Form */
@@ -622,7 +701,7 @@ const PaymentVoucher = () => {
                   <Button
                     variant="default"
                     leftSection={<IconX size={16} />}
-                    onClick={() => setModalOpened(false)}
+                    onClick={closeModal}
                     disabled={loading}
                   >
                     Cancel
@@ -633,7 +712,7 @@ const PaymentVoucher = () => {
                     loading={loading}
                     color="red"
                   >
-                    Save Payment Voucher
+                    {editingVoucherId ? 'Update Payment Voucher' : 'Save Payment Voucher'}
                   </Button>
                 </Group>
               </Stack>
@@ -765,7 +844,7 @@ const PaymentVoucher = () => {
                 <Button
                   variant="default"
                   leftSection={<IconX size={16} />}
-                  onClick={() => setModalOpened(false)}
+                  onClick={closeModal}
                   disabled={savingMultiple}
                 >
                   Cancel

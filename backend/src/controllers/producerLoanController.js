@@ -278,7 +278,13 @@ export const getFarmerLoans = async (req, res) => {
   }
 };
 
-// Update loan
+// Update loan — full edit while nothing has been recovered yet.
+// Financial fields (amount/interest/EMI count/scheme/date) are safe to change
+// wholesale and regenerate the EMI schedule from scratch because the
+// hasPaidEMI guard below already proves every EMI row is still untouched
+// (paidAmount === 0). Fields that affect the disbursement voucher
+// (principal/payment mode/bank ledger/date) trigger a reverse-and-repost so
+// the ledgers stay in sync with the edited loan.
 export const updateLoan = async (req, res) => {
   try {
     const loan = await ProducerLoan.findOne({ _id: req.params.id, companyId: req.companyId });
@@ -307,31 +313,153 @@ export const updateLoan = async (req, res) => {
       });
     }
 
-    const allowedUpdates = ['remarks', 'purpose', 'guarantorName', 'guarantorPhone'];
-    const updateData = {};
+    const FIELDS = [
+      'loanDate', 'loanType', 'loanScheme', 'principalAmount',
+      'interestType', 'interestRate', 'interestAmount', 'totalEMI',
+      'paymentMode', 'bankLedgerId', 'chequeNumber',
+      'guarantorName', 'guarantorPhone', 'purpose', 'remarks',
+    ];
+    const FINANCIAL_FIELDS = ['loanDate', 'loanScheme', 'principalAmount', 'interestType', 'interestRate', 'interestAmount', 'totalEMI'];
+    const VOUCHER_FIELDS   = ['loanDate', 'principalAmount', 'paymentMode', 'bankLedgerId'];
 
-    for (const field of allowedUpdates) {
-      if (req.body[field] !== undefined) {
-        updateData[field] = req.body[field];
+    let financialChanged = false;
+    let voucherChanged   = false;
+
+    for (const field of FIELDS) {
+      if (req.body[field] === undefined) continue;
+      const newValue = field === 'loanDate' ? new Date(req.body[field]) : req.body[field];
+      const oldValue = loan[field];
+      const changed  = field === 'loanDate'
+        ? (oldValue ? new Date(oldValue).getTime() : null) !== newValue.getTime()
+        : String(oldValue ?? '') !== String(newValue ?? '');
+
+      if (changed) {
+        if (FINANCIAL_FIELDS.includes(field)) financialChanged = true;
+        if (VOUCHER_FIELDS.includes(field))   voucherChanged   = true;
+      }
+      loan[field] = newValue;
+    }
+
+    if (financialChanged) {
+      // Recompute interest / total / EMI amount (same math as the pre-save hook)
+      if (loan.interestType === 'Percentage' && loan.interestRate > 0) {
+        loan.interestAmount = (loan.principalAmount * loan.interestRate) / 100;
+      } else if (loan.interestType !== 'Flat') {
+        loan.interestAmount = 0;
+      }
+      loan.totalLoanAmount = loan.principalAmount + (loan.interestAmount || 0);
+      if (loan.totalEMI > 0) {
+        loan.emiAmount = Math.ceil(loan.totalLoanAmount / loan.totalEMI);
+      }
+
+      // Regenerate the EMI schedule from scratch — safe because hasPaidEMI
+      // above proved no installment has been touched yet.
+      const schedule  = [];
+      const startDate = new Date(loan.loanDate);
+      for (let i = 1; i <= loan.totalEMI; i++) {
+        const dueDate = new Date(startDate);
+        if (loan.loanScheme !== 'Cycle') dueDate.setMonth(dueDate.getMonth() + i);
+        const emiAmt = i === loan.totalEMI
+          ? loan.totalLoanAmount - (loan.emiAmount * (loan.totalEMI - 1))
+          : loan.emiAmount;
+        schedule.push({ emiNumber: i, dueDate, amount: emiAmt, paidAmount: 0, status: 'Pending' });
+      }
+      loan.emiSchedule       = schedule;
+      loan.disbursedAmount   = loan.principalAmount;
+      loan.outstandingAmount = loan.totalLoanAmount;
+      loan.recoveredAmount   = 0;
+    }
+
+    // Re-post the disbursement voucher if amount / payment mode / bank / date changed
+    if (voucherChanged) {
+      if (loan.voucherId) {
+        const oldVoucher = await Voucher.findById(loan.voucherId);
+        if (oldVoucher && oldVoucher.status !== 'Cancelled') {
+          const reversedEntries = oldVoucher.entries.map(e => ({
+            ledgerId: e.ledgerId,
+            ledgerName: e.ledgerName,
+            debitAmount: e.creditAmount,
+            creditAmount: e.debitAmount,
+          }));
+          await updateLedgerBalances(reversedEntries, null, req.companyId);
+          oldVoucher.status = 'Cancelled';
+          await oldVoucher.save();
+        }
+      }
+      try {
+        const newVoucher = await createLoanDisbursementVoucher(loan, req.companyId);
+        loan.voucherId = newVoucher._id;
+      } catch (voucherError) {
+        console.error('Voucher re-creation failed on loan update:', voucherError);
       }
     }
 
-    const updatedLoan = await ProducerLoan.findOneAndUpdate(
-      { _id: req.params.id, companyId: req.companyId },
-      updateData,
-      { new: true, runValidators: true }
-    ).populate('farmerId', 'farmerNumber personalDetails');
+    await loan.save();
+    await loan.populate('farmerId', 'farmerNumber personalDetails');
 
     res.status(200).json({
       success: true,
       message: 'Loan updated successfully',
-      data: updatedLoan
+      data: loan
     });
   } catch (error) {
     console.error('Error updating loan:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Error updating loan'
+    });
+  }
+};
+
+// Delete loan — only while nothing has been recovered against it. Reverses
+// the disbursement voucher's ledger balances and removes both the voucher
+// and the loan record, so no orphaned accounting entries are left behind.
+export const deleteLoan = async (req, res) => {
+  try {
+    const loan = await ProducerLoan.findOne({ _id: req.params.id, companyId: req.companyId });
+
+    if (!loan) {
+      return res.status(404).json({
+        success: false,
+        message: 'Loan not found'
+      });
+    }
+
+    const hasPaidEMI = loan.emiSchedule.some(emi => emi.paidAmount > 0);
+    if (hasPaidEMI) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete a loan with recorded EMI payments — cancel it instead'
+      });
+    }
+
+    if (loan.voucherId) {
+      const voucher = await Voucher.findById(loan.voucherId);
+      if (voucher) {
+        if (voucher.status !== 'Cancelled') {
+          const reversedEntries = voucher.entries.map(e => ({
+            ledgerId: e.ledgerId,
+            ledgerName: e.ledgerName,
+            debitAmount: e.creditAmount,
+            creditAmount: e.debitAmount,
+          }));
+          await updateLedgerBalances(reversedEntries, null, req.companyId);
+        }
+        await Voucher.deleteOne({ _id: voucher._id });
+      }
+    }
+
+    await ProducerLoan.deleteOne({ _id: loan._id });
+
+    res.status(200).json({
+      success: true,
+      message: 'Loan deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting loan:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error deleting loan'
     });
   }
 };
@@ -580,6 +708,7 @@ export default {
   getLoanById,
   getFarmerLoans,
   updateLoan,
+  deleteLoan,
   cancelLoan,
   recordEMIPayment,
   getLoanStats,

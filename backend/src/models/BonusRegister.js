@@ -57,8 +57,8 @@ const bonusRegisterSchema = new mongoose.Schema(
       min: 0,
       default: 0,
     },
-    // Only meaningful when rateMode === 'Rate' — Percentage mode always
-    // applies to milk Amount (a % of Qty has no currency meaning).
+    // Applies to both rateMode values — Qty (Liter) or Amount can be chosen
+    // as the calculation basis whether the bonus is entered as a Rate/Ltr or a %.
     basis: {
       type: String,
       enum: ['Qty', 'Amount'],

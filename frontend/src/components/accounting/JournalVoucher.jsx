@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { message } from '../../utils/toast';
 import { localDateStr } from '../../utils/dateUtils';
 import dayjs from 'dayjs';
@@ -34,6 +34,7 @@ import {
   IconCheck,
   IconPlus,
   IconEye,
+  IconEdit,
   IconTrash,
   IconArrowsExchange,
   IconMilk,
@@ -194,6 +195,7 @@ const JournalVoucher = () => {
   const [voucherDate, setVoucherDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [viewModalOpened, setViewModalOpened] = useState(false);
   const [selectedVoucher, setSelectedVoucher] = useState(null);
+  const [editingVoucherId, setEditingVoucherId] = useState(null);
 
   // Receipt (Dr / Debit) entries — income / asset side
   const [receiptEntries, setReceiptEntries] = useState([
@@ -207,8 +209,15 @@ const JournalVoucher = () => {
 
   useEffect(() => {
     fetchLedgers();
-    fetchVouchers();
   }, []);
+
+  // The transaction grid always reflects the currently selected date — the
+  // same date field driving the entry form above it. Changing the date
+  // refreshes the grid to that date's entries only.
+  useEffect(() => {
+    fetchVouchers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voucherDate]);
 
   const fetchLedgers = async () => {
     try {
@@ -222,7 +231,11 @@ const JournalVoucher = () => {
   const fetchVouchers = async () => {
     setFetchingVouchers(true);
     try {
-      const response = await voucherAPI.getAll({ voucherType: 'Journal' });
+      const response = await voucherAPI.getAll({
+        voucherType: 'Journal',
+        startDate: voucherDate,
+        endDate: voucherDate
+      });
       setVouchers(response.data || []);
     } catch (error) {
       message.error(error.message || 'Failed to fetch vouchers');
@@ -315,11 +328,42 @@ const JournalVoucher = () => {
     ? `JV-${String(vouchers.length + 1).padStart(4, '0')}`
     : 'JV-0001';
 
-  // Reset form
-  const handleReset = () => {
+  // Clear just the entry rows — used after a successful save so the grid's
+  // date filter (shared with the entry form) isn't yanked back to today.
+  const resetEntries = () => {
     setReceiptEntries([{ ledgerId: '', amount: '', narration: '' }]);
     setPaymentEntries([{ ledgerId: '', amount: '', narration: '' }]);
+  };
+
+  // Reset form — the "Clear" button, an explicit user action, also resets
+  // the date back to today.
+  const handleReset = () => {
+    resetEntries();
     setVoucherDate(dayjs().format('YYYY-MM-DD'));
+    setEditingVoucherId(null);
+  };
+
+  // Edit — Manual entries only (enforced again server-side by
+  // updateVoucher). Loads the voucher's Dr entries into the Receipt panel
+  // and Cr entries into the Payment panel, same shape the form already uses.
+  const startEdit = (voucher) => {
+    const toRow = (e) => ({
+      ledgerId: e.ledgerId?._id || e.ledgerId || '',
+      amount: e.debitAmount > 0 ? e.debitAmount : e.creditAmount,
+      narration: e.narration || ''
+    });
+    const debits = (voucher.entries || []).filter(e => e.debitAmount > 0).map(toRow);
+    const credits = (voucher.entries || []).filter(e => e.creditAmount > 0).map(toRow);
+    setReceiptEntries(debits.length ? debits : [{ ledgerId: '', amount: '', narration: '' }]);
+    setPaymentEntries(credits.length ? credits : [{ ledgerId: '', amount: '', narration: '' }]);
+    setVoucherDate(dayjs(voucher.voucherDate).format('YYYY-MM-DD'));
+    setEditingVoucherId(voucher._id);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelEdit = () => {
+    setEditingVoucherId(null);
+    resetEntries();
   };
 
   // Submit handler
@@ -384,12 +428,18 @@ const JournalVoucher = () => {
         narration: entries.map(e => e.narration).filter(Boolean).join('; ') || 'Journal Entry'
       };
 
-      await voucherAPI.create(payload);
-      message.success('Journal voucher saved successfully');
-      handleReset();
+      if (editingVoucherId) {
+        await voucherAPI.update(editingVoucherId, payload);
+        message.success('Journal voucher updated successfully');
+      } else {
+        await voucherAPI.create(payload);
+        message.success('Journal voucher saved successfully');
+      }
+      setEditingVoucherId(null);
+      resetEntries();
       fetchVouchers();
     } catch (error) {
-      message.error(error.message || 'Failed to save journal voucher');
+      message.error(error.message || `Failed to ${editingVoucherId ? 'update' : 'save'} journal voucher`);
     } finally {
       setLoading(false);
     }
@@ -426,10 +476,11 @@ const JournalVoucher = () => {
         style={{ borderColor: '#dee2e6', background: 'linear-gradient(to right, #fafbfc, #ffffff)' }}
       >
         <Flex justify="space-between" align="center" wrap="wrap" gap="sm">
-          {/* Left: Date Picker */}
+          {/* Left: Date Picker — also drives which date's entries the grid below shows */}
           <Group gap="sm">
             <TextInput
               type="date"
+              label="Transaction Date"
               value={voucherDate}
               onChange={(e) => setVoucherDate(e.target.value)}
               size="xs"
@@ -447,6 +498,9 @@ const JournalVoucher = () => {
             <Title order={4} c="dark.7" style={{ letterSpacing: '-0.3px' }}>
               Adjustment Entry / Journal Entry
             </Title>
+            {editingVoucherId && (
+              <Badge color="orange" variant="filled" size="sm" radius="sm">Editing</Badge>
+            )}
           </Group>
 
           {/* Right: Milk Bill + Voucher No */}
@@ -556,6 +610,17 @@ const JournalVoucher = () => {
           </Group>
 
           <Group gap="sm">
+            {editingVoucherId && (
+              <Button
+                size="xs"
+                variant="subtle"
+                color="gray"
+                leftSection={<IconX size={14} />}
+                onClick={cancelEdit}
+              >
+                Cancel Edit
+              </Button>
+            )}
             <Button
               size="xs"
               variant="default"
@@ -572,7 +637,7 @@ const JournalVoucher = () => {
               loading={loading}
               disabled={!isBalanced}
             >
-              Save Voucher
+              {editingVoucherId ? 'Update Voucher' : 'Save Voucher'}
             </Button>
           </Group>
         </Flex>
@@ -605,7 +670,7 @@ const JournalVoucher = () => {
         {vouchers.length === 0 ? (
           <Box p="xl" style={{ textAlign: 'center' }}>
             <IconArrowsExchange size={40} color="#adb5bd" style={{ marginBottom: '8px' }} />
-            <Text c="dimmed" size="sm">No journal entries found. Create your first entry above.</Text>
+            <Text c="dimmed" size="sm">No journal entries on {dayjs(voucherDate).format('DD-MM-YYYY')}. Create one above.</Text>
           </Box>
         ) : (
           <ScrollArea style={{ maxHeight: '320px' }}>
@@ -636,6 +701,9 @@ const JournalVoucher = () => {
                   <Table.Th style={{ padding: '8px 10px', fontSize: '11px', fontWeight: 700 }}>
                     Narration
                   </Table.Th>
+                  <Table.Th style={{ width: '80px', padding: '8px 10px', fontSize: '11px', fontWeight: 700, textAlign: 'center' }}>
+                    Source
+                  </Table.Th>
                   <Table.Th style={{ width: '70px', padding: '8px 10px', fontSize: '11px', fontWeight: 700, textAlign: 'center' }}>
                     Action
                   </Table.Th>
@@ -645,6 +713,7 @@ const JournalVoucher = () => {
                 {vouchers.map((voucher, index) => {
                   const debitEntry = voucher.entries?.find(e => e.debitAmount > 0);
                   const creditEntry = voucher.entries?.find(e => e.creditAmount > 0);
+                  const isManual = voucher.referenceType === 'Manual';
 
                   return (
                     <Table.Tr key={voucher._id}>
@@ -680,6 +749,11 @@ const JournalVoucher = () => {
                           {voucher.narration || '-'}
                         </Text>
                       </Table.Td>
+                      <Table.Td style={{ textAlign: 'center', padding: '6px 10px' }}>
+                        <Badge size="xs" variant="light" color={isManual ? 'grape' : 'gray'}>
+                          {isManual ? 'Manual' : (voucher.referenceType || 'Auto')}
+                        </Badge>
+                      </Table.Td>
                       <Table.Td style={{ textAlign: 'center', padding: '6px 6px' }}>
                         <Group gap={4} justify="center">
                           <Tooltip label="View" withArrow>
@@ -687,11 +761,24 @@ const JournalVoucher = () => {
                               <IconEye size={14} />
                             </ActionIcon>
                           </Tooltip>
-                          <Tooltip label="Delete" withArrow>
-                            <ActionIcon size="sm" variant="subtle" color="red" onClick={() => handleDelete(voucher._id)}>
-                              <IconTrash size={14} />
-                            </ActionIcon>
-                          </Tooltip>
+                          {isManual ? (
+                            <>
+                              <Tooltip label="Edit" withArrow>
+                                <ActionIcon size="sm" variant="subtle" color="orange" onClick={() => startEdit(voucher)}>
+                                  <IconEdit size={14} />
+                                </ActionIcon>
+                              </Tooltip>
+                              <Tooltip label="Delete" withArrow>
+                                <ActionIcon size="sm" variant="subtle" color="red" onClick={() => handleDelete(voucher._id)}>
+                                  <IconTrash size={14} />
+                                </ActionIcon>
+                              </Tooltip>
+                            </>
+                          ) : (
+                            <Tooltip label="Auto-generated — edit/delete from its originating module" withArrow>
+                              <Text size="9px" c="dimmed" fs="italic">View only</Text>
+                            </Tooltip>
+                          )}
                         </Group>
                       </Table.Td>
                     </Table.Tr>
@@ -715,7 +802,7 @@ const JournalVoucher = () => {
                       {'\u20B9'} {vouchers.reduce((sum, v) => sum + (v.totalCredit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Text>
                   </Table.Td>
-                  <Table.Td colSpan={2} style={{ textAlign: 'center', padding: '8px 10px' }}>
+                  <Table.Td colSpan={3} style={{ textAlign: 'center', padding: '8px 10px' }}>
                     <Text size="xs" c="dimmed">{vouchers.length} voucher(s)</Text>
                   </Table.Td>
                 </Table.Tr>

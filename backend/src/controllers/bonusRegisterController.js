@@ -72,8 +72,10 @@ export const generatePreview = async (req, res) => {
     if (isDividend && (!dividendPercent || divPercent < 0)) {
       return res.status(400).json({ success: false, message: 'A valid Dividend % is required' });
     }
-    // Percentage mode always applies against milk Amount — a % of Qty has no currency meaning.
-    const effectiveBasis = isPercent ? 'Amount' : basis;
+    // Basis (By Qty / By Amount) is user-selectable regardless of rate mode —
+    // a % bonus can be given per-litre (% of Qty) or per-rupee (% of Amount),
+    // same as Rate/Ltr mode can be applied against either.
+    const effectiveBasis = basis === 'Amount' ? 'Amount' : 'Qty';
 
     const start = new Date(fromDate); start.setHours(0, 0, 0, 0);
     const end = new Date(toDate); end.setHours(23, 59, 59, 999);
@@ -135,9 +137,10 @@ export const generatePreview = async (req, res) => {
 
     let totalQty = 0, totalAmount = 0, totalBonusAmount = 0, totalDividendAmount = 0, totalPostAmount = 0;
     rows = rows.map((r, idx) => {
+      const basisValue = effectiveBasis === 'Amount' ? r.milkAmount : r.milkQty;
       const bonusAmount = isPercent
-        ? round2(r.milkAmount * (bonusPercent / 100))
-        : round2(bonusRate * (effectiveBasis === 'Amount' ? r.milkAmount : r.milkQty));
+        ? round2(basisValue * (bonusPercent / 100))
+        : round2(bonusRate * basisValue);
       const dividendAmount = isDividend ? round2(r.milkAmount * (divPercent / 100)) : 0;
       const totalAmt = round2(bonusAmount + dividendAmount);
 

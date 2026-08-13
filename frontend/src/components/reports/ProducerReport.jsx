@@ -65,7 +65,7 @@ export default function ProducerReport() {
   const [filters, setFilters] = useState(INIT_FILTERS);
   const [centers, setCenters] = useState([]);
   const [panelOpen, setPanelOpen] = useState(true);
-  const [sections, setSections] = useState({ basic: true, advanced: true, localBody: true, pouring: true });
+  const [sections, setSections] = useState({ basic: true, advanced: true, pouring: true });
   const [data, setData] = useState([]);
   const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 1, limit: 50 });
   const [loading, setLoading] = useState(false);
@@ -374,15 +374,6 @@ export default function ProducerReport() {
                   <Select label="Welfare Fund" data={HAS_OPTIONS} value={filters.welfareHas} onChange={v => setFilter('welfareHas', v || '')} size={inputSz} />
                   <Select label="Mobile Number" data={HAS_OPTIONS} value={filters.mobileHas} onChange={v => setFilter('mobileHas', v || '')} size={inputSz} />
                   <Select label="Bank A/C" data={HAS_OPTIONS} value={filters.bankHas} onChange={v => setFilter('bankHas', v || '')} size={inputSz} />
-                </Stack>
-              </Collapse>
-            </Paper>
-
-            {/* ── Section 3: Local Body & Wards ── */}
-            <Paper withBorder mb={8} style={{ borderRadius: 6, overflow: 'hidden' }}>
-              <SectionHeader label="Local Body & Wards" sKey="localBody" sections={sections} toggle={toggleSection} color="#2e7d32" />
-              <Collapse in={sections.localBody}>
-                <Stack gap={7} p={10}>
                   <TextInput
                     label="Local Body / Panchayat"
                     placeholder="Search panchayat..."
@@ -401,7 +392,7 @@ export default function ProducerReport() {
               </Collapse>
             </Paper>
 
-            {/* ── Section 4: Pouring Days & Quantity ── */}
+            {/* ── Section 3: Pouring Days & Quantity ── */}
             <Paper withBorder mb={8} style={{ borderRadius: 6, overflow: 'hidden' }}>
               <SectionHeader label="Pouring Days & Quantity" sKey="pouring" sections={sections} toggle={toggleSection} color="#c62828" />
               <Collapse in={sections.pouring}>

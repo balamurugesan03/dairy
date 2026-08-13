@@ -1,3 +1,4 @@
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCompany } from '../../context/CompanyContext';
 import PageHeader from '../common/PageHeader';
@@ -6,6 +7,10 @@ import './ReportsDashboard.css';
 const ReportsDashboard = () => {
   const navigate = useNavigate();
   const { selectedBusinessType } = useCompany();
+  // Ticked reports, keyed by title (a few reports share the same path —
+  // e.g. "Financial Reports" and "Final Accounts" both go to
+  // /reports/final-accounts — so title, not path, is the unique key).
+  const [selected, setSelected] = useState(() => new Set());
 
   // Dairy Cooperative Society Reports
   const dairyReports = [
@@ -480,6 +485,40 @@ const ReportsDashboard = () => {
 
   const isDairy = selectedBusinessType === 'Dairy Cooperative Society';
 
+  // Reset selection whenever the report list itself changes (business type switch)
+  const reportTitles = useMemo(() => new Set(reports.map(r => r.title)), [reports]);
+  const activeSelection = useMemo(
+    () => new Set([...selected].filter(t => reportTitles.has(t))),
+    [selected, reportTitles]
+  );
+
+  const toggleReport = (title) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(title)) next.delete(title);
+      else next.add(title);
+      return next;
+    });
+  };
+
+  const selectAll = () => setSelected(new Set(reports.map(r => r.title)));
+  const clearSelection = () => setSelected(new Set());
+
+  // Generates only the ticked reports — each is its own independent report
+  // page, so "generate" opens every ticked one in its own tab (deduped by
+  // path, since a couple of report titles share the same destination page).
+  const handleGenerateSelected = () => {
+    const paths = [...new Set(
+      reports.filter(r => activeSelection.has(r.title)).map(r => r.path)
+    )];
+    if (paths.length === 0) return;
+    if (paths.length === 1) {
+      navigate(paths[0]);
+      return;
+    }
+    paths.forEach(path => window.open(path, '_blank', 'noopener'));
+  };
+
   return (
     <div className="reports-dashboard-container">
       <PageHeader
@@ -490,24 +529,55 @@ const ReportsDashboard = () => {
         }
       />
 
+      <div className="reports-toolbar">
+        <div className="reports-toolbar-left">
+          <span className="reports-toolbar-count">
+            {activeSelection.size > 0 ? `${activeSelection.size} report${activeSelection.size !== 1 ? 's' : ''} selected` : 'Tick reports to generate only those'}
+          </span>
+          <button type="button" className="reports-toolbar-link" onClick={selectAll}>Select All</button>
+          {activeSelection.size > 0 && (
+            <button type="button" className="reports-toolbar-link" onClick={clearSelection}>Clear</button>
+          )}
+        </div>
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={activeSelection.size === 0}
+          onClick={handleGenerateSelected}
+        >
+          Generate Selected{activeSelection.size > 0 ? ` (${activeSelection.size})` : ''}
+        </button>
+      </div>
+
       <div className="reports-grid">
-        {reports.map((report, index) => (
-          <div
-            key={index}
-            className="report-card"
-            style={{ backgroundColor: report.color }}
-            onClick={() => navigate(report.path)}
-          >
-            <div className="report-card-content">
-              <div className="report-icon">
-                {report.icon}
+        {reports.map((report, index) => {
+          const isChecked = activeSelection.has(report.title);
+          return (
+            <div
+              key={index}
+              className={`report-card${isChecked ? ' report-card-selected' : ''}`}
+              style={{ backgroundColor: report.color }}
+              onClick={() => navigate(report.path)}
+            >
+              <input
+                type="checkbox"
+                className="report-card-checkbox"
+                checked={isChecked}
+                aria-label={`Select ${report.title}`}
+                onClick={(e) => e.stopPropagation()}
+                onChange={() => toggleReport(report.title)}
+              />
+              <div className="report-card-content">
+                <div className="report-icon">
+                  {report.icon}
+                </div>
+                <h3 className="report-title">{report.title}</h3>
+                <p className="report-description">{report.description}</p>
+                <button className="btn btn-primary">View Report</button>
               </div>
-              <h3 className="report-title">{report.title}</h3>
-              <p className="report-description">{report.description}</p>
-              <button className="btn btn-primary">View Report</button>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

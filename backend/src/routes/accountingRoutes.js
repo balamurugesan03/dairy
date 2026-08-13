@@ -3,6 +3,7 @@ import {
   createVoucher,
   getAllVouchers,
   getVoucherById,
+  updateVoucher,
   deleteVoucher,
   createLedger,
   getAllLedgers,
@@ -20,6 +21,7 @@ router.use(protect, addCompanyFilter);
 router.post('/vouchers', createVoucher);
 router.get('/vouchers', getAllVouchers);
 router.get('/vouchers/:id', getVoucherById);
+router.put('/vouchers/:id', updateVoucher);
 router.delete('/vouchers/:id', deleteVoucher);
 
 // Ledger routes

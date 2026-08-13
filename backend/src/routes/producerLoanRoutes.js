@@ -5,6 +5,7 @@ import {
   getLoanById,
   getFarmerLoans,
   updateLoan,
+  deleteLoan,
   cancelLoan,
   recordEMIPayment,
   getLoanStats,
@@ -33,6 +34,9 @@ router.get('/producer-loans/:id', getLoanById);
 
 // Update loan
 router.put('/producer-loans/:id', updateLoan);
+
+// Delete loan (only when no EMI has been paid — reverses the disbursement voucher)
+router.delete('/producer-loans/:id', deleteLoan);
 
 // Cancel loan
 router.post('/producer-loans/:id/cancel', cancelLoan);

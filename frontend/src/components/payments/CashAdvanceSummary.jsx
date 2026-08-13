@@ -1,19 +1,20 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import {
   Container, Paper, Group, Text, Title, Box, Badge,
-  Button, Select, Tabs, Divider, ScrollArea,
+  Button, Select, Tabs, Divider, ScrollArea, Table,
   LoadingOverlay, ActionIcon, Tooltip,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
+import { modals } from '@mantine/modals';
 import {
   IconCalendar, IconRefresh, IconPrinter, IconFileSpreadsheet,
-  IconSearch, IconCheck, IconArrowLeft, IconPlus,
+  IconSearch, IconCheck, IconArrowLeft, IconPlus, IconEdit, IconTrash,
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { useReactToPrint } from 'react-to-print';
 import * as XLSX from 'xlsx';
-import { cashAdvanceAPI, cattleFeedAdvanceAPI } from '../../services/api';
+import { cashAdvanceAPI, cattleFeedAdvanceAPI, advanceAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 import CashAdvanceFormModal from './CashAdvanceFormModal';
 
@@ -73,8 +74,16 @@ const CashAdvanceSummary = () => {
   const [summaryTotals, setSummaryTotals] = useState(null);
   const [ledgerData,    setLedgerData]    = useState(null);
   const [newOpen,       setNewOpen]       = useState(false);
+  const [editAdvance,   setEditAdvance]   = useState(null);
   const [registerRows,   setRegisterRows]   = useState([]);
   const [registerTotals, setRegisterTotals] = useState(null);
+
+  /* ── Transactions grid — every advance entered/saved via "New Cash
+       Advance", filtered by the selected Transaction Date, with Edit/Delete
+       right there ── */
+  const [txnDate,      setTxnDate]      = useState(new Date());
+  const [transactions, setTransactions] = useState([]);
+  const [txnLoading,   setTxnLoading]   = useState(false);
 
   useEffect(() => {
     cattleFeedAdvanceAPI.getFarmers().then(res => {
@@ -146,6 +155,64 @@ const CashAdvanceSummary = () => {
   const openLedger = (row) => {
     setFarmerId(row.farmerId);
     setActiveTab('ledger');
+  };
+
+  /* ── Transactions grid: loads Advance (Cash Advance) records dated on txnDate ── */
+  const fetchTransactions = async () => {
+    setTxnLoading(true);
+    try {
+      const res = await advanceAPI.getAll({
+        advanceCategory: 'Cash Advance',
+        fromDate: dayjs(txnDate).format('YYYY-MM-DD'),
+        toDate:   dayjs(txnDate).format('YYYY-MM-DD'),
+        sortBy:   'advanceDate',
+        sortOrder:'desc',
+        limit:    200,
+      });
+      setTransactions(res?.data || []);
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message || 'Failed to load transactions', color: 'red' });
+    } finally {
+      setTxnLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchTransactions(); }, [txnDate]); // eslint-disable-line
+
+  const openNewAdvance  = () => { setEditAdvance(null); setNewOpen(true); };
+  const openEditAdvance = (row) => { setEditAdvance(row); setNewOpen(true); };
+
+  const handleAdvanceSaved = () => {
+    setNewOpen(false);
+    setEditAdvance(null);
+    fetchTransactions();
+    if (activeTab === 'summary') fetchSummary();
+  };
+
+  const handleDeleteAdvance = (row) => {
+    modals.openConfirmModal({
+      title: 'Delete Cash Advance',
+      centered: true,
+      children: (
+        <Text size="sm">
+          Delete advance <b>{row.advanceNumber}</b> for <b>{row.farmerId?.personalDetails?.name || row.farmerId?.farmerNumber}</b>
+          {' '}(₹{fmt(row.advanceAmount)})? This cannot be undone.
+        </Text>
+      ),
+      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          const res = await advanceAPI.delete(row._id);
+          if (res?.success === false) throw new Error(res.message || 'Delete failed');
+          notifications.show({ title: 'Deleted', message: `Advance ${row.advanceNumber} deleted`, color: 'teal', icon: <IconCheck size={14} /> });
+          fetchTransactions();
+          if (activeTab === 'summary') fetchSummary();
+        } catch (err) {
+          notifications.show({ title: 'Error', message: err.message || 'Failed to delete advance', color: 'red' });
+        }
+      },
+    });
   };
 
   useEffect(() => {
@@ -267,7 +334,7 @@ const CashAdvanceSummary = () => {
 
           <Button
             leftSection={<IconPlus size={15} />} size="sm"
-            onClick={() => setNewOpen(true)}
+            onClick={openNewAdvance}
             styles={{
               root: {
                 background: '#1D4ED8',
@@ -323,9 +390,88 @@ const CashAdvanceSummary = () => {
 
       <CashAdvanceFormModal
         opened={newOpen}
-        onClose={() => setNewOpen(false)}
-        onSaved={() => { setNewOpen(false); fetchSummary(); }}
+        editData={editAdvance}
+        onClose={() => { setNewOpen(false); setEditAdvance(null); }}
+        onSaved={handleAdvanceSaved}
       />
+
+      {/* ── Transactions grid — every advance saved via New Cash Advance, for
+             the selected Transaction Date, with Edit/Delete ── */}
+      <Paper withBorder shadow="sm" radius="md" mb="md" className="no-print">
+        <Group justify="space-between" px="sm" py="xs" style={{ borderBottom: '1px solid #eee' }}>
+          <Group gap="xs">
+            <Text fw={700} size="sm">Transactions</Text>
+            <Badge variant="light" color="grape">{transactions.length}</Badge>
+          </Group>
+          <Group gap="sm">
+            <DatePickerInput
+              label="Transaction Date" value={txnDate} onChange={setTxnDate}
+              leftSection={<IconCalendar size={14} />} valueFormat="DD/MM/YYYY"
+              size="xs" style={{ minWidth: 140 }}
+            />
+            <ActionIcon variant="subtle" color="gray" mt={18} onClick={fetchTransactions}>
+              <IconRefresh size={16} />
+            </ActionIcon>
+          </Group>
+        </Group>
+        <ScrollArea type="hover" scrollbarSize={6}>
+          <Table striped highlightOnHover withColumnBorders fz="xs" style={{ minWidth: 820 }}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Advance No</Table.Th>
+                <Table.Th>Producer</Table.Th>
+                <Table.Th>Type</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>Amount</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>Balance</Table.Th>
+                <Table.Th>Mode</Table.Th>
+                <Table.Th>Repayment</Table.Th>
+                <Table.Th>Status</Table.Th>
+                <Table.Th style={{ textAlign: 'center' }}>Actions</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {txnLoading ? (
+                <Table.Tr><Table.Td colSpan={9} style={{ textAlign: 'center', padding: 20, color: '#999' }}>Loading…</Table.Td></Table.Tr>
+              ) : transactions.length === 0 ? (
+                <Table.Tr><Table.Td colSpan={9} style={{ textAlign: 'center', padding: 20, color: '#999' }}>No advances for this date</Table.Td></Table.Tr>
+              ) : (
+                transactions.map((t) => {
+                  const editable = !t.adjustments?.length && t.status !== 'Adjusted' && t.status !== 'Cancelled';
+                  return (
+                    <Table.Tr key={t._id}>
+                      <Table.Td style={{ fontWeight: 600 }}>{t.advanceNumber}</Table.Td>
+                      <Table.Td>
+                        <Text size="xs" fw={600}>{t.farmerId?.farmerNumber}</Text>
+                        <Text size="10px" c="dimmed">{t.farmerId?.personalDetails?.name}</Text>
+                      </Table.Td>
+                      <Table.Td><Badge size="xs" color="orange" variant="light">{t.advanceType}</Badge></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>₹ {fmt(t.advanceAmount)}</Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>₹ {fmt(t.balanceAmount)}</Table.Td>
+                      <Table.Td>{t.paymentMode}</Table.Td>
+                      <Table.Td>{t.repaymentType}</Table.Td>
+                      <Table.Td><Badge size="xs" variant="light" color={t.status === 'Adjusted' ? 'green' : t.status === 'Cancelled' ? 'gray' : 'blue'}>{t.status}</Badge></Table.Td>
+                      <Table.Td>
+                        <Group gap={4} justify="center">
+                          <Tooltip label={editable ? 'Edit' : 'Locked — already recovered / cancelled'}>
+                            <ActionIcon size="sm" variant="light" color="blue" disabled={!editable} onClick={() => openEditAdvance(t)}>
+                              <IconEdit size={13} />
+                            </ActionIcon>
+                          </Tooltip>
+                          <Tooltip label={editable ? 'Delete' : 'Locked — already recovered / cancelled'}>
+                            <ActionIcon size="sm" variant="light" color="red" disabled={!editable} onClick={() => handleDeleteAdvance(t)}>
+                              <IconTrash size={13} />
+                            </ActionIcon>
+                          </Tooltip>
+                        </Group>
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                })
+              )}
+            </Table.Tbody>
+          </Table>
+        </ScrollArea>
+      </Paper>
 
       <Paper withBorder shadow="sm" radius="md" style={{ position: 'relative' }}>
         <LoadingOverlay visible={loading} />

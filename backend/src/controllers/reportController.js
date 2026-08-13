@@ -90,6 +90,156 @@ export const getReceiptsDisbursementReport = async (req, res) => {
   }
 };
 
+// ── Shared: Trading Account computation (pure) ───────────────────────────
+// Extracted out of getTradingAccount so Profit & Loss (and, through it,
+// Balance Sheet) can pull the same Gross Profit/Loss and carry it forward —
+// the "Trade Profit b/f" / "Trade Loss b/f" leg of the
+// Trading Account → P&L → Balance Sheet flow.
+const computeTradingAccountData = async (companyId, start, end) => {
+  const financialYear = getFinancialYear(start);
+
+  // ── Opening Stock (Item model) ──────────────────────────────────
+  const items = await Item.find({ status: 'Active', companyId });
+  const openingStockTotal = items.reduce((s, it) => s + (it.openingBalance || 0) * (it.costPrice || it.salesRate || 0), 0);
+
+  // ── Closing Stock (Item model current balance) ──────────────────
+  const closingStockGrouped = {};
+  let closingStockTotal = 0;
+  items.forEach(it => {
+    const val = (it.currentBalance || 0) * (it.costPrice || it.salesRate || 0);
+    const cat = it.category || 'Others';
+    closingStockGrouped[cat] = (closingStockGrouped[cat] || 0) + val;
+    closingStockTotal += val;
+  });
+  const closingStockItems = Object.entries(closingStockGrouped).map(([category, amount]) => ({ category, amount }));
+
+  // ── Milk Purchase (MilkCollection aggregate) ────────────────────
+  const [milkPurchaseAgg] = await MilkCollection.aggregate([
+    { $match: { companyId, date: { $gte: start, $lte: end } } },
+    { $group: { _id: null, total: { $sum: '$amount' }, farmers: { $addToSet: '$farmer' }, qty: { $sum: '$qty' } } }
+  ]);
+  const milkPurchaseTotal = milkPurchaseAgg?.total || 0;
+  const milkFarmerCount   = milkPurchaseAgg?.farmers?.length || 0;
+  const milkPurchaseQty   = milkPurchaseAgg?.qty || 0;
+
+  // ── Other Purchases (Purchases A/c ledger debit entries) ────────
+  const purchaseLedgers = await Ledger.find({ ledgerType: 'Purchases A/c', status: 'Active', companyId });
+  const purchaseLedgerIds = purchaseLedgers.map(l => l._id.toString());
+  const purchaseVouchers = await Voucher.find({
+    companyId, voucherDate: { $gte: start, $lte: end },
+    'entries.ledgerId': { $in: purchaseLedgers.map(l => l._id) }
+  }).populate('entries.ledgerId', 'ledgerName ledgerType');
+
+  const purchaseGrouped = {};
+  purchaseVouchers.forEach(v => v.entries.forEach(e => {
+    if (purchaseLedgerIds.includes(e.ledgerId?._id?.toString()) && e.debitAmount > 0)
+      purchaseGrouped[e.ledgerId.ledgerName] = (purchaseGrouped[e.ledgerId.ledgerName] || 0) + e.debitAmount;
+  }));
+  const purchaseItems = Object.entries(purchaseGrouped).map(([ledgerName, amount]) => ({ ledgerName, amount }));
+  const purchaseTotal = purchaseItems.reduce((s, x) => s + x.amount, 0);
+
+  // ── Trade / Establishment Expenses (debit entries) ──────────────
+  const expTypes = ['Trade Expenses', 'Establishment Charges', 'Miscellaneous Expenses'];
+  const expLedgers = await Ledger.find({ ledgerType: { $in: expTypes }, status: 'Active', companyId });
+  const expLedgerIds = expLedgers.map(l => l._id.toString());
+  const expVouchers = await Voucher.find({
+    companyId, voucherDate: { $gte: start, $lte: end },
+    'entries.ledgerId': { $in: expLedgers.map(l => l._id) }
+  }).populate('entries.ledgerId', 'ledgerName ledgerType');
+
+  const expGrouped = {};
+  expVouchers.forEach(v => v.entries.forEach(e => {
+    if (expLedgerIds.includes(e.ledgerId?._id?.toString()) && e.debitAmount > 0)
+      expGrouped[e.ledgerId.ledgerName] = (expGrouped[e.ledgerId.ledgerName] || 0) + e.debitAmount;
+  }));
+  const expenseItems = Object.entries(expGrouped).map(([ledgerName, amount]) => ({ ledgerName, amount }));
+  const expenseTotal = expenseItems.reduce((s, x) => s + x.amount, 0);
+
+  // ── Milk Sales (MilkSales aggregate) ────────────────────────────
+  const [milkSalesAgg] = await MilkSales.aggregate([
+    { $match: { companyId, date: { $gte: start, $lte: end } } },
+    { $group: { _id: null, total: { $sum: '$amount' }, qty: { $sum: '$qty' } } }
+  ]);
+  const milkSalesTotal = milkSalesAgg?.total || 0;
+
+  // ── Union Sales Slips (credited to society) ─────────────────────
+  const [unionAgg] = await UnionSalesSlip.aggregate([
+    { $match: { companyId, date: { $gte: start, $lte: end } } },
+    { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+  ]).catch(() => [null]);
+  const unionSalesTotal = unionAgg?.total || 0;
+
+  // ── Other Sales (Sales A/c ledger credit entries) ───────────────
+  const salesLedgers = await Ledger.find({ ledgerType: 'Sales A/c', status: 'Active', companyId });
+  const salesLedgerIds = salesLedgers.map(l => l._id.toString());
+  const salesVouchers = await Voucher.find({
+    companyId, voucherDate: { $gte: start, $lte: end },
+    'entries.ledgerId': { $in: salesLedgers.map(l => l._id) }
+  }).populate('entries.ledgerId', 'ledgerName ledgerType');
+
+  const salesGrouped = {};
+  salesVouchers.forEach(v => v.entries.forEach(e => {
+    if (salesLedgerIds.includes(e.ledgerId?._id?.toString()) && e.creditAmount > 0)
+      salesGrouped[e.ledgerId.ledgerName] = (salesGrouped[e.ledgerId.ledgerName] || 0) + e.creditAmount;
+  }));
+  const salesItems = Object.entries(salesGrouped).map(([ledgerName, amount]) => ({ ledgerName, amount }));
+  const salesTotal = salesItems.reduce((s, x) => s + x.amount, 0);
+
+  // ── Trade Income (Trade Income ledger credit entries) ────────────
+  const incLedgers = await Ledger.find({ ledgerType: 'Trade Income', status: 'Active', companyId });
+  const incLedgerIds = incLedgers.map(l => l._id.toString());
+  const incVouchers = await Voucher.find({
+    companyId, voucherDate: { $gte: start, $lte: end },
+    'entries.ledgerId': { $in: incLedgers.map(l => l._id) }
+  }).populate('entries.ledgerId', 'ledgerName ledgerType');
+
+  const incGrouped = {};
+  incVouchers.forEach(v => v.entries.forEach(e => {
+    if (incLedgerIds.includes(e.ledgerId?._id?.toString()) && e.creditAmount > 0)
+      incGrouped[e.ledgerId.ledgerName] = (incGrouped[e.ledgerId.ledgerName] || 0) + e.creditAmount;
+  }));
+  const incomeItems = Object.entries(incGrouped).map(([ledgerName, amount]) => ({ ledgerName, amount }));
+  const incomeTotal = incomeItems.reduce((s, x) => s + x.amount, 0);
+
+  // ── Totals & Gross Profit/Loss ──────────────────────────────────
+  const totalDebitItems  = openingStockTotal + milkPurchaseTotal + purchaseTotal + expenseTotal;
+  const totalCreditItems = milkSalesTotal + unionSalesTotal + salesTotal + incomeTotal + closingStockTotal;
+
+  const grossProfit = totalCreditItems > totalDebitItems ? totalCreditItems - totalDebitItems : 0;
+  const grossLoss   = totalDebitItems  > totalCreditItems ? totalDebitItems  - totalCreditItems : 0;
+
+  return {
+    period: { startDate: start, endDate: end, financialYear },
+    debitSide: {
+      openingStock: { total: openingStockTotal },
+      milkPurchase: {
+        total: milkPurchaseTotal,
+        farmerCount: milkFarmerCount,
+        qty: milkPurchaseQty
+      },
+      purchases: { items: purchaseItems, total: purchaseTotal },
+      tradeExpenses: { items: expenseItems, total: expenseTotal },
+      grossProfit
+    },
+    creditSide: {
+      milkSales: { total: milkSalesTotal },
+      unionSales: { total: unionSalesTotal },
+      sales: { items: salesItems, total: salesTotal },
+      tradeIncome: { items: incomeItems, total: incomeTotal },
+      closingStock: { items: closingStockItems, total: closingStockTotal },
+      grossLoss
+    },
+    totals: {
+      debitTotal:  totalDebitItems  + grossProfit,
+      creditTotal: totalCreditItems + grossLoss
+    },
+    // Flat convenience fields — consumed by computeProfitLossData below to
+    // carry Trading Account profit/loss forward into P&L.
+    grossProfit,
+    grossLoss
+  };
+};
+
 // Trading Account
 export const getTradingAccount = async (req, res) => {
   try {
@@ -101,151 +251,103 @@ export const getTradingAccount = async (req, res) => {
     start.setUTCHours(0, 0, 0, 0);
     end.setUTCHours(23, 59, 59, 999);
 
-    const financialYear = getFinancialYear(start);
-
-    // ── Opening Stock (Item model) ──────────────────────────────────
-    const items = await Item.find({ status: 'Active', companyId });
-    const openingStockTotal = items.reduce((s, it) => s + (it.openingBalance || 0) * (it.costPrice || it.salesRate || 0), 0);
-
-    // ── Closing Stock (Item model current balance) ──────────────────
-    const closingStockGrouped = {};
-    let closingStockTotal = 0;
-    items.forEach(it => {
-      const val = (it.currentBalance || 0) * (it.costPrice || it.salesRate || 0);
-      const cat = it.category || 'Others';
-      closingStockGrouped[cat] = (closingStockGrouped[cat] || 0) + val;
-      closingStockTotal += val;
-    });
-    const closingStockItems = Object.entries(closingStockGrouped).map(([category, amount]) => ({ category, amount }));
-
-    // ── Milk Purchase (MilkCollection aggregate) ────────────────────
-    const [milkPurchaseAgg] = await MilkCollection.aggregate([
-      { $match: { companyId, date: { $gte: start, $lte: end } } },
-      { $group: { _id: null, total: { $sum: '$amount' }, farmers: { $addToSet: '$farmer' }, qty: { $sum: '$qty' } } }
-    ]);
-    const milkPurchaseTotal = milkPurchaseAgg?.total || 0;
-    const milkFarmerCount   = milkPurchaseAgg?.farmers?.length || 0;
-    const milkPurchaseQty   = milkPurchaseAgg?.qty || 0;
-
-    // ── Other Purchases (Purchases A/c ledger debit entries) ────────
-    const purchaseLedgers = await Ledger.find({ ledgerType: 'Purchases A/c', status: 'Active', companyId });
-    const purchaseLedgerIds = purchaseLedgers.map(l => l._id.toString());
-    const purchaseVouchers = await Voucher.find({
-      companyId, voucherDate: { $gte: start, $lte: end },
-      'entries.ledgerId': { $in: purchaseLedgers.map(l => l._id) }
-    }).populate('entries.ledgerId', 'ledgerName ledgerType');
-
-    const purchaseGrouped = {};
-    purchaseVouchers.forEach(v => v.entries.forEach(e => {
-      if (purchaseLedgerIds.includes(e.ledgerId?._id?.toString()) && e.debitAmount > 0)
-        purchaseGrouped[e.ledgerId.ledgerName] = (purchaseGrouped[e.ledgerId.ledgerName] || 0) + e.debitAmount;
-    }));
-    const purchaseItems = Object.entries(purchaseGrouped).map(([ledgerName, amount]) => ({ ledgerName, amount }));
-    const purchaseTotal = purchaseItems.reduce((s, x) => s + x.amount, 0);
-
-    // ── Trade / Establishment Expenses (debit entries) ──────────────
-    const expTypes = ['Trade Expenses', 'Establishment Charges', 'Miscellaneous Expenses'];
-    const expLedgers = await Ledger.find({ ledgerType: { $in: expTypes }, status: 'Active', companyId });
-    const expLedgerIds = expLedgers.map(l => l._id.toString());
-    const expVouchers = await Voucher.find({
-      companyId, voucherDate: { $gte: start, $lte: end },
-      'entries.ledgerId': { $in: expLedgers.map(l => l._id) }
-    }).populate('entries.ledgerId', 'ledgerName ledgerType');
-
-    const expGrouped = {};
-    expVouchers.forEach(v => v.entries.forEach(e => {
-      if (expLedgerIds.includes(e.ledgerId?._id?.toString()) && e.debitAmount > 0)
-        expGrouped[e.ledgerId.ledgerName] = (expGrouped[e.ledgerId.ledgerName] || 0) + e.debitAmount;
-    }));
-    const expenseItems = Object.entries(expGrouped).map(([ledgerName, amount]) => ({ ledgerName, amount }));
-    const expenseTotal = expenseItems.reduce((s, x) => s + x.amount, 0);
-
-    // ── Milk Sales (MilkSales aggregate) ────────────────────────────
-    const [milkSalesAgg] = await MilkSales.aggregate([
-      { $match: { companyId, date: { $gte: start, $lte: end } } },
-      { $group: { _id: null, total: { $sum: '$amount' }, qty: { $sum: '$qty' } } }
-    ]);
-    const milkSalesTotal = milkSalesAgg?.total || 0;
-
-    // ── Union Sales Slips (credited to society) ─────────────────────
-    const [unionAgg] = await UnionSalesSlip.aggregate([
-      { $match: { companyId, date: { $gte: start, $lte: end } } },
-      { $group: { _id: null, total: { $sum: '$totalAmount' } } }
-    ]).catch(() => [null]);
-    const unionSalesTotal = unionAgg?.total || 0;
-
-    // ── Other Sales (Sales A/c ledger credit entries) ───────────────
-    const salesLedgers = await Ledger.find({ ledgerType: 'Sales A/c', status: 'Active', companyId });
-    const salesLedgerIds = salesLedgers.map(l => l._id.toString());
-    const salesVouchers = await Voucher.find({
-      companyId, voucherDate: { $gte: start, $lte: end },
-      'entries.ledgerId': { $in: salesLedgers.map(l => l._id) }
-    }).populate('entries.ledgerId', 'ledgerName ledgerType');
-
-    const salesGrouped = {};
-    salesVouchers.forEach(v => v.entries.forEach(e => {
-      if (salesLedgerIds.includes(e.ledgerId?._id?.toString()) && e.creditAmount > 0)
-        salesGrouped[e.ledgerId.ledgerName] = (salesGrouped[e.ledgerId.ledgerName] || 0) + e.creditAmount;
-    }));
-    const salesItems = Object.entries(salesGrouped).map(([ledgerName, amount]) => ({ ledgerName, amount }));
-    const salesTotal = salesItems.reduce((s, x) => s + x.amount, 0);
-
-    // ── Trade Income (Trade Income ledger credit entries) ────────────
-    const incLedgers = await Ledger.find({ ledgerType: 'Trade Income', status: 'Active', companyId });
-    const incLedgerIds = incLedgers.map(l => l._id.toString());
-    const incVouchers = await Voucher.find({
-      companyId, voucherDate: { $gte: start, $lte: end },
-      'entries.ledgerId': { $in: incLedgers.map(l => l._id) }
-    }).populate('entries.ledgerId', 'ledgerName ledgerType');
-
-    const incGrouped = {};
-    incVouchers.forEach(v => v.entries.forEach(e => {
-      if (incLedgerIds.includes(e.ledgerId?._id?.toString()) && e.creditAmount > 0)
-        incGrouped[e.ledgerId.ledgerName] = (incGrouped[e.ledgerId.ledgerName] || 0) + e.creditAmount;
-    }));
-    const incomeItems = Object.entries(incGrouped).map(([ledgerName, amount]) => ({ ledgerName, amount }));
-    const incomeTotal = incomeItems.reduce((s, x) => s + x.amount, 0);
-
-    // ── Totals & Gross Profit/Loss ──────────────────────────────────
-    const totalDebitItems  = openingStockTotal + milkPurchaseTotal + purchaseTotal + expenseTotal;
-    const totalCreditItems = milkSalesTotal + unionSalesTotal + salesTotal + incomeTotal + closingStockTotal;
-
-    const grossProfit = totalCreditItems > totalDebitItems ? totalCreditItems - totalDebitItems : 0;
-    const grossLoss   = totalDebitItems  > totalCreditItems ? totalDebitItems  - totalCreditItems : 0;
-
-    res.status(200).json({
-      success: true,
-      data: {
-        period: { startDate: start, endDate: end, financialYear },
-        debitSide: {
-          openingStock: { total: openingStockTotal },
-          milkPurchase: {
-            total: milkPurchaseTotal,
-            farmerCount: milkFarmerCount,
-            qty: milkPurchaseQty
-          },
-          purchases: { items: purchaseItems, total: purchaseTotal },
-          tradeExpenses: { items: expenseItems, total: expenseTotal },
-          grossProfit
-        },
-        creditSide: {
-          milkSales: { total: milkSalesTotal },
-          unionSales: { total: unionSalesTotal },
-          sales: { items: salesItems, total: salesTotal },
-          tradeIncome: { items: incomeItems, total: incomeTotal },
-          closingStock: { items: closingStockItems, total: closingStockTotal },
-          grossLoss
-        },
-        totals: {
-          debitTotal:  totalDebitItems  + grossProfit,
-          creditTotal: totalCreditItems + grossLoss
-        }
-      }
-    });
+    const data = await computeTradingAccountData(companyId, start, end);
+    res.status(200).json({ success: true, data });
   } catch (error) {
     console.error('Error generating trading account:', error);
     res.status(500).json({ success: false, message: error.message || 'Error generating trading account' });
   }
+};
+
+// ── Shared: Profit & Loss computation (pure) ─────────────────────────────
+// Carries the Trading Account's Gross Profit/Loss forward as "Trade Profit
+// b/f" / "Trade Loss b/f" so Net Profit reflects the complete
+// Trading Account → P&L flow, not just the P&L-only income/expense ledgers
+// (deducting ALL applicable expenses — P&L expenses AND, via tradeLoss, the
+// Trading Account's own deficit — from income before arriving at Net Profit).
+const computeProfitLossData = async (companyId, start, end) => {
+  // Income ledger types for dairy cooperative
+  const incomeTypes = ['Income', 'Miscellaneous Income', 'Other Revenue', 'Grants & Aid', 'Subsidies'];
+  // Expense ledger types for dairy cooperative
+  const expenseTypes = ['Expense', 'Establishment Charges', 'Miscellaneous Expenses'];
+
+  const [incLedgers, expLedgers] = await Promise.all([
+    Ledger.find({ ledgerType: { $in: incomeTypes }, status: 'Active', companyId }),
+    Ledger.find({ ledgerType: { $in: expenseTypes }, status: 'Active', companyId })
+  ]);
+
+  const allLedgerIds = [...incLedgers, ...expLedgers].map(l => l._id);
+  const incLedgerIds = new Set(incLedgers.map(l => l._id.toString()));
+  const expLedgerIds = new Set(expLedgers.map(l => l._id.toString()));
+
+  // Fetch voucher entries in date range
+  const vouchers = await Voucher.find({
+    companyId,
+    voucherDate: { $gte: start, $lte: end },
+    'entries.ledgerId': { $in: allLedgerIds }
+  });
+
+  // Sum income (credit entries) and expenses (debit entries) from vouchers
+  const incGrouped = {};
+  const expGrouped = {};
+
+  vouchers.forEach(v => {
+    v.entries.forEach(e => {
+      const lid = e.ledgerId?.toString();
+      if (incLedgerIds.has(lid) && e.creditAmount > 0) {
+        incGrouped[lid] = incGrouped[lid] || { name: '', amount: 0 };
+        incGrouped[lid].amount += e.creditAmount;
+      }
+      if (expLedgerIds.has(lid) && e.debitAmount > 0) {
+        expGrouped[lid] = expGrouped[lid] || { name: '', amount: 0 };
+        expGrouped[lid].amount += e.debitAmount;
+      }
+    });
+  });
+
+  // Attach ledger names
+  [...incLedgers, ...expLedgers].forEach(l => {
+    const lid = l._id.toString();
+    if (incGrouped[lid]) incGrouped[lid].name = l.ledgerName;
+    if (expGrouped[lid]) expGrouped[lid].name = l.ledgerName;
+  });
+
+  // Also include subsidy amounts from Subsidy model
+  const [subsidyAgg] = await Subsidy.aggregate([
+    { $match: { companyId, date: { $gte: start, $lte: end } } },
+    { $group: { _id: null, total: { $sum: '$totalSubsidy' } } }
+  ]).catch(() => [null]);
+  if (subsidyAgg?.total > 0) {
+    incGrouped['_subsidy'] = { name: 'Subsidy Received', amount: subsidyAgg.total };
+  }
+
+  const income  = Object.values(incGrouped).filter(x => x.amount > 0);
+  const expenses = Object.values(expGrouped).filter(x => x.amount > 0);
+
+  const totalIncome  = income.reduce((s, x) => s + x.amount, 0);
+  const totalExpense = expenses.reduce((s, x) => s + x.amount, 0);
+
+  // Trading Account → P&L handoff: a Gross Profit is brought down as P&L
+  // income ("Trade Profit b/f"); a Gross Loss is brought down as P&L
+  // expense ("Trade Loss b/f") — the standard Trading A/c → P&L A/c chain.
+  const trading = await computeTradingAccountData(companyId, start, end);
+  const tradeProfit = trading.grossProfit;
+  const tradeLoss    = trading.grossLoss;
+
+  // Net Profit = all income (P&L income + Trade Profit b/f) minus
+  // ALL applicable expenses (P&L expenses + Trade Loss b/f).
+  const netProfit = (totalIncome + tradeProfit) - (totalExpense + tradeLoss);
+
+  return {
+    income,
+    totalIncome,
+    expenses,
+    totalExpense,
+    tradeProfit,
+    tradeLoss,
+    netProfit,
+    netLoss: netProfit < 0 ? Math.abs(netProfit) : 0
+  };
 };
 
 // Profit & Loss Statement
@@ -259,78 +361,8 @@ export const getProfitLoss = async (req, res) => {
     start.setUTCHours(0, 0, 0, 0);
     end.setUTCHours(23, 59, 59, 999);
 
-    // Income ledger types for dairy cooperative
-    const incomeTypes = ['Income', 'Miscellaneous Income', 'Other Revenue', 'Grants & Aid', 'Subsidies'];
-    // Expense ledger types for dairy cooperative
-    const expenseTypes = ['Expense', 'Establishment Charges', 'Miscellaneous Expenses'];
-
-    const [incLedgers, expLedgers] = await Promise.all([
-      Ledger.find({ ledgerType: { $in: incomeTypes }, status: 'Active', companyId }),
-      Ledger.find({ ledgerType: { $in: expenseTypes }, status: 'Active', companyId })
-    ]);
-
-    const allLedgerIds = [...incLedgers, ...expLedgers].map(l => l._id);
-    const incLedgerIds = new Set(incLedgers.map(l => l._id.toString()));
-    const expLedgerIds = new Set(expLedgers.map(l => l._id.toString()));
-
-    // Fetch voucher entries in date range
-    const vouchers = await Voucher.find({
-      companyId,
-      voucherDate: { $gte: start, $lte: end },
-      'entries.ledgerId': { $in: allLedgerIds }
-    });
-
-    // Sum income (credit entries) and expenses (debit entries) from vouchers
-    const incGrouped = {};
-    const expGrouped = {};
-
-    vouchers.forEach(v => {
-      v.entries.forEach(e => {
-        const lid = e.ledgerId?.toString();
-        if (incLedgerIds.has(lid) && e.creditAmount > 0) {
-          incGrouped[lid] = incGrouped[lid] || { name: '', amount: 0 };
-          incGrouped[lid].amount += e.creditAmount;
-        }
-        if (expLedgerIds.has(lid) && e.debitAmount > 0) {
-          expGrouped[lid] = expGrouped[lid] || { name: '', amount: 0 };
-          expGrouped[lid].amount += e.debitAmount;
-        }
-      });
-    });
-
-    // Attach ledger names
-    [...incLedgers, ...expLedgers].forEach(l => {
-      const lid = l._id.toString();
-      if (incGrouped[lid]) incGrouped[lid].name = l.ledgerName;
-      if (expGrouped[lid]) expGrouped[lid].name = l.ledgerName;
-    });
-
-    // Also include subsidy amounts from Subsidy model
-    const [subsidyAgg] = await Subsidy.aggregate([
-      { $match: { companyId, date: { $gte: start, $lte: end } } },
-      { $group: { _id: null, total: { $sum: '$totalSubsidy' } } }
-    ]).catch(() => [null]);
-    if (subsidyAgg?.total > 0) {
-      incGrouped['_subsidy'] = { name: 'Subsidy Received', amount: subsidyAgg.total };
-    }
-
-    const income  = Object.values(incGrouped).filter(x => x.amount > 0);
-    const expenses = Object.values(expGrouped).filter(x => x.amount > 0);
-
-    const totalIncome  = income.reduce((s, x) => s + x.amount, 0);
-    const totalExpense = expenses.reduce((s, x) => s + x.amount, 0);
-    const netProfit    = totalIncome - totalExpense;
-
-    res.status(200).json({
-      success: true,
-      data: {
-        income,
-        totalIncome,
-        expenses,
-        totalExpense,
-        netProfit
-      }
-    });
+    const data = await computeProfitLossData(companyId, start, end);
+    res.status(200).json({ success: true, data });
   } catch (error) {
     console.error('Error generating P&L:', error);
     res.status(500).json({ success: false, message: error.message || 'Error generating report' });
@@ -388,37 +420,17 @@ export const getBalanceSheet = async (req, res) => {
     const items = await Item.find({ status: 'Active', companyId });
     const closingStock = items.reduce((s, it) => s + (it.currentBalance || 0) * (it.costPrice || it.salesRate || 0), 0);
 
-    // ── Net Profit from P&L (income - expenses from vouchers in range) ─
-    const incTypes = ['Income', 'Miscellaneous Income', 'Other Revenue', 'Grants & Aid', 'Subsidies'];
-    const expTypes = ['Expense', 'Establishment Charges', 'Miscellaneous Expenses'];
-    const [incLedgers, expLedgers] = await Promise.all([
-      Ledger.find({ ledgerType: { $in: incTypes }, status: 'Active', companyId }),
-      Ledger.find({ ledgerType: { $in: expTypes }, status: 'Active', companyId })
-    ]);
-    const incIds = new Set(incLedgers.map(l => l._id.toString()));
-    const expIds = new Set(expLedgers.map(l => l._id.toString()));
-    const plVouchers = await Voucher.find({
-      companyId,
-      voucherDate: { $gte: start, $lte: end },
-      'entries.ledgerId': { $in: [...incLedgers, ...expLedgers].map(l => l._id) }
-    });
-    let totalPLIncome = 0, totalPLExpense = 0;
-    plVouchers.forEach(v => v.entries.forEach(e => {
-      const lid = e.ledgerId?.toString();
-      if (incIds.has(lid)) totalPLIncome  += e.creditAmount || 0;
-      if (expIds.has(lid)) totalPLExpense += e.debitAmount  || 0;
-    }));
-    // Also milk purchase/sales from dairy flow
-    const [mkpAgg] = await MilkCollection.aggregate([
-      { $match: { companyId, date: { $gte: start, $lte: end } } },
-      { $group: { _id: null, total: { $sum: '$amount' } } }
-    ]);
-    const [mksAgg] = await MilkSales.aggregate([
-      { $match: { companyId, date: { $gte: start, $lte: end } } },
-      { $group: { _id: null, total: { $sum: '$amount' } } }
-    ]);
-    const milkMargin = (mksAgg?.total || 0) - (mkpAgg?.total || 0);
-    const netProfit = totalPLIncome - totalPLExpense + milkMargin;
+    // ── Net Profit — carried forward from the SAME Profit & Loss
+    // computation getProfitLoss uses (which itself carries the Trading
+    // Account's Gross Profit/Loss forward), instead of an independent
+    // recompute. This is the fix: previously this handler recalculated its
+    // own P&L income/expense totals from scratch and substituted a
+    // milk-sales-minus-milk-purchase "margin" for Trading Account profit,
+    // so the Balance Sheet's Net Profit could silently drift from what the
+    // Profit & Loss statement actually showed. Reusing computeProfitLossData
+    // guarantees the two always match — the real "carried forward" link.
+    const pl = await computeProfitLossData(companyId, start, end);
+    const netProfit = pl.netProfit;
 
     // ── Build asset/liability/capital item arrays ──────────────────
     const toItems = (ledgers) => ledgers.map(l => ({ name: l.ledgerName, amount: Math.abs(l.currentBalance), type: l.ledgerType }));
@@ -2258,6 +2270,128 @@ const ledgerBalance = (ledger, priorMap, periodMap) => {
 };
 
 // ─── TRADING ACCOUNT V2 — driven by ac_ledgers types ─────────────────────────
+// ── Shared: Trading Account V2 computation (pure) ────────────────────────
+// Extracted out of getTradingAccountV2 so P&L V2 (and, through it, Balance
+// Sheet V2) can pull the same Gross Profit/Loss and carry it forward.
+const computeTradingAccountV2Data = async (companyId, start, end) => {
+  const TRADING_INC_TYPES = ['Sales', 'Trade Income', 'Sales A/c'];
+  const TRADING_EXP_TYPES = ['Purchases', 'Trade Expenses', 'Purchases A/c'];
+
+  // Fetch relevant ledgers (both new-style parentGroup AND legacy types)
+  const [incLedgers, expLedgers] = await Promise.all([
+    Ledger.find({
+      companyId, status: 'Active',
+      $or: [
+        { parentGroup: 'INCOME', ledgerType: { $in: TRADING_INC_TYPES } },
+        { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: TRADING_INC_TYPES } },
+        { parentGroup: { $exists: false }, ledgerType: { $in: TRADING_INC_TYPES } }
+      ]
+    }).lean(),
+    Ledger.find({
+      companyId, status: 'Active',
+      $or: [
+        { parentGroup: 'EXPENSE', ledgerType: { $in: TRADING_EXP_TYPES } },
+        { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: TRADING_EXP_TYPES } },
+        { parentGroup: { $exists: false }, ledgerType: { $in: TRADING_EXP_TYPES } }
+      ]
+    }).lean()
+  ]);
+
+  const allIds = [...incLedgers, ...expLedgers].map(l => l._id);
+  const { periodMap } = await buildVoucherMaps(companyId, start, end, allIds);
+
+  // Group income ledgers by ledgerType
+  const salesGroupMap = {};
+  incLedgers.forEach(l => {
+    const act = periodMap[l._id.toString()] || {};
+    const amount = act.credit || 0;
+    if (!amount) return;
+    const key = l.ledgerType;
+    if (!salesGroupMap[key]) salesGroupMap[key] = { accountGroup: key, items: [] };
+    salesGroupMap[key].items.push({ ledgerName: l.ledgerName, amount });
+  });
+
+  // Group expense ledgers by ledgerType
+  const purchaseGroupMap = {};
+  expLedgers.forEach(l => {
+    const act = periodMap[l._id.toString()] || {};
+    const amount = act.debit || 0;
+    if (!amount) return;
+    const key = l.ledgerType;
+    if (!purchaseGroupMap[key]) purchaseGroupMap[key] = { accountGroup: key, items: [] };
+    purchaseGroupMap[key].items.push({ ledgerName: l.ledgerName, amount });
+  });
+
+  const addGroupTotals = (gm) =>
+    Object.values(gm).map(g => ({ ...g, total: g.items.reduce((s, i) => s + i.amount, 0) }));
+
+  const salesGroups    = addGroupTotals(salesGroupMap);
+  const purchaseGroups = addGroupTotals(purchaseGroupMap);
+
+  // Dairy-direct sources
+  const [mcAgg, msAgg, usAgg, items] = await Promise.all([
+    MilkCollection.aggregate([
+      { $match: { companyId, date: { $gte: start, $lte: end } } },
+      { $group: { _id: null, total: { $sum: '$amount' }, qty: { $sum: '$qty' }, farmers: { $addToSet: '$farmer' } } }
+    ]),
+    MilkSales.aggregate([
+      { $match: { companyId, date: { $gte: start, $lte: end } } },
+      { $group: { _id: null, total: { $sum: '$amount' } } }
+    ]),
+    UnionSalesSlip.aggregate([
+      { $match: { companyId, date: { $gte: start, $lte: end } } },
+      { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+    ]).catch(() => []),
+    Item.find({ status: 'Active', companyId }).lean()
+  ]);
+
+  const openingStockTotal = items.reduce((s, it) => s + (it.openingBalance || 0) * (it.costPrice || it.salesRate || 0), 0);
+  const closingStockTotal = items.reduce((s, it) => s + (it.currentBalance || 0) * (it.costPrice || it.salesRate || 0), 0);
+  const closingStockGrouped = {};
+  items.forEach(it => {
+    const val = (it.currentBalance || 0) * (it.costPrice || it.salesRate || 0);
+    if (!val) return;
+    const cat = it.category || 'Others';
+    closingStockGrouped[cat] = (closingStockGrouped[cat] || 0) + val;
+  });
+
+  const milkPurchaseTotal = mcAgg[0]?.total || 0;
+  const milkSalesTotal    = msAgg[0]?.total || 0;
+  const unionSalesTotal   = usAgg[0]?.total  || 0;
+  const totalPurchased    = purchaseGroups.reduce((s, g) => s + g.total, 0);
+  const totalSales        = salesGroups.reduce((s, g) => s + g.total, 0);
+
+  const creditTotal = milkSalesTotal + unionSalesTotal + totalSales + closingStockTotal;
+  const debitTotal  = openingStockTotal + milkPurchaseTotal + totalPurchased;
+  const grossProfit = creditTotal > debitTotal ? creditTotal - debitTotal : 0;
+  const grossLoss   = debitTotal > creditTotal ? debitTotal - creditTotal : 0;
+
+  return {
+    period: { startDate: start, endDate: end, financialYear: getFinancialYear(start) },
+    debitSide: {
+      openingStock: { total: openingStockTotal },
+      milkPurchase: { total: milkPurchaseTotal, qty: mcAgg[0]?.qty || 0, farmerCount: mcAgg[0]?.farmers?.length || 0 },
+      purchaseGroups,
+      grossProfit
+    },
+    creditSide: {
+      milkSales: { total: milkSalesTotal },
+      unionSales: { total: unionSalesTotal },
+      salesGroups,
+      closingStock: {
+        total: closingStockTotal,
+        items: Object.entries(closingStockGrouped).map(([category, amount]) => ({ category, amount }))
+      },
+      grossLoss
+    },
+    totals: { debitTotal: debitTotal + grossProfit, creditTotal: creditTotal + grossLoss },
+    // Flat convenience fields — consumed by computeProfitLossV2Data below to
+    // carry Trading Account profit/loss forward into P&L V2.
+    grossProfit,
+    grossLoss
+  };
+};
+
 export const getTradingAccountV2 = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
@@ -2269,125 +2403,79 @@ export const getTradingAccountV2 = async (req, res) => {
     const end   = new Date(endDate);   end.setHours(23, 59, 59, 999);
     const companyId = req.companyId;
 
-    const TRADING_INC_TYPES = ['Sales', 'Trade Income', 'Sales A/c'];
-    const TRADING_EXP_TYPES = ['Purchases', 'Trade Expenses', 'Purchases A/c'];
-
-    // Fetch relevant ledgers (both new-style parentGroup AND legacy types)
-    const [incLedgers, expLedgers] = await Promise.all([
-      Ledger.find({
-        companyId, status: 'Active',
-        $or: [
-          { parentGroup: 'INCOME', ledgerType: { $in: TRADING_INC_TYPES } },
-          { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: TRADING_INC_TYPES } },
-          { parentGroup: { $exists: false }, ledgerType: { $in: TRADING_INC_TYPES } }
-        ]
-      }).lean(),
-      Ledger.find({
-        companyId, status: 'Active',
-        $or: [
-          { parentGroup: 'EXPENSE', ledgerType: { $in: TRADING_EXP_TYPES } },
-          { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: TRADING_EXP_TYPES } },
-          { parentGroup: { $exists: false }, ledgerType: { $in: TRADING_EXP_TYPES } }
-        ]
-      }).lean()
-    ]);
-
-    const allIds = [...incLedgers, ...expLedgers].map(l => l._id);
-    const { priorMap, periodMap } = await buildVoucherMaps(companyId, start, end, allIds);
-
-    // Group income ledgers by ledgerType
-    const salesGroupMap = {};
-    incLedgers.forEach(l => {
-      const act = periodMap[l._id.toString()] || {};
-      const amount = act.credit || 0;
-      if (!amount) return;
-      const key = l.ledgerType;
-      if (!salesGroupMap[key]) salesGroupMap[key] = { accountGroup: key, items: [] };
-      salesGroupMap[key].items.push({ ledgerName: l.ledgerName, amount });
-    });
-
-    // Group expense ledgers by ledgerType
-    const purchaseGroupMap = {};
-    expLedgers.forEach(l => {
-      const act = periodMap[l._id.toString()] || {};
-      const amount = act.debit || 0;
-      if (!amount) return;
-      const key = l.ledgerType;
-      if (!purchaseGroupMap[key]) purchaseGroupMap[key] = { accountGroup: key, items: [] };
-      purchaseGroupMap[key].items.push({ ledgerName: l.ledgerName, amount });
-    });
-
-    const addGroupTotals = (gm) =>
-      Object.values(gm).map(g => ({ ...g, total: g.items.reduce((s, i) => s + i.amount, 0) }));
-
-    const salesGroups    = addGroupTotals(salesGroupMap);
-    const purchaseGroups = addGroupTotals(purchaseGroupMap);
-
-    // Dairy-direct sources
-    const [mcAgg, msAgg, usAgg, items] = await Promise.all([
-      MilkCollection.aggregate([
-        { $match: { companyId, date: { $gte: start, $lte: end } } },
-        { $group: { _id: null, total: { $sum: '$amount' }, qty: { $sum: '$qty' }, farmers: { $addToSet: '$farmer' } } }
-      ]),
-      MilkSales.aggregate([
-        { $match: { companyId, date: { $gte: start, $lte: end } } },
-        { $group: { _id: null, total: { $sum: '$amount' } } }
-      ]),
-      UnionSalesSlip.aggregate([
-        { $match: { companyId, date: { $gte: start, $lte: end } } },
-        { $group: { _id: null, total: { $sum: '$totalAmount' } } }
-      ]).catch(() => []),
-      Item.find({ status: 'Active', companyId }).lean()
-    ]);
-
-    const openingStockTotal = items.reduce((s, it) => s + (it.openingBalance || 0) * (it.costPrice || it.salesRate || 0), 0);
-    const closingStockTotal = items.reduce((s, it) => s + (it.currentBalance || 0) * (it.costPrice || it.salesRate || 0), 0);
-    const closingStockGrouped = {};
-    items.forEach(it => {
-      const val = (it.currentBalance || 0) * (it.costPrice || it.salesRate || 0);
-      if (!val) return;
-      const cat = it.category || 'Others';
-      closingStockGrouped[cat] = (closingStockGrouped[cat] || 0) + val;
-    });
-
-    const milkPurchaseTotal = mcAgg[0]?.total || 0;
-    const milkSalesTotal    = msAgg[0]?.total || 0;
-    const unionSalesTotal   = usAgg[0]?.total  || 0;
-    const totalPurchased    = purchaseGroups.reduce((s, g) => s + g.total, 0);
-    const totalSales        = salesGroups.reduce((s, g) => s + g.total, 0);
-
-    const creditTotal = milkSalesTotal + unionSalesTotal + totalSales + closingStockTotal;
-    const debitTotal  = openingStockTotal + milkPurchaseTotal + totalPurchased;
-    const grossProfit = creditTotal > debitTotal ? creditTotal - debitTotal : 0;
-    const grossLoss   = debitTotal > creditTotal ? debitTotal - creditTotal : 0;
-
-    res.json({
-      success: true,
-      data: {
-        period: { startDate: start, endDate: end, financialYear: getFinancialYear(start) },
-        debitSide: {
-          openingStock: { total: openingStockTotal },
-          milkPurchase: { total: milkPurchaseTotal, qty: mcAgg[0]?.qty || 0, farmerCount: mcAgg[0]?.farmers?.length || 0 },
-          purchaseGroups,
-          grossProfit
-        },
-        creditSide: {
-          milkSales: { total: milkSalesTotal },
-          unionSales: { total: unionSalesTotal },
-          salesGroups,
-          closingStock: {
-            total: closingStockTotal,
-            items: Object.entries(closingStockGrouped).map(([category, amount]) => ({ category, amount }))
-          },
-          grossLoss
-        },
-        totals: { debitTotal: debitTotal + grossProfit, creditTotal: creditTotal + grossLoss }
-      }
-    });
+    const data = await computeTradingAccountV2Data(companyId, start, end);
+    res.json({ success: true, data });
   } catch (err) {
     console.error('getTradingAccountV2 error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
+};
+
+// ── Shared: Profit & Loss V2 computation (pure) ──────────────────────────
+// Carries Trading Account V2's Gross Profit/Loss forward as "Trade Profit
+// b/f" / "Trade Loss b/f", the same Trading Account → P&L handoff as V1's
+// computeProfitLossData — so Net Profit is always income (P&L income +
+// Trade Profit b/f) minus ALL applicable expenses (P&L expenses + Trade
+// Loss b/f), not just the P&L-only ledgers.
+const computeProfitLossV2Data = async (companyId, start, end) => {
+  // P&L types exclude trading account types
+  const TRADING_INC = ['Sales', 'Trade Income', 'Sales A/c'];
+  const TRADING_EXP = ['Purchases', 'Trade Expenses', 'Purchases A/c'];
+  const PL_INC_TYPES = ['Income', 'Miscellaneous Income', 'Other Revenue', 'Grants & Aid', 'Subsidies'];
+  const PL_EXP_TYPES = ['Expense', 'Establishment Charges', 'Contingencies', 'Miscellaneous Expenses'];
+
+  const [incLedgers, expLedgers] = await Promise.all([
+    Ledger.find({
+      companyId, status: 'Active',
+      $or: [
+        { parentGroup: 'INCOME', ledgerType: { $nin: TRADING_INC } },
+        { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: PL_INC_TYPES } },
+        { parentGroup: { $exists: false }, ledgerType: { $in: PL_INC_TYPES } }
+      ]
+    }).lean(),
+    Ledger.find({
+      companyId, status: 'Active',
+      $or: [
+        { parentGroup: 'EXPENSE', ledgerType: { $nin: TRADING_EXP } },
+        { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: PL_EXP_TYPES } },
+        { parentGroup: { $exists: false }, ledgerType: { $in: PL_EXP_TYPES } }
+      ]
+    }).lean()
+  ]);
+
+  const allIds = [...incLedgers, ...expLedgers].map(l => l._id);
+  const { periodMap } = await buildVoucherMaps(companyId, start, end, allIds);
+
+  const groupByType = (ledgers, amountKey) => {
+    const gm = {};
+    ledgers.forEach(l => {
+      const act = periodMap[l._id.toString()] || {};
+      const amount = act[amountKey] || 0;
+      if (!amount) return;
+      const key = l.ledgerType;
+      if (!gm[key]) gm[key] = { accountGroup: key, ledgers: [] };
+      gm[key].ledgers.push({ name: l.ledgerName, amount });
+    });
+    return Object.values(gm).map(g => ({ ...g, total: g.ledgers.reduce((s, l) => s + l.amount, 0) }));
+  };
+
+  const incomeGroups  = groupByType(incLedgers, 'credit');
+  const expenseGroups = groupByType(expLedgers, 'debit');
+  const totalIncome   = incomeGroups.reduce((s, g) => s + g.total, 0);
+  const totalExpense  = expenseGroups.reduce((s, g) => s + g.total, 0);
+
+  // Trading Account → P&L handoff (same convention as V1)
+  const trading = await computeTradingAccountV2Data(companyId, start, end);
+  const tradeProfit = trading.grossProfit;
+  const tradeLoss    = trading.grossLoss;
+
+  const netProfit = (totalIncome + tradeProfit) - (totalExpense + tradeLoss);
+
+  return {
+    incomeGroups, expenseGroups, totalIncome, totalExpense,
+    tradeProfit, tradeLoss,
+    netProfit, netLoss: netProfit < 0 ? Math.abs(netProfit) : 0
+  };
 };
 
 // ─── PROFIT & LOSS V2 — driven by ac_ledgers types ───────────────────────────
@@ -2402,57 +2490,8 @@ export const getProfitLossV2 = async (req, res) => {
     const end   = new Date(endDate);   end.setHours(23, 59, 59, 999);
     const companyId = req.companyId;
 
-    // P&L types exclude trading account types
-    const TRADING_INC = ['Sales', 'Trade Income', 'Sales A/c'];
-    const TRADING_EXP = ['Purchases', 'Trade Expenses', 'Purchases A/c'];
-    const PL_INC_TYPES = ['Income', 'Miscellaneous Income', 'Other Revenue', 'Grants & Aid', 'Subsidies'];
-    const PL_EXP_TYPES = ['Expense', 'Establishment Charges', 'Contingencies', 'Miscellaneous Expenses'];
-
-    const [incLedgers, expLedgers] = await Promise.all([
-      Ledger.find({
-        companyId, status: 'Active',
-        $or: [
-          { parentGroup: 'INCOME', ledgerType: { $nin: TRADING_INC } },
-          { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: PL_INC_TYPES } },
-          { parentGroup: { $exists: false }, ledgerType: { $in: PL_INC_TYPES } }
-        ]
-      }).lean(),
-      Ledger.find({
-        companyId, status: 'Active',
-        $or: [
-          { parentGroup: 'EXPENSE', ledgerType: { $nin: TRADING_EXP } },
-          { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: PL_EXP_TYPES } },
-          { parentGroup: { $exists: false }, ledgerType: { $in: PL_EXP_TYPES } }
-        ]
-      }).lean()
-    ]);
-
-    const allIds = [...incLedgers, ...expLedgers].map(l => l._id);
-    const { periodMap } = await buildVoucherMaps(companyId, start, end, allIds);
-
-    const groupByType = (ledgers, amountKey) => {
-      const gm = {};
-      ledgers.forEach(l => {
-        const act = periodMap[l._id.toString()] || {};
-        const amount = act[amountKey] || 0;
-        if (!amount) return;
-        const key = l.ledgerType;
-        if (!gm[key]) gm[key] = { accountGroup: key, ledgers: [] };
-        gm[key].ledgers.push({ name: l.ledgerName, amount });
-      });
-      return Object.values(gm).map(g => ({ ...g, total: g.ledgers.reduce((s, l) => s + l.amount, 0) }));
-    };
-
-    const incomeGroups  = groupByType(incLedgers, 'credit');
-    const expenseGroups = groupByType(expLedgers, 'debit');
-    const totalIncome   = incomeGroups.reduce((s, g) => s + g.total, 0);
-    const totalExpense  = expenseGroups.reduce((s, g) => s + g.total, 0);
-    const netProfit     = totalIncome - totalExpense;
-
-    res.json({
-      success: true,
-      data: { incomeGroups, expenseGroups, totalIncome, totalExpense, netProfit, netLoss: netProfit < 0 ? Math.abs(netProfit) : 0 }
-    });
+    const data = await computeProfitLossV2Data(companyId, start, end);
+    res.json({ success: true, data });
   } catch (err) {
     console.error('getProfitLossV2 error:', err);
     res.status(500).json({ success: false, message: err.message });
@@ -2547,13 +2586,27 @@ export const getBalanceSheetV2 = async (req, res) => {
     const closingStock = (await Item.find({ status: 'Active', companyId }).lean())
       .reduce((s, it) => s + (it.currentBalance || 0) * (it.costPrice || it.salesRate || 0), 0);
 
-    const isTallied = Math.abs((totalAssets + closingStock) - totalLiabilities) < 1;
+    // ── Net Profit — carried forward from the SAME Profit & Loss V2
+    // computation getProfitLossV2 uses (which itself carries Trading
+    // Account V2's Gross Profit/Loss forward). Previously this handler
+    // never computed or returned a Net Profit at all, so the P&L balance
+    // never reached the Balance Sheet on the "Dynamic" data source —
+    // Liabilities were compared against Assets with the period's earned
+    // profit missing entirely, which is also why isTallied could read
+    // "Not Balanced" even on books that are otherwise correct.
+    const pl = await computeProfitLossV2Data(companyId, start, end);
+    const netProfit = pl.netProfit;
+    const totalLiabilitiesAndCapital = totalLiabilities + netProfit;
+
+    const isTallied = Math.abs((totalAssets + closingStock) - totalLiabilitiesAndCapital) < 1;
 
     res.json({
       success: true,
       data: {
         assetGroups, liabilityGroups,
-        totalAssets, totalLiabilities, closingStock, isTallied
+        totalAssets, totalLiabilities, closingStock,
+        netProfit, totalLiabilitiesAndCapital,
+        isTallied
       }
     });
   } catch (err) {

@@ -18,6 +18,7 @@ import {
   getAdvanceById,
   getFarmerAdvances,
   updateAdvance,
+  deleteAdvance,
   adjustAdvance,
   cancelAdvance,
   getAdvanceStats,
@@ -126,6 +127,9 @@ router.get('/advances/:id', getAdvanceById);
 
 // Update advance
 router.put('/advances/:id', updateAdvance);
+
+// Delete advance (only when no recovery adjustments exist)
+router.delete('/advances/:id', deleteAdvance);
 
 // Adjust advance
 router.post('/advances/:id/adjust', adjustAdvance);

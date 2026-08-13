@@ -1,19 +1,20 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import {
   Container, Paper, Group, Text, Title, Box, Badge,
-  Button, Select, Tabs, Divider, ScrollArea,
+  Button, Select, Tabs, Divider, ScrollArea, Table,
   LoadingOverlay, ActionIcon, Tooltip,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
+import { modals } from '@mantine/modals';
 import {
   IconCalendar, IconRefresh, IconPrinter, IconFileSpreadsheet,
-  IconSearch, IconCheck, IconArrowLeft, IconPlus,
+  IconSearch, IconCheck, IconArrowLeft, IconPlus, IconEdit, IconTrash,
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { useReactToPrint } from 'react-to-print';
 import * as XLSX from 'xlsx';
-import { loanAdvanceAPI, cattleFeedAdvanceAPI } from '../../services/api';
+import { loanAdvanceAPI, cattleFeedAdvanceAPI, producerLoanAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 import ProducerLoanFormModal from './ProducerLoanFormModal';
 
@@ -73,8 +74,15 @@ const LoanAdvanceSummary = () => {
   const [summaryTotals, setSummaryTotals] = useState(null);
   const [ledgerData,    setLedgerData]    = useState(null);
   const [newOpen,       setNewOpen]       = useState(false);
+  const [editLoan,      setEditLoan]      = useState(null);
   const [registerRows,   setRegisterRows]   = useState([]);
   const [registerTotals, setRegisterTotals] = useState(null);
+
+  /* ── Transactions grid — every loan entered/saved via "New Loan", filtered
+       by the selected Transaction Date, with Edit/Delete right there ── */
+  const [txnDate,        setTxnDate]        = useState(new Date());
+  const [transactions,   setTransactions]   = useState([]);
+  const [txnLoading,     setTxnLoading]     = useState(false);
 
   /* ── Load farmer list once ── */
   useEffect(() => {
@@ -147,6 +155,63 @@ const LoanAdvanceSummary = () => {
   const openLedger = (row) => {
     setFarmerId(row.farmerId);
     setActiveTab('ledger');
+  };
+
+  /* ── Transactions grid: loads ProducerLoan records dated on txnDate ── */
+  const fetchTransactions = async () => {
+    setTxnLoading(true);
+    try {
+      const res = await producerLoanAPI.getAll({
+        fromDate: dayjs(txnDate).format('YYYY-MM-DD'),
+        toDate:   dayjs(txnDate).format('YYYY-MM-DD'),
+        sortBy:   'loanDate',
+        sortOrder:'desc',
+        limit:    200,
+      });
+      setTransactions(res?.data || []);
+    } catch (err) {
+      notifications.show({ title: 'Error', message: err.message || 'Failed to load transactions', color: 'red' });
+    } finally {
+      setTxnLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchTransactions(); }, [txnDate]); // eslint-disable-line
+
+  const openNewLoan  = () => { setEditLoan(null); setNewOpen(true); };
+  const openEditLoan = (row) => { setEditLoan(row); setNewOpen(true); };
+
+  const handleLoanSaved = () => {
+    setNewOpen(false);
+    setEditLoan(null);
+    fetchTransactions();
+    if (activeTab === 'summary') fetchSummary();
+  };
+
+  const handleDeleteLoan = (row) => {
+    modals.openConfirmModal({
+      title: 'Delete Loan',
+      centered: true,
+      children: (
+        <Text size="sm">
+          Delete loan <b>{row.loanNumber}</b> for <b>{row.farmerId?.personalDetails?.name || row.farmerId?.farmerNumber}</b>
+          {' '}(₹{fmt(row.principalAmount)})? This reverses its disbursement voucher and cannot be undone.
+        </Text>
+      ),
+      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          const res = await producerLoanAPI.delete(row._id);
+          if (res?.success === false) throw new Error(res.message || 'Delete failed');
+          notifications.show({ title: 'Deleted', message: `Loan ${row.loanNumber} deleted`, color: 'teal', icon: <IconCheck size={14} /> });
+          fetchTransactions();
+          if (activeTab === 'summary') fetchSummary();
+        } catch (err) {
+          notifications.show({ title: 'Error', message: err.message || 'Failed to delete loan', color: 'red' });
+        }
+      },
+    });
   };
 
   useEffect(() => {
@@ -268,7 +333,7 @@ const LoanAdvanceSummary = () => {
 
           <Button
             leftSection={<IconPlus size={15} />} size="sm"
-            onClick={() => setNewOpen(true)}
+            onClick={openNewLoan}
             styles={{ root: { background: '#1D4ED8', fontWeight: 600, boxShadow: '0 1px 2px rgba(29,78,216,0.18)' } }}
           >
             New Loan
@@ -318,9 +383,88 @@ const LoanAdvanceSummary = () => {
 
       <ProducerLoanFormModal
         opened={newOpen}
-        onClose={() => setNewOpen(false)}
-        onSaved={() => { setNewOpen(false); fetchSummary(); }}
+        editData={editLoan}
+        onClose={() => { setNewOpen(false); setEditLoan(null); }}
+        onSaved={handleLoanSaved}
       />
+
+      {/* ── Transactions grid — every loan saved via New Loan, for the
+             selected Transaction Date, with Edit/Delete ── */}
+      <Paper withBorder shadow="sm" radius="md" mb="md" className="no-print">
+        <Group justify="space-between" px="sm" py="xs" style={{ borderBottom: '1px solid #eee' }}>
+          <Group gap="xs">
+            <Text fw={700} size="sm">Transactions</Text>
+            <Badge variant="light" color="grape">{transactions.length}</Badge>
+          </Group>
+          <Group gap="sm">
+            <DatePickerInput
+              label="Transaction Date" value={txnDate} onChange={setTxnDate}
+              leftSection={<IconCalendar size={14} />} valueFormat="DD/MM/YYYY"
+              size="xs" style={{ minWidth: 140 }}
+            />
+            <ActionIcon variant="subtle" color="gray" mt={18} onClick={fetchTransactions}>
+              <IconRefresh size={16} />
+            </ActionIcon>
+          </Group>
+        </Group>
+        <ScrollArea type="hover" scrollbarSize={6}>
+          <Table striped highlightOnHover withColumnBorders fz="xs" style={{ minWidth: 860 }}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Loan No</Table.Th>
+                <Table.Th>Producer</Table.Th>
+                <Table.Th>Type</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>Principal</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>Total</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>EMI</Table.Th>
+                <Table.Th>Mode</Table.Th>
+                <Table.Th>Status</Table.Th>
+                <Table.Th style={{ textAlign: 'center' }}>Actions</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {txnLoading ? (
+                <Table.Tr><Table.Td colSpan={9} style={{ textAlign: 'center', padding: 20, color: '#999' }}>Loading…</Table.Td></Table.Tr>
+              ) : transactions.length === 0 ? (
+                <Table.Tr><Table.Td colSpan={9} style={{ textAlign: 'center', padding: 20, color: '#999' }}>No loans for this date</Table.Td></Table.Tr>
+              ) : (
+                transactions.map((t) => {
+                  const editable = !t.emiSchedule?.some(e => e.paidAmount > 0) && t.status !== 'Closed' && t.status !== 'Cancelled';
+                  return (
+                    <Table.Tr key={t._id}>
+                      <Table.Td style={{ fontWeight: 600 }}>{t.loanNumber}</Table.Td>
+                      <Table.Td>
+                        <Text size="xs" fw={600}>{t.farmerId?.farmerNumber}</Text>
+                        <Text size="10px" c="dimmed">{t.farmerId?.personalDetails?.name}</Text>
+                      </Table.Td>
+                      <Table.Td><Badge size="xs" color="violet" variant="light">{t.loanType}</Badge></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>₹ {fmt(t.principalAmount)}</Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>₹ {fmt(t.totalLoanAmount)}</Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>₹ {fmt(t.emiAmount)} ×{t.totalEMI}</Table.Td>
+                      <Table.Td>{t.paymentMode}</Table.Td>
+                      <Table.Td><Badge size="xs" variant="light" color={t.status === 'Closed' ? 'green' : t.status === 'Cancelled' ? 'gray' : 'blue'}>{t.status}</Badge></Table.Td>
+                      <Table.Td>
+                        <Group gap={4} justify="center">
+                          <Tooltip label={editable ? 'Edit' : 'Locked — EMI already recovered / closed'}>
+                            <ActionIcon size="sm" variant="light" color="blue" disabled={!editable} onClick={() => openEditLoan(t)}>
+                              <IconEdit size={13} />
+                            </ActionIcon>
+                          </Tooltip>
+                          <Tooltip label={editable ? 'Delete' : 'Locked — EMI already recovered / closed'}>
+                            <ActionIcon size="sm" variant="light" color="red" disabled={!editable} onClick={() => handleDeleteLoan(t)}>
+                              <IconTrash size={13} />
+                            </ActionIcon>
+                          </Tooltip>
+                        </Group>
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                })
+              )}
+            </Table.Tbody>
+          </Table>
+        </ScrollArea>
+      </Paper>
 
       <Paper withBorder shadow="sm" radius="md" style={{ position: 'relative' }}>
         <LoadingOverlay visible={loading} />

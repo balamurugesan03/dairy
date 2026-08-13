@@ -223,6 +223,7 @@ export const voucherAPI = {
   getAll: (params) => api.get('/vouchers', { params }).then(res => res.data).catch(handleError),
   getById: (id) => api.get(`/vouchers/${id}`).then(res => res.data).catch(handleError),
   create: (data) => api.post('/vouchers', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/vouchers/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/vouchers/${id}`).then(res => res.data).catch(handleError)
 };
 
@@ -259,6 +260,7 @@ export const advanceAPI = {
   getById: (id) => api.get(`/advances/${id}`).then(res => res.data).catch(handleError),
   create: (data) => api.post('/advances', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/advances/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/advances/${id}`).then(res => res.data).catch(handleError),
   cancel: (id, cancellationReason) => api.post(`/advances/${id}/cancel`, { cancellationReason }).then(res => res.data).catch(handleError),
   getFarmerAdvances: (farmerId, params) => api.get(`/advances/farmer/${farmerId}`, { params }).then(res => res.data).catch(handleError),
   adjust: (id, data) => api.post(`/advances/${id}/adjust`, data).then(res => res.data).catch(handleError),
@@ -663,6 +665,7 @@ export const producerLoanAPI = {
   getById: (id) => api.get(`/producer-loans/${id}`).then(res => res.data).catch(handleError),
   create: (data) => api.post('/producer-loans', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/producer-loans/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/producer-loans/${id}`).then(res => res.data).catch(handleError),
   cancel: (id, reason) => api.post(`/producer-loans/${id}/cancel`, { reason }).then(res => res.data).catch(handleError),
   getFarmerLoans: (farmerId, params) => api.get(`/producer-loans/farmer/${farmerId}`, { params }).then(res => res.data).catch(handleError),
   recordEMI: (id, data) => api.post(`/producer-loans/${id}/emi`, data).then(res => res.data).catch(handleError),

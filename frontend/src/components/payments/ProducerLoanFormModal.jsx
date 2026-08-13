@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Modal, Stack, Group, Text, Box, Grid, Select, NumberInput, TextInput,
   Textarea, Button, ActionIcon, Divider, Badge, Loader,
@@ -45,7 +45,8 @@ const BLANK = {
 const fmt = (v) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(v || 0);
 
-export default function ProducerLoanFormModal({ opened, onClose, onSaved }) {
+export default function ProducerLoanFormModal({ opened, onClose, onSaved, editData }) {
+  const isEdit = !!editData?._id;
   const [form,       setForm]       = useState(BLANK);
   const [farmer,     setFarmer]     = useState(null);
   const [farmers,    setFarmers]    = useState([]);
@@ -67,12 +68,50 @@ export default function ProducerLoanFormModal({ opened, onClose, onSaved }) {
   }, []);
 
   useEffect(() => {
-    if (opened) { setForm(prev => ({ ...BLANK, loanType: loanTypes[0]?.value || null })); setFarmer(null); setCalc({ interest: 0, total: 0, emi: 0 }); }
-  }, [opened]); // eslint-disable-line
+    if (!opened) return;
+    if (isEdit) {
+      const f = editData.farmerId;
+      setForm({
+        loanDate:        editData.loanDate ? new Date(editData.loanDate) : new Date(),
+        farmerId:        f?._id || f || null,
+        loanType:        editData.loanType || loanTypes[0]?.value || null,
+        loanScheme:      editData.loanScheme || 'Monthly',
+        principalAmount: editData.principalAmount ?? '',
+        interestType:    editData.interestType || 'Percentage',
+        interestRate:    editData.interestRate || 0,
+        interestAmount:  editData.interestAmount || 0,
+        totalEMI:        editData.totalEMI ?? '',
+        paymentMode:     editData.paymentMode || 'Cash',
+        chequeNumber:    editData.chequeNumber || '',
+        guarantorName:   editData.guarantorName || '',
+        guarantorPhone:  editData.guarantorPhone || '',
+        purpose:         editData.purpose || '',
+        remarks:         editData.remarks || '',
+      });
+      setFarmer(typeof f === 'object' ? f : null);
+      // Ensure the loan's farmer is selectable even if outside the default
+      // 100-record farmer list (e.g. inactive, or beyond the page limit).
+      if (typeof f === 'object' && f?._id) {
+        setFarmers(prev => (prev.some(x => x._id === f._id) ? prev : [f, ...prev]));
+      }
+    } else {
+      setForm({ ...BLANK, loanType: loanTypes[0]?.value || null });
+      setFarmer(null);
+      setCalc({ interest: 0, total: 0, emi: 0 });
+    }
+  }, [opened, isEdit, editData]); // eslint-disable-line
 
+  // Merges in (rather than replaces) so it never drops the edit-mode farmer
+  // injected above if that farmer falls outside this default 100-record page.
   useEffect(() => {
     farmerAPI.getAll({ status: 'Active', limit: 100 })
-      .then(r => setFarmers(r?.data || []))
+      .then(r => {
+        const list = r?.data || [];
+        setFarmers(prev => {
+          const extra = prev.filter(p => !list.some(x => x._id === p._id));
+          return [...extra, ...list];
+        });
+      })
       .catch(() => {});
   }, []);
 
@@ -122,17 +161,19 @@ export default function ProducerLoanFormModal({ opened, onClose, onSaved }) {
         totalEMI:        parseInt(form.totalEMI),
         loanDate:        dayjs(form.loanDate).format('YYYY-MM-DD'),
       };
-      const res  = await producerLoanAPI.create(payload);
+      const res  = isEdit
+        ? await producerLoanAPI.update(editData._id, payload)
+        : await producerLoanAPI.create(payload);
       const loan = res?.data;
       notifications.show({
         color: 'teal', icon: <IconCheck size={14} />,
-        title: 'Loan Created',
+        title: isEdit ? 'Loan Updated' : 'Loan Created',
         message: `${loan?.loanNumber || 'Loan'} — ${fmt(loan?.principalAmount || form.principalAmount)}`,
         autoClose: 3500,
       });
       onSaved?.();
     } catch (err) {
-      notifications.show({ color: 'red', message: err?.message || 'Failed to create loan' });
+      notifications.show({ color: 'red', message: err?.message || `Failed to ${isEdit ? 'update' : 'create'} loan` });
     } finally {
       setSaving(false);
     }
@@ -166,10 +207,10 @@ export default function ProducerLoanFormModal({ opened, onClose, onSaved }) {
             </Box>
             <Box>
               <Group gap={8}>
-                <Text fw={800} size="15px" c="#14532d">New Loan / Advance</Text>
+                <Text fw={800} size="15px" c="#14532d">{isEdit ? 'Edit Loan / Advance' : 'New Loan / Advance'}</Text>
                 <Badge color="violet" size="sm" variant="filled">{form.loanType || 'Loan'}</Badge>
               </Group>
-              <Text size="10px" c={TEXT_MUTED}>Producer Loan — EMI-based</Text>
+              <Text size="10px" c={TEXT_MUTED}>{isEdit ? (editData?.loanNumber || 'Producer Loan') : 'Producer Loan — EMI-based'}</Text>
             </Box>
           </Group>
           <ActionIcon variant="subtle" color="gray" radius="xl" size="lg" onClick={onClose}>
@@ -328,7 +369,7 @@ export default function ProducerLoanFormModal({ opened, onClose, onSaved }) {
           radius="md" onClick={handleSave} loading={saving}
           disabled={!form.farmerId || !form.principalAmount || !form.totalEMI}
           styles={{ root: { background: '#059669', fontWeight: 700, boxShadow: '0 1px 2px rgba(5,150,105,0.2)' } }}>
-          Save Loan
+          {isEdit ? 'Update Loan' : 'Save Loan'}
         </Button>
       </Group>
     </Modal>
