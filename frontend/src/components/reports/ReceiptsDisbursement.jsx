@@ -100,8 +100,8 @@ const ReceiptsDisbursement = () => {
             <Table.Thead>
               <Table.Tr style={{ backgroundColor: 'var(--mantine-color-gray-1)' }}>
                 <Table.Th>Ledger / Description</Table.Th>
-                <Table.Th style={{ textAlign: 'right', width: '150px' }}>Receipt (₹)</Table.Th>
-                <Table.Th style={{ textAlign: 'right', width: '150px' }}>Payment (₹)</Table.Th>
+                <Table.Th style={{ textAlign: 'right', width: '150px' }}>Receipt</Table.Th>
+                <Table.Th style={{ textAlign: 'right', width: '150px' }}>Payment</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -119,10 +119,10 @@ const ReceiptsDisbursement = () => {
                     <Table.Tr key={`ledger-${sectionIdx}-${ledgerIdx}`}>
                       <Table.Td style={{ paddingLeft: '2rem' }}>{ledger.ledgerName}</Table.Td>
                       <Table.Td style={{ textAlign: 'right', color: 'var(--mantine-color-green-7)' }}>
-                        {ledger.receipt > 0 ? `₹${formatCurrency(ledger.receipt)}` : ''}
+                        {ledger.receipt > 0 ? `${formatCurrency(ledger.receipt)}` : ''}
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right', color: 'var(--mantine-color-red-6)' }}>
-                        {ledger.payment > 0 ? `₹${formatCurrency(ledger.payment)}` : ''}
+                        {ledger.payment > 0 ? `${formatCurrency(ledger.payment)}` : ''}
                       </Table.Td>
                     </Table.Tr>
                   ))}
@@ -131,10 +131,10 @@ const ReceiptsDisbursement = () => {
                   <Table.Tr style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}>
                     <Table.Td><Text fw={600}>Account Group Total</Text></Table.Td>
                     <Table.Td style={{ textAlign: 'right', color: 'var(--mantine-color-green-7)' }}>
-                      <Text fw={600}>{section.groupTotal.receipt > 0 ? `₹${formatCurrency(section.groupTotal.receipt)}` : ''}</Text>
+                      <Text fw={600}>{section.groupTotal.receipt > 0 ? `${formatCurrency(section.groupTotal.receipt)}` : ''}</Text>
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right', color: 'var(--mantine-color-red-6)' }}>
-                      <Text fw={600}>{section.groupTotal.payment > 0 ? `₹${formatCurrency(section.groupTotal.payment)}` : ''}</Text>
+                      <Text fw={600}>{section.groupTotal.payment > 0 ? `${formatCurrency(section.groupTotal.payment)}` : ''}</Text>
                     </Table.Td>
                   </Table.Tr>
                 </React.Fragment>
@@ -152,13 +152,13 @@ const ReceiptsDisbursement = () => {
                   <>
                     <Table.Tr style={{ backgroundColor: '#e0e0e0', borderTop: '2px solid #555' }}>
                       <Table.Td><Text fw={700}>TOTAL</Text></Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>₹{formatCurrency(rT)}</Text></Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>₹{formatCurrency(pT)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>{formatCurrency(rT)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>{formatCurrency(pT)}</Text></Table.Td>
                     </Table.Tr>
                     <Table.Tr style={{ backgroundColor: '#eaf4fb' }}>
                       <Table.Td><Text fw={700} fs="italic" c="blue.8">Opening Balance</Text></Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
-                        <Text fw={700} c="blue.8">₹{formatCurrency(ob)}</Text>
+                        <Text fw={700} c="blue.8">{formatCurrency(ob)}</Text>
                       </Table.Td>
                       <Table.Td />
                     </Table.Tr>
@@ -166,13 +166,13 @@ const ReceiptsDisbursement = () => {
                       <Table.Td><Text fw={700} fs="italic" c="teal.8">Closing Balance</Text></Table.Td>
                       <Table.Td />
                       <Table.Td style={{ textAlign: 'right' }}>
-                        <Text fw={700} c="teal.8">₹{formatCurrency(cb)}</Text>
+                        <Text fw={700} c="teal.8">{formatCurrency(cb)}</Text>
                       </Table.Td>
                     </Table.Tr>
                     <Table.Tr style={{ backgroundColor: '#b0b0b0' }}>
                       <Table.Td><Text fw={700} fz={12}>GRAND TOTAL</Text></Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>₹{formatCurrency(grand)}</Text></Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>₹{formatCurrency(grand)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>{formatCurrency(grand)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>{formatCurrency(grand)}</Text></Table.Td>
                     </Table.Tr>
                   </>
                 );
@@ -239,8 +239,8 @@ const ReceiptsDisbursement = () => {
             <Table.Thead>
               <Table.Tr>
                 <Table.Th rowSpan={2}>Ledger / Particulars</Table.Th>
-                <Table.Th colSpan={3} style={{ textAlign: 'center', backgroundColor: 'var(--mantine-color-green-1)' }}>Receipt (₹)</Table.Th>
-                <Table.Th colSpan={3} style={{ textAlign: 'center', backgroundColor: 'var(--mantine-color-red-1)' }}>Payment (₹)</Table.Th>
+                <Table.Th colSpan={3} style={{ textAlign: 'center', backgroundColor: 'var(--mantine-color-green-1)' }}>Receipt</Table.Th>
+                <Table.Th colSpan={3} style={{ textAlign: 'center', backgroundColor: 'var(--mantine-color-red-1)' }}>Payment</Table.Th>
               </Table.Tr>
               <Table.Tr>
                 <Table.Th style={{ textAlign: 'center', width: '130px', backgroundColor: 'var(--mantine-color-green-0)', fontSize: 11 }}>
@@ -276,22 +276,22 @@ const ReceiptsDisbursement = () => {
                     <Table.Tr key={`ledger-${sectionIdx}-${ledgerIdx}`}>
                       <Table.Td style={{ paddingLeft: '2rem' }}>{ledger.ledgerName}</Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
-                        ₹{formatCurrency(ledger.receipt?.uptoMonth || 0)}
+                        {formatCurrency(ledger.receipt?.uptoMonth || 0)}
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
-                        ₹{formatCurrency(ledger.receipt?.duringMonth || 0)}
+                        {formatCurrency(ledger.receipt?.duringMonth || 0)}
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right', color: 'var(--mantine-color-green-7)' }}>
-                        ₹{formatCurrency(ledger.receipt?.endOfMonth || 0)}
+                        {formatCurrency(ledger.receipt?.endOfMonth || 0)}
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
-                        ₹{formatCurrency(ledger.payment?.uptoMonth || 0)}
+                        {formatCurrency(ledger.payment?.uptoMonth || 0)}
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
-                        ₹{formatCurrency(ledger.payment?.duringMonth || 0)}
+                        {formatCurrency(ledger.payment?.duringMonth || 0)}
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right', color: 'var(--mantine-color-red-6)' }}>
-                        ₹{formatCurrency(ledger.payment?.endOfMonth || 0)}
+                        {formatCurrency(ledger.payment?.endOfMonth || 0)}
                       </Table.Td>
                     </Table.Tr>
                   ))}
@@ -299,12 +299,12 @@ const ReceiptsDisbursement = () => {
                   {/* Group Total */}
                   <Table.Tr style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}>
                     <Table.Td><Text fw={600}>Group Total - {section.sectionName}</Text></Table.Td>
-                    <Table.Td style={{ textAlign: 'right' }}><Text fw={600}>₹{formatCurrency(section.groupTotal.receipt?.uptoMonth || 0)}</Text></Table.Td>
-                    <Table.Td style={{ textAlign: 'right' }}><Text fw={600}>₹{formatCurrency(section.groupTotal.receipt?.duringMonth || 0)}</Text></Table.Td>
-                    <Table.Td style={{ textAlign: 'right' }}><Text fw={600}>₹{formatCurrency(section.groupTotal.receipt?.endOfMonth || 0)}</Text></Table.Td>
-                    <Table.Td style={{ textAlign: 'right' }}><Text fw={600}>₹{formatCurrency(section.groupTotal.payment?.uptoMonth || 0)}</Text></Table.Td>
-                    <Table.Td style={{ textAlign: 'right' }}><Text fw={600}>₹{formatCurrency(section.groupTotal.payment?.duringMonth || 0)}</Text></Table.Td>
-                    <Table.Td style={{ textAlign: 'right' }}><Text fw={600}>₹{formatCurrency(section.groupTotal.payment?.endOfMonth || 0)}</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}><Text fw={600}>{formatCurrency(section.groupTotal.receipt?.uptoMonth || 0)}</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}><Text fw={600}>{formatCurrency(section.groupTotal.receipt?.duringMonth || 0)}</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}><Text fw={600}>{formatCurrency(section.groupTotal.receipt?.endOfMonth || 0)}</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}><Text fw={600}>{formatCurrency(section.groupTotal.payment?.uptoMonth || 0)}</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}><Text fw={600}>{formatCurrency(section.groupTotal.payment?.duringMonth || 0)}</Text></Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}><Text fw={600}>{formatCurrency(section.groupTotal.payment?.endOfMonth || 0)}</Text></Table.Td>
                   </Table.Tr>
                 </React.Fragment>
               ))}
@@ -326,33 +326,33 @@ const ReceiptsDisbursement = () => {
                   <>
                     <Table.Tr style={{ backgroundColor: '#e0e0e0', borderTop: '2px solid #555' }}>
                       <Table.Td><Text fw={700}>TOTAL</Text></Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>₹{formatCurrency(uptoR)}</Text></Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>₹{formatCurrency(duringR)}</Text></Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>₹{formatCurrency(eomR)}</Text></Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>₹{formatCurrency(uptoP)}</Text></Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>₹{formatCurrency(duringP)}</Text></Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>₹{formatCurrency(eomP)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>{formatCurrency(uptoR)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>{formatCurrency(duringR)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>{formatCurrency(eomR)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>{formatCurrency(uptoP)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>{formatCurrency(duringP)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700}>{formatCurrency(eomP)}</Text></Table.Td>
                     </Table.Tr>
                     <Table.Tr style={{ backgroundColor: '#eaf4fb' }}>
                       <Table.Td><Text fw={700} fs="italic" c="blue.8">Opening Balance</Text></Table.Td>
                       <Table.Td /><Table.Td />
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} c="blue.8">₹{formatCurrency(ob)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} c="blue.8">{formatCurrency(ob)}</Text></Table.Td>
                       <Table.Td /><Table.Td /><Table.Td />
                     </Table.Tr>
                     <Table.Tr style={{ backgroundColor: '#e8f8f5' }}>
                       <Table.Td><Text fw={700} fs="italic" c="teal.8">Closing Balance</Text></Table.Td>
                       <Table.Td /><Table.Td /><Table.Td />
                       <Table.Td /><Table.Td />
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} c="teal.8">₹{formatCurrency(cb)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} c="teal.8">{formatCurrency(cb)}</Text></Table.Td>
                     </Table.Tr>
                     <Table.Tr style={{ backgroundColor: '#b0b0b0' }}>
                       <Table.Td><Text fw={700} fz={12}>GRAND TOTAL</Text></Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>₹{formatCurrency(grandUpto)}</Text></Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>₹{formatCurrency(grandDuring)}</Text></Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>₹{formatCurrency(grandEom)}</Text></Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>₹{formatCurrency(grandUpto)}</Text></Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>₹{formatCurrency(grandDuring)}</Text></Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>₹{formatCurrency(grandEom)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>{formatCurrency(grandUpto)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>{formatCurrency(grandDuring)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>{formatCurrency(grandEom)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>{formatCurrency(grandUpto)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>{formatCurrency(grandDuring)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>{formatCurrency(grandEom)}</Text></Table.Td>
                     </Table.Tr>
                   </>
                 );
@@ -575,8 +575,8 @@ const ReceiptsDisbursement = () => {
             <Table.Thead>
               <Table.Tr>
                 <Table.Th rowSpan={2}>Ledger</Table.Th>
-                <Table.Th colSpan={3} style={{ textAlign: 'center', backgroundColor: 'var(--mantine-color-green-1)' }}>Receipt (₹)</Table.Th>
-                <Table.Th colSpan={3} style={{ textAlign: 'center', backgroundColor: 'var(--mantine-color-red-1)' }}>Payment (₹)</Table.Th>
+                <Table.Th colSpan={3} style={{ textAlign: 'center', backgroundColor: 'var(--mantine-color-green-1)' }}>Receipt</Table.Th>
+                <Table.Th colSpan={3} style={{ textAlign: 'center', backgroundColor: 'var(--mantine-color-red-1)' }}>Payment</Table.Th>
               </Table.Tr>
               <Table.Tr>
                 <Table.Th style={{ textAlign: 'right', width: '100px', backgroundColor: 'var(--mantine-color-green-0)' }}>Adjustment</Table.Th>
@@ -668,7 +668,7 @@ const ReceiptsDisbursement = () => {
                       <Table.Td><Text fw={700} fs="italic" c="blue.8">Opening Balance</Text></Table.Td>
                       <Table.Td /><Table.Td />
                       <Table.Td style={{ textAlign: 'right' }}>
-                        <Text fw={700} c="blue.8">₹{formatCurrency(ob)}</Text>
+                        <Text fw={700} c="blue.8">{formatCurrency(ob)}</Text>
                       </Table.Td>
                       <Table.Td /><Table.Td /><Table.Td />
                     </Table.Tr>
@@ -677,15 +677,15 @@ const ReceiptsDisbursement = () => {
                       <Table.Td /><Table.Td /><Table.Td />
                       <Table.Td /><Table.Td />
                       <Table.Td style={{ textAlign: 'right' }}>
-                        <Text fw={700} c="teal.8">₹{formatCurrency(cb)}</Text>
+                        <Text fw={700} c="teal.8">{formatCurrency(cb)}</Text>
                       </Table.Td>
                     </Table.Tr>
                     <Table.Tr style={{ backgroundColor: '#b0b0b0' }}>
                       <Table.Td><Text fw={700} fz={12}>GRAND TOTAL</Text></Table.Td>
                       <Table.Td /><Table.Td />
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>₹{formatCurrency(grand)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>{formatCurrency(grand)}</Text></Table.Td>
                       <Table.Td /><Table.Td />
-                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>₹{formatCurrency(grand)}</Text></Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}><Text fw={700} fz={12}>{formatCurrency(grand)}</Text></Table.Td>
                     </Table.Tr>
                   </>
                 );
@@ -712,7 +712,7 @@ const ReceiptsDisbursement = () => {
 
     const adjNote = (amt) => amt > 0 ? (
       <Text size={9} c="orange.7" fw={600} style={{ lineHeight: 1.2, fontFamily: 'monospace' }}>
-        Adj: ₹{formatCurrency(amt)}
+        Adj: {formatCurrency(amt)}
       </Text>
     ) : null;
 
@@ -727,12 +727,12 @@ const ReceiptsDisbursement = () => {
           {(g.ledgers || []).map((l, li) => (
             <Table.Tr key={li} style={{ background: li % 2 === 0 ? '#fff' : '#fafafa' }}>
               <Table.Td style={{ ...tdStyle, paddingLeft: 24 }}>{l.ledgerName}</Table.Td>
-              <Table.Td style={numStyle}>₹{formatCurrency(l.amount)}{adjNote(l.adjAmount)}</Table.Td>
+              <Table.Td style={numStyle}>{formatCurrency(l.amount)}{adjNote(l.adjAmount)}</Table.Td>
             </Table.Tr>
           ))}
           <Table.Tr style={{ background: '#f0fdf4' }}>
             <Table.Td style={{ ...tdStyle, fontWeight: 600, paddingLeft: 24 }}>Sub-total</Table.Td>
-            <Table.Td style={{ ...numStyle, fontWeight: 700 }}>₹{formatCurrency(g.total)}{adjNote(g.totalAdj)}</Table.Td>
+            <Table.Td style={{ ...numStyle, fontWeight: 700 }}>{formatCurrency(g.total)}{adjNote(g.totalAdj)}</Table.Td>
           </Table.Tr>
         </React.Fragment>
       ));
@@ -747,14 +747,14 @@ const ReceiptsDisbursement = () => {
             <Table.Thead>
               <Table.Tr>
                 <Table.Th style={thStyle}>Particulars</Table.Th>
-                <Table.Th style={{ ...thStyle, textAlign: 'right', width: 130 }}>Amount (₹)</Table.Th>
+                <Table.Th style={{ ...thStyle, textAlign: 'right', width: 130 }}>Amount</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {renderGroups(receipts, 'receipt')}
               <Table.Tr style={{ background: '#bbf7d0', borderTop: '2px solid #16a34a' }}>
                 <Table.Td style={{ ...tdStyle, fontWeight: 800 }}>TOTAL RECEIPTS</Table.Td>
-                <Table.Td style={{ ...numStyle, fontWeight: 800 }}>₹{formatCurrency(reportData.totalReceipts)}{adjNote(reportData.totalReceiptsAdj)}</Table.Td>
+                <Table.Td style={{ ...numStyle, fontWeight: 800 }}>{formatCurrency(reportData.totalReceipts)}{adjNote(reportData.totalReceiptsAdj)}</Table.Td>
               </Table.Tr>
             </Table.Tbody>
           </Table>
@@ -767,14 +767,14 @@ const ReceiptsDisbursement = () => {
             <Table.Thead>
               <Table.Tr>
                 <Table.Th style={thStyle}>Particulars</Table.Th>
-                <Table.Th style={{ ...thStyle, textAlign: 'right', width: 130 }}>Amount (₹)</Table.Th>
+                <Table.Th style={{ ...thStyle, textAlign: 'right', width: 130 }}>Amount</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {renderGroups(payments, 'payment')}
               <Table.Tr style={{ background: '#fecaca', borderTop: '2px solid #dc2626' }}>
                 <Table.Td style={{ ...tdStyle, fontWeight: 800 }}>TOTAL PAYMENTS</Table.Td>
-                <Table.Td style={{ ...numStyle, fontWeight: 800 }}>₹{formatCurrency(reportData.totalPayments)}{adjNote(reportData.totalPaymentsAdj)}</Table.Td>
+                <Table.Td style={{ ...numStyle, fontWeight: 800 }}>{formatCurrency(reportData.totalPayments)}{adjNote(reportData.totalPaymentsAdj)}</Table.Td>
               </Table.Tr>
             </Table.Tbody>
           </Table>
@@ -831,7 +831,7 @@ const ReceiptsDisbursement = () => {
                     <div>
                       <Text size="xs" c="dimmed">Opening Balance</Text>
                       <Text size="xl" fw={700} c="blue">
-                        ₹{formatCurrency(openingBalance)}
+                        {formatCurrency(openingBalance)}
                       </Text>
                     </div>
                   </Group>
@@ -844,7 +844,7 @@ const ReceiptsDisbursement = () => {
                     <div>
                       <Text size="xs" c="dimmed">Total Receipts (+)</Text>
                       <Text size="xl" fw={700} c="green">
-                        ₹{formatCurrency(totalReceipts)}
+                        {formatCurrency(totalReceipts)}
                       </Text>
                     </div>
                   </Group>
@@ -857,7 +857,7 @@ const ReceiptsDisbursement = () => {
                     <div>
                       <Text size="xs" c="dimmed">Total Payments (-)</Text>
                       <Text size="xl" fw={700} c="red">
-                        ₹{formatCurrency(totalPayments)}
+                        {formatCurrency(totalPayments)}
                       </Text>
                     </div>
                   </Group>
@@ -870,7 +870,7 @@ const ReceiptsDisbursement = () => {
                     <div>
                       <Text size="xs" c="dimmed">Closing Balance</Text>
                       <Text size="xl" fw={700} c="teal">
-                        ₹{formatCurrency(closingBalance)}
+                        {formatCurrency(closingBalance)}
                       </Text>
                     </div>
                   </Group>
@@ -881,13 +881,13 @@ const ReceiptsDisbursement = () => {
             {/* Formula Display */}
             <Paper p="sm" mb="lg" withBorder bg="gray.0">
               <Group justify="center" gap="xs">
-                <Badge size="lg" variant="light" color="blue">Opening: ₹{formatCurrency(openingBalance)}</Badge>
+                <Badge size="lg" variant="light" color="blue">Opening: {formatCurrency(openingBalance)}</Badge>
                 <Text fw={700}>+</Text>
-                <Badge size="lg" variant="light" color="green">Receipts: ₹{formatCurrency(totalReceipts)}</Badge>
+                <Badge size="lg" variant="light" color="green">Receipts: {formatCurrency(totalReceipts)}</Badge>
                 <Text fw={700}>-</Text>
-                <Badge size="lg" variant="light" color="red">Payments: ₹{formatCurrency(totalPayments)}</Badge>
+                <Badge size="lg" variant="light" color="red">Payments: {formatCurrency(totalPayments)}</Badge>
                 <Text fw={700}>=</Text>
-                <Badge size="lg" variant="filled" color="teal">Closing: ₹{formatCurrency(closingBalance)}</Badge>
+                <Badge size="lg" variant="filled" color="teal">Closing: {formatCurrency(closingBalance)}</Badge>
               </Group>
             </Paper>
 

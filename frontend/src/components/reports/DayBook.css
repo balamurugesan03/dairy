@@ -419,6 +419,51 @@
 }
 
 /* =========================================================
+   SIGNATURE BLOCK  -  Single section at the very bottom of
+   the whole Day Book (President left / Secretary right)
+   ========================================================= */
+.db-signature-block {
+  background: var(--mantine-color-body);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  box-shadow: var(--mantine-shadow-sm);
+  padding: 16px 40px 22px;
+  break-inside: avoid;
+}
+
+.db-signature-meta {
+  font-size: 11px;
+  color: var(--mantine-color-dimmed);
+  margin-bottom: 30px;
+}
+
+.db-signature-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 40px;
+}
+
+.db-sign-box {
+  flex: 0 0 auto;
+  min-width: 170px;
+  text-align: center;
+}
+
+/* Blank room to physically sign, above the printed label */
+.db-sign-space {
+  height: 46px;
+}
+
+.db-sign-line {
+  border-top: 1px solid var(--mantine-color-dark-4);
+  padding-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mantine-color-dark-7);
+}
+
+/* =========================================================
    PRINT STYLES
    ========================================================= */
 @media print {
@@ -442,19 +487,28 @@
     display: none !important;
   }
 
-  /* Each card = one printed page */
+  /* Never split a single day's transactions across two pages — each day
+     card is kept intact and, as many complete days as fit are packed onto
+     one page; a day that doesn't fully fit in the remaining space simply
+     flows to the next page in one piece, with a small gap before it. */
   .db-card {
     border: none !important;
     box-shadow: none !important;
     border-radius: 0 !important;
-    margin-bottom: 0;
-    page-break-after: always;
-    break-after: page;
+    margin-bottom: 6mm;
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 
-  .db-card:last-child {
-    page-break-after: auto;
-    break-after: auto;
+  .db-signature-block {
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 4mm 10mm 6mm;
+    page-break-before: avoid;
+    break-before: avoid;
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 
   .db-card__header {
@@ -720,6 +774,20 @@
 
 [data-mantine-color-scheme="dark"] .db-side--payment .db-closing-row td {
   background: #5a2e2e;
+}
+
+[data-mantine-color-scheme="dark"] .db-signature-block {
+  background: var(--mantine-color-dark-7);
+  border-color: var(--mantine-color-dark-4);
+}
+
+[data-mantine-color-scheme="dark"] .db-signature-meta {
+  color: var(--mantine-color-gray-5);
+}
+
+[data-mantine-color-scheme="dark"] .db-sign-line {
+  border-color: var(--mantine-color-gray-6);
+  color: var(--mantine-color-gray-2);
 }
 
 /* ---------- Delete column ---------- */

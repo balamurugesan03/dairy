@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import {
   Box, Paper, Group, Text, Button, Select, Title, Badge,
-  Stack, SimpleGrid, Loader, Center, ScrollArea, Divider
+  Stack, Loader, Center, ScrollArea, Divider
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import {
@@ -331,21 +331,28 @@ const DairyRegisterReport = () => {
           </Group>
         </Box>
 
-        {/* Summary strip */}
+        {/* Summary strip — a plain flex row (never Mantine's responsive
+            SimpleGrid, whose column count is computed from the live app
+            window's width and gets baked into a static inline style; that
+            stale value is exactly what a cloned print copy would inherit,
+            instead of a real single line). flexWrap:'nowrap' + flex:1 on
+            each card guarantees one horizontal line every time, in the
+            view and in print alike, regardless of viewport/page width. */}
         {summaryCards.length > 0 && (
           <Box px="xl" py="sm" style={{ background: '#f0f4ff' }}>
-            <SimpleGrid cols={{ base: 2, sm: 5 }} spacing="xs">
+            <Box style={{ display: 'flex', flexWrap: 'nowrap', width: '100%' }}>
               {summaryCards.map((c, i) => (
                 <Box key={i} style={{
+                  flex: '1 1 0', minWidth: 0,
                   textAlign: 'center', padding: '6px 4px',
                   borderRight: i < summaryCards.length - 1 ? '1px solid #cbd5e1' : 'none',
                 }}>
-                  <Text size="xs" c="dimmed" fw={500}>{c.label}</Text>
-                  <Text size="sm" fw={800} style={{ color: c.color }}>{c.value}</Text>
-                  <Text size="xs" c="dimmed">{c.sub}</Text>
+                  <Text size="xs" c="dimmed" fw={500} truncate>{c.label}</Text>
+                  <Text size="sm" fw={800} truncate style={{ color: c.color }}>{c.value}</Text>
+                  <Text size="xs" c="dimmed" truncate>{c.sub}</Text>
                 </Box>
               ))}
-            </SimpleGrid>
+            </Box>
           </Box>
         )}
       </Paper>
@@ -646,32 +653,35 @@ const DairyRegisterReport = () => {
           </ScrollArea>
         )}
 
-        {/* ── Footer Legend ── */}
+        {/* ── Bottom Summary (Legend) — same single-horizontal-line rule as
+            the top summary strip: wrap="nowrap" on every Group here so it
+            can never fall back to stacking items one below another, in
+            either the view or the print copy. ── */}
         {days.length > 0 && (
-          <Box px="md" py="xs" style={{ borderTop: `1px solid #e2e8f0`, background: '#f8fafc' }}>
-            <Group gap="xl" wrap="wrap" justify="space-between">
-              <Group gap="md" wrap="wrap">
+          <Box px="md" py="xs" style={{ borderTop: `1px solid #e2e8f0`, background: '#f8fafc', overflowX: 'auto' }}>
+            <Group gap="xl" wrap="nowrap" justify="space-between">
+              <Group gap="md" wrap="nowrap">
                 {LEGEND.map((l, i) => (
-                  <Group key={i} gap={4}>
+                  <Group key={i} gap={4} wrap="nowrap">
                     <Box style={{ width: 10, height: 10, borderRadius: 2, background: l.color, flexShrink: 0 }} />
-                    <Text size="xs" c="dimmed">{l.label}</Text>
+                    <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>{l.label}</Text>
                   </Group>
                 ))}
               </Group>
-              <Group gap="lg">
-                <Group gap={4}>
-                  <Box style={{ width: 14, height: 8, borderRadius: 2, background: '#dcfce7' }} />
-                  <Text size="xs" c="dimmed">AM shift</Text>
+              <Group gap="lg" wrap="nowrap">
+                <Group gap={4} wrap="nowrap">
+                  <Box style={{ width: 14, height: 8, borderRadius: 2, background: '#dcfce7', flexShrink: 0 }} />
+                  <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>AM shift</Text>
                 </Group>
-                <Group gap={4}>
-                  <Box style={{ width: 14, height: 8, borderRadius: 2, background: '#fef9c3' }} />
-                  <Text size="xs" c="dimmed">PM shift</Text>
+                <Group gap={4} wrap="nowrap">
+                  <Box style={{ width: 14, height: 8, borderRadius: 2, background: '#fef9c3', flexShrink: 0 }} />
+                  <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>PM shift</Text>
                 </Group>
-                <Group gap={4}>
-                  <Box style={{ width: 14, height: 8, borderRadius: 2, background: '#bfdbfe' }} />
-                  <Text size="xs" c="dimmed">Daily Total</Text>
+                <Group gap={4} wrap="nowrap">
+                  <Box style={{ width: 14, height: 8, borderRadius: 2, background: '#bfdbfe', flexShrink: 0 }} />
+                  <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>Daily Total</Text>
                 </Group>
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
                   Proc = Procured &nbsp;|&nbsp; Hand = Handled
                 </Text>
               </Group>

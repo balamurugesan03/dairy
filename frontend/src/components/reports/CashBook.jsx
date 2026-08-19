@@ -133,10 +133,6 @@ const CashBook = () => {
 
   const dayCards = useMemo(() => {
     if (!reportData) return [];
-    const adjustmentMap = new Map();
-    for (const adj of (reportData.adjustmentSummary || [])) {
-      adjustmentMap.set(adj.date, adj);
-    }
     const dayMap = new Map();
     for (const txn of (reportData.transactions || [])) {
       const dateKey = dayjs(txn.date).format('YYYY-MM-DD');
@@ -181,16 +177,13 @@ const CashBook = () => {
       const totalPayments = payments.reduce((s, e) => s + (e.amount || 0), 0);
       const openBal = prevClosing;
       const closeBal = openBal + totalReceipts - totalPayments;
-      const adjustment = adjustmentMap.get(dateKey);
 
       cards.push({
         date: dateKey,
-        hasData: !!dayData || !!adjustment,
+        hasData: !!dayData,
         receipts, payments,
         receiptTotal: totalReceipts,
         paymentTotal: totalPayments,
-        adjustmentReceipt: adjustment?.debit || 0,
-        adjustmentPayment: adjustment?.credit || 0,
         openingBalance: openBal,
         closingBalance: closeBal
       });
@@ -201,7 +194,7 @@ const CashBook = () => {
     return cards;
   }, [reportData, fromDate, toDate]);
 
-  const renderSideTable = (side, entries, total, openBal, closeBal, adjustmentTotal) => {
+  const renderSideTable = (side, entries, total, openBal, closeBal) => {
     const isReceipt = side === 'receipt';
     const headerBg = isReceipt
       ? 'linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%)'
@@ -212,7 +205,7 @@ const CashBook = () => {
     const closingBg = isReceipt ? '#c8e6c9' : '#ffcdd2';
 
     return (
-      <Box style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <Box style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, height: '100%' }}>
         {/* Side header */}
         <Group
           gap={8}
@@ -307,16 +300,6 @@ const CashBook = () => {
                 </Table.Td>
                 <Table.Td className="cb-no-print" style={{ width: '6%' }}></Table.Td>
               </Table.Tr>
-              <Table.Tr style={{ background: 'var(--mantine-color-yellow-0)' }}>
-                <Table.Td style={{ textAlign: 'left', fontWeight: 500, fontStyle: 'italic' }} title="Adjustment (Journal) entries for this date — reference only, not included in the cash balance">
-                  Adjustment (Journal)
-                </Table.Td>
-                <Table.Td></Table.Td>
-                <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontStyle: 'italic', fontFamily: 'Consolas, monospace', fontVariantNumeric: 'tabular-nums' }}>
-                  {fmtAlways(adjustmentTotal)}
-                </Table.Td>
-                <Table.Td className="cb-no-print"></Table.Td>
-              </Table.Tr>
               <Table.Tr style={{ background: 'var(--mantine-color-gray-0)' }}>
                 <Table.Td style={{ textAlign: 'left', fontWeight: 600 }}>
                   {isReceipt ? 'Opening Balance' : 'Closing Balance'}
@@ -337,28 +320,17 @@ const CashBook = () => {
               </Table.Tr>
             </Table.Tbody>
           </Table>
-
-          {/* Signatures */}
-          <Box px="md" py="sm">
-            <Text c="dimmed" fz={10} ta="left">
-              Generated on {dayjs().format('DD/MM/YYYY HH:mm:ss')} | By ADM
-            </Text>
-            <Group justify="space-between" mt="xl" px="xl">
-              <Box style={{ borderTop: '1px solid var(--mantine-color-dark-4)', minWidth: 110, textAlign: 'center', paddingTop: 4 }}>
-                <Text fz={11} fw={600}>President</Text>
-              </Box>
-              <Box style={{ borderTop: '1px solid var(--mantine-color-dark-4)', minWidth: 110, textAlign: 'center', paddingTop: 4 }}>
-                <Text fz={11} fw={600}>Secretary</Text>
-              </Box>
-            </Group>
-          </Box>
         </Box>
       </Box>
     );
   };
 
   const renderDayCard = (card) => (
-    <Paper key={card.date} withBorder shadow="sm" radius="md" mb="lg" style={{ overflow: 'hidden', breakInside: 'avoid' }}>
+    <Paper
+      key={card.date}
+      withBorder shadow="sm" radius="md" mb="lg"
+      style={{ overflow: 'hidden', breakInside: 'avoid' }}
+    >
       {/* Header */}
       <Box
         ta="center"
@@ -398,42 +370,72 @@ const CashBook = () => {
       </Box>
 
       {/* Body — two side panels */}
-      <Group gap={0} align="stretch" wrap="nowrap" style={{ borderTop: 0 }}>
-        <Box style={{ flex: 1, borderRight: '2px solid var(--mantine-color-default-border)' }}>
-          {renderSideTable('receipt', card.receipts, card.receiptTotal, card.openingBalance, card.closingBalance, card.adjustmentReceipt)}
+      <Group gap={0} align="stretch" wrap="nowrap" style={{ borderTop: 0, display: 'flex' }}>
+        <Box style={{ flex: 1, borderRight: '2px solid var(--mantine-color-default-border)', display: 'flex' }}>
+          {renderSideTable('receipt', card.receipts, card.receiptTotal, card.openingBalance, card.closingBalance)}
         </Box>
-        <Box style={{ flex: 1 }}>
-          {renderSideTable('payment', card.payments, card.paymentTotal, card.openingBalance, card.closingBalance, card.adjustmentPayment)}
+        <Box style={{ flex: 1, display: 'flex' }}>
+          {renderSideTable('payment', card.payments, card.paymentTotal, card.openingBalance, card.closingBalance)}
         </Box>
       </Group>
     </Paper>
   );
 
-  // PRINT / PDF / EXCEL — unchanged
+  // PRINT — clones the live stylesheets so the printed page is rendered by the
+  // exact same CSS (Mantine's Group flex layout, color vars, etc.) as the on-screen
+  // view, guaranteeing the print output matches the View screen exactly.
+  const collectLiveCSS = () => {
+    let css = '';
+    for (const sheet of document.styleSheets) {
+      try {
+        const rules = sheet.cssRules || sheet.rules;
+        if (!rules) continue;
+        for (const rule of rules) css += rule.cssText + '\n';
+      } catch {
+        // Cross-origin stylesheet (e.g. Google Fonts) — skip, fall back to <link>.
+        if (sheet.href) css += `@import url("${sheet.href}");\n`;
+      }
+    }
+    return css;
+  };
+
   const handlePrint = () => {
     const content = printRef.current;
     if (!content) return;
     const printWindow = window.open('', '_blank');
+    const liveCSS = collectLiveCSS();
     printWindow.document.write(`<!DOCTYPE html>
 <html>
 <head>
   <title>Cash Book - ${formatDateShort(fromDate)} to ${formatDateShort(toDate)}</title>
+  <style>${liveCSS}</style>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Segoe UI', Tahoma, Geneva, sans-serif; color: #1a1a2e; background: #fff; font-size: 11px; }
-    .mantine-Paper-root { page-break-after: always; padding: 10mm; border: none !important; box-shadow: none !important; }
-    .mantine-Paper-root:last-child { page-break-after: auto; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #ccc; padding: 3px 5px; font-size: 9.5px; }
-    th { background: #f5f5fa; font-weight: 700; font-size: 8.5px; text-transform: uppercase; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    html, body { margin: 0; padding: 0; background: #fff; }
+    body { font-size: 11px; }
     @page { size: A4 portrait; margin: 6mm; }
+    /* Never split a single day's transactions across two pages — each day
+       card is kept intact and, as many complete days as fit are packed onto
+       one page; a day that doesn't fully fit in the remaining space simply
+       flows to the next page in one piece. */
+    .mantine-Paper-root { page-break-inside: avoid; break-inside: avoid; }
+    .cb-signature-block { page-break-inside: avoid; break-inside: avoid; }
     .cb-no-print { display: none !important; }
   </style>
 </head>
 <body>${content.innerHTML}</body>
 </html>`);
     printWindow.document.close();
-    setTimeout(() => printWindow.print(), 300);
+    let printed = false;
+    const doPrint = () => {
+      if (printed || printWindow.closed) return;
+      printed = true;
+      printWindow.focus();
+      printWindow.print();
+    };
+    printWindow.onload = doPrint;
+    // Fallback in case onload doesn't fire (some browsers with document.write).
+    setTimeout(doPrint, 400);
   };
 
   const handlePDFExport = () => {
@@ -705,6 +707,29 @@ const CashBook = () => {
         {reportData && !loading && dayCards.length > 0 && (
           <Stack ref={printRef} gap={0}>
             {dayCards.map((card) => renderDayCard(card))}
+
+            {/* Single signature section — appears once, at the very bottom of the whole Cash Book */}
+            <Box
+              className="cb-signature-block"
+              px="xl"
+              py="lg"
+              style={{
+                borderTop: '1px solid var(--mantine-color-default-border)',
+                breakInside: 'avoid',
+              }}
+            >
+              <Text c="dimmed" fz={10} ta="left" mb="xl">
+                Generated on {dayjs().format('DD/MM/YYYY HH:mm:ss')} | By ADM
+              </Text>
+              <Group justify="space-between" px="xl">
+                <Box style={{ borderTop: '1px solid var(--mantine-color-dark-4)', minWidth: 140, textAlign: 'center', paddingTop: 4 }}>
+                  <Text fz={12} fw={600}>President</Text>
+                </Box>
+                <Box style={{ borderTop: '1px solid var(--mantine-color-dark-4)', minWidth: 140, textAlign: 'center', paddingTop: 4 }}>
+                  <Text fz={12} fw={600}>Secretary</Text>
+                </Box>
+              </Group>
+            </Box>
           </Stack>
         )}
 
@@ -713,7 +738,7 @@ const CashBook = () => {
             <Stack align="center" gap="xs">
               <IconCash size={56} stroke={1.2} opacity={0.25} />
               <Text c="dimmed" size="md" fw={500}>Select a date range and click Generate</Text>
-              <Text c="dimmed" size="xs">Each date will display as a separate printable page</Text>
+              <Text c="dimmed" size="xs">Each date's entries print together — never split across pages</Text>
             </Stack>
           </Paper>
         )}

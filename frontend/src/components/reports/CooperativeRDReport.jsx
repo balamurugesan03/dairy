@@ -94,13 +94,13 @@ const secTot = (extra = {}) => ({
 });
 
 // ── Document header (shared) ──────────────────────────────────────────────
-const DocHeader = ({ companyName, dateRange, subtitle = 'End of the Month' }) => (
+const DocHeader = ({ companyName, dateRange, subtitle = 'End of the Month', monthLabelDate }) => (
   <div style={{ textAlign: 'center', borderBottom: BORDER2, paddingBottom: 10, marginBottom: 12, fontFamily: FF }}>
     <div style={{ fontSize: 18, fontWeight: 900, letterSpacing: 2, textTransform: 'uppercase' }}>
       {companyName}
     </div>
     <div style={{ fontSize: 12, fontWeight: 700, marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-      RECEIPT AND DISBURSEMENT FOR THE MONTH {fmtMonth(dateRange[0])}
+      RECEIPT AND DISBURSEMENT FOR THE MONTH {fmtMonth(monthLabelDate || dateRange[0])}
     </div>
     <div style={{ fontSize: 10, color: '#444', marginTop: 3 }}>{subtitle}</div>
     <div style={{ fontSize: 9, color: '#666', marginTop: 4 }}>
@@ -111,7 +111,8 @@ const DocHeader = ({ companyName, dateRange, subtitle = 'End of the Month' }) =>
 );
 
 // ─────────────────────────────────────────────────────────────────────────
-// VIEW 1 — Single 7-column table
+// VIEW 1 — Single column table — no Cash/Adjustment split; each side shows
+// one combined Amount column (Cash + Adjustment = Total Amount).
 // ─────────────────────────────────────────────────────────────────────────
 const SingleTable = ({ data }) => {
   const ob = data.openingBalance || 0;
@@ -127,15 +128,9 @@ const SingleTable = ({ data }) => {
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <thead>
         <tr>
-          <th rowSpan={2} style={th({ textAlign: 'left', width: '34%' })}>Ledger</th>
-          <th colSpan={2} style={th({ background: '#2c5f8a', color: '#fff' })}>Receipt (Dr)</th>
-          <th colSpan={2} style={th({ background: '#7a2a2a', color: '#fff' })}>Payment (Cr)</th>
-        </tr>
-        <tr>
-          <th style={th({ width: '13%' })}>Cash</th>
-          <th style={th({ width: '13%' })}>Total</th>
-          <th style={th({ width: '13%' })}>Cash</th>
-          <th style={th({ width: '13%' })}>Total</th>
+          <th style={th({ textAlign: 'left', width: '46%' })}>Ledger</th>
+          <th style={th({ width: '27%', background: '#2c5f8a', color: '#fff' })}>Receipt (Dr)</th>
+          <th style={th({ width: '27%', background: '#7a2a2a', color: '#fff' })}>Payment (Cr)</th>
         </tr>
       </thead>
       <tbody>
@@ -143,8 +138,6 @@ const SingleTable = ({ data }) => {
         <tr style={{ background: '#e8f5e9' }}>
           <td style={td({ fontWeight: 700, color: '#2e7d32' })}>Opening Balance (Cash in Hand)</td>
           <td style={td({ textAlign: 'right', fontWeight: 700, color: '#2e7d32' })}>{fz(ob)}</td>
-          <td style={td({ textAlign: 'right', fontWeight: 700, color: '#2e7d32' })}>{fz(ob)}</td>
-          <td style={td({})}></td>
           <td style={td({})}></td>
         </tr>
 
@@ -152,24 +145,20 @@ const SingleTable = ({ data }) => {
         {data.sections.map((sec, si) => (
           <>
             <tr key={`sh-${si}`}>
-              <td colSpan={5} style={secHdr({ borderTop: BORDER2 })}>
+              <td colSpan={3} style={secHdr({ borderTop: BORDER2 })}>
                 {sec.name} {sec.subtitle}
               </td>
             </tr>
             {sec.items.map((item, ii) => (
               <tr key={`r-${si}-${ii}`} style={{ background: ii % 2 === 0 ? '#fff' : '#fafafa' }}>
                 <td style={td({ paddingLeft: 14 })}>{item.ledgerName}</td>
-                <td style={td({ textAlign: 'right' })}>{f(item.receiptCash)}</td>
                 <td style={td({ textAlign: 'right', fontWeight: item.receiptTotal ? 600 : 400 })}>{f(item.receiptTotal)}</td>
-                <td style={td({ textAlign: 'right' })}>{f(item.paymentCash)}</td>
                 <td style={td({ textAlign: 'right', fontWeight: item.paymentTotal ? 600 : 400 })}>{f(item.paymentTotal)}</td>
               </tr>
             ))}
             <tr key={`st-${si}`}>
               <td style={secTot({ paddingLeft: 14 })}>Account Group Total</td>
-              <td style={secTot({ textAlign: 'right' })}>{fz(sec.totalReceiptCash)}</td>
               <td style={secTot({ textAlign: 'right' })}>{fz(sec.totalReceiptTotal)}</td>
-              <td style={secTot({ textAlign: 'right' })}>{fz(sec.totalPaymentCash)}</td>
               <td style={secTot({ textAlign: 'right' })}>{fz(sec.totalPaymentTotal)}</td>
             </tr>
           </>
@@ -178,9 +167,7 @@ const SingleTable = ({ data }) => {
         {/* ── Sub-total row ── */}
         <tr style={{ background: '#e0e0e0', borderTop: BORDER2 }}>
           <td style={th({ textAlign: 'left', borderTop: BORDER2 })}>SUB-TOTAL (Transactions)</td>
-          <td style={th({ borderTop: BORDER2 })}>{fz(data.grandTotalReceiptCash)}</td>
           <td style={th({ borderTop: BORDER2 })}>{fz(rT)}</td>
-          <td style={th({ borderTop: BORDER2 })}>{fz(data.grandTotalPaymentCash)}</td>
           <td style={th({ borderTop: BORDER2 })}>{fz(pT)}</td>
         </tr>
 
@@ -188,17 +175,13 @@ const SingleTable = ({ data }) => {
         <tr style={{ background: '#fff3e0' }}>
           <td style={td({ fontWeight: 700, color: '#e65100' })}>Closing Balance (Cash in Hand)</td>
           <td style={td({})}></td>
-          <td style={td({})}></td>
-          <td style={td({ textAlign: 'right', fontWeight: 700, color: '#e65100' })}>{fz(Math.max(0, cb))}</td>
           <td style={td({ textAlign: 'right', fontWeight: 700, color: '#e65100' })}>{fz(Math.max(0, cb))}</td>
         </tr>
 
         {/* ── Grand Total ── */}
         <tr style={{ background: '#b0b0b0' }}>
           <td style={th({ textAlign: 'left', fontSize: 12 })}>GRAND TOTAL</td>
-          <td style={th({ fontSize: 12 })}></td>
           <td style={th({ fontSize: 12 })}>{fz(grand)}</td>
-          <td style={th({ fontSize: 12 })}></td>
           <td style={th({ fontSize: 12 })}>{fz(grand)}</td>
         </tr>
       </tbody>
@@ -350,7 +333,12 @@ const TwoColumnTable = ({ data }) => {
 // VIEW 3 — Three-column (Upto Month | During Month | End of Month)
 // ─────────────────────────────────────────────────────────────────────────
 const ThreeColumnTable = ({ data, dateRange }) => {
-  const monthLabel = dateRange[0] ? dayjs(dateRange[0]).format('MMM YYYY') : '';
+  // "The Month" is always the calendar month containing the report's end
+  // date (data.monthStart, computed server-side) — not the selected range's
+  // start — so picking a wide range (e.g. Financial Year) still reports
+  // Upto/During/End relative to that single reference month.
+  const monthAnchor = data.monthStart || dateRange[1] || dateRange[0];
+  const monthLabel = monthAnchor ? dayjs(monthAnchor).format('MMM YYYY') : '';
 
   const thc = (extra = {}) => th({ ...extra });
   const tdc = (extra = {}) => td({ ...extra });
@@ -421,8 +409,11 @@ const ThreeColumnTable = ({ data, dateRange }) => {
 
         {/* ── Footer ── */}
         {(() => {
-          const ob = data.openingBalance || 0;
-          const cb = Math.max(0, data.closingBalance || 0);
+          // FY-bounded balances (consistent with the Upto/During/End figures
+          // above) — falls back to the range-based balance if an older
+          // backend response doesn't carry the FY fields yet.
+          const ob = data.openingBalanceFY ?? data.openingBalance ?? 0;
+          const cb = Math.max(0, (data.closingBalanceFY ?? data.closingBalance) || 0);
           const uR = (data.grandUptoR || 0) + ob;
           const dR = data.grandDuringR || 0;
           const eR = (data.grandEomR  || 0) + ob;
@@ -693,6 +684,7 @@ const CooperativeRDReport = () => {
               companyName={companyName}
               dateRange={dateRange}
               subtitle={viewMode === 'three' ? 'Three Column' : viewMode === 'two' ? 'Two Column' : 'End of the Month'}
+              monthLabelDate={viewMode === 'three' ? (reportData.monthStart || dateRange[1]) : dateRange[0]}
             />
 
             {viewMode === 'single' && <SingleTable data={reportData} />}

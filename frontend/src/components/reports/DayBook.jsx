@@ -10,7 +10,7 @@ import {
 } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { DatePickerInput } from '@mantine/dates';
+import { DatePickerInput, DateTimePicker } from '@mantine/dates';
 import {
   IconBook, IconPrinter, IconFileTypePdf,
   IconFileSpreadsheet, IconCalendar,
@@ -59,6 +59,7 @@ const DayBook = () => {
   const [singleDate,setSingleDate]= useState(new Date());
   const [dayBookData, setDayBookData] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [generatedDate, setGeneratedDate] = useState(new Date());
   const printRef = useRef();
 
   const [fromDate, toDate] = dateRange;
@@ -144,6 +145,7 @@ const DayBook = () => {
   const formatDate = (date) => dayjs(date).format('DD/MM/YYYY');
   const formatDateLong = (date) => dayjs(date).format('dddd, DD MMMM YYYY');
   const formatDateShort = (date) => dayjs(date).format('DD MMM YYYY');
+  const formatGeneratedDate = (date) => dayjs(date).format('DD/MM/YYYY HH:mm:ss');
 
   // --- Build day-wise cards data ---
   // Fill in all dates in range (even dates with no data)
@@ -336,7 +338,7 @@ const DayBook = () => {
   };
 
   // --- Render a single day card ---
-  const renderDayCard = (card, idx) => (
+  const renderDayCard = (card) => (
     <div key={card.date} className="db-card">
       {/* Card Header */}
       <div className="db-card__header">
@@ -360,81 +362,78 @@ const DayBook = () => {
   );
 
   // --- PRINT ---
+  // Clones the live stylesheets (DayBook.css + Mantine core) into the print window
+  // so the printed page is rendered by the exact same CSS as the on-screen View —
+  // this is what keeps the Receipt/Payment side-by-side layout, the flex-stretched
+  // side panels (so the Day Total / Balance / Closing Balance summary rows always
+  // land on the same line on both sides, regardless of how many entries either side
+  // has), and the signature block all rendering identically in print as in View.
+  const collectLiveCSS = () => {
+    let css = '';
+    for (const sheet of document.styleSheets) {
+      try {
+        const rules = sheet.cssRules || sheet.rules;
+        if (!rules) continue;
+        for (const rule of rules) css += rule.cssText + '\n';
+      } catch {
+        // Cross-origin stylesheet (e.g. Google Fonts) — skip, fall back to <link>.
+        if (sheet.href) css += `@import url("${sheet.href}");\n`;
+      }
+    }
+    return css;
+  };
+
   const handlePrint = (orientation = 'landscape') => {
     const content = printRef.current;
     if (!content) return;
 
     const isPortrait = orientation === 'portrait';
-    const fontSize = isPortrait ? '9px' : '11px';
-    const descMax = isPortrait ? '100px' : '140px';
-    const thFontSize = isPortrait ? '7.5px' : '8.5px';
-    const tdFontSize = isPortrait ? '8px' : '9px';
-    const ledgerFontSize = isPortrait ? '8.5px' : '9.5px';
+    const liveCSS = collectLiveCSS();
+
+    // Only tune font sizes down a notch for Portrait (narrower page) — the
+    // underlying structure/alignment always comes from the cloned live CSS above.
+    const portraitOverrides = isPortrait ? `
+      .db-card { padding: 6mm; }
+      .db-card__company { font-size: 14px; }
+      .db-card__title { font-size: 11px; padding: 2px 14px; }
+      .db-card__date { font-size: 10px; }
+      .db-card__meta { font-size: 9px; padding: 4px 16px 0; }
+      .db-side__header { font-size: 10px; padding: 4px 8px; }
+      .db-side__subtitle { font-size: 7.5px; }
+      .db-ledger { font-size: 8.5px; }
+      .db-ledger thead th { font-size: 7.5px; padding: 2px 3px; }
+      .db-ledger tbody td { font-size: 8px; padding: 1.5px 3px; }
+      .db-ledger--footer td { font-size: 8px; padding: 2px 3px; }
+      .db-closing-row td { font-size: 8.5px; }
+      .db-signature-block { padding: 3mm 8mm 5mm; }
+    ` : '';
 
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`<!DOCTYPE html>
 <html>
 <head>
   <title>Day Book - ${formatDateShort(fromDate)} to ${formatDateShort(toDate)}</title>
+  <style>${liveCSS}</style>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Segoe UI', Tahoma, Geneva, sans-serif; color: #1a1a2e; background: #fff; font-size: ${fontSize}; }
-
-    .db-card { page-break-after: always; padding: ${isPortrait ? '6mm' : '10mm'}; }
-    .db-card:last-child { page-break-after: auto; }
-
-    .db-card__header { text-align: center; padding-bottom: 8px; border-bottom: 2px solid #1a1a2e; margin-bottom: 8px; }
-    .db-card__company { font-size: ${isPortrait ? '14px' : '16px'}; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; }
-    .db-card__title-row { margin: 4px 0; }
-    .db-card__title { font-size: ${isPortrait ? '11px' : '13px'}; font-weight: 700; letter-spacing: 5px; text-transform: uppercase; padding: 2px 16px; border-top: 2px solid #4a4a6a; border-bottom: 2px solid #4a4a6a; color: #4a4a6a; }
-    .db-card__date { font-size: ${isPortrait ? '10px' : '11px'}; margin-top: 4px; font-weight: 600; }
-    .db-card__meta { display: flex; justify-content: space-between; font-size: ${isPortrait ? '9px' : '10px'}; color: #555; margin-top: 4px; padding: 0 20px; }
-
-    .db-card__body { display: flex; gap: ${isPortrait ? '4px' : '8px'}; }
-    .db-side { flex: 1; }
-
-    .db-side__header { display: flex; align-items: center; gap: 6px; padding: ${isPortrait ? '4px 6px' : '5px 8px'}; font-weight: 700; font-size: ${isPortrait ? '9px' : '11px'}; letter-spacing: 2px; text-transform: uppercase; border-bottom: 2px solid #333; }
-    .db-side--receipt .db-side__header { background: #e8f5e9; color: #2e7d32; }
-    .db-side--payment .db-side__header { background: #fce4ec; color: #c62828; }
-    .db-side__icon { display: none; }
-    .db-side__subtitle { font-size: ${isPortrait ? '7px' : '8px'}; font-weight: 400; letter-spacing: 0; }
-
-    .db-side__body { min-height: ${isPortrait ? '60px' : '100px'}; }
-
-    .db-ledger { width: 100%; border-collapse: collapse; font-size: ${ledgerFontSize}; }
-    .db-ledger thead th { background: #f5f5fa; border: 1px solid #ccc; padding: ${isPortrait ? '2px 3px' : '3px 5px'}; font-weight: 700; font-size: ${thFontSize}; text-transform: uppercase; letter-spacing: 0.5px; text-align: center; }
-    .db-ledger thead th.db-col-desc { text-align: left; }
-    .db-ledger tbody td { border: 1px solid #e0e0e0; padding: ${isPortrait ? '1.5px 3px' : '2px 5px'}; font-size: ${tdFontSize}; }
-    .db-cell-desc { text-align: left; max-width: ${descMax}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .db-cell-narration { display: block; font-size: 0.85em; color: #666; font-weight: 400; white-space: pre-line; overflow: hidden; }
-    .db-cell-vno { text-align: center; color: #666; font-size: ${isPortrait ? '7.5px' : '8.5px'}; }
-    .db-cell-amt { text-align: right; font-variant-numeric: tabular-nums; }
-    .db-cell-total { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .db-row-even { background: #fff; }
-    .db-row-odd { background: #fafafa; }
-
-    .db-side__footer { border-top: 2px solid #333; }
-    .db-ledger--footer td { border: 1px solid #ccc; padding: ${isPortrait ? '2px 3px' : '3px 5px'}; font-size: ${tdFontSize}; }
-    .db-footer-label { text-align: left; font-weight: 600; }
-    .db-footer-vno { text-align: center; }
-    .db-footer-amt { text-align: right; font-variant-numeric: tabular-nums; }
-    .db-footer-total { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
-
-    .db-day-total td { background: #f0f0f5; font-weight: 600; }
-    .db-balance-row td { background: #fafaf5; }
-    .db-closing-row td { background: #e8e8f0; font-weight: 700; border-top: 1.5px solid #333; border-bottom: 3px double #333; }
-
-    .db-no-data { text-align: center; padding: 20px; color: #999; font-style: italic; font-size: 10px; }
-    .db-empty-row td { border: none !important; }
-    .db-no-print { display: none !important; }
-
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    html, body { margin: 0; padding: 0; background: #fff; }
     @page { size: A4 ${orientation}; margin: 6mm; }
+    ${portraitOverrides}
   </style>
 </head>
 <body>${content.innerHTML}</body>
 </html>`);
     printWindow.document.close();
-    setTimeout(() => printWindow.print(), 300);
+    let printed = false;
+    const doPrint = () => {
+      if (printed || printWindow.closed) return;
+      printed = true;
+      printWindow.focus();
+      printWindow.print();
+    };
+    printWindow.onload = doPrint;
+    // Fallback in case onload doesn't fire (some browsers with document.write).
+    setTimeout(doPrint, 400);
   };
 
   // --- PDF Export ---
@@ -694,6 +693,18 @@ const DayBook = () => {
             >
               Generate
             </Button>
+
+            <DateTimePicker
+              label="Generated Date"
+              value={generatedDate}
+              onChange={(val) => setGeneratedDate(val || new Date())}
+              valueFormat="DD/MM/YYYY HH:mm"
+              size="xs"
+              leftSection={<IconCalendar size={14} />}
+              w={175}
+              radius="md"
+              clearable={false}
+            />
           </Group>
 
           <Group gap="xs">
@@ -783,7 +794,24 @@ const DayBook = () => {
 
         {dayBookData && !loading && dayCards.length > 0 && (
           <div ref={printRef}>
-            {dayCards.map((card, idx) => renderDayCard(card, idx))}
+            {dayCards.map((card) => renderDayCard(card))}
+
+            {/* Single signature section — appears once, at the very bottom of the whole Day Book */}
+            <div className="db-signature-block">
+              <div className="db-signature-meta">
+                Generated on {formatGeneratedDate(generatedDate)} | By ADM
+              </div>
+              <div className="db-signature-row">
+                <div className="db-sign-box">
+                  <div className="db-sign-space"></div>
+                  <div className="db-sign-line">President</div>
+                </div>
+                <div className="db-sign-box">
+                  <div className="db-sign-space"></div>
+                  <div className="db-sign-line">Secretary</div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -794,7 +822,7 @@ const DayBook = () => {
               Select a date range and click Generate
             </Text>
             <Text c="dimmed" size="xs" mt={4}>
-              Each date will display as a separate printable page
+              Each date's entries print together — never split across pages
             </Text>
           </Paper>
         )}

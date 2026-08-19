@@ -1761,16 +1761,10 @@ export const getCooperativeRDReport = async (req, res) => {
       });
     };
 
-    // ── Query 1: Upto (before startDate) — BusinessVoucher ───────────────
-    const uptoMap = {};
-    const uptoVouchers = await BusinessVoucher.find({
-      companyId: req.companyId,
-      status: { $ne: 'Cancelled' },
-      date: { $lt: start }
-    }).populate('entries.ledgerId', 'name group type');
-    accumulate(uptoVouchers, uptoMap);
-
-    // ── Query 2: During period — BusinessVoucher ─────────────────────────
+    // ── During period — BusinessVoucher ───────────────────────────────────
+    // Drives the Single/Two-Column views' per-ledger totals, which must
+    // always reflect the EXACT user-selected range (This Month, This
+    // Quarter, Financial Year, custom, ...) regardless of period length.
     const duringMap = {};
     const duringVouchers = await BusinessVoucher.find({
       companyId: req.companyId,
@@ -1779,8 +1773,59 @@ export const getCooperativeRDReport = async (req, res) => {
     }).populate('entries.ledgerId', 'name group type');
     accumulate(duringVouchers, duringMap);
 
+    // ── FY-bounded windows for the Three-Column (Upto Month / During Month /
+    // End of Month) view. "The Month" is always the calendar month containing
+    // the selected end date (the report's "as of" reference date) — so
+    // picking "Financial Year" (01-04 → 31-03) as the filter still reports
+    // "Upto Month" = 01-04 → end of the second-to-last month, "During Month"
+    // = just the last calendar month, and "End of Month" = the two summed —
+    // never the unbounded all-time history the old uptoMap/duringMap gave,
+    // and never the whole selected range as "During Month".
+    const fyStartYear = end.getUTCMonth() >= 3 ? end.getUTCFullYear() : end.getUTCFullYear() - 1;
+    const fyStart = new Date(Date.UTC(fyStartYear, 3, 1, 0, 0, 0, 0));
+    const monthStart = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1, 0, 0, 0, 0));
+
+    const fyUptoMap = {};
+    const fyUptoVouchers = await BusinessVoucher.find({
+      companyId: req.companyId,
+      status: { $ne: 'Cancelled' },
+      date: { $gte: fyStart, $lt: monthStart }
+    }).populate('entries.ledgerId', 'name group type');
+    accumulate(fyUptoVouchers, fyUptoMap);
+
+    const fyDuringMap = {};
+    const fyDuringVouchers = await BusinessVoucher.find({
+      companyId: req.companyId,
+      status: { $ne: 'Cancelled' },
+      date: { $gte: monthStart, $lte: end }
+    }).populate('entries.ledgerId', 'name group type');
+    accumulate(fyDuringVouchers, fyDuringMap);
+
+    // FY-opening balance — balance carried into the financial year (before
+    // fyStart), used as the Three-Column view's Opening Balance row so it
+    // stays consistent with the FY-bounded Upto/During/End figures above.
+    let openingBalanceFY = cashLedger.openingBalance || 0;
+    if ((cashLedger.openingBalanceType || 'Debit') === 'Credit') openingBalanceFY = -openingBalanceFY;
+    const cashVouchersBeforeFY = await BusinessVoucher.find({
+      companyId: req.companyId,
+      status: { $ne: 'Cancelled' },
+      date: { $lt: fyStart },
+      'entries.ledgerId': cashLedger._id
+    }).select('entries');
+    cashVouchersBeforeFY.forEach(v => {
+      v.entries.forEach(e => {
+        if (e.ledgerId && e.ledgerId.toString() === cashLedger._id.toString()) {
+          if (e.type === 'debit')  openingBalanceFY += (e.amount || 0);
+          else                     openingBalanceFY -= (e.amount || 0);
+        }
+      });
+    });
+
     // ── Build sections ───────────────────────────────────────────────────
-    const allIds = new Set([...Object.keys(uptoMap), ...Object.keys(duringMap)]);
+    const allIds = new Set([
+      ...Object.keys(duringMap),
+      ...Object.keys(fyUptoMap), ...Object.keys(fyDuringMap)
+    ]);
 
     const buildSections = () => {
       const sectionData = SECTION_MAP.map(sec => ({
@@ -1799,28 +1844,35 @@ export const getCooperativeRDReport = async (req, res) => {
       };
 
       allIds.forEach(id => {
-        const u = uptoMap[id]   || { ledgerName: duringMap[id]?.ledgerName || '', group: duringMap[id]?.group || 'Other', receiptCash: 0, receiptAdj: 0, paymentCash: 0, paymentAdj: 0 };
-        const d = duringMap[id] || { ledgerName: uptoMap[id]?.ledgerName   || '', group: uptoMap[id]?.group   || 'Other', receiptCash: 0, receiptAdj: 0, paymentCash: 0, paymentAdj: 0 };
+        // Range-bounded (exact selected period) — drives Single/Two-Column figures.
+        const d = duringMap[id] || { ledgerName: '', group: 'Other', receiptCash: 0, receiptAdj: 0, paymentCash: 0, paymentAdj: 0 };
+        // FY-bounded (Upto Month / During Month / End of Month) — drives Three-Column figures.
+        const fu = fyUptoMap[id]   || { ledgerName: '', group: 'Other', receiptCash: 0, receiptAdj: 0, paymentCash: 0, paymentAdj: 0 };
+        const fd = fyDuringMap[id] || { ledgerName: '', group: 'Other', receiptCash: 0, receiptAdj: 0, paymentCash: 0, paymentAdj: 0 };
 
-        const ledgerName = d.ledgerName || u.ledgerName;
-        const group      = d.group || u.group;
+        const ledgerName = d.ledgerName || fu.ledgerName || fd.ledgerName;
+        const group      = d.group || fu.group || fd.group;
 
-        const uptoR   = u.receiptCash + u.receiptAdj;
-        const uptoP   = u.paymentCash + u.paymentAdj;
-        const duringR = d.receiptCash + d.receiptAdj;
-        const duringP = d.paymentCash + d.paymentAdj;
+        const rangeReceiptTotal = d.receiptCash + d.receiptAdj;
+        const rangePaymentTotal = d.paymentCash + d.paymentAdj;
+
+        const uptoR   = fu.receiptCash + fu.receiptAdj;
+        const uptoP   = fu.paymentCash + fu.paymentAdj;
+        const duringR = fd.receiptCash + fd.receiptAdj;
+        const duringP = fd.paymentCash + fd.paymentAdj;
         const eomR    = uptoR + duringR;
         const eomP    = uptoP + duringP;
 
-        if (uptoR === 0 && uptoP === 0 && duringR === 0 && duringP === 0) return;
+        if (rangeReceiptTotal === 0 && rangePaymentTotal === 0 &&
+            uptoR === 0 && uptoP === 0 && duringR === 0 && duringP === 0) return;
 
         const idx = groupToSection[group];
         const target = idx !== undefined ? sectionData[idx] : others;
 
         target.items.push({
           ledgerName,
-          receiptAdj: d.receiptAdj, receiptCash: d.receiptCash, receiptTotal: duringR,
-          paymentAdj: d.paymentAdj, paymentCash: d.paymentCash, paymentTotal: duringP,
+          receiptAdj: d.receiptAdj, receiptCash: d.receiptCash, receiptTotal: rangeReceiptTotal,
+          paymentAdj: d.paymentAdj, paymentCash: d.paymentCash, paymentTotal: rangePaymentTotal,
           uptoR, duringR, eomR,
           uptoP, duringP, eomP
         });
@@ -1829,10 +1881,10 @@ export const getCooperativeRDReport = async (req, res) => {
         target.totUptoP   += uptoP;   target.totDuringP += duringP; target.totEomP += eomP;
         target.totalReceiptAdj   += d.receiptAdj;
         target.totalReceiptCash  += d.receiptCash;
-        target.totalReceiptTotal += duringR;
+        target.totalReceiptTotal += rangeReceiptTotal;
         target.totalPaymentAdj   += d.paymentAdj;
         target.totalPaymentCash  += d.paymentCash;
-        target.totalPaymentTotal += duringP;
+        target.totalPaymentTotal += rangePaymentTotal;
       });
 
       if (others.items.length > 0) sectionData.push(others);
@@ -1859,17 +1911,25 @@ export const getCooperativeRDReport = async (req, res) => {
     // ── Closing Balance = Opening + Receipts − Payments ──────────────────
     const closingBalance = openingBalance + grandTotalReceiptTotal - grandTotalPaymentTotal;
 
+    // FY-consistent closing balance for the Three-Column view — Opening
+    // Balance (FY) + End-of-Month net, matching the FY-bounded Upto/During/
+    // End figures rather than the exact-selected-range closingBalance above.
+    const closingBalanceFY = openingBalanceFY + grandEomR - grandEomP;
+
     res.json({
       success: true,
       data: {
         openingBalance,
         closingBalance,
+        openingBalanceFY,
+        closingBalanceFY,
         sections: activeSections,
         grandTotalReceiptAdj, grandTotalReceiptCash, grandTotalReceiptTotal,
         grandTotalPaymentAdj, grandTotalPaymentCash, grandTotalPaymentTotal,
         grandUptoR, grandDuringR, grandEomR,
         grandUptoP, grandDuringP, grandEomP,
-        period: { startDate: startDate || null, endDate: endDate || null }
+        period: { startDate: startDate || null, endDate: endDate || null },
+        fyStart, monthStart
       }
     });
   } catch (error) {
