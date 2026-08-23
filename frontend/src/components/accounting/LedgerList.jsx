@@ -251,11 +251,11 @@ const LedgerList = () => {
         </Badge>
       </td>
       <td>
-        ₹{ledger.openingBalance?.toFixed(2) || 0} {ledger.openingBalanceType || ''}
+        {ledger.openingBalance?.toFixed(2) || 0} {ledger.openingBalanceType || ''}
       </td>
       <td>
         <Badge color={ledger.balanceType === 'Dr' ? 'red' : 'green'} variant="light">
-          ₹{ledger.currentBalance?.toFixed(2) || 0} {ledger.balanceType || ''}
+          {ledger.currentBalance?.toFixed(2) || 0} {ledger.balanceType || ''}
         </Badge>
       </td>
       <td>{ledger.linkedEntity?.entityType || '-'}</td>

@@ -77,6 +77,93 @@ export const printReport = (contentRef, { title = 'Report', orientation = 'lands
 };
 
 /**
+ * Collects every live stylesheet rule from the current document (Mantine's
+ * emotion-injected <style> tags, any bundled <link rel="stylesheet"> CSS,
+ * etc.) as plain CSS text. Cross-origin sheets (e.g. Google Fonts) can't be
+ * read rule-by-rule, so those fall back to an @import of their href.
+ */
+const collectLiveCSS = () => {
+  let css = '';
+  for (const sheet of document.styleSheets) {
+    try {
+      const rules = sheet.cssRules || sheet.rules;
+      if (!rules) continue;
+      for (const rule of rules) css += rule.cssText + '\n';
+    } catch {
+      if (sheet.href) css += `@import url("${sheet.href}");\n`;
+    }
+  }
+  return css;
+};
+
+/**
+ * Opens a new browser window and prints the report using the SAME live CSS
+ * as the on-screen view (Mantine's Group/SimpleGrid/Paper flex & grid
+ * layout, color vars, etc.), instead of a hand-written CSS reset. This
+ * guarantees the printed layout matches the View screen exactly — nothing
+ * that sits side-by-side or in a horizontal row on screen collapses into a
+ * stacked column in print, which a hand-duplicated stylesheet can't
+ * reliably reproduce (see print/view parity fix applied to Cash Book / Day
+ * Book).
+ *
+ * @param {React.RefObject} contentRef  - ref attached to the printable content div
+ * @param {object}          options
+ * @param {string}          options.title       - <title> shown in browser print dialog
+ * @param {string}          options.orientation - 'landscape' | 'portrait' (default: 'landscape')
+ * @param {string}          options.extraCss    - print-only CSS layered on top (page size, page-break rules, etc.)
+ */
+export const printReportLive = (contentRef, { title = 'Report', orientation = 'landscape', extraCss = '' } = {}) => {
+  const content = contentRef?.current;
+  if (!content) {
+    console.warn('printReportLive: contentRef.current is null');
+    return;
+  }
+
+  const pw = window.open('', '_blank');
+  if (!pw) {
+    alert('Pop-up blocked. Please allow pop-ups for this site and try again.');
+    return;
+  }
+
+  const clone = content.cloneNode(true);
+  clone.querySelectorAll('[data-no-print]').forEach(el => el.remove());
+
+  const liveCSS = collectLiveCSS();
+
+  pw.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>${title}</title>
+  <style>${liveCSS}</style>
+  <style>
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    html, body { margin: 0; padding: 0; background: #fff; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, sans-serif; font-size: 12px; color: #1a1a2e; }
+    button, input, select, [data-mantine-component="Button"] { display: none !important; }
+    @page { size: A4 ${orientation}; margin: 8mm; }
+    ${extraCss}
+  </style>
+</head>
+<body>
+  ${clone.innerHTML}
+</body>
+</html>`);
+
+  pw.document.close();
+  let printed = false;
+  const doPrint = () => {
+    if (printed || pw.closed) return;
+    printed = true;
+    pw.focus();
+    pw.print();
+  };
+  pw.onload = doPrint;
+  // Fallback in case onload doesn't fire (some browsers with document.write).
+  setTimeout(doPrint, 400);
+};
+
+/**
  * Convenience: call printReport and then close the window after print dialog closes.
  * Same signature as printReport.
  */

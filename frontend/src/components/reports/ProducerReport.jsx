@@ -39,6 +39,12 @@ const INIT_FILTERS = {
   daysCondition: '>=', daysValue: '', qtyCondition: '>=', qtyValue: '', daysQtyLogic: 'AND',
 };
 
+// Advanced Filter options — each one is gated by its own tick/checkbox: a
+// field only takes part in report generation when its checkbox is ticked,
+// regardless of whether a value has been picked for it.
+const ADV_FILTER_KEYS = ['gender', 'caste', 'farmerType', 'dbtHas', 'welfareHas', 'mobileHas', 'bankHas', 'localBody', 'ward'];
+const INIT_ADV_ENABLED = ADV_FILTER_KEYS.reduce((acc, k) => ({ ...acc, [k]: false }), {});
+
 function SectionHeader({ label, sKey, sections, toggle, color }) {
   return (
     <Box
@@ -63,6 +69,9 @@ export default function ProducerReport() {
   const { selectedCompany } = useCompany();
 
   const [filters, setFilters] = useState(INIT_FILTERS);
+  // Which Advanced Filter options are ticked — only ticked ones are applied
+  // when the report is generated.
+  const [advEnabled, setAdvEnabled] = useState(INIT_ADV_ENABLED);
   const [centers, setCenters] = useState([]);
   const [panelOpen, setPanelOpen] = useState(true);
   const [sections, setSections] = useState({ basic: true, advanced: true, pouring: true });
@@ -83,6 +92,7 @@ export default function ProducerReport() {
 
   const setFilter = (key, val) => setFilters(prev => ({ ...prev, [key]: val }));
   const toggleSection = (key) => setSections(prev => ({ ...prev, [key]: !prev[key] }));
+  const toggleAdvEnabled = (key) => setAdvEnabled(prev => ({ ...prev, [key]: !prev[key] }));
 
   const buildParams = useCallback(() => {
     // Always fetch all records — pagination handled client-side
@@ -92,15 +102,16 @@ export default function ProducerReport() {
     if (filters.farmerNumberFrom) p.farmerNumberFrom = filters.farmerNumberFrom;
     if (filters.farmerNumberTo) p.farmerNumberTo = filters.farmerNumberTo;
     if (filters.activeOnly) p.activeOnly = 'true';
-    if (filters.gender) p.gender = filters.gender;
-    if (filters.caste) p.caste = filters.caste;
-    if (filters.farmerType) p.farmerType = filters.farmerType;
-    if (filters.dbtHas) p.dbtHas = filters.dbtHas;
-    if (filters.welfareHas) p.welfareHas = filters.welfareHas;
-    if (filters.mobileHas) p.mobileHas = filters.mobileHas;
-    if (filters.bankHas) p.bankHas = filters.bankHas;
-    if (filters.localBody) p.localBody = filters.localBody;
-    if (filters.ward) p.ward = filters.ward;
+    // Advanced Filter options only take part when their checkbox is ticked.
+    if (advEnabled.gender && filters.gender) p.gender = filters.gender;
+    if (advEnabled.caste && filters.caste) p.caste = filters.caste;
+    if (advEnabled.farmerType && filters.farmerType) p.farmerType = filters.farmerType;
+    if (advEnabled.dbtHas && filters.dbtHas) p.dbtHas = filters.dbtHas;
+    if (advEnabled.welfareHas && filters.welfareHas) p.welfareHas = filters.welfareHas;
+    if (advEnabled.mobileHas && filters.mobileHas) p.mobileHas = filters.mobileHas;
+    if (advEnabled.bankHas && filters.bankHas) p.bankHas = filters.bankHas;
+    if (advEnabled.localBody && filters.localBody) p.localBody = filters.localBody;
+    if (advEnabled.ward && filters.ward) p.ward = filters.ward;
     if (filters.fromDate) p.fromDate = dayjs(filters.fromDate).format('YYYY-MM-DD');
     if (filters.toDate) p.toDate = dayjs(filters.toDate).format('YYYY-MM-DD');
     if (filters.daysCondition) p.daysCondition = filters.daysCondition;
@@ -109,7 +120,7 @@ export default function ProducerReport() {
     if (filters.qtyValue !== '') p.qtyValue = filters.qtyValue;
     p.daysQtyLogic = filters.daysQtyLogic;
     return p;
-  }, [filters]);
+  }, [filters, advEnabled]);
 
   const handleSearch = async () => {
     setLoading(true);
@@ -129,6 +140,7 @@ export default function ProducerReport() {
 
   const handleReset = () => {
     setFilters(INIT_FILTERS);
+    setAdvEnabled(INIT_ADV_ENABLED);
     setData([]);
     setSearched(false);
     setSearch('');
@@ -349,45 +361,160 @@ export default function ProducerReport() {
               <SectionHeader label="Advanced Filter" sKey="advanced" sections={sections} toggle={toggleSection} color="#2e7d32" />
               <Collapse in={sections.advanced}>
                 <Stack gap={7} p={10}>
-                  <Select
-                    label="Sex"
-                    data={[{ value: '', label: 'All' }, { value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }]}
-                    value={filters.gender}
-                    onChange={v => setFilter('gender', v || '')}
-                    clearable size={inputSz}
-                  />
-                  <Select
-                    label="Caste"
-                    data={[{ value: '', label: 'All' }, { value: 'OC', label: 'OC' }, { value: 'OBC', label: 'OBC' }, { value: 'SC', label: 'SC' }, { value: 'ST', label: 'ST' }]}
-                    value={filters.caste}
-                    onChange={v => setFilter('caste', v || '')}
-                    clearable size={inputSz}
-                  />
-                  <Select
-                    label="Category"
-                    data={[{ value: '', label: 'All' }, { value: 'Regular', label: 'Regular' }, { value: 'Seasonal', label: 'Seasonal' }]}
-                    value={filters.farmerType}
-                    onChange={v => setFilter('farmerType', v || '')}
-                    clearable size={inputSz}
-                  />
-                  <Select label="DBT (Ksheerasree)" data={HAS_OPTIONS} value={filters.dbtHas} onChange={v => setFilter('dbtHas', v || '')} size={inputSz} />
-                  <Select label="Welfare Fund" data={HAS_OPTIONS} value={filters.welfareHas} onChange={v => setFilter('welfareHas', v || '')} size={inputSz} />
-                  <Select label="Mobile Number" data={HAS_OPTIONS} value={filters.mobileHas} onChange={v => setFilter('mobileHas', v || '')} size={inputSz} />
-                  <Select label="Bank A/C" data={HAS_OPTIONS} value={filters.bankHas} onChange={v => setFilter('bankHas', v || '')} size={inputSz} />
-                  <TextInput
-                    label="Local Body / Panchayat"
-                    placeholder="Search panchayat..."
-                    value={filters.localBody}
-                    onChange={e => setFilter('localBody', e.currentTarget.value)}
-                    size={inputSz}
-                  />
-                  <TextInput
-                    label="Ward"
-                    placeholder="Ward name or number"
-                    value={filters.ward}
-                    onChange={e => setFilter('ward', e.currentTarget.value)}
-                    size={inputSz}
-                  />
+                  <Text size={9} c="dimmed" fw={600} tt="uppercase" mb={-3}>Tick to include a filter in the report</Text>
+                  <Group gap={6} align="flex-end" wrap="nowrap">
+                    <Checkbox
+                      mb={2}
+                      checked={advEnabled.gender}
+                      onChange={() => toggleAdvEnabled('gender')}
+                      size={inputSz}
+                    />
+                    <Select
+                      label="Sex"
+                      data={[{ value: '', label: 'All' }, { value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }]}
+                      value={filters.gender}
+                      onChange={v => setFilter('gender', v || '')}
+                      disabled={!advEnabled.gender}
+                      clearable size={inputSz}
+                      style={{ flex: 1 }}
+                    />
+                  </Group>
+                  <Group gap={6} align="flex-end" wrap="nowrap">
+                    <Checkbox
+                      mb={2}
+                      checked={advEnabled.caste}
+                      onChange={() => toggleAdvEnabled('caste')}
+                      size={inputSz}
+                    />
+                    <Select
+                      label="Caste"
+                      data={[{ value: '', label: 'All' }, { value: 'OC', label: 'OC' }, { value: 'OBC', label: 'OBC' }, { value: 'SC', label: 'SC' }, { value: 'ST', label: 'ST' }]}
+                      value={filters.caste}
+                      onChange={v => setFilter('caste', v || '')}
+                      disabled={!advEnabled.caste}
+                      clearable size={inputSz}
+                      style={{ flex: 1 }}
+                    />
+                  </Group>
+                  <Group gap={6} align="flex-end" wrap="nowrap">
+                    <Checkbox
+                      mb={2}
+                      checked={advEnabled.farmerType}
+                      onChange={() => toggleAdvEnabled('farmerType')}
+                      size={inputSz}
+                    />
+                    <Select
+                      label="Category"
+                      data={[{ value: '', label: 'All' }, { value: 'Regular', label: 'Regular' }, { value: 'Seasonal', label: 'Seasonal' }]}
+                      value={filters.farmerType}
+                      onChange={v => setFilter('farmerType', v || '')}
+                      disabled={!advEnabled.farmerType}
+                      clearable size={inputSz}
+                      style={{ flex: 1 }}
+                    />
+                  </Group>
+                  <Group gap={6} align="flex-end" wrap="nowrap">
+                    <Checkbox
+                      mb={2}
+                      checked={advEnabled.dbtHas}
+                      onChange={() => toggleAdvEnabled('dbtHas')}
+                      size={inputSz}
+                    />
+                    <Select
+                      label="DBT (Ksheerasree)"
+                      data={HAS_OPTIONS}
+                      value={filters.dbtHas}
+                      onChange={v => setFilter('dbtHas', v || '')}
+                      disabled={!advEnabled.dbtHas}
+                      size={inputSz}
+                      style={{ flex: 1 }}
+                    />
+                  </Group>
+                  <Group gap={6} align="flex-end" wrap="nowrap">
+                    <Checkbox
+                      mb={2}
+                      checked={advEnabled.welfareHas}
+                      onChange={() => toggleAdvEnabled('welfareHas')}
+                      size={inputSz}
+                    />
+                    <Select
+                      label="Welfare Fund"
+                      data={HAS_OPTIONS}
+                      value={filters.welfareHas}
+                      onChange={v => setFilter('welfareHas', v || '')}
+                      disabled={!advEnabled.welfareHas}
+                      size={inputSz}
+                      style={{ flex: 1 }}
+                    />
+                  </Group>
+                  <Group gap={6} align="flex-end" wrap="nowrap">
+                    <Checkbox
+                      mb={2}
+                      checked={advEnabled.mobileHas}
+                      onChange={() => toggleAdvEnabled('mobileHas')}
+                      size={inputSz}
+                    />
+                    <Select
+                      label="Mobile Number"
+                      data={HAS_OPTIONS}
+                      value={filters.mobileHas}
+                      onChange={v => setFilter('mobileHas', v || '')}
+                      disabled={!advEnabled.mobileHas}
+                      size={inputSz}
+                      style={{ flex: 1 }}
+                    />
+                  </Group>
+                  <Group gap={6} align="flex-end" wrap="nowrap">
+                    <Checkbox
+                      mb={2}
+                      checked={advEnabled.bankHas}
+                      onChange={() => toggleAdvEnabled('bankHas')}
+                      size={inputSz}
+                    />
+                    <Select
+                      label="Bank A/C"
+                      data={HAS_OPTIONS}
+                      value={filters.bankHas}
+                      onChange={v => setFilter('bankHas', v || '')}
+                      disabled={!advEnabled.bankHas}
+                      size={inputSz}
+                      style={{ flex: 1 }}
+                    />
+                  </Group>
+                  <Group gap={6} align="flex-end" wrap="nowrap">
+                    <Checkbox
+                      mb={2}
+                      checked={advEnabled.localBody}
+                      onChange={() => toggleAdvEnabled('localBody')}
+                      size={inputSz}
+                    />
+                    <TextInput
+                      label="Local Body / Panchayat"
+                      placeholder="Search panchayat..."
+                      value={filters.localBody}
+                      onChange={e => setFilter('localBody', e.currentTarget.value)}
+                      disabled={!advEnabled.localBody}
+                      size={inputSz}
+                      style={{ flex: 1 }}
+                    />
+                  </Group>
+                  <Group gap={6} align="flex-end" wrap="nowrap">
+                    <Checkbox
+                      mb={2}
+                      checked={advEnabled.ward}
+                      onChange={() => toggleAdvEnabled('ward')}
+                      size={inputSz}
+                    />
+                    <TextInput
+                      label="Ward"
+                      placeholder="Ward name or number"
+                      value={filters.ward}
+                      onChange={e => setFilter('ward', e.currentTarget.value)}
+                      disabled={!advEnabled.ward}
+                      size={inputSz}
+                      style={{ flex: 1 }}
+                    />
+                  </Group>
                 </Stack>
               </Collapse>
             </Paper>

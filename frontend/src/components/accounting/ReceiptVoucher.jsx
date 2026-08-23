@@ -264,7 +264,7 @@ const ReceiptVoucher = () => {
 
               <div class="amount-section">
                 <div class="label">Amount Received</div>
-                <div class="amount">₹${(voucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                <div class="amount">${(voucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
               </div>
 
               <div class="narration-section">
@@ -534,7 +534,7 @@ const ReceiptVoucher = () => {
                       <td>{creditEntry?.ledgerName || '-'}</td>
                       <td style={{ textAlign: 'right' }}>
                         <Text fw={600} c="green">
-                          ₹{(voucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          {(voucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </Text>
                       </td>
                       <td>
@@ -609,7 +609,7 @@ const ReceiptVoucher = () => {
             <Group justify="space-between">
               <Text fw={500}>Total Receipts</Text>
               <Text size="xl" fw={700} c="green">
-                ₹{vouchers.reduce((sum, v) => sum + (v.totalDebit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                {vouchers.reduce((sum, v) => sum + (v.totalDebit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </Text>
             </Group>
           </Card>
@@ -704,7 +704,7 @@ const ReceiptVoucher = () => {
                     <Group justify="space-between">
                       <Text size="sm" c="dimmed">Amount to be recorded:</Text>
                       <Text fw={700} c="green" size="lg">
-                        ₹{parseFloat(form.values.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {parseFloat(form.values.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </Text>
                     </Group>
                   </Card>
@@ -845,7 +845,7 @@ const ReceiptVoucher = () => {
                     <div>
                       <Text size="xs" c="dimmed">Total Amount</Text>
                       <Text fw={700} c="green" size="lg">
-                        ₹{getMultipleTotals().toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {getMultipleTotals().toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </Text>
                     </div>
                   </Group>
@@ -910,7 +910,7 @@ const ReceiptVoucher = () => {
                 <Card p="md" withBorder bg="green.0">
                   <Text size="sm" c="dimmed" mb="xs">Amount Received</Text>
                   <Text size="xl" fw={700} c="green">
-                    ₹{(selectedVoucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    {(selectedVoucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </Text>
                 </Card>
               </Grid.Col>

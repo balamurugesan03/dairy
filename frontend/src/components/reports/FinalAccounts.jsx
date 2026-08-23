@@ -115,7 +115,7 @@ const TradingAccount = ({ data, period }) => {
         <Table.Tr>
           <Table.Th w={32} ta="center" style={{ fontSize: 11 }}>#</Table.Th>
           <Table.Th>Particulars</Table.Th>
-          <Table.Th w={130} ta="right">Amount (₹)</Table.Th>
+          <Table.Th w={130} ta="right">Amount</Table.Th>
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>{children}</Table.Tbody>
@@ -235,7 +235,7 @@ const ProfitLoss = ({ data }) => {
         <Table.Tr>
           <Table.Th w={32} ta="center" style={{ fontSize: 11 }}>#</Table.Th>
           <Table.Th>Particulars</Table.Th>
-          <Table.Th w={130} ta="right">Amount (₹)</Table.Th>
+          <Table.Th w={130} ta="right">Amount</Table.Th>
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>{children}</Table.Tbody>
@@ -308,7 +308,7 @@ const ProfitLoss = ({ data }) => {
       <Card withBorder radius="md" p="sm" bg={isProfit ? 'green.0' : 'red.0'}>
         <Group justify="center" gap="xl">
           <Text fw={700} c={isProfit ? 'green' : 'red'} size="lg">
-            {isProfit ? 'NET PROFIT' : 'NET LOSS'}: ₹ {fmt(netProfit)}
+            {isProfit ? 'NET PROFIT' : 'NET LOSS'}: {fmt(netProfit)}
           </Text>
           <Badge color={isProfit ? 'green' : 'red'} size="lg">
             {isProfit ? 'Profitable' : 'Loss-Making'}
@@ -332,7 +332,7 @@ const BalanceSheetSection = ({ data }) => {
         <Table.Tr>
           <Table.Th w={32} ta="center" style={{ fontSize: 11 }}>#</Table.Th>
           <Table.Th>Particulars</Table.Th>
-          <Table.Th w={130} ta="right">Amount (₹)</Table.Th>
+          <Table.Th w={130} ta="right">Amount</Table.Th>
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>{children}</Table.Tbody>
@@ -352,8 +352,8 @@ const BalanceSheetSection = ({ data }) => {
 
       {!isTallied && (
         <Alert icon={<IconAlertCircle size={16} />} color="orange" title="Not Balanced">
-          Liabilities + Capital (₹ {fmt(totalLiabilitiesAndCapital)}) ≠ Assets (₹ {fmt(totalAssets)}) |
-          Difference: ₹ {fmt(Math.abs((totalLiabilitiesAndCapital || 0) - (totalAssets || 0)))}
+          Liabilities + Capital ({fmt(totalLiabilitiesAndCapital)}) ≠ Assets ({fmt(totalAssets)}) |
+          Difference: {fmt(Math.abs((totalLiabilitiesAndCapital || 0) - (totalAssets || 0)))}
         </Alert>
       )}
 
@@ -412,7 +412,7 @@ const BalanceSheetSection = ({ data }) => {
 
       {isTallied && (
         <Alert icon={<IconScale size={16} />} color="green" title="Balance Sheet Tallied">
-          Total Liabilities & Capital = Total Assets = ₹ {fmt(totalAssets)}
+          Total Liabilities & Capital = Total Assets = {fmt(totalAssets)}
         </Alert>
       )}
     </Stack>
@@ -435,7 +435,7 @@ const TradingAccountV2 = ({ data, period }) => {
         <Table.Tr>
           <Table.Th w={32} ta="center" style={{ fontSize: 11 }}>#</Table.Th>
           <Table.Th>Particulars</Table.Th>
-          <Table.Th w={130} ta="right">Amount (₹)</Table.Th>
+          <Table.Th w={130} ta="right">Amount</Table.Th>
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>{children}</Table.Tbody>
@@ -536,7 +536,7 @@ const ProfitLossV2 = ({ data }) => {
         <Table.Tr>
           <Table.Th w={32} ta="center" style={{ fontSize: 11 }}>#</Table.Th>
           <Table.Th>Particulars</Table.Th>
-          <Table.Th w={130} ta="right">Amount (₹)</Table.Th>
+          <Table.Th w={130} ta="right">Amount</Table.Th>
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>{children}</Table.Tbody>
@@ -588,7 +588,7 @@ const ProfitLossV2 = ({ data }) => {
       <Card withBorder radius="md" p="sm" bg={isProfit ? 'green.0' : 'red.0'}>
         <Group justify="center" gap="xl">
           <Text fw={700} c={isProfit ? 'green' : 'red'} size="lg">
-            {isProfit ? 'NET PROFIT' : 'NET LOSS'}: ₹ {fmt(netProfit)}
+            {isProfit ? 'NET PROFIT' : 'NET LOSS'}: {fmt(netProfit)}
           </Text>
           <Badge color={isProfit ? 'green' : 'red'} size="lg">{isProfit ? 'Profitable' : 'Loss-Making'}</Badge>
         </Group>
@@ -613,7 +613,7 @@ const BalanceSheetV2 = ({ data }) => {
         <Table.Tr>
           <Table.Th w={32} ta="center" style={{ fontSize: 11 }}>#</Table.Th>
           <Table.Th>Particulars</Table.Th>
-          <Table.Th w={130} ta="right">Amount (₹)</Table.Th>
+          <Table.Th w={130} ta="right">Amount</Table.Th>
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>{children}</Table.Tbody>
@@ -631,8 +631,8 @@ const BalanceSheetV2 = ({ data }) => {
       </Box>
       {!isTallied && (
         <Alert icon={<IconAlertCircle size={16} />} color="orange" title="Not Balanced">
-          Liabilities (₹ {fmt(grandLiabilities)}) ≠ Assets (₹ {fmt(grandAssets)}) |
-          Difference: ₹ {fmt(Math.abs(grandLiabilities - grandAssets))}
+          Liabilities ({fmt(grandLiabilities)}) ≠ Assets ({fmt(grandAssets)}) |
+          Difference: {fmt(Math.abs(grandLiabilities - grandAssets))}
         </Alert>
       )}
       <TwoCol
@@ -686,7 +686,7 @@ const BalanceSheetV2 = ({ data }) => {
       />
       {isTallied && (
         <Alert icon={<IconScale size={16} />} color="green" title="Balance Sheet Tallied">
-          Total Liabilities = Total Assets = ₹ {fmt(grandAssets)}
+          Total Liabilities = Total Assets = {fmt(grandAssets)}
         </Alert>
       )}
     </Stack>

@@ -229,7 +229,7 @@ const VoucherList = () => {
           <Group gap={4} justify="flex-end" noWrap>
             <IconTrendingUp size={14} color="red" />
             <Text fw={600} c="red" size="sm">
-              ₹{(voucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              {(voucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
           </Group>
         </td>
@@ -237,7 +237,7 @@ const VoucherList = () => {
           <Group gap={4} justify="flex-end" noWrap>
             <IconTrendingDown size={14} color="green" />
             <Text fw={600} c="green" size="sm">
-              ₹{(voucher.totalCredit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              {(voucher.totalCredit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
           </Group>
         </td>
@@ -456,7 +456,7 @@ const VoucherList = () => {
               <IconTrendingUp size={18} color="red" />
             </Group>
             <Text size="xl" fw={700} c="red" mt="xs">
-              ₹{stats.totalDebits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              {stats.totalDebits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
           </Paper>
           
@@ -466,7 +466,7 @@ const VoucherList = () => {
               <IconTrendingDown size={18} color="green" />
             </Group>
             <Text size="xl" fw={700} c="green" mt="xs">
-              ₹{stats.totalCredits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              {stats.totalCredits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
           </Paper>
           
@@ -476,7 +476,7 @@ const VoucherList = () => {
               {stats.difference < 0.01 ? <IconCheck size={18} color="green" /> : <IconX size={18} color="red" />}
             </Group>
             <Text size="xl" fw={700} c={stats.difference < 0.01 ? 'green' : 'red'} mt="xs">
-              ₹{stats.difference.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              {stats.difference.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
           </Paper>
         </SimpleGrid>
@@ -643,8 +643,8 @@ const VoucherList = () => {
                 <thead>
                   <tr>
                     <th>Ledger</th>
-                    <th style={{ textAlign: 'right', color: 'red' }}>Receipt (₹)</th>
-                    <th style={{ textAlign: 'right', color: 'green' }}>Payment (₹)</th>
+                    <th style={{ textAlign: 'right', color: 'red' }}>Receipt</th>
+                    <th style={{ textAlign: 'right', color: 'green' }}>Payment</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -662,10 +662,10 @@ const VoucherList = () => {
                   <tr style={{ fontWeight: 700, background: '#f8f9fa' }}>
                     <td>Total</td>
                     <td style={{ textAlign: 'right', color: 'red' }}>
-                      ₹{(selectedVoucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {(selectedVoucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
                     <td style={{ textAlign: 'right', color: 'green' }}>
-                      ₹{(selectedVoucher.totalCredit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {(selectedVoucher.totalCredit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
                   </tr>
                 </tbody>

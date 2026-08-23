@@ -51,7 +51,7 @@ const SideTable = ({ title, color, items, capital, netProfit, showExtra }) => {
             <Table.Tr>
               <Table.Th w={36} ta="center" style={{ fontSize: 12 }}>#</Table.Th>
               <Table.Th>Ledger / Particulars</Table.Th>
-              <Table.Th w={130} ta="right">Amount (₹)</Table.Th>
+              <Table.Th w={130} ta="right">Amount</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -86,7 +86,7 @@ const SideTable = ({ title, color, items, capital, netProfit, showExtra }) => {
               </Table.Td>
               <Table.Td ta="right">
                 <Text fw={700} size="sm" c={grandTotal < 0 ? 'red' : color}>
-                  ₹ {grandTotal < 0 ? `(${fmt(grandTotal)})` : fmt(grandTotal)}
+                  {grandTotal < 0 ? `(${fmt(grandTotal)})` : fmt(grandTotal)}
                 </Text>
               </Table.Td>
             </Table.Tr>
@@ -187,10 +187,10 @@ const BalanceSheet = () => {
       {data && !isBalanced && (
         <Alert icon={<IconAlertCircle size={16} />} color="orange" title="Balance Sheet Not Balanced">
           <Group gap="xl">
-            <Text size="sm">Liabilities + Capital: ₹ {fmt(data.totalLiabilitiesAndCapital)}</Text>
-            <Text size="sm">Assets: ₹ {fmt(data.totalAssets)}</Text>
+            <Text size="sm">Liabilities + Capital: {fmt(data.totalLiabilitiesAndCapital)}</Text>
+            <Text size="sm">Assets: {fmt(data.totalAssets)}</Text>
             <Text size="sm" fw={600}>
-              Difference: ₹ {fmt(Math.abs((data.totalLiabilitiesAndCapital || 0) - (data.totalAssets || 0)))}
+              Difference: {fmt(Math.abs((data.totalLiabilitiesAndCapital || 0) - (data.totalAssets || 0)))}
             </Text>
           </Group>
         </Alert>
@@ -199,7 +199,7 @@ const BalanceSheet = () => {
       {/* Balance indicator */}
       {data && isBalanced && (
         <Alert icon={<IconScale size={16} />} color="green" title="Balance Sheet is Balanced">
-          <Text size="sm">Total Liabilities & Capital = Total Assets = ₹ {fmt(data.totalAssets)}</Text>
+          <Text size="sm">Total Liabilities & Capital = Total Assets = {fmt(data.totalAssets)}</Text>
         </Alert>
       )}
 
@@ -232,27 +232,27 @@ const BalanceSheet = () => {
             <Grid.Col span={3}>
               <Card withBorder radius="md" p="sm" bg="blue.0">
                 <Text size="xs" c="dimmed" tt="uppercase" fw={500}>Total Liabilities</Text>
-                <Text size="xl" fw={700} c="blue">₹ {fmt(data.totalLiabilities)}</Text>
+                <Text size="xl" fw={700} c="blue">{fmt(data.totalLiabilities)}</Text>
               </Card>
             </Grid.Col>
             <Grid.Col span={3}>
               <Card withBorder radius="md" p="sm" bg="violet.0">
                 <Text size="xs" c="dimmed" tt="uppercase" fw={500}>Total Capital</Text>
-                <Text size="xl" fw={700} c="violet">₹ {fmt(data.totalCapital)}</Text>
+                <Text size="xl" fw={700} c="violet">{fmt(data.totalCapital)}</Text>
               </Card>
             </Grid.Col>
             <Grid.Col span={3}>
               <Card withBorder radius="md" p="sm" bg={data.netProfit >= 0 ? 'green.0' : 'red.0'}>
                 <Text size="xs" c="dimmed" tt="uppercase" fw={500}>Net Profit / Loss</Text>
                 <Text size="xl" fw={700} c={data.netProfit >= 0 ? 'green' : 'red'}>
-                  {data.netProfit < 0 ? '(' : ''}₹ {fmt(data.netProfit)}{data.netProfit < 0 ? ')' : ''}
+                  {data.netProfit < 0 ? '(' : ''}{fmt(data.netProfit)}{data.netProfit < 0 ? ')' : ''}
                 </Text>
               </Card>
             </Grid.Col>
             <Grid.Col span={3}>
               <Card withBorder radius="md" p="sm" bg="teal.0">
                 <Text size="xs" c="dimmed" tt="uppercase" fw={500}>Total Assets</Text>
-                <Text size="xl" fw={700} c="teal">₹ {fmt(data.totalAssets)}</Text>
+                <Text size="xl" fw={700} c="teal">{fmt(data.totalAssets)}</Text>
               </Card>
             </Grid.Col>
           </Grid>

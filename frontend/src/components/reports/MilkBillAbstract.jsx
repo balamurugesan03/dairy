@@ -158,7 +158,7 @@ const MilkBillAbstract = () => {
             style={{ padding: '6px 14px', color: '#fff', fontWeight: 800, fontSize: 12 }}
           >
             {m.monthLabel} &nbsp;—&nbsp; {m.rows.length} Collection{m.rows.length !== 1 ? 's' : ''} &nbsp;|&nbsp;
-            Total Qty: {fmt3(m.totalQty)} L &nbsp;|&nbsp; Milk Value: ₹{fmt2(m.totalAmount)}
+            Total Qty: {fmt3(m.totalQty)} L &nbsp;|&nbsp; Milk Value: {fmt2(m.totalAmount)}
           </Table.Td>
         </Table.Tr>
       );
@@ -180,16 +180,16 @@ const MilkBillAbstract = () => {
             <Table.Td style={{ ...tdRight, color: '#0369a1', fontWeight: 600 }}>{fmt3(row.qty)}</Table.Td>
             <Table.Td style={tdRight}>{fmt2(row.fat)}</Table.Td>
             <Table.Td style={tdRight}>{fmt2(row.snf)}</Table.Td>
-            <Table.Td style={tdRight}>₹{fmt2(row.rate)}</Table.Td>
+            <Table.Td style={tdRight}>{fmt2(row.rate)}</Table.Td>
             <Table.Td style={{ ...tdRight, color: '#166534' }}>{fmtD(row.incentive)}</Table.Td>
-            <Table.Td style={{ ...tdRight, fontWeight: 700 }}>₹{fmt2(row.amount)}</Table.Td>
+            <Table.Td style={{ ...tdRight, fontWeight: 700 }}>{fmt2(row.amount)}</Table.Td>
             {DEDUCTION_COLS.map(c => (
               <Table.Td key={c.key} style={{ ...tdRight, color: '#dc2626' }}>
                 {fmtD(row.deductions?.[c.key])}
               </Table.Td>
             ))}
             <Table.Td style={{ ...tdRight, fontWeight: 800, color: '#065f46' }}>
-              ₹{fmt2(row.netPayable)}
+              {fmt2(row.netPayable)}
             </Table.Td>
           </Table.Tr>
         );
@@ -209,14 +209,14 @@ const MilkBillAbstract = () => {
           <Table.Td style={tdBase} />
           <Table.Td style={tdBase} />
           <Table.Td style={tdBase} />
-          <Table.Td style={{ ...tdRight, fontWeight: 800 }}>₹{fmt2(m.totalAmount)}</Table.Td>
+          <Table.Td style={{ ...tdRight, fontWeight: 800 }}>{fmt2(m.totalAmount)}</Table.Td>
           {DEDUCTION_COLS.map(c => (
             <Table.Td key={c.key} style={{ ...tdRight, fontWeight: 800, color: '#b91c1c' }}>
               {fmt2(m.totals?.[c.key])}
             </Table.Td>
           ))}
           <Table.Td style={{ ...tdRight, fontWeight: 900, color: '#064e3b', fontSize: 12 }}>
-            ₹{fmt2(m.totalPayment)}
+            {fmt2(m.totalPayment)}
           </Table.Td>
         </Table.Tr>
       );
@@ -237,14 +237,14 @@ const MilkBillAbstract = () => {
           <Table.Td style={tdBase} />
           <Table.Td style={tdBase} />
           <Table.Td style={tdBase} />
-          <Table.Td style={{ ...tdRight, fontWeight: 900, fontSize: 12 }}>₹{fmt2(gt.amount)}</Table.Td>
+          <Table.Td style={{ ...tdRight, fontWeight: 900, fontSize: 12 }}>{fmt2(gt.amount)}</Table.Td>
           {DEDUCTION_COLS.map(c => (
             <Table.Td key={c.key} style={{ ...tdRight, fontWeight: 900, color: '#991b1b', fontSize: 12 }}>
               {fmt2(gt.deductions?.[c.key])}
             </Table.Td>
           ))}
           <Table.Td style={{ ...tdRight, fontWeight: 900, color: '#064e3b', fontSize: 13 }}>
-            ₹{fmt2(gt.payment)}
+            {fmt2(gt.payment)}
           </Table.Td>
         </Table.Tr>
       );
@@ -284,9 +284,9 @@ const MilkBillAbstract = () => {
               {[
                 { label: 'Total Collections', value: totalRows,              color: 'blue.8' },
                 { label: 'Total Qty (L)',      value: fmt3(gt.qty),          color: 'cyan.8' },
-                { label: 'Milk Value',         value: `₹${fmt2(gt.amount)}`,color: 'green.8' },
-                { label: 'Total Deductions',   value: `₹${fmt2(DEDUCTION_COLS.reduce((s,c) => s + parseFloat(gt.deductions?.[c.key]||0), 0))}`, color: 'red.7' },
-                { label: 'Net Payable',        value: `₹${fmt2(gt.payment)}`,color: 'teal.8' }
+                { label: 'Milk Value',         value: `${fmt2(gt.amount)}`,color: 'green.8' },
+                { label: 'Total Deductions',   value: `${fmt2(DEDUCTION_COLS.reduce((s,c) => s + parseFloat(gt.deductions?.[c.key]||0), 0))}`, color: 'red.7' },
+                { label: 'Net Payable',        value: `${fmt2(gt.payment)}`,color: 'teal.8' }
               ].map(s => (
                 <Box key={s.label} style={{ background: 'rgba(255,255,255,0.85)', borderRadius: 8, padding: '8px 12px', textAlign: 'center' }}>
                   <Text size="xs" c="dimmed" fw={600} tt="uppercase">{s.label}</Text>

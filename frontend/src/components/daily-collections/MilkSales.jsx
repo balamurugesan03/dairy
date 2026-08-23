@@ -268,15 +268,17 @@ export default function MilkSales() {
   const formRef      = useRef({});
   formRef.current = { mode, session, date, billNo, center, agent, category, creditor, opCr, litre, rate, amount, pType, editingId, waEnabled, waConnected: waStatus.connected };
 
-  // ── Focus the field the user was actually last working in ──────────────────
-  // Users keep both F2 (Milk Purchase) and F3 (Milk Sales) open together and
-  // swap mid-entry — form values already survive that swap (restored from
-  // sessionStorage above), but focus used to always snap back to Litre.
-  // Resume on Rate instead when it already holds a value (the user had
-  // progressed past Litre), so they pick up where they left off.
+  // ── Always land the cursor on Litre ─────────────────────────────────────
+  // Rate is auto-fetched from the Milk Sales Rate table and read-only — it's
+  // never something the user tabs into or types in — so Litre is the only
+  // field that should ever receive focus: on initial mount, after a form
+  // reset (New/Clear/Save), after Cancel Edit, and whenever the user swaps
+  // between this screen and Milk Purchase (F2/F3, or plain P/S) mid-entry.
+  // (A previous "resume on whichever field held a value" heuristic used to
+  // land focus on Rate instead once it auto-filled, which — being
+  // read-only — looked like focus never landed anywhere at all.)
   const focusLastActiveField = () => {
-    const f = formRef.current;
-    (f.rate !== '' && f.rate != null ? rateRef : litrRef).current?.focus({ preventScroll: true });
+    litrRef.current?.focus({ preventScroll: true });
   };
 
   // ── Auto-calc amount ──────────────────────────────────────────────────────

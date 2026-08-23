@@ -37,6 +37,7 @@ import {
   getReceiptsPayments,
   getLedgerAbstractGrouped,
   getRDStatementDynamic,
+  getRDStatementUnified,
   getReceiptsPaymentsDynamic
 } from '../controllers/accountingReportsController.js';
 import {
@@ -108,6 +109,7 @@ router.get('/receipts-payments', getReceiptsPayments);
 // Dynamic (ac_ledgers-driven) accounting reports
 router.get('/ledger-abstract-grouped', getLedgerAbstractGrouped);
 router.get('/rd-statement', getRDStatementDynamic);
+router.get('/rd-statement-unified', getRDStatementUnified);
 router.get('/receipts-payments-statement', getReceiptsPaymentsDynamic);
 router.get('/trading-account-v2', getTradingAccountV2);
 router.get('/profit-loss-v2', getProfitLossV2);

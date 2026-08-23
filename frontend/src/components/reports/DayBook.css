@@ -500,13 +500,20 @@
     break-inside: avoid;
   }
 
+  /* No page-break-before:avoid here on purpose — forcing the signature to
+     stay glued to whichever day card immediately precedes it means that,
+     whenever the two don't jointly fit the space left on a page, the browser
+     pushes the ENTIRE last day card to a fresh page too (even though that
+     day alone would have fit), wasting up to a full day's worth of space on
+     the previous page. Leaving this unconstrained lets the signature simply
+     flow into whatever room remains after the last day card and only spill
+     to its own page when it truly doesn't fit — so day cards always pack as
+     tightly as possible. */
   .db-signature-block {
     border: none !important;
     box-shadow: none !important;
     border-radius: 0 !important;
     padding: 4mm 10mm 6mm;
-    page-break-before: avoid;
-    break-before: avoid;
     page-break-inside: avoid;
     break-inside: avoid;
   }

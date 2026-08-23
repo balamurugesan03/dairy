@@ -240,7 +240,7 @@ const CashBook = () => {
                   {isReceipt ? 'Receipt No' : 'Voucher No'}
                 </Table.Th>
                 <Table.Th style={{ textAlign: 'right', width: '28%', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                  Cash (₹)
+                  Cash
                 </Table.Th>
                 <Table.Th className="cb-no-print" style={{ width: '6%', textAlign: 'center', padding: 0 }} />
               </Table.Tr>
@@ -364,8 +364,8 @@ const CashBook = () => {
         </Box>
         <Text fz={13} fw={600} mt={4}>{formatDateLong(card.date)}</Text>
         <Group justify="space-between" px={40} mt={6} style={{ fontFamily: 'Consolas, monospace', fontVariantNumeric: 'tabular-nums' }}>
-          <Text fz={12} c="dimmed" fw={500}>Opening: ₹{fmtAlways(card.openingBalance)}</Text>
-          <Text fz={12} c="dimmed" fw={500}>Closing: ₹{fmtAlways(card.closingBalance)}</Text>
+          <Text fz={12} c="dimmed" fw={500}>Opening: {fmtAlways(card.openingBalance)}</Text>
+          <Text fz={12} c="dimmed" fw={500}>Closing: {fmtAlways(card.closingBalance)}</Text>
         </Group>
       </Box>
 
@@ -443,7 +443,7 @@ const CashBook = () => {
     const pageWidth = doc.internal.pageSize.width;
     const halfW = (pageWidth - 30) / 2;
 
-    const head = [['Description', 'No', 'Cash (₹)']];
+    const head = [['Description', 'No', 'Cash']];
     const colStyles = {
       0: { halign: 'left',   cellWidth: halfW * 0.50 },
       1: { halign: 'center', cellWidth: halfW * 0.20 },
@@ -536,7 +536,7 @@ const CashBook = () => {
     for (const card of dayCards) {
       rows.push([`Date: ${formatDateLong(card.date)}`]);
       rows.push(['RECEIPTS', '', '', '', 'PAYMENTS', '', '']);
-      rows.push(['Description', 'Receipt No', 'Cash (₹)', '', 'Description', 'Voucher No', 'Cash (₹)']);
+      rows.push(['Description', 'Receipt No', 'Cash', '', 'Description', 'Voucher No', 'Cash']);
 
       const maxRows = Math.max(card.receipts.length, card.payments.length, 1);
       for (let i = 0; i < maxRows; i++) {

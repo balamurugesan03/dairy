@@ -1,4 +1,5 @@
 ﻿import { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { farmerAPI, advanceAPI, producerOpeningAPI } from '../../services/api';
 import {
   Container, Paper, Group, Text, Title, Box, Badge,
@@ -75,6 +76,10 @@ const BalanceCard = ({ label, value, color, icon, note }) => {
 ════════════════════════════════════════════════════════ */
 const CashAdvanceVoucher = () => {
   const printRef = useRef();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const farmerFieldRef = useRef(null);
+  const amountRef      = useRef(null);
 
   const handlePrint = useReactToPrint({
     contentRef: printRef,
@@ -114,17 +119,23 @@ const CashAdvanceVoucher = () => {
   const [form, setForm] = useState(emptyForm());
   const [errors, setErrors] = useState({});
 
-  /* ── F5 → open New Cash Advance modal ── */
+  /* ── F5 → open New Cash Advance modal ──────────────────────────────────
+     F5 is a global hotkey handled once, in MainLayout, so it works from any
+     page — it navigates here AND carries a one-shot "open the form" signal
+     via navigation state (this avoids needing a first F5 to land on this
+     page and a second F5, now finally caught by a listener that only exists
+     after this component has mounted, to actually open the modal). Reading
+     that signal here also means F5 opens the modal instantly when the user
+     is already on this page, since navigating to the same route still
+     produces a new location/state. */
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'F5') {
-        e.preventDefault();
-        setModalOpen(true);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+    if (location.state?.openNewCashAdvance) {
+      setModalOpen(true);
+      // Consume the signal so Back/Forward or a later same-page re-render
+      // doesn't reopen the modal on its own.
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Load farmer list ── */
   useEffect(() => {
@@ -476,6 +487,7 @@ const CashAdvanceVoucher = () => {
           header: { borderBottom: '1px solid #eee', paddingBottom: 12 },
           body:   { paddingTop: 16 },
         }}
+        onEnterTransitionEnd={() => farmerFieldRef.current?.focus()}
       >
         <Stack gap="md">
 
@@ -528,11 +540,17 @@ const CashAdvanceVoucher = () => {
           {/* ── Producer & Date ── */}
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
             <Select
+              ref={farmerFieldRef}
               label="Producer"
               placeholder="Search and select producer"
               data={farmers}
               value={form.farmerId}
-              onChange={v => setField('farmerId', v)}
+              onChange={v => {
+                setField('farmerId', v);
+                // Producer chosen (typed number + Enter, or clicked) → move
+                // straight to Advance Amount, same as Tab order.
+                if (v) setTimeout(() => amountRef.current?.focus(), 50);
+              }}
               searchable clearable
               leftSection={<IconUser size={16} color="#666" />}
               error={errors.farmerId}
@@ -560,10 +578,14 @@ const CashAdvanceVoucher = () => {
               styles={{ input: { borderRadius: 8, background: '#f5f5f5', cursor: 'default' } }}
             />
             <NumberInput
+              ref={amountRef}
               label="Advance Amount (₹)"
               placeholder="0.00"
               value={form.advanceAmount}
               onChange={v => setField('advanceAmount', v)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { e.preventDefault(); handleSubmit(); }
+              }}
               leftSection={<IconCurrencyRupee size={16} color="#666" />}
               min={1}
               decimalScale={2}

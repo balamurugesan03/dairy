@@ -114,8 +114,8 @@ const OutstandingReport = () => {
       <table>
         <thead><tr>
           <th>#</th><th>Ledger Name</th><th>Account Type</th>
-          <th class="right">Debit (₹)</th><th class="right">Credit (₹)</th>
-          <th class="right">Outstanding (₹)</th><th>Status</th>
+          <th class="right">Debit</th><th class="right">Credit</th>
+          <th class="right">Outstanding</th><th>Status</th>
         </tr></thead>
         <tbody>
           ${ledgers.map((l, i) => `<tr>
@@ -131,15 +131,15 @@ const OutstandingReport = () => {
           </tr>`).join('')}
           <tr class="total-row">
             <td colspan="5">Total</td>
-            <td class="right green">₹${stats.totalReceivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })} Receivable</td>
-            <td class="right red">₹${stats.totalPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })} Payable</td>
+            <td class="right green">${stats.totalReceivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })} Receivable</td>
+            <td class="right red">${stats.totalPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })} Payable</td>
           </tr>
         </tbody>
       </table>
       <div class="summary">
-        <div class="summary-item"><div class="summary-label">Total Receivable</div><div class="summary-value" style="color:#2f9e44">₹${stats.totalReceivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div></div>
-        <div class="summary-item"><div class="summary-label">Total Payable</div><div class="summary-value" style="color:#e03131">₹${stats.totalPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div></div>
-        <div class="summary-item"><div class="summary-label">Net Position</div><div class="summary-value">₹${Math.abs(stats.netPosition).toLocaleString('en-IN', { minimumFractionDigits: 2 })} ${stats.netPosition >= 0 ? 'Favorable' : 'Unfavorable'}</div></div>
+        <div class="summary-item"><div class="summary-label">Total Receivable</div><div class="summary-value" style="color:#2f9e44">${stats.totalReceivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div></div>
+        <div class="summary-item"><div class="summary-label">Total Payable</div><div class="summary-value" style="color:#e03131">${stats.totalPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div></div>
+        <div class="summary-item"><div class="summary-label">Net Position</div><div class="summary-value">${Math.abs(stats.netPosition).toLocaleString('en-IN', { minimumFractionDigits: 2 })} ${stats.netPosition >= 0 ? 'Favorable' : 'Unfavorable'}</div></div>
       </div>
     </body></html>`);
     win.document.close();
@@ -213,7 +213,7 @@ const OutstandingReport = () => {
                   <Box>
                     <Text size="xs" c="dimmed" fw={600}>TO RECEIVE</Text>
                     <Text size="xl" fw={700} c="green">
-                      ₹{stats.totalReceivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {stats.totalReceivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Text>
                   </Box>
                   <RingProgress size={60} thickness={4}
@@ -231,7 +231,7 @@ const OutstandingReport = () => {
                   <Box>
                     <Text size="xs" c="dimmed" fw={600}>TO PAY</Text>
                     <Text size="xl" fw={700} c="red">
-                      ₹{stats.totalPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {stats.totalPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Text>
                   </Box>
                   <RingProgress size={60} thickness={4}
@@ -254,7 +254,7 @@ const OutstandingReport = () => {
                         ? <IconArrowUpRight size={18} color="#228be6" />
                         : <IconArrowDownRight size={18} color="#fd7e14" />}
                       <Text size="xl" fw={700} color={stats.netPosition >= 0 ? 'blue' : 'orange'}>
-                        ₹{Math.abs(stats.netPosition).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {Math.abs(stats.netPosition).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </Text>
                     </Group>
                   </Box>
@@ -299,7 +299,7 @@ const OutstandingReport = () => {
             <Stack gap="xs">
               <Group justify="space-between">
                 <Group gap="xs"><IconTrendingUp size={14} color="green" /><Text size="sm">To Receive</Text></Group>
-                <Text size="sm" fw={500}>₹{stats.totalReceivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
+                <Text size="sm" fw={500}>{stats.totalReceivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
               </Group>
               <Progress
                 value={stats.totalReceivable > 0 ? (stats.totalReceivable / (stats.totalReceivable + stats.totalPayable)) * 100 : 0}
@@ -307,7 +307,7 @@ const OutstandingReport = () => {
               />
               <Group justify="space-between" mt="sm">
                 <Group gap="xs"><IconTrendingDown size={14} color="red" /><Text size="sm">To Pay</Text></Group>
-                <Text size="sm" fw={500}>₹{stats.totalPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
+                <Text size="sm" fw={500}>{stats.totalPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
               </Group>
               <Progress
                 value={stats.totalPayable > 0 ? (stats.totalPayable / (stats.totalReceivable + stats.totalPayable)) * 100 : 0}
@@ -342,9 +342,9 @@ const OutstandingReport = () => {
                         <th>#</th>
                         <th>Ledger Name</th>
                         <th>Account Type</th>
-                        <th style={{ textAlign: 'right' }}>Debit (₹)</th>
-                        <th style={{ textAlign: 'right' }}>Credit (₹)</th>
-                        <th style={{ textAlign: 'right' }}>Outstanding (₹)</th>
+                        <th style={{ textAlign: 'right' }}>Debit</th>
+                        <th style={{ textAlign: 'right' }}>Credit</th>
+                        <th style={{ textAlign: 'right' }}>Outstanding</th>
                         <th>Status</th>
                       </tr>
                     </thead>
@@ -373,7 +373,7 @@ const OutstandingReport = () => {
                           </td>
                           <td style={{ textAlign: 'right' }}>
                             <Text fw={700} color={ledger.balanceType === 'Dr' ? 'green' : 'red'} size="sm">
-                              ₹{ledger.currentBalance?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              {ledger.currentBalance?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </Text>
                           </td>
                           <td>
@@ -402,18 +402,18 @@ const OutstandingReport = () => {
                       <Divider orientation="vertical" />
                       <div>
                         <Text size="sm" c="dimmed">Total Receivable</Text>
-                        <Text fw={700} c="green">₹{stats.totalReceivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
+                        <Text fw={700} c="green">{stats.totalReceivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
                       </div>
                       <Divider orientation="vertical" />
                       <div>
                         <Text size="sm" c="dimmed">Total Payable</Text>
-                        <Text fw={700} c="red">₹{stats.totalPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
+                        <Text fw={700} c="red">{stats.totalPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
                       </div>
                       <Divider orientation="vertical" />
                       <div>
                         <Text size="sm" c="dimmed">Net Position</Text>
                         <Badge color={stats.netPosition >= 0 ? 'blue' : 'orange'} variant="light" size="lg">
-                          ₹{Math.abs(stats.netPosition).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          {Math.abs(stats.netPosition).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           {stats.netPosition >= 0 ? ' favorable' : ' unfavorable'}
                         </Badge>
                       </div>

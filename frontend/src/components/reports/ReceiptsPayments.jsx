@@ -125,7 +125,7 @@ const ReceiptsPayments = () => {
     ]);
 
     autoTable(doc, {
-      head: [['Receipt Particulars', 'Amount (₹)', 'Payment Particulars', 'Amount (₹)']],
+      head: [['Receipt Particulars', 'Amount', 'Payment Particulars', 'Amount']],
       body,
       startY: 28,
       margin: { left: mg, right: mg },
@@ -149,7 +149,7 @@ const ReceiptsPayments = () => {
       ['RECEIPTS & PAYMENTS ACCOUNT'],
       [`Period: ${periodLabel}`],
       [],
-      ['Receipt Particulars', 'Amount (₹)', 'Payment Particulars', 'Amount (₹)'],
+      ['Receipt Particulars', 'Amount', 'Payment Particulars', 'Amount'],
     ];
     for (let i = 0; i < maxRows; i++) {
       const r = receipts[i] || { label: '', amount: 0 };
@@ -231,9 +231,9 @@ const ReceiptsPayments = () => {
           <thead>
             <tr>
               <th style={{ ...thStyle, textAlign: 'left', color: '#1a4d2e', background: '#E8F5E9' }}>Receipt Particulars</th>
-              <th style={{ ...thStyle, textAlign: 'right', color: '#1a4d2e', background: '#E8F5E9' }}>Amount (₹)</th>
+              <th style={{ ...thStyle, textAlign: 'right', color: '#1a4d2e', background: '#E8F5E9' }}>Amount</th>
               <th style={{ ...thStyle, textAlign: 'left', color: '#4a1a1a', background: '#FFEBEE', borderLeft: '2.5px solid #1a1a2e' }}>Payment Particulars</th>
-              <th style={{ ...thStyle, textAlign: 'right', color: '#4a1a1a', background: '#FFEBEE' }}>Amount (₹)</th>
+              <th style={{ ...thStyle, textAlign: 'right', color: '#4a1a1a', background: '#FFEBEE' }}>Amount</th>
             </tr>
           </thead>
           <tbody>

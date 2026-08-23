@@ -2440,6 +2440,215 @@ export const getRDStatementDynamic = async (req, res) => {
   }
 };
 
+// ─── 8b. R&D STATEMENT — UNIFIED (Account Group / Ledger / Category × Single /
+//         Two / Three column, full transaction coverage) ────────────────────
+// Single backend shape serves all nine combinations the R&D Statement screen
+// offers: every ledger record below always carries BOTH the exact-selected-
+// range Cash/Adjustment/Total figures (Single & Two Column use these) AND the
+// FY-anchored Upto/During/End-of-Month figures (Three Column uses these) —
+// the frontend just picks which fields to show. Coverage is identical to
+// Ledger Abstract: every voucher in range (Receipt/Payment/Journal/Contra/
+// auto-posted) is included, classified Cash vs Adjustment by its own driving
+// Cash/Bank leg (classifyVoucherEntry) — nothing is excluded for not touching
+// a Cash/Bank ledger, unlike the older cash/bank-scoped R&D formats above.
+export const getRDStatementUnified = async (req, res) => {
+  try {
+    const { startDate, endDate, groupBy = 'accountGroup' } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ success: false, message: 'startDate and endDate are required' });
+    }
+    const start = new Date(startDate); start.setUTCHours(0, 0, 0, 0);
+    const end   = new Date(endDate);   end.setUTCHours(23, 59, 59, 999);
+
+    const ledgers = await Ledger.find({ status: 'Active', companyId: req.companyId }).lean();
+    const ledgerMap = Object.fromEntries(ledgers.map(l => [l._id.toString(), l]));
+    const cashBankIds = await getCashBankLedgerIds(req.companyId);
+    const CASH_BANK_TYPES = ['Cash', 'Bank', 'Cash in Hand', 'Bank Accounts'];
+    const cashBankLedgers = ledgers.filter(l => CASH_BANK_TYPES.includes(l.ledgerType));
+
+    // "The Month" for Three Column is always the calendar month containing the
+    // selected END date (not the selected start) — so a wide range like
+    // Financial Year still reports Upto/During/End relative to that one month.
+    const monthStart = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1, 0, 0, 0, 0));
+    const fyStartYear = end.getUTCMonth() >= 3 ? end.getUTCFullYear() : end.getUTCFullYear() - 1;
+    const fyStart = new Date(Date.UTC(fyStartYear, 3, 1, 0, 0, 0, 0));
+    const fyEnd   = new Date(Date.UTC(fyStartYear + 1, 2, 31, 23, 59, 59, 999));
+    const uptoMonthEnd = new Date(monthStart.getTime() - 1); // last instant of the month before "the month"
+
+    // ── Full-coverage per-entry accumulator for an arbitrary [from, to] window
+    //    — every Voucher entry (Receipt/Payment/Journal/Contra/auto-posted),
+    //    classified Cash vs Adjustment by the voucher's own driving Cash/Bank
+    //    leg, plus the same Producers Dues / Milk Purchase synthetic rows
+    //    Ledger Abstract and the existing rd-statement endpoint add (no real
+    //    Voucher is posted for the milk-purchase accrual any more).
+    const accumulate = async (from, to) => {
+      const map = {};
+      const bump = (lid, side, amount, isCash) => {
+        if (!amount) return;
+        if (!map[lid]) map[lid] = { receiptCash: 0, receiptAdj: 0, paymentCash: 0, paymentAdj: 0 };
+        map[lid][side + (isCash ? 'Cash' : 'Adj')] += amount;
+      };
+
+      const vouchers = await Voucher.find({
+        companyId: req.companyId,
+        voucherDate: { $gte: from, $lte: to },
+        status: { $ne: 'Cancelled' }
+      }).select('entries').lean();
+
+      vouchers.forEach(v => {
+        const { column } = classifyVoucherEntry(v.entries, cashBankIds);
+        const isCash = column === 'cash';
+        (v.entries || []).forEach(e => {
+          const lid = e.ledgerId?.toString();
+          if (!lid) return;
+          const ledger = ledgerMap[lid];
+          if (!ledger) return;
+          const dr = e.debitAmount || 0;
+          const cr = e.creditAmount || 0;
+          if (CASH_BANK_TYPES.includes(ledger.ledgerType)) {
+            bump(lid, 'receipt', dr, isCash);
+            bump(lid, 'payment', cr, isCash);
+          } else {
+            const vt = ['R', 'P', 'B'].includes(ledger.voucherType)
+              ? ledger.voucherType
+              : getDefaultVoucherType(ledger.ledgerType);
+            if (['R', 'B'].includes(vt)) bump(lid, 'receipt', cr, isCash);
+            if (['P', 'B'].includes(vt)) bump(lid, 'payment', dr, isCash);
+          }
+        });
+      });
+
+      const mcLedgers = ledgers.filter(l =>
+        /producers?\s*(dues?|payable|account)/i.test(l.ledgerName) ||
+        (l.ledgerType === 'Other Payable' && /producer|farmer|dues/i.test(l.ledgerName)) ||
+        /^milk\s*(purchase|procurement|procure|collection)\s*(a\/?c\.?|account)?$/i.test(l.ledgerName.trim())
+      );
+      if (mcLedgers.length) {
+        const mcAgg = await MilkCollection.aggregate([
+          { $match: { companyId: req.companyId, amount: { $gt: 0 }, date: { $gte: from, $lte: to } } },
+          { $group: { _id: null, total: { $sum: '$amount' } } }
+        ]);
+        const mc = mcAgg[0]?.total || 0;
+        if (mc > 0) {
+          mcLedgers.forEach(l => {
+            const lid = l._id.toString();
+            const isDues = /producers?\s*(dues?|payable|account)/i.test(l.ledgerName) ||
+              (l.ledgerType === 'Other Payable' && /producer|farmer|dues/i.test(l.ledgerName));
+            if (isDues) bump(lid, 'receipt', mc, false);
+            else        bump(lid, 'payment', mc, false);
+          });
+        }
+      }
+
+      return map;
+    };
+
+    const [duringRangeMap, uptoMap, duringMonthMap] = await Promise.all([
+      accumulate(start, end),                // Single / Two Column — exact selected range
+      accumulate(fyStart, uptoMonthEnd),      // Three Column — "Up to the Month"
+      accumulate(monthStart, end)             // Three Column — "During the Month"
+    ]);
+
+    // Opening/Closing balance — exact selected range (Single/Two Column) and
+    // FY-anchored (Three Column, consistent with its Upto/During/End figures).
+    const [{ priorMap: rangePriorMap, periodMap: rangePeriodMap },
+           { priorMap: fyPriorMap,    periodMap: fyPeriodMap }] = await Promise.all([
+      buildActivityMaps(Voucher, req.companyId, start, end),
+      buildActivityMaps(Voucher, req.companyId, fyStart, end)
+    ]);
+    const sumBal = (map1, map2, addPeriod) =>
+      cashBankLedgers.reduce((s, l) => s + computeLedgerBalance(l, map1, map2, addPeriod).signed, 0);
+    const openingBalance   = sumBal(rangePriorMap, {}, false);
+    const closingBalance   = sumBal(rangePriorMap, rangePeriodMap, true);
+    const openingBalanceFY = sumBal(fyPriorMap, {}, false);
+    const closingBalanceFY = sumBal(fyPriorMap, fyPeriodMap, true);
+
+    // ── Build one unified record per ledger touched in ANY of the three windows ──
+    const empty = { receiptCash: 0, receiptAdj: 0, paymentCash: 0, paymentAdj: 0 };
+    const allLids = new Set([...Object.keys(duringRangeMap), ...Object.keys(uptoMap), ...Object.keys(duringMonthMap)]);
+    const records = [];
+    allLids.forEach(lid => {
+      const ledger = ledgerMap[lid];
+      if (!ledger) return;
+      const d = duringRangeMap[lid] || empty;
+      const u = uptoMap[lid] || empty;
+      const m = duringMonthMap[lid] || empty;
+
+      const receiptCash = d.receiptCash, receiptAdj = d.receiptAdj, receiptTotal = receiptCash + receiptAdj;
+      const paymentCash = d.paymentCash, paymentAdj = d.paymentAdj, paymentTotal = paymentCash + paymentAdj;
+      const uptoR = u.receiptCash + u.receiptAdj, uptoP = u.paymentCash + u.paymentAdj;
+      const duringR = m.receiptCash + m.receiptAdj, duringP = m.paymentCash + m.paymentAdj;
+      const eomR = uptoR + duringR, eomP = uptoP + duringP; // guaranteed by construction
+
+      if (receiptTotal === 0 && paymentTotal === 0 &&
+          uptoR === 0 && uptoP === 0 && duringR === 0 && duringP === 0) return;
+
+      records.push({
+        ledgerId: lid,
+        ledgerName: ledger.ledgerName,
+        ledgerType: ledger.ledgerType || 'Other',
+        parentGroup: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'].includes(ledger.parentGroup)
+          ? ledger.parentGroup : getParentGroupFromLedgerType(ledger.ledgerType),
+        category: getLedgerCategory(ledger.ledgerType),
+        receiptCash, receiptAdj, receiptTotal,
+        paymentCash, paymentAdj, paymentTotal,
+        uptoR, duringR, eomR,
+        uptoP, duringP, eomP
+      });
+    });
+
+    // ── Group by the requested dimension ────────────────────────────────────
+    const groupKeyOf = (r) => groupBy === 'category' ? r.category
+      : groupBy === 'ledger' ? 'All Ledgers'
+      : r.ledgerType; // accountGroup (default)
+
+    const groupMap = {};
+    records.forEach(r => {
+      const key = groupKeyOf(r);
+      if (!groupMap[key]) groupMap[key] = { sectionName: key, parentGroup: r.parentGroup, ledgers: [] };
+      groupMap[key].ledgers.push(r);
+    });
+    Object.values(groupMap).forEach(g => g.ledgers.sort((a, b) => a.ledgerName.localeCompare(b.ledgerName)));
+
+    const ZERO_TOT = {
+      receiptCash: 0, receiptAdj: 0, receiptTotal: 0, paymentCash: 0, paymentAdj: 0, paymentTotal: 0,
+      uptoR: 0, duringR: 0, eomR: 0, uptoP: 0, duringP: 0, eomP: 0
+    };
+    const sumFields = (items) => items.reduce((acc, l) => {
+      Object.keys(ZERO_TOT).forEach(k => { acc[k] += l[k] || 0; });
+      return acc;
+    }, { ...ZERO_TOT });
+
+    const pgOrder = ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE', 'OTHER'];
+    const catOrder = ['ASSETS', 'LIABILITIES', 'INCOME', 'EXPENSES', 'CAPITAL', 'OTHER'];
+    const sections = Object.values(groupMap)
+      .map(g => ({ ...g, groupTotal: sumFields(g.ledgers) }))
+      .sort((a, b) => {
+        if (groupBy === 'category') return catOrder.indexOf(a.sectionName) - catOrder.indexOf(b.sectionName);
+        if (groupBy === 'ledger') return 0;
+        const ai = pgOrder.indexOf(a.parentGroup), bi = pgOrder.indexOf(b.parentGroup);
+        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi) || a.sectionName.localeCompare(b.sectionName);
+      });
+
+    const grandTotal = sumFields(records);
+
+    res.json({
+      success: true,
+      data: {
+        startDate: start, endDate: end, fyStart, fyEnd, monthStart,
+        groupBy,
+        openingBalance, closingBalance,
+        openingBalanceFY, closingBalanceFY,
+        sections,
+        grandTotal
+      }
+    });
+  } catch (err) {
+    console.error('getRDStatementUnified error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // ─── 9. RECEIPTS & PAYMENTS — DYNAMIC (with opening/closing cash balance) ────
 export const getReceiptsPaymentsDynamic = async (req, res) => {
   try {
@@ -2544,5 +2753,6 @@ export default {
   getReceiptsPayments,
   getLedgerAbstractGrouped,
   getRDStatementDynamic,
+  getRDStatementUnified,
   getReceiptsPaymentsDynamic
 };

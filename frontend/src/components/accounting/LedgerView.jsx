@@ -176,12 +176,12 @@ const LedgerView = () => {
       </td>
       <td align="right">
         <Text size="sm" fw={500}>
-          {txn.debit > 0 ? `₹${txn.debit.toFixed(2)}` : '-'}
+          {txn.debit > 0 ? `${txn.debit.toFixed(2)}` : '-'}
         </Text>
       </td>
       <td align="right">
         <Text size="sm" fw={500}>
-          {txn.credit > 0 ? `₹${txn.credit.toFixed(2)}` : '-'}
+          {txn.credit > 0 ? `${txn.credit.toFixed(2)}` : '-'}
         </Text>
       </td>
       <td align="right">
@@ -190,7 +190,7 @@ const LedgerView = () => {
           variant="light"
           size="sm"
         >
-          ₹{Math.abs(txn.balance).toFixed(2)} {txn.balanceType}
+          {Math.abs(txn.balance).toFixed(2)} {txn.balanceType}
         </Badge>
       </td>
     </tr>
@@ -242,7 +242,7 @@ const LedgerView = () => {
           <div>
             <Text size="sm" c="dimmed">Opening Balance</Text>
             <Text fw={500} size="lg">
-              ₹{ledger.openingBalance?.toFixed(2) || 0} {ledger.openingBalanceType || ''}
+              {ledger.openingBalance?.toFixed(2) || 0} {ledger.openingBalanceType || ''}
             </Text>
           </div>
           <div>
@@ -252,7 +252,7 @@ const LedgerView = () => {
               variant="light"
               size="lg"
             >
-              ₹{ledger.currentBalance?.toFixed(2) || 0} {ledger.balanceType || ''}
+              {ledger.currentBalance?.toFixed(2) || 0} {ledger.balanceType || ''}
             </Badge>
           </div>
           <div>
@@ -332,10 +332,10 @@ const LedgerView = () => {
                     <Text fw={700}>Total:</Text>
                   </td>
                   <td align="right">
-                    <Text fw={700}>₹{totalDebit.toFixed(2)}</Text>
+                    <Text fw={700}>{totalDebit.toFixed(2)}</Text>
                   </td>
                   <td align="right">
-                    <Text fw={700}>₹{totalCredit.toFixed(2)}</Text>
+                    <Text fw={700}>{totalCredit.toFixed(2)}</Text>
                   </td>
                   <td></td>
                 </tr>
@@ -348,13 +348,13 @@ const LedgerView = () => {
                 <div>
                   <Text size="sm" c="dimmed">Total Debit</Text>
                   <Text size="lg" fw={700} c="red">
-                    ₹{totalDebit.toFixed(2)}
+                    {totalDebit.toFixed(2)}
                   </Text>
                 </div>
                 <div>
                   <Text size="sm" c="dimmed">Total Credit</Text>
                   <Text size="lg" fw={700} c="green">
-                    ₹{totalCredit.toFixed(2)}
+                    {totalCredit.toFixed(2)}
                   </Text>
                 </div>
                 <div>
@@ -364,7 +364,7 @@ const LedgerView = () => {
                     variant="filled"
                     size="lg"
                   >
-                    ₹{ledger.currentBalance?.toFixed(2) || 0} {ledger.balanceType || ''}
+                    {ledger.currentBalance?.toFixed(2) || 0} {ledger.balanceType || ''}
                   </Badge>
                 </div>
               </SimpleGrid>

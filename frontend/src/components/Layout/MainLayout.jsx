@@ -101,7 +101,11 @@ const MainLayout = () => {
       if (e.key === 'F2') { e.preventDefault(); navigate('/daily-collections/milk-purchase'); return; }
       if (e.key === 'F3') { e.preventDefault(); navigate('/daily-collections/milk-sales'); return; }
       if (e.key === 'F4') { e.preventDefault(); navigate('/sales/new'); return; }
-      if (e.key === 'F5') { e.preventDefault(); navigate('/payments/cash-advance/voucher'); return; }
+      // F5 also carries a one-shot "open the New Cash Advance form" signal via
+      // navigation state, so a single press opens the form directly instead
+      // of needing a first F5 to land on the page and a second F5 (now
+      // caught by that page's own listener) to actually open it.
+      if (e.key === 'F5') { e.preventDefault(); navigate('/payments/cash-advance/voucher', { state: { openNewCashAdvance: true } }); return; }
 
       // Other shortcuts: ignore when typing inside an input / textarea / select
       const tag = document.activeElement?.tagName;

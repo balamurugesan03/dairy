@@ -316,6 +316,7 @@ export const reportAPI = {
   ledgerAbstractGrouped: (params) => api.get('/reports/ledger-abstract-grouped', { params }).then(res => res.data).catch(handleError),
   rdEnhanced: (params) => api.get('/reports/rd-enhanced', { params }).then(res => res.data).catch(handleError),
   rdStatement: (params) => api.get('/reports/rd-statement', { params }).then(res => res.data).catch(handleError),
+  rdStatementUnified: (params) => api.get('/reports/rd-statement-unified', { params }).then(res => res.data).catch(handleError),
   receiptsPayments: (params) => api.get('/reports/receipts-payments', { params }).then(res => res.data).catch(handleError),
   receiptsPaymentsStatement: (params) => api.get('/reports/receipts-payments-statement', { params }).then(res => res.data).catch(handleError),
   ledgersDropdown: (params) => api.get('/reports/ledgers-dropdown', { params }).then(res => res.data).catch(handleError),
