@@ -1905,7 +1905,7 @@ export const getReceiptsPayments = async (req, res) => {
       regProducers, regCreditors,
       prAgg,
       cfAdvAgg, cashAdvAgg, loanAgg,
-      journalAgg
+      journalVouchers
     ] = await Promise.all([
       // Milk Purchase (payment side)
       MilkCollection.aggregate([
@@ -1973,12 +1973,14 @@ export const getReceiptsPayments = async (req, res) => {
         { $match: { companyId: cid, loanDate: { $gte: start, $lte: end }, status: { $ne: 'Cancelled' } } },
         { $group: { _id: null, total: { $sum: '$principalAmount' } } }
       ]),
-      // Adjustment module (Journal vouchers) — shown on both sides so it does
-      // not affect the net cash-flow balance, consistent with Cash Book.
-      Voucher.aggregate([
-        { $match: { companyId: cid, voucherType: 'Journal', voucherDate: { $gte: start, $lte: end } } },
-        { $group: { _id: null, total: { $sum: '$totalDebit' } } }
-      ])
+      // Adjustment module (Journal vouchers) — each leg is folded into the
+      // matching Receipt / Payment line below (credit legs → receipts, debit
+      // legs → payments). A Journal always balances, so both sides grow by
+      // the same total and the net cash-flow balance is unaffected.
+      Voucher.find({
+        companyId: cid, voucherType: 'Journal', status: { $ne: 'Cancelled' },
+        voucherDate: { $gte: start, $lte: end }
+      }).select('entries').lean()
     ]);
 
     // Derive CF purchase total + commission + inspection fee from ledgerEntries
@@ -1998,7 +2000,6 @@ export const getReceiptsPayments = async (req, res) => {
     const producersDue       = regProducers[0]?.milkValue || 0;
     const producersDueCredit = regCreditors[0]?.milkValue || 0;
     const kdwfWelfare        = (regProducers[0]?.welfare || 0) + (regCreditors[0]?.welfare || 0);
-    const journalTotal       = journalAgg[0]?.total || 0;
 
     const receiptItems = [
       { label: 'Producer Due',            amount: producersDueCredit },
@@ -2011,7 +2012,6 @@ export const getReceiptsPayments = async (req, res) => {
       { label: 'KDFW Welfare',            amount: kdwfWelfare },
       { label: 'Cattle Feed Commission',  amount: cfCommission },
       { label: 'CF Inspection Fee',       amount: cfInspectionFee },
-      { label: 'Adjustment (Journal)',    amount: journalTotal, isAdjustment: true },
     ];
 
     const paymentItems = [
@@ -2020,8 +2020,42 @@ export const getReceiptsPayments = async (req, res) => {
       { label: 'CF Advance',             amount: cfAdvAgg[0]?.total  || 0 },
       { label: 'Cash Advance',           amount: cashAdvAgg[0]?.total || 0 },
       { label: 'Loan Advance',           amount: loanAgg[0]?.total   || 0 },
-      { label: 'Adjustment (Journal)',   amount: journalTotal, isAdjustment: true },
     ];
+
+    // Fold Adjustment (Journal) legs into the line they relate to, matched by
+    // ledger name; a ledger with no matching line gets its own line under its
+    // ledger name — never a separate lump "Adjustment" line.
+    const RECEIPT_LINE_MATCH = [
+      ['Cattle Feed Sales',      /(cattle\s*feed|\bcf\b).*sales?/i],
+      ['Cattle Feed Commission', /commission/i],
+      ['CF Inspection Fee',      /inspection/i],
+      ['Local Sales',            /local\s*sales?/i],
+      ['Credit Sales',           /credit\s*sales?/i],
+      ['Sample Sales',           /sample/i],
+      ['Producer Receipt',       /producers?\s*receipt/i],
+      ['KDFW Welfare',           /welfare|kdfw|kdwf/i],
+      ['Producer Due',           /producers?\s*dues?/i],
+    ];
+    const PAYMENT_LINE_MATCH = [
+      ['Milk Purchase',          /milk\s*(purchase|procure)/i],
+      ['Cattle Feed Purchase',   /(cattle\s*feed|\bcf\b).*purchase/i],
+      ['CF Advance',             /(cattle\s*feed|\bcf\b).*advance/i],
+      ['Cash Advance',           /cash\s*advance/i],
+      ['Loan Advance',           /loan/i],
+    ];
+    const foldInto = (items, matchers, ledgerName, amount) => {
+      const hit = matchers.find(([, re]) => re.test(ledgerName || ''));
+      const label = hit ? hit[0] : (ledgerName || 'Other');
+      let line = items.find(i => i.label.toLowerCase() === label.toLowerCase());
+      if (!line) { line = { label, amount: 0 }; items.push(line); }
+      line.amount += amount;
+    };
+    journalVouchers.forEach(v => {
+      (v.entries || []).forEach(e => {
+        if (e.creditAmount > 0) foldInto(receiptItems, RECEIPT_LINE_MATCH, e.ledgerName, e.creditAmount);
+        if (e.debitAmount > 0)  foldInto(paymentItems, PAYMENT_LINE_MATCH, e.ledgerName, e.debitAmount);
+      });
+    });
 
     const totalReceipts = receiptItems.reduce((s, r) => s + r.amount, 0);
     const totalPayments = paymentItems.reduce((s, p) => s + p.amount, 0);

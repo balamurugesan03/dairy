@@ -21,7 +21,6 @@ import {
   SimpleGrid
 } from '@mantine/core';
 import {
-  IconArrowLeft,
   IconEdit,
   IconBrandWhatsapp,
   IconFileExport,
@@ -216,13 +215,6 @@ const SupplierView = () => {
             <Text c="dimmed" size="sm">View details for {supplier.name}</Text>
           </div>
           <Group>
-            <Button
-              variant="default"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/suppliers')}
-            >
-              Back
-            </Button>
             <Button
               leftSection={<IconEdit size={16} />}
               onClick={() => navigate(`/suppliers/edit/${id}`)}

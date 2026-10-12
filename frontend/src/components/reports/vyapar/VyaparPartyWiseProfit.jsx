@@ -38,7 +38,6 @@ import {
   IconPrinter,
   IconChevronDown,
   IconChevronUp,
-  IconArrowLeft,
   IconTrendingUp,
   IconTrendingDown,
   IconUsers,
@@ -396,14 +395,6 @@ const VyaparPartyWiseProfit = () => {
         <Paper p="md" withBorder style={{ borderColor: '#e0e0e0' }}>
           <Group justify="space-between" align="flex-start">
             <Group gap="md">
-              <ActionIcon
-                variant="subtle"
-                color="gray"
-                onClick={() => navigate('/reports/vyapar')}
-                size="lg"
-              >
-                <IconArrowLeft size={20} />
-              </ActionIcon>
               <div>
                 <Title order={2} style={{ color: '#1976d2', fontWeight: 700 }}>
                   PARTY-WISE PROFIT & LOSS

@@ -634,7 +634,7 @@ export default function SuperAdminDashboard() {
               leftSection={<IconArrowLeft size={14} />}
               onClick={() => step === 0 ? setAddOpen(false) : setStep(s => s - 1)}
             >
-              {step === 0 ? 'Cancel' : 'Back'}
+              {step === 0 ? 'Cancel' : 'Previous'}
             </Button>
 
             {step < 2 ? (

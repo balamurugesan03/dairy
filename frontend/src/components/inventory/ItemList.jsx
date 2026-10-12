@@ -1137,7 +1137,7 @@ const ItemList = () => {
                       itemForm.setFieldValue('measurement', '');
                     }}
                   >
-                    Back
+                    Cancel
                   </Button>
                 </Group>
               )}

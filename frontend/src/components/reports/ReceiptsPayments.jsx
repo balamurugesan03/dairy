@@ -16,6 +16,7 @@ import { useCompany } from '../../context/CompanyContext';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { openA4Print, a4Header, a4Signatures, escapeHtml } from '../../utils/printA4';
 
 const fmt = (v) =>
   parseFloat(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -56,31 +57,45 @@ const ReceiptsPayments = () => {
     }
   };
 
-  /* ── Print ── */
-  const handlePrint = (orientation = 'landscape') => {
-    if (!printRef.current) return;
-    const pw = window.open('', '_blank');
-    pw.document.write(`<!DOCTYPE html><html><head>
-      <title>Receipts & Payments — ${companyName}</title>
-      <style>
-        *{margin:0;padding:0;box-sizing:border-box}
-        body{font-family:'Segoe UI',Tahoma,sans-serif;color:#1a1a2e;background:#fff}
-        .rp-register{border:1.5px solid #000}
-        .rp-header{text-align:center;padding:10mm 10mm 6mm;border-bottom:2px solid #000}
-        .rp-header__society{font-size:17px;font-weight:800;letter-spacing:3px;text-transform:uppercase}
-        .rp-header__title{display:inline-block;font-size:13px;font-weight:700;letter-spacing:7px;text-transform:uppercase;padding:3px 20px;border-top:2.5px double #000;border-bottom:2.5px double #000}
-        .rp-header__info{display:flex;justify-content:space-between;padding:6px 0 0;font-size:10.5px}
-        table{width:100%;border-collapse:collapse;font-size:9.5px}
-        th,td{border:1px solid #aaa;padding:3px 6px}
-        th{background:#eee;font-weight:700;text-align:center;font-size:8.5px;text-transform:uppercase}
-        .td-label{text-align:left;font-size:9.5px}
-        .td-num{text-align:right;font-family:Consolas,monospace;font-size:9.5px}
-        .row-total td{background:#e8eaf6;font-weight:800;border-top:2.5px double #000;border-bottom:2.5px double #000}
-        .row-balance td{background:#fffde7;font-weight:700}
-        @page{size:A4 ${orientation};margin:8mm}
-      </style></head><body>${printRef.current.innerHTML}</body></html>`);
-    pw.document.close();
-    setTimeout(() => pw.print(), 300);
+  /* ── Print — dedicated A4 layout: Receipt | Payment particulars paired
+     row by row, the balance on the short side, equal totals, and one
+     signature block. ── */
+  const handlePrint = () => {
+    if (!reportData) return;
+    const receipts = (reportData.receiptItems || []).filter(r => r.amount > 0);
+    const payments = (reportData.paymentItems || []).filter(p => p.amount > 0);
+    const balance  = (reportData.totalReceipts || 0) - (reportData.totalPayments || 0);
+    const maxRows  = Math.max(receipts.length, payments.length, 1);
+    const side = (item, i, split) => item
+      ? `<td class="${split ? 'split' : ''}">${i + 1}. ${escapeHtml(item.label)}</td><td class="amt">${fmt(item.amount)}</td>`
+      : `<td class="${split ? 'split' : ''}"></td><td></td>`;
+
+    let rows = '';
+    for (let i = 0; i < maxRows; i++) rows += `<tr>${side(receipts[i], i, false)}${side(payments[i], i, true)}</tr>`;
+    if (balance > 0) {
+      rows += `<tr class="row-bal"><td></td><td></td><td class="split">Balance (Excess of Receipts)</td><td class="amt">${fmt(balance)}</td></tr>`;
+    } else if (balance < 0) {
+      rows += `<tr class="row-bal"><td>Balance (Excess of Payments)</td><td class="amt">${fmt(-balance)}</td><td class="split"></td><td></td></tr>`;
+    }
+    const grand = Math.max(reportData.totalReceipts || 0, reportData.totalPayments || 0);
+    rows += `<tr class="row-grand"><td>TOTAL</td><td class="amt">${fmt(grand)}</td><td class="split">TOTAL</td><td class="amt">${fmt(grand)}</td></tr>`;
+
+    openA4Print({
+      title: `Receipts & Payments — ${companyName}`,
+      orientation: 'portrait',
+      css: 'table.a4 td { font-size: 10px; padding: 3px 5px; }',
+      bodyHtml: a4Header({
+        orgName: companyName,
+        title: 'Receipts & Payments Account',
+        period: periodLabel,
+        extra: `Printed: ${dayjs().format('DD/MM/YYYY')}`
+      }) + `
+        <table class="a4">
+          <colgroup><col style="width:36%"><col style="width:14%"><col style="width:36%"><col style="width:14%"></colgroup>
+          <thead><tr><th>Receipt Particulars</th><th>Amount</th><th class="split">Payment Particulars</th><th>Amount</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>` + a4Signatures(['President', 'Secretary', 'Accountant'], dayjs().format('DD/MM/YYYY HH:mm:ss'))
+    });
   };
 
   /* ── PDF ── */
@@ -182,16 +197,16 @@ const ReceiptsPayments = () => {
       const bg = i % 2 === 0 ? '#FFFFFF' : '#FAFAFA';
       rows.push(
         <tr key={i} style={{ background: bg }}>
-          <td style={{ ...tdBase, color: r?.isAdjustment ? '#b45309' : '#1a4d2e', fontWeight: r ? 500 : 400, fontStyle: r?.isAdjustment ? 'italic' : 'normal' }}>
+          <td style={{ ...tdBase, color: '#1a4d2e', fontWeight: r ? 500 : 400 }}>
             {r ? `${i + 1}. ${r.label}` : ''}
           </td>
-          <td style={{ ...tdNum, color: r?.isAdjustment ? '#b45309' : '#1a4d2e' }}>
+          <td style={{ ...tdNum, color: '#1a4d2e' }}>
             {r && r.amount > 0 ? fmt(r.amount) : ''}
           </td>
-          <td style={{ ...tdBase, ...divider, color: p?.isAdjustment ? '#b45309' : '#4a1a1a', fontWeight: p ? 500 : 400, fontStyle: p?.isAdjustment ? 'italic' : 'normal' }}>
+          <td style={{ ...tdBase, ...divider, color: '#4a1a1a', fontWeight: p ? 500 : 400 }}>
             {p ? `${i + 1}. ${p.label}` : ''}
           </td>
-          <td style={{ ...tdNum, color: p?.isAdjustment ? '#b45309' : '#4a1a1a' }}>
+          <td style={{ ...tdNum, color: '#4a1a1a' }}>
             {p && p.amount > 0 ? fmt(p.amount) : ''}
           </td>
         </tr>
@@ -348,7 +363,7 @@ const ReceiptsPayments = () => {
                     size="xs"
                     radius="md"
                     leftSection={<IconPrinter size={14} />}
-                    onClick={() => handlePrint('landscape')}
+                    onClick={handlePrint}
                   >
                     Print
                   </Button>

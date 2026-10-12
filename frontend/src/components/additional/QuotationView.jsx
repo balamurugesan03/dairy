@@ -8,7 +8,7 @@ import {
 import { notifications } from '@mantine/notifications';
 import { modals } from '@mantine/modals';
 import {
-  IconArrowLeft, IconEdit, IconPrinter, IconArrowRight, IconCheck,
+  IconEdit, IconPrinter, IconArrowRight, IconCheck,
   IconSend, IconX, IconFileInvoice, IconAlertCircle, IconBrandWhatsapp, IconMail
 } from '@tabler/icons-react';
 import { quotationAPI } from '../../services/api';
@@ -91,7 +91,6 @@ const QuotationView = () => {
       {/* Action Bar */}
       <Group justify="space-between" mb="md">
         <Group gap="xs">
-          <ActionIcon variant="subtle" onClick={() => navigate('/quotations')}><IconArrowLeft size={18}/></ActionIcon>
           <Box>
             <Title order={2} fw={700}>{q.quotationNumber}</Title>
             <Text size="sm" c="dimmed">{dayjs(q.quotationDate).format('DD MMM YYYY')} · Valid until {dayjs(q.validUntil).format('DD MMM YYYY')}</Text>

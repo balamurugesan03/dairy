@@ -6,7 +6,7 @@ import {
   ScrollArea, TextInput, Pagination, ActionIcon
 } from '@mantine/core';
 import {
-  IconArrowLeft, IconUsers, IconUserCheck,
+  IconUsers, IconUserCheck,
   IconGenderMale, IconBuildingCommunity,
   IconRefresh, IconPrinter, IconSearch, IconEye, IconFileSpreadsheet
 } from '@tabler/icons-react';
@@ -285,9 +285,6 @@ const FarmerReport = () => {
       {/* Header */}
       <Group justify="space-between" mb="md" data-no-print>
         <Group>
-          <ActionIcon variant="subtle" onClick={() => navigate('/farmers')}>
-            <IconArrowLeft size={18} />
-          </ActionIcon>
           <Title order={3}>Farmer Report</Title>
         </Group>
         <Group>

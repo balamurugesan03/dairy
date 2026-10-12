@@ -8,7 +8,7 @@ import {
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import {
-  IconPlus, IconTrash, IconArrowLeft, IconDeviceFloppy, IconRefresh
+  IconPlus, IconTrash, IconDeviceFloppy, IconRefresh
 } from '@tabler/icons-react';
 import { quotationAPI, businessCustomerAPI, businessItemAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
@@ -285,9 +285,6 @@ const QuotationForm = () => {
       {/* ── Header ── */}
       <Group justify="space-between" mb="md">
         <Group gap="xs">
-          <ActionIcon variant="subtle" onClick={() => navigate('/')}>
-            <IconArrowLeft size={18} />
-          </ActionIcon>
           <Box>
             <Title order={2} fw={700}>{isEdit ? 'Edit Quotation' : 'New Quotation / Estimate'}</Title>
             <Text size="sm" c="dimmed">Fill the form and click Save to generate the invoice</Text>

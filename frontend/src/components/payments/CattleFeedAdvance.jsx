@@ -8,8 +8,7 @@ import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import {
   IconCalendar, IconRefresh, IconPrinter, IconFileSpreadsheet,
-  IconSearch, IconCheck, IconArrowLeft,
-} from '@tabler/icons-react';
+  IconSearch, IconCheck, } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { useReactToPrint } from 'react-to-print';
 import * as XLSX from 'xlsx';
@@ -543,15 +542,6 @@ const CattleFeedAdvance = () => {
 
           {/* ── LEDGER TAB ── */}
           <Tabs.Panel value="ledger" p="md">
-            {farmerId && (
-              <Button
-                size="xs" variant="subtle" leftSection={<IconArrowLeft size={13} />}
-                onClick={() => setActiveTab('summary')}
-                mb="xs" className="no-print"
-              >
-                Back to Summary
-              </Button>
-            )}
 
             <div id="cfa-print" ref={activeTab === 'ledger' ? printRef : undefined}>
               {ledgerData ? (

@@ -7,7 +7,7 @@ import {
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import {
-  IconCalendarCheck, IconArrowLeft, IconUsers, IconUserCheck, IconUserOff, IconClock
+  IconCalendarCheck, IconUsers, IconUserCheck, IconUserOff, IconClock
 } from '@tabler/icons-react';
 import { attendanceAPI, employeeAPI } from '../../services/api';
 import { localDateStr } from '../../utils/dateUtils';
@@ -105,9 +105,6 @@ const MarkAttendance = () => {
           <Title order={2}>Mark Attendance</Title>
           <Text c="dimmed" size="sm">Record daily attendance for all employees</Text>
         </div>
-        <Button variant="default" leftSection={<IconArrowLeft size={16} />} onClick={() => navigate('/hrm/attendance')}>
-          Back
-        </Button>
       </Group>
 
       {/* Date & Bulk Actions */}

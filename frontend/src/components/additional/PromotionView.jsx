@@ -84,16 +84,6 @@ const PromotionView = () => {
         subtitle="View promotion activity details"
         extra={[
           <button
-            key="back"
-            className="btn btn-default"
-            onClick={() => navigate('/promotions')}
-          >
-            <svg className="icon" viewBox="0 0 16 16" fill="currentColor">
-              <path fillRule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z"/>
-            </svg>
-            Back
-          </button>,
-          <button
             key="edit"
             className="btn btn-primary"
             onClick={() => navigate(`/promotions/edit/${id}`)}

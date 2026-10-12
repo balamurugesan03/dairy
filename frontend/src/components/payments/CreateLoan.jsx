@@ -14,7 +14,7 @@ import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import {
   IconHandStop, IconUser, IconReceipt, IconCalculator,
-  IconDeviceFloppy, IconX, IconArrowLeft, IconRefresh,
+  IconDeviceFloppy, IconX, IconRefresh,
   IconEye, IconPlus, IconSearch,
 } from '@tabler/icons-react';
 import { farmerAPI, producerLoanAPI, ledgerAPI } from '../../services/api';
@@ -267,9 +267,6 @@ export default function CreateLoan() {
             </Button>
             <Button leftSection={<IconX size={14} />} onClick={handleReset} size="sm" radius="md" variant="default" style={{ fontWeight: 700 }}>
               Reset
-            </Button>
-            <Button leftSection={<IconArrowLeft size={14} />} onClick={() => navigate(-1)} size="sm" radius="md" variant="default" style={{ fontWeight: 700 }}>
-              Back
             </Button>
           </Group>
         </Group>

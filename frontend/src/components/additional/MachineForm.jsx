@@ -6,7 +6,7 @@ import {
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
-import { IconArrowLeft, IconDeviceFloppy } from '@tabler/icons-react';
+import { IconDeviceFloppy } from '@tabler/icons-react';
 import { machineAPI, supplierAPI, warrantyAPI } from '../../services/api';
 import dayjs from 'dayjs';
 
@@ -129,7 +129,6 @@ const MachineForm = () => {
     <Container size="xl" py="md">
       <Group justify="space-between" mb="md">
         <Group gap="xs">
-          <ActionIcon variant="subtle" onClick={() => navigate('/machines')}><IconArrowLeft size={18}/></ActionIcon>
           <Box>
             <Title order={2} fw={700}>{isEdit ? 'Edit Machine' : 'Add Machine / Asset'}</Title>
             <Text size="sm" c="dimmed">Register a machine or asset with full details</Text>

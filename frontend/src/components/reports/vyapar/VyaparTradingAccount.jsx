@@ -31,7 +31,6 @@ import {
   IconPrinter,
   IconChevronDown,
   IconChevronRight,
-  IconArrowLeft,
   IconTrendingUp,
   IconTrendingDown,
   IconScale
@@ -255,9 +254,6 @@ const VyaparTradingAccount = () => {
         <Paper p="md" withBorder style={{ borderColor: '#e0e0e0' }}>
           <Group position="apart" align="flex-start">
             <Group spacing="md">
-              <ActionIcon variant="subtle" color="gray" onClick={() => navigate('/reports/vyapar')} size="lg">
-                <IconArrowLeft size={20} />
-              </ActionIcon>
               <div>
                 <Title order={2} style={{ color: '#1976d2', fontWeight: 700 }}>TRADING ACCOUNT</Title>
                 <Text color="dimmed" size="sm" mt={4}>

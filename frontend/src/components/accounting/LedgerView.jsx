@@ -26,7 +26,7 @@ import {
   Alert
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
-import { IconArrowLeft, IconDownload, IconCalendar, IconReceipt, IconCash, IconExchange } from '@tabler/icons-react';
+import { IconDownload, IconCalendar, IconReceipt, IconCash, IconExchange } from '@tabler/icons-react';
 
 const LedgerView = () => {
   const navigate = useNavigate();
@@ -206,13 +206,6 @@ const LedgerView = () => {
       {/* Actions Bar */}
       <Paper p="md" mb="md" withBorder>
         <Group justify="space-between">
-          <Button
-            leftSection={<IconArrowLeft size={16} />}
-            variant="default"
-            onClick={() => navigate('/accounting/ledgers')}
-          >
-            Back to Ledgers
-          </Button>
           <ExportButton
             data={exportData}
             filename={`ledger_${ledger.ledgerName}`}

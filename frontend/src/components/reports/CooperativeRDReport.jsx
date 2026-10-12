@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import {
   Box, Paper, Group, Stack, Text, Button, Select,
-  Loader, Center, ActionIcon, Tooltip, SegmentedControl
+  Loader, Center, SegmentedControl
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import {
@@ -13,6 +13,7 @@ import * as XLSX from 'xlsx';
 import dayjs from 'dayjs';
 import { reportAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
+import { printRDStatement } from './shared/rdPrint';
 
 // ── Date presets ──────────────────────────────────────────────────────────
 const PRESETS = [
@@ -513,35 +514,37 @@ const CooperativeRDReport = () => {
   };
 
   // ── Print ─────────────────────────────────────────────────────────────
+  // Dedicated A4 layout — same print as the R&D Statement, fed by this
+  // report's data mapped onto the shared unified shape.
   const handlePrint = () => {
-    const el = printRef.current;
-    if (!el) return;
-    const pw = window.open('', '_blank');
-    if (!pw) { alert('Pop-up blocked. Please allow pop-ups.'); return; }
-    const clone = el.cloneNode(true);
-    clone.querySelectorAll('[data-no-print]').forEach(e => e.remove());
-    const orientation = viewMode === 'single' ? 'portrait' : 'landscape';
-    pw.document.write(`<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8"/>
-  <title>R&D – ${companyName}</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, Helvetica, sans-serif; font-size: 10px; color: #000;
-           background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 8mm; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #bbb; padding: 3px 5px; vertical-align: middle; }
-    th { background: #e8e8e8 !important; font-weight: 700; text-align: center; font-size: 10px; }
-    .text-right { text-align: right !important; }
-    .text-left  { text-align: left !important; }
-    @page { size: A4 ${orientation}; margin: 8mm; }
-  </style>
-</head>
-<body>${clone.innerHTML}</body>
-</html>`);
-    pw.document.close();
-    setTimeout(() => { pw.focus(); pw.print(); }, 400);
+    if (!reportData?.sections) return;
+    const d = reportData;
+    printRDStatement({
+      data: {
+        openingBalance: d.openingBalance, closingBalance: d.closingBalance,
+        openingBalanceFY: d.openingBalanceFY, closingBalanceFY: d.closingBalanceFY,
+        monthStart: d.monthStart,
+        sections: d.sections.map(sec => ({
+          sectionName: `${sec.name || ''} ${sec.subtitle || ''}`.trim(),
+          ledgers: sec.items || [],
+          groupTotal: {
+            receiptAdj: sec.totalReceiptAdj, receiptCash: sec.totalReceiptCash, receiptTotal: sec.totalReceiptTotal,
+            paymentAdj: sec.totalPaymentAdj, paymentCash: sec.totalPaymentCash, paymentTotal: sec.totalPaymentTotal,
+            uptoR: sec.totUptoR, duringR: sec.totDuringR, eomR: sec.totEomR,
+            uptoP: sec.totUptoP, duringP: sec.totDuringP, eomP: sec.totEomP
+          }
+        })),
+        grandTotal: {
+          receiptAdj: d.grandTotalReceiptAdj, receiptCash: d.grandTotalReceiptCash, receiptTotal: d.grandTotalReceiptTotal,
+          paymentAdj: d.grandTotalPaymentAdj, paymentCash: d.grandTotalPaymentCash, paymentTotal: d.grandTotalPaymentTotal,
+          uptoR: d.grandUptoR, duringR: d.grandDuringR, eomR: d.grandEomR,
+          uptoP: d.grandUptoP, duringP: d.grandDuringP, eomP: d.grandEomP
+        }
+      },
+      columnFormat: viewMode,
+      companyName,
+      dateRange
+    });
   };
 
   // ── Excel Export ──────────────────────────────────────────────────────
@@ -597,6 +600,19 @@ const CooperativeRDReport = () => {
 
   return (
     <Box p="md">
+      {/* ── Title + Print / Export ── */}
+      <Group justify="space-between" align="center" mb="md" wrap="wrap" gap="sm">
+        <Text fw={700} size="lg">R&amp;D Report (Receipt &amp; Disbursement)</Text>
+        <Group gap="xs">
+          <Button leftSection={<IconPrinter size={16} />} variant="light" color="gray" onClick={handlePrint} size="sm" disabled={!reportData}>
+            Print
+          </Button>
+          <Button leftSection={<IconFileExport size={16} />} variant="light" color="green" onClick={handleExport} size="sm" disabled={!reportData}>
+            Export Excel
+          </Button>
+        </Group>
+      </Group>
+
       {/* ── Control Panel ── */}
       <Paper shadow="xs" withBorder p="md" mb="md" data-no-print>
         <Group gap="sm" wrap="wrap" align="flex-end">
@@ -642,17 +658,6 @@ const CooperativeRDReport = () => {
               />
             </Box>
           )}
-
-          <Tooltip label="Print">
-            <ActionIcon variant="light" color="dark" size="lg" onClick={handlePrint} disabled={!reportData}>
-              <IconPrinter size={18} />
-            </ActionIcon>
-          </Tooltip>
-          <Tooltip label="Export Excel">
-            <ActionIcon variant="light" color="green" size="lg" onClick={handleExport} disabled={!reportData}>
-              <IconFileExport size={18} />
-            </ActionIcon>
-          </Tooltip>
         </Group>
       </Paper>
 

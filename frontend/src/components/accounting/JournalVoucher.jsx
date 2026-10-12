@@ -191,6 +191,7 @@ const JournalVoucher = () => {
   const [fetchingVouchers, setFetchingVouchers] = useState(false);
   const [ledgers, setLedgers] = useState([]);
   const [vouchers, setVouchers] = useState([]);
+  const [cashVouchers, setCashVouchers] = useState([]);
   const [isMilkBill, setIsMilkBill] = useState(false);
   const [voucherDate, setVoucherDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [viewModalOpened, setViewModalOpened] = useState(false);
@@ -231,12 +232,17 @@ const JournalVoucher = () => {
   const fetchVouchers = async () => {
     setFetchingVouchers(true);
     try {
-      const response = await voucherAPI.getAll({
-        voucherType: 'Journal',
-        startDate: voucherDate,
-        endDate: voucherDate
-      });
-      setVouchers(response.data || []);
+      // Adjustment (Journal) entries drive the form; the same date's Cash
+      // Receipt/Payment vouchers are listed alongside them (view only).
+      const params = { startDate: voucherDate, endDate: voucherDate, limit: 1000 };
+      const [journalRes, receiptRes, paymentRes] = await Promise.all([
+        voucherAPI.getAll({ ...params, voucherType: 'Journal' }),
+        voucherAPI.getAll({ ...params, voucherType: 'Receipt' }),
+        voucherAPI.getAll({ ...params, voucherType: 'Payment' })
+      ]);
+      setVouchers(journalRes.data || []);
+      setCashVouchers([...(receiptRes.data || []), ...(paymentRes.data || [])]
+        .filter(v => v.status !== 'Cancelled'));
     } catch (error) {
       message.error(error.message || 'Failed to fetch vouchers');
     } finally {
@@ -333,6 +339,7 @@ const JournalVoucher = () => {
   const resetEntries = () => {
     setReceiptEntries([{ ledgerId: '', amount: '', narration: '' }]);
     setPaymentEntries([{ ledgerId: '', amount: '', narration: '' }]);
+    setIsMilkBill(false);
   };
 
   // Reset form — the "Clear" button, an explicit user action, also resets
@@ -356,6 +363,7 @@ const JournalVoucher = () => {
     const credits = (voucher.entries || []).filter(e => e.creditAmount > 0).map(toRow);
     setReceiptEntries(debits.length ? debits : [{ ledgerId: '', amount: '', narration: '' }]);
     setPaymentEntries(credits.length ? credits : [{ ledgerId: '', amount: '', narration: '' }]);
+    setIsMilkBill(!!voucher.isMilkBill);
     setVoucherDate(dayjs(voucher.voucherDate).format('YYYY-MM-DD'));
     setEditingVoucherId(voucher._id);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -425,6 +433,7 @@ const JournalVoucher = () => {
         totalDebit,
         totalCredit,
         referenceType: 'Manual',
+        isMilkBill,
         narration: entries.map(e => e.narration).filter(Boolean).join('; ') || 'Journal Entry'
       };
 
@@ -462,6 +471,28 @@ const JournalVoucher = () => {
     setSelectedVoucher(voucher);
     setViewModalOpened(true);
   };
+
+  // Grid rows — the date's Adjustment entries first, then its Cash
+  // Receipt / Payment vouchers.
+  const gridRows = useMemo(() => [
+    ...vouchers.map(voucher => ({ voucher, kind: 'adjustment' })),
+    ...cashVouchers.map(voucher => ({ voucher, kind: voucher.voucherType === 'Receipt' ? 'receipt' : 'payment' }))
+  ], [vouchers, cashVouchers]);
+
+  // All ledgers on one side of a voucher (a Receipt can credit several heads).
+  const voucherSide = (voucher, side) => {
+    const legs = (voucher.entries || []).filter(e => (side === 'debit' ? e.debitAmount : e.creditAmount) > 0);
+    return {
+      names: [...new Set(legs.map(e => e.ledgerName))].join(', ') || '-',
+      amount: legs.reduce((s, e) => s + (side === 'debit' ? e.debitAmount : e.creditAmount), 0)
+    };
+  };
+
+  const cashTotals = useMemo(() => cashVouchers.reduce((acc, v) => {
+    if (v.voucherType === 'Receipt') acc.receipts += v.totalDebit || 0;
+    else acc.payments += v.totalCredit || 0;
+    return acc;
+  }, { receipts: 0, payments: 0 }), [cashVouchers]);
 
   return (
     <Container size="xl" py="sm" px="md">
@@ -643,7 +674,7 @@ const JournalVoucher = () => {
         </Flex>
       </Paper>
 
-      {/* =============== BOTTOM SECTION - TRANSACTION DETAILS =============== */}
+      {/* =============== BOTTOM SECTION - ADJUSTMENT + CASH TRANSACTION DETAILS =============== */}
       <Paper withBorder radius="sm" style={{ borderColor: '#dee2e6', overflow: 'hidden' }}>
         {/* Section Header */}
         <Box
@@ -657,31 +688,36 @@ const JournalVoucher = () => {
           <Group gap={8}>
             <IconFileText size={16} color="#1976d2" />
             <Text fw={700} size="sm" c="blue.8" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-              Adjustment Entry Transaction Details
+              Adjustment + Cash Transaction Details — {dayjs(voucherDate).format('DD-MM-YYYY')}
             </Text>
-            <Badge variant="filled" color="blue" size="sm" radius="sm" ml="auto">
-              {vouchers.length} Entries
-            </Badge>
+            <Group gap={6} ml="auto">
+              <Badge variant="filled" color="blue" size="sm" radius="sm">
+                {vouchers.length} Adjustment
+              </Badge>
+              <Badge variant="filled" color="teal" size="sm" radius="sm">
+                {cashVouchers.length} Cash
+              </Badge>
+            </Group>
           </Group>
         </Box>
 
         <LoadingOverlay visible={fetchingVouchers} overlayProps={{ blur: 2 }} />
 
-        {vouchers.length === 0 ? (
+        {gridRows.length === 0 ? (
           <Box p="xl" style={{ textAlign: 'center' }}>
             <IconArrowsExchange size={40} color="#adb5bd" style={{ marginBottom: '8px' }} />
-            <Text c="dimmed" size="sm">No journal entries on {dayjs(voucherDate).format('DD-MM-YYYY')}. Create one above.</Text>
+            <Text c="dimmed" size="sm">No adjustment or cash entries on {dayjs(voucherDate).format('DD-MM-YYYY')}. Create one above.</Text>
           </Box>
         ) : (
-          <ScrollArea style={{ maxHeight: '320px' }}>
+          <ScrollArea style={{ maxHeight: '360px' }}>
             <Table striped highlightOnHover withColumnBorders style={{ fontSize: '13px' }}>
               <Table.Thead style={{ position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 1 }}>
                 <Table.Tr>
                   <Table.Th style={{ width: '40px', padding: '8px 10px', fontSize: '11px', fontWeight: 700, textAlign: 'center' }}>
                     #
                   </Table.Th>
-                  <Table.Th style={{ width: '100px', padding: '8px 10px', fontSize: '11px', fontWeight: 700 }}>
-                    Date
+                  <Table.Th style={{ width: '120px', padding: '8px 10px', fontSize: '11px', fontWeight: 700 }}>
+                    Type
                   </Table.Th>
                   <Table.Th style={{ width: '90px', padding: '8px 10px', fontSize: '11px', fontWeight: 700 }}>
                     Voucher No
@@ -710,38 +746,51 @@ const JournalVoucher = () => {
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {vouchers.map((voucher, index) => {
-                  const debitEntry = voucher.entries?.find(e => e.debitAmount > 0);
-                  const creditEntry = voucher.entries?.find(e => e.creditAmount > 0);
+                {gridRows.map(({ voucher, kind }, index) => {
+                  const dr = voucherSide(voucher, 'debit');
+                  const cr = voucherSide(voucher, 'credit');
+                  const isAdj = kind === 'adjustment';
                   const isManual = voucher.referenceType === 'Manual';
+                  const typeBadge = isAdj
+                    ? { label: 'Adjustment', color: 'blue' }
+                    : kind === 'receipt'
+                      ? { label: 'Cash Receipt', color: 'teal' }
+                      : { label: 'Cash Payment', color: 'red' };
 
                   return (
                     <Table.Tr key={voucher._id}>
                       <Table.Td style={{ textAlign: 'center', padding: '6px 10px', color: '#868e96', fontSize: '12px' }}>
                         {index + 1}
                       </Table.Td>
-                      <Table.Td style={{ padding: '6px 10px', fontSize: '12px', fontWeight: 500 }}>
-                        {dayjs(voucher.voucherDate).format('DD-MM-YYYY')}
+                      <Table.Td style={{ padding: '6px 10px' }}>
+                        <Group gap={4} wrap="nowrap">
+                          <Badge size="xs" variant="light" color={typeBadge.color}>{typeBadge.label}</Badge>
+                          {voucher.isMilkBill && (
+                            <Tooltip label="Milk Bill — shown in Milk Bill Abstract" withArrow>
+                              <IconMilk size={14} color="var(--mantine-color-cyan-6)" />
+                            </Tooltip>
+                          )}
+                        </Group>
                       </Table.Td>
                       <Table.Td style={{ padding: '6px 10px' }}>
-                        <Badge variant="outline" color="blue" size="xs" radius="sm">
+                        <Badge variant="outline" color={typeBadge.color} size="xs" radius="sm">
                           {voucher.voucherNumber || '-'}
                         </Badge>
                       </Table.Td>
                       <Table.Td style={{ padding: '6px 10px', fontSize: '12px' }}>
-                        {debitEntry?.ledgerName || '-'}
+                        {dr.names}
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right', padding: '6px 10px' }}>
                         <Text size="xs" fw={600} c="red.7" ff="monospace">
-                          {'\u20B9'} {(debitEntry?.debitAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          {'₹'} {dr.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </Text>
                       </Table.Td>
                       <Table.Td style={{ padding: '6px 10px', fontSize: '12px' }}>
-                        {creditEntry?.ledgerName || '-'}
+                        {cr.names}
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right', padding: '6px 10px' }}>
                         <Text size="xs" fw={600} c="green.7" ff="monospace">
-                          {'\u20B9'} {(creditEntry?.creditAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          {'₹'} {cr.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </Text>
                       </Table.Td>
                       <Table.Td style={{ padding: '6px 10px' }}>
@@ -761,7 +810,7 @@ const JournalVoucher = () => {
                               <IconEye size={14} />
                             </ActionIcon>
                           </Tooltip>
-                          {isManual ? (
+                          {isAdj && isManual ? (
                             <>
                               <Tooltip label="Edit" withArrow>
                                 <ActionIcon size="sm" variant="subtle" color="orange" onClick={() => startEdit(voucher)}>
@@ -775,7 +824,12 @@ const JournalVoucher = () => {
                               </Tooltip>
                             </>
                           ) : (
-                            <Tooltip label="Auto-generated — edit/delete from its originating module" withArrow>
+                            <Tooltip
+                              label={isAdj
+                                ? 'Auto-generated — edit/delete from its originating module'
+                                : `Edit/delete from the ${kind === 'receipt' ? 'Receipt' : 'Payment'} Voucher screen`}
+                              withArrow
+                            >
                               <Text size="9px" c="dimmed" fs="italic">View only</Text>
                             </Tooltip>
                           )}
@@ -785,25 +839,44 @@ const JournalVoucher = () => {
                   );
                 })}
               </Table.Tbody>
-              {/* Table Footer with Totals */}
+              {/* Table Footer — Adjustment and Cash totals kept apart */}
               <Table.Tfoot>
                 <Table.Tr style={{ background: '#e3f2fd', fontWeight: 700 }}>
                   <Table.Td colSpan={4} style={{ textAlign: 'right', padding: '8px 10px' }}>
-                    <Text size="xs" fw={700} c="dark.6">GRAND TOTAL</Text>
+                    <Text size="xs" fw={700} c="dark.6">ADJUSTMENT TOTAL</Text>
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'right', padding: '8px 10px' }}>
                     <Text size="sm" fw={700} c="red.7" ff="monospace">
-                      {'\u20B9'} {vouchers.reduce((sum, v) => sum + (v.totalDebit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {'₹'} {vouchers.reduce((sum, v) => sum + (v.totalDebit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Text>
                   </Table.Td>
                   <Table.Td style={{ padding: '8px 10px' }}></Table.Td>
                   <Table.Td style={{ textAlign: 'right', padding: '8px 10px' }}>
                     <Text size="sm" fw={700} c="green.7" ff="monospace">
-                      {'\u20B9'} {vouchers.reduce((sum, v) => sum + (v.totalCredit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {'₹'} {vouchers.reduce((sum, v) => sum + (v.totalCredit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Text>
                   </Table.Td>
                   <Table.Td colSpan={3} style={{ textAlign: 'center', padding: '8px 10px' }}>
                     <Text size="xs" c="dimmed">{vouchers.length} voucher(s)</Text>
+                  </Table.Td>
+                </Table.Tr>
+                <Table.Tr style={{ background: '#e6fcf5', fontWeight: 700 }}>
+                  <Table.Td colSpan={4} style={{ textAlign: 'right', padding: '8px 10px' }}>
+                    <Text size="xs" fw={700} c="dark.6">CASH RECEIPTS / CASH PAYMENTS</Text>
+                  </Table.Td>
+                  <Table.Td style={{ textAlign: 'right', padding: '8px 10px' }}>
+                    <Text size="sm" fw={700} c="teal.7" ff="monospace">
+                      {'₹'} {cashTotals.receipts.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td style={{ padding: '8px 10px' }}></Table.Td>
+                  <Table.Td style={{ textAlign: 'right', padding: '8px 10px' }}>
+                    <Text size="sm" fw={700} c="red.7" ff="monospace">
+                      {'₹'} {cashTotals.payments.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td colSpan={3} style={{ textAlign: 'center', padding: '8px 10px' }}>
+                    <Text size="xs" c="dimmed">{cashVouchers.length} voucher(s)</Text>
                   </Table.Td>
                 </Table.Tr>
               </Table.Tfoot>

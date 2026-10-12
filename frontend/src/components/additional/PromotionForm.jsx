@@ -193,7 +193,7 @@ const PromotionForm = () => {
               className="btn btn-default"
               onClick={() => navigate('/promotions')}
             >
-              Back to List
+              Cancel
             </button>
           </div>
         </form>

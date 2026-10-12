@@ -13,7 +13,8 @@ import { notifications } from '@mantine/notifications';
 import * as XLSX from 'xlsx';
 import dayjs from 'dayjs';
 import { reportAPI } from '../../services/api';
-import { printReportLive } from '../../utils/printReport';
+import { openA4Print, a4Header, a4Signatures, escapeHtml } from '../../utils/printA4';
+import { useCompany } from '../../context/CompanyContext';
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 const f2 = (n) => parseFloat(n || 0).toFixed(2);
@@ -96,6 +97,8 @@ const PG_CONFIG = {
 
 // ── Main component ────────────────────────────────────────────────────────
 const LedgerAbstract = () => {
+  const { selectedCompany } = useCompany();
+  const companyName = selectedCompany?.companyName || 'Dairy Co-operative Society';
   const [loading, setLoading]           = useState(false);
   const [reportData, setReportData]     = useState(null);
   const [groupedData, setGroupedData]   = useState(null);
@@ -190,25 +193,88 @@ const LedgerAbstract = () => {
     notifications.show({ title: 'Exported', message: 'Ledger Abstract exported to Excel', color: 'green' });
   };
 
-  // ── Print — clones the live stylesheets (Mantine's Group/SimpleGrid flex
-  // & grid CSS) so the printout renders with the exact same horizontal
-  // layout as the on-screen view: summary cards in one row, account-group
-  // totals and the grand-total footer each as a single row, nothing
-  // collapsing into a stacked column the way a hand-written print
-  // stylesheet would. ───────────────────────────────────────────────────
+  // ── Print — dedicated A4 layout built from the data of the view on
+  // screen (Ledger Wise / Category Wise / All Ledgers): one header, a plain
+  // 7-column table with the column header repeated on every page, and the
+  // grand total once at the end. Receipt / Payment already include every
+  // Cash and Adjustment entry, so no separate Adjustment figure is printed.
   const handlePrint = () => {
-    printReportLive(printRef, {
+    if (!abstract.length) return;
+    const cells = (obDr, obCr, rec, pay, clDr, clCr, blank) => {
+      const v = (n) => (blank ? fz(n) : f2(n));
+      return `<td class="amt">${v(obDr)}</td><td class="amt">${v(obCr)}</td>`
+        + `<td class="amt">${v(rec)}</td><td class="amt">${v(pay)}</td>`
+        + `<td class="amt">${v(clDr)}</td><td class="amt">${v(clCr)}</td>`;
+    };
+    const ledgerRow = (item, rec, pay, indent) => `<tr>
+        <td class="${indent ? 'indent' : ''}">${escapeHtml(item.ledgerName)}</td>
+        ${cells(
+          item.openingBalanceType === 'Dr' ? item.openingBalance : 0,
+          item.openingBalanceType === 'Cr' ? item.openingBalance : 0,
+          rec, pay,
+          item.closingBalanceType === 'Dr' ? item.closingBalance : 0,
+          item.closingBalanceType === 'Cr' ? item.closingBalance : 0,
+          true
+        )}
+      </tr>`;
+
+    let body = '';
+    if (view === 'accountGroup') {
+      let currentPG = null;
+      (groupedData?.groups || []).forEach(group => {
+        const pg = group.parentGroup || 'OTHER';
+        if (pg !== currentPG) {
+          currentPG = pg;
+          body += `<tr class="row-sec"><td colspan="7">${escapeHtml((PG_CONFIG[pg] || PG_CONFIG.OTHER).label)}</td></tr>`;
+        }
+        const t = group.totals;
+        body += `<tr class="row-sub"><td>${escapeHtml(group.accountGroup)}</td>${cells(t.obDr, t.obCr, t.receipt ?? t.debit, t.payment ?? t.credit, t.clDr, t.clCr, false)}</tr>`;
+        group.ledgers.forEach(item => { body += ledgerRow(item, item.receipt ?? item.debit, item.payment ?? item.credit, true); });
+      });
+    } else if (view === 'grouped') {
+      sortedCats.forEach(cat => {
+        const items = grouped[cat];
+        const tot = catTotals(items);
+        body += `<tr class="row-sec"><td colspan="7">${escapeHtml(getCatConf(cat).label)}</td></tr>`;
+        items.forEach(item => { body += ledgerRow(item, item.totalReceipt ?? item.totalDebits, item.totalPayment ?? item.totalCredits, true); });
+        body += `<tr class="row-sub"><td class="amt">Sub-total — ${escapeHtml(getCatConf(cat).label)}</td>${cells(tot.obDr, tot.obCr, tot.debit, tot.credit, tot.clDr, tot.clCr, false)}</tr>`;
+      });
+    } else {
+      abstract.forEach(item => { body += ledgerRow(item, item.totalReceipt ?? item.totalDebits, item.totalPayment ?? item.totalCredits, false); });
+    }
+    if (s) {
+      body += `<tr class="row-grand"><td>GRAND TOTAL — ${s.totalLedgers} Ledger${s.totalLedgers !== 1 ? 's' : ''}</td>${cells(
+        s.totalOpeningDebit, s.totalOpeningCredit, s.totalReceipt ?? s.totalDebits, s.totalPayment ?? s.totalCredits,
+        s.totalClosingDebit, s.totalClosingCredit, false
+      )}</tr>`;
+    }
+
+    const viewLabel = view === 'accountGroup' ? 'Ledger Wise' : view === 'grouped' ? 'Category Wise' : 'All Ledgers';
+    openA4Print({
       title: 'Ledger Abstract',
-      orientation: 'landscape',
-      extraCss: `
-        /* Repeat the table header / grand-total footer on every page */
-        thead { display: table-header-group; }
-        tfoot { display: table-footer-group; }
-        /* Never split a row (account-group totals, a ledger line, the
-           grand total) across two pages */
-        tr { page-break-inside: avoid; break-inside: avoid; }
-        table { page-break-inside: auto; }
-      `
+      orientation: 'portrait',
+      bodyHtml: a4Header({
+        orgName: companyName,
+        title: 'Ledger Abstract',
+        period: `${fmtDate(dateRange[0])} to ${fmtDate(dateRange[1])}`,
+        extra: `${viewLabel} &nbsp;|&nbsp; Printed: ${dayjs().format('DD-MM-YYYY')}`
+      }) + `
+        <table class="a4">
+          <colgroup>
+            <col style="width:31%"><col style="width:11.5%"><col style="width:11.5%">
+            <col style="width:11.5%"><col style="width:11.5%"><col style="width:11.5%"><col style="width:11.5%">
+          </colgroup>
+          <thead>
+            <tr>
+              <th rowspan="2">Ledger Name</th>
+              <th colspan="2">Opening Balance</th>
+              <th colspan="2">During Period</th>
+              <th colspan="2">Closing Balance</th>
+            </tr>
+            <tr><th>Dr.</th><th>Cr.</th><th>Receipt</th><th>Payment</th><th>Dr.</th><th>Cr.</th></tr>
+          </thead>
+          <tbody>${body}</tbody>
+        </table>` + a4Signatures(['President', 'Secretary'])
     });
   };
 

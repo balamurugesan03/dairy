@@ -9,7 +9,7 @@ import { notifications } from '@mantine/notifications';
 import { modals } from '@mantine/modals';
 import {
   IconCalendar, IconRefresh, IconPrinter, IconFileSpreadsheet,
-  IconSearch, IconCheck, IconArrowLeft, IconPlus, IconEdit, IconTrash,
+  IconSearch, IconCheck, IconPlus, IconEdit, IconTrash,
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { useReactToPrint } from 'react-to-print';
@@ -666,15 +666,6 @@ const LoanAdvanceSummary = () => {
 
           {/* ── LEDGER TAB ── */}
           <Tabs.Panel value="ledger" p="md">
-            {farmerId && (
-              <Button
-                size="xs" variant="subtle" leftSection={<IconArrowLeft size={13} />}
-                onClick={() => setActiveTab('summary')}
-                mb="xs" className="no-print"
-              >
-                Back to Summary
-              </Button>
-            )}
 
             <div id="la-print" ref={activeTab === 'ledger' ? printRef : undefined}>
               {ledgerData ? (

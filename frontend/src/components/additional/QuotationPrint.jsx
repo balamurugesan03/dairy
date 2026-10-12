@@ -75,9 +75,6 @@ const QuotationPrint = () => {
     <div className="qp-wrapper">
       {/* Toolbar — hidden on print */}
       <div className="qp-toolbar no-print">
-        <button className="qp-btn qp-btn-outline" onClick={() => navigate('/quotations')}>
-          ← Back to List
-        </button>
         <button className="qp-btn qp-btn-outline" onClick={() => navigate(`/quotations/edit/${id}`)}>
           ✏ Edit
         </button>

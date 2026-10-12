@@ -29,7 +29,6 @@ import {
   IconPrinter,
   IconRefresh,
   IconCalendar,
-  IconArrowLeft,
   IconArrowUpRight,
   IconArrowDownRight,
   IconWallet,
@@ -283,9 +282,6 @@ const VyaparBankStatement = () => {
       <Paper shadow="xs" p="md" mb="md" withBorder radius="md" style={{ backgroundColor: '#fff' }}>
         <Group justify="space-between" align="center" mb="lg">
           <Group gap="sm">
-            <ActionIcon variant="subtle" color="gray" onClick={() => navigate('/reports/vyapar')} size="lg">
-              <IconArrowLeft size={20} />
-            </ActionIcon>
             <ThemeIcon size="xl" variant="gradient" gradient={{ from: 'blue', to: 'cyan' }} radius="md">
               <IconBuildingBank size={24} />
             </ThemeIcon>

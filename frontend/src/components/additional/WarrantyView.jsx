@@ -8,7 +8,7 @@ import {
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import {
-  IconArrowLeft, IconEdit, IconPlus, IconShield, IconShieldCheck,
+  IconEdit, IconPlus, IconShield, IconShieldCheck,
   IconShieldOff, IconAlertCircle, IconUser, IconTag
 } from '@tabler/icons-react';
 import { warrantyAPI } from '../../services/api';
@@ -135,7 +135,6 @@ const WarrantyView = () => {
     <Container size="xl" py="md">
       <Group justify="space-between" mb="md">
         <Group gap="xs">
-          <ActionIcon variant="subtle" onClick={() => navigate('/warranty')}><IconArrowLeft size={18}/></ActionIcon>
           <Box>
             <Title order={2} fw={700}>{w.warrantyNumber}</Title>
             <Text size="sm" c="dimmed">{w.itemName}</Text>
