@@ -243,7 +243,6 @@ import {
   ActionIcon
 } from '@mantine/core';
 import {
-  IconArrowLeft,
   IconPrinter,
   IconCalendar,
   IconUser,
@@ -342,13 +341,6 @@ const SalesView = () => {
             </Text>
           </div>
           <Group>
-            <Button
-              variant="outline"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/sales')}
-            >
-              Back
-            </Button>
             <Button
               leftSection={<IconPrinter size={16} />}
               onClick={handlePrint}

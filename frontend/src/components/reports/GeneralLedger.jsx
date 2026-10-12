@@ -243,12 +243,11 @@ const GeneralLedger = () => {
       { content: '', styles: { fillColor: byY } }, { content: '', styles: { fillColor: byY } },
       { content: '', styles: { fillColor: byY } },
       { content: `${fmtA(processedData.openBal)} ${processedData.openBalType}`, styles: { ...boldR, fillColor: byY } },
-      { content: '', styles: { fillColor: byY } },
       { content: 'Opening Balance - B/F', styles: { ...bold, fillColor: byY } }
     ]);
 
     processedData.months.forEach(m => {
-      body.push([{ content: `Month :  ${m.key}`, colSpan: 8, styles: { halign: 'center', ...bold, fillColor: bgB, textColor: [40, 53, 147] } }]);
+      body.push([{ content: `Month :  ${m.key}`, colSpan: 7, styles: { halign: 'center', ...bold, fillColor: bgB, textColor: [40, 53, 147] } }]);
       m.rows.forEach(r => body.push([
         { content: formatDay(r.date), styles: { halign: 'center' } },
         { content: fmt(r.receipt),    styles: { halign: 'right' } },
@@ -256,7 +255,6 @@ const GeneralLedger = () => {
         { content: fmt(r.payment),    styles: { halign: 'right' } },
         { content: r.payment > 0 ? fmtA(r.progPayment) : '', styles: { halign: 'right', textColor: [100, 100, 100] } },
         { content: `${fmtA(r.runningBalance)} ${r.balType}`, styles: { halign: 'right', fontStyle: 'bold' } },
-        { content: r.column === 'adjustment' ? 'Adjustment' : 'Cash', styles: { halign: 'center', fontSize: fs - 0.5, textColor: r.column === 'adjustment' ? [180, 120, 0] : [40, 120, 80] } },
         r.particulars + (r.narration ? ` - ${r.narration}` : '')
       ]));
       body.push([
@@ -264,7 +262,6 @@ const GeneralLedger = () => {
         { content: fmtA(m.monthReceipt), styles: { ...boldR, fillColor: bgG } },
         { content: '', styles: { fillColor: bgG } },
         { content: fmtA(m.monthPayment), styles: { ...boldR, fillColor: bgG } },
-        { content: '', styles: { fillColor: bgG } },
         { content: '', styles: { fillColor: bgG } },
         { content: '', styles: { fillColor: bgG } },
         { content: `Total : ${m.key}`, styles: { ...bold, fillColor: bgG } }
@@ -276,7 +273,6 @@ const GeneralLedger = () => {
       { content: '', styles: { fillColor: byY } }, { content: '', styles: { fillColor: byY } },
       { content: '', styles: { fillColor: byY } },
       { content: `${fmtA(processedData.closeBal)} ${processedData.closeBalType}`, styles: { ...boldR, fillColor: byY } },
-      { content: '', styles: { fillColor: byY } },
       { content: 'Closing Balance - C/F', styles: { ...bold, fillColor: byY } }
     ]);
     body.push([
@@ -285,19 +281,18 @@ const GeneralLedger = () => {
       { content: '', styles: { fillColor: bgB } },
       { content: fmtA(processedData.totalPayments), styles: { ...boldR, fillColor: bgB } },
       { content: '', styles: { fillColor: bgB } }, { content: '', styles: { fillColor: bgB } },
-      { content: '', styles: { fillColor: bgB } },
       { content: 'GRAND TOTAL', styles: { ...bold, fillColor: bgB } }
     ]);
 
     autoTable(doc, {
-      head: [['Day', 'Receipt', 'Prog. Receipt', 'Payment', 'Prog. Payment', 'Balance', 'Type', 'Description']],
+      head: [['Day', 'Receipt', 'Prog. Receipt', 'Payment', 'Prog. Payment', 'Balance', 'Description']],
       body,
       startY: 32,
       margin: { left: mg, right: mg },
       theme: 'grid',
       styles: { font: 'helvetica', fontSize: fs, cellPadding: 1.5, lineColor: [150, 150, 150], lineWidth: 0.15, overflow: 'ellipsize' },
       headStyles: { fillColor: [230, 230, 235], textColor: [26, 26, 46], fontStyle: 'bold', fontSize: fs, halign: 'center' },
-      columnStyles: { 0: { halign: 'center' }, 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right', fontStyle: 'bold' }, 6: { halign: 'center' }, 7: { halign: 'left' } }
+      columnStyles: { 0: { halign: 'center' }, 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right', fontStyle: 'bold' }, 6: { halign: 'left' } }
     });
 
     doc.save(`general_ledger_${processedData.ledgerName.replace(/\s+/g, '_')}_${dayjs(fromDate).format('YYYY-MM-DD')}.pdf`);
@@ -312,8 +307,8 @@ const GeneralLedger = () => {
       [`Head of Account: ${processedData.ledgerName}`, '', '', '', '', '', `F.Y.: ${getFinancialYear()}`],
       [`Period: ${formatDate(fromDate)} to ${formatDate(toDate)}`],
       [],
-      ['Day', 'Receipt', 'Prog. Receipt', 'Payment', 'Prog. Payment', 'Balance', 'Type', 'Description'],
-      ['', '', '', '', '', `${fmtA(processedData.openBal)} ${processedData.openBalType}`, '', 'Opening Balance - B/F'],
+      ['Day', 'Receipt', 'Prog. Receipt', 'Payment', 'Prog. Payment', 'Balance', 'Description'],
+      ['', '', '', '', '', `${fmtA(processedData.openBal)} ${processedData.openBalType}`, 'Opening Balance - B/F'],
     ];
 
     processedData.months.forEach(m => {
@@ -323,17 +318,16 @@ const GeneralLedger = () => {
         r.receipt || '', r.receipt > 0 ? r.progReceipt : '',
         r.payment || '', r.payment > 0 ? r.progPayment : '',
         `${r.runningBalance} ${r.balType}`,
-        r.column === 'adjustment' ? 'Adjustment' : 'Cash',
         `${r.particulars}${r.narration ? ' - ' + r.narration : ''}`
       ]));
-      rows.push(['', m.monthReceipt, '', m.monthPayment, '', '', '', `Total: ${m.key}`]);
+      rows.push(['', m.monthReceipt, '', m.monthPayment, '', '', `Total: ${m.key}`]);
     });
 
-    rows.push(['', '', '', '', '', `${fmtA(processedData.closeBal)} ${processedData.closeBalType}`, '', 'Closing Balance - C/F']);
-    rows.push(['', processedData.totalReceipts, '', processedData.totalPayments, '', '', '', 'GRAND TOTAL']);
+    rows.push(['', '', '', '', '', `${fmtA(processedData.closeBal)} ${processedData.closeBalType}`, 'Closing Balance - C/F']);
+    rows.push(['', processedData.totalReceipts, '', processedData.totalPayments, '', '', 'GRAND TOTAL']);
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{ wch: 6 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 12 }, { wch: 34 }];
+    ws['!cols'] = [{ wch: 6 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 40 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'General Ledger');
     XLSX.writeFile(wb, `general_ledger_${processedData.ledgerName.replace(/\s+/g, '_')}_${dayjs(fromDate).format('YYYY-MM-DD')}.xlsx`);
@@ -444,8 +438,7 @@ const GeneralLedger = () => {
               <col style={{ width: '11%' }} />
               <col style={{ width: '12%' }} />
               <col style={{ width: '13%' }} />
-              <col style={{ width: '8%' }} />
-              <col style={{ width: '28%' }} />
+              <col style={{ width: '36%' }} />
             </colgroup>
             <thead style={{ position: 'sticky', top: 0, zIndex: 2 }}>
               <tr>
@@ -455,7 +448,6 @@ const GeneralLedger = () => {
                 <th style={thBase}>Payment</th>
                 <th style={thBase}>Prog. Payment</th>
                 <th style={thBase}>Balance</th>
-                <th style={thBase}>Type</th>
                 <th style={{ ...thBase, textAlign: 'left', paddingLeft: 10 }}>Description</th>
               </tr>
             </thead>
@@ -477,7 +469,6 @@ const GeneralLedger = () => {
                   {fmtA(processedData.openBal)}
                   <span style={S.balType}>{processedData.openBalType}</span>
                 </td>
-                <td style={{ ...S.base, background: BG.opening, border: '1px solid #C8CDD2', borderBottom: '1.5px solid #999' }} />
                 <td
                   style={{
                     ...S.base, ...S.desc,
@@ -495,7 +486,7 @@ const GeneralLedger = () => {
               {processedData.months.length === 0 && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={7}
                     style={{
                       ...S.base, ...S.desc,
                       textAlign: 'center',
@@ -515,7 +506,7 @@ const GeneralLedger = () => {
                   {/* Month header */}
                   <tr key={`mh-${mIdx}`}>
                     <td
-                      colSpan={8}
+                      colSpan={7}
                       style={{
                         ...S.base,
                         background: BG.month,
@@ -562,16 +553,6 @@ const GeneralLedger = () => {
                         {fmtA(row.runningBalance)}
                         <span style={S.balType}>{row.balType}</span>
                       </td>
-                      <td style={{ ...S.base, textAlign: 'center', border: '1px solid #C8CDD2' }}>
-                        <Badge
-                          size="xs"
-                          radius="sm"
-                          variant="light"
-                          color={row.column === 'adjustment' ? 'yellow' : 'teal'}
-                        >
-                          {row.column === 'adjustment' ? 'Adj' : 'Cash'}
-                        </Badge>
-                      </td>
                       <td
                         style={{
                           ...S.base, ...S.desc,
@@ -605,7 +586,6 @@ const GeneralLedger = () => {
                     </td>
                     <td style={{ ...S.base, background: BG.monthTotal, border: '1px solid #C8CDD2', borderTop: '1.5px solid #999', borderBottom: '1.5px solid #999' }} />
                     <td style={{ ...S.base, background: BG.monthTotal, border: '1px solid #C8CDD2', borderTop: '1.5px solid #999', borderBottom: '1.5px solid #999' }} />
-                    <td style={{ ...S.base, background: BG.monthTotal, border: '1px solid #C8CDD2', borderTop: '1.5px solid #999', borderBottom: '1.5px solid #999' }} />
                     <td style={{ ...S.base, ...S.desc, ...S.bal, background: BG.monthTotal, border: '1px solid #C8CDD2', borderTop: '1.5px solid #999', borderBottom: '1.5px solid #999' }}>
                       Total : {month.key}
                     </td>
@@ -622,7 +602,6 @@ const GeneralLedger = () => {
                   {fmtA(processedData.closeBal)}
                   <span style={S.balType}>{processedData.closeBalType}</span>
                 </td>
-                <td style={{ ...S.base, background: BG.closing, border: '1px solid #C8CDD2', borderTop: '2px solid #1a1a2e' }} />
                 <td style={{ ...S.base, ...S.desc, background: BG.closing, border: '1px solid #C8CDD2', borderTop: '2px solid #1a1a2e', fontWeight: 700 }}>
                   Closing Balance — Carried Forward
                 </td>
@@ -638,7 +617,6 @@ const GeneralLedger = () => {
                 <td style={{ ...S.base, ...S.num, fontWeight: 800, fontSize: 12.5, background: BG.grandTotal, border: '1px solid #9FA6B2', borderTop: '2.5px double #1a1a2e', borderBottom: '2.5px double #1a1a2e' }}>
                   {fmtA(processedData.totalPayments)}
                 </td>
-                <td style={{ ...S.base, background: BG.grandTotal, border: '1px solid #9FA6B2', borderTop: '2.5px double #1a1a2e', borderBottom: '2.5px double #1a1a2e' }} />
                 <td style={{ ...S.base, background: BG.grandTotal, border: '1px solid #9FA6B2', borderTop: '2.5px double #1a1a2e', borderBottom: '2.5px double #1a1a2e' }} />
                 <td style={{ ...S.base, background: BG.grandTotal, border: '1px solid #9FA6B2', borderTop: '2.5px double #1a1a2e', borderBottom: '2.5px double #1a1a2e' }} />
                 <td style={{ ...S.base, ...S.desc, fontWeight: 800, fontSize: 12.5, color: '#283593', background: BG.grandTotal, border: '1px solid #9FA6B2', borderTop: '2.5px double #1a1a2e', borderBottom: '2.5px double #1a1a2e' }}>

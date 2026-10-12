@@ -1069,10 +1069,22 @@ const DEDUCTION_COLS = [
   { key: 'shareInMilma',   types: ['Share in Milma', 'Share', 'Society Fee'] },
   { key: 'silageFactory',  types: ['Silage Factory', 'Silage'] },
   { key: 'unionBank',      types: ['Union Bank A/c', 'Union Bank', 'Loan EMI', 'Transport'] },
+  // Milk-bill Adjustment Entry recoveries whose ledger matches none of the
+  // columns above (never matched against FarmerPayment deduction types).
+  { key: 'otherAdj',       types: [] },
 ];
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const emptyDed = () => Object.fromEntries(DEDUCTION_COLS.map(c => [c.key, 0]));
+
+// The producers' milk-bill ledger itself (Producers Dues / Milk Purchase) —
+// the leg of a Milk Bill adjustment that the recovery is taken out of.
+const MILK_BILL_LEDGER_RE = /producers?\s*(dues?|payable|account)|milk\s*(purchase|procurement|procure|collection|bill|payable)/i;
+const deductionKeyForLedger = (ledgerName) => {
+  const name = (ledgerName || '').toLowerCase();
+  const col = DEDUCTION_COLS.find(c => c.types.some(t => name.includes(t.toLowerCase())));
+  return col ? col.key : 'otherAdj';
+};
 
 export const getMilkBillAbstractReport = async (req, res) => {
   try {
@@ -1118,19 +1130,21 @@ export const getMilkBillAbstractReport = async (req, res) => {
 
     // ── 3. Group collections by month
     const monthMap = {};
-
-    collections.forEach(c => {
-      const d = new Date(c.date);
+    const getMonth = (date) => {
+      const d = new Date(date);
       const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const ml = `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
-
       if (!monthMap[mk]) {
         monthMap[mk] = {
-          monthKey: mk, monthLabel: ml,
-          rows: [], totals: emptyDed(),
+          monthKey: mk, monthLabel: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`,
+          rows: [], adjustmentRows: [], totals: emptyDed(),
           totalQty: 0, totalAmount: 0, totalPayment: 0
         };
       }
+      return { mk, month: monthMap[mk] };
+    };
+
+    collections.forEach(c => {
+      const { mk } = getMonth(c.date);
 
       const dedMapKey = `${c.farmerNumber}__${mk}`;
       const dedMap = dedByFarmerMonth[dedMapKey] || emptyDed();
@@ -1158,6 +1172,58 @@ export const getMilkBillAbstractReport = async (req, res) => {
       monthMap[mk].totalAmount += row.amount;
       monthMap[mk].totalPayment += row.netPayable;
       DEDUCTION_COLS.forEach(col => { monthMap[mk].totals[col.key] += dedMap[col.key] || 0; });
+    });
+
+    // ── 4. Adjustment (Journal) Entries saved with "Milk Bill" ticked.
+    //    Usual shape: Dr Producers Dues / Cr <recovery ledger> — each credited
+    //    ledger is a recovery from the milk bill, placed in its matching
+    //    deduction column (or "Other Adj." when none matches). The reverse
+    //    shape (Cr Producers Dues / Dr <ledger>) is an addition to the bill
+    //    and is shown in the Milk Amount column instead.
+    const milkBillVouchers = await Voucher.find({
+      ...companyFilter,
+      voucherType: 'Journal',
+      isMilkBill: true,
+      status: { $ne: 'Cancelled' },
+      voucherDate: { $gte: start, $lte: end }
+    }).sort({ voucherDate: 1, voucherNumber: 1 }).lean();
+
+    milkBillVouchers.forEach(v => {
+      const entries = v.entries || [];
+      const isBillLeg = (e) => MILK_BILL_LEDGER_RE.test(e.ledgerName || '');
+      const billDebited  = entries.some(e => e.debitAmount > 0 && isBillLeg(e));
+      const billCredited = entries.some(e => e.creditAmount > 0 && isBillLeg(e));
+      const isAddition = billCredited && !billDebited;
+
+      const deductions = emptyDed();
+      let addition = 0;
+      let heads;
+      if (isAddition) {
+        const legs = entries.filter(e => e.debitAmount > 0);
+        legs.forEach(e => { addition += e.debitAmount; });
+        heads = legs.map(e => e.ledgerName);
+      } else {
+        const legs = entries.filter(e => e.creditAmount > 0 && !isBillLeg(e));
+        legs.forEach(e => { deductions[deductionKeyForLedger(e.ledgerName)] += e.creditAmount; });
+        heads = legs.map(e => e.ledgerName);
+      }
+      const totalDed = DEDUCTION_COLS.reduce((s, col) => s + deductions[col.key], 0);
+      if (addition === 0 && totalDed === 0) return;
+
+      const { month } = getMonth(v.voucherDate);
+      month.adjustmentRows.push({
+        date: v.voucherDate,
+        voucherNumber: v.voucherNumber,
+        particulars: [...new Set(heads)].join(', '),
+        narration: v.narration || '',
+        amount: addition,
+        deductions,
+        totalDeduction: totalDed,
+        netPayable: addition - totalDed
+      });
+      month.totalAmount  += addition;
+      month.totalPayment += addition - totalDed;
+      DEDUCTION_COLS.forEach(col => { month.totals[col.key] += deductions[col.key]; });
     });
 
     const months = Object.values(monthMap).sort((a, b) => a.monthKey.localeCompare(b.monthKey));

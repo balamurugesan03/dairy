@@ -8,7 +8,7 @@ import {
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import {
-  IconArrowLeft, IconEdit, IconPlus, IconTool, IconEngine,
+  IconEdit, IconPlus, IconTool, IconEngine,
   IconMapPin, IconCalendar, IconCurrencyRupee, IconUser
 } from '@tabler/icons-react';
 import { machineAPI } from '../../services/api';
@@ -143,7 +143,6 @@ const MachineView = () => {
     <Container size="xl" py="md">
       <Group justify="space-between" mb="md">
         <Group gap="xs">
-          <ActionIcon variant="subtle" onClick={() => navigate('/machines')}><IconArrowLeft size={18}/></ActionIcon>
           <Box>
             <Title order={2} fw={700}>{m.machineName}</Title>
             <Text size="sm" c="dimmed">{m.machineCode} {m.category ? `· ${m.category}` : ''}</Text>

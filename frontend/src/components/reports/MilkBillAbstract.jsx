@@ -25,6 +25,9 @@ const DEDUCTION_COLS = [
   { key: 'shareInMilma',   label: 'Share in\nMilma' },
   { key: 'silageFactory',  label: 'Silage\nFactory' },
   { key: 'unionBank',      label: 'Union\nBank A/c' },
+  // Milk Bill Adjustment Entry recoveries matching none of the heads above —
+  // only shown when the period actually has one.
+  { key: 'otherAdj',       label: 'Other\nAdj.' },
 ];
 
 const fmt2  = (n) => parseFloat(n || 0).toFixed(2);
@@ -102,6 +105,13 @@ const MilkBillAbstract = () => {
     }
   };
 
+  const months = reportData?.months || [];
+  const gt     = reportData?.grandTotals;
+  const totalRows    = months.reduce((s, m) => s + m.rows.length, 0);
+  const totalAdjRows = months.reduce((s, m) => s + (m.adjustmentRows?.length || 0), 0);
+  const dedCols = DEDUCTION_COLS.filter(c => c.key !== 'otherAdj' || parseFloat(gt?.deductions?.otherAdj || 0) > 0);
+  const colCount = 11 + dedCols.length + 1;
+
   const handleExport = () => {
     if (!months.length) return;
     const rows = [];
@@ -120,8 +130,19 @@ const MilkBillAbstract = () => {
           'Incentive': fmt2(r.incentive),
           'Milk Amount': fmt2(r.amount)
         };
-        DEDUCTION_COLS.forEach(c => { row[c.label.replace('\n', ' ')] = fmtD(r.deductions?.[c.key]); });
+        dedCols.forEach(c => { row[c.label.replace('\n', ' ')] = fmtD(r.deductions?.[c.key]); });
         row['Net Payable'] = fmt2(r.netPayable);
+        rows.push(row);
+      });
+      (m.adjustmentRows || []).forEach(a => {
+        const row = {
+          'Month/Year': '', 'Date': fmtDate(a.date), 'Shift': 'Milk Bill Adj.',
+          'Farmer No': a.voucherNumber, 'Farmer Name': a.particulars,
+          'Qty (L)': '', 'FAT': '', 'SNF': '', 'Rate': '', 'Incentive': '',
+          'Milk Amount': fmtD(a.amount)
+        };
+        dedCols.forEach(c => { row[c.label.replace('\n', ' ')] = fmtD(a.deductions?.[c.key]); });
+        row['Net Payable'] = fmt2(a.netPayable);
         rows.push(row);
       });
       const tot = {
@@ -130,7 +151,7 @@ const MilkBillAbstract = () => {
         'Qty (L)': fmt3(m.totalQty), 'FAT': '', 'SNF': '', 'Rate': '', 'Incentive': '',
         'Milk Amount': fmt2(m.totalAmount)
       };
-      DEDUCTION_COLS.forEach(c => { tot[c.label.replace('\n', ' ')] = fmt2(m.totals?.[c.key]); });
+      dedCols.forEach(c => { tot[c.label.replace('\n', ' ')] = fmt2(m.totals?.[c.key]); });
       tot['Net Payable'] = fmt2(m.totalPayment);
       rows.push(tot);
     });
@@ -141,10 +162,6 @@ const MilkBillAbstract = () => {
     notifications.show({ title: 'Exported', message: 'Excel file downloaded', color: 'green' });
   };
 
-  const months = reportData?.months || [];
-  const gt     = reportData?.grandTotals;
-  const totalRows = months.reduce((s, m) => s + m.rows.length, 0);
-
   // ── Render table body ─────────────────────────────────────────────────
   const renderRows = () => {
     const result = [];
@@ -154,7 +171,7 @@ const MilkBillAbstract = () => {
       result.push(
         <Table.Tr key={`mhdr-${mi}`} style={{ background: NAVY }}>
           <Table.Td
-            colSpan={11 + DEDUCTION_COLS.length + 1}
+            colSpan={colCount}
             style={{ padding: '6px 14px', color: '#fff', fontWeight: 800, fontSize: 12 }}
           >
             {m.monthLabel} &nbsp;—&nbsp; {m.rows.length} Collection{m.rows.length !== 1 ? 's' : ''} &nbsp;|&nbsp;
@@ -183,7 +200,7 @@ const MilkBillAbstract = () => {
             <Table.Td style={tdRight}>{fmt2(row.rate)}</Table.Td>
             <Table.Td style={{ ...tdRight, color: '#166534' }}>{fmtD(row.incentive)}</Table.Td>
             <Table.Td style={{ ...tdRight, fontWeight: 700 }}>{fmt2(row.amount)}</Table.Td>
-            {DEDUCTION_COLS.map(c => (
+            {dedCols.map(c => (
               <Table.Td key={c.key} style={{ ...tdRight, color: '#dc2626' }}>
                 {fmtD(row.deductions?.[c.key])}
               </Table.Td>
@@ -195,6 +212,49 @@ const MilkBillAbstract = () => {
         );
       });
 
+      // Adjustment Entries saved with "Milk Bill" ticked — recoveries sit in
+      // their deduction column, additions in Milk Amount.
+      const adjRows = m.adjustmentRows || [];
+      if (adjRows.length > 0) {
+        result.push(
+          <Table.Tr key={`ahdr-${mi}`} style={{ background: '#fef3c7' }}>
+            <Table.Td colSpan={colCount} style={{ ...tdBase, fontWeight: 800, color: '#92400e', fontSize: 11 }}>
+              Milk Bill Adjustment Entries — {adjRows.length}
+            </Table.Td>
+          </Table.Tr>
+        );
+        adjRows.forEach((a, ai) => {
+          result.push(
+            <Table.Tr key={`a-${mi}-${ai}`} style={{ background: '#fffbeb' }}>
+              <Table.Td style={tdCtr} />
+              <Table.Td style={{ ...tdBase, whiteSpace: 'nowrap' }}>{fmtDate(a.date)}</Table.Td>
+              <Table.Td style={tdCtr}>
+                <Badge size="xs" variant="light" color="orange">Adj</Badge>
+              </Table.Td>
+              <Table.Td style={{ ...tdCtr, fontSize: 10 }}>{a.voucherNumber}</Table.Td>
+              <Table.Td style={{ ...tdBase, fontWeight: 600 }}>
+                {a.particulars}
+                {a.narration && <Text size="10px" c="dimmed" fs="italic">{a.narration}</Text>}
+              </Table.Td>
+              <Table.Td style={tdRight} />
+              <Table.Td style={tdRight} />
+              <Table.Td style={tdRight} />
+              <Table.Td style={tdRight} />
+              <Table.Td style={tdRight} />
+              <Table.Td style={{ ...tdRight, fontWeight: 700 }}>{fmtD(a.amount)}</Table.Td>
+              {dedCols.map(c => (
+                <Table.Td key={c.key} style={{ ...tdRight, color: '#dc2626' }}>
+                  {fmtD(a.deductions?.[c.key])}
+                </Table.Td>
+              ))}
+              <Table.Td style={{ ...tdRight, fontWeight: 800, color: a.netPayable < 0 ? '#b91c1c' : '#065f46' }}>
+                {fmt2(a.netPayable)}
+              </Table.Td>
+            </Table.Tr>
+          );
+        });
+      }
+
       // Month total row
       result.push(
         <Table.Tr key={`mtot-${mi}`} style={{ background: '#cfe2ff' }}>
@@ -202,7 +262,7 @@ const MilkBillAbstract = () => {
             {m.monthLabel} Total
           </Table.Td>
           <Table.Td colSpan={3} style={{ ...tdBase, color: '#374151', fontWeight: 600 }}>
-            {m.rows.length} entries
+            {m.rows.length} entries{m.adjustmentRows?.length ? ` + ${m.adjustmentRows.length} adj.` : ''}
           </Table.Td>
           <Table.Td style={{ ...tdRight, fontWeight: 800, color: '#0369a1' }}>{fmt3(m.totalQty)}</Table.Td>
           <Table.Td style={tdBase} />
@@ -210,7 +270,7 @@ const MilkBillAbstract = () => {
           <Table.Td style={tdBase} />
           <Table.Td style={tdBase} />
           <Table.Td style={{ ...tdRight, fontWeight: 800 }}>{fmt2(m.totalAmount)}</Table.Td>
-          {DEDUCTION_COLS.map(c => (
+          {dedCols.map(c => (
             <Table.Td key={c.key} style={{ ...tdRight, fontWeight: 800, color: '#b91c1c' }}>
               {fmt2(m.totals?.[c.key])}
             </Table.Td>
@@ -230,7 +290,7 @@ const MilkBillAbstract = () => {
             GRAND TOTAL
           </Table.Td>
           <Table.Td colSpan={3} style={{ ...tdBase, fontWeight: 700, color: '#374151' }}>
-            {months.length} month{months.length !== 1 ? 's' : ''} · {totalRows} entries
+            {months.length} month{months.length !== 1 ? 's' : ''} · {totalRows} entries{totalAdjRows ? ` + ${totalAdjRows} adj.` : ''}
           </Table.Td>
           <Table.Td style={{ ...tdRight, fontWeight: 900, color: '#0369a1', fontSize: 12 }}>{fmt3(gt.qty)}</Table.Td>
           <Table.Td style={tdBase} />
@@ -238,7 +298,7 @@ const MilkBillAbstract = () => {
           <Table.Td style={tdBase} />
           <Table.Td style={tdBase} />
           <Table.Td style={{ ...tdRight, fontWeight: 900, fontSize: 12 }}>{fmt2(gt.amount)}</Table.Td>
-          {DEDUCTION_COLS.map(c => (
+          {dedCols.map(c => (
             <Table.Td key={c.key} style={{ ...tdRight, fontWeight: 900, color: '#991b1b', fontSize: 12 }}>
               {fmt2(gt.deductions?.[c.key])}
             </Table.Td>
@@ -285,7 +345,7 @@ const MilkBillAbstract = () => {
                 { label: 'Total Collections', value: totalRows,              color: 'blue.8' },
                 { label: 'Total Qty (L)',      value: fmt3(gt.qty),          color: 'cyan.8' },
                 { label: 'Milk Value',         value: `${fmt2(gt.amount)}`,color: 'green.8' },
-                { label: 'Total Deductions',   value: `${fmt2(DEDUCTION_COLS.reduce((s,c) => s + parseFloat(gt.deductions?.[c.key]||0), 0))}`, color: 'red.7' },
+                { label: 'Total Deductions',   value: `${fmt2(dedCols.reduce((s,c) => s + parseFloat(gt.deductions?.[c.key]||0), 0))}`, color: 'red.7' },
                 { label: 'Net Payable',        value: `${fmt2(gt.payment)}`,color: 'teal.8' }
               ].map(s => (
                 <Box key={s.label} style={{ background: 'rgba(255,255,255,0.85)', borderRadius: 8, padding: '8px 12px', textAlign: 'center' }}>
@@ -369,7 +429,7 @@ const MilkBillAbstract = () => {
                   <Table.Th style={{ ...thBaseR, minWidth: 65 }}>Rate</Table.Th>
                   <Table.Th style={{ ...thBaseR, minWidth: 70 }}>Incentive</Table.Th>
                   <Table.Th style={{ ...thBaseR, minWidth: 85 }}>{'Milk\nAmount'}</Table.Th>
-                  {DEDUCTION_COLS.map(c => (
+                  {dedCols.map(c => (
                     <Table.Th key={c.key} style={{ ...thBaseR, minWidth: 75 }}>{c.label}</Table.Th>
                   ))}
                   <Table.Th style={{ ...thBaseR, minWidth: 90, background: '#0a1f42' }}>{'Payment\nTotal'}</Table.Th>

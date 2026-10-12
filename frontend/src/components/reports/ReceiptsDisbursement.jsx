@@ -4,6 +4,7 @@ import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
 import { reportAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
+import { printRDStatement } from './shared/rdPrint';
 import {
   Box, Paper, Group, Text, Title, Button, Select,
   Stack, SimpleGrid, Loader, Center, Badge,
@@ -438,33 +439,22 @@ const ReceiptsDisbursement = () => {
   };
 
   // ── Print ─────────────────────────────────────────────────────────────
+  // Dedicated A4 layout (portrait for Single Column, landscape for Two /
+  // Three Column) built from the report data, not a copy of the screen.
   const handlePrint = () => {
-    const el = printRef.current;
-    if (!el) return;
-    const pw = window.open('', '_blank');
-    if (!pw) { message.error('Pop-up blocked. Please allow pop-ups.'); return; }
-    const clone = el.cloneNode(true);
-    clone.querySelectorAll('[data-no-print]').forEach(e => e.remove());
-    const orientation = columnFormat === 'single' ? 'portrait' : 'landscape';
-    pw.document.write(`<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8"/>
-  <title>R&amp;D Statement – ${companyName}</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, Helvetica, sans-serif; font-size: 10px; color: #000;
-           background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 8mm; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #bbb; padding: 3px 5px; vertical-align: middle; }
-    th { background: #e8e8e8 !important; font-weight: 700; text-align: center; font-size: 10px; }
-    @page { size: A4 ${orientation}; margin: 8mm; }
-  </style>
-</head>
-<body>${clone.innerHTML}</body>
-</html>`);
-    pw.document.close();
-    setTimeout(() => { pw.focus(); pw.print(); }, 400);
+    if (!reportData?.sections) { message.error('Generate the report first'); return; }
+    printRDStatement({
+      data: {
+        ...reportData,
+        sections: reportData.sections.map(sec => ({ ...sec, sectionName: sectionLabel(groupBy, sec.sectionName) }))
+      },
+      columnFormat,
+      showGroups: reportData.groupBy !== 'ledger',
+      totalLabel: reportData.groupBy === 'category' ? 'Category Total' : 'Account Group Total',
+      companyName,
+      dateRange,
+      viewLabel: GROUP_BY_OPTS.find(o => o.value === groupBy)?.label
+    });
   };
 
   // ── Excel Export — full detail (Cash/Adjustment/Total + Upto/During/End),
@@ -526,12 +516,22 @@ const ReceiptsDisbursement = () => {
 
   return (
     <Container size="xl" py="md">
-      <Group gap="sm" mb="md">
-        <ThemeIcon size={38} radius="md" color="indigo" variant="light"><IconReceipt size={22} /></ThemeIcon>
-        <Box>
-          <Title order={4}>R&amp;D Statement</Title>
-          <Text size="xs" c="dimmed">Receipts &amp; Disbursement — every Cash, Adjustment and auto-posted transaction for the period, ledger-wise</Text>
-        </Box>
+      <Group justify="space-between" align="center" mb="md" wrap="wrap" gap="sm">
+        <Group gap="sm">
+          <ThemeIcon size={38} radius="md" color="indigo" variant="light"><IconReceipt size={22} /></ThemeIcon>
+          <Box>
+            <Title order={4}>R&amp;D Statement</Title>
+            <Text size="xs" c="dimmed">Receipts &amp; Disbursement — every Cash, Adjustment and auto-posted transaction for the period, ledger-wise</Text>
+          </Box>
+        </Group>
+        <Group gap="xs">
+          <Button leftSection={<IconPrinter size={16} />} variant="light" color="gray" onClick={handlePrint} size="sm" disabled={!reportData}>
+            Print
+          </Button>
+          <Button leftSection={<IconFileExport size={16} />} variant="light" color="green" onClick={handleExport} size="sm" disabled={!reportData}>
+            Export Excel
+          </Button>
+        </Group>
       </Group>
 
       {/* ── Filters ── */}
@@ -551,17 +551,6 @@ const ReceiptsDisbursement = () => {
           <Button leftSection={<IconRefresh size={16} />} onClick={() => fetchReport()} loading={loading} size="sm">
             Generate
           </Button>
-
-          {reportData && (
-            <>
-              <Button leftSection={<IconFileExport size={16} />} variant="light" color="green" onClick={handleExport} size="sm">
-                Export Excel
-              </Button>
-              <Button leftSection={<IconPrinter size={16} />} variant="light" color="gray" onClick={handlePrint} size="sm">
-                Print
-              </Button>
-            </>
-          )}
         </Group>
 
         {reportData && (

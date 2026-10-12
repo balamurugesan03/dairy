@@ -90,12 +90,6 @@ const EmployeeView = () => {
         extra={
           <div className="header-actions">
             <button
-              className="btn btn-outline"
-              onClick={() => navigate('/hrm/employees')}
-            >
-              <i className="icon-arrow-left"></i> Back
-            </button>
-            <button
               className="btn btn-primary"
               onClick={() => navigate(`/hrm/employees/${id}/edit`)}
             >

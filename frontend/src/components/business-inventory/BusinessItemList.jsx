@@ -975,7 +975,7 @@ const BusinessItemList = () => {
                       itemForm.setFieldValue('measurement', '');
                     }}
                   >
-                    Back
+                    Cancel
                   </Button>
                 </Group>
               )}

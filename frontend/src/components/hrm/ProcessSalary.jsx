@@ -5,7 +5,7 @@ import {
   NumberInput, SimpleGrid, Alert, Divider, ThemeIcon
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconArrowLeft, IconCurrencyRupee, IconInfoCircle, IconCalculator } from '@tabler/icons-react';
+import { IconCurrencyRupee, IconInfoCircle, IconCalculator } from '@tabler/icons-react';
 import { salaryAPI, employeeAPI } from '../../services/api';
 
 const MONTHS = [
@@ -81,9 +81,6 @@ const ProcessSalary = () => {
           <Title order={2}>Process Salary</Title>
           <Text c="dimmed" size="sm">Generate payroll for an employee</Text>
         </div>
-        <Button variant="default" leftSection={<IconArrowLeft size={16} />} onClick={() => navigate('/hrm/salary')}>
-          Back
-        </Button>
       </Group>
 
       <Paper shadow="sm" p="xl" radius="md" withBorder>

@@ -69,6 +69,13 @@ const voucherSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  // Adjustment (Journal) Entry saved with the "Milk Bill" box ticked — a
+  // milk-bill recovery/addition that the Milk Bill Abstract pulls in for
+  // its period.
+  isMilkBill: {
+    type: Boolean,
+    default: false
+  },
   status: {
     type: String,
     enum: ['Draft', 'Posted', 'Cancelled'],

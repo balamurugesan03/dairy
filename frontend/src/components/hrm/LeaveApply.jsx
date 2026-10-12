@@ -6,7 +6,7 @@ import {
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
-import { IconCalendarPlus, IconArrowLeft, IconInfoCircle } from '@tabler/icons-react';
+import { IconCalendarPlus, IconInfoCircle } from '@tabler/icons-react';
 import { leaveAPI, employeeAPI } from '../../services/api';
 
 const LEAVE_TYPES = ['Casual', 'Sick', 'Earned', 'Maternity', 'Paternity', 'Unpaid', 'Compensatory'];
@@ -66,9 +66,6 @@ const LeaveApply = () => {
           <Title order={2}>Apply Leave</Title>
           <Text c="dimmed" size="sm">Submit a leave application</Text>
         </div>
-        <Button variant="default" leftSection={<IconArrowLeft size={16} />} onClick={() => navigate('/hrm/leaves')}>
-          Back
-        </Button>
       </Group>
 
       <Paper shadow="sm" p="xl" radius="md" withBorder>

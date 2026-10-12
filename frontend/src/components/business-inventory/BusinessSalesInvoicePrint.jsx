@@ -92,9 +92,6 @@ const BusinessSalesInvoicePrint = () => {
     <div className="qp-wrapper">
       {/* Toolbar — hidden on print */}
       <div className="qp-toolbar no-print">
-        <button className="qp-btn qp-btn-outline" onClick={() => navigate('/business-inventory/sales/list')}>
-          ← Back to List
-        </button>
         <button className="qp-btn qp-btn-outline" onClick={() => navigate(`/business-inventory/sales/edit/${id}`)}>
           ✏ Edit
         </button>

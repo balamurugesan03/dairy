@@ -6,7 +6,7 @@ import {
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
-import { IconArrowLeft, IconDeviceFloppy } from '@tabler/icons-react';
+import { IconDeviceFloppy } from '@tabler/icons-react';
 import { warrantyAPI, businessCustomerAPI, businessItemAPI } from '../../services/api';
 import dayjs from 'dayjs';
 
@@ -143,7 +143,6 @@ const WarrantyForm = () => {
     <Container size="xl" py="md">
       <Group justify="space-between" mb="md">
         <Group gap="xs">
-          <ActionIcon variant="subtle" onClick={() => navigate('/warranty')}><IconArrowLeft size={18}/></ActionIcon>
           <Box>
             <Title order={2} fw={700}>{isEdit ? 'Edit Warranty' : 'Add Warranty'}</Title>
             <Text size="sm" c="dimmed">Track product warranty for a customer</Text>

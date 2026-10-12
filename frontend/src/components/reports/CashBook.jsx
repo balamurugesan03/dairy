@@ -19,6 +19,7 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { openA4Print, a4Header, a4Signatures, escapeHtml } from '../../utils/printA4';
 
 const PRESETS = [
   { value: 'today',         label: 'Today' },
@@ -310,11 +311,14 @@ const CashBook = () => {
                 </Table.Td>
                 <Table.Td className="cb-no-print"></Table.Td>
               </Table.Tr>
+              {/* Opening Balance (receipt side) and Closing Balance (payment
+                  side) share the row above; this row balances both sides:
+                  Opening + Receipts = Payments + Closing. */}
               <Table.Tr style={{ background: closingBg, borderTop: '2px solid var(--mantine-color-dark-4)', borderBottom: '3px double var(--mantine-color-dark-4)' }}>
-                <Table.Td style={{ textAlign: 'left', fontWeight: 700 }}>Closing Balance</Table.Td>
+                <Table.Td style={{ textAlign: 'left', fontWeight: 700 }}>Total</Table.Td>
                 <Table.Td></Table.Td>
                 <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'Consolas, monospace', fontVariantNumeric: 'tabular-nums' }}>
-                  {fmtAlways(closeBal)}
+                  {fmtAlways(isReceipt ? openBal + total : total + closeBal)}
                 </Table.Td>
                 <Table.Td className="cb-no-print"></Table.Td>
               </Table.Tr>
@@ -381,80 +385,74 @@ const CashBook = () => {
     </Paper>
   );
 
-  // PRINT — clones the live stylesheets so the printed page is rendered by the
-  // exact same CSS (Mantine's Group flex layout, color vars, etc.) as the on-screen
-  // view, guaranteeing the print output matches the View screen exactly.
-  const collectLiveCSS = () => {
-    let css = '';
-    for (const sheet of document.styleSheets) {
-      try {
-        const rules = sheet.cssRules || sheet.rules;
-        if (!rules) continue;
-        for (const rule of rules) css += rule.cssText + '\n';
-      } catch {
-        // Cross-origin stylesheet (e.g. Google Fonts) — skip, fall back to <link>.
-        if (sheet.href) css += `@import url("${sheet.href}");\n`;
-      }
-    }
-    return css;
-  };
-
+  // PRINT — a dedicated A4 register layout built from the report data (not a
+  // copy of the on-screen cards): report header once, each day as one
+  // Receipt | Payment table with entries paired side by side, Opening and
+  // Closing Balance on the same row, and one signature block at the end.
+  // A day is kept on one page whenever it fits.
   const handlePrint = () => {
-    const content = printRef.current;
-    if (!content) return;
-    const printWindow = window.open('', '_blank');
-    const liveCSS = collectLiveCSS();
-    // data-mantine-color-scheme is required: Mantine defines its text/border/
-    // table colour variables under that attribute, so without it the table
-    // grid lines and dimmed text vanish in print. Always print in light.
-    printWindow.document.write(`<!DOCTYPE html>
-<html data-mantine-color-scheme="light">
-<head>
-  <title>Cash Book - ${formatDateShort(fromDate)} to ${formatDateShort(toDate)}</title>
-  <style>${liveCSS}</style>
-  <style>
-    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    html, body { margin: 0; padding: 0; background: #fff; }
-    body { font-size: 11px; }
-    @page { size: A4 portrait; margin: 6mm; }
-    /* Never split a single day's transactions across two pages — each day
-       card is kept intact and, as many complete days as fit are packed onto
-       one page; a day that doesn't fully fit in the remaining space simply
-       flows to the next page in one piece. */
-    .mantine-Paper-root { page-break-inside: avoid; break-inside: avoid; overflow: visible !important; box-shadow: none !important; }
-    .cb-signature-block { page-break-inside: avoid; break-inside: avoid; }
-    .cb-no-print { display: none !important; }
-    /* Print every detail in full — the on-screen view truncates long ledger
-       names with "…", which on a half-width A4 column hides most of the text.
-       Wrap descriptions, bill numbers and amounts instead of clipping them. */
-    [data-truncate] { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; }
-    .mantine-Table-td, .mantine-Table-th {
-      padding: 3px 5px !important;
-      overflow: visible !important;
-      overflow-wrap: anywhere;
-      word-break: break-word;
-      vertical-align: top;
-    }
-    .mantine-Table-td { font-size: 10px !important; }
-    .mantine-Table-td .mantine-Text-root { font-size: inherit !important; }
-    .cb-narr { font-size: 9px !important; }
-    .mantine-Table-th { font-size: 9px !important; letter-spacing: 0 !important; }
-    tr { page-break-inside: avoid; break-inside: avoid; }
-  </style>
-</head>
-<body>${content.innerHTML}</body>
-</html>`);
-    printWindow.document.close();
-    let printed = false;
-    const doPrint = () => {
-      if (printed || printWindow.closed) return;
-      printed = true;
-      printWindow.focus();
-      printWindow.print();
+    if (!dayCards.length) return;
+
+    const sideCells = (e, split) => {
+      const cls = split ? ' split' : '';
+      if (!e) return `<td class="${cls}"></td><td></td><td></td>`;
+      return `<td class="${cls}">${escapeHtml(e.description)}${e.narration ? `<div class="narr">${escapeHtml(e.narration)}</div>` : ''}</td>`
+        + `<td class="ctr">${escapeHtml(e.voucherNumber)}</td>`
+        + `<td class="amt">${fmt(e.amount)}</td>`;
     };
-    printWindow.onload = doPrint;
-    // Fallback in case onload doesn't fire (some browsers with document.write).
-    setTimeout(doPrint, 400);
+
+    const days = dayCards.map((card) => {
+      const n = Math.max(card.receipts.length, card.payments.length);
+      let rows = '';
+      for (let i = 0; i < n; i++) {
+        rows += `<tr>${sideCells(card.receipts[i], false)}${sideCells(card.payments[i], true)}</tr>`;
+      }
+      if (n === 0) rows = '<tr><td colspan="3" class="ctr narr">No transactions</td><td colspan="3" class="ctr narr split">No transactions</td></tr>';
+      return `
+        <section class="cb-day">
+          <div class="cb-day__date">${escapeHtml(formatDateLong(card.date))}</div>
+          <table class="a4">
+            <colgroup>
+              <col style="width:31%"><col style="width:8%"><col style="width:11%">
+              <col style="width:31%"><col style="width:8%"><col style="width:11%">
+            </colgroup>
+            <thead>
+              <tr><th colspan="3">Receipt (Dr)</th><th colspan="3" class="split">Payment (Cr)</th></tr>
+              <tr><th>Particulars</th><th>R. No</th><th>Cash</th><th class="split">Particulars</th><th>V. No</th><th>Cash</th></tr>
+            </thead>
+            <tbody>
+              ${rows}
+              <tr class="row-sub">
+                <td colspan="2">Day Total</td><td class="amt">${fmtAlways(card.receiptTotal)}</td>
+                <td colspan="2" class="split">Day Total</td><td class="amt">${fmtAlways(card.paymentTotal)}</td>
+              </tr>
+              <tr class="row-bal">
+                <td colspan="2">Opening Balance</td><td class="amt">${fmtAlways(card.openingBalance)}</td>
+                <td colspan="2" class="split">Closing Balance</td><td class="amt">${fmtAlways(card.closingBalance)}</td>
+              </tr>
+              <tr class="row-grand">
+                <td colspan="2">Total</td><td class="amt">${fmtAlways(card.openingBalance + card.receiptTotal)}</td>
+                <td colspan="2" class="split">Total</td><td class="amt">${fmtAlways(card.paymentTotal + card.closingBalance)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>`;
+    }).join('');
+
+    openA4Print({
+      title: `Cash Book - ${formatDateShort(fromDate)} to ${formatDateShort(toDate)}`,
+      orientation: 'portrait',
+      css: `
+        .cb-day { margin-bottom: 7px; page-break-inside: avoid; break-inside: avoid; }
+        .cb-day__date { font-weight: 700; font-size: 10px; padding: 2px 4px; border: 0.75px solid #444; border-bottom: none; background: #f2f2f2; }
+      `,
+      bodyHtml: a4Header({
+        orgName: companyName,
+        title: 'Cash Book',
+        period: `${dayjs(fromDate).format('DD/MM/YYYY')} to ${dayjs(toDate).format('DD/MM/YYYY')}`,
+        extra: `Opening: ${fmtAlways(dayCards[0].openingBalance)} &nbsp;|&nbsp; Closing: ${fmtAlways(dayCards[dayCards.length - 1].closingBalance)}`
+      }) + days + a4Signatures(['President', 'Secretary'], `${dayjs().format('DD/MM/YYYY HH:mm:ss')} | By ADM`)
+    });
   };
 
   const handlePDFExport = () => {
@@ -469,7 +467,7 @@ const CashBook = () => {
       2: { halign: 'right',  cellWidth: halfW * 0.30, fontStyle: 'bold' }
     };
 
-    const buildBody = (entries, total, balLabel, balAmt, closeBal) => {
+    const buildBody = (entries, total, balLabel, balAmt) => {
       const body = entries.map(e => [e.description || '', e.voucherNumber || '', fmt(e.amount)]);
       const bold = { fontStyle: 'bold' };
       const boldRight = { halign: 'right', fontStyle: 'bold' };
@@ -485,9 +483,9 @@ const CashBook = () => {
         { content: fmtAlways(balAmt), styles: boldRight }
       ]);
       body.push([
-        { content: 'Closing Balance', styles: { ...bold, fillColor: bg2, fontSize: 8 } },
-        { content: '',                styles: { fillColor: bg2 } },
-        { content: fmtAlways(closeBal), styles: { ...boldRight, fillColor: bg2, fontSize: 8 } }
+        { content: 'Total', styles: { ...bold, fillColor: bg2, fontSize: 8 } },
+        { content: '',      styles: { fillColor: bg2 } },
+        { content: fmtAlways(total + balAmt), styles: { ...boldRight, fillColor: bg2, fontSize: 8 } }
       ]);
       return body;
     };
@@ -523,7 +521,7 @@ const CashBook = () => {
       doc.text('RECEIPTS (Money In)', 14, tableY - 1);
       autoTable(doc, {
         head,
-        body: buildBody(card.receipts, card.receiptTotal, 'Opening Balance', card.openingBalance, card.closingBalance),
+        body: buildBody(card.receipts, card.receiptTotal, 'Opening Balance', card.openingBalance),
         startY: tableY,
         margin: { left: 14, right: pageWidth / 2 + 1 },
         tableWidth: halfW,
@@ -534,7 +532,7 @@ const CashBook = () => {
       doc.text('PAYMENTS (Money Out)', pageWidth / 2 + 2, tableY - 1);
       autoTable(doc, {
         head,
-        body: buildBody(card.payments, card.paymentTotal, 'Closing Balance', card.closingBalance, card.closingBalance),
+        body: buildBody(card.payments, card.paymentTotal, 'Closing Balance', card.closingBalance),
         startY: tableY,
         margin: { left: pageWidth / 2 + 2, right: 14 },
         tableWidth: halfW,
@@ -570,6 +568,7 @@ const CashBook = () => {
 
       rows.push(['Day Total', '', card.receiptTotal, '', 'Day Total', '', card.paymentTotal]);
       rows.push(['Opening Balance', '', card.openingBalance, '', 'Closing Balance', '', card.closingBalance]);
+      rows.push(['Total', '', card.openingBalance + card.receiptTotal, '', 'Total', '', card.paymentTotal + card.closingBalance]);
       rows.push([]);
     }
 

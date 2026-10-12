@@ -23,7 +23,6 @@ import {
   Divider
 } from '@mantine/core';
 import {
-  IconArrowLeft,
   IconSearch,
   IconEye,
   IconEdit,
@@ -276,15 +275,6 @@ const MemberList = () => {
       <PageHeader
         title="Member Farmers"
         subtitle="View and manage all member farmers"
-        extra={
-          <Button
-            variant="default"
-            leftSection={<IconArrowLeft size={16} />}
-            onClick={() => navigate('/farmers')}
-          >
-            Back to Farmers
-          </Button>
-        }
       />
 
       {/* Search and Filter */}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Outlet, useLocation } from 'react-router-dom';
 import {
   AppShell,
@@ -23,7 +23,7 @@ import {
   IconHome, IconUsers, IconBox, IconShoppingCart, IconBook,
   IconCash, IconFileReport, IconShield, IconTool, IconSearch,
   IconSpeakerphone, IconBriefcase, IconChevronDown, IconChevronRight, IconMenu2, IconLogout, IconUser,
-  IconUserCog, IconBuildingStore, IconSettings, IconMilk, IconArrowLeft, IconBuildingCommunity,
+  IconUserCog, IconBuildingStore, IconSettings, IconMilk, IconBuildingCommunity,
   IconCalendarEvent, IconAdjustments, IconReportAnalytics, IconX
 } from '@tabler/icons-react';
 import { useCompany } from '../../context/CompanyContext';
@@ -70,29 +70,7 @@ const MainLayout = () => {
 
   const isDark = colorScheme === 'dark';
 
-  // ── App-internal navigation stack for Back button ───────────────────────
-  const navStack = useRef([location.pathname]);
-
-  useEffect(() => {
-    const stack = navStack.current;
-    if (stack[stack.length - 1] !== location.pathname) {
-      stack.push(location.pathname);
-    }
-  }, [location.pathname]);
-
-  const handleBack = () => {
-    const stack = navStack.current;
-    if (stack.length > 1) {
-      stack.pop(); // remove current
-      navigate(stack[stack.length - 1]);
-    } else {
-      navigate('/');
-    }
-  };
-
-  const isOnDashboard = location.pathname === '/';
   const isBankTransferPage = location.pathname === '/payments/bank-transfer';
-  const hideBackButton = isOnDashboard || location.pathname === '/daily-collections/milk-purchase' || location.pathname === '/farmers' || location.pathname === '/collection-centers' || location.pathname === '/agents' || location.pathname === '/customers' || location.pathname === '/daily-collections/union-sales-slip' || location.pathname === '/daily-collections/milk-sales' || location.pathname === '/daily-collections/list' || location.pathname === '/reports/salesman-balance' || location.pathname === '/daily-collections/rate-chart-settings' || location.pathname === '/reports/cash-book' || location.pathname === '/reports/daybook' || location.pathname === '/reports/receipts-payments' || location.pathname === '/farmers/member-register' || location.pathname === '/daily-collections/producer-report' || location.pathname === '/daily-collections/collection-analysis';
 
   // ── Global hotkeys ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -1086,31 +1064,19 @@ const MainLayout = () => {
           minHeight: 'calc(100vh - 120px)',
         }}
       >
-        {!hideBackButton && (
+        {/* No Back button on any page — only the Bank Transfer page keeps its Close button */}
+        {isBankTransferPage && (
           <Box px="md" pt="sm" pb={0}>
             <Button
               variant="gradient"
-              gradient={isBankTransferPage
-                ? { from: 'red', to: 'pink', deg: 135 }
-                : { from: 'violet', to: 'indigo', deg: 135 }}
+              gradient={{ from: 'red', to: 'pink', deg: 135 }}
               size="sm"
               radius="xl"
-              leftSection={isBankTransferPage ? <IconX size={16} /> : <IconArrowLeft size={16} />}
-              onClick={isBankTransferPage ? () => navigate('/') : handleBack}
-              styles={{
-                root: {
-                  fontWeight: 700,
-                  letterSpacing: 0.5,
-                  boxShadow: '0 4px 14px rgba(102,126,234,0.45)',
-                  '&:hover': {
-                    boxShadow: '0 6px 20px rgba(102,126,234,0.6)',
-                    transform: 'translateY(-1px)',
-                  },
-                  transition: 'all 0.2s ease',
-                },
-              }}
+              leftSection={<IconX size={16} />}
+              onClick={() => navigate('/')}
+              styles={{ root: { fontWeight: 700, letterSpacing: 0.5 } }}
             >
-              {isBankTransferPage ? 'Close' : 'Back'}
+              Close
             </Button>
           </Box>
         )}

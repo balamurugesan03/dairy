@@ -9,7 +9,7 @@ import {
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import {
-  IconArrowLeft, IconRefresh, IconPrinter, IconFileTypePdf,
+  IconRefresh, IconPrinter, IconFileTypePdf,
   IconFileTypeCsv, IconMilk, IconUsers, IconUser,
   IconCurrencyRupee, IconDroplet, IconChartBar,
   IconSchool, IconShoppingCart, IconBuildingStore, IconFlask,
@@ -434,9 +434,6 @@ export default function MilkPurchaseReport() {
       <Paper radius="sm" p="xs" mb="sm" withBorder style={{ borderColor: '#dde3ee', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
         <Group justify="space-between" wrap="nowrap">
           <Group gap="sm">
-            <ActionIcon variant="subtle" color="dark" onClick={() => navigate(-1)} size="lg" radius="sm">
-              <IconArrowLeft size={18} />
-            </ActionIcon>
             <Stack gap={0}>
               <Title order={5} style={{ color: '#1c3d6e', lineHeight: 1.2 }}>Milk Purchase Report</Title>
               {loaded && <Text size="xs" c="dimmed">{periodLabel} · {tab === 'farmer' ? 'Farmer-wise' : 'Date-wise'}</Text>}

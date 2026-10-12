@@ -24,7 +24,6 @@ import {
   Progress
 } from '@mantine/core';
 import {
-  IconArrowLeft,
   IconEdit,
   IconPrinter,
   IconFileDownload,
@@ -206,13 +205,6 @@ const FarmerView = () => {
             </Text>
           </Box>
           <Group>
-            <Button
-              variant="default"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/farmers')}
-            >
-              Back
-            </Button>
             <Button
               variant="default"
               leftSection={<IconPrinter size={16} />}

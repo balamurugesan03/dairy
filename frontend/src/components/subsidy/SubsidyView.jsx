@@ -16,7 +16,6 @@ import {
   LoadingOverlay,
   Box
 } from '@mantine/core';
-import { IconArrowLeft } from '@tabler/icons-react';
 import { subsidyAPI } from '../../services/api';
 import PageHeader from '../common/PageHeader';
 import { message } from '../../utils/toast';
@@ -89,14 +88,6 @@ const SubsidyView = () => {
               View details for {subsidy.subsidyName || 'Subsidy'}
             </Text>
           </div>
-          <Button
-            leftSection={<IconArrowLeft size={16} />}
-            variant="default"
-            onClick={() => navigate('/subsidies')}
-            radius="md"
-          >
-            Back to List
-          </Button>
         </Group>
 
         <Card shadow="sm" padding="lg" radius="md">

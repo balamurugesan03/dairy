@@ -26,7 +26,6 @@ import {
   Textarea,
 } from '@mantine/core';
 import {
-  IconArrowLeft,
   IconPrinter,
   IconCurrencyRupee,
   IconCalendar,
@@ -183,9 +182,6 @@ const ProducerLoanView = () => {
         {/* Header */}
         <Group justify="space-between">
           <Group>
-            <ActionIcon variant="subtle" size="lg" onClick={() => navigate('/payments/loans')}>
-              <IconArrowLeft size={20} />
-            </ActionIcon>
             <Box>
               <Title order={2}>Loan Details</Title>
               <Text c="dimmed" size="sm">{loan.loanNumber}</Text>

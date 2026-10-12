@@ -241,7 +241,7 @@ export const updateVoucher = async (req, res) => {
       });
     }
 
-    const { voucherDate, entries, narration } = req.body;
+    const { voucherDate, entries, narration, isMilkBill } = req.body;
     if (!Array.isArray(entries) || entries.length === 0) {
       return res.status(400).json({ success: false, message: 'At least one entry is required' });
     }
@@ -313,6 +313,7 @@ export const updateVoucher = async (req, res) => {
     voucher.totalDebit = totalDebit;
     voucher.totalCredit = totalCredit;
     if (narration !== undefined) voucher.narration = narration;
+    if (isMilkBill !== undefined) voucher.isMilkBill = !!isMilkBill;
 
     await voucher.save();
     await updateLedgerBalances(entries, null, req.companyId);
