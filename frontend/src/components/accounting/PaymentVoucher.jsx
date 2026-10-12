@@ -50,12 +50,12 @@ const PaymentVoucher = () => {
   const [fetchingVouchers, setFetchingVouchers] = useState(false);
   const [ledgers, setLedgers] = useState([]);
   const [vouchers, setVouchers] = useState([]);
-  const [modalOpened, setModalOpened] = useState(false);
   const [viewModalOpened, setViewModalOpened] = useState(false);
   const [selectedVoucher, setSelectedVoucher] = useState(null);
   const [editingVoucherId, setEditingVoucherId] = useState(null);
   const [filterDate, setFilterDate] = useState(dayjs().format('YYYY-MM-DD'));
   const printRef = useRef(null);
+  const formSectionRef = useRef(null);
   const [entryMode, setEntryMode] = useState('single');
   const [multipleEntries, setMultipleEntries] = useState([
     { voucherDate: dayjs().format('YYYY-MM-DD'), ledgerId: '', amount: '', narration: '' }
@@ -168,10 +168,12 @@ const PaymentVoucher = () => {
         await voucherAPI.create(payload);
         message.success('Payment voucher created successfully');
       }
-      setModalOpened(false);
-      setEditingVoucherId(null);
-      form.reset();
-      fetchVouchers();
+      // Form stays on the page — clear it for the next entry, keep the same
+      // date, and make sure the grid below is showing that date.
+      const savedDate = dayjs(values.voucherDate).format('YYYY-MM-DD');
+      resetEntryForm(savedDate);
+      if (savedDate !== filterDate) setFilterDate(savedDate);
+      else fetchVouchers();
     } catch (error) {
       message.error(error.message || `Failed to ${editingVoucherId ? 'update' : 'create'} payment voucher`);
     } finally {
@@ -184,6 +186,7 @@ const PaymentVoucher = () => {
     try {
       await voucherAPI.delete(id);
       message.success('Voucher deleted successfully');
+      if (id === editingVoucherId) resetEntryForm();
       fetchVouchers();
     } catch (error) {
       message.error(error.message || 'Failed to delete voucher');
@@ -274,22 +277,19 @@ const PaymentVoucher = () => {
     }, 100);
   };
 
-  const openAddModal = () => {
-    form.reset();
-    form.setFieldValue('voucherDate', dayjs().format('YYYY-MM-DD'));
-    setEntryMode('single');
+  // The entry form lives inline at the top of the page (no popup). Clearing
+  // it also drops out of edit mode.
+  const resetEntryForm = (date = dayjs().format('YYYY-MM-DD')) => {
+    form.setValues({ voucherDate: date, ledgerId: '', amount: '', narration: '' });
+    form.clearErrors();
     setEditingVoucherId(null);
-    setMultipleEntries([
-      { voucherDate: dayjs().format('YYYY-MM-DD'), ledgerId: '', amount: '', narration: '' }
-    ]);
-    setModalOpened(true);
   };
 
   // Edit — Manual entries only (enforced again server-side by updateVoucher).
   // Prefills the single-entry form from the voucher's debit leg (the "head
   // of account" the user originally picked — Cash is always the automatic
   // credit leg and isn't shown as an editable field here, same as Add).
-  const openEditModal = (voucher) => {
+  const startEdit = (voucher) => {
     const debitEntry = voucher.entries?.find(e => e.debitAmount > 0);
     form.setValues({
       voucherDate: dayjs(voucher.voucherDate).format('YYYY-MM-DD'),
@@ -297,14 +297,10 @@ const PaymentVoucher = () => {
       amount: voucher.totalDebit || 0,
       narration: voucher.narration || ''
     });
+    form.clearErrors();
     setEntryMode('single');
     setEditingVoucherId(voucher._id);
-    setModalOpened(true);
-  };
-
-  const closeModal = () => {
-    setModalOpened(false);
-    setEditingVoucherId(null);
+    formSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const addMultipleRow = () => {
@@ -391,7 +387,9 @@ const PaymentVoucher = () => {
 
     if (successCount > 0) {
       message.success(`${successCount} payment voucher(s) created successfully`);
-      setModalOpened(false);
+      setMultipleEntries([
+        { voucherDate: dayjs().format('YYYY-MM-DD'), ledgerId: '', amount: '', narration: '' }
+      ]);
       fetchVouchers();
     }
     if (errorCount > 0) {
@@ -437,274 +435,95 @@ const PaymentVoucher = () => {
         subtitle="Manage payment vouchers for money paid"
       />
 
-      {/* Vouchers List */}
-      <Paper p="lg" withBorder shadow="sm">
-        <LoadingOverlay visible={fetchingVouchers} overlayProps={{ blur: 2 }} />
-
-        <Group justify="space-between" mb="md">
-          <Group gap="sm">
-            <Button
-              leftSection={<IconPlus size={16} />}
-              color="red"
-              onClick={openAddModal}
-            >
-              Add Payment Voucher
-            </Button>
-            <Title order={4}>
-              <Group gap="xs">
-                <IconCreditCard size={20} />
-                Payment Vouchers List
-              </Group>
-            </Title>
-          </Group>
-          <Group gap="sm">
-            <TextInput
-              type="date"
-              label="Transaction Date"
-              value={filterDate}
-              onChange={(e) => setFilterDate(e.target.value)}
-              leftSection={<IconCalendar size={16} />}
-              size="sm"
-              styles={{ root: { width: 170 } }}
-            />
-            <Badge size="lg" variant="filled" color="red" mt={22}>
-              {vouchers.length} Vouchers
-            </Badge>
-          </Group>
-        </Group>
-
-        {vouchers.length === 0 ? (
-          <Card p="xl" withBorder bg="gray.0">
-            <Stack align="center" gap="md">
-              <IconCreditCard size={48} color="gray" />
-              <Text c="dimmed" size="lg">No payment vouchers on {dayjs(filterDate).format('DD-MM-YYYY')}</Text>
-              <Button
-                variant="light"
-                leftSection={<IconPlus size={16} />}
-                onClick={openAddModal}
-              >
-                Create Payment Voucher
-              </Button>
-            </Stack>
-          </Card>
-        ) : (
-          <ScrollArea>
-            <Table striped highlightOnHover withBorder>
-              <thead>
-                <tr>
-                  <th>S.No</th>
-                  <th>Bill No</th>
-                  <th>Date</th>
-                  <th>Head of Account</th>
-                  <th style={{ textAlign: 'right' }}>Amount</th>
-                  <th>Narration</th>
-                  <th style={{ textAlign: 'center' }}>Source</th>
-                  <th style={{ textAlign: 'center' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {vouchers.map((voucher, index) => {
-                  const debitEntry = voucher.entries?.find(e => e.debitAmount > 0);
-                  const isManual = voucher.referenceType === 'Manual';
-
-                  return (
-                    <tr key={voucher._id}>
-                      <td>{index + 1}</td>
-                      <td>
-                        <Badge variant="outline" color="red">
-                          {voucher.voucherNumber || 'Auto'}
-                        </Badge>
-                      </td>
-                      <td>{dayjs(voucher.voucherDate).format('DD-MM-YYYY')}</td>
-                      <td>{debitEntry?.ledgerName || '-'}</td>
-                      <td style={{ textAlign: 'right' }}>
-                        <Text fw={600} c="red">
-                          {(voucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </Text>
-                      </td>
-                      <td>
-                        <Text size="sm" lineClamp={1}>
-                          {voucher.narration || '-'}
-                        </Text>
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        <Badge size="sm" variant="light" color={isManual ? 'grape' : 'gray'}>
-                          {isManual ? 'Manual' : (voucher.referenceType || 'Auto')}
-                        </Badge>
-                      </td>
-                      <td>
-                        <Group gap="xs" justify="center">
-                          <Tooltip label="View Details">
-                            <ActionIcon
-                              color="blue"
-                              variant="light"
-                              onClick={() => handleView(voucher)}
-                            >
-                              <IconEye size={16} />
-                            </ActionIcon>
-                          </Tooltip>
-                          <Tooltip label="Print">
-                            <ActionIcon
-                              color="red"
-                              variant="light"
-                              onClick={() => handlePrint(voucher)}
-                            >
-                              <IconPrinter size={16} />
-                            </ActionIcon>
-                          </Tooltip>
-                          {isManual ? (
-                            <>
-                              <Tooltip label="Edit">
-                                <ActionIcon
-                                  color="orange"
-                                  variant="light"
-                                  onClick={() => openEditModal(voucher)}
-                                >
-                                  <IconEdit size={16} />
-                                </ActionIcon>
-                              </Tooltip>
-                              <Tooltip label="Delete">
-                                <ActionIcon
-                                  color="red"
-                                  variant="light"
-                                  onClick={() => handleDelete(voucher._id)}
-                                >
-                                  <IconTrash size={16} />
-                                </ActionIcon>
-                              </Tooltip>
-                            </>
-                          ) : (
-                            <Tooltip label="Auto-generated — edit/delete from its originating module">
-                              <Text size="xs" c="dimmed" fs="italic">View only</Text>
-                            </Tooltip>
-                          )}
-                        </Group>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </Table>
-          </ScrollArea>
-        )}
-
-        {/* Summary Card */}
-        {vouchers.length > 0 && (
-          <Card mt="md" p="md" withBorder bg="red.0">
-            <Group justify="space-between">
-              <Text fw={500}>Total Payments</Text>
-              <Text size="xl" fw={700} c="red">
-                {vouchers.reduce((sum, v) => sum + (v.totalDebit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </Text>
-            </Group>
-          </Card>
-        )}
-      </Paper>
-
-      {/* Add / Edit Modal */}
-      <Modal
-        opened={modalOpened}
-        onClose={closeModal}
-        title={
-          <Group gap="xs">
-            <IconCreditCard size={20} />
-            <Text fw={600}>{editingVoucherId ? 'Edit Payment Voucher' : 'Add Payment Voucher'}</Text>
-          </Group>
-        }
-        size={entryMode === 'multiple' ? 'xl' : 'md'}
-        centered
-      >
+      {/* Add / Edit Form — inline on the page, the grid below shows saved vouchers */}
+      <Paper ref={formSectionRef} p="lg" mb="md" withBorder shadow="sm" pos="relative">
         <LoadingOverlay visible={loading || savingMultiple} overlayProps={{ blur: 2 }} />
 
         <Stack gap="md">
-          {/* Entry Mode Selector — hidden while editing, an edit always targets one existing voucher */}
-          {!editingVoucherId && (
-            <SegmentedControl
-              value={entryMode}
-              onChange={setEntryMode}
-              fullWidth
-              color="red"
-              data={[
-                { label: 'Single Entry', value: 'single' },
-                { label: 'Multiple Entries', value: 'multiple' }
-              ]}
-            />
-          )}
+          <Group justify="space-between" wrap="wrap">
+            <Title order={4}>
+              <Group gap="xs">
+                <IconCreditCard size={20} />
+                {editingVoucherId ? 'Edit Payment Voucher' : 'Add Payment Voucher'}
+                {editingVoucherId && <Badge color="orange" variant="light">Editing</Badge>}
+              </Group>
+            </Title>
+            {/* Entry Mode Selector — hidden while editing, an edit always targets one existing voucher */}
+            {!editingVoucherId && (
+              <SegmentedControl
+                value={entryMode}
+                onChange={setEntryMode}
+                color="red"
+                data={[
+                  { label: 'Single Entry', value: 'single' },
+                  { label: 'Multiple Entries', value: 'multiple' }
+                ]}
+              />
+            )}
+          </Group>
 
           {entryMode === 'single' ? (
             /* Single Entry Form */
             <form onSubmit={form.onSubmit(handleSubmit)}>
               <Stack gap="md">
-                <TextInput
-                  label="Voucher Date"
-                  placeholder="Select date"
-                  required
-                  type="date"
-                  leftSection={<IconCalendar size={16} />}
-                  {...form.getInputProps('voucherDate')}
-                />
+                <Grid>
+                  <Grid.Col span={{ base: 12, sm: 6, md: 2 }}>
+                    <TextInput
+                      label="Voucher Date"
+                      placeholder="Select date"
+                      required
+                      type="date"
+                      leftSection={<IconCalendar size={16} />}
+                      {...form.getInputProps('voucherDate')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
+                    <Select
+                      label="Head of Account (Ledger)"
+                      placeholder="Select ledger"
+                      required
+                      searchable
+                      data={selectData}
+                      {...form.getInputProps('ledgerId')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={{ base: 12, sm: 6, md: 2 }}>
+                    <NumberInput
+                      label="Amount"
+                      placeholder="Enter amount"
+                      required
+                      leftSection={<IconCurrencyRupee size={16} />}
+                      min={0.01}
+                      decimalScale={2}
+                      hideControls
+                      {...form.getInputProps('amount')}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
+                    <Textarea
+                      label="Narration"
+                      placeholder="Enter narration/description"
+                      required
+                      leftSection={<IconNotes size={16} />}
+                      autosize
+                      minRows={1}
+                      {...form.getInputProps('narration')}
+                    />
+                  </Grid.Col>
+                </Grid>
 
-                <Select
-                  label="Head of Account (Ledger)"
-                  placeholder="Select ledger"
-                  required
-                  searchable
-                  data={selectData}
-                  {...form.getInputProps('ledgerId')}
-                />
-
-                <NumberInput
-                  label="Amount"
-                  placeholder="Enter amount"
-                  required
-                  leftSection={<IconCurrencyRupee size={16} />}
-                  min={0.01}
-                  decimalScale={2}
-                  hideControls
-                  {...form.getInputProps('amount')}
-                />
-
-                <Textarea
-                  label="Narration"
-                  placeholder="Enter narration/description"
-                  required
-                  leftSection={<IconNotes size={16} />}
-                  minRows={2}
-                  {...form.getInputProps('narration')}
-                />
-
-                {/* Bill No Info */}
-                <Card p="sm" withBorder bg="blue.0">
-                  <Group gap="xs">
-                    <IconCreditCard size={16} />
-                    <Text size="sm" c="dimmed">
-                      Bill No will be auto-generated upon saving
-                    </Text>
-                  </Group>
-                </Card>
-
-                {/* Amount Preview */}
-                {form.values.amount && (
-                  <Card p="sm" withBorder bg="red.0">
-                    <Group justify="space-between">
-                      <Text size="sm" c="dimmed">Amount to be recorded:</Text>
-                      <Text fw={700} c="red" size="lg">
-                        {parseFloat(form.values.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </Text>
-                    </Group>
-                  </Card>
-                )}
-
-                <Divider />
-
-                <Group justify="flex-end" gap="md">
+                <Group justify="space-between" gap="md">
+                  <Text size="sm" c="dimmed">
+                    Bill No will be auto-generated upon saving · Cash account is credited automatically
+                  </Text>
+                  <Group gap="md">
                   <Button
                     variant="default"
                     leftSection={<IconX size={16} />}
-                    onClick={closeModal}
+                    onClick={() => resetEntryForm()}
                     disabled={loading}
                   >
-                    Cancel
+                    {editingVoucherId ? 'Cancel Edit' : 'Clear'}
                   </Button>
                   <Button
                     type="submit"
@@ -714,6 +533,7 @@ const PaymentVoucher = () => {
                   >
                     {editingVoucherId ? 'Update Payment Voucher' : 'Save Payment Voucher'}
                   </Button>
+                  </Group>
                 </Group>
               </Stack>
             </form>
@@ -844,10 +664,12 @@ const PaymentVoucher = () => {
                 <Button
                   variant="default"
                   leftSection={<IconX size={16} />}
-                  onClick={closeModal}
+                  onClick={() => setMultipleEntries([
+                    { voucherDate: dayjs().format('YYYY-MM-DD'), ledgerId: '', amount: '', narration: '' }
+                  ])}
                   disabled={savingMultiple}
                 >
-                  Cancel
+                  Clear
                 </Button>
                 <Button
                   leftSection={<IconCheck size={16} />}
@@ -861,7 +683,157 @@ const PaymentVoucher = () => {
             </Stack>
           )}
         </Stack>
-      </Modal>
+      </Paper>
+
+      {/* Vouchers List */}
+      <Paper p="lg" withBorder shadow="sm" pos="relative">
+        <LoadingOverlay visible={fetchingVouchers} overlayProps={{ blur: 2 }} />
+
+        <Group justify="space-between" mb="md">
+          <Group gap="sm">
+            <Title order={4}>
+              <Group gap="xs">
+                <IconCreditCard size={20} />
+                Payment Vouchers List
+              </Group>
+            </Title>
+          </Group>
+          <Group gap="sm">
+            <TextInput
+              type="date"
+              label="Transaction Date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              leftSection={<IconCalendar size={16} />}
+              size="sm"
+              styles={{ root: { width: 170 } }}
+            />
+            <Badge size="lg" variant="filled" color="red" mt={22}>
+              {vouchers.length} Vouchers
+            </Badge>
+          </Group>
+        </Group>
+
+        {vouchers.length === 0 ? (
+          <Card p="xl" withBorder bg="gray.0">
+            <Stack align="center" gap="md">
+              <IconCreditCard size={48} color="gray" />
+              <Text c="dimmed" size="lg">No payment vouchers on {dayjs(filterDate).format('DD-MM-YYYY')}</Text>
+            </Stack>
+          </Card>
+        ) : (
+          <ScrollArea>
+            <Table striped highlightOnHover withBorder>
+              <thead>
+                <tr>
+                  <th>S.No</th>
+                  <th>Bill No</th>
+                  <th>Date</th>
+                  <th>Head of Account</th>
+                  <th style={{ textAlign: 'right' }}>Amount</th>
+                  <th>Narration</th>
+                  <th style={{ textAlign: 'center' }}>Source</th>
+                  <th style={{ textAlign: 'center' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vouchers.map((voucher, index) => {
+                  const debitEntry = voucher.entries?.find(e => e.debitAmount > 0);
+                  const isManual = voucher.referenceType === 'Manual';
+
+                  return (
+                    <tr key={voucher._id}>
+                      <td>{index + 1}</td>
+                      <td>
+                        <Badge variant="outline" color="red">
+                          {voucher.voucherNumber || 'Auto'}
+                        </Badge>
+                      </td>
+                      <td>{dayjs(voucher.voucherDate).format('DD-MM-YYYY')}</td>
+                      <td>{debitEntry?.ledgerName || '-'}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        <Text fw={600} c="red">
+                          {(voucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </Text>
+                      </td>
+                      <td>
+                        <Text size="sm" lineClamp={1}>
+                          {voucher.narration || '-'}
+                        </Text>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <Badge size="sm" variant="light" color={isManual ? 'grape' : 'gray'}>
+                          {isManual ? 'Manual' : (voucher.referenceType || 'Auto')}
+                        </Badge>
+                      </td>
+                      <td>
+                        <Group gap="xs" justify="center">
+                          <Tooltip label="View Details">
+                            <ActionIcon
+                              color="blue"
+                              variant="light"
+                              onClick={() => handleView(voucher)}
+                            >
+                              <IconEye size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+                          <Tooltip label="Print">
+                            <ActionIcon
+                              color="red"
+                              variant="light"
+                              onClick={() => handlePrint(voucher)}
+                            >
+                              <IconPrinter size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+                          {isManual ? (
+                            <>
+                              <Tooltip label="Edit">
+                                <ActionIcon
+                                  color="orange"
+                                  variant="light"
+                                  onClick={() => startEdit(voucher)}
+                                >
+                                  <IconEdit size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                              <Tooltip label="Delete">
+                                <ActionIcon
+                                  color="red"
+                                  variant="light"
+                                  onClick={() => handleDelete(voucher._id)}
+                                >
+                                  <IconTrash size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                            </>
+                          ) : (
+                            <Tooltip label="Auto-generated — edit/delete from its originating module">
+                              <Text size="xs" c="dimmed" fs="italic">View only</Text>
+                            </Tooltip>
+                          )}
+                        </Group>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </ScrollArea>
+        )}
+
+        {/* Summary Card */}
+        {vouchers.length > 0 && (
+          <Card mt="md" p="md" withBorder bg="red.0">
+            <Group justify="space-between">
+              <Text fw={500}>Total Payments</Text>
+              <Text size="xl" fw={700} c="red">
+                {vouchers.reduce((sum, v) => sum + (v.totalDebit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </Text>
+            </Group>
+          </Card>
+        )}
+      </Paper>
 
       {/* View Details Modal */}
       <Modal

@@ -258,9 +258,9 @@ const CashBook = () => {
                 entries.map((entry, idx) => (
                   <Table.Tr key={idx}>
                     <Table.Td title={entry.description} style={{ overflow: 'hidden', maxWidth: 0 }}>
-                      <Text fz={12} fw={500} truncate>{entry.description}</Text>
+                      <Text className="cb-desc" fz={12} fw={500} truncate>{entry.description}</Text>
                       {entry.narration && (
-                        <Text fz={10} c="dimmed" fs="italic" style={{ whiteSpace: 'pre-line' }}>{entry.narration}</Text>
+                        <Text className="cb-narr" fz={10} c="dimmed" fs="italic" style={{ whiteSpace: 'pre-line' }}>{entry.narration}</Text>
                       )}
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'center', fontFamily: 'Consolas, monospace', fontSize: 11 }}>
@@ -404,8 +404,11 @@ const CashBook = () => {
     if (!content) return;
     const printWindow = window.open('', '_blank');
     const liveCSS = collectLiveCSS();
+    // data-mantine-color-scheme is required: Mantine defines its text/border/
+    // table colour variables under that attribute, so without it the table
+    // grid lines and dimmed text vanish in print. Always print in light.
     printWindow.document.write(`<!DOCTYPE html>
-<html>
+<html data-mantine-color-scheme="light">
 <head>
   <title>Cash Book - ${formatDateShort(fromDate)} to ${formatDateShort(toDate)}</title>
   <style>${liveCSS}</style>
@@ -418,9 +421,25 @@ const CashBook = () => {
        card is kept intact and, as many complete days as fit are packed onto
        one page; a day that doesn't fully fit in the remaining space simply
        flows to the next page in one piece. */
-    .mantine-Paper-root { page-break-inside: avoid; break-inside: avoid; }
+    .mantine-Paper-root { page-break-inside: avoid; break-inside: avoid; overflow: visible !important; box-shadow: none !important; }
     .cb-signature-block { page-break-inside: avoid; break-inside: avoid; }
     .cb-no-print { display: none !important; }
+    /* Print every detail in full — the on-screen view truncates long ledger
+       names with "…", which on a half-width A4 column hides most of the text.
+       Wrap descriptions, bill numbers and amounts instead of clipping them. */
+    [data-truncate] { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; }
+    .mantine-Table-td, .mantine-Table-th {
+      padding: 3px 5px !important;
+      overflow: visible !important;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      vertical-align: top;
+    }
+    .mantine-Table-td { font-size: 10px !important; }
+    .mantine-Table-td .mantine-Text-root { font-size: inherit !important; }
+    .cb-narr { font-size: 9px !important; }
+    .mantine-Table-th { font-size: 9px !important; letter-spacing: 0 !important; }
+    tr { page-break-inside: avoid; break-inside: avoid; }
   </style>
 </head>
 <body>${content.innerHTML}</body>
