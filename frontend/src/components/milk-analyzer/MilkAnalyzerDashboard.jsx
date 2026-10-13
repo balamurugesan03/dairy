@@ -15,9 +15,9 @@ import {
 } from '@tabler/icons-react';
 import { DataTable } from 'mantine-datatable';
 import dayjs from 'dayjs';
-import { milkAnalyzerAPI } from '../../services/api';
+import { milkAnalyzerAPI, SERVER_URL } from '../../services/api';
 
-const SOCKET_URL = 'http://localhost:5000';
+const SOCKET_URL = SERVER_URL;
 const PAGE_SIZE = 20;
 
 // ── Stat Card ─────────────────────────────────────────────────────────────────

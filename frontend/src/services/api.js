@@ -1,6 +1,10 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+// Backend origin: set VITE_API_URL at build time (e.g. https://api.dairysoft.net).
+// Dev falls back to the local backend; production falls back to same-origin.
+export const SERVER_URL = (import.meta.env.VITE_API_URL
+  || (import.meta.env.DEV ? 'http://localhost:5000' : window.location.origin)).replace(/\/+$/, '');
+const API_BASE_URL = `${SERVER_URL}/api`;
 
 // Public API instance - NO auth token (for login page, etc.)
 const publicApi = axios.create({
@@ -1050,7 +1054,7 @@ export const individualTransactionAPI = {
 // ── Thermal Printer API ───────────────────────────────────────────────────────
 // No auth header needed — hits /api/print/* which has no protect middleware
 const printApi = axios.create({
-  baseURL: 'http://localhost:5000/api/print',
+  baseURL: `${API_BASE_URL}/print`,
   timeout: 5000,
   headers: { 'Content-Type': 'application/json' }
 });

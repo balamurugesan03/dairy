@@ -28,7 +28,7 @@ import {
   agentAPI, collectionCenterAPI, farmerAPI,
   milkCollectionAPI, milkPurchaseSettingsAPI, rateChartAPI, milkSalesAPI,
   thermalPrintAPI, machineConfigAPI, timeIncentiveAPI, shiftIncentiveAPI,
-  milmaChartAPI, whatsappAPI,
+  milmaChartAPI, whatsappAPI, SERVER_URL,
 } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import dayjs from 'dayjs';
@@ -703,7 +703,7 @@ const MilkPurchase = () => {
   // ── Socket.io — Backend Serial Port ───────────────────────────────────────
   // Receives data from Node.js serialport service and feeds into parseMachineData
   useEffect(() => {
-    const socket = socketIO('http://localhost:5000');
+    const socket = socketIO(SERVER_URL);
 
     socket.on('connect', () => {
       setSocketConnected(true);
