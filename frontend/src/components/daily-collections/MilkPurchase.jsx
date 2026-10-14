@@ -22,7 +22,7 @@ import {
   IconAlertCircle, IconRefresh, IconId, IconReceipt,
   IconDroplet, IconFlame, IconChartBar,
   IconPlus, IconEdit, IconBan, IconHistory,
-  IconPlugConnected, IconPlugConnectedX, IconScale, IconUpload, IconFilter, IconDownload,
+  IconPlugConnected, IconPlugConnectedX, IconScale, IconUpload, IconFilter, IconDownload, IconSettings,
 } from '@tabler/icons-react';
 import {
   agentAPI, collectionCenterAPI, farmerAPI,
@@ -369,6 +369,7 @@ const MilkPurchase = () => {
   const [speakEnabled, setSpeakEnabled] = useState(false);
   const [speakLang,    setSpeakLang]    = useState('en-IN'); // 'en-IN' | 'ml-IN'
   const [cpMode,      setCpMode]      = useState([]);
+  const [showAdminPanel, setShowAdminPanel] = useState(false); // right control panel — hidden until the Administrator button is clicked
   const [paramCombo,  setParamCombo]  = useState('CLR-FAT'); // 'CLR-FAT' | 'FAT-SNF'
   const [qtyUnit,     setQtyUnit]     = useState('Litre');   // 'Litre' | 'KG'
   const whatsAppSettingsRef = useRef({ enabled: false });
@@ -1461,13 +1462,30 @@ const MilkPurchase = () => {
     notifications.show({ message: `Editing: ${selectedRow.billNo} — modify values and press Save`, color: 'blue', autoClose: 3000 });
   };
 
-  const handleDelete = async (id) => {
-    try {
-      await milkCollectionAPI.delete(id);
-      setEntries(prev => sortByProducerNo(prev.filter(e => e.id !== id)));
-      if (selectedRow?.id === id) setSelectedRow(null);
-      notifications.show({ message: 'Entry deleted', color: 'orange', autoClose: 1500 });
-    } catch (err) { notifications.show({ message: err?.message || 'Delete failed', color: 'red' }); }
+  const handleDelete = (id) => {
+    const row = entries.find(e => e.id === id);
+    modals.openConfirmModal({
+      title: 'Delete Collection Entry',
+      centered: true,
+      closeOnClickOutside: false,
+      children: (
+        <Text size="sm">
+          Are you sure you want to delete bill <b>{row?.billNo || '—'}</b>
+          {row?.producerName ? <> for <b>{row.producerName}</b></> : null}?
+          <Text size="xs" c="red" mt={4}>This action cannot be undone.</Text>
+        </Text>
+      ),
+      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          await milkCollectionAPI.delete(id);
+          setEntries(prev => sortByProducerNo(prev.filter(e => e.id !== id)));
+          setSelectedRow(prev => (prev?.id === id ? null : prev));
+          notifications.show({ message: 'Entry deleted', color: 'orange', autoClose: 1500 });
+        } catch (err) { notifications.show({ message: err?.message || 'Delete failed', color: 'red' }); }
+      },
+    });
   };
 
   const [bulkDeleting,   setBulkDeleting]   = useState(false);
@@ -1890,7 +1908,7 @@ const MilkPurchase = () => {
 
         .mp-col-hide-mobile { display: none !important; }
         .mp-tbl { min-width: 550px !important; }
-        .mp-tbl td, .mp-tbl th { padding: 6px 8px !important; font-size: 11px !important; }
+        .mp-tbl td, .mp-tbl th { padding: 6px 8px !important; font-size: 12px !important; }
 
         .mp-footer-strip { display: grid !important; grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; padding: 10px !important; }
         .mp-footer-divider { display: none !important; }
@@ -2544,6 +2562,13 @@ const MilkPurchase = () => {
                 Refresh
               </Button>
 
+              {/* ADMINISTRATOR — shows / hides the right control panel */}
+              <Button leftSection={<IconSettings size={12} />} onClick={() => setShowAdminPanel(v => !v)}
+                size="compact-xs" radius="sm"
+                style={{ background: showAdminPanel ? '#006064' : 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
+                {showAdminPanel ? 'Hide Administrator' : 'Administrator'}
+              </Button>
+
               {/* EXPORT to Excel — not available to restricted users */}
               {!isUser && (
                 <Button leftSection={<IconDownload size={12} />} onClick={() => setExportOpen(true)}
@@ -2635,7 +2660,7 @@ const MilkPurchase = () => {
         {/* Table */}
         <Box style={{ flex: 1, overflowY: 'hidden', overflowX: 'auto', background: 'white', borderRadius: '0 0 10px 10px', border: '1px solid #bfdbfe', borderTop: 'none' }}>
           <ScrollArea h="100%" type="auto" viewportRef={tableScrollRef}>
-            <Table className="mp-tbl" striped highlightOnHover stickyHeader withColumnBorders style={{ fontSize: 12 }}>
+            <Table className="mp-tbl" striped highlightOnHover stickyHeader withColumnBorders style={{ fontSize: 14 }}>
               <Table.Thead style={{ background: 'linear-gradient(180deg,#dbeafe 0%,#bfdbfe 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
                 <Table.Tr>
                   {[
@@ -2653,7 +2678,7 @@ const MilkPurchase = () => {
                     { col: 'Rate/L',    hide: true  },
                     { col: 'Amount',    hide: false },
                   ].map(({ col, hide }) => (
-                    <Table.Th key={col} className={hide ? 'mp-col-hide-mobile' : ''} style={{ fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#1e40af', whiteSpace: 'nowrap', padding: '9px 12px', borderBottom: '2px solid #93c5fd' }}>
+                    <Table.Th key={col} className={hide ? 'mp-col-hide-mobile' : ''} style={{ fontWeight: 800, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#1e40af', whiteSpace: 'nowrap', padding: '9px 12px', borderBottom: '2px solid #93c5fd' }}>
                       {col}
                     </Table.Th>
                   ))}
@@ -2682,12 +2707,12 @@ const MilkPurchase = () => {
                   const isEditing = editingId === entry.id;
                   return (
                     <Table.Tr key={entry.id} onClick={() => setSelectedRow(isSel ? null : entry)}
-                      style={{ cursor: 'pointer', fontSize: 13, background: isEditing ? '#fffbeb' : isSel ? '#eff6ff' : undefined, borderLeft: isEditing ? '3px solid #d97706' : isSel ? '3px solid #2563eb' : '3px solid transparent', transition: 'background 0.1s' }}>
-                      <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', fontWeight: 700, color: '#94a3b8', width: 32, fontSize: 13 }}>{entry.sl}</Table.Td>
+                      style={{ cursor: 'pointer', fontSize: 15, background: isEditing ? '#fffbeb' : isSel ? '#eff6ff' : undefined, borderLeft: isEditing ? '3px solid #d97706' : isSel ? '3px solid #2563eb' : '3px solid transparent', transition: 'background 0.1s' }}>
+                      <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', fontWeight: 700, color: '#94a3b8', width: 32, fontSize: 15 }}>{entry.sl}</Table.Td>
                       <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', fontWeight: 700, color: '#1e40af', whiteSpace: 'nowrap' }}>{entry.billNo}</Table.Td>
-                      <Table.Td style={{ padding: '6px 12px' }}><Badge size="sm" color="blue" variant="light" radius="sm">{entry.producerNo}</Badge></Table.Td>
-                      <Table.Td style={{ padding: '6px 8px', color: '#475569', fontSize: 13, whiteSpace: 'nowrap' }}>{entry.date ? new Date(entry.date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit' }) : '—'}</Table.Td>
-                      <Table.Td style={{ padding: '6px 8px' }}><Badge size="xs" color={entry.shift === 'AM' ? 'orange' : 'indigo'} variant="light" radius="sm">{entry.shift || '—'}</Badge></Table.Td>
+                      <Table.Td style={{ padding: '6px 12px' }}><Badge size="md" color="blue" variant="light" radius="sm">{entry.producerNo}</Badge></Table.Td>
+                      <Table.Td style={{ padding: '6px 8px', color: '#475569', fontSize: 15, whiteSpace: 'nowrap' }}>{entry.date ? new Date(entry.date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit' }) : '—'}</Table.Td>
+                      <Table.Td style={{ padding: '6px 8px' }}><Badge size="sm" color={entry.shift === 'AM' ? 'orange' : 'indigo'} variant="light" radius="sm">{entry.shift || '—'}</Badge></Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0369a1', textAlign: 'right' }}>{(entry.ltr ?? entry.qty).toFixed(2)}</Table.Td>
                       <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', fontWeight: 800, color: '#0284c7', textAlign: 'right' }}>{((entry.ltr ?? entry.qty) * (1 + (entry.clr || 26) / 1000)).toFixed(2)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#c2410c', textAlign: 'right' }}>{entry.fat.toFixed(1)}</Table.Td>
@@ -2695,7 +2720,7 @@ const MilkPurchase = () => {
                       <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', color: '#166534', textAlign: 'right' }}>{entry.snf.toFixed(2)}</Table.Td>
                       <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', textAlign: 'right' }}>&#8377;{entry.incentive.toFixed(2)}</Table.Td>
                       <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', fontWeight: 600, textAlign: 'right' }}>&#8377;{entry.rate.toFixed(2)}</Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', textAlign: 'right' }}><Text size="15px" fw={800} c="blue.7">&#8377;{entry.amount.toFixed(2)}</Text></Table.Td>
+                      <Table.Td style={{ padding: '6px 12px', textAlign: 'right' }}><Text size="16px" fw={800} c="blue.7">&#8377;{entry.amount.toFixed(2)}</Text></Table.Td>
                     </Table.Tr>
                   );
                 })}
@@ -2706,15 +2731,15 @@ const MilkPurchase = () => {
                   <Table.Tr style={{ background: '#1e3a8a' }}>
                     <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px' }} />
                     <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px' }} />
-                    <Table.Td colSpan={3} style={{ padding: '8px 12px', fontWeight: 700, color: '#93c5fd', fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#7dd3fc', textAlign: 'right', fontSize: 15 }}>{totalLtr.toFixed(2)}</Table.Td>
-                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px', fontWeight: 900, color: '#38bdf8', textAlign: 'right', fontSize: 15 }}>{totalKg.toFixed(2)}</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#fdba74', textAlign: 'right', fontSize: 14 }}>{avgFat.toFixed(1)}</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#a78bfa', textAlign: 'right', fontSize: 14 }}>{avgClr.toFixed(1)}</Table.Td>
-                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px', fontWeight: 700, color: '#4ade80', textAlign: 'right', fontSize: 14 }}>{avgSnf.toFixed(2)}</Table.Td>
+                    <Table.Td colSpan={3} style={{ padding: '8px 12px', fontWeight: 700, color: '#93c5fd', fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
+                    <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#7dd3fc', textAlign: 'right', fontSize: 16 }}>{totalLtr.toFixed(2)}</Table.Td>
+                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px', fontWeight: 900, color: '#38bdf8', textAlign: 'right', fontSize: 16 }}>{totalKg.toFixed(2)}</Table.Td>
+                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#fdba74', textAlign: 'right', fontSize: 15 }}>{avgFat.toFixed(1)}</Table.Td>
+                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#a78bfa', textAlign: 'right', fontSize: 15 }}>{avgClr.toFixed(1)}</Table.Td>
+                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px', fontWeight: 700, color: '#4ade80', textAlign: 'right', fontSize: 15 }}>{avgSnf.toFixed(2)}</Table.Td>
                     <Table.Td className="mp-col-hide-mobile" />
-                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px', fontWeight: 700, color: '#e2e8f0', textAlign: 'right', fontSize: 14 }}>&#8377;{avgRate.toFixed(2)}</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', textAlign: 'right' }}><Text size="16px" fw={900} c="white">&#8377;{totalAmt.toFixed(2)}</Text></Table.Td>
+                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px', fontWeight: 700, color: '#e2e8f0', textAlign: 'right', fontSize: 15 }}>&#8377;{avgRate.toFixed(2)}</Table.Td>
+                    <Table.Td style={{ padding: '8px 12px', textAlign: 'right' }}><Text size="17px" fw={900} c="white">&#8377;{totalAmt.toFixed(2)}</Text></Table.Td>
                   </Table.Tr>
                 </Table.Tfoot>
               )}
@@ -2797,6 +2822,8 @@ const MilkPurchase = () => {
       {/* ══ RIGHT CONTROL PANEL ══════════════════════════════════════════════ */}
       <Box className="mp-right-panel" style={{
         width: 200, flexShrink: 0,
+        // Kept mounted (scale / analyzer / display connections live here) — only hidden
+        ...(showAdminPanel ? {} : { display: 'none' }),
         background: 'linear-gradient(180deg, #e0f7fa 0%, #b2ebf2 40%, #e0f2f1 100%)',
         borderLeft: '2px solid #80deea',
         display: 'flex', flexDirection: 'column',

@@ -314,20 +314,14 @@ const DayBook = () => {
                 <td className="db-footer-total">{fmtAlways(totals.total)}</td>
                 <td className="db-no-print"></td>
               </tr>
-              <tr className="db-summary-row db-balance-row">
+              {/* Opening Balance (Receipt side) and Closing Balance (Payment side)
+                  sit on the same line */}
+              <tr className="db-summary-row db-closing-row">
                 <td className="db-footer-label">{balanceLabel}</td>
                 <td className="db-footer-vno"></td>
                 <td className="db-footer-amt">{fmtAlways(balanceAmount)}</td>
                 <td className="db-footer-amt"></td>
                 <td className="db-footer-total">{fmtAlways(balanceAmount)}</td>
-                <td className="db-no-print"></td>
-              </tr>
-              <tr className="db-summary-row db-closing-row">
-                <td className="db-footer-label">Closing Balance</td>
-                <td className="db-footer-vno"></td>
-                <td className="db-footer-amt">{fmtAlways(closeBal)}</td>
-                <td className="db-footer-amt"></td>
-                <td className="db-footer-total">{fmtAlways(closeBal)}</td>
                 <td className="db-no-print"></td>
               </tr>
             </tbody>
@@ -456,7 +450,7 @@ const DayBook = () => {
       4: { halign: 'right', cellWidth: halfW * 0.18, fontStyle: 'bold' }
     };
 
-    const buildBody = (entries, totals, balLabel, balAmt, closeBal) => {
+    const buildBody = (entries, totals, balLabel, balAmt) => {
       const body = entries.map(e => [
         e.description || '', e.voucherNumber || '',
         fmt(e.cash), fmt(e.adjustment), fmt(e.total)
@@ -475,16 +469,11 @@ const DayBook = () => {
         { content: fmtAlways(totals.total), styles: { ...boldRight, fillColor: bg1 } }
       ]);
       body.push([
-        { content: balLabel, styles: bold }, '',
-        { content: fmtAlways(balAmt), styles: boldRight }, '',
-        { content: fmtAlways(balAmt), styles: boldRight }
-      ]);
-      body.push([
-        { content: 'Closing Balance', styles: { ...bold, fillColor: bg2, fontSize: closingFontSize } },
+        { content: balLabel, styles: { ...bold, fillColor: bg2, fontSize: closingFontSize } },
         { content: '', styles: { fillColor: bg2 } },
-        { content: fmtAlways(closeBal), styles: { ...boldRight, fillColor: bg2, fontSize: closingFontSize } },
+        { content: fmtAlways(balAmt), styles: { ...boldRight, fillColor: bg2, fontSize: closingFontSize } },
         { content: '', styles: { fillColor: bg2 } },
-        { content: fmtAlways(closeBal), styles: { ...boldRight, fillColor: bg2, fontSize: closingFontSize } }
+        { content: fmtAlways(balAmt), styles: { ...boldRight, fillColor: bg2, fontSize: closingFontSize } }
       ]);
       return body;
     };
@@ -522,7 +511,7 @@ const DayBook = () => {
       doc.text('RECEIPTS (Money In)', margin, tableY - 1);
       autoTable(doc, {
         head,
-        body: buildBody(card.receipts, card.receiptTotals, 'Opening Balance', card.openingBalance, card.closingBalance),
+        body: buildBody(card.receipts, card.receiptTotals, 'Opening Balance', card.openingBalance),
         startY: tableY,
         margin: { left: margin, right: pageWidth / 2 + 1 },
         tableWidth: halfW,
@@ -534,7 +523,7 @@ const DayBook = () => {
       doc.text('PAYMENTS (Money Out)', pageWidth / 2 + 2, tableY - 1);
       autoTable(doc, {
         head,
-        body: buildBody(card.payments, card.paymentTotals, 'Closing Balance', card.closingBalance, card.closingBalance),
+        body: buildBody(card.payments, card.paymentTotals, 'Closing Balance', card.closingBalance),
         startY: tableY,
         margin: { left: pageWidth / 2 + 2, right: margin },
         tableWidth: halfW,

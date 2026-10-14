@@ -610,15 +610,20 @@ const MainLayout = () => {
     }
   };
 
-  // Renders menu children with "More" flyout for items beyond 10
+  // Renders menu children with "More" flyout for items beyond 10.
+  // Sub-menu groups (e.g. Dairy Inventory → Reports) are never tucked under
+  // "More" — they always render directly, after the plain items.
   const renderMenuChildren = (item) => {
     const ordered = getOrderedChildren(item);
-    const visible = ordered.slice(0, ITEMS_VISIBLE);
-    const hidden = ordered.slice(ITEMS_VISIBLE);
+    const leaves = ordered.filter(c => !c.children);
+    const groups = item.children.filter(c => c.children);
+    const visible = leaves.slice(0, ITEMS_VISIBLE);
+    const hidden = leaves.slice(ITEMS_VISIBLE);
 
     return (
       <>
         {visible.map(child => renderDropdownItem(child, item.color, item.key, ordered))}
+        {groups.map(child => renderDropdownItem(child, item.color, item.key, ordered))}
         {hidden.length > 0 && (
           <Menu trigger="hover" position="right-start" offset={0} shadow="lg" width={230}>
             <Menu.Target>
