@@ -321,9 +321,10 @@ const AppContent = () => {
     return <CompanySelection />;
   }
 
-  // Otherwise, show the main app
+  // Otherwise, show the main app.
+  // basename = Vite's build base (e.g. /admin/ in production) so routes match under that path.
   return (
-    <Router>
+    <Router basename={import.meta.env.BASE_URL.replace(/\/+$/, '')}>
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           <Route path="/login" element={<Navigate to="/" replace />} />
