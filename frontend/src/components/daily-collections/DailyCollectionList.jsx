@@ -56,8 +56,11 @@ const DailyCollectionList = () => {
     sample: { qty: 0, amt: 0 },
   });
 
-  const [fromDate, setFromDate] = useState(new Date());
-  const [toDate,   setToDate]   = useState(new Date());
+  // Single date filter — fromDate/toDate are kept as aliases so the fetch and
+  // the Excel/PDF/print exports keep working unchanged
+  const [date, setDate] = useState(new Date());
+  const fromDate = date;
+  const toDate   = date;
   const [shift,  setShift]  = useState('');
   const [center, setCenter] = useState('');
   const [agent,  setAgent]  = useState('');
@@ -688,20 +691,11 @@ const DailyCollectionList = () => {
       <Paper withBorder p="sm" mb="md" radius="md">
         <Group gap="sm" wrap="wrap" align="flex-end">
           <DatePickerInput
-            label="From Date"
-            value={fromDate}
-            onChange={v => { setFromDate(v); setPage(1); }}
+            label="Date"
+            value={date}
+            onChange={v => { setDate(v); setPage(1); }}
             leftSection={<IconCalendar size={14} />}
             valueFormat="DD MMM YYYY"
-            size="sm" style={{ width: 150 }}
-          />
-          <DatePickerInput
-            label="To Date"
-            value={toDate}
-            onChange={v => { setToDate(v); setPage(1); }}
-            leftSection={<IconCalendar size={14} />}
-            valueFormat="DD MMM YYYY"
-            minDate={fromDate || undefined}
             size="sm" style={{ width: 150 }}
           />
           <Select
@@ -764,21 +758,22 @@ const DailyCollectionList = () => {
           noRecordsText="No collection entries found for this date/shift"
           striped
           highlightOnHover
+          styles={{ header: { fontSize: 15 } }}
           sortStatus={sortStatus}
           onSortStatusChange={(s) => { setSortStatus(s); setPage(1); }}
           columns={[
             {
               accessor: 'billNo', title: 'Bill No', width: 130, sortable: true,
-              render: r => <Text size="sm" fw={700} c="blue">{r.billNo}</Text>,
+              render: r => <Text size="md" fw={700} c="blue">{r.billNo}</Text>,
             },
             {
               accessor: 'date', title: 'Date', width: 110, sortable: true,
-              render: r => <Text size="sm">{dayjs(r.date).format('DD MMM YY')}</Text>,
+              render: r => <Text size="md">{dayjs(r.date).format('DD MMM YY')}</Text>,
             },
             {
               accessor: 'shift', title: 'Shift', width: 80, sortable: true,
               render: r => (
-                <Badge size="sm" color={r.shift === 'AM' ? 'yellow' : 'indigo'} variant="light">
+                <Badge size="md" color={r.shift === 'AM' ? 'yellow' : 'indigo'} variant="light">
                   {r.shift === 'AM' ? '☀ AM' : '🌙 PM'}
                 </Badge>
               ),
@@ -788,43 +783,43 @@ const DailyCollectionList = () => {
               render: r => (
                 <Box>
                   <Group gap={4} wrap="nowrap">
-                    <Badge size="xs" color="green" variant="filled" radius="sm">{r.farmerNumber}</Badge>
-                    <Badge size="xs" color={r.isMembership !== false ? 'blue' : 'gray'} variant="light" radius="sm">
+                    <Badge size="sm" color="green" variant="filled" radius="sm">{r.farmerNumber}</Badge>
+                    <Badge size="sm" color={r.isMembership !== false ? 'blue' : 'gray'} variant="light" radius="sm">
                       {r.isMembership !== false ? 'Member' : 'Non-Member'}
                     </Badge>
                   </Group>
-                  <Text size="xs" c="dimmed" mt={1}>{r.farmerName || '—'}</Text>
+                  <Text size="sm" c="dimmed" mt={1}>{r.farmerName || '—'}</Text>
                 </Box>
               ),
             },
             {
-              accessor: 'qty', title: 'Qty (L)', width: 80, textAlign: 'right', sortable: true,
-              render: r => <Text size="sm" fw={700} c="blue">{(r.qty || 0).toFixed(2)}</Text>,
+              accessor: 'qty', title: 'Qty (L)', width: 90, textAlign: 'right', sortable: true,
+              render: r => <Text size="md" fw={700} c="blue">{(r.qty || 0).toFixed(2)}</Text>,
             },
             {
               accessor: 'fat', title: 'FAT %', width: 75, textAlign: 'right', sortable: true,
-              render: r => <Text size="sm" fw={600} c="orange">{(r.fat || 0).toFixed(2)}</Text>,
+              render: r => <Text size="md" fw={600} c="orange">{(r.fat || 0).toFixed(2)}</Text>,
             },
             {
               accessor: 'clr', title: 'CLR', width: 70, textAlign: 'right', sortable: true,
-              render: r => <Text size="sm" c="violet">{(r.clr || 0).toFixed(1)}</Text>,
+              render: r => <Text size="md" c="violet">{(r.clr || 0).toFixed(1)}</Text>,
             },
             {
               accessor: 'snf', title: 'SNF %', width: 75, textAlign: 'right', sortable: true,
-              render: r => <Text size="sm" c="green">{(r.snf || 0).toFixed(2)}</Text>,
+              render: r => <Text size="md" c="green">{(r.snf || 0).toFixed(2)}</Text>,
             },
             {
-              accessor: 'rate', title: 'Rate', width: 80, textAlign: 'right', sortable: true,
-              render: r => <Text size="sm" fw={600}>₹{(r.rate || 0).toFixed(2)}</Text>,
+              accessor: 'rate', title: 'Rate', width: 90, textAlign: 'right', sortable: true,
+              render: r => <Text size="md" fw={600}>₹{(r.rate || 0).toFixed(2)}</Text>,
             },
             {
-              accessor: 'incentive', title: 'Incentive', width: 85, textAlign: 'right', sortable: true,
-              render: r => <Text size="sm" c="teal">₹{(r.incentive || 0).toFixed(2)}</Text>,
+              accessor: 'incentive', title: 'Incentive', width: 100, textAlign: 'right', sortable: true,
+              render: r => <Text size="md" c="teal">₹{(r.incentive || 0).toFixed(2)}</Text>,
             },
             {
-              accessor: 'amount', title: 'Amount', width: 100, textAlign: 'right', sortable: true,
+              accessor: 'amount', title: 'Amount', width: 120, textAlign: 'right', sortable: true,
               render: r => (
-                <Text size="sm" fw={700} c="green.8">
+                <Text size="md" fw={700} c="green.8">
                   ₹{(r.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </Text>
               ),
@@ -833,8 +828,8 @@ const DailyCollectionList = () => {
               accessor: 'actions', title: '', width: 50,
               render: r => (
                 <Tooltip label="Delete" withArrow>
-                  <ActionIcon size="sm" color="red" variant="subtle" onClick={(e) => handleDelete(e, r)}>
-                    <IconTrash size={14} />
+                  <ActionIcon size="md" color="red" variant="subtle" onClick={(e) => handleDelete(e, r)}>
+                    <IconTrash size={16} />
                   </ActionIcon>
                 </Tooltip>
               ),
