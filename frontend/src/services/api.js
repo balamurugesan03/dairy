@@ -48,8 +48,9 @@ api.interceptors.response.use(
       localStorage.removeItem('selectedCompanyId');
       localStorage.removeItem('selectedBusinessType');
       // Redirect to login
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+      const loginPath = `${import.meta.env.BASE_URL}login`;
+      if (window.location.pathname !== loginPath) {
+        window.location.href = loginPath;
       }
     }
     return Promise.reject(error);
