@@ -6,7 +6,7 @@ import { dayBookAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 import {
   Container, Paper, Text, Group, LoadingOverlay, Button,
-  Title, Divider, Menu, Badge, Select, ActionIcon
+  Title, Divider, Menu, Badge, Select, ActionIcon, Modal
 } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
@@ -21,6 +21,8 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { printHtmlDocument } from '../../utils/printA4';
+import { buildDayBookPrintHtml } from './dayBookPrint';
 import './DayBook.css';
 
 const PRESETS = [
@@ -60,6 +62,7 @@ const DayBook = () => {
   const [dayBookData, setDayBookData] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [generatedDate, setGeneratedDate] = useState(new Date());
+  const [printOrientation, setPrintOrientation] = useState(null); // preview open when set
   const printRef = useRef();
 
   const [fromDate, toDate] = dateRange;
@@ -77,7 +80,9 @@ const DayBook = () => {
     setDateRange([dayjs(val).startOf('day').toDate(), dayjs(val).endOf('day').toDate()]);
   };
 
-  const companyName = selectedCompany?.companyName || 'Dairy Co-operative Society';
+  const companyName = selectedCompany?.societyName || selectedCompany?.companyName || 'Dairy Co-operative Society';
+  const societyCode = selectedCompany?.societyCode || '';
+  const societyPlace = selectedCompany?.address || selectedCompany?.district || '';
 
   // --- Fetch ---
   const fetchDayBook = async (start, end) => {
@@ -306,22 +311,31 @@ const DayBook = () => {
         <div className="db-side__footer">
           <table className="db-ledger db-ledger--footer">
             <tbody>
+              {/* Opening Balance (Receipt side) and Closing Balance (Payment side)
+                  sit on the same line */}
+              <tr className="db-summary-row db-balance-row">
+                <td className="db-footer-label">{balanceLabel}</td>
+                <td className="db-footer-vno"></td>
+                <td className="db-footer-amt">{fmtAlways(balanceAmount)}</td>
+                <td className="db-footer-amt"></td>
+                <td className="db-footer-total">{fmtAlways(balanceAmount)}</td>
+                <td className="db-no-print"></td>
+              </tr>
               <tr className="db-summary-row db-day-total">
-                <td className="db-footer-label">Day Total</td>
+                <td className="db-footer-label">Transactions</td>
                 <td className="db-footer-vno"></td>
                 <td className="db-footer-amt">{fmtAlways(totals.cash)}</td>
                 <td className="db-footer-amt">{fmtAlways(totals.adj)}</td>
                 <td className="db-footer-total">{fmtAlways(totals.total)}</td>
                 <td className="db-no-print"></td>
               </tr>
-              {/* Opening Balance (Receipt side) and Closing Balance (Payment side)
-                  sit on the same line */}
+              {/* Grand Total = Balance + Transactions */}
               <tr className="db-summary-row db-closing-row">
-                <td className="db-footer-label">{balanceLabel}</td>
+                <td className="db-footer-label">Grand Total</td>
                 <td className="db-footer-vno"></td>
-                <td className="db-footer-amt">{fmtAlways(balanceAmount)}</td>
-                <td className="db-footer-amt"></td>
-                <td className="db-footer-total">{fmtAlways(balanceAmount)}</td>
+                <td className="db-footer-amt">{fmtAlways(balanceAmount + totals.cash)}</td>
+                <td className="db-footer-amt">{fmtAlways(totals.adj)}</td>
+                <td className="db-footer-total">{fmtAlways(balanceAmount + totals.total)}</td>
                 <td className="db-no-print"></td>
               </tr>
             </tbody>
@@ -337,10 +351,12 @@ const DayBook = () => {
       {/* Card Header */}
       <div className="db-card__header">
         <div className="db-card__company">{companyName}</div>
+        {societyCode && <div className="db-card__society">Society Code: {societyCode}</div>}
+        {societyPlace && <div className="db-card__society">{societyPlace}</div>}
         <div className="db-card__title-row">
           <span className="db-card__title">DAY BOOK</span>
         </div>
-        <div className="db-card__date">{formatDateLong(card.date)}</div>
+        <div className="db-card__date">{dayjs(card.date).format('DD / MM / YYYY  (dddd)')}</div>
         <div className="db-card__meta">
           <span>Opening: {fmtAlways(card.openingBalance)}</span>
           <span>Closing: {fmtAlways(card.closingBalance)}</span>
@@ -352,83 +368,32 @@ const DayBook = () => {
         {renderSideTable('receipt', card.receipts, card.receiptTotals, card.openingBalance, card.closingBalance)}
         {renderSideTable('payment', card.payments, card.paymentTotals, card.openingBalance, card.closingBalance)}
       </div>
+
+      {/* Signatures under every date — President centred, Secretary beside it */}
+      <div className="db-card-sign">
+        <div className="db-card-sign__box">President</div>
+        <div className="db-card-sign__box">Secretary</div>
+      </div>
     </div>
   );
 
   // --- PRINT ---
-  // Clones the live stylesheets (DayBook.css + Mantine core) into the print window
-  // so the printed page is rendered by the exact same CSS as the on-screen View —
-  // this is what keeps the Receipt/Payment side-by-side layout, the flex-stretched
-  // side panels (so the Day Total / Balance / Closing Balance summary rows always
-  // land on the same line on both sides, regardless of how many entries either side
-  // has), and the signature block all rendering identically in print as in View.
-  const collectLiveCSS = () => {
-    let css = '';
-    for (const sheet of document.styleSheets) {
-      try {
-        const rules = sheet.cssRules || sheet.rules;
-        if (!rules) continue;
-        for (const rule of rules) css += rule.cssText + '\n';
-      } catch {
-        // Cross-origin stylesheet (e.g. Google Fonts) — skip, fall back to <link>.
-        if (sheet.href) css += `@import url("${sheet.href}");\n`;
-      }
-    }
-    return css;
-  };
+  // Dedicated black & white A4 layout built from the day cards (one date per
+  // page, signatures under every date). The Print menu opens a preview that
+  // renders this exact document at real A4 size; printing goes from there.
+  const printHtml = useMemo(() => {
+    if (!printOrientation) return '';
+    return buildDayBookPrintHtml(dayCards, {
+      societyName: companyName,
+      societyCode,
+      place: societyPlace,
+      generatedOn: `${formatGeneratedDate(generatedDate)} | By ADM`,
+      title: `Day Book - ${formatDateShort(fromDate)} to ${formatDateShort(toDate)}`
+    }, printOrientation);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [printOrientation, dayCards, companyName, societyCode, societyPlace, generatedDate]);
 
-  const handlePrint = (orientation = 'landscape') => {
-    const content = printRef.current;
-    if (!content) return;
-
-    const isPortrait = orientation === 'portrait';
-    const liveCSS = collectLiveCSS();
-
-    // Only tune font sizes down a notch for Portrait (narrower page) — the
-    // underlying structure/alignment always comes from the cloned live CSS above.
-    const portraitOverrides = isPortrait ? `
-      .db-card { padding: 6mm; }
-      .db-card__company { font-size: 14px; }
-      .db-card__title { font-size: 11px; padding: 2px 14px; }
-      .db-card__date { font-size: 10px; }
-      .db-card__meta { font-size: 9px; padding: 4px 16px 0; }
-      .db-side__header { font-size: 10px; padding: 4px 8px; }
-      .db-side__subtitle { font-size: 7.5px; }
-      .db-ledger { font-size: 8.5px; }
-      .db-ledger thead th { font-size: 7.5px; padding: 2px 3px; }
-      .db-ledger tbody td { font-size: 8px; padding: 1.5px 3px; }
-      .db-ledger--footer td { font-size: 8px; padding: 2px 3px; }
-      .db-closing-row td { font-size: 8.5px; }
-      .db-signature-block { padding: 3mm 8mm 5mm; }
-    ` : '';
-
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`<!DOCTYPE html>
-<html>
-<head>
-  <title>Day Book - ${formatDateShort(fromDate)} to ${formatDateShort(toDate)}</title>
-  <style>${liveCSS}</style>
-  <style>
-    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    html, body { margin: 0; padding: 0; background: #fff; }
-    @page { size: A4 ${orientation}; margin: 6mm; }
-    ${portraitOverrides}
-  </style>
-</head>
-<body>${content.innerHTML}</body>
-</html>`);
-    printWindow.document.close();
-    let printed = false;
-    const doPrint = () => {
-      if (printed || printWindow.closed) return;
-      printed = true;
-      printWindow.focus();
-      printWindow.print();
-    };
-    printWindow.onload = doPrint;
-    // Fallback in case onload doesn't fire (some browsers with document.write).
-    setTimeout(doPrint, 400);
-  };
+  const handlePrint = (orientation = 'landscape') => setPrintOrientation(orientation);
 
   // --- PDF Export ---
   const handlePDFExport = (orientation = 'landscape') => {
@@ -462,18 +427,26 @@ const DayBook = () => {
       const bg2 = [232, 232, 240];
 
       body.push([
-        { content: 'Day Total', styles: { ...bold, fillColor: bg1 } },
+        { content: balLabel, styles: { ...bold, fillColor: bg1 } },
+        { content: '', styles: { fillColor: bg1 } },
+        { content: fmtAlways(balAmt), styles: { ...boldRight, fillColor: bg1 } },
+        { content: '', styles: { fillColor: bg1 } },
+        { content: fmtAlways(balAmt), styles: { ...boldRight, fillColor: bg1 } }
+      ]);
+      body.push([
+        { content: 'Transactions', styles: { ...bold, fillColor: bg1 } },
         { content: '', styles: { fillColor: bg1 } },
         { content: fmtAlways(totals.cash), styles: { ...boldRight, fillColor: bg1 } },
         { content: fmtAlways(totals.adj), styles: { ...boldRight, fillColor: bg1 } },
         { content: fmtAlways(totals.total), styles: { ...boldRight, fillColor: bg1 } }
       ]);
+      // Grand Total = Balance + Transactions
       body.push([
-        { content: balLabel, styles: { ...bold, fillColor: bg2, fontSize: closingFontSize } },
+        { content: 'Grand Total', styles: { ...bold, fillColor: bg2, fontSize: closingFontSize } },
         { content: '', styles: { fillColor: bg2 } },
-        { content: fmtAlways(balAmt), styles: { ...boldRight, fillColor: bg2, fontSize: closingFontSize } },
-        { content: '', styles: { fillColor: bg2 } },
-        { content: fmtAlways(balAmt), styles: { ...boldRight, fillColor: bg2, fontSize: closingFontSize } }
+        { content: fmtAlways(balAmt + totals.cash), styles: { ...boldRight, fillColor: bg2, fontSize: closingFontSize } },
+        { content: fmtAlways(totals.adj), styles: { ...boldRight, fillColor: bg2, fontSize: closingFontSize } },
+        { content: fmtAlways(balAmt + totals.total), styles: { ...boldRight, fillColor: bg2, fontSize: closingFontSize } }
       ]);
       return body;
     };
@@ -567,13 +540,19 @@ const DayBook = () => {
 
       const rt = card.receiptTotals;
       const pt = card.paymentTotals;
+      const ob = card.openingBalance;
+      const cb = card.closingBalance;
       rows.push([
-        'Day Total', '', rt.cash, rt.adj, rt.total,
-        '', 'Day Total', '', pt.cash, pt.adj, pt.total
+        'Opening Balance', '', ob, '', ob,
+        '', 'Closing Balance', '', cb, '', cb
       ]);
       rows.push([
-        'Opening Balance', '', card.openingBalance, '', card.openingBalance,
-        '', 'Closing Balance', '', card.closingBalance, '', card.closingBalance
+        'Transactions', '', rt.cash, rt.adj, rt.total,
+        '', 'Transactions', '', pt.cash, pt.adj, pt.total
+      ]);
+      rows.push([
+        'Grand Total', '', ob + rt.cash, rt.adj, ob + rt.total,
+        '', 'Grand Total', '', cb + pt.cash, pt.adj, cb + pt.total
       ]);
       rows.push([]);
     }
@@ -785,24 +764,33 @@ const DayBook = () => {
           <div ref={printRef}>
             {dayCards.map((card) => renderDayCard(card))}
 
-            {/* Single signature section — appears once, at the very bottom of the whole Day Book */}
-            <div className="db-signature-block">
-              <div className="db-signature-meta">
-                Generated on {formatGeneratedDate(generatedDate)} | By ADM
-              </div>
-              <div className="db-signature-row">
-                <div className="db-sign-box">
-                  <div className="db-sign-space"></div>
-                  <div className="db-sign-line">President</div>
-                </div>
-                <div className="db-sign-box">
-                  <div className="db-sign-space"></div>
-                  <div className="db-sign-line">Secretary</div>
-                </div>
-              </div>
+            {/* Signatures now sit under each date card; only the generated-on line remains here */}
+            <div className="db-signature-meta">
+              Generated on {formatGeneratedDate(generatedDate)} | By ADM
             </div>
           </div>
         )}
+
+        {/* Print preview — the iframe shows the exact A4 document that gets printed */}
+        <Modal
+          opened={!!printOrientation}
+          onClose={() => setPrintOrientation(null)}
+          title={<Text fw={600}>Day Book — Print Preview (A4 {printOrientation === 'portrait' ? 'Portrait' : 'Landscape'})</Text>}
+          size={printOrientation === 'portrait' ? 880 : 1200}
+          centered
+        >
+          <iframe
+            title="Day Book print preview"
+            srcDoc={printHtml}
+            style={{ width: '100%', height: '75vh', border: '1px solid #ccc', display: 'block' }}
+          />
+          <Group justify="flex-end" mt="md">
+            <Button variant="default" onClick={() => setPrintOrientation(null)}>Close</Button>
+            <Button color="dark" leftSection={<IconPrinter size={16} />} onClick={() => printHtmlDocument(printHtml)}>
+              Print
+            </Button>
+          </Group>
+        </Modal>
 
         {!dayBookData && !loading && (
           <Paper radius="md" withBorder shadow="sm" className="db-empty-state">

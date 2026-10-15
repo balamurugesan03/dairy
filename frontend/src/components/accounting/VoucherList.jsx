@@ -30,8 +30,7 @@ import {
   TextInput,
   Textarea,
   SimpleGrid,
-  RingProgress,
-  Center
+  RingProgress
 } from '@mantine/core';
 import {
   IconReceipt,
@@ -148,12 +147,10 @@ const VoucherList = () => {
   const filteredVouchers = vouchers.filter(voucher => {
     if (voucherTypeFilter && voucher.voucherType !== voucherTypeFilter) return false;
     
-    if (dateRange[0] && dateRange[1]) {
-      const voucherDate = dayjs(voucher.voucherDate);
-      if (voucherDate.isBefore(dateRange[0], 'day') || voucherDate.isAfter(dateRange[1], 'day')) {
-        return false;
-      }
-    }
+    // From / To each apply on their own, so either one alone also filters.
+    const voucherDate = dayjs(voucher.voucherDate);
+    if (dateRange[0] && voucherDate.isBefore(dateRange[0], 'day')) return false;
+    if (dateRange[1] && voucherDate.isAfter(dateRange[1], 'day')) return false;
     
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -291,24 +288,24 @@ const VoucherList = () => {
   });
 
   return (
-    <Container size="xl" py="md">
+    <Container size="xl" py="sm">
       {/* Header Section */}
-      <Paper p="lg" mb="md" withBorder shadow="sm" radius="md" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+      <Paper px="lg" py="sm" mb="xs" withBorder shadow="sm" radius="md" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
         <Group justify="space-between">
           <Box>
-            <Title order={2} c="white">Voucher Management</Title>
-            <Text c="white" size="sm" opacity={0.9}>
+            <Title order={3} c="white">Voucher Management</Title>
+            <Text c="white" size="xs" opacity={0.9}>
               Manage all accounting vouchers in one place
             </Text>
           </Box>
-          
+
           <Menu shadow="md" width={220} position="bottom-end">
             <Menu.Target>
-              <Button 
-                leftSection={<IconPlus size={18} />} 
-                color="white" 
+              <Button
+                leftSection={<IconPlus size={18} />}
+                color="white"
                 variant="filled"
-                size="md"
+                size="sm"
                 style={{ background: 'rgba(255,255,255,0.2)', backdropFilter: 'blur(10px)' }}
               >
                 Create Voucher
@@ -344,216 +341,178 @@ const VoucherList = () => {
         </Group>
       </Paper>
 
-      {/* Stats Cards */}
-      <Grid gutter="md" mb="md">
-        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-          <Card withBorder p="lg" radius="md" style={{ borderLeft: '4px solid #4dabf7' }}>
-            <Group justify="space-between">
-              <Box>
-                <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Total Vouchers</Text>
-                <Text size="xl" fw={700}>{stats.total}</Text>
-              </Box>
-              <RingProgress
-                size={60}
-                thickness={4}
-                sections={[{ value: 100, color: '#4dabf7' }]}
-                label={
-                  <Center>
-                    <IconFileInvoice size={22} color="#4dabf7" />
-                  </Center>
-                }
-              />
-            </Group>
-          </Card>
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-          <Card withBorder p="lg" radius="md" style={{ borderLeft: '4px solid #40c057' }}>
-            <Group justify="space-between">
-              <Box>
-                <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Receipts</Text>
-                <Text size="xl" fw={700} c="green">{stats.receipt}</Text>
-              </Box>
-              <RingProgress
-                size={60}
-                thickness={4}
-                sections={[{ value: stats.total > 0 ? (stats.receipt / stats.total) * 100 : 0, color: '#40c057' }]}
-                label={
-                  <Center>
-                    <IconReceipt2 size={22} color="#40c057" />
-                  </Center>
-                }
-              />
-            </Group>
-          </Card>
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-          <Card withBorder p="lg" radius="md" style={{ borderLeft: '4px solid #fa5252' }}>
-            <Group justify="space-between">
-              <Box>
-                <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Payments</Text>
-                <Text size="xl" fw={700} c="red">{stats.payment}</Text>
-              </Box>
-              <RingProgress
-                size={60}
-                thickness={4}
-                sections={[{ value: stats.total > 0 ? (stats.payment / stats.total) * 100 : 0, color: '#fa5252' }]}
-                label={
-                  <Center>
-                    <IconCash size={22} color="#fa5252" />
-                  </Center>
-                }
-              />
-            </Group>
-          </Card>
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-          <Card withBorder p="lg" radius="md" style={{ borderLeft: '4px solid #228be6' }}>
-            <Group justify="space-between">
-              <Box>
-                <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Journals</Text>
-                <Text size="xl" fw={700} c="blue">{stats.journal}</Text>
-              </Box>
-              <RingProgress
-                size={60}
-                thickness={4}
-                sections={[{ value: stats.total > 0 ? (stats.journal / stats.total) * 100 : 0, color: '#228be6' }]}
-                label={
-                  <Center>
-                    <IconExchange size={22} color="#228be6" />
-                  </Center>
-                }
-              />
-            </Group>
-          </Card>
-        </Grid.Col>
-      </Grid>
-
-      {/* Financial Summary */}
-      <Card withBorder p="lg" radius="md" mb="md">
-        <Group justify="space-between" mb="md">
-          <Title order={4}>
-            <Group gap="xs">
-              <IconChartBar size={20} />
-              Financial Summary
-            </Group>
-          </Title>
-          <Badge 
-            color={stats.difference < 0.01 ? 'green' : 'orange'} 
-            variant="filled"
-            size="lg"
+      {/* Search and Filters — directly below the heading, one compact row */}
+      <Paper px="sm" py="xs" mb="xs" withBorder shadow="xs" radius="md">
+        <Group gap="xs" wrap="wrap" align="center">
+          <TextInput
+            size="xs"
+            style={{ flex: '1 1 260px', minWidth: 200 }}
+            placeholder="Search by voucher number, reference, narration..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            leftSection={<IconSearch size={14} />}
+            rightSection={
+              searchQuery && (
+                <ActionIcon size="xs" onClick={() => setSearchQuery('')}>
+                  <IconX size={12} />
+                </ActionIcon>
+              )
+            }
+          />
+          <DatePickerInput
+            size="xs"
+            w={150}
+            placeholder="From Date"
+            valueFormat="DD-MM-YYYY"
+            value={dateRange[0]}
+            onChange={(d) => setDateRange([d, dateRange[1]])}
+            maxDate={dateRange[1] ? new Date(dateRange[1]) : undefined}
+            leftSection={<IconCalendar size={14} />}
+            clearable
+          />
+          <DatePickerInput
+            size="xs"
+            w={150}
+            placeholder="To Date"
+            valueFormat="DD-MM-YYYY"
+            value={dateRange[1]}
+            onChange={(d) => setDateRange([dateRange[0], d])}
+            minDate={dateRange[0] ? new Date(dateRange[0]) : undefined}
+            leftSection={<IconCalendar size={14} />}
+            clearable
+          />
+          <Select
+            size="xs"
+            w={160}
+            placeholder="All Types"
+            data={[
+              { value: '', label: '📁 All Types' },
+              { value: 'Receipt', label: '📥 Receipt' },
+              { value: 'Payment', label: '📤 Payment' },
+              { value: 'Journal', label: '📝 Journal' },
+              { value: 'ProducerDue', label: '💸 Producer Due' }
+            ]}
+            value={voucherTypeFilter}
+            onChange={setVoucherTypeFilter}
+            clearable
+          />
+          <Button
+            size="xs"
+            variant="light"
+            color="gray"
+            leftSection={<IconRefresh size={14} />}
+            onClick={() => {
+              setDateRange([null, null]);
+              setVoucherTypeFilter('');
+              setSearchQuery('');
+            }}
           >
-            {stats.difference < 0.01 ? 'Balanced' : 'Unbalanced'}
-          </Badge>
+            Reset
+          </Button>
         </Group>
-        
-        <SimpleGrid cols={{ base: 1, sm: 3 }} gap="lg">
-          <Paper p="md" withBorder>
-            <Group justify="space-between">
-              <Text size="sm" c="dimmed">Total Receipts</Text>
-              <IconTrendingUp size={18} color="red" />
-            </Group>
-            <Text size="xl" fw={700} c="red" mt="xs">
-              {stats.totalDebits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-            </Text>
-          </Paper>
-          
-          <Paper p="md" withBorder>
-            <Group justify="space-between">
-              <Text size="sm" c="dimmed">Total Payments</Text>
-              <IconTrendingDown size={18} color="green" />
-            </Group>
-            <Text size="xl" fw={700} c="green" mt="xs">
-              {stats.totalCredits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-            </Text>
-          </Paper>
-          
-          <Paper p="md" withBorder>
-            <Group justify="space-between">
-              <Text size="sm" c="dimmed">Difference</Text>
-              {stats.difference < 0.01 ? <IconCheck size={18} color="green" /> : <IconX size={18} color="red" />}
-            </Group>
-            <Text size="xl" fw={700} c={stats.difference < 0.01 ? 'green' : 'red'} mt="xs">
-              {stats.difference.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-            </Text>
-          </Paper>
-        </SimpleGrid>
-      </Card>
-
-      {/* Search and Filters */}
-      <Paper p="lg" mb="md" withBorder shadow="sm" radius="md">
-        <Grid gutter="md" align="flex-end">
-          <Grid.Col span={{ base: 12, md: 4 }}>
-            <TextInput
-              placeholder="Search by voucher number, reference, narration..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              leftSection={<IconSearch size={16} />}
-              rightSection={
-                searchQuery && (
-                  <ActionIcon size="xs" onClick={() => setSearchQuery('')}>
-                    <IconX size={12} />
-                  </ActionIcon>
-                )
-              }
-            />
-          </Grid.Col>
-
-          <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-            <DatePickerInput
-              type="range"
-              label="Date Range"
-              placeholder="Pick dates"
-              value={dateRange}
-              onChange={setDateRange}
-              leftSection={<IconCalendar size={16} />}
-              clearable
-            />
-          </Grid.Col>
-
-          <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-            <Select
-              label="Voucher Type"
-              placeholder="All Types"
-              data={[
-                { value: '', label: '📁 All Types' },
-                { value: 'Receipt', label: '📥 Receipt' },
-                { value: 'Payment', label: '📤 Payment' },
-                { value: 'Journal', label: '📝 Journal' },
-                { value: 'ProducerDue', label: '💸 Producer Due' }
-              ]}
-              value={voucherTypeFilter}
-              onChange={setVoucherTypeFilter}
-              clearable
-            />
-          </Grid.Col>
-
-          <Grid.Col span={{ base: 12, sm: 6, md: 2 }}>
-            <Button
-              variant="light"
-              color="gray"
-              leftSection={<IconRefresh size={16} />}
-              onClick={() => {
-                setDateRange([null, null]);
-                setVoucherTypeFilter('');
-                setSearchQuery('');
-              }}
-              fullWidth
-            >
-              Reset
-            </Button>
-          </Grid.Col>
-        </Grid>
       </Paper>
 
+      {/* Stats Cards — compact single row */}
+      <SimpleGrid cols={{ base: 2, md: 4 }} spacing="xs" mb="xs">
+        <Card withBorder px="sm" py={6} radius="md" style={{ borderLeft: '4px solid #4dabf7' }}>
+          <Group justify="space-between" wrap="nowrap">
+            <Box>
+              <Text size="10px" c="dimmed" tt="uppercase" fw={600}>Total Vouchers</Text>
+              <Text size="md" fw={700}>{stats.total}</Text>
+            </Box>
+            <IconFileInvoice size={20} color="#4dabf7" />
+          </Group>
+        </Card>
+
+        <Card withBorder px="sm" py={6} radius="md" style={{ borderLeft: '4px solid #40c057' }}>
+          <Group justify="space-between" wrap="nowrap">
+            <Box>
+              <Text size="10px" c="dimmed" tt="uppercase" fw={600}>Receipts</Text>
+              <Text size="md" fw={700} c="green">{stats.receipt}</Text>
+            </Box>
+            <RingProgress
+              size={36}
+              thickness={3}
+              sections={[{ value: stats.total > 0 ? (stats.receipt / stats.total) * 100 : 0, color: '#40c057' }]}
+            />
+          </Group>
+        </Card>
+
+        <Card withBorder px="sm" py={6} radius="md" style={{ borderLeft: '4px solid #fa5252' }}>
+          <Group justify="space-between" wrap="nowrap">
+            <Box>
+              <Text size="10px" c="dimmed" tt="uppercase" fw={600}>Payments</Text>
+              <Text size="md" fw={700} c="red">{stats.payment}</Text>
+            </Box>
+            <RingProgress
+              size={36}
+              thickness={3}
+              sections={[{ value: stats.total > 0 ? (stats.payment / stats.total) * 100 : 0, color: '#fa5252' }]}
+            />
+          </Group>
+        </Card>
+
+        <Card withBorder px="sm" py={6} radius="md" style={{ borderLeft: '4px solid #228be6' }}>
+          <Group justify="space-between" wrap="nowrap">
+            <Box>
+              <Text size="10px" c="dimmed" tt="uppercase" fw={600}>Journals</Text>
+              <Text size="md" fw={700} c="blue">{stats.journal}</Text>
+            </Box>
+            <RingProgress
+              size={36}
+              thickness={3}
+              sections={[{ value: stats.total > 0 ? (stats.journal / stats.total) * 100 : 0, color: '#228be6' }]}
+            />
+          </Group>
+        </Card>
+      </SimpleGrid>
+
+      {/* Financial Summary — compact strip */}
+      <Card withBorder px="sm" py={6} radius="md" mb="xs">
+        <Group justify="space-between" wrap="wrap" gap="xs">
+          <Group gap={6}>
+            <IconChartBar size={16} />
+            <Text size="sm" fw={600}>Financial Summary</Text>
+          </Group>
+          <Group gap="lg" wrap="wrap">
+            <Group gap={4}>
+              <Text size="xs" c="dimmed">Total Receipts</Text>
+              <IconTrendingUp size={14} color="red" />
+              <Text size="sm" fw={700} c="red">
+                {stats.totalDebits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </Text>
+            </Group>
+            <Group gap={4}>
+              <Text size="xs" c="dimmed">Total Payments</Text>
+              <IconTrendingDown size={14} color="green" />
+              <Text size="sm" fw={700} c="green">
+                {stats.totalCredits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </Text>
+            </Group>
+            <Group gap={4}>
+              <Text size="xs" c="dimmed">Difference</Text>
+              {stats.difference < 0.01 ? <IconCheck size={14} color="green" /> : <IconX size={14} color="red" />}
+              <Text size="sm" fw={700} c={stats.difference < 0.01 ? 'green' : 'red'}>
+                {stats.difference.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </Text>
+            </Group>
+            <Badge
+              color={stats.difference < 0.01 ? 'green' : 'orange'}
+              variant="filled"
+              size="sm"
+            >
+              {stats.difference < 0.01 ? 'Balanced' : 'Unbalanced'}
+            </Badge>
+          </Group>
+        </Group>
+      </Card>
+
       {/* Vouchers Table */}
-      <Paper p="md" withBorder shadow="sm" radius="md">
+      <Paper p="sm" withBorder shadow="sm" radius="md">
         <LoadingOverlay visible={loading} overlayProps={{ blur: 2 }} />
 
-        <Group justify="space-between" mb="md">
-          <Title order={4}>Voucher List</Title>
+        <Group justify="space-between" mb="xs">
+          <Title order={5}>Voucher List</Title>
           <Group gap="xs">
             <ExportButton
               data={exportData}

@@ -109,3 +109,25 @@ export const openA4Print = ({ title, bodyHtml, orientation = 'portrait', css = '
   // Fallback in case onload doesn't fire after document.write.
   setTimeout(doPrint, 400);
 };
+
+/**
+ * Print a complete HTML document through a hidden iframe — no pop-up window,
+ * so it also works after an async step (pop-up blockers only allow
+ * window.open directly on a click). Used by the print previews, which render
+ * the very same document in an iframe so preview == print.
+ */
+export const printHtmlDocument = (html) => {
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  Object.assign(frame.style, { position: 'fixed', right: '0', bottom: '0', width: '0', height: '0', border: '0' });
+  document.body.appendChild(frame);
+  const doc = frame.contentWindow.document;
+  doc.open();
+  doc.write(html);
+  doc.close();
+  setTimeout(() => {
+    frame.contentWindow.focus();
+    frame.contentWindow.print();
+    setTimeout(() => frame.remove(), 1000);
+  }, 250);
+};

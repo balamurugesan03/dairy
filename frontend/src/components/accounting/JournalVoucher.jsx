@@ -495,7 +495,8 @@ const JournalVoucher = () => {
   }, { receipts: 0, payments: 0 }), [cashVouchers]);
 
   return (
-    <Container size="xl" py="sm" px="md">
+    // 1500px (wider than "xl" 1320px) gives the Receipt / Payment panels more room
+    <Container size={1500} py="sm" px="md">
       <LoadingOverlay visible={loading} overlayProps={{ blur: 2 }} />
 
       {/* =============== HEADER AREA =============== */}

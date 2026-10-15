@@ -368,8 +368,8 @@ const MainLayout = () => {
           key: 'accounts-reports-sub',
           label: 'Reports',
           children: [
-            { key: '/reports/cash-book',             label: 'Cash Book' },
             { key: '/reports/daybook',               label: 'Day Book' },
+            { key: '/reports/cash-book',             label: 'Cash Book' },
             { key: '/reports/general-ledger',        label: 'General Ledger' },
             { key: '/reports/ledger-abstract',       label: 'Ledger Abstract' },
             { key: '/reports/trial-balance',         label: 'Trial Balance' },

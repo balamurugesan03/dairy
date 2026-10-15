@@ -79,7 +79,7 @@
 }
 
 .db-card__date {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--mantine-color-dark-6);
   margin-top: 4px;
@@ -810,4 +810,43 @@
 
 @media print {
   .db-no-print { display: none !important; }
+}
+
+/* =========================================================
+   SOCIETY DETAILS + PER-DATE SIGNATURES
+   ========================================================= */
+.db-card__society {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--mantine-color-dark-5);
+  line-height: 1.4;
+}
+
+/* Compact signature row under every date: President centred, Secretary beside it */
+.db-card-sign {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  padding: 26px 24px 10px;
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+
+.db-card-sign__box {
+  min-width: 150px;
+  border-top: 1px solid var(--mantine-color-dark-4);
+  padding-top: 3px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mantine-color-dark-7);
+}
+
+.db-card-sign__box:first-child { grid-column: 2; }
+.db-card-sign__box:last-child { grid-column: 3; justify-self: start; margin-left: 60px; }
+
+.db-cards-area > div > .db-signature-meta { margin: 0 0 8px; }
+
+[data-mantine-color-scheme="dark"] .db-card__society { color: var(--mantine-color-gray-4); }
+[data-mantine-color-scheme="dark"] .db-card-sign__box {
+  border-color: var(--mantine-color-gray-6);
+  color: var(--mantine-color-gray-2);
 }

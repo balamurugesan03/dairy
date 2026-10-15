@@ -28,7 +28,8 @@ import {
   Tooltip,
   ScrollArea,
   SegmentedControl,
-  Alert
+  Alert,
+  Checkbox
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import {
@@ -44,6 +45,14 @@ import {
   IconCreditCard,
   IconPrinter
 } from '@tabler/icons-react';
+import { useCompany } from '../../context/CompanyContext';
+import { printVouchers } from '../../utils/voucherPrint';
+import VoucherPrintPreview from './VoucherPrintPreview';
+
+const PRINT_PREF_KEY = 'paymentVoucher.printOnSave';
+
+// Focus after the current event finishes (Select closes its dropdown first).
+const focusNext = (ref) => setTimeout(() => ref?.current?.focus(), 0);
 
 const PaymentVoucher = () => {
   const [loading, setLoading] = useState(false);
@@ -54,13 +63,43 @@ const PaymentVoucher = () => {
   const [selectedVoucher, setSelectedVoucher] = useState(null);
   const [editingVoucherId, setEditingVoucherId] = useState(null);
   const [filterDate, setFilterDate] = useState(dayjs().format('YYYY-MM-DD'));
-  const printRef = useRef(null);
   const formSectionRef = useRef(null);
   const [entryMode, setEntryMode] = useState('single');
   const [multipleEntries, setMultipleEntries] = useState([
     { voucherDate: dayjs().format('YYYY-MM-DD'), ledgerId: '', amount: '', narration: '' }
   ]);
   const [savingMultiple, setSavingMultiple] = useState(false);
+  const { selectedCompany } = useCompany();
+  const companyName = selectedCompany?.companyName || 'Dairy Co-operative Society';
+  const [printOnSave, setPrintOnSave] = useState(() => {
+    try { return localStorage.getItem(PRINT_PREF_KEY) === '1'; } catch { return false; }
+  });
+  const [previewVouchers, setPreviewVouchers] = useState(null);
+
+  // Keyboard flow: Head of Account → Amount → Narration → Save.
+  const ledgerRef = useRef(null);
+  const amountRef = useRef(null);
+  const narrationRef = useRef(null);
+  const saveRef = useRef(null);
+  const saveAllRef = useRef(null);
+  const rowRefs = useRef({}); // multiple entries: `${index}-${field}` → input
+
+  const togglePrintOnSave = (checked) => {
+    setPrintOnSave(checked);
+    try { localStorage.setItem(PRINT_PREF_KEY, checked ? '1' : '0'); } catch { /* ignore */ }
+  };
+
+  const focusRow = (index, field) =>
+    setTimeout(() => rowRefs.current[`${index}-${field}`]?.focus(), 0);
+
+  // Enter moves to the next field instead of submitting / adding a newline
+  // (Shift+Enter still adds a newline in Narration).
+  const onEnter = (next) => (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      next();
+    }
+  };
 
   const form = useForm({
     initialValues: {
@@ -85,6 +124,19 @@ const PaymentVoucher = () => {
   useEffect(() => {
     fetchLedgers();
   }, []);
+
+  // The grid follows the voucher date in the entry form (no separate
+  // Transaction Date picker on the grid).
+  useEffect(() => {
+    const d = form.values.voucherDate;
+    if (d && dayjs(d).isValid()) setFilterDate(dayjs(d).format('YYYY-MM-DD'));
+  }, [form.values.voucherDate]);
+
+  // Switching between Single / Multiple puts the cursor on Head of Account.
+  useEffect(() => {
+    if (entryMode === 'single') focusNext(ledgerRef);
+    else focusRow(0, 'ledger');
+  }, [entryMode]);
 
   // Re-fetch whenever the selected date changes — the grid always shows
   // only that date's transactions, never the full history.
@@ -161,13 +213,15 @@ const PaymentVoucher = () => {
         narration: values.narration
       };
 
+      let res;
       if (editingVoucherId) {
-        await voucherAPI.update(editingVoucherId, payload);
+        res = await voucherAPI.update(editingVoucherId, payload);
         message.success('Payment voucher updated successfully');
       } else {
-        await voucherAPI.create(payload);
+        res = await voucherAPI.create(payload);
         message.success('Payment voucher created successfully');
       }
+      if (printOnSave) printVouchers([res?.data || payload], 'Payment', companyName);
       // Form stays on the page — clear it for the next entry, keep the same
       // date, and make sure the grid below is showing that date.
       const savedDate = dayjs(values.voucherDate).format('YYYY-MM-DD');
@@ -178,6 +232,7 @@ const PaymentVoucher = () => {
       message.error(error.message || `Failed to ${editingVoucherId ? 'update' : 'create'} payment voucher`);
     } finally {
       setLoading(false);
+      focusNext(ledgerRef);
     }
   };
 
@@ -198,84 +253,8 @@ const PaymentVoucher = () => {
     setViewModalOpened(true);
   };
 
-  const handlePrint = (voucher) => {
-    setSelectedVoucher(voucher);
-    setTimeout(() => {
-      const printWindow = window.open('', '_blank');
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Payment Voucher - ${voucher.voucherNumber || 'N/A'}</title>
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            .voucher-container { max-width: 800px; margin: 0 auto; border: 2px solid #333; padding: 20px; }
-            .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 15px; margin-bottom: 20px; }
-            .header h1 { font-size: 24px; margin-bottom: 5px; }
-            .header h2 { font-size: 18px; color: #dc3545; }
-            .info-row { display: flex; justify-content: space-between; margin-bottom: 10px; padding: 5px 0; }
-            .info-row.bordered { border-bottom: 1px dashed #ccc; }
-            .label { font-weight: bold; color: #555; }
-            .value { font-weight: 500; }
-            .amount-section { background: #f8f9fa; padding: 15px; margin: 20px 0; border-radius: 5px; text-align: center; }
-            .amount-section .amount { font-size: 28px; font-weight: bold; color: #dc3545; }
-            .narration-section { margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 5px; }
-            .narration-section .label { display: block; margin-bottom: 5px; }
-            .footer { margin-top: 40px; display: flex; justify-content: space-between; }
-            .signature { text-align: center; padding-top: 40px; border-top: 1px solid #333; width: 150px; }
-            @media print {
-              body { padding: 0; }
-              .voucher-container { border: 2px solid #000; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="voucher-container">
-            <div class="header">
-              <h1>PAYMENT VOUCHER</h1>
-              <h2>Money Paid</h2>
-            </div>
-
-            <div class="info-row bordered">
-              <span class="label">Bill No:</span>
-              <span class="value">${voucher.voucherNumber || 'Auto-Generated'}</span>
-            </div>
-
-            <div class="info-row bordered">
-              <span class="label">Date:</span>
-              <span class="value">${dayjs(voucher.voucherDate).format('DD-MM-YYYY')}</span>
-            </div>
-
-            <div class="info-row bordered">
-              <span class="label">Paid To (Head of Account):</span>
-              <span class="value">${voucher.entries?.find(e => e.debitAmount > 0)?.ledgerName || '-'}</span>
-            </div>
-
-            <div class="amount-section">
-              <div class="label">Amount Paid</div>
-              <div class="amount">${(voucher.totalDebit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-            </div>
-
-            <div class="narration-section">
-              <span class="label">Narration:</span>
-              <span class="value">${voucher.narration || '-'}</span>
-            </div>
-
-            <div class="footer">
-              <div class="signature">Receiver's Signature</div>
-              <div class="signature">Authorized Signature</div>
-            </div>
-          </div>
-        </body>
-        </html>
-      `);
-      printWindow.document.close();
-      printWindow.focus();
-      printWindow.print();
-      printWindow.close();
-    }, 100);
-  };
+  // Opens the A4 print preview; printing happens from the preview.
+  const handlePrint = (voucher) => setPreviewVouchers([voucher]);
 
   // The entry form lives inline at the top of the page (no popup). Clearing
   // it also drops out of edit mode.
@@ -345,6 +324,7 @@ const PaymentVoucher = () => {
     setSavingMultiple(true);
     let successCount = 0;
     let errorCount = 0;
+    const saved = [];
 
     for (const entry of validEntries) {
       try {
@@ -376,7 +356,8 @@ const PaymentVoucher = () => {
           narration: entry.narration || ''
         };
 
-        await voucherAPI.create(payload);
+        const res = await voucherAPI.create(payload);
+        saved.push(res?.data || payload);
         successCount++;
       } catch (error) {
         errorCount++;
@@ -387,6 +368,7 @@ const PaymentVoucher = () => {
 
     if (successCount > 0) {
       message.success(`${successCount} payment voucher(s) created successfully`);
+      if (printOnSave) printVouchers(saved, 'Payment', companyName);
       setMultipleEntries([
         { voucherDate: dayjs().format('YYYY-MM-DD'), ledgerId: '', amount: '', narration: '' }
       ]);
@@ -395,6 +377,7 @@ const PaymentVoucher = () => {
     if (errorCount > 0) {
       message.error(`${errorCount} voucher(s) failed to create`);
     }
+    focusRow(0, 'ledger');
   };
 
   const getMultipleTotals = () => {
@@ -449,17 +432,26 @@ const PaymentVoucher = () => {
               </Group>
             </Title>
             {/* Entry Mode Selector — hidden while editing, an edit always targets one existing voucher */}
-            {!editingVoucherId && (
-              <SegmentedControl
-                value={entryMode}
-                onChange={setEntryMode}
+            <Group gap="md">
+              {!editingVoucherId && (
+                <SegmentedControl
+                  value={entryMode}
+                  onChange={setEntryMode}
+                  color="red"
+                  data={[
+                    { label: 'Single Entry', value: 'single' },
+                    { label: 'Multiple Entries', value: 'multiple' }
+                  ]}
+                />
+              )}
+              <Checkbox
+                label="Voucher Print"
                 color="red"
-                data={[
-                  { label: 'Single Entry', value: 'single' },
-                  { label: 'Multiple Entries', value: 'multiple' }
-                ]}
+                checked={printOnSave}
+                onChange={(e) => togglePrintOnSave(e.currentTarget.checked)}
+                tabIndex={-1}
               />
-            )}
+            </Group>
           </Group>
 
           {entryMode === 'single' ? (
@@ -479,16 +471,22 @@ const PaymentVoucher = () => {
                   </Grid.Col>
                   <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
                     <Select
+                      ref={ledgerRef}
                       label="Head of Account (Ledger)"
                       placeholder="Select ledger"
                       required
                       searchable
                       data={selectData}
                       {...form.getInputProps('ledgerId')}
+                      onChange={(value) => {
+                        form.setFieldValue('ledgerId', value);
+                        if (value) focusNext(amountRef);
+                      }}
                     />
                   </Grid.Col>
                   <Grid.Col span={{ base: 12, sm: 6, md: 2 }}>
                     <NumberInput
+                      ref={amountRef}
                       label="Amount"
                       placeholder="Enter amount"
                       required
@@ -497,10 +495,12 @@ const PaymentVoucher = () => {
                       decimalScale={2}
                       hideControls
                       {...form.getInputProps('amount')}
+                      onKeyDown={onEnter(() => narrationRef.current?.focus())}
                     />
                   </Grid.Col>
                   <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
                     <Textarea
+                      ref={narrationRef}
                       label="Narration"
                       placeholder="Enter narration/description"
                       required
@@ -508,6 +508,7 @@ const PaymentVoucher = () => {
                       autosize
                       minRows={1}
                       {...form.getInputProps('narration')}
+                      onKeyDown={onEnter(() => saveRef.current?.focus())}
                     />
                   </Grid.Col>
                 </Grid>
@@ -526,6 +527,7 @@ const PaymentVoucher = () => {
                     {editingVoucherId ? 'Cancel Edit' : 'Clear'}
                   </Button>
                   <Button
+                    ref={saveRef}
                     type="submit"
                     leftSection={<IconCheck size={16} />}
                     loading={loading}
@@ -564,9 +566,9 @@ const PaymentVoucher = () => {
                     <tr>
                       <th style={{ width: '40px' }}>#</th>
                       <th style={{ width: '120px' }}>Date</th>
-                      <th>Head of Account</th>
+                      <th style={{ width: '280px' }}>Head of Account</th>
                       <th style={{ width: '120px' }}>Amount</th>
-                      <th style={{ width: '150px' }}>Narration</th>
+                      <th>Narration</th>
                       <th style={{ width: '50px' }}>Status</th>
                       <th style={{ width: '50px' }}></th>
                     </tr>
@@ -589,31 +591,39 @@ const PaymentVoucher = () => {
                           </td>
                           <td>
                             <Select
+                              ref={(el) => { rowRefs.current[`${index}-ledger`] = el; }}
                               placeholder="Select ledger"
                               searchable
                               size="xs"
                               data={selectData}
                               value={entry.ledgerId}
-                              onChange={(value) => updateMultipleEntry(index, 'ledgerId', value)}
+                              onChange={(value) => {
+                                updateMultipleEntry(index, 'ledgerId', value);
+                                if (value) focusRow(index, 'amount');
+                              }}
                             />
                           </td>
                           <td>
                             <NumberInput
+                              ref={(el) => { rowRefs.current[`${index}-amount`] = el; }}
                               size="xs"
                               placeholder="Amount"
                               min={0}
                               decimalScale={2}
                               value={entry.amount}
                               onChange={(value) => updateMultipleEntry(index, 'amount', value)}
+                              onKeyDown={onEnter(() => focusRow(index, 'narration'))}
                               styles={{ input: { color: 'red', fontWeight: 600 } }}
                             />
                           </td>
                           <td>
                             <TextInput
+                              ref={(el) => { rowRefs.current[`${index}-narration`] = el; }}
                               size="xs"
                               placeholder="Narration"
                               value={entry.narration}
                               onChange={(e) => updateMultipleEntry(index, 'narration', e.target.value)}
+                              onKeyDown={onEnter(() => saveAllRef.current?.focus())}
                             />
                           </td>
                           <td style={{ textAlign: 'center' }}>
@@ -672,6 +682,7 @@ const PaymentVoucher = () => {
                   Clear
                 </Button>
                 <Button
+                  ref={saveAllRef}
                   leftSection={<IconCheck size={16} />}
                   loading={savingMultiple}
                   color="red"
@@ -900,8 +911,13 @@ const PaymentVoucher = () => {
         )}
       </Modal>
 
-      {/* Hidden print container */}
-      <div id="print-payment" style={{ display: 'none' }} ref={printRef}></div>
+      <VoucherPrintPreview
+        opened={!!previewVouchers}
+        onClose={() => setPreviewVouchers(null)}
+        vouchers={previewVouchers}
+        kind="Payment"
+        orgName={companyName}
+      />
     </Container>
   );
 };
