@@ -131,3 +131,33 @@ export const printHtmlDocument = (html) => {
     setTimeout(() => frame.remove(), 1000);
   }, 250);
 };
+
+/** A4 sheet size in CSS units and in screen pixels (96 dpi) per orientation. */
+export const A4_SIZE = {
+  portrait:  { w: '210mm', h: '297mm', px: 794 },
+  landscape: { w: '297mm', h: '210mm', px: 1123 }
+};
+
+/**
+ * Compact President / Secretary row shared by the register prints (Day Book,
+ * Cash Book, General Ledger): President in the page centre, Secretary beside
+ * it, and the Generated On line in the same block.
+ */
+export const SIGN_CSS = `
+  .sign { margin-top: 10px; page-break-inside: avoid; break-inside: avoid; }
+  .sign__row { display: grid; grid-template-columns: 1fr auto 1fr; }
+  .sign__box { min-width: 120px; padding-top: 22px; text-align: center; }
+  .sign__box:first-child { grid-column: 2; }
+  .sign__box:last-child { grid-column: 3; justify-self: start; margin-left: 50px; }
+  .sign__line { border-top: 1px solid #000; padding-top: 2px; font-size: 10px; font-weight: 700; }
+  .sign__meta { margin-top: 4px; font-size: 7.5px; color: #333; }
+`;
+
+export const signRowHtml = (generatedOn = '') => `
+  <div class="sign">
+    <div class="sign__row">
+      <div class="sign__box"><div class="sign__line">President</div></div>
+      <div class="sign__box"><div class="sign__line">Secretary</div></div>
+    </div>
+    ${generatedOn ? `<div class="sign__meta">Generated On : ${escapeHtml(generatedOn)}</div>` : ''}
+  </div>`;

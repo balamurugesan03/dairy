@@ -960,6 +960,10 @@ export const getGeneralLedger = async (req, res) => {
 };
 
 // 3. GENERAL LEDGER ABSTRACT
+// Case-insensitive A→Z name order used by the Ledger Abstract views.
+const byNameCI = (a = '', b = '') =>
+  String(a).localeCompare(String(b), 'en', { sensitivity: 'base', numeric: true });
+
 export const getGeneralLedgerAbstract = async (req, res) => {
   try {
     const { startDate, endDate, filterType, customStart, customEnd, ledgerType } = req.query;
@@ -1230,9 +1234,10 @@ export const getGeneralLedgerAbstract = async (req, res) => {
     );
 
     // Only include ledgers that have actual activity (opening balance, debits, or credits)
+    // Alphabetical, ignoring case (Mongo's sort puts all capitals first).
     const activeAbstract = abstract.filter(a =>
       a.openingBalance !== 0 || a.totalDebits !== 0 || a.totalCredits !== 0
-    );
+    ).sort((a, b) => byNameCI(a.ledgerName, b.ledgerName));
 
     // Calculate totals
     const summary = {
@@ -2278,7 +2283,7 @@ export const getLedgerAbstractGrouped = async (req, res) => {
 
     // Ledgers within each Account Group are shown alphabetically — the
     // report's hierarchy is strictly Account Group → its heads/ledgers.
-    Object.values(groupMap).forEach(g => g.ledgers.sort((a, b) => a.ledgerName.localeCompare(b.ledgerName)));
+    Object.values(groupMap).forEach(g => g.ledgers.sort((a, b) => byNameCI(a.ledgerName, b.ledgerName)));
 
     const pgOrder = ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE', 'OTHER'];
     const groups = Object.values(groupMap).map(g => ({
@@ -2299,7 +2304,7 @@ export const getLedgerAbstractGrouped = async (req, res) => {
       }), { debit: 0, credit: 0, receipt: 0, payment: 0, debitCash: 0, debitAdj: 0, creditCash: 0, creditAdj: 0, obDr: 0, obCr: 0, clDr: 0, clCr: 0 })
     })).sort((a, b) => {
       const ai = pgOrder.indexOf(a.parentGroup), bi = pgOrder.indexOf(b.parentGroup);
-      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi) || a.accountGroup.localeCompare(b.accountGroup);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi) || byNameCI(a.accountGroup, b.accountGroup);
     });
 
     res.json({ success: true, data: { startDate: start, endDate: end, groups } });
@@ -2642,7 +2647,7 @@ export const getRDStatementUnified = async (req, res) => {
       if (!groupMap[key]) groupMap[key] = { sectionName: key, parentGroup: r.parentGroup, ledgers: [] };
       groupMap[key].ledgers.push(r);
     });
-    Object.values(groupMap).forEach(g => g.ledgers.sort((a, b) => a.ledgerName.localeCompare(b.ledgerName)));
+    Object.values(groupMap).forEach(g => g.ledgers.sort((a, b) => byNameCI(a.ledgerName, b.ledgerName)));
 
     const ZERO_TOT = {
       receiptCash: 0, receiptAdj: 0, receiptTotal: 0, paymentCash: 0, paymentAdj: 0, paymentTotal: 0,
