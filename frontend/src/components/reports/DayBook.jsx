@@ -6,7 +6,7 @@ import { dayBookAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 import {
   Container, Paper, Text, Group, LoadingOverlay, Button,
-  Title, Divider, Menu, Badge, Select, ActionIcon, Modal
+  Title, Divider, Menu, Badge, Select, ActionIcon
 } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
@@ -21,7 +21,7 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { printHtmlDocument } from '../../utils/printA4';
+import A4PrintPreview from './shared/A4PrintPreview';
 import { buildDayBookPrintHtml } from './dayBookPrint';
 import './DayBook.css';
 
@@ -772,25 +772,12 @@ const DayBook = () => {
         )}
 
         {/* Print preview — the iframe shows the exact A4 document that gets printed */}
-        <Modal
-          opened={!!printOrientation}
+        <A4PrintPreview
+          html={printHtml}
+          orientation={printOrientation}
+          title="Day Book"
           onClose={() => setPrintOrientation(null)}
-          title={<Text fw={600}>Day Book — Print Preview (A4 {printOrientation === 'portrait' ? 'Portrait' : 'Landscape'})</Text>}
-          size={printOrientation === 'portrait' ? 880 : 1200}
-          centered
-        >
-          <iframe
-            title="Day Book print preview"
-            srcDoc={printHtml}
-            style={{ width: '100%', height: '75vh', border: '1px solid #ccc', display: 'block' }}
-          />
-          <Group justify="flex-end" mt="md">
-            <Button variant="default" onClick={() => setPrintOrientation(null)}>Close</Button>
-            <Button color="dark" leftSection={<IconPrinter size={16} />} onClick={() => printHtmlDocument(printHtml)}>
-              Print
-            </Button>
-          </Group>
-        </Modal>
+        />
 
         {!dayBookData && !loading && (
           <Paper radius="md" withBorder shadow="sm" className="db-empty-state">

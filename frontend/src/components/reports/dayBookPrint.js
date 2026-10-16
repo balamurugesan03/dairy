@@ -9,7 +9,7 @@
  * @page margin 0), so content width is identical in preview and print.
  */
 import dayjs from 'dayjs';
-import { escapeHtml } from '../../utils/printA4';
+import { escapeHtml, SIGN_CSS, signRowHtml } from '../../utils/printA4';
 
 const fmtAmt = (n) => {
   const num = parseFloat(n || 0);
@@ -53,14 +53,7 @@ const css = (orientation) => {
   .row-grand td { font-weight: 700; background: #e0e0e0; border-top: 1.5px solid #000; border-bottom: 2.5px double #000; }
   .empty td { text-align: center; font-style: italic; color: #444; }
 
-  .sign { margin-top: 10px; page-break-inside: avoid; break-inside: avoid; }
-  /* President in the page centre, Secretary right beside it */
-  .sign__row { display: grid; grid-template-columns: 1fr auto 1fr; }
-  .sign__box { min-width: 120px; padding-top: 22px; text-align: center; }
-  .sign__box:first-child { grid-column: 2; }
-  .sign__box:last-child { grid-column: 3; justify-self: start; margin-left: 50px; }
-  .sign__line { border-top: 1px solid #000; padding-top: 2px; font-size: 10px; font-weight: 700; }
-  .sign__meta { margin-top: 4px; font-size: 7.5px; color: #333; }
+  ${SIGN_CSS}
 
   /* Preview only: draw each page as an A4 sheet on a grey desk. */
   @media screen {
@@ -127,13 +120,7 @@ const pageHtml = (card, ctx) => {
         <tr class="row-grand">${summaryCells('Grand Total', ob + r.cash, r.adj, ob + r.total)}${summaryCells('Grand Total', cb + p.cash, p.adj, cb + p.total, 'split')}</tr>
       </tbody>
     </table>
-    <div class="sign">
-      <div class="sign__row">
-        <div class="sign__box"><div class="sign__line">President</div></div>
-        <div class="sign__box"><div class="sign__line">Secretary</div></div>
-      </div>
-      ${ctx.generatedOn ? `<div class="sign__meta">Generated on ${escapeHtml(ctx.generatedOn)}</div>` : ''}
-    </div>
+    ${signRowHtml(ctx.generatedOn)}
   </section>`;
 };
 

@@ -1,12 +1,12 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { Fragment, useState, useEffect, useRef, useMemo } from 'react';
 import {
   Box, Button, Center, Container, Divider, Group, Loader,
-  Menu, Paper, ScrollArea, Select, Stack, Table, Text, Title, Badge
+  Menu, Paper, Select, Stack, Text, Title, Badge
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import {
   IconBook2, IconCalendar, IconDownload, IconFileSpreadsheet,
-  IconFileTypePdf, IconPrinter, IconRectangle, IconRectangleVertical,
+  IconPrinter, IconRectangle, IconRectangleVertical,
   IconSearch
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
@@ -16,6 +16,8 @@ import { useCompany } from '../../context/CompanyContext';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import A4PrintPreview from './shared/A4PrintPreview';
+import { buildGeneralLedgerPrintHtml } from './generalLedgerPrint';
 
 /* ── number formatting ──────────────────────────────────────── */
 const fmt = (v) => {
@@ -26,32 +28,44 @@ const fmt = (v) => {
 const fmtA = (v) =>
   parseFloat(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/* ── shared table cell styles ───────────────────────────────── */
+/* ── register grid styles ───────────────────────────────────────
+   Only the header row is shaded; data rows stay plain white. Month, total
+   and balance rows are set apart with bold text and heavier rules. */
+const FONT = "'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+const LINE = '1px solid #9AA0A6';
+const RULE = '1.5px solid #3A3F47';
+
 const S = {
   base: {
-    fontFamily: "'Consolas','Courier New',monospace",
-    fontSize: 12.5,
-    padding: '4px 7px',
+    fontFamily: FONT,
+    fontSize: 13,
+    padding: '5px 8px',
     verticalAlign: 'middle',
-    borderColor: '#c8cdd2',
+    border: LINE,
+    background: '#fff',
+    color: '#1a1a1a',
   },
-  num: { textAlign: 'right', fontVariantNumeric: 'tabular-nums' },
-  day: { textAlign: 'center', fontWeight: 700, fontSize: 12.5 },
-  desc: { textAlign: 'left', fontFamily: "'Segoe UI',system-ui,sans-serif", fontSize: 12.5 },
+  num: { textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' },
+  day: { textAlign: 'center', fontWeight: 600 },
+  desc: { textAlign: 'left' },
   bal: { fontWeight: 700 },
-  prog: { color: '#666' },
-  balType: { fontSize: 10, fontWeight: 700, marginLeft: 4, color: '#666' },
+  balType: { fontSize: 11, fontWeight: 600, marginLeft: 4 },
+  total: { fontWeight: 700, borderTop: RULE, borderBottom: RULE },
+  grand: { fontWeight: 700, borderTop: RULE, borderBottom: '3px double #3A3F47' },
 };
 
-/* ── row backgrounds ────────────────────────────────────────── */
-const BG = {
-  opening: '#FFFDE7',
-  closing: '#FFFDE7',
-  month: '#E8EAF6',
-  monthTotal: '#F0F0F5',
-  grandTotal: '#E8EAF6',
-  odd: '#FAFAFA',
-  even: '#FFFFFF',
+const TH = {
+  background: '#E9ECEF',
+  border: LINE,
+  padding: '7px 6px',
+  fontFamily: FONT,
+  fontWeight: 700,
+  fontSize: 12,
+  letterSpacing: 0.5,
+  textTransform: 'uppercase',
+  color: '#1a1a1a',
+  textAlign: 'center',
+  whiteSpace: 'nowrap',
 };
 
 const GeneralLedger = () => {
@@ -62,9 +76,19 @@ const GeneralLedger = () => {
   const [selectedLedger, setSelectedLedger] = useState('');
   const [fromDate, setFromDate] = useState(null);
   const [toDate, setToDate] = useState(null);
-  const printRef = useRef(null);
+  const [generatedAt, setGeneratedAt] = useState(new Date());
+  const [printOrientation, setPrintOrientation] = useState(null); // preview open when set
+  const ledgerInputRef = useRef(null);
 
-  const companyName = selectedCompany?.companyName || 'Dairy Co-operative Society';
+  const companyName = selectedCompany?.societyName || selectedCompany?.companyName || 'Dairy Co-operative Society';
+  const societyCode = selectedCompany?.societyCode || '';
+  const societyPlace = selectedCompany?.address || selectedCompany?.district || '';
+
+  // Cursor starts in the Ledger Account field when the page opens.
+  useEffect(() => {
+    const t = setTimeout(() => ledgerInputRef.current?.focus(), 0);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     fetchLedgers();
@@ -96,6 +120,7 @@ const GeneralLedger = () => {
         ledgerId: selectedLedger
       });
       setReportData(res?.data || res);
+      setGeneratedAt(new Date());
     } catch (err) {
       notifications.show({ color: 'red', message: err.message || 'Failed to fetch general ledger' });
     } finally {
@@ -169,46 +194,23 @@ const GeneralLedger = () => {
   }, [reportData]);
 
   /* ── print ───────────────────────────────────────────────── */
-  const handlePrint = (orientation = 'landscape') => {
-    const content = printRef.current;
-    if (!content) return;
-    const pw = window.open('', '_blank');
-    pw.document.write(`<!DOCTYPE html><html><head>
-      <title>General Ledger - ${processedData?.ledgerName || ''}</title>
-      <style>
-        *{margin:0;padding:0;box-sizing:border-box}
-        body{font-family:'Segoe UI',Tahoma,sans-serif;color:#1a1a2e;background:#fff}
-        .gl-register{border:1.5px solid #000}
-        .gl-header{text-align:center;padding:10mm 10mm 6mm;border-bottom:2px solid #000}
-        .gl-header__society{font-size:17px;font-weight:800;letter-spacing:3px;text-transform:uppercase}
-        .gl-header__title{display:inline-block;font-size:13px;font-weight:700;letter-spacing:7px;text-transform:uppercase;padding:3px 20px;border-top:2.5px double #000;border-bottom:2.5px double #000}
-        .gl-header__info{display:flex;justify-content:space-between;padding:6px 0 0;font-size:10.5px}
-        table{width:100%;border-collapse:collapse;font-size:9.5px;table-layout:fixed}
-        col.day{width:5%} col.num{width:11%} col.prog{width:12%} col.bal{width:13%} col.type{width:8%} col.desc{width:27%}
-        thead th{background:#eee;border:1px solid #888;padding:4px;font-weight:700;font-size:8.5px;letter-spacing:.5px;text-transform:uppercase;text-align:center}
-        thead th.desc{text-align:left;padding-left:6px}
-        tbody td{border:1px solid #aaa;padding:2.5px 4px;font-size:9px}
-        .td-day{text-align:center;font-weight:600}
-        .td-num{text-align:right;font-family:Consolas,monospace;padding-right:5px}
-        .td-prog{color:#555}
-        .td-bal{font-weight:700}
-        .bal-type{font-size:8px;font-weight:700;color:#555;margin-left:3px}
-        .td-desc{text-align:left;padding-left:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0}
-        .row-even td{background:#fff} .row-odd td{background:#fafafa}
-        .row-opening td,.row-closing td{background:#fffde7;font-weight:700}
-        .row-month td{background:#e8eaf6;text-align:center;font-weight:700;font-size:9.5px;letter-spacing:1.5px;text-transform:uppercase;color:#283593;border-top:1.5px solid #888;border-bottom:1.5px solid #888;padding:4px}
-        .row-month-total td{background:#f0f0f5;font-weight:700;border-top:1.5px solid #888;border-bottom:1.5px solid #888}
-        .row-grand-total td{background:#e8eaf6;font-weight:800;font-size:9.5px;border-top:2.5px double #000;border-bottom:2.5px double #000}
-        .gl-footer{border-top:2px solid #000;padding:8mm 15mm}
-        .gl-footer__ts{text-align:center;font-size:9px;color:#888;margin-bottom:15mm;font-style:italic}
-        .gl-footer__sigs{display:flex;justify-content:space-between}
-        .gl-footer__sig{text-align:center;min-width:100px}
-        .gl-footer__sig-line{border-top:1px solid #000;margin-top:20mm;padding-top:4px;font-size:10px;font-weight:600}
-        @page{size:A4 ${orientation};margin:6mm}
-      </style></head><body>${content.innerHTML}</body></html>`);
-    pw.document.close();
-    setTimeout(() => pw.print(), 300);
-  };
+  // Dedicated black & white A4 layout built from the register data. The Print
+  // menu opens a preview of this exact document; printing goes from there.
+  const printHtml = useMemo(() => {
+    if (!printOrientation || !processedData) return '';
+    return buildGeneralLedgerPrintHtml(processedData, {
+      societyName: companyName,
+      societyCode,
+      place: societyPlace,
+      period: `${formatDate(fromDate)} to ${formatDate(toDate)}`,
+      financialYear: getFinancialYear(),
+      generatedOn: dayjs(generatedAt).format('DD/MM/YYYY HH:mm:ss'),
+      title: `General Ledger - ${processedData.ledgerName}`
+    }, printOrientation);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [printOrientation, processedData, companyName, societyCode, societyPlace, generatedAt]);
+
+  const handlePrint = (orientation = 'landscape') => setPrintOrientation(orientation);
 
   /* ── PDF ─────────────────────────────────────────────────── */
   const handlePDF = (orientation = 'landscape') => {
@@ -337,313 +339,201 @@ const GeneralLedger = () => {
   const renderRegister = () => {
     if (!processedData) return null;
 
-    const colStyle = { padding: 0, border: 'none' };
-    const thBase   = {
-      background: '#ECEEF2',
-      border: '1px solid #9FA6B2',
-      padding: '7px 6px',
-      fontWeight: 700,
-      fontSize: 11,
-      letterSpacing: 1,
-      textTransform: 'uppercase',
-      color: '#1a1a2e',
-      textAlign: 'center',
-      whiteSpace: 'nowrap',
-    };
+    const blank = (n, extra = {}) =>
+      Array.from({ length: n }, (_, i) => <td key={i} style={{ ...S.base, ...extra }} />);
 
     return (
       <Box
-        ref={printRef}
-        className="gl-register"
         style={{
-          border: '1.5px solid #1a1a2e',
+          border: '1.5px solid #3A3F47',
           borderRadius: 4,
           background: '#fff',
-          overflow: 'hidden',
-          fontFamily: "'Segoe UI',system-ui,sans-serif",
-          color: '#1a1a2e',
+          fontFamily: FONT,
+          color: '#1a1a1a',
         }}
       >
         {/* ── HEADER ── */}
-        <Box
-          style={{
-            textAlign: 'center',
-            padding: '20px 30px 14px',
-            borderBottom: '2px solid #1a1a2e',
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 20,
-              fontWeight: 800,
-              letterSpacing: 3,
-              textTransform: 'uppercase',
-              lineHeight: 1.3,
-            }}
-          >
+        <Box style={{ textAlign: 'center', padding: '16px 24px 12px', borderBottom: '1.5px solid #3A3F47' }}>
+          <Text style={{ fontFamily: FONT, fontSize: 20, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', lineHeight: 1.3 }}>
             {companyName}
           </Text>
+          {societyCode && <Text style={{ fontFamily: FONT, fontSize: 13 }}>Society Code: {societyCode}</Text>}
+          {societyPlace && <Text style={{ fontFamily: FONT, fontSize: 13 }}>{societyPlace}</Text>}
           <Box my={8}>
             <Text
               component="span"
               style={{
                 display: 'inline-block',
+                fontFamily: FONT,
                 fontSize: 15,
                 fontWeight: 700,
-                letterSpacing: 8,
+                letterSpacing: 6,
                 textTransform: 'uppercase',
-                padding: '4px 24px',
-                borderTop: '2.5px double #1a1a2e',
-                borderBottom: '2.5px double #1a1a2e',
+                padding: '3px 22px',
+                borderTop: '1.5px solid #3A3F47',
+                borderBottom: '1.5px solid #3A3F47',
               }}
             >
               GENERAL LEDGER
             </Text>
           </Box>
-          <Group justify="space-between" pt={6} px={4}>
+          <Group justify="space-between" align="flex-end" pt={6} px={4}>
             <Stack gap={2} style={{ textAlign: 'left' }}>
-              <Text size="sm">
-                <Text component="span" fw={600}>Head of Account : </Text>
-                <Text component="span" fw={700} tt="uppercase" style={{ letterSpacing: 0.5 }}>
+              <Text style={{ fontFamily: FONT, fontSize: 15 }}>
+                <Text component="span" fw={600} inherit>Head of Account : </Text>
+                <Text component="span" fw={700} tt="uppercase" inherit style={{ fontSize: 17, letterSpacing: 0.5 }}>
                   {processedData.ledgerName}
                 </Text>
               </Text>
-              <Text size="xs" c="dimmed">
+              <Text style={{ fontFamily: FONT, fontSize: 13 }} c="dimmed">
                 Period : {formatDate(fromDate)} to {formatDate(toDate)}
               </Text>
             </Stack>
             <Stack gap={2} style={{ textAlign: 'right' }}>
-              <Text size="sm">
-                <Text component="span" fw={600}>F.Y. : </Text>
-                <Text component="span" fw={700}>{getFinancialYear()}</Text>
+              <Text style={{ fontFamily: FONT, fontSize: 14 }}>
+                <Text component="span" fw={600} inherit>F.Y. : </Text>
+                <Text component="span" fw={700} inherit>{getFinancialYear()}</Text>
               </Text>
-              <Text size="xs" c="dimmed">Ledger Type : {processedData.ledgerType}</Text>
+              <Text style={{ fontFamily: FONT, fontSize: 13 }} c="dimmed">Ledger Type : {processedData.ledgerType}</Text>
             </Stack>
           </Group>
         </Box>
 
-        {/* ── TABLE ── */}
-        <ScrollArea>
-          <table
-            style={{
-              width: '100%',
-              borderCollapse: 'collapse',
-              tableLayout: 'fixed',
-            }}
-          >
-            <colgroup>
-              <col style={{ width: '5%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '12%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '12%' }} />
-              <col style={{ width: '13%' }} />
-              <col style={{ width: '36%' }} />
-            </colgroup>
-            <thead style={{ position: 'sticky', top: 0, zIndex: 2 }}>
-              <tr>
-                <th style={thBase}>Day</th>
-                <th style={thBase}>Receipt</th>
-                <th style={thBase}>Prog. Receipt</th>
-                <th style={thBase}>Payment</th>
-                <th style={thBase}>Prog. Payment</th>
-                <th style={thBase}>Balance</th>
-                <th style={{ ...thBase, textAlign: 'left', paddingLeft: 10 }}>Description</th>
-              </tr>
-            </thead>
+        {/* ── TABLE ── (fixed layout fits the width, so no scroll container) */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <colgroup>
+            <col style={{ width: '5%' }} />
+            <col style={{ width: '11%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '11%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '13%' }} />
+            <col style={{ width: '36%' }} />
+          </colgroup>
+          <thead style={{ position: 'sticky', top: 0, zIndex: 2 }}>
+            <tr>
+              <th style={TH}>Day</th>
+              <th style={TH}>Receipt</th>
+              <th style={TH}>Prog. Receipt</th>
+              <th style={TH}>Payment</th>
+              <th style={TH}>Prog. Payment</th>
+              <th style={TH}>Balance</th>
+              <th style={{ ...TH, textAlign: 'left', paddingLeft: 10 }}>Description</th>
+            </tr>
+          </thead>
 
-            <tbody>
-              {/* Opening Balance */}
+          <tbody>
+            {/* Opening Balance */}
+            <tr>
+              {blank(5)}
+              <td style={{ ...S.base, ...S.num, ...S.bal }}>
+                {fmtA(processedData.openBal)}
+                <span style={S.balType}>{processedData.openBalType}</span>
+              </td>
+              <td style={{ ...S.base, ...S.desc, ...S.bal }}>Opening Balance — Brought Forward</td>
+            </tr>
+
+            {/* No transactions */}
+            {processedData.months.length === 0 && (
               <tr>
-                {['', '', '', '', ''].map((_, i) => (
-                  <td key={i} style={{ ...S.base, background: BG.opening, border: '1px solid #C8CDD2' }} />
-                ))}
-                <td
-                  style={{
-                    ...S.base, ...S.num, ...S.bal,
-                    background: BG.opening,
-                    border: '1px solid #C8CDD2',
-                    borderBottom: '1.5px solid #999',
-                  }}
-                >
-                  {fmtA(processedData.openBal)}
-                  <span style={S.balType}>{processedData.openBalType}</span>
-                </td>
-                <td
-                  style={{
-                    ...S.base, ...S.desc,
-                    background: BG.opening,
-                    border: '1px solid #C8CDD2',
-                    borderBottom: '1.5px solid #999',
-                    fontWeight: 600,
-                  }}
-                >
-                  Opening Balance — Brought Forward
+                <td colSpan={7} style={{ ...S.base, textAlign: 'center', padding: 24, color: '#777', fontStyle: 'italic' }}>
+                  No transactions in the selected period
                 </td>
               </tr>
+            )}
 
-              {/* No transactions */}
-              {processedData.months.length === 0 && (
+            {/* Monthly groups */}
+            {processedData.months.map((month) => (
+              <Fragment key={month.key}>
                 <tr>
                   <td
                     colSpan={7}
                     style={{
-                      ...S.base, ...S.desc,
+                      ...S.base,
                       textAlign: 'center',
-                      padding: '24px',
-                      color: '#999',
-                      fontStyle: 'italic',
+                      fontWeight: 700,
+                      letterSpacing: 1.5,
+                      textTransform: 'uppercase',
+                      padding: '6px 10px',
+                      borderTop: RULE,
                     }}
                   >
-                    No transactions in the selected period
+                    Month :&nbsp;&nbsp;{month.key}
                   </td>
                 </tr>
-              )}
 
-              {/* Monthly groups */}
-              {processedData.months.map((month, mIdx) => (
-                <>
-                  {/* Month header */}
-                  <tr key={`mh-${mIdx}`}>
+                {month.rows.map((row, rIdx) => (
+                  <tr key={rIdx}>
+                    <td style={{ ...S.base, ...S.day }}>{formatDay(row.date)}</td>
+                    <td style={{ ...S.base, ...S.num }}>{fmt(row.receipt)}</td>
+                    <td style={{ ...S.base, ...S.num }}>{row.receipt > 0 ? fmtA(row.progReceipt) : ''}</td>
+                    <td style={{ ...S.base, ...S.num }}>{fmt(row.payment)}</td>
+                    <td style={{ ...S.base, ...S.num }}>{row.payment > 0 ? fmtA(row.progPayment) : ''}</td>
+                    <td style={{ ...S.base, ...S.num, ...S.bal }}>
+                      {fmtA(row.runningBalance)}
+                      <span style={S.balType}>{row.balType}</span>
+                    </td>
                     <td
-                      colSpan={7}
-                      style={{
-                        ...S.base,
-                        background: BG.month,
-                        textAlign: 'center',
-                        fontWeight: 700,
-                        fontSize: 12,
-                        letterSpacing: 1.5,
-                        textTransform: 'uppercase',
-                        color: '#283593',
-                        padding: '7px 10px',
-                        borderTop: '1.5px solid #999',
-                        borderBottom: '1.5px solid #999',
-                        border: '1px solid #9FA6B2',
-                      }}
+                      style={{ ...S.base, ...S.desc, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 0 }}
+                      title={row.particulars}
                     >
-                      Month :&nbsp;&nbsp;{month.key}
+                      {row.particulars}
+                      {row.narration && (
+                        <span style={{ display: 'block', fontSize: 11.5, color: '#555', fontStyle: 'italic', marginTop: 1 }}>
+                          {row.narration}
+                        </span>
+                      )}
                     </td>
                   </tr>
-
-                  {/* Daily rows */}
-                  {month.rows.map((row, rIdx) => (
-                    <tr
-                      key={`r-${mIdx}-${rIdx}`}
-                      style={{ background: rIdx % 2 === 0 ? BG.even : BG.odd }}
-                      onMouseEnter={e => { e.currentTarget.style.background = '#EEF2FF'; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = rIdx % 2 === 0 ? BG.even : BG.odd; }}
-                    >
-                      <td style={{ ...S.base, ...S.day, border: '1px solid #C8CDD2' }}>
-                        {formatDay(row.date)}
-                      </td>
-                      <td style={{ ...S.base, ...S.num, border: '1px solid #C8CDD2' }}>
-                        {fmt(row.receipt)}
-                      </td>
-                      <td style={{ ...S.base, ...S.num, ...S.prog, border: '1px solid #C8CDD2' }}>
-                        {row.receipt > 0 ? fmtA(row.progReceipt) : ''}
-                      </td>
-                      <td style={{ ...S.base, ...S.num, border: '1px solid #C8CDD2' }}>
-                        {fmt(row.payment)}
-                      </td>
-                      <td style={{ ...S.base, ...S.num, ...S.prog, border: '1px solid #C8CDD2' }}>
-                        {row.payment > 0 ? fmtA(row.progPayment) : ''}
-                      </td>
-                      <td style={{ ...S.base, ...S.num, ...S.bal, border: '1px solid #C8CDD2' }}>
-                        {fmtA(row.runningBalance)}
-                        <span style={S.balType}>{row.balType}</span>
-                      </td>
-                      <td
-                        style={{
-                          ...S.base, ...S.desc,
-                          border: '1px solid #C8CDD2',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          maxWidth: 0,
-                        }}
-                        title={row.particulars}
-                      >
-                        {row.particulars}
-                        {row.narration && (
-                          <span style={{ display: 'block', fontSize: 10, color: '#777', fontStyle: 'italic', marginTop: 1 }}>
-                            {row.narration}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-
-                  {/* Month total */}
-                  <tr key={`mt-${mIdx}`}>
-                    <td style={{ ...S.base, background: BG.monthTotal, border: '1px solid #C8CDD2', borderTop: '1.5px solid #999', borderBottom: '1.5px solid #999' }} />
-                    <td style={{ ...S.base, ...S.num, ...S.bal, background: BG.monthTotal, border: '1px solid #C8CDD2', borderTop: '1.5px solid #999', borderBottom: '1.5px solid #999' }}>
-                      {fmtA(month.monthReceipt)}
-                    </td>
-                    <td style={{ ...S.base, background: BG.monthTotal, border: '1px solid #C8CDD2', borderTop: '1.5px solid #999', borderBottom: '1.5px solid #999' }} />
-                    <td style={{ ...S.base, ...S.num, ...S.bal, background: BG.monthTotal, border: '1px solid #C8CDD2', borderTop: '1.5px solid #999', borderBottom: '1.5px solid #999' }}>
-                      {fmtA(month.monthPayment)}
-                    </td>
-                    <td style={{ ...S.base, background: BG.monthTotal, border: '1px solid #C8CDD2', borderTop: '1.5px solid #999', borderBottom: '1.5px solid #999' }} />
-                    <td style={{ ...S.base, background: BG.monthTotal, border: '1px solid #C8CDD2', borderTop: '1.5px solid #999', borderBottom: '1.5px solid #999' }} />
-                    <td style={{ ...S.base, ...S.desc, ...S.bal, background: BG.monthTotal, border: '1px solid #C8CDD2', borderTop: '1.5px solid #999', borderBottom: '1.5px solid #999' }}>
-                      Total : {month.key}
-                    </td>
-                  </tr>
-                </>
-              ))}
-
-              {/* Closing Balance */}
-              <tr>
-                {['', '', '', '', ''].map((_, i) => (
-                  <td key={i} style={{ ...S.base, background: BG.closing, border: '1px solid #C8CDD2', borderTop: '2px solid #1a1a2e' }} />
                 ))}
-                <td style={{ ...S.base, ...S.num, ...S.bal, background: BG.closing, border: '1px solid #C8CDD2', borderTop: '2px solid #1a1a2e' }}>
-                  {fmtA(processedData.closeBal)}
-                  <span style={S.balType}>{processedData.closeBalType}</span>
-                </td>
-                <td style={{ ...S.base, ...S.desc, background: BG.closing, border: '1px solid #C8CDD2', borderTop: '2px solid #1a1a2e', fontWeight: 700 }}>
-                  Closing Balance — Carried Forward
-                </td>
-              </tr>
 
-              {/* Grand Total */}
-              <tr>
-                <td style={{ ...S.base, background: BG.grandTotal, border: '1px solid #9FA6B2', borderTop: '2.5px double #1a1a2e', borderBottom: '2.5px double #1a1a2e' }} />
-                <td style={{ ...S.base, ...S.num, fontWeight: 800, fontSize: 12.5, background: BG.grandTotal, border: '1px solid #9FA6B2', borderTop: '2.5px double #1a1a2e', borderBottom: '2.5px double #1a1a2e' }}>
-                  {fmtA(processedData.totalReceipts)}
-                </td>
-                <td style={{ ...S.base, background: BG.grandTotal, border: '1px solid #9FA6B2', borderTop: '2.5px double #1a1a2e', borderBottom: '2.5px double #1a1a2e' }} />
-                <td style={{ ...S.base, ...S.num, fontWeight: 800, fontSize: 12.5, background: BG.grandTotal, border: '1px solid #9FA6B2', borderTop: '2.5px double #1a1a2e', borderBottom: '2.5px double #1a1a2e' }}>
-                  {fmtA(processedData.totalPayments)}
-                </td>
-                <td style={{ ...S.base, background: BG.grandTotal, border: '1px solid #9FA6B2', borderTop: '2.5px double #1a1a2e', borderBottom: '2.5px double #1a1a2e' }} />
-                <td style={{ ...S.base, background: BG.grandTotal, border: '1px solid #9FA6B2', borderTop: '2.5px double #1a1a2e', borderBottom: '2.5px double #1a1a2e' }} />
-                <td style={{ ...S.base, ...S.desc, fontWeight: 800, fontSize: 12.5, color: '#283593', background: BG.grandTotal, border: '1px solid #9FA6B2', borderTop: '2.5px double #1a1a2e', borderBottom: '2.5px double #1a1a2e' }}>
-                  GRAND TOTAL
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </ScrollArea>
+                {/* Month total */}
+                <tr>
+                  {blank(1, S.total)}
+                  <td style={{ ...S.base, ...S.num, ...S.total }}>{fmtA(month.monthReceipt)}</td>
+                  {blank(1, S.total)}
+                  <td style={{ ...S.base, ...S.num, ...S.total }}>{fmtA(month.monthPayment)}</td>
+                  {blank(2, S.total)}
+                  <td style={{ ...S.base, ...S.desc, ...S.total }}>Total : {month.key}</td>
+                </tr>
+              </Fragment>
+            ))}
 
-        {/* ── FOOTER ── */}
-        <Box style={{ borderTop: '2px solid #1a1a2e', padding: '20px 30px' }}>
-          <Text ta="center" size="xs" c="dimmed" mb="xl" fs="italic">
-            Generated on {dayjs().format('DD/MM/YYYY HH:mm:ss')} &nbsp;|&nbsp; Dairy Cooperative Management System
+            {/* Closing Balance */}
+            <tr>
+              {blank(5, { borderTop: RULE })}
+              <td style={{ ...S.base, ...S.num, ...S.bal, borderTop: RULE }}>
+                {fmtA(processedData.closeBal)}
+                <span style={S.balType}>{processedData.closeBalType}</span>
+              </td>
+              <td style={{ ...S.base, ...S.desc, ...S.bal, borderTop: RULE }}>Closing Balance — Carried Forward</td>
+            </tr>
+
+            {/* Grand Total */}
+            <tr>
+              {blank(1, S.grand)}
+              <td style={{ ...S.base, ...S.num, ...S.grand }}>{fmtA(processedData.totalReceipts)}</td>
+              {blank(1, S.grand)}
+              <td style={{ ...S.base, ...S.num, ...S.grand }}>{fmtA(processedData.totalPayments)}</td>
+              {blank(2, S.grand)}
+              <td style={{ ...S.base, ...S.desc, ...S.grand }}>GRAND TOTAL</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* ── FOOTER: President centred, Secretary beside it, Generated On ── */}
+        <Box style={{ padding: '30px 24px 10px', borderTop: '1.5px solid #3A3F47', fontFamily: FONT }}>
+          <Box style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr' }}>
+            <Box style={{ gridColumn: 2, minWidth: 150, borderTop: '1px solid #3A3F47', paddingTop: 3, textAlign: 'center', fontSize: 13, fontWeight: 600 }}>
+              President
+            </Box>
+            <Box style={{ gridColumn: 3, justifySelf: 'start', marginLeft: 60, minWidth: 150, borderTop: '1px solid #3A3F47', paddingTop: 3, textAlign: 'center', fontSize: 13, fontWeight: 600 }}>
+              Secretary
+            </Box>
+          </Box>
+          <Text mt={8} style={{ fontFamily: FONT, fontSize: 11.5, color: '#555' }}>
+            Generated On : {dayjs(generatedAt).format('DD/MM/YYYY HH:mm:ss')}
           </Text>
-          <Group justify="space-between" px="xl">
-            <Stack gap={0} align="center" style={{ minWidth: 140 }}>
-              <Box style={{ borderTop: '1px solid #1a1a2e', marginTop: 40, paddingTop: 6, width: '100%' }}>
-                <Text ta="center" size="xs" fw={600} style={{ letterSpacing: 0.5 }}>President</Text>
-              </Box>
-            </Stack>
-            <Stack gap={0} align="center" style={{ minWidth: 140 }}>
-              <Box style={{ borderTop: '1px solid #1a1a2e', marginTop: 40, paddingTop: 6, width: '100%' }}>
-                <Text ta="center" size="xs" fw={600} style={{ letterSpacing: 0.5 }}>Secretary</Text>
-              </Box>
-            </Stack>
-          </Group>
         </Box>
       </Box>
     );
@@ -662,6 +552,7 @@ const GeneralLedger = () => {
             <Divider orientation="vertical" style={{ height: 24 }} />
 
             <Select
+              ref={ledgerInputRef}
               label="Ledger Account"
               value={selectedLedger}
               onChange={setSelectedLedger}
@@ -670,7 +561,7 @@ const GeneralLedger = () => {
               searchable
               clearable
               size="xs"
-              w={260}
+              w={340}
               radius="md"
             />
             <DatePickerInput
@@ -770,6 +661,14 @@ const GeneralLedger = () => {
       )}
 
       {!loading && reportData && renderRegister()}
+
+      {/* Print preview — the iframe shows the exact A4 document that gets printed */}
+      <A4PrintPreview
+        html={printHtml}
+        orientation={printOrientation}
+        title="General Ledger"
+        onClose={() => setPrintOrientation(null)}
+      />
 
       {!loading && !reportData && (
         <Paper radius="md" withBorder shadow="sm" p="xl" ta="center">

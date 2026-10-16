@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { message } from '../../utils/toast';
 import dayjs from 'dayjs';
@@ -6,7 +6,7 @@ import { reportAPI, dayBookAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 import {
   Container, Paper, Text, Group, LoadingOverlay, Button,
-  Title, Divider, Menu, Badge, Stack, Box, Table, Center, Select, ActionIcon
+  Title, Divider, Menu, Badge, Stack, Box, Select, ActionIcon
 } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
@@ -14,12 +14,18 @@ import { DatePickerInput } from '@mantine/dates';
 import {
   IconCash, IconPrinter, IconFileTypePdf,
   IconFileSpreadsheet, IconCalendar,
-  IconDownload, IconSearch, IconX, IconTrash
+  IconDownload, IconSearch, IconX, IconTrash,
+  IconRectangle, IconRectangleVertical
 } from '@tabler/icons-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { openA4Print, a4Header, a4Signatures, escapeHtml } from '../../utils/printA4';
+import A4PrintPreview from './shared/A4PrintPreview';
+import { buildCashBookPrintHtml } from './cashBookPrint';
+
+const CB_FONT = "'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+const CB_LINE = '1px solid #9AA0A6';
+const CB_RULE = '1.5px solid #3A3F47';
 
 const PRESETS = [
   { value: 'today',         label: 'Today' },
@@ -57,7 +63,8 @@ const CashBook = () => {
   const [singleDate, setSingleDate] = useState(new Date());
   const [reportData, setReportData] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
-  const printRef = useRef();
+  const [generatedDate, setGeneratedDate] = useState(new Date());
+  const [printOrientation, setPrintOrientation] = useState(null); // preview open when set
 
   const [fromDate, toDate] = dateRange;
 
@@ -74,7 +81,9 @@ const CashBook = () => {
     setDateRange([dayjs(val).startOf('day').toDate(), dayjs(val).endOf('day').toDate()]);
   };
 
-  const companyName = selectedCompany?.companyName || 'Dairy Co-operative Society';
+  const companyName = selectedCompany?.societyName || selectedCompany?.companyName || 'Dairy Co-operative Society';
+  const societyCode = selectedCompany?.societyCode || '';
+  const societyPlace = selectedCompany?.address || selectedCompany?.district || '';
 
   const fetchCashBook = async (start, end) => {
     if (!start || !end) return;
@@ -85,6 +94,7 @@ const CashBook = () => {
         endDate: dayjs(end).format('YYYY-MM-DD')
       });
       setReportData(response.data);
+      setGeneratedDate(new Date());
     } catch (error) {
       message.error(error.message || 'Failed to fetch cash book');
     } finally {
@@ -195,136 +205,95 @@ const CashBook = () => {
     return cards;
   }, [reportData, fromDate, toDate]);
 
+  // Grid: only the header rows are shaded; entry rows stay plain, with clear
+  // column / row rules. Balance and total rows are set apart by weight + rules.
   const renderSideTable = (side, entries, total, openBal, closeBal) => {
     const isReceipt = side === 'receipt';
-    const headerBg = isReceipt
-      ? 'linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%)'
-      : 'linear-gradient(135deg, #fce4ec 0%, #fff3e0 100%)';
-    const headerColor = isReceipt ? '#2e7d32' : '#c62828';
-    const headerBorder = isReceipt ? '#a5d6a7' : '#ef9a9a';
-    const totalBg = isReceipt ? '#e8f5e9' : '#fce4ec';
-    const closingBg = isReceipt ? '#c8e6c9' : '#ffcdd2';
+    const cell = { fontFamily: CB_FONT, fontSize: 13, border: CB_LINE, padding: '5px 8px', background: '#fff', color: '#1a1a1a' };
+    const head = { ...cell, background: '#E9ECEF', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6 };
+    const num = { textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
+    const bold = { fontWeight: 700 };
+    const balLabel = isReceipt ? 'Opening Balance' : 'Closing Balance';
+    const balAmt = isReceipt ? openBal : closeBal;
 
     return (
-      <Box style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, height: '100%' }}>
-        {/* Side header */}
-        <Group
-          gap={8}
-          px={14}
-          py={8}
-          style={{
-            background: headerBg,
-            color: headerColor,
-            borderBottom: `2px solid ${headerBorder}`,
-            fontWeight: 700,
-            fontSize: 12,
-            letterSpacing: 2.5,
-            textTransform: 'uppercase',
-            userSelect: 'none',
-          }}
-        >
-          <Text fw={700} fz={12}>{isReceipt ? 'RECEIPT (Dr)' : 'PAYMENT (Cr)'}</Text>
-          <Text fz={10} fw={400} style={{ letterSpacing: 0.5, opacity: 0.7 }}>
-            {isReceipt ? '(Income / Receipts)' : '(Expenses / Payments)'}
-          </Text>
-        </Group>
-
-        {/* Body table */}
-        <Box style={{ flex: 1, minHeight: 80 }}>
-          <Table withColumnBorders striped highlightOnHover style={{ tableLayout: 'fixed' }}>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th style={{ textAlign: 'left', width: '46%', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                  Description
-                </Table.Th>
-                <Table.Th style={{ textAlign: 'center', width: '20%', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                  {isReceipt ? 'Receipt No' : 'Voucher No'}
-                </Table.Th>
-                <Table.Th style={{ textAlign: 'right', width: '28%', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                  Cash
-                </Table.Th>
-                <Table.Th className="cb-no-print" style={{ width: '6%', textAlign: 'center', padding: 0 }} />
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {entries.length === 0 ? (
-                <Table.Tr>
-                  <Table.Td colSpan={4} style={{ border: 'none' }}>
-                    <Center py={30}>
-                      <Text c="dimmed" fz={13} fs="italic">No transactions</Text>
-                    </Center>
-                  </Table.Td>
-                </Table.Tr>
-              ) : (
-                entries.map((entry, idx) => (
-                  <Table.Tr key={idx}>
-                    <Table.Td title={entry.description} style={{ overflow: 'hidden', maxWidth: 0 }}>
-                      <Text className="cb-desc" fz={12} fw={500} truncate>{entry.description}</Text>
-                      {entry.narration && (
-                        <Text className="cb-narr" fz={10} c="dimmed" fs="italic" style={{ whiteSpace: 'pre-line' }}>{entry.narration}</Text>
-                      )}
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'center', fontFamily: 'Consolas, monospace', fontSize: 11 }}>
-                      <Text c="dimmed" fz={11}>{entry.voucherNumber}</Text>
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontFamily: 'Consolas, monospace', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
-                      {fmt(entry.amount)}
-                    </Table.Td>
-                    <Table.Td className="cb-no-print" style={{ textAlign: 'center', padding: 2 }}>
-                      <ActionIcon
-                        size="xs"
-                        color="red"
-                        variant="light"
-                        loading={deletingId === (entry.voucherId || `${entry.voucherType}-${entry.entryDate}`)}
-                        onClick={() => handleDeleteEntry(entry)}
-                        title="Delete entry"
-                      >
-                        <IconTrash size={13} />
-                      </ActionIcon>
-                    </Table.Td>
-                  </Table.Tr>
-                ))
-              )}
-            </Table.Tbody>
-          </Table>
-        </Box>
-
-        {/* Footer totals */}
-        <Box style={{ borderTop: '2px solid var(--mantine-color-dark-3)' }}>
-          <Table withColumnBorders style={{ tableLayout: 'fixed' }}>
-            <Table.Tbody>
-              <Table.Tr style={{ background: totalBg }}>
-                <Table.Td style={{ textAlign: 'left', fontWeight: 600, width: '46%' }}>Day Total (Cash)</Table.Td>
-                <Table.Td style={{ width: '20%' }}></Table.Td>
-                <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'Consolas, monospace', fontVariantNumeric: 'tabular-nums', width: '28%' }}>
-                  {fmtAlways(total)}
-                </Table.Td>
-                <Table.Td className="cb-no-print" style={{ width: '6%' }}></Table.Td>
-              </Table.Tr>
-              <Table.Tr style={{ background: 'var(--mantine-color-gray-0)' }}>
-                <Table.Td style={{ textAlign: 'left', fontWeight: 600 }}>
-                  {isReceipt ? 'Opening Balance' : 'Closing Balance'}
-                </Table.Td>
-                <Table.Td></Table.Td>
-                <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'Consolas, monospace', fontVariantNumeric: 'tabular-nums' }}>
-                  {fmtAlways(isReceipt ? openBal : closeBal)}
-                </Table.Td>
-                <Table.Td className="cb-no-print"></Table.Td>
-              </Table.Tr>
-              {/* Opening Balance (receipt side) and Closing Balance (payment
-                  side) share the row above; this row balances both sides:
-                  Opening + Receipts = Payments + Closing. */}
-              <Table.Tr style={{ background: closingBg, borderTop: '2px solid var(--mantine-color-dark-4)', borderBottom: '3px double var(--mantine-color-dark-4)' }}>
-                <Table.Td style={{ textAlign: 'left', fontWeight: 700 }}>Total</Table.Td>
-                <Table.Td></Table.Td>
-                <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'Consolas, monospace', fontVariantNumeric: 'tabular-nums' }}>
-                  {fmtAlways(isReceipt ? openBal + total : total + closeBal)}
-                </Table.Td>
-                <Table.Td className="cb-no-print"></Table.Td>
-              </Table.Tr>
-            </Table.Tbody>
-          </Table>
-        </Box>
+      <Box style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', flex: 1 }}>
+          <colgroup>
+            <col style={{ width: '50%' }} />
+            <col style={{ width: '18%' }} />
+            <col style={{ width: '26%' }} />
+            <col className="cb-no-print" style={{ width: '6%' }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th colSpan={4} style={{ ...head, fontSize: 13, letterSpacing: 2, textAlign: 'center' }}>
+                {isReceipt ? 'Receipt (Dr)' : 'Payment (Cr)'}
+              </th>
+            </tr>
+            <tr>
+              <th style={{ ...head, textAlign: 'left' }}>Description</th>
+              <th style={{ ...head, textAlign: 'center' }}>{isReceipt ? 'Receipt No' : 'Voucher No'}</th>
+              <th style={{ ...head, textAlign: 'right' }}>Cash</th>
+              <th className="cb-no-print" style={{ ...head, padding: 0 }} />
+            </tr>
+          </thead>
+          <tbody>
+            {entries.length === 0 ? (
+              <tr>
+                <td colSpan={4} style={{ ...cell, textAlign: 'center', padding: '28px 8px', color: '#777', fontStyle: 'italic' }}>
+                  No transactions
+                </td>
+              </tr>
+            ) : (
+              entries.map((entry, idx) => (
+                <tr key={idx}>
+                  <td title={entry.description} style={{ ...cell, overflow: 'hidden', maxWidth: 0 }}>
+                    <Text className="cb-desc" fz={13} fw={500} truncate style={{ fontFamily: CB_FONT }}>{entry.description}</Text>
+                    {entry.narration && (
+                      <Text className="cb-narr" fz={11.5} c="dimmed" fs="italic" style={{ whiteSpace: 'pre-line', fontFamily: CB_FONT }}>{entry.narration}</Text>
+                    )}
+                  </td>
+                  <td style={{ ...cell, textAlign: 'center', color: '#555' }}>{entry.voucherNumber}</td>
+                  <td style={{ ...cell, ...num, fontWeight: 600 }}>{fmt(entry.amount)}</td>
+                  <td className="cb-no-print" style={{ ...cell, textAlign: 'center', padding: 2 }}>
+                    <ActionIcon
+                      size="xs"
+                      color="red"
+                      variant="light"
+                      loading={deletingId === (entry.voucherId || `${entry.voucherType}-${entry.entryDate}`)}
+                      onClick={() => handleDeleteEntry(entry)}
+                      title="Delete entry"
+                    >
+                      <IconTrash size={13} />
+                    </ActionIcon>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+          {/* Footer — same rows as the Day Book: Opening (receipt side) and
+              Closing (payment side) on one row, the day's transactions, then
+              a Grand Total where both sides balance:
+              Opening + Receipts = Payments + Closing. */}
+          <tfoot>
+            <tr>
+              <td colSpan={2} style={{ ...cell, ...bold, borderTop: CB_RULE }}>{balLabel}</td>
+              <td style={{ ...cell, ...num, ...bold, borderTop: CB_RULE }}>{fmtAlways(balAmt)}</td>
+              <td className="cb-no-print" style={{ ...cell, borderTop: CB_RULE }} />
+            </tr>
+            <tr>
+              <td colSpan={2} style={{ ...cell, ...bold }}>Transactions</td>
+              <td style={{ ...cell, ...num, ...bold }}>{fmtAlways(total)}</td>
+              <td className="cb-no-print" style={cell} />
+            </tr>
+            <tr>
+              <td colSpan={2} style={{ ...cell, ...bold, borderTop: CB_RULE, borderBottom: '3px double #3A3F47' }}>Grand Total</td>
+              <td style={{ ...cell, ...num, ...bold, borderTop: CB_RULE, borderBottom: '3px double #3A3F47' }}>{fmtAlways(balAmt + total)}</td>
+              <td className="cb-no-print" style={{ ...cell, borderTop: CB_RULE, borderBottom: '3px double #3A3F47' }} />
+            </tr>
+          </tfoot>
+        </table>
       </Box>
     );
   };
@@ -333,127 +302,79 @@ const CashBook = () => {
     <Paper
       key={card.date}
       withBorder shadow="sm" radius="md" mb="lg"
-      style={{ overflow: 'hidden', breakInside: 'avoid' }}
+      style={{ overflow: 'hidden', breakInside: 'avoid', background: '#fff', fontFamily: CB_FONT }}
     >
       {/* Header */}
-      <Box
-        ta="center"
-        px="lg" pt="md" pb={10}
-        style={{
-          borderBottom: '1px solid var(--mantine-color-default-border)',
-          background: 'linear-gradient(180deg, var(--mantine-color-gray-0) 0%, var(--mantine-color-body) 100%)',
-        }}
-      >
-        <Text fz={18} fw={700} tt="uppercase" style={{ letterSpacing: 2 }}>
+      <Box ta="center" px="lg" pt="md" pb={10} style={{ borderBottom: CB_RULE, color: '#1a1a1a' }}>
+        <Text fz={18} fw={700} tt="uppercase" style={{ letterSpacing: 1.5, fontFamily: CB_FONT }}>
           {companyName}
         </Text>
+        {societyCode && <Text fz={12} fw={500} style={{ fontFamily: CB_FONT }}>Society Code: {societyCode}</Text>}
+        {societyPlace && <Text fz={12} fw={500} style={{ fontFamily: CB_FONT }}>{societyPlace}</Text>}
         <Box mt={6} mb={4}>
           <Text
             component="span"
             display="inline-block"
             fz={14}
             fw={700}
-            c="blue.7"
             tt="uppercase"
             px={20}
             py={3}
             style={{
+              fontFamily: CB_FONT,
               letterSpacing: 6,
-              borderTop: '2px solid var(--mantine-color-blue-4)',
-              borderBottom: '2px solid var(--mantine-color-blue-4)',
+              borderTop: CB_RULE,
+              borderBottom: CB_RULE,
             }}
           >
             CASH BOOK
           </Text>
         </Box>
-        <Text fz={13} fw={600} mt={4}>{formatDateLong(card.date)}</Text>
-        <Group justify="space-between" px={40} mt={6} style={{ fontFamily: 'Consolas, monospace', fontVariantNumeric: 'tabular-nums' }}>
-          <Text fz={12} c="dimmed" fw={500}>Opening: {fmtAlways(card.openingBalance)}</Text>
-          <Text fz={12} c="dimmed" fw={500}>Closing: {fmtAlways(card.closingBalance)}</Text>
+        <Text fz={15} fw={600} mt={4} style={{ fontFamily: CB_FONT }}>{dayjs(card.date).format('DD / MM / YYYY  (dddd)')}</Text>
+        <Group justify="space-between" px={40} mt={6} style={{ fontVariantNumeric: 'tabular-nums' }}>
+          <Text fz={12.5} fw={600} style={{ fontFamily: CB_FONT }}>Opening: {fmtAlways(card.openingBalance)}</Text>
+          <Text fz={12.5} fw={600} style={{ fontFamily: CB_FONT }}>Closing: {fmtAlways(card.closingBalance)}</Text>
         </Group>
       </Box>
 
       {/* Body — two side panels */}
-      <Group gap={0} align="stretch" wrap="nowrap" style={{ borderTop: 0, display: 'flex' }}>
-        <Box style={{ flex: 1, borderRight: '2px solid var(--mantine-color-default-border)', display: 'flex' }}>
+      <Group gap={0} align="stretch" wrap="nowrap" style={{ display: 'flex' }}>
+        <Box style={{ flex: 1, borderRight: '2px solid #3A3F47', display: 'flex' }}>
           {renderSideTable('receipt', card.receipts, card.receiptTotal, card.openingBalance, card.closingBalance)}
         </Box>
         <Box style={{ flex: 1, display: 'flex' }}>
           {renderSideTable('payment', card.payments, card.paymentTotal, card.openingBalance, card.closingBalance)}
         </Box>
       </Group>
+
+      {/* Signatures under every date — President centred, Secretary beside it */}
+      <Box style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', padding: '26px 24px 10px', borderTop: CB_LINE }}>
+        <Box style={{ gridColumn: 2, minWidth: 150, borderTop: '1px solid #3A3F47', paddingTop: 3, textAlign: 'center', fontSize: 12.5, fontWeight: 600 }}>
+          President
+        </Box>
+        <Box style={{ gridColumn: 3, justifySelf: 'start', marginLeft: 60, minWidth: 150, borderTop: '1px solid #3A3F47', paddingTop: 3, textAlign: 'center', fontSize: 12.5, fontWeight: 600 }}>
+          Secretary
+        </Box>
+      </Box>
     </Paper>
   );
 
-  // PRINT — a dedicated A4 register layout built from the report data (not a
-  // copy of the on-screen cards): report header once, each day as one
-  // Receipt | Payment table with entries paired side by side, Opening and
-  // Closing Balance on the same row, and one signature block at the end.
-  // A day is kept on one page whenever it fits.
-  const handlePrint = () => {
-    if (!dayCards.length) return;
+  // PRINT — same dedicated B&W A4 layout as the Day Book (one date per page,
+  // signatures under every date). The Print menu opens a preview of this
+  // exact document; printing goes from there.
+  const printHtml = useMemo(() => {
+    if (!printOrientation) return '';
+    return buildCashBookPrintHtml(dayCards, {
+      societyName: companyName,
+      societyCode,
+      place: societyPlace,
+      generatedOn: `${dayjs(generatedDate).format('DD/MM/YYYY HH:mm:ss')} | By ADM`,
+      title: `Cash Book - ${formatDateShort(fromDate)} to ${formatDateShort(toDate)}`
+    }, printOrientation);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [printOrientation, dayCards, companyName, societyCode, societyPlace, generatedDate]);
 
-    const sideCells = (e, split) => {
-      const cls = split ? ' split' : '';
-      if (!e) return `<td class="${cls}"></td><td></td><td></td>`;
-      return `<td class="${cls}">${escapeHtml(e.description)}${e.narration ? `<div class="narr">${escapeHtml(e.narration)}</div>` : ''}</td>`
-        + `<td class="ctr">${escapeHtml(e.voucherNumber)}</td>`
-        + `<td class="amt">${fmt(e.amount)}</td>`;
-    };
-
-    const days = dayCards.map((card) => {
-      const n = Math.max(card.receipts.length, card.payments.length);
-      let rows = '';
-      for (let i = 0; i < n; i++) {
-        rows += `<tr>${sideCells(card.receipts[i], false)}${sideCells(card.payments[i], true)}</tr>`;
-      }
-      if (n === 0) rows = '<tr><td colspan="3" class="ctr narr">No transactions</td><td colspan="3" class="ctr narr split">No transactions</td></tr>';
-      return `
-        <section class="cb-day">
-          <div class="cb-day__date">${escapeHtml(formatDateLong(card.date))}</div>
-          <table class="a4">
-            <colgroup>
-              <col style="width:31%"><col style="width:8%"><col style="width:11%">
-              <col style="width:31%"><col style="width:8%"><col style="width:11%">
-            </colgroup>
-            <thead>
-              <tr><th colspan="3">Receipt (Dr)</th><th colspan="3" class="split">Payment (Cr)</th></tr>
-              <tr><th>Particulars</th><th>R. No</th><th>Cash</th><th class="split">Particulars</th><th>V. No</th><th>Cash</th></tr>
-            </thead>
-            <tbody>
-              ${rows}
-              <tr class="row-sub">
-                <td colspan="2">Day Total</td><td class="amt">${fmtAlways(card.receiptTotal)}</td>
-                <td colspan="2" class="split">Day Total</td><td class="amt">${fmtAlways(card.paymentTotal)}</td>
-              </tr>
-              <tr class="row-bal">
-                <td colspan="2">Opening Balance</td><td class="amt">${fmtAlways(card.openingBalance)}</td>
-                <td colspan="2" class="split">Closing Balance</td><td class="amt">${fmtAlways(card.closingBalance)}</td>
-              </tr>
-              <tr class="row-grand">
-                <td colspan="2">Total</td><td class="amt">${fmtAlways(card.openingBalance + card.receiptTotal)}</td>
-                <td colspan="2" class="split">Total</td><td class="amt">${fmtAlways(card.paymentTotal + card.closingBalance)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </section>`;
-    }).join('');
-
-    openA4Print({
-      title: `Cash Book - ${formatDateShort(fromDate)} to ${formatDateShort(toDate)}`,
-      orientation: 'portrait',
-      css: `
-        .cb-day { margin-bottom: 7px; page-break-inside: avoid; break-inside: avoid; }
-        .cb-day__date { font-weight: 700; font-size: 10px; padding: 2px 4px; border: 0.75px solid #444; border-bottom: none; background: #f2f2f2; }
-      `,
-      bodyHtml: a4Header({
-        orgName: companyName,
-        title: 'Cash Book',
-        period: `${dayjs(fromDate).format('DD/MM/YYYY')} to ${dayjs(toDate).format('DD/MM/YYYY')}`,
-        extra: `Opening: ${fmtAlways(dayCards[0].openingBalance)} &nbsp;|&nbsp; Closing: ${fmtAlways(dayCards[dayCards.length - 1].closingBalance)}`
-      }) + days + a4Signatures(['President', 'Secretary'], `${dayjs().format('DD/MM/YYYY HH:mm:ss')} | By ADM`)
-    });
-  };
+  const handlePrint = (orientation = 'portrait') => setPrintOrientation(orientation);
 
   const handlePDFExport = () => {
     const doc = new jsPDF('portrait', 'mm', 'a4');
@@ -474,16 +395,16 @@ const CashBook = () => {
       const bg1 = [240, 240, 245];
       const bg2 = [232, 232, 240];
       body.push([
-        { content: 'Day Total', styles: { ...bold, fillColor: bg1 } },
-        { content: '',          styles: { fillColor: bg1 } },
-        { content: fmtAlways(total), styles: { ...boldRight, fillColor: bg1 } }
+        { content: balLabel, styles: { ...bold, fillColor: bg1 } },
+        { content: '',       styles: { fillColor: bg1 } },
+        { content: fmtAlways(balAmt), styles: { ...boldRight, fillColor: bg1 } }
       ]);
       body.push([
-        { content: balLabel, styles: bold }, '',
-        { content: fmtAlways(balAmt), styles: boldRight }
+        { content: 'Transactions', styles: bold }, '',
+        { content: fmtAlways(total), styles: boldRight }
       ]);
       body.push([
-        { content: 'Total', styles: { ...bold, fillColor: bg2, fontSize: 8 } },
+        { content: 'Grand Total', styles: { ...bold, fillColor: bg2, fontSize: 8 } },
         { content: '',      styles: { fillColor: bg2 } },
         { content: fmtAlways(total + balAmt), styles: { ...boldRight, fillColor: bg2, fontSize: 8 } }
       ]);
@@ -566,9 +487,9 @@ const CashBook = () => {
         ]);
       }
 
-      rows.push(['Day Total', '', card.receiptTotal, '', 'Day Total', '', card.paymentTotal]);
       rows.push(['Opening Balance', '', card.openingBalance, '', 'Closing Balance', '', card.closingBalance]);
-      rows.push(['Total', '', card.openingBalance + card.receiptTotal, '', 'Total', '', card.paymentTotal + card.closingBalance]);
+      rows.push(['Transactions', '', card.receiptTotal, '', 'Transactions', '', card.paymentTotal]);
+      rows.push(['Grand Total', '', card.openingBalance + card.receiptTotal, '', 'Grand Total', '', card.paymentTotal + card.closingBalance]);
       rows.push([]);
     }
 
@@ -674,14 +595,26 @@ const CashBook = () => {
                 {daysWithData} / {totalDays} days
               </Badge>
             )}
-            <Button
-              variant="light" size="xs" radius="md"
-              leftSection={<IconPrinter size={14} />}
-              onClick={handlePrint}
-              disabled={!reportData}
-            >
-              Print
-            </Button>
+            <Menu shadow="md" width={200} position="bottom-end">
+              <Menu.Target>
+                <Button
+                  variant="light" size="xs" radius="md"
+                  leftSection={<IconPrinter size={14} />}
+                  disabled={!reportData || !dayCards.length}
+                >
+                  Print
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Label>Print Orientation</Menu.Label>
+                <Menu.Item leftSection={<IconRectangleVertical size={16} color="var(--mantine-color-blue-6)" />} onClick={() => handlePrint('portrait')}>
+                  A4 Portrait
+                </Menu.Item>
+                <Menu.Item leftSection={<IconRectangle size={16} color="var(--mantine-color-blue-6)" />} onClick={() => handlePrint('landscape')}>
+                  A4 Landscape
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
             <Menu shadow="md" width={160} position="bottom-end">
               <Menu.Target>
                 <Button
@@ -723,33 +656,23 @@ const CashBook = () => {
         <LoadingOverlay visible={loading} overlayProps={{ blur: 2 }} />
 
         {reportData && !loading && dayCards.length > 0 && (
-          <Stack ref={printRef} gap={0}>
+          <Stack gap={0}>
             {dayCards.map((card) => renderDayCard(card))}
 
-            {/* Single signature section — appears once, at the very bottom of the whole Cash Book */}
-            <Box
-              className="cb-signature-block"
-              px="xl"
-              py="lg"
-              style={{
-                borderTop: '1px solid var(--mantine-color-default-border)',
-                breakInside: 'avoid',
-              }}
-            >
-              <Text c="dimmed" fz={10} ta="left" mb="xl">
-                Generated on {dayjs().format('DD/MM/YYYY HH:mm:ss')} | By ADM
-              </Text>
-              <Group justify="space-between" px="xl">
-                <Box style={{ borderTop: '1px solid var(--mantine-color-dark-4)', minWidth: 140, textAlign: 'center', paddingTop: 4 }}>
-                  <Text fz={12} fw={600}>President</Text>
-                </Box>
-                <Box style={{ borderTop: '1px solid var(--mantine-color-dark-4)', minWidth: 140, textAlign: 'center', paddingTop: 4 }}>
-                  <Text fz={12} fw={600}>Secretary</Text>
-                </Box>
-              </Group>
-            </Box>
+            {/* Signatures now sit under each date card; only the generated-on line remains here */}
+            <Text c="dimmed" fz={11} ta="left" mb={8} style={{ fontFamily: CB_FONT }}>
+              Generated On : {dayjs(generatedDate).format('DD/MM/YYYY HH:mm:ss')} | By ADM
+            </Text>
           </Stack>
         )}
+
+        {/* Print preview — the iframe shows the exact A4 document that gets printed */}
+        <A4PrintPreview
+          html={printHtml}
+          orientation={printOrientation}
+          title="Cash Book"
+          onClose={() => setPrintOrientation(null)}
+        />
 
         {!reportData && !loading && (
           <Paper radius="md" withBorder shadow="sm" py={80} ta="center">
