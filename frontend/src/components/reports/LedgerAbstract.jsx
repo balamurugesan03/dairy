@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
 import {
-  Box, Paper, Group, Text, Title, Button, Select,
+  Box, Paper, Group, Text, Button, Select,
   Table, ScrollArea, Stack, SimpleGrid, Loader, Center,
-  Badge, SegmentedControl, ThemeIcon, Divider, Modal, NumberInput
+  Badge, SegmentedControl, Divider, Modal, NumberInput
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import {
@@ -81,7 +81,6 @@ const LEDGER_TYPE_OPTS = [
 ];
 
 // ── Design tokens ─────────────────────────────────────────────────────────
-const INDIGO  = '#312e81';
 const INDIGO2 = '#4338ca';
 
 // One text colour for every value and label in the grid; sections are told
@@ -108,6 +107,21 @@ const PG_CONFIG = {
   EXPENSE:   { label: 'Expenses' },
   OTHER:     { label: 'Other' }
 };
+
+// Liability side first, then Asset, then the revenue groups.
+const PG_ORDER  = ['LIABILITY', 'ASSET', 'INCOME', 'EXPENSE', 'OTHER'];
+const CAT_ORDER = ['LIABILITIES', 'CAPITAL', 'ASSETS', 'INCOME', 'EXPENSES', 'OTHER'];
+
+// ── Opening / Closing Balance visibility ──────────────────────────────────
+// Only balance-sheet groups carry an Opening and Closing Balance (Liability,
+// Asset, Bank Accounts, Fixed Assets, Grants and Subsidies, Interest
+// Receivable …). Revenue groups — Income, Sales, Expense, Establishment
+// Charges, Purchases, Trade Expenses — show Receipt / Payment only.
+const GRANT_TYPES = ['Grants and Subsidies', 'Grants & Aid', 'Subsidies'];
+const hidesBalance = (ledgerType, parentGroup, category) =>
+  !GRANT_TYPES.includes(ledgerType) &&
+  (['INCOME', 'EXPENSE'].includes(parentGroup) || ['INCOME', 'EXPENSES'].includes(category));
+const stripBalance = (item) => ({ ...item, noBal: true, openingBalance: 0, closingBalance: 0 });
 
 // ── Main component ────────────────────────────────────────────────────────
 const LedgerAbstract = () => {
@@ -174,6 +188,7 @@ const LedgerAbstract = () => {
 
   // Opening Dr / Cr cells of a ledger row — click to edit the Ledger's opening balance.
   const openingCells = (item) => {
+    if (item.noBal) return <><Table.Td style={tdRight} /><Table.Td style={tdRight} /></>;
     const cellProps = {
       onClick: () => openObEditor(item),
       title: 'Click to edit this ledger\'s Opening Balance',
@@ -181,8 +196,8 @@ const LedgerAbstract = () => {
     };
     return (
       <>
-        <Table.Td {...cellProps} className="la-ob-cell">{item.openingBalanceType === 'Dr' ? fz(item.openingBalance) : ''}</Table.Td>
         <Table.Td {...cellProps} className="la-ob-cell">{item.openingBalanceType === 'Cr' ? fz(item.openingBalance) : ''}</Table.Td>
+        <Table.Td {...cellProps} className="la-ob-cell">{item.openingBalanceType === 'Dr' ? fz(item.openingBalance) : ''}</Table.Td>
       </>
     );
   };
@@ -218,20 +233,36 @@ const LedgerAbstract = () => {
     }
   };
 
+  // ── Report data with Opening / Closing blanked for revenue groups ───────
+  const abstract = useMemo(() =>
+    (reportData?.abstract || []).map(it =>
+      hidesBalance(it.ledgerType, it.parentGroup, it.category) ? stripBalance(it) : it),
+  [reportData]);
+
+  // Account groups — Liability side first, then Asset (A→Z within each).
+  const groups = useMemo(() =>
+    (groupedData?.groups || [])
+      .map(g => hidesBalance(g.accountGroup, g.parentGroup)
+        ? { ...g, noBal: true, ledgers: g.ledgers.map(stripBalance), totals: { ...g.totals, obDr: 0, obCr: 0, clDr: 0, clCr: 0 } }
+        : g)
+      .sort((a, b) => {
+        const ai = PG_ORDER.indexOf(a.parentGroup), bi = PG_ORDER.indexOf(b.parentGroup);
+        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      }),
+  [groupedData]);
+
   // ── Group abstract by category (for the "Category Wise" view) ───────────
   const grouped = useMemo(() => {
-    if (!reportData?.abstract) return {};
     const map = {};
-    reportData.abstract.forEach(item => {
+    abstract.forEach(item => {
       const cat = item.category || 'OTHER';
       if (!map[cat]) map[cat] = [];
       map[cat].push(item);
     });
     return map;
-  }, [reportData]);
+  }, [abstract]);
 
-  const catOrder = ['ASSETS', 'LIABILITIES', 'INCOME', 'EXPENSES', 'CAPITAL', 'OTHER'];
-  const sortedCats = catOrder.filter(c => grouped[c]?.length);
+  const sortedCats = CAT_ORDER.filter(c => grouped[c]?.length);
 
   // ── Category subtotals ──────────────────────────────────────────────────
   const catTotals = (items) =>
@@ -245,21 +276,30 @@ const LedgerAbstract = () => {
       return acc;
     }, { obDr: 0, obCr: 0, debit: 0, credit: 0, clDr: 0, clCr: 0 });
 
+  // Grand totals — Opening / Closing summed from the balance-sheet groups only.
+  const s = useMemo(() => {
+    const base = reportData?.summary;
+    if (!base) return null;
+    const t = catTotals(abstract);
+    return { ...base, totalOpeningDebit: t.obDr, totalOpeningCredit: t.obCr, totalClosingDebit: t.clDr, totalClosingCredit: t.clCr };
+  }, [reportData, abstract]);
+
   // ── Export — Account Group → ledgers, same hierarchy as the default view ─
   const handleExport = () => {
-    if (!groupedData?.groups?.length) return;
+    if (!groups.length) return;
     const rows = [];
-    groupedData.groups.forEach(g => {
+    groups.forEach(g => {
       g.ledgers.forEach(item => {
+        const bal = (type, side, amt) => (!item.noBal && type === side ? f2(amt) : '');
         rows.push({
           'Account Group':  g.accountGroup,
-          'Ledger Name':    item.ledgerName,
-          'Opening Dr':     item.openingBalanceType === 'Dr' ? f2(item.openingBalance) : '',
-          'Opening Cr':     item.openingBalanceType === 'Cr' ? f2(item.openingBalance) : '',
-          'Total Receipt':  f2(item.receipt ?? item.debit),
-          'Total Payment':  f2(item.payment ?? item.credit),
-          'Closing Dr':     item.closingBalanceType === 'Dr' ? f2(item.closingBalance) : '',
-          'Closing Cr':     item.closingBalanceType === 'Cr' ? f2(item.closingBalance) : ''
+          'Head of Account':   item.ledgerName,
+          'Opening Liability': bal(item.openingBalanceType, 'Cr', item.openingBalance),
+          'Opening Asset':     bal(item.openingBalanceType, 'Dr', item.openingBalance),
+          'Total Receipt':     f2(item.receipt ?? item.debit),
+          'Total Payment':     f2(item.payment ?? item.credit),
+          'Closing Liability': bal(item.closingBalanceType, 'Cr', item.closingBalance),
+          'Closing Asset':     bal(item.closingBalanceType, 'Dr', item.closingBalance)
         });
       });
     });
@@ -277,11 +317,14 @@ const LedgerAbstract = () => {
   // Cash and Adjustment entry, so no separate Adjustment figure is printed.
   const handlePrint = () => {
     if (!abstract.length) return;
-    const cells = (obDr, obCr, rec, pay, clDr, clCr, blank) => {
+    // noBal — revenue group: Opening / Closing cells stay empty.
+    const cells = (obDr, obCr, rec, pay, clDr, clCr, blank, noBal) => {
       const v = (n) => (blank ? fz(n) : f2(n));
-      return `<td class="amt">${v(obDr)}</td><td class="amt">${v(obCr)}</td>`
+      const b = (n) => (noBal ? '' : v(n));
+      // Liability (Cr) before Asset (Dr), matching the on-screen grid.
+      return `<td class="amt">${b(obCr)}</td><td class="amt">${b(obDr)}</td>`
         + `<td class="amt">${v(rec)}</td><td class="amt">${v(pay)}</td>`
-        + `<td class="amt">${v(clDr)}</td><td class="amt">${v(clCr)}</td>`;
+        + `<td class="amt">${b(clCr)}</td><td class="amt">${b(clDr)}</td>`;
     };
     const ledgerRow = (item, rec, pay, indent) => `<tr>
         <td class="${indent ? 'indent' : ''}">${escapeHtml(item.ledgerName)}</td>
@@ -298,14 +341,14 @@ const LedgerAbstract = () => {
     let body = '';
     if (view === 'accountGroup') {
       let currentPG = null;
-      (groupedData?.groups || []).forEach(group => {
+      groups.forEach(group => {
         const pg = group.parentGroup || 'OTHER';
         if (pg !== currentPG) {
           currentPG = pg;
           body += `<tr class="row-sec"><td colspan="7">${escapeHtml((PG_CONFIG[pg] || PG_CONFIG.OTHER).label)}</td></tr>`;
         }
         const t = group.totals;
-        body += `<tr class="row-sub"><td>${escapeHtml(group.accountGroup)}</td>${cells(t.obDr, t.obCr, t.receipt ?? t.debit, t.payment ?? t.credit, t.clDr, t.clCr, false)}</tr>`;
+        body += `<tr class="row-sub"><td>${escapeHtml(group.accountGroup)}</td>${cells(t.obDr, t.obCr, t.receipt ?? t.debit, t.payment ?? t.credit, t.clDr, t.clCr, false, group.noBal)}</tr>`;
         group.ledgers.forEach(item => { body += ledgerRow(item, item.receipt ?? item.debit, item.payment ?? item.credit, true); });
       });
     } else if (view === 'grouped') {
@@ -314,7 +357,7 @@ const LedgerAbstract = () => {
         const tot = catTotals(items);
         body += `<tr class="row-sec"><td colspan="7">${escapeHtml(getCatConf(cat).label)}</td></tr>`;
         items.forEach(item => { body += ledgerRow(item, item.totalReceipt ?? item.totalDebits, item.totalPayment ?? item.totalCredits, true); });
-        body += `<tr class="row-sub"><td class="amt">Sub-total — ${escapeHtml(getCatConf(cat).label)}</td>${cells(tot.obDr, tot.obCr, tot.debit, tot.credit, tot.clDr, tot.clCr, false)}</tr>`;
+        body += `<tr class="row-sub"><td class="amt">Sub-total — ${escapeHtml(getCatConf(cat).label)}</td>${cells(tot.obDr, tot.obCr, tot.debit, tot.credit, tot.clDr, tot.clCr, false, items.every(i => i.noBal))}</tr>`;
       });
     } else {
       abstract.forEach(item => { body += ledgerRow(item, item.totalReceipt ?? item.totalDebits, item.totalPayment ?? item.totalCredits, false); });
@@ -343,31 +386,28 @@ const LedgerAbstract = () => {
           </colgroup>
           <thead>
             <tr>
-              <th rowspan="2">Ledger Name</th>
+              <th rowspan="2">Head of Account</th>
               <th colspan="2">Opening Balance</th>
               <th colspan="2">During Period</th>
               <th colspan="2">Closing Balance</th>
             </tr>
-            <tr><th>Dr.</th><th>Cr.</th><th>Receipt</th><th>Payment</th><th>Dr.</th><th>Cr.</th></tr>
+            <tr><th>Liability</th><th>Asset</th><th>Receipt</th><th>Payment</th><th>Liability</th><th>Asset</th></tr>
           </thead>
           <tbody>${body}</tbody>
         </table>` + a4Signatures(['President', 'Secretary'])
     });
   };
 
-  const s = reportData?.summary;
-  const abstract = reportData?.abstract || [];
-
   // ── Render account-group rows ("Account Group Wise" view) — Account Group
   // → its heads/ledgers, groups and ledgers A→Z (sorted server-side in
   // getLedgerAbstractGrouped). ─────────────────────────────────────────────
   const renderAccountGroup = () => {
-    if (!groupedData?.groups?.length) return (
+    if (!groups.length) return (
       <Table.Tr><Table.Td colSpan={7} style={{ ...tdBase, textAlign: 'center', padding: 24, color: '#777' }}>No grouped data</Table.Td></Table.Tr>
     );
     const rows = [];
     let currentPG = null;
-    groupedData.groups.forEach((group, gi) => {
+    groups.forEach((group, gi) => {
       const pg   = group.parentGroup || 'OTHER';
       const conf = PG_CONFIG[pg] || PG_CONFIG.OTHER;
 
@@ -390,12 +430,12 @@ const LedgerAbstract = () => {
           <Table.Td style={{ ...tdBase, fontWeight: 700, paddingLeft: 20, background: GROUP_BG }}>
             {group.accountGroup} <Text span size="xs" c="dimmed" fw={600}>({group.ledgers.length})</Text>
           </Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{f2(t.obDr)}</Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{f2(t.obCr)}</Table.Td>
+          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{group.noBal ? '' : f2(t.obCr)}</Table.Td>
+          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{group.noBal ? '' : f2(t.obDr)}</Table.Td>
           <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{f2(t.receipt ?? t.debit)}</Table.Td>
           <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{f2(t.payment ?? t.credit)}</Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{t.clDr > 0 ? f2(t.clDr) : ''}</Table.Td>
           <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{t.clCr > 0 ? f2(t.clCr) : ''}</Table.Td>
+          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{t.clDr > 0 ? f2(t.clDr) : ''}</Table.Td>
         </Table.Tr>
       );
 
@@ -407,8 +447,8 @@ const LedgerAbstract = () => {
             {openingCells(item)}
             <Table.Td style={tdRight}>{fz(item.receipt ?? item.debit)}</Table.Td>
             <Table.Td style={tdRight}>{fz(item.payment ?? item.credit)}</Table.Td>
-            <Table.Td style={{ ...tdRight, fontWeight: 600 }}>{item.closingBalanceType === 'Dr' ? fz(item.closingBalance) : ''}</Table.Td>
             <Table.Td style={{ ...tdRight, fontWeight: 600 }}>{item.closingBalanceType === 'Cr' ? fz(item.closingBalance) : ''}</Table.Td>
+            <Table.Td style={{ ...tdRight, fontWeight: 600 }}>{item.closingBalanceType === 'Dr' ? fz(item.closingBalance) : ''}</Table.Td>
           </Table.Tr>
         );
       });
@@ -423,6 +463,7 @@ const LedgerAbstract = () => {
       const items = grouped[cat];
       const conf  = getCatConf(cat);
       const tot   = catTotals(items);
+      const noBal = items.every(i => i.noBal);
 
       // Category header
       rows.push(
@@ -441,8 +482,8 @@ const LedgerAbstract = () => {
             {openingCells(item)}
             <Table.Td style={tdRight}>{fz(item.totalReceipt ?? item.totalDebits)}</Table.Td>
             <Table.Td style={tdRight}>{fz(item.totalPayment ?? item.totalCredits)}</Table.Td>
-            <Table.Td style={{ ...tdRight, fontWeight: 600 }}>{item.closingBalanceType === 'Dr' ? fz(item.closingBalance) : ''}</Table.Td>
             <Table.Td style={{ ...tdRight, fontWeight: 600 }}>{item.closingBalanceType === 'Cr' ? fz(item.closingBalance) : ''}</Table.Td>
+            <Table.Td style={{ ...tdRight, fontWeight: 600 }}>{item.closingBalanceType === 'Dr' ? fz(item.closingBalance) : ''}</Table.Td>
           </Table.Tr>
         );
       });
@@ -453,12 +494,12 @@ const LedgerAbstract = () => {
           <Table.Td style={{ ...tdBase, fontWeight: 700, textAlign: 'right', paddingRight: 12, background: GROUP_BG }}>
             Sub-total — {conf.label}
           </Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{f2(tot.obDr)}</Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{f2(tot.obCr)}</Table.Td>
+          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{noBal ? '' : f2(tot.obCr)}</Table.Td>
+          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{noBal ? '' : f2(tot.obDr)}</Table.Td>
           <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{f2(tot.debit)}</Table.Td>
           <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{f2(tot.credit)}</Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{tot.clDr > 0 ? f2(tot.clDr) : ''}</Table.Td>
           <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{tot.clCr > 0 ? f2(tot.clCr) : ''}</Table.Td>
+          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{tot.clDr > 0 ? f2(tot.clDr) : ''}</Table.Td>
         </Table.Tr>
       );
     });
@@ -474,52 +515,27 @@ const LedgerAbstract = () => {
         {openingCells(item)}
         <Table.Td style={tdRight}>{fz(item.totalReceipt ?? item.totalDebits)}</Table.Td>
         <Table.Td style={tdRight}>{fz(item.totalPayment ?? item.totalCredits)}</Table.Td>
-        <Table.Td style={{ ...tdRight, fontWeight: 600 }}>{item.closingBalanceType === 'Dr' ? fz(item.closingBalance) : ''}</Table.Td>
         <Table.Td style={{ ...tdRight, fontWeight: 600 }}>{item.closingBalanceType === 'Cr' ? fz(item.closingBalance) : ''}</Table.Td>
+        <Table.Td style={{ ...tdRight, fontWeight: 600 }}>{item.closingBalanceType === 'Dr' ? fz(item.closingBalance) : ''}</Table.Td>
       </Table.Tr>
     ));
 
-  const groupCount = groupedData?.groups?.length || 0;
+  const groupCount = groups.length;
 
   return (
     <Box p="md">
       <style>{`.la-ob-cell:hover { text-decoration: underline; background: #f8f9fa !important; }`}</style>
 
-      {/* ── Page Header — title, counts and the report view selector ──── */}
-      <Paper radius="lg" mb="md" style={{ overflow: 'hidden', border: '1px solid #c7d2fe' }}>
-        <Box style={{ background: `linear-gradient(90deg, ${INDIGO} 0%, ${INDIGO2} 60%, #6366f1 100%)`, padding: '12px 20px' }}>
-          <Group justify="space-between" align="center" wrap="wrap" gap="sm">
-            <Group gap="sm">
-              <ThemeIcon size={38} radius="md" style={{ background: 'rgba(255,255,255,0.18)' }}>
-                <IconBook2 size={22} color="white" />
-              </ThemeIcon>
-              <Box>
-                <Title order={4} c="white" style={{ lineHeight: 1.1 }}>General Ledger — Abstract</Title>
-                <Text size="xs" c="rgba(255,255,255,0.75)">
-                  {dateRange[0] && dateRange[1]
-                    ? `${fmtDate(dateRange[0])} to ${fmtDate(dateRange[1])}`
-                    : 'All ledger balances with opening, movement and closing'}
-                </Text>
-              </Box>
-            </Group>
-            <Group gap="sm" wrap="wrap">
-              {reportData && (
-                <Badge size="lg" variant="white" color="indigo">
-                  {abstract.length} Ledger{abstract.length !== 1 ? 's' : ''} &nbsp;·&nbsp; {groupCount} Group{groupCount !== 1 ? 's' : ''}
-                </Badge>
-              )}
-              <SegmentedControl
-                value={view}
-                onChange={setView}
-                data={VIEW_OPTS}
-                size="xs"
-                style={{ background: 'rgba(255,255,255,0.15)' }}
-                styles={{ label: { color: '#fff', fontSize: 11.5, fontWeight: 600 }, indicator: { background: 'rgba(255,255,255,0.3)' } }}
-              />
-            </Group>
-          </Group>
-        </Box>
-      </Paper>
+      {/* ── Top bar — report view selector beside the Ledgers / Groups
+          count; no separate title line ─────────────────────────────────── */}
+      <Group gap="sm" align="center" wrap="wrap" mb="md" data-no-print>
+        <Badge size="lg" variant="light" color="indigo" radius="sm">
+          {reportData
+            ? <>{abstract.length} Ledger{abstract.length !== 1 ? 's' : ''} &nbsp;·&nbsp; {groupCount} Group{groupCount !== 1 ? 's' : ''}</>
+            : 'Ledgers · Groups'}
+        </Badge>
+        <SegmentedControl value={view} onChange={setView} data={VIEW_OPTS} size="xs" />
+      </Group>
 
       {/* ── Period / filters ───────────────────────────────────────────── */}
       <Paper radius="md" p="md" mb="md" withBorder data-no-print>
@@ -569,8 +585,8 @@ const LedgerAbstract = () => {
         <SimpleGrid cols={{ base: 2, sm: 5 }} spacing="sm" mb="md">
           {[
             { label: 'Total Ledgers',  value: s.totalLedgers },
-            { label: 'Opening Dr',     value: f2(s.totalOpeningDebit) },
-            { label: 'Opening Cr',     value: f2(s.totalOpeningCredit) },
+            { label: 'Opening Liability', value: f2(s.totalOpeningCredit) },
+            { label: 'Opening Asset',     value: f2(s.totalOpeningDebit) },
             { label: 'Total Receipt',  value: f2(s.totalReceipt ?? s.totalDebits) },
             { label: 'Total Payment',  value: f2(s.totalPayment ?? s.totalCredits) }
           ].map(stat => (
@@ -606,18 +622,18 @@ const LedgerAbstract = () => {
               {/* Double-row header */}
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th rowSpan={2} style={{ ...thLeft, minWidth: 220, verticalAlign: 'middle' }}>Ledger Name</Table.Th>
+                  <Table.Th rowSpan={2} style={{ ...thLeft, minWidth: 220, verticalAlign: 'middle' }}>Head of Account</Table.Th>
                   <Table.Th colSpan={2} style={thBase}>Opening Balance</Table.Th>
-                  <Table.Th colSpan={2} style={thBase}>During Period (Receipt / Payment)</Table.Th>
+                  <Table.Th colSpan={2} style={thBase}>During Period</Table.Th>
                   <Table.Th colSpan={2} style={thBase}>Closing Balance</Table.Th>
                 </Table.Tr>
                 <Table.Tr>
-                  <Table.Th style={{ ...thBase, minWidth: 105 }}>Dr.</Table.Th>
-                  <Table.Th style={{ ...thBase, minWidth: 105 }}>Cr.</Table.Th>
+                  <Table.Th style={{ ...thBase, minWidth: 105 }}>Liability</Table.Th>
+                  <Table.Th style={{ ...thBase, minWidth: 105 }}>Asset</Table.Th>
                   <Table.Th style={{ ...thBase, minWidth: 105 }}>Receipt</Table.Th>
                   <Table.Th style={{ ...thBase, minWidth: 105 }}>Payment</Table.Th>
-                  <Table.Th style={{ ...thBase, minWidth: 105 }}>Dr.</Table.Th>
-                  <Table.Th style={{ ...thBase, minWidth: 105 }}>Cr.</Table.Th>
+                  <Table.Th style={{ ...thBase, minWidth: 105 }}>Liability</Table.Th>
+                  <Table.Th style={{ ...thBase, minWidth: 105 }}>Asset</Table.Th>
                 </Table.Tr>
               </Table.Thead>
 
@@ -631,9 +647,9 @@ const LedgerAbstract = () => {
                   <Table.Tr>
                     {[
                       `GRAND TOTAL — ${s.totalLedgers} Ledger${s.totalLedgers !== 1 ? 's' : ''}`,
-                      f2(s.totalOpeningDebit), f2(s.totalOpeningCredit),
+                      f2(s.totalOpeningCredit), f2(s.totalOpeningDebit),
                       f2(s.totalReceipt ?? s.totalDebits), f2(s.totalPayment ?? s.totalCredits),
-                      f2(s.totalClosingDebit), f2(s.totalClosingCredit)
+                      f2(s.totalClosingCredit), f2(s.totalClosingDebit)
                     ].map((v, i) => (
                       <Table.Td
                         key={i}
@@ -657,7 +673,7 @@ const LedgerAbstract = () => {
         {abstract.length > 0 && (
           <Box p="sm" style={{ borderTop: LINE, background: '#f8f9fa' }}>
             <Group gap="sm" wrap="wrap" mb={6}>
-              {[...(groupedData?.groups || [])]
+              {[...groups]
                 .sort((a, b) => a.accountGroup.localeCompare(b.accountGroup, 'en', { sensitivity: 'base' }))
                 .map(g => (
                   <Badge key={g.accountGroup} size="sm" color="gray" variant="light">
@@ -667,8 +683,8 @@ const LedgerAbstract = () => {
             </Group>
             <Divider mb={6} />
             <Group gap="xl" wrap="wrap">
-              <Text size="xs" c="dimmed">Dr = Debit balance (Asset/Expense nature)</Text>
-              <Text size="xs" c="dimmed">Cr = Credit balance (Liability/Income nature)</Text>
+              <Text size="xs" c="dimmed">Liability = Credit (Cr) balance</Text>
+              <Text size="xs" c="dimmed">Asset = Debit (Dr) balance</Text>
               <Text size="xs" c="dimmed">Click an Opening Balance to edit it — it is saved to the Ledger</Text>
             </Group>
           </Box>
