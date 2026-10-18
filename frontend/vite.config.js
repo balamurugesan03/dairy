@@ -4,6 +4,13 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      // Plain icons index — the package root's dynamic-import icon map makes the
+      // dev pre-bundle split into ~11k chunks (net::ERR_INSUFFICIENT_RESOURCES)
+      '@tabler/icons-react': '@tabler/icons-react/dist/esm/icons/index.mjs'
+    }
+  },
   build: {
     rollupOptions: {
       output: {

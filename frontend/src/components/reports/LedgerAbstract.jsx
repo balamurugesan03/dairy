@@ -1,8 +1,7 @@
 import { useState, useMemo } from 'react';
 import {
-  Box, Paper, Group, Text, Button, Select,
-  Table, ScrollArea, Stack, SimpleGrid, Loader, Center,
-  Badge, SegmentedControl, Divider, Modal, NumberInput
+  Box, Paper, Group, Text, Button, Select, ScrollArea, Stack, Loader, Center,
+  Badge, SegmentedControl, Modal, NumberInput
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import {
@@ -13,99 +12,39 @@ import { notifications } from '@mantine/notifications';
 import * as XLSX from 'xlsx';
 import dayjs from 'dayjs';
 import { reportAPI, ledgerAPI } from '../../services/api';
-import { openA4Print, a4Header, a4Signatures, escapeHtml } from '../../utils/printA4';
+import { openA4Print, escapeHtml } from '../../utils/printA4';
 import { useCompany } from '../../context/CompanyContext';
+
+// General Ledger abstract — laid out exactly as the reference PDF: a
+// 3-line heading, Ledger | Opening Dr./Cr. | Receipt/Payment | Closing
+// Asset (Dr.)/Liability (Cr.), dotted grid lines, a solid line under each
+// group heading, no fills, no subtotal / grand total rows.
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 const f2 = (n) => parseFloat(n || 0).toFixed(2);
-const fz = (n) => { const v = parseFloat(n || 0); return v === 0 ? '' : v.toFixed(2); };
-const fmtDate = (d) => d ? dayjs(d).format('DD-MM-YYYY') : '-';
+// Amounts: 2 decimals, no thousand separators, blank when zero.
+const fz = (n) => { const v = parseFloat(n || 0); return Math.abs(v) < 0.005 ? '' : v.toFixed(2); };
+const fmtDate = (d) => d ? dayjs(d).format('DD/MM/YYYY') : '';
 
-// ── Presets ───────────────────────────────────────────────────────────────
-const PRESETS = [
-  { value: 'thisMonth',     label: 'This Month' },
-  { value: 'lastMonth',     label: 'Last Month' },
-  { value: 'thisQuarter',   label: 'This Quarter' },
-  { value: 'financialYear', label: 'Financial Year' },
-  { value: 'custom',        label: 'Custom Range' }
-];
-
-const getPresetRange = (preset) => {
+const financialYearRange = () => {
   const now = dayjs();
-  switch (preset) {
-    case 'thisMonth':     return [now.startOf('month').toDate(), now.endOf('month').toDate()];
-    case 'lastMonth':     return [now.subtract(1,'month').startOf('month').toDate(), now.subtract(1,'month').endOf('month').toDate()];
-    case 'thisQuarter':   return [now.startOf('quarter').toDate(), now.endOf('quarter').toDate()];
-    case 'financialYear': {
-      const fy = now.month() >= 3 ? now.year() : now.year() - 1;
-      return [new Date(fy, 3, 1), new Date(fy + 1, 2, 31)];
-    }
-    default: return [null, null];
-  }
+  const fy = now.month() >= 3 ? now.year() : now.year() - 1;
+  return [new Date(fy, 3, 1), new Date(fy + 1, 2, 31)];
 };
 
-// ── Report views — same names as the R&D Statement ────────────────────────
+// ── Report views ──────────────────────────────────────────────────────────
+// Ledger-wise   = ledgers under their Account Group ("Advance due by Society (LIABILITY)")
+// Category-wise = ledgers under their category (Liabilities, Assets …)
+// All Ledger    = one A→Z list, no headings
 const VIEW_OPTS = [
-  { value: 'accountGroup', label: 'Account Group Wise' },
-  { value: 'flat',         label: 'Ledger Wise' },
-  { value: 'grouped',      label: 'Category Wise' }
-];
-const viewLabelOf = (v) => (VIEW_OPTS.find(o => o.value === v) || VIEW_OPTS[0]).label;
-
-// ── Category display config (for the "Category Wise" view) ─────────────────
-const CATEGORY_CONFIG = {
-  ASSETS:      { label: 'Assets' },
-  LIABILITIES: { label: 'Liabilities' },
-  INCOME:      { label: 'Income' },
-  EXPENSES:    { label: 'Expenses' },
-  CAPITAL:     { label: 'Capital & Reserves' },
-  OTHER:       { label: 'Other' }
-};
-
-const getCatConf = (cat) => CATEGORY_CONFIG[cat] || CATEGORY_CONFIG.OTHER;
-
-// ── Account Group filter options ──────────────────────────────────────────
-const LEDGER_TYPE_OPTS = [
-  { value: '', label: 'All Account Groups' },
-  { value: 'Cash', label: 'Cash' },
-  { value: 'Bank', label: 'Bank' },
-  { value: 'Asset', label: 'Asset' },
-  { value: 'Liability', label: 'Liability' },
-  { value: 'Income', label: 'Income' },
-  { value: 'Expense', label: 'Expense' },
-  { value: 'Capital', label: 'Capital' },
-  { value: 'Purchases A/c', label: 'Purchases A/c' },
-  { value: 'Sales A/c', label: 'Sales A/c' },
-  { value: 'Trade Expenses', label: 'Trade Expenses' },
-  { value: 'Trade Income', label: 'Trade Income' }
+  { value: 'accountGroup', label: 'Ledger-wise' },
+  { value: 'grouped',      label: 'Category-wise' },
+  { value: 'flat',         label: 'All Ledger' }
 ];
 
-// ── Design tokens ─────────────────────────────────────────────────────────
-const INDIGO2 = '#4338ca';
-
-// One text colour for every value and label in the grid; sections are told
-// apart by weight and a single neutral row shade, not by colour.
-const INK     = '#1a1a1a';
-const LINE    = '1px solid #ced4da';
-const GROUP_BG = '#f1f3f5';
-const FONT    = "'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
-
-const thBase = {
-  padding: '8px 10px', fontSize: 12, fontWeight: 700, fontFamily: FONT,
-  color: INK, background: '#e9ecef',
-  border: LINE, whiteSpace: 'nowrap', textAlign: 'center'
-};
-const thLeft = { ...thBase, textAlign: 'left' };
-const tdBase = { padding: '6px 10px', fontSize: 13, fontFamily: FONT, color: INK, border: LINE };
-const tdRight = { ...tdBase, textAlign: 'right', fontSize: 13.5, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
-
-// ── Parent-group labels ────────────────────────────────────────────────────
-const PG_CONFIG = {
-  ASSET:     { label: 'Assets' },
-  LIABILITY: { label: 'Liabilities' },
-  INCOME:    { label: 'Income' },
-  EXPENSE:   { label: 'Expenses' },
-  OTHER:     { label: 'Other' }
+const CATEGORY_LABEL = {
+  LIABILITIES: 'Liabilities', CAPITAL: 'Capital & Reserves', ASSETS: 'Assets',
+  INCOME: 'Income', EXPENSES: 'Expenses', OTHER: 'Other'
 };
 
 // Liability side first, then Asset, then the revenue groups.
@@ -113,29 +52,80 @@ const PG_ORDER  = ['LIABILITY', 'ASSET', 'INCOME', 'EXPENSE', 'OTHER'];
 const CAT_ORDER = ['LIABILITIES', 'CAPITAL', 'ASSETS', 'INCOME', 'EXPENSES', 'OTHER'];
 
 // ── Opening / Closing Balance visibility ──────────────────────────────────
-// Only balance-sheet groups carry an Opening and Closing Balance (Liability,
-// Asset, Bank Accounts, Fixed Assets, Grants and Subsidies, Interest
-// Receivable …). Revenue groups — Income, Sales, Expense, Establishment
-// Charges, Purchases, Trade Expenses — show Receipt / Payment only.
+// Only balance-sheet groups (Liability, Asset, Grants and Subsidies …) carry
+// an Opening and Closing Balance. Revenue groups — Income, Sales, Expense,
+// Establishment Charges, Purchases, Trade Expenses — show Receipt / Payment only.
 const GRANT_TYPES = ['Grants and Subsidies', 'Grants & Aid', 'Subsidies'];
 const hidesBalance = (ledgerType, parentGroup, category) =>
   !GRANT_TYPES.includes(ledgerType) &&
   (['INCOME', 'EXPENSE'].includes(parentGroup) || ['INCOME', 'EXPENSES'].includes(category));
 const stripBalance = (item) => ({ ...item, noBal: true, openingBalance: 0, closingBalance: 0 });
 
+// One grid row's figures. Opening and Closing sit on one side only.
+const rowValues = (item) => {
+  const ob = item.noBal ? 0 : item.openingBalance;
+  const cl = item.noBal ? 0 : item.closingBalance;
+  return {
+    obDr: item.openingBalanceType === 'Dr' ? ob : 0,
+    obCr: item.openingBalanceType === 'Cr' ? ob : 0,
+    // grouped endpoint: receipt / payment; flat endpoint: totalReceipt / totalPayment
+    rec:  item.receipt ?? item.totalReceipt ?? item.debit ?? item.totalDebits,
+    pay:  item.payment ?? item.totalPayment ?? item.credit ?? item.totalCredits,
+    clDr: item.closingBalanceType === 'Dr' ? cl : 0,
+    clCr: item.closingBalanceType === 'Cr' ? cl : 0
+  };
+};
+
+// ── Layout — shared by screen (scoped under .gla) and print ──────────────
+const GRID_CSS = `
+  .gla { font-family: 'Times New Roman', Times, serif; color: #000; }
+  .gla-head { text-align: center; line-height: 1.25; margin-bottom: 2px; }
+  .gla-head__org { font-size: 14pt; text-transform: uppercase; font-weight: 400; }
+  .gla-head__title { font-size: 18pt; font-weight: 700; text-decoration: underline; text-transform: uppercase; }
+  .gla-head__period { font-size: 13pt; font-weight: 400; }
+  .gla table { width: 100%; border-collapse: collapse; table-layout: fixed; background: #fff;
+    font-family: 'Times New Roman', Times, serif; font-size: 11pt; color: #000; border: 1px dotted #000; }
+  .gla th, .gla td { border: 1px dotted #000; padding: 2px 4px; vertical-align: top; }
+  .gla th { font-weight: 700; text-align: center; vertical-align: middle; }
+  .gla td.name { text-transform: uppercase; overflow-wrap: anywhere; }
+  .gla td.amt { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .gla tr.grp td { border: none; border-bottom: 1px solid #000; font-size: 13pt; font-weight: 700;
+    text-align: left; padding: 6px 2px 2px; }
+  .gla thead { display: table-header-group; }
+  .gla tbody.keep { break-inside: avoid; page-break-inside: avoid; }
+`;
+
+const COLS = [26, 12.33, 12.33, 12.33, 12.33, 12.34, 12.34];
+
+const theadHtml = `
+  <colgroup>${COLS.map(w => `<col style="width:${w}%">`).join('')}</colgroup>
+  <thead>
+    <tr>
+      <th rowspan="2">Ledger</th>
+      <th colspan="2">Opening Balance</th>
+      <th colspan="2">During the Year</th>
+      <th colspan="2">Closing Balance</th>
+    </tr>
+    <tr><th>Dr.</th><th>Cr.</th><th>Receipt</th><th>Payment</th><th>Asset (Dr.)</th><th>Liability (Cr.)</th></tr>
+  </thead>`;
+
+const headingHtml = (orgName, range) => `
+  <div class="gla-head">
+    <div class="gla-head__org">${escapeHtml(orgName)}</div>
+    <div class="gla-head__title">General Ledger</div>
+    <div class="gla-head__period">Abstract for the period of ${fmtDate(range[0])} to ${fmtDate(range[1])}</div>
+  </div>`;
+
 // ── Main component ────────────────────────────────────────────────────────
 const LedgerAbstract = () => {
   const { selectedCompany } = useCompany();
-  const companyName = selectedCompany?.companyName || 'Dairy Co-operative Society';
-  const [loading, setLoading]           = useState(false);
-  const [reportData, setReportData]     = useState(null);
-  const [groupedData, setGroupedData]   = useState(null);
-  const [preset, setPreset]             = useState('financialYear');
-  const [dateRange, setDateRange]       = useState(getPresetRange('financialYear'));
-  const [ledgerType, setLedgerType]     = useState('');
-  // Account Group Wise is the preferred/default view; Ledger Wise and
-  // Category Wise remain available as additional options.
-  const [view, setView]                 = useState('accountGroup'); // accountGroup | flat | grouped
+  const orgName = selectedCompany?.societyName || selectedCompany?.companyName || 'Dairy Co-operative Society';
+  const [loading, setLoading]         = useState(false);
+  const [reportData, setReportData]   = useState(null);
+  const [groupedData, setGroupedData] = useState(null);
+  const [dateRange, setDateRange]     = useState(financialYearRange);
+  const [loadedRange, setLoadedRange] = useState(null);
+  const [view, setView]               = useState('accountGroup'); // accountGroup | grouped | flat
 
   // Opening balance editor. The abstract's Opening Balance comes straight
   // from the Ledger master (Ledger.openingBalance / openingBalanceType), so
@@ -186,31 +176,10 @@ const LedgerAbstract = () => {
     }
   };
 
-  // Opening Dr / Cr cells of a ledger row — click to edit the Ledger's opening balance.
-  const openingCells = (item) => {
-    if (item.noBal) return <><Table.Td style={tdRight} /><Table.Td style={tdRight} /></>;
-    const cellProps = {
-      onClick: () => openObEditor(item),
-      title: 'Click to edit this ledger\'s Opening Balance',
-      style: { ...tdRight, cursor: 'pointer' }
-    };
-    return (
-      <>
-        <Table.Td {...cellProps} className="la-ob-cell">{item.openingBalanceType === 'Cr' ? fz(item.openingBalance) : ''}</Table.Td>
-        <Table.Td {...cellProps} className="la-ob-cell">{item.openingBalanceType === 'Dr' ? fz(item.openingBalance) : ''}</Table.Td>
-      </>
-    );
-  };
-
-  const handlePresetChange = (val) => {
-    setPreset(val);
-    if (val !== 'custom') setDateRange(getPresetRange(val));
-  };
-
   const fetchReport = async () => {
     const [start, end] = dateRange;
     if (!start || !end) {
-      notifications.show({ title: 'Error', message: 'Select a date range', color: 'red' });
+      notifications.show({ title: 'Error', message: 'Select From and To dates', color: 'red' });
       return;
     }
     setLoading(true);
@@ -219,13 +188,13 @@ const LedgerAbstract = () => {
         startDate: dayjs(start).format('YYYY-MM-DD'),
         endDate:   dayjs(end).format('YYYY-MM-DD')
       };
-      if (ledgerType) params.ledgerType = ledgerType;
       const [res, resG] = await Promise.all([
         reportAPI.ledgerAbstract(params),
         reportAPI.ledgerAbstractGrouped(params)
       ]);
       setReportData(res?.data || res);
       setGroupedData(resG?.data || resG);
+      setLoadedRange([start, end]);
     } catch (err) {
       notifications.show({ title: 'Error', message: err.message || 'Failed to fetch', color: 'red' });
     } finally {
@@ -242,292 +211,103 @@ const LedgerAbstract = () => {
   // Account groups — Liability side first, then Asset (A→Z within each).
   const groups = useMemo(() =>
     (groupedData?.groups || [])
-      .map(g => hidesBalance(g.accountGroup, g.parentGroup)
-        ? { ...g, noBal: true, ledgers: g.ledgers.map(stripBalance), totals: { ...g.totals, obDr: 0, obCr: 0, clDr: 0, clCr: 0 } }
-        : g)
+      .map(g => hidesBalance(g.accountGroup, g.parentGroup) ? { ...g, ledgers: g.ledgers.map(stripBalance) } : g)
       .sort((a, b) => {
         const ai = PG_ORDER.indexOf(a.parentGroup), bi = PG_ORDER.indexOf(b.parentGroup);
         return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
       }),
   [groupedData]);
 
-  // ── Group abstract by category (for the "Category Wise" view) ───────────
-  const grouped = useMemo(() => {
-    const map = {};
-    abstract.forEach(item => {
-      const cat = item.category || 'OTHER';
-      if (!map[cat]) map[cat] = [];
-      map[cat].push(item);
-    });
-    return map;
-  }, [abstract]);
+  // The view on screen as sections: { title | null, items }.
+  const sections = useMemo(() => {
+    if (view === 'accountGroup') {
+      return groups.map(g => ({ title: `${g.accountGroup} (${g.parentGroup || 'OTHER'})`, items: g.ledgers }));
+    }
+    if (view === 'grouped') {
+      const map = {};
+      abstract.forEach(it => { (map[it.category || 'OTHER'] ||= []).push(it); });
+      return CAT_ORDER.filter(c => map[c]?.length).map(c => ({ title: CATEGORY_LABEL[c], items: map[c] }));
+    }
+    return [{ title: null, items: abstract }];
+  }, [view, groups, abstract]);
 
-  const sortedCats = CAT_ORDER.filter(c => grouped[c]?.length);
-
-  // ── Category subtotals ──────────────────────────────────────────────────
-  const catTotals = (items) =>
-    items.reduce((acc, it) => {
-      if (it.openingBalanceType === 'Dr') acc.obDr += it.openingBalance;
-      else                                 acc.obCr += it.openingBalance;
-      acc.debit   += it.totalReceipt ?? it.totalDebits;
-      acc.credit  += it.totalPayment ?? it.totalCredits;
-      if (it.closingBalanceType === 'Dr') acc.clDr += it.closingBalance;
-      else                                 acc.clCr += it.closingBalance;
-      return acc;
-    }, { obDr: 0, obCr: 0, debit: 0, credit: 0, clDr: 0, clCr: 0 });
-
-  // Grand totals — Opening / Closing summed from the balance-sheet groups only.
-  const s = useMemo(() => {
-    const base = reportData?.summary;
-    if (!base) return null;
-    const t = catTotals(abstract);
-    return { ...base, totalOpeningDebit: t.obDr, totalOpeningCredit: t.obCr, totalClosingDebit: t.clDr, totalClosingCredit: t.clCr };
-  }, [reportData, abstract]);
-
-  // ── Export — Account Group → ledgers, same hierarchy as the default view ─
+  // ── Export — the view on screen, same columns as the grid ──────────────
   const handleExport = () => {
-    if (!groups.length) return;
-    const rows = [];
-    groups.forEach(g => {
-      g.ledgers.forEach(item => {
-        const bal = (type, side, amt) => (!item.noBal && type === side ? f2(amt) : '');
-        rows.push({
-          'Account Group':  g.accountGroup,
-          'Head of Account':   item.ledgerName,
-          'Opening Liability': bal(item.openingBalanceType, 'Cr', item.openingBalance),
-          'Opening Asset':     bal(item.openingBalanceType, 'Dr', item.openingBalance),
-          'Total Receipt':     f2(item.receipt ?? item.debit),
-          'Total Payment':     f2(item.payment ?? item.credit),
-          'Closing Liability': bal(item.closingBalanceType, 'Cr', item.closingBalance),
-          'Closing Asset':     bal(item.closingBalanceType, 'Dr', item.closingBalance)
-        });
+    if (!abstract.length) return;
+    const num = (v) => (Math.abs(v || 0) < 0.005 ? '' : Math.round(v * 100) / 100);
+    const aoa = [
+      ['Ledger', 'Opening Balance', '', 'During the Year', '', 'Closing Balance', ''],
+      ['', 'Dr.', 'Cr.', 'Receipt', 'Payment', 'Asset (Dr.)', 'Liability (Cr.)']
+    ];
+    sections.forEach(sec => {
+      if (sec.title) aoa.push([sec.title]);
+      sec.items.forEach(item => {
+        const v = rowValues(item);
+        aoa.push([item.ledgerName.toUpperCase(), num(v.obDr), num(v.obCr), num(v.rec), num(v.pay), num(v.clDr), num(v.clCr)]);
       });
     });
-    const ws = XLSX.utils.json_to_sheet(rows);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 1, c: 0 } },
+      { s: { r: 0, c: 1 }, e: { r: 0, c: 2 } },
+      { s: { r: 0, c: 3 }, e: { r: 0, c: 4 } },
+      { s: { r: 0, c: 5 }, e: { r: 0, c: 6 } }
+    ];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Ledger Abstract');
-    XLSX.writeFile(wb, `ledger_abstract_${dayjs().format('YYYY-MM-DD')}.xlsx`);
-    notifications.show({ title: 'Exported', message: 'Ledger Abstract exported to Excel', color: 'green' });
+    XLSX.utils.book_append_sheet(wb, ws, 'General Ledger');
+    XLSX.writeFile(wb, `general_ledger_abstract_${dayjs().format('YYYY-MM-DD')}.xlsx`);
+    notifications.show({ title: 'Exported', message: 'General Ledger abstract exported to Excel', color: 'green' });
   };
 
-  // ── Print — dedicated A4 layout built from the data of the view on
-  // screen (Ledger Wise / Category Wise / All Ledgers): one header, a plain
-  // 7-column table with the column header repeated on every page, and the
-  // grand total once at the end. Receipt / Payment already include every
-  // Cash and Adjustment entry, so no separate Adjustment figure is printed.
+  // ── Print — A4 portrait, heading on page 1, header rows repeat. Each
+  // group heading shares an unbreakable block with its first two ledgers, so
+  // it never sits alone at the foot of a page. ─────────────────────────────
   const handlePrint = () => {
     if (!abstract.length) return;
-    // noBal — revenue group: Opening / Closing cells stay empty.
-    const cells = (obDr, obCr, rec, pay, clDr, clCr, blank, noBal) => {
-      const v = (n) => (blank ? fz(n) : f2(n));
-      const b = (n) => (noBal ? '' : v(n));
-      // Liability (Cr) before Asset (Dr), matching the on-screen grid.
-      return `<td class="amt">${b(obCr)}</td><td class="amt">${b(obDr)}</td>`
-        + `<td class="amt">${v(rec)}</td><td class="amt">${v(pay)}</td>`
-        + `<td class="amt">${b(clCr)}</td><td class="amt">${b(clDr)}</td>`;
+    const rowHtml = (item) => {
+      const v = rowValues(item);
+      return `<tr><td class="name">${escapeHtml(item.ledgerName)}</td>${
+        [v.obDr, v.obCr, v.rec, v.pay, v.clDr, v.clCr].map(n => `<td class="amt">${fz(n)}</td>`).join('')}</tr>`;
     };
-    const ledgerRow = (item, rec, pay, indent) => `<tr>
-        <td class="${indent ? 'indent' : ''}">${escapeHtml(item.ledgerName)}</td>
-        ${cells(
-          item.openingBalanceType === 'Dr' ? item.openingBalance : 0,
-          item.openingBalanceType === 'Cr' ? item.openingBalance : 0,
-          rec, pay,
-          item.closingBalanceType === 'Dr' ? item.closingBalance : 0,
-          item.closingBalanceType === 'Cr' ? item.closingBalance : 0,
-          true
-        )}
-      </tr>`;
-
-    let body = '';
-    if (view === 'accountGroup') {
-      let currentPG = null;
-      groups.forEach(group => {
-        const pg = group.parentGroup || 'OTHER';
-        if (pg !== currentPG) {
-          currentPG = pg;
-          body += `<tr class="row-sec"><td colspan="7">${escapeHtml((PG_CONFIG[pg] || PG_CONFIG.OTHER).label)}</td></tr>`;
-        }
-        const t = group.totals;
-        body += `<tr class="row-sub"><td>${escapeHtml(group.accountGroup)}</td>${cells(t.obDr, t.obCr, t.receipt ?? t.debit, t.payment ?? t.credit, t.clDr, t.clCr, false, group.noBal)}</tr>`;
-        group.ledgers.forEach(item => { body += ledgerRow(item, item.receipt ?? item.debit, item.payment ?? item.credit, true); });
-      });
-    } else if (view === 'grouped') {
-      sortedCats.forEach(cat => {
-        const items = grouped[cat];
-        const tot = catTotals(items);
-        body += `<tr class="row-sec"><td colspan="7">${escapeHtml(getCatConf(cat).label)}</td></tr>`;
-        items.forEach(item => { body += ledgerRow(item, item.totalReceipt ?? item.totalDebits, item.totalPayment ?? item.totalCredits, true); });
-        body += `<tr class="row-sub"><td class="amt">Sub-total — ${escapeHtml(getCatConf(cat).label)}</td>${cells(tot.obDr, tot.obCr, tot.debit, tot.credit, tot.clDr, tot.clCr, false, items.every(i => i.noBal))}</tr>`;
-      });
-    } else {
-      abstract.forEach(item => { body += ledgerRow(item, item.totalReceipt ?? item.totalDebits, item.totalPayment ?? item.totalCredits, false); });
-    }
-    if (s) {
-      body += `<tr class="row-grand"><td>GRAND TOTAL — ${s.totalLedgers} Ledger${s.totalLedgers !== 1 ? 's' : ''}</td>${cells(
-        s.totalOpeningDebit, s.totalOpeningCredit, s.totalReceipt ?? s.totalDebits, s.totalPayment ?? s.totalCredits,
-        s.totalClosingDebit, s.totalClosingCredit, false
-      )}</tr>`;
-    }
-
-    const viewLabel = viewLabelOf(view);
+    const body = sections.map(sec => {
+      if (!sec.title) return `<tbody>${sec.items.map(rowHtml).join('')}</tbody>`;
+      const head = sec.items.slice(0, 2), rest = sec.items.slice(2);
+      return `<tbody class="keep"><tr class="grp"><td colspan="7">${escapeHtml(sec.title)}</td></tr>${head.map(rowHtml).join('')}</tbody>`
+        + (rest.length ? `<tbody>${rest.map(rowHtml).join('')}</tbody>` : '');
+    }).join('');
     openA4Print({
-      title: 'Ledger Abstract',
+      title: 'General Ledger',
       orientation: 'portrait',
-      bodyHtml: a4Header({
-        orgName: companyName,
-        title: 'Ledger Abstract',
-        period: `${fmtDate(dateRange[0])} to ${fmtDate(dateRange[1])}`,
-        extra: `${viewLabel} &nbsp;|&nbsp; Printed: ${dayjs().format('DD-MM-YYYY')}`
-      }) + `
-        <table class="a4">
-          <colgroup>
-            <col style="width:31%"><col style="width:11.5%"><col style="width:11.5%">
-            <col style="width:11.5%"><col style="width:11.5%"><col style="width:11.5%"><col style="width:11.5%">
-          </colgroup>
-          <thead>
-            <tr>
-              <th rowspan="2">Head of Account</th>
-              <th colspan="2">Opening Balance</th>
-              <th colspan="2">During Period</th>
-              <th colspan="2">Closing Balance</th>
-            </tr>
-            <tr><th>Liability</th><th>Asset</th><th>Receipt</th><th>Payment</th><th>Liability</th><th>Asset</th></tr>
-          </thead>
-          <tbody>${body}</tbody>
-        </table>` + a4Signatures(['President', 'Secretary'])
+      css: `${GRID_CSS} body { font-family: 'Times New Roman', Times, serif; }`,
+      bodyHtml: `<div class="gla">${headingHtml(orgName, loadedRange)}<table>${theadHtml}${body}</table></div>`
     });
   };
 
-  // ── Render account-group rows ("Account Group Wise" view) — Account Group
-  // → its heads/ledgers, groups and ledgers A→Z (sorted server-side in
-  // getLedgerAbstractGrouped). ─────────────────────────────────────────────
-  const renderAccountGroup = () => {
-    if (!groups.length) return (
-      <Table.Tr><Table.Td colSpan={7} style={{ ...tdBase, textAlign: 'center', padding: 24, color: '#777' }}>No grouped data</Table.Td></Table.Tr>
+  // ── Screen grid ─────────────────────────────────────────────────────────
+  const renderRow = (item, key) => {
+    const v = rowValues(item);
+    // Opening Dr / Cr cells — click to edit the Ledger's opening balance.
+    const obProps = item.noBal ? {} : {
+      className: 'amt gla-ob', onClick: () => openObEditor(item), title: 'Click to edit this ledger\'s Opening Balance'
+    };
+    return (
+      <tr key={key}>
+        <td className="name">{item.ledgerName}</td>
+        <td className="amt" {...obProps}>{fz(v.obDr)}</td>
+        <td className="amt" {...obProps}>{fz(v.obCr)}</td>
+        <td className="amt">{fz(v.rec)}</td>
+        <td className="amt">{fz(v.pay)}</td>
+        <td className="amt">{fz(v.clDr)}</td>
+        <td className="amt">{fz(v.clCr)}</td>
+      </tr>
     );
-    const rows = [];
-    let currentPG = null;
-    groups.forEach((group, gi) => {
-      const pg   = group.parentGroup || 'OTHER';
-      const conf = PG_CONFIG[pg] || PG_CONFIG.OTHER;
-
-      // Parent-group separator
-      if (pg !== currentPG) {
-        currentPG = pg;
-        rows.push(
-          <Table.Tr key={`pg-${pg}`}>
-            <Table.Td colSpan={7} style={{ ...tdBase, fontWeight: 800, fontSize: 13.5, letterSpacing: 1, textTransform: 'uppercase', borderTop: '2px solid #495057' }}>
-              {conf.label}
-            </Table.Td>
-          </Table.Tr>
-        );
-      }
-
-      // Account-group header
-      const t = group.totals;
-      rows.push(
-        <Table.Tr key={`ag-${gi}`}>
-          <Table.Td style={{ ...tdBase, fontWeight: 700, paddingLeft: 20, background: GROUP_BG }}>
-            {group.accountGroup} <Text span size="xs" c="dimmed" fw={600}>({group.ledgers.length})</Text>
-          </Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{group.noBal ? '' : f2(t.obCr)}</Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{group.noBal ? '' : f2(t.obDr)}</Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{f2(t.receipt ?? t.debit)}</Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{f2(t.payment ?? t.credit)}</Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{t.clCr > 0 ? f2(t.clCr) : ''}</Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{t.clDr > 0 ? f2(t.clDr) : ''}</Table.Td>
-        </Table.Tr>
-      );
-
-      // Ledger rows inside the group — alphabetical by ledgerName
-      group.ledgers.forEach((item, ii) => {
-        rows.push(
-          <Table.Tr key={`ag-${gi}-${ii}`}>
-            <Table.Td style={{ ...tdBase, paddingLeft: 36 }}>{item.ledgerName}</Table.Td>
-            {openingCells(item)}
-            <Table.Td style={tdRight}>{fz(item.receipt ?? item.debit)}</Table.Td>
-            <Table.Td style={tdRight}>{fz(item.payment ?? item.credit)}</Table.Td>
-            <Table.Td style={{ ...tdRight, fontWeight: 600 }}>{item.closingBalanceType === 'Cr' ? fz(item.closingBalance) : ''}</Table.Td>
-            <Table.Td style={{ ...tdRight, fontWeight: 600 }}>{item.closingBalanceType === 'Dr' ? fz(item.closingBalance) : ''}</Table.Td>
-          </Table.Tr>
-        );
-      });
-    });
-    return rows;
   };
-
-  // ── Render grouped-by-category rows ("Category Wise" view) ─────────────
-  const renderGrouped = () => {
-    const rows = [];
-    sortedCats.forEach((cat, ci) => {
-      const items = grouped[cat];
-      const conf  = getCatConf(cat);
-      const tot   = catTotals(items);
-      const noBal = items.every(i => i.noBal);
-
-      // Category header
-      rows.push(
-        <Table.Tr key={`cat-${ci}`}>
-          <Table.Td colSpan={7} style={{ ...tdBase, fontWeight: 800, fontSize: 13.5, letterSpacing: 1, textTransform: 'uppercase', paddingLeft: 14, borderTop: '2px solid #495057' }}>
-            {conf.label} <Text span size="xs" c="dimmed" fw={600} tt="none">({items.length})</Text>
-          </Table.Td>
-        </Table.Tr>
-      );
-
-      // Ledger rows (A→Z)
-      items.forEach((item, ii) => {
-        rows.push(
-          <Table.Tr key={`item-${ci}-${ii}`}>
-            <Table.Td style={{ ...tdBase, paddingLeft: 28 }}>{item.ledgerName}</Table.Td>
-            {openingCells(item)}
-            <Table.Td style={tdRight}>{fz(item.totalReceipt ?? item.totalDebits)}</Table.Td>
-            <Table.Td style={tdRight}>{fz(item.totalPayment ?? item.totalCredits)}</Table.Td>
-            <Table.Td style={{ ...tdRight, fontWeight: 600 }}>{item.closingBalanceType === 'Cr' ? fz(item.closingBalance) : ''}</Table.Td>
-            <Table.Td style={{ ...tdRight, fontWeight: 600 }}>{item.closingBalanceType === 'Dr' ? fz(item.closingBalance) : ''}</Table.Td>
-          </Table.Tr>
-        );
-      });
-
-      // Category sub-total
-      rows.push(
-        <Table.Tr key={`tot-${ci}`}>
-          <Table.Td style={{ ...tdBase, fontWeight: 700, textAlign: 'right', paddingRight: 12, background: GROUP_BG }}>
-            Sub-total — {conf.label}
-          </Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{noBal ? '' : f2(tot.obCr)}</Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{noBal ? '' : f2(tot.obDr)}</Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{f2(tot.debit)}</Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{f2(tot.credit)}</Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{tot.clCr > 0 ? f2(tot.clCr) : ''}</Table.Td>
-          <Table.Td style={{ ...tdRight, fontWeight: 700, background: GROUP_BG }}>{tot.clDr > 0 ? f2(tot.clDr) : ''}</Table.Td>
-        </Table.Tr>
-      );
-    });
-
-    return rows;
-  };
-
-  // ── Render flat table rows ("Ledger Wise" view, A→Z) ────────────────────
-  const renderFlat = () =>
-    abstract.map((item, idx) => (
-      <Table.Tr key={idx}>
-        <Table.Td style={tdBase}>{item.ledgerName}</Table.Td>
-        {openingCells(item)}
-        <Table.Td style={tdRight}>{fz(item.totalReceipt ?? item.totalDebits)}</Table.Td>
-        <Table.Td style={tdRight}>{fz(item.totalPayment ?? item.totalCredits)}</Table.Td>
-        <Table.Td style={{ ...tdRight, fontWeight: 600 }}>{item.closingBalanceType === 'Cr' ? fz(item.closingBalance) : ''}</Table.Td>
-        <Table.Td style={{ ...tdRight, fontWeight: 600 }}>{item.closingBalanceType === 'Dr' ? fz(item.closingBalance) : ''}</Table.Td>
-      </Table.Tr>
-    ));
 
   const groupCount = groups.length;
 
   return (
     <Box p="md">
-      <style>{`.la-ob-cell:hover { text-decoration: underline; background: #f8f9fa !important; }`}</style>
-
-      {/* ── Top bar — report view selector beside the Ledgers / Groups
-          count; no separate title line ─────────────────────────────────── */}
+      {/* ── Top bar — view selector beside the Ledgers / Groups count ──── */}
       <Group gap="sm" align="center" wrap="wrap" mb="md" data-no-print>
         <Badge size="lg" variant="light" color="indigo" radius="sm">
           {reportData
@@ -537,159 +317,83 @@ const LedgerAbstract = () => {
         <SegmentedControl value={view} onChange={setView} data={VIEW_OPTS} size="xs" />
       </Group>
 
-      {/* ── Period / filters ───────────────────────────────────────────── */}
-      <Paper radius="md" p="md" mb="md" withBorder data-no-print>
-        <Group gap="md" wrap="wrap" align="flex-end">
-          <Select label="Period" value={preset} onChange={handlePresetChange} data={PRESETS} style={{ flex: '1 1 140px' }} size="sm" />
+      {/* ── Filter bar — From Date, To Date, Generate ─────────────────── */}
+      <Paper radius="sm" p="sm" mb="md" withBorder data-no-print>
+        <Group gap="sm" wrap="nowrap" align="flex-end">
           <DatePickerInput
             label="From Date" value={dateRange[0]}
-            onChange={(val) => { setDateRange([val, dateRange[1]]); setPreset('custom'); }}
-            leftSection={<IconCalendar size={16} />}
-            valueFormat="DD/MM/YYYY"
-            style={{ flex: '1 1 140px' }} size="sm"
+            onChange={(val) => setDateRange([val, dateRange[1]])}
+            leftSection={<IconCalendar size={12} />} leftSectionWidth={24}
+            w={112} size="xs"
           />
           <DatePickerInput
             label="To Date" value={dateRange[1]}
-            onChange={(val) => { setDateRange([dateRange[0], val]); setPreset('custom'); }}
-            leftSection={<IconCalendar size={16} />}
-            valueFormat="DD/MM/YYYY"
-            style={{ flex: '1 1 140px' }} size="sm"
+            onChange={(val) => setDateRange([dateRange[0], val])}
+            leftSection={<IconCalendar size={12} />} leftSectionWidth={24}
+            w={112} size="xs"
           />
-          <Select
-            label="Account Group"
-            value={ledgerType}
-            onChange={setLedgerType}
-            data={LEDGER_TYPE_OPTS}
-            style={{ flex: '1 1 160px' }}
-            size="sm"
-            clearable
-          />
-          <Button leftSection={<IconRefresh size={16} />} onClick={fetchReport} loading={loading} size="sm" style={{ background: INDIGO2 }}>
+          <Button leftSection={<IconRefresh size={14} />} onClick={fetchReport} loading={loading} size="xs">
             Generate
           </Button>
           {abstract.length > 0 && (
-            <>
-              <Button leftSection={<IconFileExport size={16} />} variant="light" color="gray" onClick={handleExport} size="sm">
+            <Group gap="xs" ml="auto" wrap="nowrap">
+              <Button leftSection={<IconFileExport size={14} />} variant="light" color="gray" onClick={handleExport} size="xs">
                 Export Excel
               </Button>
-              <Button leftSection={<IconPrinter size={16} />} variant="light" color="gray" onClick={handlePrint} size="sm">
+              <Button leftSection={<IconPrinter size={14} />} variant="light" color="gray" onClick={handlePrint} size="xs">
                 Print
               </Button>
-            </>
+            </Group>
           )}
         </Group>
       </Paper>
 
-      {/* ── Totals — below the Period section ─────────────────────────── */}
-      {s && (
-        <SimpleGrid cols={{ base: 2, sm: 5 }} spacing="sm" mb="md">
-          {[
-            { label: 'Total Ledgers',  value: s.totalLedgers },
-            { label: 'Opening Liability', value: f2(s.totalOpeningCredit) },
-            { label: 'Opening Asset',     value: f2(s.totalOpeningDebit) },
-            { label: 'Total Receipt',  value: f2(s.totalReceipt ?? s.totalDebits) },
-            { label: 'Total Payment',  value: f2(s.totalPayment ?? s.totalCredits) }
-          ].map(stat => (
-            <Paper key={stat.label} withBorder radius="md" p="xs" ta="center">
-              <Text size="xs" c="dimmed" fw={600} tt="uppercase">{stat.label}</Text>
-              <Text fw={700} size="md" c={INK} style={{ fontVariantNumeric: 'tabular-nums' }}>{stat.value}</Text>
-            </Paper>
-          ))}
-        </SimpleGrid>
-      )}
-
-      {/* ── Table ──────────────────────────────────────────────────────── */}
-      <Paper radius="md" withBorder style={{ overflow: 'hidden' }}>
-        <ScrollArea>
-          {loading ? (
-            <Center py="xl"><Loader size="md" color="indigo" /></Center>
-          ) : !reportData ? (
-            <Center py="xl">
-              <Stack align="center" gap="xs">
-                <IconBook2 size={48} color="#bdbdbd" />
-                <Text c="dimmed" size="sm">Select a period and click Generate to view the ledger abstract</Text>
-              </Stack>
-            </Center>
-          ) : abstract.length === 0 ? (
-            <Center py="xl">
-              <Stack align="center" gap="xs">
-                <IconInbox size={48} color="#bdbdbd" />
-                <Text c="dimmed" size="sm">No ledger data found for this period</Text>
-              </Stack>
-            </Center>
-          ) : (
-            <Table style={{ borderCollapse: 'collapse', background: '#fff' }}>
-              {/* Double-row header */}
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th rowSpan={2} style={{ ...thLeft, minWidth: 220, verticalAlign: 'middle' }}>Head of Account</Table.Th>
-                  <Table.Th colSpan={2} style={thBase}>Opening Balance</Table.Th>
-                  <Table.Th colSpan={2} style={thBase}>During Period</Table.Th>
-                  <Table.Th colSpan={2} style={thBase}>Closing Balance</Table.Th>
-                </Table.Tr>
-                <Table.Tr>
-                  <Table.Th style={{ ...thBase, minWidth: 105 }}>Liability</Table.Th>
-                  <Table.Th style={{ ...thBase, minWidth: 105 }}>Asset</Table.Th>
-                  <Table.Th style={{ ...thBase, minWidth: 105 }}>Receipt</Table.Th>
-                  <Table.Th style={{ ...thBase, minWidth: 105 }}>Payment</Table.Th>
-                  <Table.Th style={{ ...thBase, minWidth: 105 }}>Liability</Table.Th>
-                  <Table.Th style={{ ...thBase, minWidth: 105 }}>Asset</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-
-              <Table.Tbody>
-                {view === 'accountGroup' ? renderAccountGroup() : view === 'grouped' ? renderGrouped() : renderFlat()}
-              </Table.Tbody>
-
-              {/* Grand total footer */}
-              {s && (
-                <Table.Tfoot>
-                  <Table.Tr>
-                    {[
-                      `GRAND TOTAL — ${s.totalLedgers} Ledger${s.totalLedgers !== 1 ? 's' : ''}`,
-                      f2(s.totalOpeningCredit), f2(s.totalOpeningDebit),
-                      f2(s.totalReceipt ?? s.totalDebits), f2(s.totalPayment ?? s.totalCredits),
-                      f2(s.totalClosingCredit), f2(s.totalClosingDebit)
-                    ].map((v, i) => (
-                      <Table.Td
-                        key={i}
-                        style={{
-                          ...(i === 0 ? { ...tdBase, textAlign: 'right', paddingRight: 12 } : tdRight),
-                          fontWeight: 800, background: '#e9ecef',
-                          borderTop: '2px solid #495057', borderBottom: '3px double #495057'
-                        }}
-                      >
-                        {v}
-                      </Table.Td>
-                    ))}
-                  </Table.Tr>
-                </Table.Tfoot>
-              )}
-            </Table>
-          )}
-        </ScrollArea>
-
-        {/* Legend */}
-        {abstract.length > 0 && (
-          <Box p="sm" style={{ borderTop: LINE, background: '#f8f9fa' }}>
-            <Group gap="sm" wrap="wrap" mb={6}>
-              {[...groups]
-                .sort((a, b) => a.accountGroup.localeCompare(b.accountGroup, 'en', { sensitivity: 'base' }))
-                .map(g => (
-                  <Badge key={g.accountGroup} size="sm" color="gray" variant="light">
-                    {g.accountGroup}: {g.ledgers.length}
-                  </Badge>
+      {loading ? (
+        <Center py="xl"><Loader size="md" /></Center>
+      ) : !reportData ? (
+        <Center py="xl">
+          <Stack align="center" gap="xs">
+            <IconBook2 size={48} color="#bdbdbd" />
+            <Text c="dimmed" size="sm">Select From / To dates and click Generate</Text>
+          </Stack>
+        </Center>
+      ) : abstract.length === 0 ? (
+        <Center py="xl">
+          <Stack align="center" gap="xs">
+            <IconInbox size={48} color="#bdbdbd" />
+            <Text c="dimmed" size="sm">No ledger data found for this period</Text>
+          </Stack>
+        </Center>
+      ) : (
+        <Paper radius="sm" p="md" withBorder style={{ background: '#fff' }}>
+          <style>{`${GRID_CSS} .gla .gla-ob { cursor: pointer; } .gla .gla-ob:hover { text-decoration: underline; }`}</style>
+          <ScrollArea type="auto">
+            <div className="gla" style={{ minWidth: 820 }}>
+              <div dangerouslySetInnerHTML={{ __html: headingHtml(orgName, loadedRange) }} />
+              <table>
+                <colgroup>{COLS.map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
+                <thead>
+                  <tr>
+                    <th rowSpan={2}>Ledger</th>
+                    <th colSpan={2}>Opening Balance</th>
+                    <th colSpan={2}>During the Year</th>
+                    <th colSpan={2}>Closing Balance</th>
+                  </tr>
+                  <tr>
+                    <th>Dr.</th><th>Cr.</th><th>Receipt</th><th>Payment</th><th>Asset (Dr.)</th><th>Liability (Cr.)</th>
+                  </tr>
+                </thead>
+                {sections.map((sec, si) => (
+                  <tbody key={si}>
+                    {sec.title && <tr className="grp"><td colSpan={7}>{sec.title}</td></tr>}
+                    {sec.items.map((item, ii) => renderRow(item, `${si}-${ii}`))}
+                  </tbody>
                 ))}
-            </Group>
-            <Divider mb={6} />
-            <Group gap="xl" wrap="wrap">
-              <Text size="xs" c="dimmed">Liability = Credit (Cr) balance</Text>
-              <Text size="xs" c="dimmed">Asset = Debit (Dr) balance</Text>
-              <Text size="xs" c="dimmed">Click an Opening Balance to edit it — it is saved to the Ledger</Text>
-            </Group>
-          </Box>
-        )}
-      </Paper>
+              </table>
+            </div>
+          </ScrollArea>
+        </Paper>
+      )}
 
       {/* ── Opening Balance editor — reads and writes the Ledger master ── */}
       <Modal
@@ -734,7 +438,7 @@ const LedgerAbstract = () => {
             )}
             <Group justify="flex-end" mt="xs">
               <Button variant="default" onClick={() => setObEdit(null)} disabled={obSaving}>Cancel</Button>
-              <Button onClick={saveOpeningBalance} loading={obSaving} style={{ background: INDIGO2 }}>Save</Button>
+              <Button onClick={saveOpeningBalance} loading={obSaving}>Save</Button>
             </Group>
           </Stack>
         )}

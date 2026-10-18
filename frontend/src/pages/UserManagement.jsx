@@ -114,7 +114,6 @@ const MODULE_GROUPS = [
       { key: 'accounting.cashBook',  label: 'Cash Book'                },
       { key: 'accounting.dayBook',   label: 'Day Book'                 },
       { key: 'accounting.generalLedger', label: 'General Ledger'       },
-      { key: 'accounting.balanceSheet',  label: 'Balance Sheet'        },
       { key: 'accounting.finalAccounts', label: 'Final Accounts'       },
       { key: 'accounting.outstanding',   label: 'Outstanding Report'   },
     ]
@@ -129,7 +128,7 @@ const MODULE_GROUPS = [
       { key: 'reports.milkPurchase',    label: 'Milk Purchase Report'     },
       { key: 'reports.milkStatement',   label: 'Milk Statement'           },
       { key: 'reports.milkBillAbstract',label: 'Milk Bill Abstract'       },
-      { key: 'reports.rdStatement',     label: 'R&D Statement'            },
+      { key: 'reports.rdStatement',     label: 'Receipt and Disbursements' },
       { key: 'reports.inspectionReport',label: 'Inspection Report'        },
       { key: 'reports.cropStatements',  label: 'Crop Damage Statements'   },
       { key: 'reports.agriStats',       label: 'Monthly Agri Statistics'  },

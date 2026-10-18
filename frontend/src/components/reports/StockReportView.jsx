@@ -7,6 +7,7 @@ import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import dayjs from 'dayjs';
 import './StockReportView.css';
+import DateField from '../common/DateField';
 
 const StockReportView = () => {
   const [loading, setLoading] = useState(false);
@@ -282,8 +283,7 @@ const StockReportView = () => {
         <div className="date-filter-row">
           <div className="date-filter">
             <label>From Date:</label>
-            <input
-              type="date"
+            <DateField
               value={fromDate}
               onChange={(e) => setFromDate(e.target.value)}
               className="date-input"
@@ -291,8 +291,7 @@ const StockReportView = () => {
           </div>
           <div className="date-filter">
             <label>To Date:</label>
-            <input
-              type="date"
+            <DateField
               value={toDate}
               onChange={(e) => setToDate(e.target.value)}
               className="date-input"

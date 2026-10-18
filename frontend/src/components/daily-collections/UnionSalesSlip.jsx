@@ -436,7 +436,7 @@ export default function UnionSalesSlip() {
             <Box style={{ flexShrink: 0 }}>
               <Text size="9px" fw={700} c="#64748b" tt="uppercase" mb={3} style={{ letterSpacing: '0.4px' }}>Date</Text>
               <DatePickerInput
-                value={form.date} onChange={d => d && setField('date', d)} valueFormat="DD MMM YYYY"
+                value={form.date} onChange={d => d && setField('date', d)} valueFormat="DD/MM/YYYY"
                 size="xs" radius="md" style={{ width: 120 }}
                 styles={{ input: { fontWeight: 700, fontSize: 12, border: '1.5px solid #bfdbfe', height: 28 } }}
               />

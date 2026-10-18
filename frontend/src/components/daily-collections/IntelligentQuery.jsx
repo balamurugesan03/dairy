@@ -440,7 +440,7 @@ const IntelligentQuery = () => {
           size="sm"
           mb="sm"
           placeholder="Pick date"
-          valueFormat="DD MMM YYYY"
+          valueFormat="DD/MM/YYYY"
         />
 
         {/* Time Shift */}

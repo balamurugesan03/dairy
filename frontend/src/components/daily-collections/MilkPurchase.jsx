@@ -1964,7 +1964,7 @@ const MilkPurchase = () => {
               setDate(d);
               setMonthMode(false);
             }}
-            valueFormat="DD MMM YYYY"
+            valueFormat="DD/MM/YYYY"
             size="sm" radius="md" style={{ width: 130 }}
             styles={{ input: { fontWeight: 700, fontSize: 13, border: '1.5px solid #bfdbfe' } }}
           />
@@ -3264,7 +3264,7 @@ const MilkPurchase = () => {
             onChange={setExportFrom}
             size="sm"
             radius="sm"
-            valueFormat="DD MMM YYYY"
+            valueFormat="DD/MM/YYYY"
           />
           <DatePickerInput
             label="To Date"
@@ -3273,7 +3273,7 @@ const MilkPurchase = () => {
             onChange={setExportTo}
             size="sm"
             radius="sm"
-            valueFormat="DD MMM YYYY"
+            valueFormat="DD/MM/YYYY"
             minDate={exportFrom || undefined}
           />
           <Button

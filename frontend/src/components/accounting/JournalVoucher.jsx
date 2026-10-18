@@ -46,12 +46,19 @@ import {
   IconFileText,
   IconX
 } from '@tabler/icons-react';
+import DateField from '../common/DateField';
 
 // ─ Module-level styles (prevent remount on every parent re-render) ──────────
+// Full column height + flex column: the Receipt and Payment panels always
+// match heights, so both TOTAL bars sit on the same line whatever the row
+// count on either side.
 const sectionBorder = {
   border: '1px solid var(--mantine-color-gray-3)',
   borderRadius: '6px',
-  overflow: 'hidden'
+  overflow: 'hidden',
+  height: '100%',
+  display: 'flex',
+  flexDirection: 'column'
 };
 
 const panelHeaderStyle = (color) => ({
@@ -74,117 +81,137 @@ const compactInput  = { input: { fontSize: '13px', height: '32px', minHeight: '3
 const compactSelect = { input: { fontSize: '13px', height: '32px', minHeight: '32px' } };
 const compactNumber = { input: { fontSize: '13px', height: '32px', minHeight: '32px', textAlign: 'right', fontWeight: 600 } };
 
+// Every list row has this fixed height, and the shorter side is padded with
+// blank rows to the longer side's count — so both TOTAL bars always sit on
+// the same line, however many rows either side has.
+const LIST_ROW_H = 34;
+
+const EMPTY_ROW = { ledgerId: '', amount: '', narration: '' };
+
 // ─ EntryPanel OUTSIDE component — prevents unmount/remount on every keystroke ─
-const EntryPanel = ({ title, icon, color, entries, onAdd, onRemove, onUpdate, total, ledgerOptions }) => (
-  <Box style={sectionBorder}>
-    <Flex justify="space-between" align="center" style={panelHeaderStyle(color)}>
-      <Group gap={8}>
-        {icon}
-        <Text fw={700} size="sm" tt="uppercase" c={color === 'green' ? 'green.8' : 'orange.8'}>
-          {title}
-        </Text>
-      </Group>
-      <Button
-        size="compact-xs"
-        variant="light"
-        color={color === 'green' ? 'green' : 'orange'}
-        leftSection={<IconPlus size={13} />}
-        onClick={onAdd}
-        styles={{ root: { fontSize: '12px', height: '26px' } }}
-      >
-        Add Row
-      </Button>
-    </Flex>
+// One input line (Head of Account, Amount, Narration) + Add Row; each added
+// entry becomes its own list row: "Head (narration)" with its own amount.
+const EntryPanel = ({
+  title, icon, color, entries, draft, onDraftChange, onAdd, onRemove, onEditRow,
+  total, ledgerOptions, ledgerName, rowCount
+}) => {
+  const tone = color === 'green' ? 'green' : 'orange';
+  const blanks = Math.max(0, rowCount - entries.length);
+  const addOnEnter = (e) => { if (e.key === 'Enter') { e.preventDefault(); onAdd(); } };
+  return (
+    <Box style={sectionBorder}>
+      <Flex justify="space-between" align="center" style={panelHeaderStyle(color)}>
+        <Group gap={8}>
+          {icon}
+          <Text fw={700} size="sm" tt="uppercase" c={`${tone}.8`}>
+            {title}
+          </Text>
+        </Group>
+      </Flex>
 
-    <Box px={0}>
-      <Table withRowBorders={false} style={{ tableLayout: 'fixed' }}>
-        <Table.Thead>
-          <Table.Tr style={{ background: '#f8f9fa', borderBottom: '1px solid #dee2e6' }}>
-            <Table.Th style={{ width: '38%', padding: '6px 10px', fontSize: '11px', fontWeight: 700, color: '#495057', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Head of Account
-            </Table.Th>
-            <Table.Th style={{ width: '22%', padding: '6px 10px', fontSize: '11px', fontWeight: 700, color: '#495057', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right' }}>
-              Amount
-            </Table.Th>
-            <Table.Th style={{ width: '32%', padding: '6px 10px', fontSize: '11px', fontWeight: 700, color: '#495057', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Narration
-            </Table.Th>
-            <Table.Th style={{ width: '8%', padding: '6px 6px', textAlign: 'center' }}></Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-      </Table>
-    </Box>
+      {/* Entry line */}
+      <Flex gap={6} align="flex-end" px={10} py={8} style={{ background: '#f8f9fa', borderBottom: '1px solid #dee2e6' }}>
+        <Select
+          label="Head of Account"
+          placeholder="Select account"
+          data={ledgerOptions}
+          searchable
+          clearable
+          size="xs"
+          value={draft.ledgerId || null}
+          onChange={(val) => onDraftChange('ledgerId', val)}
+          styles={compactSelect}
+          nothingFoundMessage="No accounts found"
+          style={{ flex: '1 1 38%', minWidth: 0 }}
+        />
+        <NumberInput
+          label="Amount"
+          placeholder="0.00"
+          min={0}
+          decimalScale={2}
+          size="xs"
+          hideControls
+          value={draft.amount}
+          onChange={(val) => onDraftChange('amount', val)}
+          onKeyDown={addOnEnter}
+          styles={compactNumber}
+          leftSection={<IconCurrencyRupee size={13} color="#868e96" />}
+          leftSectionWidth={24}
+          style={{ flex: '0 0 22%', minWidth: 0 }}
+        />
+        <TextInput
+          label="Narration"
+          placeholder="Narration"
+          size="xs"
+          value={draft.narration}
+          onChange={(e) => onDraftChange('narration', e.target.value)}
+          onKeyDown={addOnEnter}
+          styles={compactInput}
+          style={{ flex: '1 1 28%', minWidth: 0 }}
+        />
+        <Button
+          size="xs"
+          variant="light"
+          color={tone}
+          leftSection={<IconPlus size={13} />}
+          onClick={onAdd}
+          styles={{ root: { height: '32px', paddingInline: 8 } }}
+        >
+          Add Row
+        </Button>
+      </Flex>
 
-    <ScrollArea style={{ maxHeight: '260px' }} offsetScrollbars>
-      <Box px={0}>
+      {/* flex: 1 takes up the spare height so the TOTAL bar stays at the bottom */}
+      <ScrollArea.Autosize mah={LIST_ROW_H * 8} offsetScrollbars style={{ flex: 1 }}>
         <Table withRowBorders={false} style={{ tableLayout: 'fixed' }}>
           <Table.Tbody>
-            {entries.map((entry, index) => (
-              <Table.Tr key={index} style={{ borderBottom: '1px solid #f1f3f5' }}>
-                <Table.Td style={{ width: '38%', padding: '4px 10px' }}>
-                  <Select
-                    placeholder="Select account"
-                    data={ledgerOptions}
-                    searchable
-                    clearable
-                    size="xs"
-                    value={entry.ledgerId}
-                    onChange={(val) => onUpdate(index, 'ledgerId', val)}
-                    styles={compactSelect}
-                    nothingFoundMessage="No accounts found"
-                  />
-                </Table.Td>
-                <Table.Td style={{ width: '22%', padding: '4px 6px' }}>
-                  <NumberInput
-                    placeholder="0.00"
-                    min={0}
-                    decimalScale={2}
-                    size="xs"
-                    hideControls
-                    value={entry.amount}
-                    onChange={(val) => onUpdate(index, 'amount', val)}
-                    styles={compactNumber}
-                    leftSection={<IconCurrencyRupee size={13} color="#868e96" />}
-                    leftSectionWidth={24}
-                  />
-                </Table.Td>
-                <Table.Td style={{ width: '32%', padding: '4px 6px' }}>
-                  <TextInput
-                    placeholder="Narration"
-                    size="xs"
-                    value={entry.narration}
-                    onChange={(e) => onUpdate(index, 'narration', e.target.value)}
-                    styles={compactInput}
-                  />
-                </Table.Td>
-                <Table.Td style={{ width: '8%', padding: '4px 4px', textAlign: 'center' }}>
-                  <ActionIcon
-                    size="sm"
-                    variant="subtle"
-                    color="red"
-                    onClick={() => onRemove(index)}
-                    disabled={entries.length <= 1}
+            {entries.map((entry, index) => {
+              const name = ledgerName(entry.ledgerId);
+              const narration = (entry.narration || '').trim();
+              return (
+                <Table.Tr key={index} style={{ height: LIST_ROW_H, borderBottom: '1px solid #f1f3f5' }}>
+                  <Table.Td
+                    title={narration ? `${name} (${narration})` : name}
+                    style={{ padding: '0 10px', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                   >
-                    <IconTrash size={14} />
-                  </ActionIcon>
-                </Table.Td>
+                    {narration ? `${name} (${narration})` : name}
+                  </Table.Td>
+                  <Table.Td style={{ width: '28%', padding: '0 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, fontSize: '13px' }}>
+                    {'₹'} {(parseFloat(entry.amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Table.Td>
+                  <Table.Td style={{ width: '64px', padding: '0 4px', textAlign: 'center' }}>
+                    <Group gap={2} justify="center" wrap="nowrap">
+                      <ActionIcon size="sm" variant="subtle" color="blue" onClick={() => onEditRow(index)}>
+                        <IconEdit size={14} />
+                      </ActionIcon>
+                      <ActionIcon size="sm" variant="subtle" color="red" onClick={() => onRemove(index)}>
+                        <IconTrash size={14} />
+                      </ActionIcon>
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              );
+            })}
+            {Array.from({ length: blanks }, (_, i) => (
+              <Table.Tr key={`blank-${i}`} style={{ height: LIST_ROW_H }}>
+                <Table.Td colSpan={3} />
               </Table.Tr>
             ))}
           </Table.Tbody>
         </Table>
-      </Box>
-    </ScrollArea>
+      </ScrollArea.Autosize>
 
-    <Flex justify="space-between" align="center" style={totalBarStyle(color)}>
-      <Text fw={700} size="sm" c={color === 'green' ? 'green.9' : 'orange.9'}>
-        TOTAL
-      </Text>
-      <Text fw={800} size="md" c={color === 'green' ? 'green.9' : 'orange.9'} ff="monospace">
-        {'\u20B9'} {total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-      </Text>
-    </Flex>
-  </Box>
-);
+      <Flex justify="space-between" align="center" style={totalBarStyle(color)}>
+        <Text fw={700} size="sm" c={`${tone}.9`}>
+          TOTAL
+        </Text>
+        <Text fw={800} size="md" c={`${tone}.9`} ff="monospace">
+          {'₹'} {total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </Text>
+      </Flex>
+    </Box>
+  );
+};
 
 const JournalVoucher = () => {
   const [loading, setLoading] = useState(false);
@@ -198,15 +225,14 @@ const JournalVoucher = () => {
   const [selectedVoucher, setSelectedVoucher] = useState(null);
   const [editingVoucherId, setEditingVoucherId] = useState(null);
 
-  // Receipt (Dr / Debit) entries — income / asset side
-  const [receiptEntries, setReceiptEntries] = useState([
-    { ledgerId: '', amount: '', narration: '' }
-  ]);
+  // Receipt (Dr / Debit) entries — income / asset side. The *Draft is the
+  // panel's entry line; Add Row moves it into the list.
+  const [receiptEntries, setReceiptEntries] = useState([]);
+  const [receiptDraft, setReceiptDraft] = useState(EMPTY_ROW);
 
   // Payment (Cr / Credit) entries — expense / liability side
-  const [paymentEntries, setPaymentEntries] = useState([
-    { ledgerId: '', amount: '', narration: '' }
-  ]);
+  const [paymentEntries, setPaymentEntries] = useState([]);
+  const [paymentDraft, setPaymentDraft] = useState(EMPTY_ROW);
 
   useEffect(() => {
     fetchLedgers();
@@ -289,39 +315,27 @@ const JournalVoucher = () => {
     return Object.entries(groups).map(([group, items]) => ({ group, items }));
   }, [ledgers]);
 
-  // Receipt (Debit) handlers
-  const addReceiptRow = () => {
-    setReceiptEntries([...receiptEntries, { ledgerId: '', amount: '', narration: '' }]);
-  };
+  const ledgerName = (id) => ledgers.find(l => l._id === id)?.ledgerName || '-';
 
-  const removeReceiptRow = (index) => {
-    if (receiptEntries.length > 1) {
-      setReceiptEntries(receiptEntries.filter((_, i) => i !== index));
+  // Per-side list handlers: Add Row moves the entry line into the list,
+  // Edit moves a list row back into the entry line.
+  const sideHandlers = (entries, setEntries, draft, setDraft) => ({
+    onDraftChange: (field, value) => setDraft(d => ({ ...d, [field]: value })),
+    onAdd: () => {
+      if (!draft.ledgerId) { message.error('Select a Head of Account'); return; }
+      if (!(parseFloat(draft.amount) > 0)) { message.error('Enter an amount'); return; }
+      setEntries([...entries, { ...draft, narration: (draft.narration || '').trim() }]);
+      setDraft(EMPTY_ROW);
+    },
+    onRemove: (index) => setEntries(entries.filter((_, i) => i !== index)),
+    onEditRow: (index) => {
+      setDraft(entries[index]);
+      setEntries(entries.filter((_, i) => i !== index));
     }
-  };
-
-  const updateReceiptEntry = (index, field, value) => {
-    const updated = [...receiptEntries];
-    updated[index] = { ...updated[index], [field]: value };
-    setReceiptEntries(updated);
-  };
-
-  // Payment (Credit) handlers
-  const addPaymentRow = () => {
-    setPaymentEntries([...paymentEntries, { ledgerId: '', amount: '', narration: '' }]);
-  };
-
-  const removePaymentRow = (index) => {
-    if (paymentEntries.length > 1) {
-      setPaymentEntries(paymentEntries.filter((_, i) => i !== index));
-    }
-  };
-
-  const updatePaymentEntry = (index, field, value) => {
-    const updated = [...paymentEntries];
-    updated[index] = { ...updated[index], [field]: value };
-    setPaymentEntries(updated);
-  };
+  });
+  const receiptHandlers = sideHandlers(receiptEntries, setReceiptEntries, receiptDraft, setReceiptDraft);
+  const paymentHandlers = sideHandlers(paymentEntries, setPaymentEntries, paymentDraft, setPaymentDraft);
+  const listRowCount = Math.max(receiptEntries.length, paymentEntries.length, 1);
 
   // Calculate totals
   const receiptTotal = receiptEntries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
@@ -337,8 +351,10 @@ const JournalVoucher = () => {
   // Clear just the entry rows — used after a successful save so the grid's
   // date filter (shared with the entry form) isn't yanked back to today.
   const resetEntries = () => {
-    setReceiptEntries([{ ledgerId: '', amount: '', narration: '' }]);
-    setPaymentEntries([{ ledgerId: '', amount: '', narration: '' }]);
+    setReceiptEntries([]);
+    setPaymentEntries([]);
+    setReceiptDraft(EMPTY_ROW);
+    setPaymentDraft(EMPTY_ROW);
     setIsMilkBill(false);
   };
 
@@ -361,8 +377,10 @@ const JournalVoucher = () => {
     });
     const debits = (voucher.entries || []).filter(e => e.debitAmount > 0).map(toRow);
     const credits = (voucher.entries || []).filter(e => e.creditAmount > 0).map(toRow);
-    setReceiptEntries(debits.length ? debits : [{ ledgerId: '', amount: '', narration: '' }]);
-    setPaymentEntries(credits.length ? credits : [{ ledgerId: '', amount: '', narration: '' }]);
+    setReceiptEntries(debits);
+    setPaymentEntries(credits);
+    setReceiptDraft(EMPTY_ROW);
+    setPaymentDraft(EMPTY_ROW);
     setIsMilkBill(!!voucher.isMilkBill);
     setVoucherDate(dayjs(voucher.voucherDate).format('YYYY-MM-DD'));
     setEditingVoucherId(voucher._id);
@@ -479,14 +497,25 @@ const JournalVoucher = () => {
     ...cashVouchers.map(voucher => ({ voucher, kind: voucher.voucherType === 'Receipt' ? 'receipt' : 'payment' }))
   ], [vouchers, cashVouchers]);
 
-  // All ledgers on one side of a voucher (a Receipt can credit several heads).
-  const voucherSide = (voucher, side) => {
-    const legs = (voucher.entries || []).filter(e => (side === 'debit' ? e.debitAmount : e.creditAmount) > 0);
-    return {
-      names: [...new Set(legs.map(e => e.ledgerName))].join(', ') || '-',
-      amount: legs.reduce((s, e) => s + (side === 'debit' ? e.debitAmount : e.creditAmount), 0)
-    };
+  // Each ledger on one side of a voucher as its own line — "Head (narration)"
+  // with that head's own amount, never a comma-joined list. Cash vouchers
+  // keep their narration on the voucher, so their head-of-account side
+  // (Receipt → credits, Payment → debits) falls back to it.
+  const voucherLegs = (voucher, side, kind) => {
+    const fallback = (kind === 'receipt' && side === 'credit') || (kind === 'payment' && side === 'debit')
+      ? (voucher.narration || '') : '';
+    return (voucher.entries || [])
+      .filter(e => (side === 'debit' ? e.debitAmount : e.creditAmount) > 0)
+      .map(e => {
+        const narration = (e.narration || fallback).trim();
+        return {
+          label: narration ? `${e.ledgerName} (${narration})` : e.ledgerName,
+          amount: side === 'debit' ? e.debitAmount : e.creditAmount
+        };
+      });
   };
+
+  const fmtAmt = (n) => `₹ ${(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
   const cashTotals = useMemo(() => cashVouchers.reduce((acc, v) => {
     if (v.voucherType === 'Receipt') acc.receipts += v.totalDebit || 0;
@@ -510,8 +539,7 @@ const JournalVoucher = () => {
         <Flex justify="space-between" align="center" wrap="wrap" gap="sm">
           {/* Left: Date Picker — also drives which date's entries the grid below shows */}
           <Group gap="sm">
-            <TextInput
-              type="date"
+            <DateField
               label="Transaction Date"
               value={voucherDate}
               onChange={(e) => setVoucherDate(e.target.value)}
@@ -571,11 +599,12 @@ const JournalVoucher = () => {
             icon={<IconReceipt size={16} color="#e65100" />}
             color="orange"
             entries={receiptEntries}
-            onAdd={addReceiptRow}
-            onRemove={removeReceiptRow}
-            onUpdate={updateReceiptEntry}
+            draft={receiptDraft}
+            {...receiptHandlers}
             total={receiptTotal}
             ledgerOptions={ledgerOptions}
+            ledgerName={ledgerName}
+            rowCount={listRowCount}
           />
         </Grid.Col>
 
@@ -586,11 +615,12 @@ const JournalVoucher = () => {
             icon={<IconCreditCard size={16} color="#2e7d32" />}
             color="green"
             entries={paymentEntries}
-            onAdd={addPaymentRow}
-            onRemove={removePaymentRow}
-            onUpdate={updatePaymentEntry}
+            draft={paymentDraft}
+            {...paymentHandlers}
             total={paymentTotal}
             ledgerOptions={ledgerOptions}
+            ledgerName={ledgerName}
+            rowCount={listRowCount}
           />
         </Grid.Col>
       </Grid>
@@ -711,7 +741,7 @@ const JournalVoucher = () => {
           </Box>
         ) : (
           <ScrollArea style={{ maxHeight: '360px' }}>
-            <Table striped highlightOnHover withColumnBorders style={{ fontSize: '13px' }}>
+            <Table highlightOnHover withColumnBorders style={{ fontSize: '13px' }}>
               <Table.Thead style={{ position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 1 }}>
                 <Table.Tr>
                   <Table.Th style={{ width: '40px', padding: '8px 10px', fontSize: '11px', fontWeight: 700, textAlign: 'center' }}>
@@ -735,9 +765,6 @@ const JournalVoucher = () => {
                   <Table.Th style={{ width: '120px', padding: '8px 10px', fontSize: '11px', fontWeight: 700, textAlign: 'right' }}>
                     Credit Amt
                   </Table.Th>
-                  <Table.Th style={{ padding: '8px 10px', fontSize: '11px', fontWeight: 700 }}>
-                    Narration
-                  </Table.Th>
                   <Table.Th style={{ width: '80px', padding: '8px 10px', fontSize: '11px', fontWeight: 700, textAlign: 'center' }}>
                     Source
                   </Table.Th>
@@ -748,8 +775,9 @@ const JournalVoucher = () => {
               </Table.Thead>
               <Table.Tbody>
                 {gridRows.map(({ voucher, kind }, index) => {
-                  const dr = voucherSide(voucher, 'debit');
-                  const cr = voucherSide(voucher, 'credit');
+                  const drLegs = voucherLegs(voucher, 'debit', kind);
+                  const crLegs = voucherLegs(voucher, 'credit', kind);
+                  const lineCount = Math.max(drLegs.length, crLegs.length, 1);
                   const isAdj = kind === 'adjustment';
                   const isManual = voucher.referenceType === 'Manual';
                   const typeBadge = isAdj
@@ -757,87 +785,98 @@ const JournalVoucher = () => {
                     : kind === 'receipt'
                       ? { label: 'Cash Receipt', color: 'teal' }
                       : { label: 'Cash Payment', color: 'red' };
+                  // One table row per account line; the voucher-level cells
+                  // span all of them. Banded per voucher (not per line).
+                  const rowBg = index % 2 === 0 ? '#ffffff' : '#f8f9fa';
+                  const lineBorder = { borderTop: '1px solid #f1f3f5' };
 
-                  return (
-                    <Table.Tr key={voucher._id}>
-                      <Table.Td style={{ textAlign: 'center', padding: '6px 10px', color: '#868e96', fontSize: '12px' }}>
-                        {index + 1}
-                      </Table.Td>
-                      <Table.Td style={{ padding: '6px 10px' }}>
-                        <Group gap={4} wrap="nowrap">
-                          <Badge size="xs" variant="light" color={typeBadge.color}>{typeBadge.label}</Badge>
-                          {voucher.isMilkBill && (
-                            <Tooltip label="Milk Bill — shown in Milk Bill Abstract" withArrow>
-                              <IconMilk size={14} color="var(--mantine-color-cyan-6)" />
-                            </Tooltip>
+                  return Array.from({ length: lineCount }, (_, li) => {
+                    const dr = drLegs[li];
+                    const cr = crLegs[li];
+                    return (
+                      <Table.Tr key={`${voucher._id}-${li}`} style={{ background: rowBg, ...(li > 0 ? lineBorder : {}) }}>
+                        {li === 0 && (
+                          <>
+                            <Table.Td rowSpan={lineCount} style={{ textAlign: 'center', padding: '6px 10px', color: '#868e96', fontSize: '12px' }}>
+                              {index + 1}
+                            </Table.Td>
+                            <Table.Td rowSpan={lineCount} style={{ padding: '6px 10px' }}>
+                              <Group gap={4} wrap="nowrap">
+                                <Badge size="xs" variant="light" color={typeBadge.color}>{typeBadge.label}</Badge>
+                                {voucher.isMilkBill && (
+                                  <Tooltip label="Milk Bill — shown in Milk Bill Abstract" withArrow>
+                                    <IconMilk size={14} color="var(--mantine-color-cyan-6)" />
+                                  </Tooltip>
+                                )}
+                              </Group>
+                            </Table.Td>
+                            <Table.Td rowSpan={lineCount} style={{ padding: '6px 10px' }}>
+                              <Badge variant="outline" color={typeBadge.color} size="xs" radius="sm">
+                                {voucher.voucherNumber || '-'}
+                              </Badge>
+                            </Table.Td>
+                          </>
+                        )}
+                        <Table.Td style={{ padding: '5px 10px', fontSize: '12px' }}>
+                          {dr ? dr.label : (li === 0 ? '-' : '')}
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right', padding: '5px 10px' }}>
+                          {dr && (
+                            <Text size="xs" fw={600} c="red.7" ff="monospace">{fmtAmt(dr.amount)}</Text>
                           )}
-                        </Group>
-                      </Table.Td>
-                      <Table.Td style={{ padding: '6px 10px' }}>
-                        <Badge variant="outline" color={typeBadge.color} size="xs" radius="sm">
-                          {voucher.voucherNumber || '-'}
-                        </Badge>
-                      </Table.Td>
-                      <Table.Td style={{ padding: '6px 10px', fontSize: '12px' }}>
-                        {dr.names}
-                      </Table.Td>
-                      <Table.Td style={{ textAlign: 'right', padding: '6px 10px' }}>
-                        <Text size="xs" fw={600} c="red.7" ff="monospace">
-                          {'₹'} {dr.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td style={{ padding: '6px 10px', fontSize: '12px' }}>
-                        {cr.names}
-                      </Table.Td>
-                      <Table.Td style={{ textAlign: 'right', padding: '6px 10px' }}>
-                        <Text size="xs" fw={600} c="green.7" ff="monospace">
-                          {'₹'} {cr.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td style={{ padding: '6px 10px' }}>
-                        <Text size="xs" lineClamp={1} c="dimmed">
-                          {voucher.narration || '-'}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td style={{ textAlign: 'center', padding: '6px 10px' }}>
-                        <Badge size="xs" variant="light" color={isManual ? 'grape' : 'gray'}>
-                          {isManual ? 'Manual' : (voucher.referenceType || 'Auto')}
-                        </Badge>
-                      </Table.Td>
-                      <Table.Td style={{ textAlign: 'center', padding: '6px 6px' }}>
-                        <Group gap={4} justify="center">
-                          <Tooltip label="View" withArrow>
-                            <ActionIcon size="sm" variant="subtle" color="blue" onClick={() => handleView(voucher)}>
-                              <IconEye size={14} />
-                            </ActionIcon>
-                          </Tooltip>
-                          {isAdj && isManual ? (
-                            <>
-                              <Tooltip label="Edit" withArrow>
-                                <ActionIcon size="sm" variant="subtle" color="orange" onClick={() => startEdit(voucher)}>
-                                  <IconEdit size={14} />
-                                </ActionIcon>
-                              </Tooltip>
-                              <Tooltip label="Delete" withArrow>
-                                <ActionIcon size="sm" variant="subtle" color="red" onClick={() => handleDelete(voucher._id)}>
-                                  <IconTrash size={14} />
-                                </ActionIcon>
-                              </Tooltip>
-                            </>
-                          ) : (
-                            <Tooltip
-                              label={isAdj
-                                ? 'Auto-generated — edit/delete from its originating module'
-                                : `Edit/delete from the ${kind === 'receipt' ? 'Receipt' : 'Payment'} Voucher screen`}
-                              withArrow
-                            >
-                              <Text size="9px" c="dimmed" fs="italic">View only</Text>
-                            </Tooltip>
+                        </Table.Td>
+                        <Table.Td style={{ padding: '5px 10px', fontSize: '12px' }}>
+                          {cr ? cr.label : (li === 0 ? '-' : '')}
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right', padding: '5px 10px' }}>
+                          {cr && (
+                            <Text size="xs" fw={600} c="green.7" ff="monospace">{fmtAmt(cr.amount)}</Text>
                           )}
-                        </Group>
-                      </Table.Td>
-                    </Table.Tr>
-                  );
+                        </Table.Td>
+                        {li === 0 && (
+                          <>
+                            <Table.Td rowSpan={lineCount} style={{ textAlign: 'center', padding: '6px 10px' }}>
+                              <Badge size="xs" variant="light" color={isManual ? 'grape' : 'gray'}>
+                                {isManual ? 'Manual' : (voucher.referenceType || 'Auto')}
+                              </Badge>
+                            </Table.Td>
+                            <Table.Td rowSpan={lineCount} style={{ textAlign: 'center', padding: '6px 6px' }}>
+                              <Group gap={4} justify="center">
+                                <Tooltip label="View" withArrow>
+                                  <ActionIcon size="sm" variant="subtle" color="blue" onClick={() => handleView(voucher)}>
+                                    <IconEye size={14} />
+                                  </ActionIcon>
+                                </Tooltip>
+                                {isAdj && isManual ? (
+                                  <>
+                                    <Tooltip label="Edit" withArrow>
+                                      <ActionIcon size="sm" variant="subtle" color="orange" onClick={() => startEdit(voucher)}>
+                                        <IconEdit size={14} />
+                                      </ActionIcon>
+                                    </Tooltip>
+                                    <Tooltip label="Delete" withArrow>
+                                      <ActionIcon size="sm" variant="subtle" color="red" onClick={() => handleDelete(voucher._id)}>
+                                        <IconTrash size={14} />
+                                      </ActionIcon>
+                                    </Tooltip>
+                                  </>
+                                ) : (
+                                  <Tooltip
+                                    label={isAdj
+                                      ? 'Auto-generated — edit/delete from its originating module'
+                                      : `Edit/delete from the ${kind === 'receipt' ? 'Receipt' : 'Payment'} Voucher screen`}
+                                    withArrow
+                                  >
+                                    <Text size="9px" c="dimmed" fs="italic">View only</Text>
+                                  </Tooltip>
+                                )}
+                              </Group>
+                            </Table.Td>
+                          </>
+                        )}
+                      </Table.Tr>
+                    );
+                  });
                 })}
               </Table.Tbody>
               {/* Table Footer — Adjustment and Cash totals kept apart */}
@@ -857,7 +896,7 @@ const JournalVoucher = () => {
                       {'₹'} {vouchers.reduce((sum, v) => sum + (v.totalCredit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Text>
                   </Table.Td>
-                  <Table.Td colSpan={3} style={{ textAlign: 'center', padding: '8px 10px' }}>
+                  <Table.Td colSpan={2} style={{ textAlign: 'center', padding: '8px 10px' }}>
                     <Text size="xs" c="dimmed">{vouchers.length} voucher(s)</Text>
                   </Table.Td>
                 </Table.Tr>
@@ -876,7 +915,7 @@ const JournalVoucher = () => {
                       {'₹'} {cashTotals.payments.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Text>
                   </Table.Td>
-                  <Table.Td colSpan={3} style={{ textAlign: 'center', padding: '8px 10px' }}>
+                  <Table.Td colSpan={2} style={{ textAlign: 'center', padding: '8px 10px' }}>
                     <Text size="xs" c="dimmed">{cashVouchers.length} voucher(s)</Text>
                   </Table.Td>
                 </Table.Tr>
@@ -933,7 +972,9 @@ const JournalVoucher = () => {
               <Table.Tbody>
                 {selectedVoucher.entries?.map((entry, idx) => (
                   <Table.Tr key={idx}>
-                    <Table.Td style={{ fontSize: '12px' }}>{entry.ledgerName}</Table.Td>
+                    <Table.Td style={{ fontSize: '12px' }}>
+                      {entry.narration?.trim() ? `${entry.ledgerName} (${entry.narration.trim()})` : entry.ledgerName}
+                    </Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
                       {entry.debitAmount > 0 ? (
                         <Text c="red.7" fw={600} size="xs" ff="monospace">

@@ -4,6 +4,7 @@ import { reportAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 import { localDateStr } from '../../utils/dateUtils';
 import './MISReport.css';
+import DateField from '../common/DateField';
 
 // ── Formatters ──────────────────────────────────────────────────────────────
 const n2 = (v) => Number(v || 0).toFixed(2);
@@ -160,11 +161,11 @@ export default function MISReport() {
         <div className="mis-filter-grid">
           <div className="mis-field">
             <label>From Date</label>
-            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} />
+            <DateField value={fromDate} onChange={e => setFromDate(e.target.value)} />
           </div>
           <div className="mis-field">
             <label>To Date</label>
-            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} />
+            <DateField value={toDate} onChange={e => setToDate(e.target.value)} />
           </div>
           <div className="mis-field">
             <label>Milk Code</label>
@@ -172,7 +173,7 @@ export default function MISReport() {
           </div>
           <div className="mis-field">
             <label>Report Date</label>
-            <input type="date" value={reportDate} onChange={e => setReportDate(e.target.value)} />
+            <DateField value={reportDate} onChange={e => setReportDate(e.target.value)} />
           </div>
         </div>
         <div className="mis-filter-footer">

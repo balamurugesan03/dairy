@@ -17,6 +17,7 @@ import {
 } from '@tabler/icons-react';
 import { useAuth } from '../context/AuthContext';
 import { companyAPI, adminMilmaChartAPI } from '../services/api';
+import DateField from '../components/common/DateField';
 
 // ─── Stat Card ───────────────────────────────────────────────────────────────
 const StatCard = ({ icon: Icon, label, value, color }) => (
@@ -616,11 +617,11 @@ export default function SuperAdminDashboard() {
                 <TextInput label="SSI Registration" placeholder="SSI Reg. No" {...form.getInputProps('ssiRegistration')} />
               </SimpleGrid>
               <SimpleGrid cols={2} spacing="sm">
-                <TextInput label="Date of Registration" type="date" {...form.getInputProps('dateOfRegistration')} />
-                <TextInput label="Start Date" type="date" {...form.getInputProps('startDate')} />
+                <DateField label="Date of Registration" {...form.getInputProps('dateOfRegistration')} />
+                <DateField label="Start Date" {...form.getInputProps('startDate')} />
               </SimpleGrid>
               <SimpleGrid cols={2} spacing="sm">
-                <TextInput label="SSI Registration Date" type="date" {...form.getInputProps('ssiRegistrationDate')} />
+                <DateField label="SSI Registration Date" {...form.getInputProps('ssiRegistrationDate')} />
                 <TextInput label="Year of Audit" placeholder="e.g. 2023-24" {...form.getInputProps('yearOfAudit')} />
               </SimpleGrid>
               <TextInput label="Audit Classification" placeholder="Audit classification" {...form.getInputProps('auditClassification')} />

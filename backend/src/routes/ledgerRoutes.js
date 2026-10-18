@@ -6,6 +6,7 @@ import {
   updateLedger,
   deleteLedger,
   getOutstandingReport,
+  getPartyOutstanding,
   seedDefaultLedgers
 } from '../controllers/ledgerController.js';
 import { protect, addCompanyFilter } from '../middleware/auth.js';
@@ -16,6 +17,7 @@ router.use(protect, addCompanyFilter);
 // Ledger routes
 router.post('/ledgers/seed-defaults', seedDefaultLedgers);
 router.get('/ledgers/outstanding-report', getOutstandingReport);
+router.get('/ledgers/outstanding-parties', getPartyOutstanding);
 router.get('/ledgers', getAllLedgers);
 router.post('/ledgers', createLedger);
 router.get('/ledgers/:id', getLedgerById);

@@ -1,148 +1,171 @@
 import dayjs from 'dayjs';
-import { openA4Print, a4Header, escapeHtml } from '../../../utils/printA4';
+import { openA4Print, escapeHtml } from '../../../utils/printA4';
 
-// Dedicated A4 print for the Receipt & Disbursement statement (Single / Two /
-// Three Column). Expects the unified R&D shape returned by
-// /reports/rd-statement-unified:
+// Receipt and Disbursements statement (Single / Two / Three Column) — one
+// HTML builder shared by the on-screen view and the A4 print, so the two
+// always match. Layout follows the society's statutory format: serif type,
+// black on white, solid outer border with dotted inner lines.
+//
+// Expects the unified shape returned by /reports/rd-statement-unified:
 //   { openingBalance, closingBalance, openingBalanceFY, closingBalanceFY,
 //     monthStart, sections: [{ sectionName, ledgers: [...], groupTotal }], grandTotal }
 // where each ledger / groupTotal / grandTotal carries receiptCash, receiptAdj,
 // receiptTotal, paymentCash, paymentAdj, paymentTotal and uptoR, duringR,
 // eomR, uptoP, duringP, eomP.
 
-const f  = (n) => { const v = parseFloat(n || 0); return v === 0 ? '' : v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
-const fz = (n) => parseFloat(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const td = (v, cls = 'amt') => `<td class="${cls}">${v}</td>`;
+// Plain 2-decimal amounts, no thousand separators; blank when zero.
+const f  = (n) => { const v = parseFloat(n || 0); return v === 0 ? '' : v.toFixed(2); };
+const fz = (n) => parseFloat(n || 0).toFixed(2);
+const td = (v) => `<td class="amt">${v}</td>`;
+
+// Scoped under .rd-doc so it can be injected on screen without leaking.
+export const RD_CSS = `
+  .rd-doc { font-family: 'Times New Roman', Times, serif; color: #000; background: #fff; font-size: var(--rd-fs, 13px); }
+  .rd-doc .rd-head { text-align: center; margin-bottom: 8px; line-height: 1.35; }
+  .rd-doc .rd-head__org { font-size: 1.25em; text-transform: uppercase; }
+  .rd-doc .rd-head__title { margin-top: 2px; font-weight: 700; text-decoration: underline; text-transform: uppercase; }
+  .rd-doc table.rd { width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid #000; }
+  .rd-doc table.rd th, .rd-doc table.rd td { border: 1px dotted #000; padding: 2px 5px; vertical-align: top;
+    overflow-wrap: anywhere; word-break: break-word; }
+  .rd-doc table.rd th { font-weight: 700; text-align: center; vertical-align: middle; }
+  .rd-doc table.rd thead { display: table-header-group; }
+  .rd-doc table.rd tr { page-break-inside: avoid; break-inside: avoid; }
+  .rd-doc .amt { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .rd-doc .rd-grp td { font-weight: 700; }
+  .rd-doc .rd-led td:first-child { padding-left: 24px; text-transform: uppercase; }
+  .rd-doc table.rd-two .rd-led td:first-child { padding-left: 5px; }
+  .rd-doc table.rd th.sub { font-weight: 400; text-align: right; }
+  .rd-doc .rd-gt td { font-weight: 700; }
+  .rd-doc .rd-gt td:first-child { text-align: center; }
+  .rd-doc table.rd-three .rd-gt td:first-child { text-align: right; }
+  .rd-doc .rd-tot td { font-weight: 700; border-top: 1.5px solid #000; }
+  .rd-doc .rd-tot td:first-child, .rd-doc .rd-grand td:first-child { text-align: right; }
+  .rd-doc .rd-cash td { font-weight: 700; font-style: italic; }
+  .rd-doc .rd-cash td:first-child { text-align: center; }
+  .rd-doc .rd-grand td { font-weight: 700; border-top: 3px double #000; border-bottom: 3px double #000; }
+`;
+
+const CASH_LABEL = 'Cash Balance (Opening Balance) (Closing Balance)';
+
+// Group header + ledger rows + group total, shared by every format.
+const sectionRows = (data, showGroups, totalLabel, colCount, cells) => {
+  let rows = '';
+  data.sections.forEach(sec => {
+    if (showGroups) rows += `<tr class="rd-grp"><td colspan="${colCount}">${escapeHtml(sec.sectionName)}</td></tr>`;
+    sec.ledgers.forEach(l => { rows += `<tr class="rd-led"><td>${escapeHtml(l.ledgerName)}</td>${cells(l, f)}</tr>`; });
+    if (showGroups) rows += `<tr class="rd-gt"><td>${totalLabel}</td>${cells(sec.groupTotal, f)}</tr>`;
+  });
+  return rows;
+};
 
 const singleHtml = (data, showGroups, totalLabel) => {
   const ob = data.openingBalance || 0;
-  const cb = Math.max(0, data.closingBalance || 0);
-  const rT = data.grandTotal?.receiptTotal || 0;
-  const pT = data.grandTotal?.paymentTotal || 0;
-  const grand = Math.max(ob + rT, pT + cb);
-  let rows = `<tr class="row-bal"><td>Opening Balance (Cash in Hand)</td>${td(fz(ob))}${td('')}</tr>`;
-  data.sections.forEach(sec => {
-    if (showGroups) rows += `<tr class="row-sec"><td colspan="3">${escapeHtml(sec.sectionName)}</td></tr>`;
-    sec.ledgers.forEach(l => {
-      rows += `<tr><td class="indent">${escapeHtml(l.ledgerName)}</td>${td(f(l.receiptTotal))}${td(f(l.paymentTotal))}</tr>`;
-    });
-    if (showGroups) rows += `<tr class="row-sub"><td class="indent">${totalLabel}</td>${td(fz(sec.groupTotal.receiptTotal))}${td(fz(sec.groupTotal.paymentTotal))}</tr>`;
-  });
-  rows += `<tr class="row-sub"><td>SUB-TOTAL (Transactions)</td>${td(fz(rT))}${td(fz(pT))}</tr>`;
-  rows += `<tr class="row-bal"><td>Closing Balance (Cash in Hand)</td>${td('')}${td(fz(cb))}</tr>`;
-  rows += `<tr class="row-grand"><td>GRAND TOTAL</td>${td(fz(grand))}${td(fz(grand))}</tr>`;
+  const cb = data.closingBalance || 0;
+  const gt = data.grandTotal || {};
+  let rows = sectionRows(data, showGroups, totalLabel, 3, (o, fmt) => td(fmt(o.receiptTotal)) + td(fmt(o.paymentTotal)));
+  rows += `<tr class="rd-tot"><td>Total</td>${td(fz(gt.receiptTotal))}${td(fz(gt.paymentTotal))}</tr>`;
+  rows += `<tr class="rd-cash"><td>${CASH_LABEL}</td>${td(fz(ob))}${td(fz(cb))}</tr>`;
+  rows += `<tr class="rd-grand"><td>Grand Total</td>${td(fz((gt.receiptTotal || 0) + ob))}${td(fz((gt.paymentTotal || 0) + cb))}</tr>`;
   return `
-    <table class="a4">
-      <colgroup><col style="width:52%"><col style="width:24%"><col style="width:24%"></colgroup>
-      <thead><tr><th>Ledger</th><th>Receipt (Dr)</th><th>Payment (Cr)</th></tr></thead>
+    <table class="rd">
+      <colgroup><col style="width:65%"><col style="width:17.5%"><col style="width:17.5%"></colgroup>
+      <thead><tr><th>Ledger</th><th>Receipt</th><th>Payment</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
 };
 
-const twoSideHtml = (side, data, showGroups, totalLabel) => {
-  const isR = side === 'receipt';
+// Two Column — one table: Receipt (Adjustment | Cash | Total) and
+// Payment (Adjustment | Cash | Total) side by side on every ledger row.
+const twoHtml = (data, showGroups, totalLabel) => {
   const ob = data.openingBalance || 0;
-  const cb = Math.max(0, data.closingBalance || 0);
+  const cb = data.closingBalance || 0;
   const gt = data.grandTotal || {};
-  const k = (l, part) => l[(isR ? 'receipt' : 'payment') + part];
-  let rows = isR ? `<tr class="row-bal"><td>Opening Balance</td>${td('')}${td(fz(ob))}${td(fz(ob))}</tr>` : '';
-  data.sections.forEach(sec => {
-    const items = sec.ledgers.filter(l => k(l, 'Total') > 0);
-    if (!items.length) return;
-    if (showGroups) rows += `<tr class="row-sec"><td colspan="4">${escapeHtml(sec.sectionName)}</td></tr>`;
-    items.forEach(l => {
-      rows += `<tr><td class="indent">${escapeHtml(l.ledgerName)}</td>${td(f(k(l, 'Adj')))}${td(f(k(l, 'Cash')))}${td(f(k(l, 'Total')))}</tr>`;
-    });
-    if (showGroups) {
-      const t = sec.groupTotal;
-      rows += `<tr class="row-sub"><td class="indent">${totalLabel}</td>${td(fz(k(t, 'Adj')))}${td(fz(k(t, 'Cash')))}${td(fz(k(t, 'Total')))}</tr>`;
-    }
-  });
-  rows += `<tr class="row-sub"><td>${isR ? 'SUB-TOTAL (Receipts)' : 'SUB-TOTAL (Payments)'}</td>${td(fz(k(gt, 'Adj')))}${td(fz(k(gt, 'Cash')))}${td(fz(k(gt, 'Total')))}</tr>`;
-  if (!isR) rows += `<tr class="row-bal"><td>Closing Balance</td>${td('')}${td(fz(cb))}${td(fz(cb))}</tr>`;
-  const grand = Math.max(ob + (gt.receiptTotal || 0), (gt.paymentTotal || 0) + cb);
-  rows += `<tr class="row-grand"><td>GRAND TOTAL</td>${td('')}${td('')}${td(fz(grand))}</tr>`;
+  const six = (o, fmt) => ['receiptAdj', 'receiptCash', 'receiptTotal', 'paymentAdj', 'paymentCash', 'paymentTotal']
+    .map(k => td(fmt(o[k]))).join('');
+  let rows = sectionRows(data, showGroups, totalLabel, 7, six);
+  rows += `<tr class="rd-tot"><td>Total</td>${six(gt, fz)}</tr>`;
+  rows += `<tr class="rd-cash"><td>${CASH_LABEL}</td>${td('')}${td(fz(ob))}${td(fz(ob))}${td('')}${td(fz(cb))}${td(fz(cb))}</tr>`;
+  rows += `<tr class="rd-grand"><td>Grand Total</td>`
+    + `${td('')}${td(fz((gt.receiptCash || 0) + ob))}${td(fz((gt.receiptTotal || 0) + ob))}`
+    + `${td('')}${td(fz((gt.paymentCash || 0) + cb))}${td(fz((gt.paymentTotal || 0) + cb))}</tr>`;
+  const sub = '<th class="sub">Adjustment</th><th class="sub">Cash</th><th class="sub">Total</th>';
   return `
-    <div class="rd-half">
-      <div class="rd-side-title">${isR ? 'Receipt (Dr)' : 'Payment / Disbursement (Cr)'}</div>
-      <table class="a4">
-        <colgroup><col style="width:43%"><col style="width:19%"><col style="width:19%"><col style="width:19%"></colgroup>
-        <thead><tr><th>Ledger</th><th>Adjustment</th><th>Cash</th><th>Total</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>`;
+    <table class="rd rd-two">
+      <colgroup><col style="width:40%">${'<col style="width:10%">'.repeat(6)}</colgroup>
+      <thead>
+        <tr><th rowspan="2">Ledger</th><th colspan="3">Receipt</th><th colspan="3">Payment</th></tr>
+        <tr>${sub}${sub}</tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
 };
 
+// Three Column — Upto Month | During the Month | End of the Month (FY-anchored).
+// Cash row: Receipt side carries the opening balances (FY start, month start,
+// FY start); Payment side the closings (before the month, month end, month
+// end). Each Grand Total column = its Total + its Cash Balance, so Receipt
+// and Payment agree column by column.
 const threeHtml = (data, showGroups, totalLabel) => {
-  const monthLabel = data.monthStart ? dayjs(data.monthStart).format('MMM YYYY') : '';
-  const ob = data.openingBalanceFY ?? data.openingBalance ?? 0;
-  const cb = Math.max(0, (data.closingBalanceFY ?? data.closingBalance) || 0);
+  const obFY    = data.openingBalanceFY ?? data.openingBalance ?? 0;
+  const obMonth = data.openingBalanceMonth ?? obFY;
+  const cb      = data.closingBalanceFY ?? data.closingBalance ?? 0;
   const gt = data.grandTotal || {};
-  const grandUpto   = Math.max((gt.uptoR || 0) + ob, gt.uptoP || 0);
-  const grandDuring = Math.max(gt.duringR || 0, gt.duringP || 0);
-  const grandEom    = Math.max((gt.eomR || 0) + ob, (gt.eomP || 0) + cb);
-  const six = (o, fmt) => ['uptoR', 'duringR', 'eomR', 'uptoP', 'duringP', 'eomP']
-    .map((key, i) => td(fmt(o[key]), i === 3 ? 'amt split' : 'amt')).join('');
-  let rows = '';
-  data.sections.forEach(sec => {
-    if (showGroups) rows += `<tr class="row-sec"><td colspan="7">${escapeHtml(sec.sectionName)}</td></tr>`;
-    sec.ledgers.forEach(l => { rows += `<tr><td class="indent">${escapeHtml(l.ledgerName)}</td>${six(l, f)}</tr>`; });
-    if (showGroups) rows += `<tr class="row-sub"><td class="indent">${totalLabel}</td>${six(sec.groupTotal, fz)}</tr>`;
-  });
-  rows += `<tr class="row-bal"><td>Opening Balance (Cash)</td>${td(fz(ob))}${td('')}${td(fz(ob))}${td('', 'split')}${td('')}${td('')}</tr>`;
-  rows += `<tr class="row-sub"><td>SUB-TOTAL</td>${six(gt, fz)}</tr>`;
-  rows += `<tr class="row-bal"><td>Closing Balance (Cash)</td>${td('')}${td('')}${td('')}${td(fz(cb), 'amt split')}${td(fz(cb))}${td(fz(cb))}</tr>`;
-  rows += `<tr class="row-grand"><td>GRAND TOTAL</td>${td(fz(grandUpto))}${td(fz(grandDuring))}${td(fz(grandEom))}`
-    + `${td(fz(grandUpto), 'amt split')}${td(fz(grandDuring))}${td(fz(grandEom))}</tr>`;
+  const keys = ['uptoR', 'duringR', 'eomR', 'uptoP', 'duringP', 'eomP'];
+  const cash = [obFY, obMonth, obFY, obMonth, cb, cb];
+  const six = (o, fmt) => keys.map(k => td(fmt(o[k]))).join('');
+  const label = totalLabel === 'Account Group Total' ? 'Group Total' : totalLabel;
+  let rows = sectionRows(data, showGroups, label, 7, six);
+  rows += `<tr class="rd-tot"><td>Total</td>${six(gt, fz)}</tr>`;
+  rows += `<tr class="rd-cash"><td>${CASH_LABEL}</td>${cash.map(v => td(fz(v))).join('')}</tr>`;
+  rows += `<tr class="rd-grand"><td>Grand Total</td>${keys.map((k, i) => td(fz((gt[k] || 0) + cash[i]))).join('')}</tr>`;
+  const sub = '<th>Upto Month</th><th>During the Month</th><th>End of the Month</th>';
   return `
-    <table class="a4">
-      <colgroup><col style="width:28%">${'<col style="width:12%">'.repeat(6)}</colgroup>
+    <table class="rd rd-three">
+      <colgroup><col style="width:32%">${'<col style="width:11.33%">'.repeat(6)}</colgroup>
       <thead>
-        <tr><th rowspan="2">Ledger</th><th colspan="3">Receipt</th><th colspan="3" class="split">Payment</th></tr>
-        <tr>
-          <th>Upto Month<br/><i>Before ${monthLabel}</i></th><th>During the Month<br/><i>${monthLabel}</i></th><th>End of the Month<br/><i>Cumulative</i></th>
-          <th class="split">Upto Month<br/><i>Before ${monthLabel}</i></th><th>During the Month<br/><i>${monthLabel}</i></th><th>End of the Month<br/><i>Cumulative</i></th>
-        </tr>
+        <tr><th rowspan="2">Ledger</th><th colspan="3">Receipt</th><th colspan="3">Payment</th></tr>
+        <tr>${sub}${sub}</tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>`;
 };
 
 /**
+ * Full statement document (header + table) as an HTML string.
  * @param {object} opts
  * @param {object} opts.data          unified R&D data (see top of file)
  * @param {'single'|'two'|'three'} opts.columnFormat
- * @param {boolean} opts.showGroups   print section header / total rows
- * @param {string}  opts.totalLabel   label of each section's total row
+ * @param {boolean} opts.showGroups   print group header / total rows
+ * @param {string}  opts.totalLabel   label of each group's total row
  * @param {string}  opts.companyName
+ * @param {string}  [opts.societyCode]
  * @param {Date[]}  opts.dateRange    [from, to]
- * @param {string}  [opts.viewLabel]  e.g. "Account Group Wise"
  */
-export const printRDStatement = ({ data, columnFormat, showGroups = true, totalLabel = 'Account Group Total', companyName, dateRange, viewLabel = '' }) => {
+export const rdDocHtml = ({ data, columnFormat, showGroups = true, totalLabel = 'Account Group Total', companyName, societyCode = '', dateRange }) => {
   const monthDate = columnFormat === 'three' ? (data.monthStart || dateRange[1]) : dateRange[0];
-  const formatLabel = columnFormat === 'three' ? 'Three Column' : columnFormat === 'two' ? 'Two Column' : 'Single Column';
-  const body = columnFormat === 'two'
-    ? `<div class="rd-two">${twoSideHtml('receipt', data, showGroups, totalLabel)}${twoSideHtml('payment', data, showGroups, totalLabel)}</div>`
+  const month = monthDate ? dayjs(monthDate).format('MMMM-YYYY').toUpperCase() : '';
+  const table = columnFormat === 'two'
+    ? twoHtml(data, showGroups, totalLabel)
     : columnFormat === 'three'
       ? threeHtml(data, showGroups, totalLabel)
       : singleHtml(data, showGroups, totalLabel);
+  return `
+    <div class="rd-head">
+      <div class="rd-head__org">${escapeHtml(companyName)}</div>
+      ${societyCode ? `<div>${escapeHtml(societyCode)}</div>` : ''}
+      <div class="rd-head__title">Receipt and Disbursement for the month ${month}</div>
+      <div>End of The Month</div>
+    </div>
+    ${table}`;
+};
 
+/** A4 print — portrait for Single / Two Column, landscape for Three Column. */
+export const printRDStatement = (opts) => {
+  const { columnFormat, companyName } = opts;
   openA4Print({
-    title: `R&D Statement – ${companyName}`,
-    orientation: columnFormat === 'single' ? 'portrait' : 'landscape',
-    css: `
-      .rd-two { display: flex; gap: 6px; align-items: flex-start; }
-      .rd-half { flex: 1 1 0; min-width: 0; }
-      .rd-side-title { text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase;
-        letter-spacing: 1px; padding: 2px 0; border: 0.75px solid #444; border-bottom: none; background: #d9d9d9; }
-      table.a4 th i { font-weight: 400; text-transform: none; font-size: 7.5px; }
-      .rd-foot { margin-top: 10px; font-size: 8.5px; color: #333; text-align: right; }
-    `,
-    bodyHtml: a4Header({
-      orgName: companyName,
-      title: `Receipt and Disbursement for the month ${monthDate ? dayjs(monthDate).format('MMMM-YYYY').toUpperCase() : ''}`,
-      period: `${dayjs(dateRange[0]).format('DD/MM/YYYY')} to ${dayjs(dateRange[1]).format('DD/MM/YYYY')}`,
-      extra: `${formatLabel}${viewLabel ? ` · ${escapeHtml(viewLabel)}` : ''} &nbsp;|&nbsp; Printed: ${dayjs().format('DD/MM/YYYY')}`
-    }) + body + '<div class="rd-foot">Computer generated statement — No signature required.</div>'
+    title: `Receipt and Disbursements – ${companyName}`,
+    orientation: columnFormat === 'three' ? 'landscape' : 'portrait',
+    css: RD_CSS,
+    bodyHtml: `<div class="rd-doc" style="--rd-fs:${columnFormat === 'single' ? '10pt' : '9pt'}">${rdDocHtml(opts)}</div>`
   });
 };

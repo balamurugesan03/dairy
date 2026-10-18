@@ -230,7 +230,7 @@ export default function CreateLoan() {
             <Box>
               <Text size="9px" fw={700} c="#64748b" tt="uppercase" mb={3}>Date</Text>
               <DatePickerInput
-                value={form.loanDate} onChange={set('loanDate')} valueFormat="DD MMM YYYY"
+                value={form.loanDate} onChange={set('loanDate')} valueFormat="DD/MM/YYYY"
                 size="xs" radius="md" style={{ width: 130 }}
                 styles={{ input: { fontWeight: 700, fontSize: 12, border: '1.5px solid #bfdbfe', height: 28 } }}
               />

@@ -1,5 +1,9 @@
 import Ledger from '../models/Ledger.js';
 import Voucher from '../models/Voucher.js';
+import Supplier from '../models/Supplier.js';
+import Customer from '../models/Customer.js';
+import MilkSales from '../models/MilkSales.js';
+import mongoose from 'mongoose';
 import { seedDairyLedgersForCompany } from '../scripts/seedDairyLedgers.js';
 
 // Get all ledgers
@@ -254,6 +258,113 @@ export const getOutstandingReport = async (req, res) => {
   }
 };
 
+// ── Party outstanding for the Outstanding Report ───────────────────────────
+// GET /ledgers/outstanding-parties?fromDate=&toDate=
+//  suppliers (To Pay)    — Dairy Inventory → Supplier. Balance of the
+//    supplier's own ledger (linkedEntity Supplier): opening (Cr) + credit
+//    purchases − payments.
+//  customers (To Receive) — Farmers Management → Customers. Same rule as the
+//    Milk Sales "Opening Credit" (getCreditorBalance): opening balance +
+//    CREDIT milk sales − Receipt vouchers on the customer's ledger.
+// Each row: { code, name, opening, debit, credit, balance } where debit =
+// added to the outstanding in the period, credit = settled in the period.
+export const getPartyOutstanding = async (req, res) => {
+  try {
+    const { fromDate, toDate } = req.query;
+    const companyId = req.companyId;
+    const r2 = (v) => Math.round((v || 0) * 100) / 100;
+    const start = fromDate ? new Date(fromDate) : new Date('2000-01-01');
+    start.setHours(0, 0, 0, 0);
+    const end = toDate ? new Date(toDate) : new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const [suppliers, customers] = await Promise.all([
+      Supplier.find({ companyId }).select('supplierId name openingBalance dueToLedgerId').lean(),
+      Customer.find({ companyId }).select('customerId name openingBalance ledgerId').lean()
+    ]);
+
+    // ── Suppliers ──
+    const supplierLedgers = await Ledger.find({
+      companyId,
+      $or: [
+        { 'linkedEntity.entityType': 'Supplier', 'linkedEntity.entityId': { $in: suppliers.map(s => s._id) } },
+        { _id: { $in: suppliers.map(s => s.dueToLedgerId).filter(Boolean) } }
+      ]
+    }).select('openingBalance openingBalanceType linkedEntity').lean();
+    const ledgerOfSupplier = {};
+    supplierLedgers.forEach(l => { if (l.linkedEntity?.entityId) ledgerOfSupplier[String(l.linkedEntity.entityId)] = l; });
+    suppliers.forEach(s => {
+      if (!ledgerOfSupplier[String(s._id)] && s.dueToLedgerId) {
+        const l = supplierLedgers.find(x => String(x._id) === String(s.dueToLedgerId));
+        if (l) ledgerOfSupplier[String(s._id)] = l;
+      }
+    });
+
+    const supLedgerIds = Object.values(ledgerOfSupplier).map(l => l._id);
+    const supVouchers = supLedgerIds.length ? await Voucher.find({
+      companyId, status: { $ne: 'Cancelled' }, voucherDate: { $lte: end }, 'entries.ledgerId': { $in: supLedgerIds }
+    }).select('voucherDate entries').lean() : [];
+    const supMv = {}; // ledgerId → { prior, debit, credit } in Cr sense
+    supVouchers.forEach(v => {
+      const before = v.voucherDate < start;
+      v.entries.forEach(e => {
+        const k = String(e.ledgerId);
+        if (!supLedgerIds.some(id => String(id) === k)) return;
+        const m = (supMv[k] ||= { prior: 0, debit: 0, credit: 0 });
+        if (before) m.prior += (e.creditAmount || 0) - (e.debitAmount || 0);
+        else { m.debit += e.creditAmount || 0; m.credit += e.debitAmount || 0; }
+      });
+    });
+
+    const supplierRows = suppliers.map(s => {
+      const l = ledgerOfSupplier[String(s._id)];
+      const base = l ? (l.openingBalanceType === 'Dr' ? -1 : 1) * (l.openingBalance || 0) : (s.openingBalance || 0);
+      const m = (l && supMv[String(l._id)]) || { prior: 0, debit: 0, credit: 0 };
+      const opening = r2(base + m.prior);
+      return { id: s._id, code: s.supplierId || '', name: s.name, opening, debit: r2(m.debit), credit: r2(m.credit), balance: r2(opening + m.debit - m.credit) };
+    }).filter(r => r.opening || r.debit || r.credit || r.balance);
+
+    // ── Customers ──
+    const salesAgg = await MilkSales.aggregate([
+      { $match: { companyId: new mongoose.Types.ObjectId(String(companyId)), saleMode: 'CREDIT', creditorId: { $ne: null }, date: { $lte: end } } },
+      { $group: {
+        _id: '$creditorId',
+        prior:  { $sum: { $cond: [{ $lt: ['$date', start] }, '$amount', 0] } },
+        period: { $sum: { $cond: [{ $gte: ['$date', start] }, '$amount', 0] } }
+      } }
+    ]);
+    const salesOf = Object.fromEntries(salesAgg.map(a => [String(a._id), a]));
+
+    const custLedgerIds = customers.map(c => c.ledgerId).filter(Boolean);
+    const rcptVouchers = custLedgerIds.length ? await Voucher.find({
+      companyId, voucherType: 'Receipt', status: { $ne: 'Cancelled' }, voucherDate: { $lte: end }, 'entries.ledgerId': { $in: custLedgerIds }
+    }).select('voucherDate entries').lean() : [];
+    const rcptOf = {}; // ledgerId → { prior, period }
+    rcptVouchers.forEach(v => {
+      const before = v.voucherDate < start;
+      v.entries.forEach(e => {
+        const k = String(e.ledgerId);
+        if (!custLedgerIds.some(id => String(id) === k) || !e.creditAmount) return;
+        const m = (rcptOf[k] ||= { prior: 0, period: 0 });
+        if (before) m.prior += e.creditAmount; else m.period += e.creditAmount;
+      });
+    });
+
+    const customerRows = customers.map(c => {
+      const s = salesOf[String(c._id)] || { prior: 0, period: 0 };
+      const rc = (c.ledgerId && rcptOf[String(c.ledgerId)]) || { prior: 0, period: 0 };
+      const opening = r2((c.openingBalance || 0) + s.prior - rc.prior);
+      return { id: c._id, code: c.customerId || '', name: c.name, opening, debit: r2(s.period), credit: r2(rc.period), balance: r2(opening + s.period - rc.period) };
+    }).filter(r => r.opening || r.debit || r.credit || r.balance);
+
+    const byName = (a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
+    res.json({ success: true, data: { suppliers: supplierRows.sort(byName), customers: customerRows.sort(byName) } });
+  } catch (error) {
+    console.error('Error in party outstanding:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export const seedDefaultLedgers = async (req, res) => {
   try {
     const result = await seedDairyLedgersForCompany(req.companyId);
@@ -274,5 +385,6 @@ export default {
   updateLedger,
   deleteLedger,
   getOutstandingReport,
+  getPartyOutstanding,
   seedDefaultLedgers
 };

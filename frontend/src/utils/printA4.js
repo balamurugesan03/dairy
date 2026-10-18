@@ -126,9 +126,15 @@ export const printHtmlDocument = (html) => {
   doc.write(html);
   doc.close();
   setTimeout(() => {
-    frame.contentWindow.focus();
-    frame.contentWindow.print();
-    setTimeout(() => frame.remove(), 1000);
+    const go = () => {
+      frame.contentWindow.focus();
+      frame.contentWindow.print();
+      setTimeout(() => frame.remove(), 1000);
+    };
+    // Wait for any web fonts the document imports (e.g. Malayalam) before printing.
+    const fonts = doc.fonts;
+    if (fonts && fonts.ready) fonts.ready.then(go, go);
+    else go();
   }, 250);
 };
 

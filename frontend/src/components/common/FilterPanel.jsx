@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import './FilterPanel.css';
 import { message } from '../../utils/toast';
+import DateField from './DateField';
 
 const FilterPanel = ({
   filters,
@@ -128,8 +129,7 @@ const FilterPanel = ({
 
       case 'date':
         return (
-          <input
-            type="date"
+          <DateField
             className="filter-input"
             value={value}
             onChange={(e) => onFilterChange({ ...filters, [config.key]: e.target.value })}
@@ -139,16 +139,14 @@ const FilterPanel = ({
       case 'daterange':
         return (
           <div className="filter-daterange">
-            <input
-              type="date"
+            <DateField
               className="filter-input"
               value={filters[config.fromKey] || ''}
               onChange={(e) => onFilterChange({ ...filters, [config.fromKey]: e.target.value })}
               placeholder="From"
             />
             <span className="daterange-separator">to</span>
-            <input
-              type="date"
+            <DateField
               className="filter-input"
               value={filters[config.toKey] || ''}
               onChange={(e) => onFilterChange({ ...filters, [config.toKey]: e.target.value })}

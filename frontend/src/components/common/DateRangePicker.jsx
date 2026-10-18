@@ -5,7 +5,7 @@ import dayjs from 'dayjs';
 const DateRangePickerComponent = ({
   value,
   onChange,
-  format = 'YYYY-MM-DD',
+  format = 'DD/MM/YYYY',
   placeholder = ['Start Date', 'End Date'],
   ...rest
 }) => {

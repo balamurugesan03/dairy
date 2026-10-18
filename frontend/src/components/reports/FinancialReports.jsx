@@ -5,6 +5,7 @@ import { reportAPI } from '../../services/api';
 import PageHeader from '../common/PageHeader';
 import ExportButton from '../common/ExportButton';
 import './FinancialReports.css';
+import DateField from '../common/DateField';
 
 const FinancialReports = () => {
   const [loading, setLoading] = useState(false);
@@ -389,15 +390,13 @@ const FinancialReports = () => {
         <div className="toolbar">
           {activeTab !== 'balanceSheet' && (
             <div className="date-range">
-              <input
-                type="date"
+              <DateField
                 value={dateRange[0].format('YYYY-MM-DD')}
                 onChange={(e) => handleDateChange(e, true)}
                 className="date-input"
               />
               <span className="date-separator">to</span>
-              <input
-                type="date"
+              <DateField
                 value={dateRange[1].format('YYYY-MM-DD')}
                 onChange={(e) => handleDateChange(e, false)}
                 className="date-input"

@@ -14,6 +14,7 @@ import Subsidy from '../models/Subsidy.js';
 import { getDateRange } from '../utils/dateFilters.js';
 import { getStockReport as getStockReportHelper } from '../utils/stockHelper.js';
 import { isDebitNatureLedger, getParentGroupFromLedgerType } from '../utils/balanceCalculator.js';
+import { getAccountGroup } from '../utils/accountGroups.js';
 
 // Helper function to get financial year string (e.g., "2024-25")
 const getFinancialYear = (date) => {
@@ -1057,35 +1058,10 @@ export const getStockRegister = async (req, res) => {
 };
 
 // ── Milk Bill Abstract Report ──────────────────────────────────────────
-// Deduction-column mapping (key → deduction type names from FarmerPayment)
-const DEDUCTION_COLS = [
-  { key: 'floodRelief',    types: ['Flood Relief Fund', 'Flood Relief', 'Welfare Recovery'] },
-  { key: 'licPremium',     types: ['LIC GI Premium', 'LIC', 'Insurance'] },
-  { key: 'milkValueAdv',   types: ['Milk Value Addl. Price Advance', 'Milk Value Advance', 'CF Advance', 'Loan Advance', 'Cash Advance'] },
-  { key: 'milmaFeeds',     types: ['Milma Feeds', 'Cattle Feed', 'Feed'] },
-  { key: 'mineralMixture', types: ['Mineral Mixture'] },
-  { key: 'mdi',            types: ['MDI', 'Medicine'] },
-  { key: 'roundingDiff',   types: ['Rounding Difference', 'Rounding Difference Payment'] },
-  { key: 'shareInMilma',   types: ['Share in Milma', 'Share', 'Society Fee'] },
-  { key: 'silageFactory',  types: ['Silage Factory', 'Silage'] },
-  { key: 'unionBank',      types: ['Union Bank A/c', 'Union Bank', 'Loan EMI', 'Transport'] },
-  // Milk-bill Adjustment Entry recoveries whose ledger matches none of the
-  // columns above (never matched against FarmerPayment deduction types).
-  { key: 'otherAdj',       types: [] },
-];
-
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const emptyDed = () => Object.fromEntries(DEDUCTION_COLS.map(c => [c.key, 0]));
-
-// The producers' milk-bill ledger itself (Producers Dues / Milk Purchase) —
-// the leg of a Milk Bill adjustment that the recovery is taken out of.
-const MILK_BILL_LEDGER_RE = /producers?\s*(dues?|payable|account)|milk\s*(purchase|procurement|procure|collection|bill|payable)/i;
-const deductionKeyForLedger = (ledgerName) => {
-  const name = (ledgerName || '').toLowerCase();
-  const col = DEDUCTION_COLS.find(c => c.types.some(t => name.includes(t.toLowerCase())));
-  return col ? col.key : 'otherAdj';
-};
-
+// Built only from Adjustment (Journal) Entries saved with "Milk Bill"
+// ticked. Receipt = the entry's Dr legs, Payment = its Cr legs (the same
+// sides as the Adjustment Entry screen). Each section is a date-wise grid:
+// one row per date, one column per Head of Account, row and column totals.
 export const getMilkBillAbstractReport = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
@@ -1098,89 +1074,7 @@ export const getMilkBillAbstractReport = async (req, res) => {
 
     const companyFilter = req.userCompany ? { companyId: req.userCompany } : {};
 
-    // ── 1. Primary source: MilkCollection (actual daily milk purchases from farmers)
-    const collections = await MilkCollection.find({
-      ...companyFilter,
-      date: { $gte: start, $lte: end }
-    }).sort({ date: 1, farmerNumber: 1 });
-
-    // ── 2. Secondary source: FarmerPayment deductions for same period (if any)
-    const payments = await FarmerPayment.find({
-      ...companyFilter,
-      paymentDate: { $gte: start, $lte: end },
-      status: { $ne: 'Cancelled' }
-    }).populate('farmerId', 'farmerNumber');
-
-    // Build a deduction map: farmerNumber + monthKey → deduction breakdown
-    const dedByFarmerMonth = {};
-    payments.forEach(p => {
-      const farmerNum = p.farmerId?.farmerNumber || '';
-      if (!farmerNum) return;
-      const pd = new Date(p.paymentDate);
-      const mk = `${pd.getFullYear()}-${String(pd.getMonth() + 1).padStart(2, '0')}`;
-      const mapKey = `${farmerNum}__${mk}`;
-      if (!dedByFarmerMonth[mapKey]) dedByFarmerMonth[mapKey] = emptyDed();
-      (p.deductions || []).forEach(ded => {
-        const col = DEDUCTION_COLS.find(c =>
-          c.types.some(t => t.toLowerCase() === (ded.type || '').toLowerCase())
-        );
-        if (col) dedByFarmerMonth[mapKey][col.key] += ded.amount || 0;
-      });
-    });
-
-    // ── 3. Group collections by month
-    const monthMap = {};
-    const getMonth = (date) => {
-      const d = new Date(date);
-      const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      if (!monthMap[mk]) {
-        monthMap[mk] = {
-          monthKey: mk, monthLabel: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`,
-          rows: [], adjustmentRows: [], totals: emptyDed(),
-          totalQty: 0, totalAmount: 0, totalPayment: 0
-        };
-      }
-      return { mk, month: monthMap[mk] };
-    };
-
-    collections.forEach(c => {
-      const { mk } = getMonth(c.date);
-
-      const dedMapKey = `${c.farmerNumber}__${mk}`;
-      const dedMap = dedByFarmerMonth[dedMapKey] || emptyDed();
-      const totalDed = DEDUCTION_COLS.reduce((s, col) => s + (dedMap[col.key] || 0), 0);
-      const netPayable = (c.amount || 0) - totalDed;
-
-      const row = {
-        date: c.date,
-        shift: c.shift,
-        farmerNumber: c.farmerNumber || '-',
-        farmerName: c.farmerName || '-',
-        qty: c.qty || 0,
-        fat: c.fat || 0,
-        snf: c.snf || 0,
-        rate: c.rate || 0,
-        incentive: c.incentive || 0,
-        amount: c.amount || 0,   // milk value (qty × rate + incentive)
-        deductions: dedMap,
-        totalDeduction: totalDed,
-        netPayable
-      };
-
-      monthMap[mk].rows.push(row);
-      monthMap[mk].totalQty    += row.qty;
-      monthMap[mk].totalAmount += row.amount;
-      monthMap[mk].totalPayment += row.netPayable;
-      DEDUCTION_COLS.forEach(col => { monthMap[mk].totals[col.key] += dedMap[col.key] || 0; });
-    });
-
-    // ── 4. Adjustment (Journal) Entries saved with "Milk Bill" ticked.
-    //    Usual shape: Dr Producers Dues / Cr <recovery ledger> — each credited
-    //    ledger is a recovery from the milk bill, placed in its matching
-    //    deduction column (or "Other Adj." when none matches). The reverse
-    //    shape (Cr Producers Dues / Dr <ledger>) is an addition to the bill
-    //    and is shown in the Milk Amount column instead.
-    const milkBillVouchers = await Voucher.find({
+    const vouchers = await Voucher.find({
       ...companyFilter,
       voucherType: 'Journal',
       isMilkBill: true,
@@ -1188,56 +1082,44 @@ export const getMilkBillAbstractReport = async (req, res) => {
       voucherDate: { $gte: start, $lte: end }
     }).sort({ voucherDate: 1, voucherNumber: 1 }).lean();
 
-    milkBillVouchers.forEach(v => {
-      const entries = v.entries || [];
-      const isBillLeg = (e) => MILK_BILL_LEDGER_RE.test(e.ledgerName || '');
-      const billDebited  = entries.some(e => e.debitAmount > 0 && isBillLeg(e));
-      const billCredited = entries.some(e => e.creditAmount > 0 && isBillLeg(e));
-      const isAddition = billCredited && !billDebited;
-
-      const deductions = emptyDed();
-      let addition = 0;
-      let heads;
-      if (isAddition) {
-        const legs = entries.filter(e => e.debitAmount > 0);
-        legs.forEach(e => { addition += e.debitAmount; });
-        heads = legs.map(e => e.ledgerName);
-      } else {
-        const legs = entries.filter(e => e.creditAmount > 0 && !isBillLeg(e));
-        legs.forEach(e => { deductions[deductionKeyForLedger(e.ledgerName)] += e.creditAmount; });
-        heads = legs.map(e => e.ledgerName);
-      }
-      const totalDed = DEDUCTION_COLS.reduce((s, col) => s + deductions[col.key], 0);
-      if (addition === 0 && totalDed === 0) return;
-
-      const { month } = getMonth(v.voucherDate);
-      month.adjustmentRows.push({
-        date: v.voucherDate,
-        voucherNumber: v.voucherNumber,
-        particulars: [...new Set(heads)].join(', '),
-        narration: v.narration || '',
-        amount: addition,
-        deductions,
-        totalDeduction: totalDed,
-        netPayable: addition - totalDed
-      });
-      month.totalAmount  += addition;
-      month.totalPayment += addition - totalDed;
-      DEDUCTION_COLS.forEach(col => { month.totals[col.key] += deductions[col.key]; });
-    });
-
-    const months = Object.values(monthMap).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
-
-    const grandTotals = {
-      qty:     months.reduce((s, m) => s + m.totalQty, 0),
-      amount:  months.reduce((s, m) => s + m.totalAmount, 0),
-      payment: months.reduce((s, m) => s + m.totalPayment, 0),
-      deductions: Object.fromEntries(
-        DEDUCTION_COLS.map(c => [c.key, months.reduce((s, m) => s + m.totals[c.key], 0)])
-      )
+    const dateKey = (d) => {
+      const x = new Date(d);
+      return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
     };
 
-    res.status(200).json({ success: true, data: { months, grandTotals, startDate: start, endDate: end } });
+    const buildSection = (side) => {
+      const amountOf = (e) => (side === 'debit' ? e.debitAmount : e.creditAmount) || 0;
+      const heads = new Map();   // headKey → { key, name }
+      const rows = new Map();    // date → { date, amounts, total }
+      vouchers.forEach(v => {
+        (v.entries || []).forEach(e => {
+          const amt = amountOf(e);
+          if (amt <= 0) return;
+          const key = String(e.ledgerId || e.ledgerName);
+          if (!heads.has(key)) heads.set(key, { key, name: e.ledgerName || '-' });
+          const dk = dateKey(v.voucherDate);
+          if (!rows.has(dk)) rows.set(dk, { date: dk, amounts: {}, total: 0 });
+          const row = rows.get(dk);
+          row.amounts[key] = (row.amounts[key] || 0) + amt;
+          row.total += amt;
+        });
+      });
+      const headList = [...heads.values()].sort((a, b) => a.name.localeCompare(b.name));
+      const rowList = [...rows.values()].sort((a, b) => a.date.localeCompare(b.date));
+      const totals = Object.fromEntries(headList.map(h => [h.key, rowList.reduce((s, r) => s + (r.amounts[h.key] || 0), 0)]));
+      return { heads: headList, rows: rowList, totals, grandTotal: rowList.reduce((s, r) => s + r.total, 0) };
+    };
+
+    res.status(200).json({
+      success: true,
+      data: {
+        receipt: buildSection('debit'),
+        payment: buildSection('credit'),
+        voucherCount: vouchers.length,
+        startDate: start,
+        endDate: end
+      }
+    });
   } catch (error) {
     console.error('Error generating milk bill abstract:', error);
     res.status(500).json({ success: false, message: error.message });
@@ -2395,66 +2277,83 @@ const ledgerBalance = (ledger, priorMap, periodMap) => {
   return { signed, isDebit };
 };
 
-// ─── TRADING ACCOUNT V2 — driven by ac_ledgers types ─────────────────────────
+// ─── FINAL ACCOUNTS V2 (Dynamic) — driven by the Account Group master ───────
+// Every active ledger is classified purely by its account group's FA Type
+// (BS / PL / TR → which statement) and Def Voucher Type (B / P / R → which
+// side), looked up in utils/accountGroups.js. Payment = debit side, Receipt =
+// credit side (Balance Sheet: Assets / Liabilities):
+//   P → Payment side, amount = net Dr balance
+//   R → Receipt side, amount = net Cr balance
+//   B → the side the net balance falls on (Dr → Payment, Cr → Receipt)
+// TR / PL ledgers use opening balance + period activity; BS ledgers use the
+// closing balance (opening + everything up to the end date).
+const classifyFinalAccountLedgers = async (companyId, start, end) => {
+  const ledgers = await Ledger.find({ companyId, status: 'Active' }).lean();
+  const { priorMap, periodMap } = await buildVoucherMaps(companyId, start, end, ledgers.map(l => l._id));
+
+  const sides = { TR: {}, PL: {}, BS: {} };
+  ['TR', 'PL', 'BS'].forEach(fa => { sides[fa] = { payment: {}, receipt: {} }; });
+
+  ledgers.forEach(l => {
+    const pg = ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'].includes(l.parentGroup)
+      ? l.parentGroup : getParentGroupFromLedgerType(l.ledgerType);
+    const group = getAccountGroup(l.ledgerType, pg);
+    const isDebitNature = group.parentGroup === 'ASSET' || group.parentGroup === 'EXPENSE';
+
+    // Net balance, Dr positive / Cr negative
+    const obType = l.openingBalanceType || (isDebitNature ? 'Dr' : 'Cr');
+    let net = (l.openingBalance || 0) * (obType === 'Cr' ? -1 : 1);
+    const lid = l._id.toString();
+    if (group.faType === 'BS' && priorMap[lid]) net += priorMap[lid].debit - priorMap[lid].credit;
+    if (periodMap[lid]) net += periodMap[lid].debit - periodMap[lid].credit;
+    if (Math.abs(net) < 0.005) return;
+
+    let side;
+    if (group.defVoucherType === 'P') side = 'payment';
+    else if (group.defVoucherType === 'R') side = 'receipt';
+    else side = net > 0 ? 'payment' : 'receipt';
+    const amount = side === 'payment' ? net : -net;
+
+    const bucket = sides[group.faType][side];
+    if (!bucket[group.name]) {
+      bucket[group.name] = {
+        accountGroup: group.name, faType: group.faType, defVoucherType: group.defVoucherType,
+        order: group.order, ledgers: []
+      };
+    }
+    // contra: the balance sits opposite the group's normal nature (Dr for
+    // ASSET/EXPENSE, Cr for LIABILITY/INCOME) — shown in red on the Balance Sheet
+    const contra = isDebitNature ? net < 0 : net > 0;
+    bucket[group.name].ledgers.push({ name: l.ledgerName, amount, contra });
+  });
+
+  // Groups in master order, ledgers A→Z, each with its total
+  const finish = (bucket) => Object.values(bucket)
+    .sort((a, b) => a.order - b.order || a.accountGroup.localeCompare(b.accountGroup))
+    .map(({ order, ...g }) => ({
+      ...g,
+      ledgers: g.ledgers.sort((a, b) => a.name.localeCompare(b.name)),
+      total: g.ledgers.reduce((s, x) => s + x.amount, 0)
+    }));
+
+  const out = {};
+  Object.entries(sides).forEach(([fa, s]) => {
+    out[fa] = { payment: finish(s.payment), receipt: finish(s.receipt) };
+  });
+  return out;
+};
+
+const sumGroups = (groups) => groups.reduce((s, g) => s + g.total, 0);
+
 // ── Shared: Trading Account V2 computation (pure) ────────────────────────
-// Extracted out of getTradingAccountV2 so P&L V2 (and, through it, Balance
-// Sheet V2) can pull the same Gross Profit/Loss and carry it forward.
-const computeTradingAccountV2Data = async (companyId, start, end) => {
-  const TRADING_INC_TYPES = ['Sales', 'Trade Income', 'Sales A/c'];
-  const TRADING_EXP_TYPES = ['Purchases', 'Trade Expenses', 'Purchases A/c'];
+// TR groups from the Account Group master, plus the dairy-direct sources
+// (milk purchase / milk sales / union sales slips / item stock) that are not
+// posted through ledgers.
+const computeTradingAccountV2Data = async (companyId, start, end, classified) => {
+  const fa = classified || await classifyFinalAccountLedgers(companyId, start, end);
+  const purchaseGroups = fa.TR.payment.map(g => ({ ...g, items: g.ledgers.map(x => ({ ledgerName: x.name, amount: x.amount })) }));
+  const salesGroups    = fa.TR.receipt.map(g => ({ ...g, items: g.ledgers.map(x => ({ ledgerName: x.name, amount: x.amount })) }));
 
-  // Fetch relevant ledgers (both new-style parentGroup AND legacy types)
-  const [incLedgers, expLedgers] = await Promise.all([
-    Ledger.find({
-      companyId, status: 'Active',
-      $or: [
-        { parentGroup: 'INCOME', ledgerType: { $in: TRADING_INC_TYPES } },
-        { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: TRADING_INC_TYPES } },
-        { parentGroup: { $exists: false }, ledgerType: { $in: TRADING_INC_TYPES } }
-      ]
-    }).lean(),
-    Ledger.find({
-      companyId, status: 'Active',
-      $or: [
-        { parentGroup: 'EXPENSE', ledgerType: { $in: TRADING_EXP_TYPES } },
-        { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: TRADING_EXP_TYPES } },
-        { parentGroup: { $exists: false }, ledgerType: { $in: TRADING_EXP_TYPES } }
-      ]
-    }).lean()
-  ]);
-
-  const allIds = [...incLedgers, ...expLedgers].map(l => l._id);
-  const { periodMap } = await buildVoucherMaps(companyId, start, end, allIds);
-
-  // Group income ledgers by ledgerType
-  const salesGroupMap = {};
-  incLedgers.forEach(l => {
-    const act = periodMap[l._id.toString()] || {};
-    const amount = act.credit || 0;
-    if (!amount) return;
-    const key = l.ledgerType;
-    if (!salesGroupMap[key]) salesGroupMap[key] = { accountGroup: key, items: [] };
-    salesGroupMap[key].items.push({ ledgerName: l.ledgerName, amount });
-  });
-
-  // Group expense ledgers by ledgerType
-  const purchaseGroupMap = {};
-  expLedgers.forEach(l => {
-    const act = periodMap[l._id.toString()] || {};
-    const amount = act.debit || 0;
-    if (!amount) return;
-    const key = l.ledgerType;
-    if (!purchaseGroupMap[key]) purchaseGroupMap[key] = { accountGroup: key, items: [] };
-    purchaseGroupMap[key].items.push({ ledgerName: l.ledgerName, amount });
-  });
-
-  const addGroupTotals = (gm) =>
-    Object.values(gm).map(g => ({ ...g, total: g.items.reduce((s, i) => s + i.amount, 0) }));
-
-  const salesGroups    = addGroupTotals(salesGroupMap);
-  const purchaseGroups = addGroupTotals(purchaseGroupMap);
-
-  // Dairy-direct sources
   const [mcAgg, msAgg, usAgg, items] = await Promise.all([
     MilkCollection.aggregate([
       { $match: { companyId, date: { $gte: start, $lte: end } } },
@@ -2484,11 +2383,9 @@ const computeTradingAccountV2Data = async (companyId, start, end) => {
   const milkPurchaseTotal = mcAgg[0]?.total || 0;
   const milkSalesTotal    = msAgg[0]?.total || 0;
   const unionSalesTotal   = usAgg[0]?.total  || 0;
-  const totalPurchased    = purchaseGroups.reduce((s, g) => s + g.total, 0);
-  const totalSales        = salesGroups.reduce((s, g) => s + g.total, 0);
 
-  const creditTotal = milkSalesTotal + unionSalesTotal + totalSales + closingStockTotal;
-  const debitTotal  = openingStockTotal + milkPurchaseTotal + totalPurchased;
+  const creditTotal = milkSalesTotal + unionSalesTotal + sumGroups(salesGroups) + closingStockTotal;
+  const debitTotal  = openingStockTotal + milkPurchaseTotal + sumGroups(purchaseGroups);
   const grossProfit = creditTotal > debitTotal ? creditTotal - debitTotal : 0;
   const grossLoss   = debitTotal > creditTotal ? debitTotal - creditTotal : 0;
 
@@ -2518,18 +2415,22 @@ const computeTradingAccountV2Data = async (companyId, start, end) => {
   };
 };
 
+const parseV2Range = (req, res) => {
+  const { startDate, endDate } = req.query;
+  if (!startDate || !endDate) {
+    res.status(400).json({ success: false, message: 'startDate and endDate are required' });
+    return null;
+  }
+  const start = new Date(startDate); start.setHours(0, 0, 0, 0);
+  const end   = new Date(endDate);   end.setHours(23, 59, 59, 999);
+  return { start, end };
+};
+
 export const getTradingAccountV2 = async (req, res) => {
   try {
-    const { startDate, endDate } = req.query;
-    if (!startDate || !endDate) {
-      return res.status(400).json({ success: false, message: 'startDate and endDate are required' });
-    }
-
-    const start = new Date(startDate); start.setHours(0, 0, 0, 0);
-    const end   = new Date(endDate);   end.setHours(23, 59, 59, 999);
-    const companyId = req.companyId;
-
-    const data = await computeTradingAccountV2Data(companyId, start, end);
+    const range = parseV2Range(req, res);
+    if (!range) return;
+    const data = await computeTradingAccountV2Data(req.companyId, range.start, range.end);
     res.json({ success: true, data });
   } catch (err) {
     console.error('getTradingAccountV2 error:', err);
@@ -2538,62 +2439,19 @@ export const getTradingAccountV2 = async (req, res) => {
 };
 
 // ── Shared: Profit & Loss V2 computation (pure) ──────────────────────────
-// Carries Trading Account V2's Gross Profit/Loss forward as "Trade Profit
-// b/f" / "Trade Loss b/f", the same Trading Account → P&L handoff as V1's
-// computeProfitLossData — so Net Profit is always income (P&L income +
-// Trade Profit b/f) minus ALL applicable expenses (P&L expenses + Trade
-// Loss b/f), not just the P&L-only ledgers.
-const computeProfitLossV2Data = async (companyId, start, end) => {
-  // P&L types exclude trading account types
-  const TRADING_INC = ['Sales', 'Trade Income', 'Sales A/c'];
-  const TRADING_EXP = ['Purchases', 'Trade Expenses', 'Purchases A/c'];
-  const PL_INC_TYPES = ['Income', 'Miscellaneous Income', 'Other Revenue', 'Grants & Aid', 'Subsidies'];
-  const PL_EXP_TYPES = ['Expense', 'Establishment Charges', 'Contingencies', 'Miscellaneous Expenses'];
+// PL groups from the Account Group master. Carries Trading Account V2's Gross
+// Profit/Loss forward as "Trade Profit b/f" / "Trade Loss b/f", so Net Profit
+// = (Receipt side + Trade Profit) − (Payment side + Trade Loss).
+const computeProfitLossV2Data = async (companyId, start, end, classified) => {
+  const fa = classified || await classifyFinalAccountLedgers(companyId, start, end);
+  const expenseGroups = fa.PL.payment;
+  const incomeGroups  = fa.PL.receipt;
+  const totalIncome   = sumGroups(incomeGroups);
+  const totalExpense  = sumGroups(expenseGroups);
 
-  const [incLedgers, expLedgers] = await Promise.all([
-    Ledger.find({
-      companyId, status: 'Active',
-      $or: [
-        { parentGroup: 'INCOME', ledgerType: { $nin: TRADING_INC } },
-        { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: PL_INC_TYPES } },
-        { parentGroup: { $exists: false }, ledgerType: { $in: PL_INC_TYPES } }
-      ]
-    }).lean(),
-    Ledger.find({
-      companyId, status: 'Active',
-      $or: [
-        { parentGroup: 'EXPENSE', ledgerType: { $nin: TRADING_EXP } },
-        { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: PL_EXP_TYPES } },
-        { parentGroup: { $exists: false }, ledgerType: { $in: PL_EXP_TYPES } }
-      ]
-    }).lean()
-  ]);
-
-  const allIds = [...incLedgers, ...expLedgers].map(l => l._id);
-  const { periodMap } = await buildVoucherMaps(companyId, start, end, allIds);
-
-  const groupByType = (ledgers, amountKey) => {
-    const gm = {};
-    ledgers.forEach(l => {
-      const act = periodMap[l._id.toString()] || {};
-      const amount = act[amountKey] || 0;
-      if (!amount) return;
-      const key = l.ledgerType;
-      if (!gm[key]) gm[key] = { accountGroup: key, ledgers: [] };
-      gm[key].ledgers.push({ name: l.ledgerName, amount });
-    });
-    return Object.values(gm).map(g => ({ ...g, total: g.ledgers.reduce((s, l) => s + l.amount, 0) }));
-  };
-
-  const incomeGroups  = groupByType(incLedgers, 'credit');
-  const expenseGroups = groupByType(expLedgers, 'debit');
-  const totalIncome   = incomeGroups.reduce((s, g) => s + g.total, 0);
-  const totalExpense  = expenseGroups.reduce((s, g) => s + g.total, 0);
-
-  // Trading Account → P&L handoff (same convention as V1)
-  const trading = await computeTradingAccountV2Data(companyId, start, end);
+  const trading = await computeTradingAccountV2Data(companyId, start, end, fa);
   const tradeProfit = trading.grossProfit;
-  const tradeLoss    = trading.grossLoss;
+  const tradeLoss   = trading.grossLoss;
 
   const netProfit = (totalIncome + tradeProfit) - (totalExpense + tradeLoss);
 
@@ -2604,19 +2462,11 @@ const computeProfitLossV2Data = async (companyId, start, end) => {
   };
 };
 
-// ─── PROFIT & LOSS V2 — driven by ac_ledgers types ───────────────────────────
 export const getProfitLossV2 = async (req, res) => {
   try {
-    const { startDate, endDate } = req.query;
-    if (!startDate || !endDate) {
-      return res.status(400).json({ success: false, message: 'startDate and endDate are required' });
-    }
-
-    const start = new Date(startDate); start.setHours(0, 0, 0, 0);
-    const end   = new Date(endDate);   end.setHours(23, 59, 59, 999);
-    const companyId = req.companyId;
-
-    const data = await computeProfitLossV2Data(companyId, start, end);
+    const range = parseV2Range(req, res);
+    if (!range) return;
+    const data = await computeProfitLossV2Data(req.companyId, range.start, range.end);
     res.json({ success: true, data });
   } catch (err) {
     console.error('getProfitLossV2 error:', err);
@@ -2624,103 +2474,33 @@ export const getProfitLossV2 = async (req, res) => {
   }
 };
 
-// ─── BALANCE SHEET V2 — driven by ac_ledgers types ───────────────────────────
+// ─── BALANCE SHEET V2 — BS groups from the Account Group master ─────────────
+// Payment (Dr) side → Assets, Receipt (Cr) side → Liabilities. Net Profit is
+// carried forward from the same P&L V2 computation.
 export const getBalanceSheetV2 = async (req, res) => {
   try {
-    const { startDate, endDate } = req.query;
-    if (!startDate || !endDate) {
-      return res.status(400).json({ success: false, message: 'startDate and endDate are required' });
-    }
-
-    const start = new Date(startDate); start.setHours(0, 0, 0, 0);
-    const end   = new Date(endDate);   end.setHours(23, 59, 59, 999);
+    const range = parseV2Range(req, res);
+    if (!range) return;
+    const { start, end } = range;
     const companyId = req.companyId;
 
-    const ASSET_TYPES_NEW = [
-      'Bank Accounts', 'Share in Other Institutions', 'Other Investments',
-      'Fixed Assets - Movables', 'Fixed Assets - Immovables', 'Advance due to Society',
-      'Loss', 'Cash in Hand', 'Loans & Advances to Members', 'Interest Receivable',
-      'Other Assets', 'Investment in Govt. Securities'
-    ];
-    const ASSET_TYPES_LEGACY = [
-      'Asset', 'Fixed Assets', 'Movable Assets', 'Immovable Assets', 'Cash', 'Bank',
-      'Other Receivable', 'Sundry Debtors', 'Customer'
-    ];
-    const LIABILITY_TYPES_NEW = [
-      'Share Capital', 'Statutory Funds and Reserves', 'Other Funds, Reserves and Provisions',
-      'Grants and Subsidies', 'Other Liabilities', 'Advance due by Society', 'Profit',
-      'Deposits', 'Borrowings (Loans, Cash Credits)', 'Interest Payable', 'Education Fund'
-    ];
-    const LIABILITY_TYPES_LEGACY = [
-      'Liability', 'Capital', 'Other Payable', 'Deposit A/c', 'Contingency Fund',
-      'Accounts Due To (Sundry Creditors)', 'Sundry Creditors'
-    ];
-    const ALL_ASSET_TYPES = [...ASSET_TYPES_NEW, ...ASSET_TYPES_LEGACY];
-    const ALL_LIABILITY_TYPES = [...LIABILITY_TYPES_NEW, ...LIABILITY_TYPES_LEGACY];
+    const fa = await classifyFinalAccountLedgers(companyId, start, end);
+    const assetGroups     = fa.BS.payment;
+    const liabilityGroups = fa.BS.receipt;
+    const totalAssets      = sumGroups(assetGroups);
+    const totalLiabilities = sumGroups(liabilityGroups);
 
-    const [assetLedgers, liabilityLedgers] = await Promise.all([
-      Ledger.find({
-        companyId, status: 'Active',
-        $or: [
-          { parentGroup: 'ASSET' },
-          { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: ALL_ASSET_TYPES } },
-          { parentGroup: { $exists: false }, ledgerType: { $in: ALL_ASSET_TYPES } }
-        ]
-      }).lean(),
-      Ledger.find({
-        companyId, status: 'Active',
-        $or: [
-          { parentGroup: 'LIABILITY' },
-          { parentGroup: { $nin: ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE'] }, ledgerType: { $in: ALL_LIABILITY_TYPES } },
-          { parentGroup: { $exists: false }, ledgerType: { $in: ALL_LIABILITY_TYPES } }
-        ]
-      }).lean()
-    ]);
+    const items = await Item.find({ status: 'Active', companyId }).lean();
+    const closingStockGrouped = {};
+    const closingStock = items.reduce((s, it) => {
+      const val = (it.currentBalance || 0) * (it.costPrice || it.salesRate || 0);
+      const cat = it.category || 'Others';
+      if (val) closingStockGrouped[cat] = (closingStockGrouped[cat] || 0) + val;
+      return s + val;
+    }, 0);
+    const closingStockItems = Object.entries(closingStockGrouped).map(([category, amount]) => ({ category, amount }));
 
-    const allIds = [...assetLedgers, ...liabilityLedgers].map(l => l._id);
-    const { priorMap, periodMap } = await buildVoucherMaps(companyId, start, end, allIds);
-
-    const groupLedgers = (ledgers, isDebitNature) => {
-      const gm = {};
-      ledgers.forEach(l => {
-        const lid = l._id.toString();
-        let signed = l.openingBalance || 0;
-        const obType = l.openingBalanceType || (isDebitNature ? 'Dr' : 'Cr');
-        const isNormal = (isDebitNature && obType === 'Dr') || (!isDebitNature && obType === 'Cr');
-        if (!isNormal && signed > 0) signed = -signed;
-        const pr = priorMap[lid];
-        if (pr) signed += isDebitNature ? (pr.debit - pr.credit) : -(pr.debit - pr.credit);
-        const pe = periodMap[lid];
-        if (pe) signed += isDebitNature ? (pe.debit - pe.credit) : -(pe.debit - pe.credit);
-
-        if (signed === 0) return;
-        const key = l.ledgerType || 'Other';
-        if (!gm[key]) gm[key] = { accountGroup: key, ledgers: [] };
-        gm[key].ledgers.push({ name: l.ledgerName, balance: Math.abs(signed), balanceType: signed >= 0 ? (isDebitNature ? 'Dr' : 'Cr') : (isDebitNature ? 'Cr' : 'Dr') });
-      });
-      return Object.values(gm).map(g => ({
-        ...g,
-        total: g.ledgers.reduce((s, l) => s + (isDebitNature ? (l.balanceType === 'Dr' ? l.balance : -l.balance) : (l.balanceType === 'Cr' ? l.balance : -l.balance)), 0)
-      }));
-    };
-
-    const assetGroups     = groupLedgers(assetLedgers, true);
-    const liabilityGroups = groupLedgers(liabilityLedgers, false);
-    const totalAssets     = assetGroups.reduce((s, g) => s + g.total, 0);
-    const totalLiabilities = liabilityGroups.reduce((s, g) => s + g.total, 0);
-
-    const closingStock = (await Item.find({ status: 'Active', companyId }).lean())
-      .reduce((s, it) => s + (it.currentBalance || 0) * (it.costPrice || it.salesRate || 0), 0);
-
-    // ── Net Profit — carried forward from the SAME Profit & Loss V2
-    // computation getProfitLossV2 uses (which itself carries Trading
-    // Account V2's Gross Profit/Loss forward). Previously this handler
-    // never computed or returned a Net Profit at all, so the P&L balance
-    // never reached the Balance Sheet on the "Dynamic" data source —
-    // Liabilities were compared against Assets with the period's earned
-    // profit missing entirely, which is also why isTallied could read
-    // "Not Balanced" even on books that are otherwise correct.
-    const pl = await computeProfitLossV2Data(companyId, start, end);
+    const pl = await computeProfitLossV2Data(companyId, start, end, fa);
     const netProfit = pl.netProfit;
     const totalLiabilitiesAndCapital = totalLiabilities + netProfit;
 
@@ -2729,8 +2509,9 @@ export const getBalanceSheetV2 = async (req, res) => {
     res.json({
       success: true,
       data: {
+        asOn: end,
         assetGroups, liabilityGroups,
-        totalAssets, totalLiabilities, closingStock,
+        totalAssets, totalLiabilities, closingStock, closingStockItems,
         netProfit, totalLiabilitiesAndCapital,
         isTallied
       }

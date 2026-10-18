@@ -6,6 +6,7 @@ import { reportAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 import { localDateStr } from '../../utils/dateUtils';
 import './InspectionReport.css';
+import DateField from '../common/DateField';
 
 const TODAY = localDateStr(new Date());
 
@@ -510,8 +511,7 @@ export default function InspectionReport() {
       <div className="insp-filter">
         <div>
           <label>Date of Inspection</label>
-          <input
-            type="date"
+          <DateField
             value={form.dateOfInspection}
             onChange={e => setF('dateOfInspection', e.target.value)}
           />
@@ -613,9 +613,8 @@ export default function InspectionReport() {
               <td className="sno">3</td>
               <td className="lbl">Date of Inspection</td>
               <td className="val">
-                <input
+                <DateField
                   className="insp-ci-date"
-                  type="date"
                   value={form.dateOfInspection}
                   onChange={e => setF('dateOfInspection', e.target.value)}
                 />
@@ -1083,9 +1082,8 @@ export default function InspectionReport() {
               <td className="sno">72</td>
               <td className="lbl">Date of Completion of the Society's Daily Written Down Amount Outstanding</td>
               <td className="val">
-                <input
+                <DateField
                   className="insp-ci-date"
-                  type="date"
                   value={form.dailyWrittenDownCompletionDate}
                   onChange={e => setF('dailyWrittenDownCompletionDate', e.target.value)}
                 />
@@ -1095,9 +1093,8 @@ export default function InspectionReport() {
               <td className="sno">73</td>
               <td className="lbl">Date of Completion of the Society's Written Records</td>
               <td className="val">
-                <input
+                <DateField
                   className="insp-ci-date"
-                  type="date"
                   value={form.societyWrittenRecordsDate}
                   onChange={e => setF('societyWrittenRecordsDate', e.target.value)}
                 />

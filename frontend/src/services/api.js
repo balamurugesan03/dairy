@@ -243,6 +243,7 @@ export const ledgerAPI = {
   delete: (id) => api.delete(`/ledgers/${id}`).then(res => res.data).catch(handleError),
   getOutstanding: (id) => api.get(`/ledgers/${id}/outstanding`).then(res => res.data).catch(handleError),
   getOutstandingReport: (params) => api.get('/ledgers/outstanding-report', { params }).then(res => res.data).catch(handleError),
+  getPartyOutstanding: (params) => api.get('/ledgers/outstanding-parties', { params }).then(res => res.data).catch(handleError),
   seedDefaults: () => api.post('/ledgers/seed-defaults').then(res => res.data).catch(handleError)
 };
 
