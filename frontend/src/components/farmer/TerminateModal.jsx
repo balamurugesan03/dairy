@@ -296,6 +296,7 @@ import {
   IconCoin
 } from '@tabler/icons-react';
 import { farmerAPI } from '../../services/api';
+import DateField from '../common/DateField';
 
 const TerminateModal = ({ opened, onClose, onSuccess, farmer }) => {
   const [loading, setLoading] = useState(false);
@@ -422,10 +423,9 @@ const TerminateModal = ({ opened, onClose, onSuccess, farmer }) => {
 
           {/* Form Fields */}
           <SimpleGrid cols={2} spacing="md">
-            <TextInput
+            <DateField
               label="Retirement Date"
               withAsterisk
-              type="date"
               icon={<IconCalendar size={16} />}
               {...form.getInputProps('retirementDate')}
             />
@@ -438,18 +438,16 @@ const TerminateModal = ({ opened, onClose, onSuccess, farmer }) => {
               {...form.getInputProps('resolutionNumber')}
             />
 
-            <TextInput
+            <DateField
               label="Resolution Date"
               withAsterisk
-              type="date"
               icon={<IconCalendar size={16} />}
               {...form.getInputProps('resolutionDate')}
             />
 
-            <TextInput
+            <DateField
               label="Refund Date"
               withAsterisk
-              type="date"
               icon={<IconCalendar size={16} />}
               {...form.getInputProps('refundDate')}
             />

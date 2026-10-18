@@ -484,7 +484,7 @@ const DairyAbstractReport = () => {
             value={dateRange[0]}
             onChange={(val) => { setDateRange([val, dateRange[1]]); setPreset('custom'); }}
             leftSection={<IconCalendar size={14} />}
-            valueFormat="DD-MM-YYYY"
+            valueFormat="DD/MM/YYYY"
             clearable
           />
           <DatePickerInput
@@ -492,7 +492,7 @@ const DairyAbstractReport = () => {
             value={dateRange[1]}
             onChange={(val) => { setDateRange([dateRange[0], val]); setPreset('custom'); }}
             leftSection={<IconCalendar size={14} />}
-            valueFormat="DD-MM-YYYY"
+            valueFormat="DD/MM/YYYY"
             clearable
           />
           <Button

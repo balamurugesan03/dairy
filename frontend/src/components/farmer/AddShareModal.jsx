@@ -30,6 +30,7 @@ import {
   IconNote
 } from '@tabler/icons-react';
 import { farmerAPI } from '../../services/api';
+import DateField from '../common/DateField';
 
 const AddShareModal = ({ opened, onClose, onSuccess, farmer }) => {
   const [loading, setLoading] = useState(false);
@@ -217,10 +218,9 @@ const AddShareModal = ({ opened, onClose, onSuccess, farmer }) => {
               {...form.getInputProps('resolutionNo')}
             />
 
-            <TextInput
+            <DateField
               label="Resolution Date"
               withAsterisk
-              type="date"
               icon={<IconCalendar size={16} />}
               {...form.getInputProps('resolutionDate')}
             />

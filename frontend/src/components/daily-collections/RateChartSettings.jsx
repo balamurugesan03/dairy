@@ -540,7 +540,7 @@ const RateChartSettings = () => {
                 leftSection={<IconCalendar size={16} />}
                 value={uploadDate}
                 onChange={setUploadDate}
-                valueFormat="DD-MM-YYYY"
+                valueFormat="DD/MM/YYYY"
                 radius="md"
                 clearable
               />
@@ -648,7 +648,7 @@ const RateChartSettings = () => {
                 label="From Date"
                 placeholder="DD-MM-YYYY"
                 leftSection={<IconCalendar size={16} />}
-                valueFormat="DD-MM-YYYY"
+                valueFormat="DD/MM/YYYY"
                 radius="md"
                 clearable
                 {...manualForm.getInputProps('fromDate')}
@@ -769,7 +769,7 @@ const RateChartSettings = () => {
                 label="From Date"
                 placeholder="DD-MM-YYYY"
                 leftSection={<IconCalendar size={16} />}
-                valueFormat="DD-MM-YYYY"
+                valueFormat="DD/MM/YYYY"
                 radius="md"
                 clearable
                 {...formulaForm.getInputProps('fromDate')}
@@ -978,7 +978,7 @@ const RateChartSettings = () => {
                 label="From Date"
                 placeholder="DD-MM-YYYY"
                 leftSection={<IconCalendar size={16} />}
-                valueFormat="DD-MM-YYYY"
+                valueFormat="DD/MM/YYYY"
                 radius="md"
                 clearable
                 {...lowForm.getInputProps('fromDate')}
@@ -1089,7 +1089,7 @@ const RateChartSettings = () => {
                 label="From Date"
                 placeholder="DD-MM-YYYY"
                 leftSection={<IconCalendar size={16} />}
-                valueFormat="DD-MM-YYYY"
+                valueFormat="DD/MM/YYYY"
                 radius="md"
                 clearable
                 {...glForm.getInputProps('fromDate')}
@@ -1181,7 +1181,7 @@ const RateChartSettings = () => {
                 label="From Date"
                 placeholder="DD-MM-YYYY"
                 leftSection={<IconCalendar size={16} />}
-                valueFormat="DD-MM-YYYY"
+                valueFormat="DD/MM/YYYY"
                 radius="md"
                 clearable
                 {...slabForm.getInputProps('fromDate')}

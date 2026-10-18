@@ -4,6 +4,7 @@ import { producerRegisterAPI, farmerAPI } from '../../services/api';
 import { message } from '../../utils/toast';
 import dayjs from 'dayjs';
 import './ProducerRegister.css';
+import DateField from '../common/DateField';
 
 const ProducerRegister = () => {
   // State
@@ -337,8 +338,7 @@ const ProducerRegister = () => {
 
           <div className="control-group">
             <label>From Date:</label>
-            <input
-              type="date"
+            <DateField
               value={dateRange.fromDate}
               onChange={(e) => setDateRange(prev => ({ ...prev, fromDate: e.target.value }))}
               className="ledger-input"
@@ -347,8 +347,7 @@ const ProducerRegister = () => {
 
           <div className="control-group">
             <label>To Date:</label>
-            <input
-              type="date"
+            <DateField
               value={dateRange.toDate}
               onChange={(e) => setDateRange(prev => ({ ...prev, toDate: e.target.value }))}
               className="ledger-input"

@@ -11,6 +11,8 @@
  * - THEME_OPTIONS array use panni UI-la dropdown/buttons show pannalaam
  */
 
+import { DATE_FORMAT, parseDateInput } from '../utils/dateUtils';
+
 // All available color themes with their configurations
 export const THEMES = {
   blue: {
@@ -239,6 +241,16 @@ export const getMantineTheme = (themeKey = DEFAULT_THEME) => {
       [theme.primaryColor]: theme.mantineShades,
     },
     components: {
+      // One date format on every picker (DATE_FORMAT in utils/dateUtils).
+      DateInput: {
+        defaultProps: { valueFormat: DATE_FORMAT, dateParser: parseDateInput },
+      },
+      DatePickerInput: {
+        defaultProps: { valueFormat: DATE_FORMAT },
+      },
+      DateTimePicker: {
+        defaultProps: { valueFormat: `${DATE_FORMAT} HH:mm` },
+      },
       Modal: {
         defaultProps: {
           // Prevent accidental data loss: clicking outside a modal/dialog

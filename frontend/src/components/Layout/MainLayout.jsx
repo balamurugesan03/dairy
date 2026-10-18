@@ -372,13 +372,13 @@ const MainLayout = () => {
             { key: '/reports/cash-book',             label: 'Cash Book' },
             { key: '/reports/general-ledger',        label: 'General Ledger' },
             { key: '/reports/ledger-abstract',       label: 'Ledger Abstract' },
-            { key: '/reports/trial-balance',         label: 'Trial Balance' },
-            { key: '/reports/receipts-payments',     label: 'Receipts & Payments' },
-            { key: '/reports/rd-enhanced',           label: 'R&D Statement' },
-            { key: '/reports/final-accounts',     label: 'Final Accounts' },
-            { key: '/reports/balance-sheet',      label: 'Balance Sheet' },
-            { key: '/reports/milk-bill-abstract', label: 'Milk Bill Abstract' },
-            { key: '/accounting/outstanding',     label: 'Outstanding Report' },
+            { key: '/accounting/outstanding',        label: 'Outstanding Report' },
+            { key: '/reports/rd-enhanced',           label: 'Receipt and Disbursements' },
+            { key: '/reports/milk-bill-abstract',    label: 'Milk Bill Abstract' },
+            // Inactive: kept in the menu (greyed, not clickable) so they can be re-activated later.
+            { key: '/reports/trial-balance',         label: 'Trial Balance',       inactive: true },
+            { key: '/reports/receipts-payments',     label: 'Receipts & Payments', inactive: true },
+            { key: '/reports/final-accounts',        label: 'Final Accounts' },
           ]
         },
       ]
@@ -695,7 +695,16 @@ const MainLayout = () => {
             </Menu.Item>
           </Menu.Target>
           <Menu.Dropdown style={{ border: 'none', boxShadow: '0 10px 40px rgba(0,0,0,0.15)', borderRadius: '12px' }}>
-            {child.children.map((sub) => (
+            {child.children.map((sub) => sub.inactive ? (
+              <Menu.Item
+                key={sub.key}
+                disabled
+                rightSection={<Text size="xs" c="dimmed">Inactive</Text>}
+                style={{ borderRadius: '8px', margin: '4px' }}
+              >
+                {sub.label}
+              </Menu.Item>
+            ) : (
               <Menu.Item
                 key={sub.key}
                 onMouseDown={() => handleMenuClick(sub.key)}
@@ -1003,6 +1012,8 @@ const MainLayout = () => {
                                     key={sub.key}
                                     variant={location.pathname === sub.key ? 'light' : 'subtle'}
                                     color={location.pathname === sub.key ? item.color : 'gray'}
+                                    disabled={sub.inactive}
+                                    rightSection={sub.inactive ? <Text size="xs" c="dimmed">Inactive</Text> : undefined}
                                     onClick={() => handleMenuClick(sub.key)}
                                     fullWidth
                                     justify="flex-start"

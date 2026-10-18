@@ -48,6 +48,7 @@ import {
 import { useCompany } from '../../context/CompanyContext';
 import { printVouchers } from '../../utils/voucherPrint';
 import VoucherPrintPreview from './VoucherPrintPreview';
+import DateField from '../common/DateField';
 
 const PRINT_PREF_KEY = 'paymentVoucher.printOnSave';
 
@@ -460,11 +461,10 @@ const PaymentVoucher = () => {
               <Stack gap="md">
                 <Grid>
                   <Grid.Col span={{ base: 12, sm: 6, md: 2 }}>
-                    <TextInput
+                    <DateField
                       label="Voucher Date"
                       placeholder="Select date"
                       required
-                      type="date"
                       leftSection={<IconCalendar size={16} />}
                       {...form.getInputProps('voucherDate')}
                     />
@@ -582,8 +582,7 @@ const PaymentVoucher = () => {
                         <tr key={index}>
                           <td>{index + 1}</td>
                           <td>
-                            <TextInput
-                              type="date"
+                            <DateField
                               size="xs"
                               value={entry.voucherDate}
                               onChange={(e) => updateMultipleEntry(index, 'voucherDate', e.target.value)}
@@ -710,8 +709,7 @@ const PaymentVoucher = () => {
             </Title>
           </Group>
           <Group gap="sm">
-            <TextInput
-              type="date"
+            <DateField
               label="Transaction Date"
               value={filterDate}
               onChange={(e) => setFilterDate(e.target.value)}

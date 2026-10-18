@@ -5,6 +5,7 @@ import { promotionAPI } from '../../services/api';
 import PageHeader from '../common/PageHeader';
 import dayjs from 'dayjs';
 import './PromotionForm.css';
+import DateField from '../common/DateField';
 
 const PromotionForm = () => {
   const navigate = useNavigate();
@@ -103,8 +104,7 @@ const PromotionForm = () => {
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label className="form-label required">Promotion Date</label>
-            <input
-              type="date"
+            <DateField
               name="promotionDate"
               className={`form-input ${errors.promotionDate ? 'error' : ''}`}
               value={formData.promotionDate}

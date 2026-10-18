@@ -154,7 +154,7 @@ const BalanceSheet = () => {
             label="From Date"
             value={fromDate}
             onChange={v => v && setFromDate(v)}
-            valueFormat="DD-MM-YYYY"
+            valueFormat="DD/MM/YYYY"
             maxDate={new Date()}
             clearable={false}
             w={160}
@@ -163,7 +163,7 @@ const BalanceSheet = () => {
             label="To Date"
             value={toDate}
             onChange={v => v && setToDate(v)}
-            valueFormat="DD-MM-YYYY"
+            valueFormat="DD/MM/YYYY"
             maxDate={new Date()}
             clearable={false}
             w={160}

@@ -4,6 +4,7 @@ import { employeeAPI, departmentAPI, designationAPI } from '../../services/api';
 import { message } from '../../utils/toast';
 import PageHeader from '../common/PageHeader';
 import './EmployeeForm.css';
+import DateField from '../common/DateField';
 
 const EmployeeForm = () => {
   const navigate = useNavigate();
@@ -321,8 +322,7 @@ const EmployeeForm = () => {
 
         <div className="form-group">
           <label>Date of Birth</label>
-          <input
-            type="date"
+          <DateField
             value={formData.personalDetails.dob}
             onChange={(e) => handleInputChange('personalDetails.dob', e.target.value)}
           />
@@ -441,8 +441,7 @@ const EmployeeForm = () => {
 
         <div className="form-group">
           <label>Date of Joining <span className="required">*</span></label>
-          <input
-            type="date"
+          <DateField
             value={formData.employmentDetails.dateOfJoining}
             onChange={(e) => handleInputChange('employmentDetails.dateOfJoining', e.target.value)}
             className={errors['employmentDetails.dateOfJoining'] ? 'error' : ''}
@@ -501,8 +500,7 @@ const EmployeeForm = () => {
 
         <div className="form-group">
           <label>Confirmation Date</label>
-          <input
-            type="date"
+          <DateField
             value={formData.employmentDetails.confirmationDate}
             onChange={(e) => handleInputChange('employmentDetails.confirmationDate', e.target.value)}
           />

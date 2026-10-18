@@ -49,6 +49,7 @@ import {
   IconArrowDownCircle,
   IconPrinter
 } from '@tabler/icons-react';
+import DateField from '../common/DateField';
 
 const BusinessIncomeVoucher = () => {
   const navigate = useNavigate();
@@ -618,11 +619,10 @@ const BusinessIncomeVoucher = () => {
             /* Single Entry Form */
             <form onSubmit={form.onSubmit(handleSubmit)}>
               <Stack gap="md">
-                <TextInput
+                <DateField
                   label="Voucher Date"
                   placeholder="Select date"
                   required
-                  type="date"
                   leftSection={<IconCalendar size={16} />}
                   {...form.getInputProps('voucherDate')}
                 />
@@ -747,8 +747,7 @@ const BusinessIncomeVoucher = () => {
                         <Table.Tr key={index}>
                           <Table.Td>{index + 1}</Table.Td>
                           <Table.Td>
-                            <TextInput
-                              type="date"
+                            <DateField
                               size="xs"
                               value={entry.voucherDate}
                               onChange={(e) => updateMultipleEntry(index, 'voucherDate', e.target.value)}

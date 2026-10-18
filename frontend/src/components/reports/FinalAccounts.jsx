@@ -1,25 +1,23 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Badge, Box, Button, Card, Divider, Grid, Group,
-  Loader, Paper, Stack, Table, Tabs, Text, Title, ActionIcon, Tooltip,
+  Alert, Box, Button, Divider, Group, Loader, Paper, Stack, Tabs, Text, Title,
   SegmentedControl
 } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import {
-  IconRefresh, IconPrinter, IconAlertCircle, IconScale,
+  IconRefresh, IconPrinter, IconAlertCircle, IconScale, IconFileSpreadsheet,
   IconChartBar, IconTrendingUp, IconFileText, IconLayoutColumns
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
-import { reportAPI } from '../../services/api';
-import { printReport } from '../../utils/printReport';
-
-/* ── helpers ────────────────────────────────────────────────── */
-const fmt = (v) =>
-  new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
-    Math.abs(parseFloat(v || 0))
-  );
-const neg = (v) => parseFloat(v || 0) < 0;
+import { reportAPI, societyInfoAPI } from '../../services/api';
+import { useCompany } from '../../context/CompanyContext';
+import A4PrintPreview from './shared/A4PrintPreview';
+import { buildTrading, buildProfitLoss, buildBalanceSheet } from './finalAccountsModel';
+import {
+  FA_FONT_IMPORT, FA_GRID_CSS, statementTableHtml, reportHeaderHtml,
+  buildFinalAccountsPrintHtml, exportFinalAccountsExcel
+} from './finalAccountsPrint';
 
 const getFinancialYear = (date) => {
   const d = dayjs(date);
@@ -28,665 +26,29 @@ const getFinancialYear = (date) => {
   return m >= 3 ? `${y}-${(y + 1).toString().slice(2)}` : `${y - 1}-${y.toString().slice(2)}`;
 };
 
-/* ── reusable two-column wrapper ────────────────────────────── */
-const TwoCol = ({ left, right }) => (
-  <Group align="flex-start" grow gap="md" style={{ alignItems: 'stretch' }}>
-    {left}
-    {right}
-  </Group>
-);
-
-/* ── side panel card ────────────────────────────────────────── */
-const SideCard = ({ title, color, children, footer }) => (
-  <Card withBorder shadow="sm" radius="md" p={0} style={{ flex: 1 }}>
-    <Box bg={color} px="md" py="xs">
-      <Text fw={700} size="sm" c="white" tt="uppercase" style={{ letterSpacing: 1 }}>
-        {title}
-      </Text>
-    </Box>
-    <Box>{children}</Box>
-    {footer && (
-      <Box bg="gray.1" px="md" py="xs" style={{ borderTop: '1px solid #dee2e6' }}>
-        {footer}
-      </Box>
-    )}
-  </Card>
-);
-
-/* ── simple table row types ─────────────────────────────────── */
-const GroupHeader = ({ label, no }) => (
-  <Table.Tr bg="gray.0">
-    <Table.Td w={32} ta="center" c="dimmed" style={{ fontSize: 11 }}>{no}</Table.Td>
-    <Table.Td colSpan={2}><Text fw={700} size="sm">{label}</Text></Table.Td>
-  </Table.Tr>
-);
-
-const ItemRow = ({ label, amount, indent }) => (
-  <Table.Tr>
-    <Table.Td />
-    <Table.Td pl={indent ? 28 : 12}>{label}</Table.Td>
-    <Table.Td ta="right" w={130} c={neg(amount) ? 'red' : 'dark'} fw={500}>
-      {neg(amount) ? `(${fmt(amount)})` : fmt(amount)}
-    </Table.Td>
-  </Table.Tr>
-);
-
-const SubtotalRow = ({ label, amount }) => (
-  <Table.Tr bg="blue.0">
-    <Table.Td />
-    <Table.Td pl={28}><Text fw={600} size="sm">{label}</Text></Table.Td>
-    <Table.Td ta="right" w={130}>
-      <Text fw={700} size="sm" c="blue">{neg(amount) ? `(${fmt(amount)})` : fmt(amount)}</Text>
-    </Table.Td>
-  </Table.Tr>
-);
-
-const GrandTotalRow = ({ label, amount, color = 'dark' }) => (
-  <Table.Tr bg="dark" style={{ borderTop: '2px solid #343a40' }}>
-    <Table.Td colSpan={2} pl={12}><Text fw={800} size="sm" c="white">{label}</Text></Table.Td>
-    <Table.Td ta="right" w={130}>
-      <Text fw={800} size="sm" c="yellow">{neg(amount) ? `(${fmt(amount)})` : fmt(amount)}</Text>
-    </Table.Td>
-  </Table.Tr>
-);
-
-const SpecialRow = ({ label, amount, color = 'green' }) => (
-  <Table.Tr bg={`${color}.0`}>
-    <Table.Td colSpan={2} pl={12}><Text fw={700} size="sm" c={color}>{label}</Text></Table.Td>
-    <Table.Td ta="right" w={130}>
-      <Text fw={700} size="sm" c={color}>{neg(amount) ? `(${fmt(amount)})` : fmt(amount)}</Text>
-    </Table.Td>
-  </Table.Tr>
-);
-
-/* ══════════════════════════════════════════════════════════════
-   TRADING ACCOUNT
-══════════════════════════════════════════════════════════════ */
-const TradingAccount = ({ data, period }) => {
-  if (!data) return null;
-  const { debitSide, creditSide, totals } = data;
-  const periodLabel = period
-    ? `${dayjs(period.startDate).format('DD-MMM-YYYY')} to ${dayjs(period.endDate).format('DD-MMM-YYYY')}`
-    : '';
-
-  const BaseTable = ({ children }) => (
-    <Table withColumnBorders style={{ fontSize: 13 }}>
-      <Table.Thead bg="gray.0">
-        <Table.Tr>
-          <Table.Th w={32} ta="center" style={{ fontSize: 11 }}>#</Table.Th>
-          <Table.Th>Particulars</Table.Th>
-          <Table.Th w={130} ta="right">Amount</Table.Th>
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>{children}</Table.Tbody>
-    </Table>
-  );
-
-  return (
-    <Stack gap="sm">
-      <Box ta="center">
-        <Text fw={700} size="md">TRADING ACCOUNT</Text>
-        {periodLabel && <Text size="sm" c="dimmed">Period: {periodLabel}</Text>}
-      </Box>
-
-      <TwoCol
-        left={
-          <SideCard title="Receipt — Expenditure / Purchases" color="blue">
-            <BaseTable>
-              <GroupHeader no={1} label="Opening Stock" />
-              <ItemRow label="Total Opening Stock" amount={debitSide?.openingStock?.total || 0} />
-              <SubtotalRow label="Total Opening Stock" amount={debitSide?.openingStock?.total || 0} />
-
-              <GroupHeader no={2} label="Milk Purchase (Dairy)" />
-              <ItemRow
-                label={`Milk Purchase — ${debitSide?.milkPurchase?.farmerCount || 0} Farmers (${(debitSide?.milkPurchase?.qty || 0).toFixed(2)} L)`}
-                amount={debitSide?.milkPurchase?.total || 0}
-                indent
-              />
-              <SubtotalRow label="Total Milk Purchase" amount={debitSide?.milkPurchase?.total || 0} />
-
-              {(debitSide?.purchases?.items || []).length > 0 && (
-                <>
-                  <GroupHeader no={3} label="Other Purchases" />
-                  {(debitSide.purchases.items).map((it, i) => (
-                    <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />
-                  ))}
-                  <SubtotalRow label="Total Other Purchases" amount={debitSide?.purchases?.total || 0} />
-                </>
-              )}
-
-              <GroupHeader no={4} label="Trade / Establishment Expenses" />
-              {(debitSide?.tradeExpenses?.items || []).map((it, i) => (
-                <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />
-              ))}
-              <SubtotalRow label="Total Expenses" amount={debitSide?.tradeExpenses?.total || 0} />
-
-              {parseFloat(debitSide?.grossProfit || 0) > 0 && (
-                <SpecialRow label="Gross Profit c/o to P&L A/c" amount={debitSide.grossProfit} color="green" />
-              )}
-              <GrandTotalRow label="GRAND TOTAL" amount={totals?.debitTotal || 0} />
-            </BaseTable>
-          </SideCard>
-        }
-        right={
-          <SideCard title="Payment — Sales / Income" color="teal">
-            <BaseTable>
-              <GroupHeader no={1} label="Milk Sales (Dairy)" />
-              <ItemRow label="Milk Sales to Customers / Local" amount={creditSide?.milkSales?.total || 0} indent />
-              <SubtotalRow label="Total Milk Sales" amount={creditSide?.milkSales?.total || 0} />
-
-              {(creditSide?.unionSales?.total || 0) > 0 && (
-                <>
-                  <GroupHeader no={2} label="Union / Society Sales Slips" />
-                  <ItemRow label="Union Sales Slips" amount={creditSide.unionSales.total} indent />
-                  <SubtotalRow label="Total Union Sales" amount={creditSide.unionSales.total} />
-                </>
-              )}
-
-              {(creditSide?.sales?.items || []).length > 0 && (
-                <>
-                  <GroupHeader no={3} label="Other Sales" />
-                  {creditSide.sales.items.map((it, i) => (
-                    <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />
-                  ))}
-                  <SubtotalRow label="Total Other Sales" amount={creditSide?.sales?.total || 0} />
-                </>
-              )}
-
-              {(creditSide?.tradeIncome?.items || []).length > 0 && (
-                <>
-                  <GroupHeader no={4} label="Trade Income" />
-                  {creditSide.tradeIncome.items.map((it, i) => (
-                    <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />
-                  ))}
-                  <SubtotalRow label="Total Trade Income" amount={creditSide?.tradeIncome?.total || 0} />
-                </>
-              )}
-
-              <GroupHeader no={5} label="Closing Stock" />
-              {(creditSide?.closingStock?.items || []).map((it, i) => (
-                <ItemRow key={i} label={it.category} amount={it.amount} indent />
-              ))}
-              <SubtotalRow label="Total Closing Stock" amount={creditSide?.closingStock?.total || 0} />
-
-              {parseFloat(creditSide?.grossLoss || 0) > 0 && (
-                <SpecialRow label="Gross Loss c/o to P&L A/c" amount={creditSide.grossLoss} color="red" />
-              )}
-              <GrandTotalRow label="GRAND TOTAL" amount={totals?.creditTotal || 0} />
-            </BaseTable>
-          </SideCard>
-        }
-      />
-    </Stack>
-  );
+const NOTE_STYLE = {
+  ok:     { color: 'green',  icon: <IconScale size={16} /> },
+  warn:   { color: 'orange', icon: <IconAlertCircle size={16} /> },
+  profit: { color: 'green',  icon: <IconTrendingUp size={16} /> },
+  loss:   { color: 'red',    icon: <IconAlertCircle size={16} /> }
 };
 
-/* ══════════════════════════════════════════════════════════════
-   PROFIT & LOSS
-══════════════════════════════════════════════════════════════ */
-const ProfitLoss = ({ data }) => {
-  if (!data) return null;
-  const { income, totalIncome, expenses, totalExpense, tradeProfit = 0, tradeLoss = 0, netProfit } = data;
-  const isProfit = netProfit >= 0;
-
-  const BaseTable = ({ children }) => (
-    <Table withColumnBorders style={{ fontSize: 13 }}>
-      <Table.Thead bg="gray.0">
-        <Table.Tr>
-          <Table.Th w={32} ta="center" style={{ fontSize: 11 }}>#</Table.Th>
-          <Table.Th>Particulars</Table.Th>
-          <Table.Th w={130} ta="right">Amount</Table.Th>
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>{children}</Table.Tbody>
-    </Table>
-  );
-
+/* ── one statement: report header + grid (the same HTML as the print) ── */
+const StatementView = ({ st, ctx, emptyText }) => {
+  if (!st) return <Text c="dimmed" ta="center" py="xl">{emptyText}</Text>;
+  const note = st.note && NOTE_STYLE[st.note.tone];
   return (
     <Stack gap="sm">
-      <Box ta="center">
-        <Text fw={700} size="md">PROFIT & LOSS ACCOUNT</Text>
-        <Text size="sm" c="dimmed">Based on current ledger balances</Text>
-      </Box>
-
-      <TwoCol
-        left={
-          <SideCard title="Receipt — Expenses" color="red.7">
-            <BaseTable>
-              <GroupHeader no={1} label="Expenses" />
-              {(expenses || []).map((it, i) => (
-                <ItemRow key={i} label={it.name} amount={it.amount} indent />
-              ))}
-              <SubtotalRow label="Total Expenses" amount={totalExpense} />
-
-              {/* Trading Account's Gross Loss, brought down into P&L */}
-              {tradeLoss > 0 && (
-                <SpecialRow label="Trade Loss b/f (from Trading A/c)" amount={tradeLoss} color="orange" />
-              )}
-
-              {/* Net Profit carried to Balance Sheet */}
-              {isProfit && (
-                <SpecialRow label="Net Profit (c/o to Balance Sheet)" amount={netProfit} color="green" />
-              )}
-
-              <GrandTotalRow
-                label="GRAND TOTAL"
-                amount={(totalExpense + tradeLoss) + (isProfit ? netProfit : 0)}
-              />
-            </BaseTable>
-          </SideCard>
-        }
-        right={
-          <SideCard title="Payment — Income" color="green.7">
-            <BaseTable>
-              <GroupHeader no={1} label="Income" />
-              {(income || []).map((it, i) => (
-                <ItemRow key={i} label={it.name} amount={it.amount} indent />
-              ))}
-              <SubtotalRow label="Total Income" amount={totalIncome} />
-
-              {/* Trading Account's Gross Profit, brought down into P&L */}
-              {tradeProfit > 0 && (
-                <SpecialRow label="Trade Profit b/f (from Trading A/c)" amount={tradeProfit} color="green" />
-              )}
-
-              {/* Net Loss carried to Balance Sheet */}
-              {!isProfit && (
-                <SpecialRow label="Net Loss (c/o to Balance Sheet)" amount={Math.abs(netProfit)} color="red" />
-              )}
-
-              <GrandTotalRow
-                label="GRAND TOTAL"
-                amount={(totalIncome + tradeProfit) + (!isProfit ? Math.abs(netProfit) : 0)}
-              />
-            </BaseTable>
-          </SideCard>
-        }
-      />
-
-      {/* Net Profit / Loss summary */}
-      <Card withBorder radius="md" p="sm" bg={isProfit ? 'green.0' : 'red.0'}>
-        <Group justify="center" gap="xl">
-          <Text fw={700} c={isProfit ? 'green' : 'red'} size="lg">
-            {isProfit ? 'NET PROFIT' : 'NET LOSS'}: {fmt(netProfit)}
-          </Text>
-          <Badge color={isProfit ? 'green' : 'red'} size="lg">
-            {isProfit ? 'Profitable' : 'Loss-Making'}
-          </Badge>
-        </Group>
-      </Card>
-    </Stack>
-  );
-};
-
-/* ══════════════════════════════════════════════════════════════
-   BALANCE SHEET
-══════════════════════════════════════════════════════════════ */
-const BalanceSheetSection = ({ data }) => {
-  if (!data) return null;
-  const { assets, totalAssets, liabilities, totalLiabilities, capital, totalCapital, netProfit, totalLiabilitiesAndCapital, isTallied } = data;
-
-  const BaseTable = ({ children }) => (
-    <Table withColumnBorders style={{ fontSize: 13 }}>
-      <Table.Thead bg="gray.0">
-        <Table.Tr>
-          <Table.Th w={32} ta="center" style={{ fontSize: 11 }}>#</Table.Th>
-          <Table.Th>Particulars</Table.Th>
-          <Table.Th w={130} ta="right">Amount</Table.Th>
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>{children}</Table.Tbody>
-    </Table>
-  );
-
-  // Build liability+capital items
-  const liabRow = (it, i) => <ItemRow key={i} label={it.name} amount={it.amount} indent />;
-  const capRow = (it, i) => <ItemRow key={`cap-${i}`} label={it.name} amount={it.amount} indent />;
-
-  return (
-    <Stack gap="sm">
-      <Box ta="center">
-        <Text fw={700} size="md">BALANCE SHEET</Text>
-        <Text size="sm" c="dimmed">As on {dayjs().format('DD MMMM YYYY')}</Text>
-      </Box>
-
-      {!isTallied && (
-        <Alert icon={<IconAlertCircle size={16} />} color="orange" title="Not Balanced">
-          Liabilities + Capital ({fmt(totalLiabilitiesAndCapital)}) ≠ Assets ({fmt(totalAssets)}) |
-          Difference: {fmt(Math.abs((totalLiabilitiesAndCapital || 0) - (totalAssets || 0)))}
-        </Alert>
-      )}
-
-      <TwoCol
-        left={
-          <SideCard title="Liabilities & Capital" color="blue">
-            <BaseTable>
-              {/* Liabilities */}
-              {(liabilities || []).length > 0 && (
-                <>
-                  <GroupHeader no={1} label="Liabilities" />
-                  {(liabilities || []).map(liabRow)}
-                  <SubtotalRow label="Total Liabilities" amount={totalLiabilities} />
-                </>
-              )}
-
-              {/* Capital */}
-              {(capital || []).length > 0 && (
-                <>
-                  <GroupHeader no={2} label="Capital" />
-                  {(capital || []).map(capRow)}
-                  <SubtotalRow label="Total Capital" amount={totalCapital} />
-                </>
-              )}
-
-              {/* Net Profit from P&L */}
-              <Table.Tr bg="green.0">
-                <Table.Td />
-                <Table.Td pl={12}>
-                  <Text fw={600} size="sm" c="green">Net Profit from P&L A/c</Text>
-                </Table.Td>
-                <Table.Td ta="right" w={130}>
-                  <Text fw={700} size="sm" c={netProfit >= 0 ? 'green' : 'red'}>
-                    {netProfit < 0 ? `(${fmt(netProfit)})` : fmt(netProfit)}
-                  </Text>
-                </Table.Td>
-              </Table.Tr>
-
-              <GrandTotalRow label="GRAND TOTAL" amount={totalLiabilitiesAndCapital} />
-            </BaseTable>
-          </SideCard>
-        }
-        right={
-          <SideCard title="Assets" color="teal">
-            <BaseTable>
-              <GroupHeader no={1} label="Assets" />
-              {(assets || []).map((it, i) => (
-                <ItemRow key={i} label={it.name} amount={it.amount} indent />
-              ))}
-              <SubtotalRow label="Total Assets" amount={totalAssets} />
-              <GrandTotalRow label="GRAND TOTAL" amount={totalAssets} />
-            </BaseTable>
-          </SideCard>
-        }
-      />
-
-      {isTallied && (
-        <Alert icon={<IconScale size={16} />} color="green" title="Balance Sheet Tallied">
-          Total Liabilities & Capital = Total Assets = {fmt(totalAssets)}
-        </Alert>
-      )}
-    </Stack>
-  );
-};
-
-/* ══════════════════════════════════════════════════════════════
-   V2 — TRADING ACCOUNT (grouped by account_group)
-══════════════════════════════════════════════════════════════ */
-const TradingAccountV2 = ({ data, period }) => {
-  if (!data) return null;
-  const { debitSide, creditSide, totals } = data;
-  const periodLabel = period
-    ? `${dayjs(period.startDate).format('DD-MMM-YYYY')} to ${dayjs(period.endDate).format('DD-MMM-YYYY')}`
-    : '';
-
-  const BaseTable = ({ children }) => (
-    <Table withColumnBorders style={{ fontSize: 13 }}>
-      <Table.Thead bg="gray.0">
-        <Table.Tr>
-          <Table.Th w={32} ta="center" style={{ fontSize: 11 }}>#</Table.Th>
-          <Table.Th>Particulars</Table.Th>
-          <Table.Th w={130} ta="right">Amount</Table.Th>
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>{children}</Table.Tbody>
-    </Table>
-  );
-
-  let grpNo = 0;
-  return (
-    <Stack gap="sm">
-      <Box ta="center">
-        <Text fw={700} size="md">TRADING ACCOUNT (Dynamic)</Text>
-        {periodLabel && <Text size="sm" c="dimmed">Period: {periodLabel}</Text>}
-      </Box>
-      <TwoCol
-        left={
-          <SideCard title="Receipt — Expenditure / Purchases" color="blue">
-            <BaseTable>
-              <GroupHeader no={++grpNo} label="Opening Stock" />
-              <ItemRow label="Total Opening Stock" amount={debitSide?.openingStock?.total || 0} />
-              <SubtotalRow label="Total Opening Stock" amount={debitSide?.openingStock?.total || 0} />
-
-              <GroupHeader no={++grpNo} label="Milk Purchase (Dairy)" />
-              <ItemRow
-                label={`Milk Purchase — ${debitSide?.milkPurchase?.farmerCount || 0} Farmers (${(debitSide?.milkPurchase?.qty || 0).toFixed(2)} L)`}
-                amount={debitSide?.milkPurchase?.total || 0}
-                indent
-              />
-              <SubtotalRow label="Total Milk Purchase" amount={debitSide?.milkPurchase?.total || 0} />
-
-              {(debitSide?.purchaseGroups || []).map((g, gi) => (
-                <React.Fragment key={gi}>
-                  <GroupHeader no={++grpNo} label={g.accountGroup} />
-                  {(g.items || []).map((it, i) => <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />)}
-                  <SubtotalRow label={`Total ${g.accountGroup}`} amount={g.total} />
-                </React.Fragment>
-              ))}
-
-              {parseFloat(debitSide?.grossProfit || 0) > 0 && (
-                <SpecialRow label="Gross Profit c/o to P&L A/c" amount={debitSide.grossProfit} color="green" />
-              )}
-              <GrandTotalRow label="GRAND TOTAL" amount={totals?.debitTotal || 0} />
-            </BaseTable>
-          </SideCard>
-        }
-        right={
-          <SideCard title="Payment — Sales / Income" color="teal">
-            <BaseTable>
-              {(() => { grpNo = 0; return null; })()}
-              <GroupHeader no={++grpNo} label="Milk Sales (Dairy)" />
-              <ItemRow label="Milk Sales to Customers / Local" amount={creditSide?.milkSales?.total || 0} indent />
-              <SubtotalRow label="Total Milk Sales" amount={creditSide?.milkSales?.total || 0} />
-
-              {(creditSide?.unionSales?.total || 0) > 0 && (
-                <>
-                  <GroupHeader no={++grpNo} label="Union / Society Sales Slips" />
-                  <ItemRow label="Union Sales Slips" amount={creditSide.unionSales.total} indent />
-                  <SubtotalRow label="Total Union Sales" amount={creditSide.unionSales.total} />
-                </>
-              )}
-
-              {(creditSide?.salesGroups || []).map((g, gi) => (
-                <React.Fragment key={gi}>
-                  <GroupHeader no={++grpNo} label={g.accountGroup} />
-                  {(g.items || []).map((it, i) => <ItemRow key={i} label={it.ledgerName} amount={it.amount} indent />)}
-                  <SubtotalRow label={`Total ${g.accountGroup}`} amount={g.total} />
-                </React.Fragment>
-              ))}
-
-              <GroupHeader no={++grpNo} label="Closing Stock" />
-              {(creditSide?.closingStock?.items || []).map((it, i) => (
-                <ItemRow key={i} label={it.category} amount={it.amount} indent />
-              ))}
-              <SubtotalRow label="Total Closing Stock" amount={creditSide?.closingStock?.total || 0} />
-
-              {parseFloat(creditSide?.grossLoss || 0) > 0 && (
-                <SpecialRow label="Gross Loss c/o to P&L A/c" amount={creditSide.grossLoss} color="red" />
-              )}
-              <GrandTotalRow label="GRAND TOTAL" amount={totals?.creditTotal || 0} />
-            </BaseTable>
-          </SideCard>
-        }
-      />
-    </Stack>
-  );
-};
-
-/* ══════════════════════════════════════════════════════════════
-   V2 — PROFIT & LOSS (grouped by account_group)
-══════════════════════════════════════════════════════════════ */
-const ProfitLossV2 = ({ data }) => {
-  if (!data) return null;
-  const { incomeGroups, expenseGroups, totalIncome, totalExpense, tradeProfit = 0, tradeLoss = 0, netProfit } = data;
-  const isProfit = (netProfit || 0) >= 0;
-
-  const BaseTable = ({ children }) => (
-    <Table withColumnBorders style={{ fontSize: 13 }}>
-      <Table.Thead bg="gray.0">
-        <Table.Tr>
-          <Table.Th w={32} ta="center" style={{ fontSize: 11 }}>#</Table.Th>
-          <Table.Th>Particulars</Table.Th>
-          <Table.Th w={130} ta="right">Amount</Table.Th>
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>{children}</Table.Tbody>
-    </Table>
-  );
-
-  return (
-    <Stack gap="sm">
-      <Box ta="center">
-        <Text fw={700} size="md">PROFIT & LOSS ACCOUNT (Dynamic)</Text>
-        <Text size="sm" c="dimmed">Based on ac_ledgers account groups</Text>
-      </Box>
-      <TwoCol
-        left={
-          <SideCard title="Receipt — Expenses" color="red.7">
-            <BaseTable>
-              {(expenseGroups || []).map((g, gi) => (
-                <React.Fragment key={gi}>
-                  <GroupHeader no={gi + 1} label={g.accountGroup} />
-                  {(g.ledgers || []).map((it, i) => <ItemRow key={i} label={it.name} amount={it.amount} indent />)}
-                  <SubtotalRow label={`Total ${g.accountGroup}`} amount={g.total} />
-                </React.Fragment>
-              ))}
-              <SubtotalRow label="Total Expenses" amount={totalExpense} />
-              {tradeLoss > 0 && <SpecialRow label="Trade Loss b/f (from Trading A/c)" amount={tradeLoss} color="orange" />}
-              {isProfit && <SpecialRow label="Net Profit (c/o to Balance Sheet)" amount={netProfit} color="green" />}
-              <GrandTotalRow label="GRAND TOTAL" amount={(totalExpense + tradeLoss) + (isProfit ? netProfit : 0)} />
-            </BaseTable>
-          </SideCard>
-        }
-        right={
-          <SideCard title="Payment — Income" color="green.7">
-            <BaseTable>
-              {(incomeGroups || []).map((g, gi) => (
-                <React.Fragment key={gi}>
-                  <GroupHeader no={gi + 1} label={g.accountGroup} />
-                  {(g.ledgers || []).map((it, i) => <ItemRow key={i} label={it.name} amount={it.amount} indent />)}
-                  <SubtotalRow label={`Total ${g.accountGroup}`} amount={g.total} />
-                </React.Fragment>
-              ))}
-              <SubtotalRow label="Total Income" amount={totalIncome} />
-              {tradeProfit > 0 && <SpecialRow label="Trade Profit b/f (from Trading A/c)" amount={tradeProfit} color="green" />}
-              {!isProfit && <SpecialRow label="Net Loss (c/o to Balance Sheet)" amount={Math.abs(netProfit)} color="red" />}
-              <GrandTotalRow label="GRAND TOTAL" amount={(totalIncome + tradeProfit) + (!isProfit ? Math.abs(netProfit) : 0)} />
-            </BaseTable>
-          </SideCard>
-        }
-      />
-      <Card withBorder radius="md" p="sm" bg={isProfit ? 'green.0' : 'red.0'}>
-        <Group justify="center" gap="xl">
-          <Text fw={700} c={isProfit ? 'green' : 'red'} size="lg">
-            {isProfit ? 'NET PROFIT' : 'NET LOSS'}: {fmt(netProfit)}
-          </Text>
-          <Badge color={isProfit ? 'green' : 'red'} size="lg">{isProfit ? 'Profitable' : 'Loss-Making'}</Badge>
-        </Group>
-      </Card>
-    </Stack>
-  );
-};
-
-/* ══════════════════════════════════════════════════════════════
-   V2 — BALANCE SHEET (grouped by account_group)
-══════════════════════════════════════════════════════════════ */
-const BalanceSheetV2 = ({ data }) => {
-  if (!data) return null;
-  const {
-    assetGroups, liabilityGroups, totalAssets, totalLiabilities, closingStock,
-    netProfit = 0, totalLiabilitiesAndCapital, isTallied
-  } = data;
-
-  const BaseTable = ({ children }) => (
-    <Table withColumnBorders style={{ fontSize: 13 }}>
-      <Table.Thead bg="gray.0">
-        <Table.Tr>
-          <Table.Th w={32} ta="center" style={{ fontSize: 11 }}>#</Table.Th>
-          <Table.Th>Particulars</Table.Th>
-          <Table.Th w={130} ta="right">Amount</Table.Th>
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>{children}</Table.Tbody>
-    </Table>
-  );
-
-  const grandAssets = (totalAssets || 0) + (closingStock || 0);
-  const grandLiabilities = totalLiabilitiesAndCapital ?? ((totalLiabilities || 0) + netProfit);
-
-  return (
-    <Stack gap="sm">
-      <Box ta="center">
-        <Text fw={700} size="md">BALANCE SHEET (Dynamic)</Text>
-        <Text size="sm" c="dimmed">As on {dayjs().format('DD MMMM YYYY')}</Text>
-      </Box>
-      {!isTallied && (
-        <Alert icon={<IconAlertCircle size={16} />} color="orange" title="Not Balanced">
-          Liabilities ({fmt(grandLiabilities)}) ≠ Assets ({fmt(grandAssets)}) |
-          Difference: {fmt(Math.abs(grandLiabilities - grandAssets))}
-        </Alert>
-      )}
-      <TwoCol
-        left={
-          <SideCard title="Liabilities" color="blue">
-            <BaseTable>
-              {(liabilityGroups || []).map((g, gi) => (
-                <React.Fragment key={gi}>
-                  <GroupHeader no={gi + 1} label={g.accountGroup} />
-                  {(g.ledgers || []).map((it, i) => <ItemRow key={i} label={it.name} amount={it.balance} indent />)}
-                  <SubtotalRow label={`Total ${g.accountGroup}`} amount={g.total} />
-                </React.Fragment>
-              ))}
-              {/* Net Profit/Loss carried forward from Profit & Loss A/c */}
-              <Table.Tr bg="green.0">
-                <Table.Td />
-                <Table.Td pl={12}>
-                  <Text fw={600} size="sm" c="green">Net Profit from P&L A/c</Text>
-                </Table.Td>
-                <Table.Td ta="right" w={130}>
-                  <Text fw={700} size="sm" c={netProfit >= 0 ? 'green' : 'red'}>
-                    {netProfit < 0 ? `(${fmt(netProfit)})` : fmt(netProfit)}
-                  </Text>
-                </Table.Td>
-              </Table.Tr>
-              <GrandTotalRow label="GRAND TOTAL" amount={grandLiabilities} />
-            </BaseTable>
-          </SideCard>
-        }
-        right={
-          <SideCard title="Assets" color="teal">
-            <BaseTable>
-              {(assetGroups || []).map((g, gi) => (
-                <React.Fragment key={gi}>
-                  <GroupHeader no={gi + 1} label={g.accountGroup} />
-                  {(g.ledgers || []).map((it, i) => <ItemRow key={i} label={it.name} amount={it.balance} indent />)}
-                  <SubtotalRow label={`Total ${g.accountGroup}`} amount={g.total} />
-                </React.Fragment>
-              ))}
-              {(closingStock || 0) > 0 && (
-                <>
-                  <GroupHeader no={(assetGroups || []).length + 1} label="Closing Stock" />
-                  <ItemRow label="Total Closing Stock" amount={closingStock} indent />
-                  <SubtotalRow label="Total Closing Stock" amount={closingStock} />
-                </>
-              )}
-              <GrandTotalRow label="GRAND TOTAL" amount={grandAssets} />
-            </BaseTable>
-          </SideCard>
-        }
-      />
-      {isTallied && (
-        <Alert icon={<IconScale size={16} />} color="green" title="Balance Sheet Tallied">
-          Total Liabilities = Total Assets = {fmt(grandAssets)}
+      <Paper withBorder p="md" radius={0} style={{ overflowX: 'auto', background: '#fff' }}>
+        <Box
+          className="fa-report"
+          miw={900}
+          dangerouslySetInnerHTML={{ __html: reportHeaderHtml(st, ctx) + statementTableHtml(st) }}
+        />
+      </Paper>
+      {note && (
+        <Alert icon={note.icon} color={note.color} py="xs">
+          <Text fw={700} size="sm">{st.note.text}</Text>
         </Alert>
       )}
     </Stack>
@@ -697,31 +59,42 @@ const BalanceSheetV2 = ({ data }) => {
    MAIN COMPONENT
 ══════════════════════════════════════════════════════════════ */
 const FinalAccounts = () => {
+  const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('trading');
-  const [dataSource, setDataSource] = useState('standard'); // 'standard' | 'dynamic'
-  const printRef = useRef(null);
+  const [dataSource, setDataSource] = useState('dynamic'); // 'dynamic' | 'standard'
+  const [printOpen, setPrintOpen] = useState(false);
   const [startDate, setStartDate] = useState(() => {
     const now = new Date();
     const fy = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
     return new Date(fy, 3, 1);
   });
   const [endDate, setEndDate] = useState(new Date());
+  const [loadedPeriod, setLoadedPeriod] = useState(null);
+  const [raw, setRaw] = useState(null);
+  const [registeredName, setRegisteredName] = useState('');
 
-  const [tradingData, setTradingData] = useState(null);
-  const [plData, setPlData] = useState(null);
-  const [bsData, setBsData] = useState(null);
-  const [tradingDataV2, setTradingDataV2] = useState(null);
-  const [plDataV2, setPlDataV2] = useState(null);
-  const [bsDataV2, setBsDataV2] = useState(null);
+  // Registered name (with Reg. No., often Malayalam) for the 2nd header line
+  useEffect(() => {
+    societyInfoAPI.get()
+      .then(res => setRegisteredName(res?.data?.info?.registeredName || ''))
+      .catch(() => {});
+  }, [selectedCompany?._id]);
 
-  const fy = getFinancialYear(startDate);
+  const societyName = selectedCompany?.societyName || selectedCompany?.companyName || 'Dairy Co-operative Society';
+  const fy = getFinancialYear(loadedPeriod?.startDate || startDate);
+  const headerCtx = { shortName: societyName, registeredName, financialYear: fy };
+
+  // Balance Sheet tab: As On only — the period runs from 1 April of that financial year
+  const isBsTab = activeTab === 'bs';
 
   const fetchAll = async () => {
     setLoading(true);
     try {
+      const from = isBsTab ? `${getFinancialYear(endDate).slice(0, 4)}-04-01` : dayjs(startDate).format('YYYY-MM-DD');
+      if (isBsTab) setStartDate(dayjs(from).toDate());
       const params = {
-        startDate: dayjs(startDate).format('YYYY-MM-DD'),
+        startDate: from,
         endDate: dayjs(endDate).format('YYYY-MM-DD')
       };
 
@@ -734,12 +107,11 @@ const FinalAccounts = () => {
         reportAPI.balanceSheetV2(params)
       ]);
 
-      setTradingData(trading?.data || null);
-      setPlData(pl?.data || null);
-      setBsData(bs?.data || null);
-      setTradingDataV2(tradingV2?.data || null);
-      setPlDataV2(plV2?.data || null);
-      setBsDataV2(bsV2?.data || null);
+      setRaw({
+        standard: { trading: trading?.data || null, pl: pl?.data || null, bs: bs?.data || null },
+        dynamic:  { trading: tradingV2?.data || null, pl: plV2?.data || null, bs: bsV2?.data || null }
+      });
+      setLoadedPeriod({ startDate: params.startDate, endDate: params.endDate });
 
       notifications.show({ title: 'Done', message: 'Final accounts loaded', color: 'green' });
     } catch (err) {
@@ -749,13 +121,41 @@ const FinalAccounts = () => {
     }
   };
 
-  const hasData = tradingData || plData || bsData || tradingDataV2 || plDataV2 || bsDataV2;
-  const activeTradingData = dataSource === 'dynamic' ? tradingDataV2 : tradingData;
-  const activePlData      = dataSource === 'dynamic' ? plDataV2      : plData;
-  const activeBsData      = dataSource === 'dynamic' ? bsDataV2      : bsData;
+  const statements = useMemo(() => {
+    const src = raw?.[dataSource];
+    if (!src) return null;
+    return {
+      trading: buildTrading(src.trading, dataSource, loadedPeriod),
+      pl:      buildProfitLoss(src.pl, dataSource, loadedPeriod),
+      bs:      buildBalanceSheet(src.bs, dataSource, loadedPeriod)
+    };
+  }, [raw, dataSource, loadedPeriod]);
+
+  const hasData = !!statements && !!(statements.trading || statements.pl || statements.bs);
+
+  // Print / export the open tab; Combined View covers all three statements.
+  const selected = () => (activeTab === 'combined' || !statements?.[activeTab]
+    ? [statements?.trading, statements?.pl, statements?.bs]
+    : [statements[activeTab]]);
+
+  const printHtml = useMemo(() => {
+    if (!printOpen || !statements) return '';
+    return buildFinalAccountsPrintHtml(selected(), {
+      ...headerCtx,
+      generatedOn: dayjs().format('DD/MM/YYYY HH:mm:ss')
+    }, 'landscape');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [printOpen, statements, activeTab, societyName, registeredName, fy]);
+
+  const handleExport = () => {
+    exportFinalAccountsExcel(selected(), headerCtx,
+      `final_accounts_${activeTab}_${dataSource}_${dayjs(loadedPeriod?.endDate).format('YYYY-MM-DD')}.xlsx`);
+  };
 
   return (
     <Stack gap="md" p="md">
+      <style>{FA_FONT_IMPORT + FA_GRID_CSS}</style>
+
       {/* Header */}
       <Group justify="space-between">
         <Stack gap={2}>
@@ -763,44 +163,45 @@ const FinalAccounts = () => {
           <Text size="sm" c="dimmed">Trading Account · Profit & Loss · Balance Sheet</Text>
         </Stack>
         {hasData && (
-          <Tooltip label="Print">
-            <ActionIcon variant="light" color="gray" size="lg" onClick={() => printReport(printRef, { title: 'Final Accounts', orientation: 'landscape' })}>
-              <IconPrinter size={18} />
-            </ActionIcon>
-          </Tooltip>
+          <Group gap="xs">
+            <Button variant="light" color="green" leftSection={<IconFileSpreadsheet size={16} />} onClick={handleExport}>
+              Export
+            </Button>
+            <Button variant="light" color="dark" leftSection={<IconPrinter size={16} />} onClick={() => setPrintOpen(true)}>
+              Print
+            </Button>
+          </Group>
         )}
       </Group>
 
-      {/* Filters */}
+      {/* Filters — one row: From Date, To Date, Generate (Balance Sheet: As On Date, Generate) */}
       <Paper withBorder p="sm" radius="md">
-        <Group align="flex-end" gap="md" wrap="wrap">
+        <Group align="flex-end" gap="md" wrap="nowrap" style={{ overflowX: 'auto' }}>
+          {!isBsTab && (
+            <DateInput
+              label="From Date"
+              value={startDate}
+              onChange={setStartDate}
+              valueFormat="DD/MM/YYYY"
+              clearable={false}
+              w={160}
+            />
+          )}
           <DateInput
-            label="From Date"
-            value={startDate}
-            onChange={setStartDate}
-            valueFormat="DD-MM-YYYY"
-            clearable={false}
-            w={160}
-          />
-          <DateInput
-            label="To Date"
+            label={isBsTab ? 'As On Date' : 'To Date'}
             value={endDate}
             onChange={setEndDate}
-            valueFormat="DD-MM-YYYY"
+            valueFormat="DD/MM/YYYY"
             clearable={false}
             w={160}
           />
-          <Box>
-            <Text size="xs" c="dimmed" mb={4}>Financial Year</Text>
-            <Badge size="lg" variant="outline" color="blue" radius="sm">{fy}</Badge>
-          </Box>
           <Button
             leftSection={loading ? <Loader size={14} color="white" /> : <IconRefresh size={16} />}
             onClick={fetchAll}
             loading={loading}
             color="blue"
           >
-            Generate All
+            Generate
           </Button>
           <Box>
             <Text size="xs" c="dimmed" mb={4}>Data Source</Text>
@@ -809,8 +210,8 @@ const FinalAccounts = () => {
               value={dataSource}
               onChange={setDataSource}
               data={[
-                { value: 'standard', label: 'Standard' },
-                { value: 'dynamic',  label: 'Dynamic (ac_ledgers)' }
+                { value: 'dynamic',  label: 'Dynamic' },
+                { value: 'standard', label: 'Standard' }
               ]}
             />
           </Box>
@@ -827,14 +228,13 @@ const FinalAccounts = () => {
       {!loading && !hasData && (
         <Paper withBorder p="xl" ta="center" radius="md">
           <Text c="dimmed" size="sm">
-            Select a date range and click "Generate All" to view the Final Accounts
+            Select a date range and click "Generate" to view the Final Accounts
           </Text>
         </Paper>
       )}
 
       {/* Tabs */}
       {hasData && (
-        <Box ref={printRef}>
         <Tabs value={activeTab} onChange={setActiveTab} keepMounted={false}>
           <Tabs.List>
             <Tabs.Tab value="trading" leftSection={<IconChartBar size={16} />}>
@@ -852,77 +252,37 @@ const FinalAccounts = () => {
           </Tabs.List>
 
           <Tabs.Panel value="trading" pt="md">
-            {activeTradingData
-              ? dataSource === 'dynamic'
-                ? <TradingAccountV2 data={activeTradingData} period={activeTradingData.period} />
-                : <TradingAccount   data={activeTradingData} period={activeTradingData.period} />
-              : <Text c="dimmed" ta="center" py="xl">No trading data available</Text>
-            }
+            <StatementView st={statements.trading} ctx={headerCtx} emptyText="No trading data available" />
           </Tabs.Panel>
 
           <Tabs.Panel value="pl" pt="md">
-            {activePlData
-              ? dataSource === 'dynamic'
-                ? <ProfitLossV2 data={activePlData} />
-                : <ProfitLoss   data={activePlData} />
-              : <Text c="dimmed" ta="center" py="xl">No profit & loss data available</Text>
-            }
+            <StatementView st={statements.pl} ctx={headerCtx} emptyText="No profit & loss data available" />
           </Tabs.Panel>
 
           <Tabs.Panel value="bs" pt="md">
-            {activeBsData
-              ? dataSource === 'dynamic'
-                ? <BalanceSheetV2      data={activeBsData} />
-                : <BalanceSheetSection data={activeBsData} />
-              : <Text c="dimmed" ta="center" py="xl">No balance sheet data available</Text>
-            }
+            <StatementView st={statements.bs} ctx={headerCtx} emptyText="No balance sheet data available" />
           </Tabs.Panel>
 
           <Tabs.Panel value="combined" pt="md">
             <Stack gap="xl">
-              <Box>
-                <Divider label={<Text fw={700} size="sm">TRADING ACCOUNT</Text>} labelPosition="center" mb="md" />
-                {activeTradingData
-                  ? dataSource === 'dynamic'
-                    ? <TradingAccountV2 data={activeTradingData} period={activeTradingData.period} />
-                    : <TradingAccount   data={activeTradingData} period={activeTradingData.period} />
-                  : <Text c="dimmed" ta="center">No data</Text>
-                }
-              </Box>
-              <Box>
-                <Divider label={<Text fw={700} size="sm">PROFIT & LOSS ACCOUNT</Text>} labelPosition="center" mb="md" />
-                {activePlData
-                  ? dataSource === 'dynamic'
-                    ? <ProfitLossV2 data={activePlData} />
-                    : <ProfitLoss   data={activePlData} />
-                  : <Text c="dimmed" ta="center">No data</Text>
-                }
-              </Box>
-              <Box>
-                <Divider label={<Text fw={700} size="sm">BALANCE SHEET</Text>} labelPosition="center" mb="md" />
-                {activeBsData
-                  ? dataSource === 'dynamic'
-                    ? <BalanceSheetV2      data={activeBsData} />
-                    : <BalanceSheetSection data={activeBsData} />
-                  : <Text c="dimmed" ta="center">No data</Text>
-                }
-              </Box>
+              {['trading', 'pl', 'bs'].map((k, i) => (
+                <Box key={k}>
+                  {i > 0 && <Divider mb="md" />}
+                  <StatementView st={statements[k]} ctx={headerCtx} emptyText="No data" />
+                </Box>
+              ))}
             </Stack>
           </Tabs.Panel>
         </Tabs>
-        </Box>
       )}
 
-      {/* Footer */}
-      {hasData && (
-        <Paper withBorder p="sm" radius="md">
-          <Group justify="space-between">
-            <Text size="xs" c="dimmed">Financial Year: {fy}</Text>
-            <Text size="xs" c="dimmed">This is a computer-generated report</Text>
-            <Text size="xs" c="dimmed">Generated: {dayjs().format('DD/MM/YYYY hh:mm A')}</Text>
-          </Group>
-        </Paper>
-      )}
+      {/* Print preview — the iframe shows the exact A4 document that gets printed */}
+      <A4PrintPreview
+        html={printHtml}
+        orientation={printOpen ? 'landscape' : null}
+        title="Final Accounts"
+        onClose={() => setPrintOpen(false)}
+      />
     </Stack>
   );
 };

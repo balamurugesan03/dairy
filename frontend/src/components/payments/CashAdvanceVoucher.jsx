@@ -491,8 +491,10 @@ const CashAdvanceVoucher = () => {
       >
         <Stack gap="md">
 
-          {/* ── Balance Summary Cards ── */}
-          {form.farmerId && (
+          {/* ── Balance Summary Cards ── always shown (zeros until a producer
+              is picked) so choosing a producer doesn't push the fields below
+              down under the mouse pointer. */}
+          {(
             <Box>
               <Group justify="space-between" align="center" mb={8}>
                 <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: 0.5 }}>
@@ -508,7 +510,7 @@ const CashAdvanceVoucher = () => {
                   value={openingBalance ?? 0}
                   color="gray"
                   icon={<IconCurrencyRupee size={16} />}
-                  note={openingBalance === null ? 'No opening record' : 'From Producer Openings'}
+                  note={!form.farmerId ? 'Select a producer' : openingBalance === null ? 'No opening record' : 'From Producer Openings'}
                 />
                 <BalanceCard
                   label="Outstanding Advances"
@@ -535,7 +537,7 @@ const CashAdvanceVoucher = () => {
             </Box>
           )}
 
-          {form.farmerId && <Divider />}
+          <Divider />
 
           {/* ── Producer & Date ── */}
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">

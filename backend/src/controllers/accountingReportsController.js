@@ -2591,9 +2591,11 @@ export const getRDStatementUnified = async (req, res) => {
     // Opening/Closing balance — exact selected range (Single/Two Column) and
     // FY-anchored (Three Column, consistent with its Upto/During/End figures).
     const [{ priorMap: rangePriorMap, periodMap: rangePeriodMap },
-           { priorMap: fyPriorMap,    periodMap: fyPeriodMap }] = await Promise.all([
+           { priorMap: fyPriorMap,    periodMap: fyPeriodMap },
+           { priorMap: monthPriorMap }] = await Promise.all([
       buildActivityMaps(Voucher, req.companyId, start, end),
-      buildActivityMaps(Voucher, req.companyId, fyStart, end)
+      buildActivityMaps(Voucher, req.companyId, fyStart, end),
+      buildActivityMaps(Voucher, req.companyId, monthStart, end)
     ]);
     const sumBal = (map1, map2, addPeriod) =>
       cashBankLedgers.reduce((s, l) => s + computeLedgerBalance(l, map1, map2, addPeriod).signed, 0);
@@ -2601,6 +2603,8 @@ export const getRDStatementUnified = async (req, res) => {
     const closingBalance   = sumBal(rangePriorMap, rangePeriodMap, true);
     const openingBalanceFY = sumBal(fyPriorMap, {}, false);
     const closingBalanceFY = sumBal(fyPriorMap, fyPeriodMap, true);
+    // Three Column cash row: balance carried into "the month" (= closing before it).
+    const openingBalanceMonth = sumBal(monthPriorMap, {}, false);
 
     // ── Build one unified record per ledger touched in ANY of the three windows ──
     const empty = { receiptCash: 0, receiptAdj: 0, paymentCash: 0, paymentAdj: 0 };
@@ -2677,7 +2681,7 @@ export const getRDStatementUnified = async (req, res) => {
         startDate: start, endDate: end, fyStart, fyEnd, monthStart,
         groupBy,
         openingBalance, closingBalance,
-        openingBalanceFY, closingBalanceFY,
+        openingBalanceFY, closingBalanceFY, openingBalanceMonth,
         sections,
         grandTotal
       }

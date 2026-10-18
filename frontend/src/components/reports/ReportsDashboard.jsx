@@ -105,7 +105,7 @@ const ReportsDashboard = () => {
       color: '#f9f0ff'
     },
     {
-      title: 'Receipts & Disbursement',
+      title: 'Receipt and Disbursements',
       description: 'Summary of all receipts and disbursements',
       icon: (
         <svg viewBox="0 0 24 24" fill="none" stroke="#eb2f96">
@@ -180,7 +180,7 @@ const ReportsDashboard = () => {
       color: '#e6fffb'
     },
     {
-      title: 'R&D Enhanced',
+      title: 'Receipt and Disbursements',
       description: 'Receipts & Disbursement: Single | Three Column | Classified',
       icon: (
         <svg viewBox="0 0 24 24" fill="none" stroke="#f5222d">

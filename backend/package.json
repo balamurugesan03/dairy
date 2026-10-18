@@ -8,6 +8,7 @@
     "dev": "nodemon --max-old-space-size=4096 src/server.js",
     "init:ledgers": "node src/scripts/initLedgers.js",
     "seed:dairy-ledgers": "node src/scripts/seedDairyLedgers.js",
+    "seed:reports-demo": "node src/scripts/seedReportsDemoData.js",
     "seed:admin": "node src/scripts/seedSuperAdmin.js",
     "import:farmers": "node src/scripts/importFarmers.js",
     "test": "echo \"Error: no test specified\" && exit 1"

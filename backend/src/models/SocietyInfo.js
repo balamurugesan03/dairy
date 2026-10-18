@@ -6,6 +6,8 @@ const societyInfoSchema = new mongoose.Schema({
   // ── Basic Information ──────────────────────────────────────────
   societyCode:       { type: String, default: '' },
   societyName:       { type: String, default: '' },
+  // Full registered name with Reg. No. (may be Malayalam) — 2nd line of report headers
+  registeredName:    { type: String, default: '' },
   doorNo:            { type: String, default: '' },
   city:              { type: String, default: '' },
   state:             { type: String, default: '' },

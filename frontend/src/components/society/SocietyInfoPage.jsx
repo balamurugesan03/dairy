@@ -244,7 +244,7 @@ export default function SocietyInfoPage() {
 
   const form = useForm({
     initialValues: {
-      societyCode: '', societyName: '', doorNo: '', city: '', state: '',
+      societyCode: '', societyName: '', registeredName: '', doorNo: '', city: '', state: '',
       pinCode: '', phone: '', fax: '', email: '',
       financialYearFrom: null, financialYearTo: null,
       welfareCode: '', noOfStaff: 0,
@@ -520,6 +520,13 @@ export default function SocietyInfoPage() {
                   {...form.getInputProps('societyName')}
                 />
 
+                <TextInput
+                  label="Registered Name (with Reg. No.)"
+                  description="Printed below the society name on report headers — Malayalam allowed"
+                  placeholder="e.g. VILLOOR കെ.എസ്.എസ് ലിമിറ്റഡ്, നം.M 265 (D) ആപ്കോസ്"
+                  {...form.getInputProps('registeredName')}
+                />
+
                 <SimpleGrid cols={2} spacing="sm">
                   <TextInput
                     label="Door No."
@@ -576,14 +583,14 @@ export default function SocietyInfoPage() {
                   <DatePickerInput
                     label="From"
                     placeholder="Pick start date"
-                    valueFormat="DD MMM YYYY"
+                    valueFormat="DD/MM/YYYY"
                     {...form.getInputProps('financialYearFrom')}
                     clearable
                   />
                   <DatePickerInput
                     label="To"
                     placeholder="Pick end date"
-                    valueFormat="DD MMM YYYY"
+                    valueFormat="DD/MM/YYYY"
                     {...form.getInputProps('financialYearTo')}
                     clearable
                   />
@@ -700,7 +707,7 @@ export default function SocietyInfoPage() {
                   <DatePickerInput
                     label="Last Board Meeting"
                     placeholder="Pick date"
-                    valueFormat="DD MMM YYYY"
+                    valueFormat="DD/MM/YYYY"
                     leftSection={<IconCalendar size={14} />}
                     {...form.getInputProps('boardMeetingDate')}
                     clearable
@@ -708,7 +715,7 @@ export default function SocietyInfoPage() {
                   <DatePickerInput
                     label="Next Election Date"
                     placeholder="Pick date"
-                    valueFormat="DD MMM YYYY"
+                    valueFormat="DD/MM/YYYY"
                     leftSection={<IconCalendar size={14} />}
                     {...form.getInputProps('nextElectionDate')}
                     clearable

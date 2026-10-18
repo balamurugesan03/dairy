@@ -468,7 +468,7 @@ export default function FinancialYearManagement() {
                 placeholder="01 Apr 2025"
                 value={form.startDate}
                 onChange={d => setForm(f => ({ ...f, startDate: d }))}
-                valueFormat="DD MMM YYYY"
+                valueFormat="DD/MM/YYYY"
                 required
               />
             </Grid.Col>
@@ -478,7 +478,7 @@ export default function FinancialYearManagement() {
                 placeholder="31 Mar 2026"
                 value={form.endDate}
                 onChange={d => setForm(f => ({ ...f, endDate: d }))}
-                valueFormat="DD MMM YYYY"
+                valueFormat="DD/MM/YYYY"
                 required
               />
             </Grid.Col>

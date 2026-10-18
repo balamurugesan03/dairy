@@ -206,7 +206,7 @@ export default function PaymentSettings() {
                   placeholder="Select payment from date"
                   value={paymentFromDate}
                   onChange={setPaymentFromDate}
-                  valueFormat="DD MMM YYYY"
+                  valueFormat="DD/MM/YYYY"
                   clearable
                   leftSection={<IconCalendarEvent size={16} />}
                 />
@@ -341,7 +341,7 @@ export default function PaymentSettings() {
                   placeholder="Select start date"
                   value={accountStartDate}
                   onChange={setAccountStartDate}
-                  valueFormat="DD MMM YYYY"
+                  valueFormat="DD/MM/YYYY"
                   clearable
                   leftSection={<IconCalendarEvent size={16} />}
                 />

@@ -4,6 +4,7 @@ import { producerRegisterAPI, collectionCenterAPI } from '../../services/api';
 import { message } from '../../utils/toast';
 import dayjs from 'dayjs';
 import './ProducerRegister.css';
+import DateField from '../common/DateField';
 
 const ProducerRegisterSummary = () => {
   const [summaryData, setSummaryData] = useState(null);
@@ -78,8 +79,7 @@ const ProducerRegisterSummary = () => {
         <div className="control-row">
           <div className="control-group">
             <label>From Date:</label>
-            <input
-              type="date"
+            <DateField
               value={filters.fromDate}
               onChange={(e) => setFilters(prev => ({ ...prev, fromDate: e.target.value }))}
               className="ledger-input"
@@ -88,8 +88,7 @@ const ProducerRegisterSummary = () => {
 
           <div className="control-group">
             <label>To Date:</label>
-            <input
-              type="date"
+            <DateField
               value={filters.toDate}
               onChange={(e) => setFilters(prev => ({ ...prev, toDate: e.target.value }))}
               className="ledger-input"

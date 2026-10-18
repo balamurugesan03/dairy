@@ -363,7 +363,7 @@ const VoucherList = () => {
             size="xs"
             w={150}
             placeholder="From Date"
-            valueFormat="DD-MM-YYYY"
+            valueFormat="DD/MM/YYYY"
             value={dateRange[0]}
             onChange={(d) => setDateRange([d, dateRange[1]])}
             maxDate={dateRange[1] ? new Date(dateRange[1]) : undefined}
@@ -374,7 +374,7 @@ const VoucherList = () => {
             size="xs"
             w={150}
             placeholder="To Date"
-            valueFormat="DD-MM-YYYY"
+            valueFormat="DD/MM/YYYY"
             value={dateRange[1]}
             onChange={(d) => setDateRange([dateRange[0], d])}
             minDate={dateRange[0] ? new Date(dateRange[0]) : undefined}

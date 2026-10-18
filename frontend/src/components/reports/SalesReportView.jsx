@@ -7,6 +7,7 @@ import PageHeader from '../common/PageHeader';
 import ExportButton from '../common/ExportButton';
 import { SegmentedControl } from '@mantine/core';
 import './SalesReportView.css';
+import DateField from '../common/DateField';
 
 const fmt = (n) => parseFloat(n || 0).toFixed(2);
 
@@ -145,11 +146,11 @@ const SalesReportView = () => {
           <div className="date-inputs">
             <label>
               From:
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <DateField value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </label>
             <label>
               To:
-              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              <DateField value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </label>
           </div>
 

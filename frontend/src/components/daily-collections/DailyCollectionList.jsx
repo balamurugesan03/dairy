@@ -695,7 +695,7 @@ const DailyCollectionList = () => {
             value={date}
             onChange={v => { setDate(v); setPage(1); }}
             leftSection={<IconCalendar size={14} />}
-            valueFormat="DD MMM YYYY"
+            valueFormat="DD/MM/YYYY"
             size="sm" style={{ width: 150 }}
           />
           <Select
