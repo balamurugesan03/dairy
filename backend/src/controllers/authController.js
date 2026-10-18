@@ -122,7 +122,8 @@ export const login = async (req, res) => {
     let user = await User.findOne({ username: username.toLowerCase() })
       .select('+password')
       .populate('company', 'companyName businessTypes status')
-      .populate('collectionCenter', 'centerName');
+      .populate('collectionCenter', 'centerName')
+      .populate('agentId', 'agentName agentCode collectionCenterId');
 
     if (!user) {
       return res.status(401).json({

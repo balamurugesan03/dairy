@@ -228,6 +228,7 @@ export const salesAPI = {
 // VOUCHER APIs
 export const voucherAPI = {
   getAll: (params) => api.get('/vouchers', { params }).then(res => res.data).catch(handleError),
+  cashBookEntry: (date) => api.get('/vouchers/cash-book-entry', { params: { date } }).then(res => res.data).catch(handleError),
   getById: (id) => api.get(`/vouchers/${id}`).then(res => res.data).catch(handleError),
   create: (data) => api.post('/vouchers', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/vouchers/${id}`, data).then(res => res.data).catch(handleError),

@@ -104,6 +104,7 @@ const LedgerList = lazy(() => import('./components/accounting/LedgerList'));
 const LedgerView = lazy(() => import('./components/accounting/LedgerView'));
 const ReceiptVoucher = lazy(() => import('./components/accounting/ReceiptVoucher'));
 const PaymentVoucher = lazy(() => import('./components/accounting/PaymentVoucher'));
+const CashBookEntry = lazy(() => import('./components/accounting/CashBookEntry'));
 const JournalVoucher = lazy(() => import('./components/accounting/JournalVoucher'));
 const OutstandingReport = lazy(() => import('./components/accounting/OutstandingReport'));
 
@@ -429,6 +430,7 @@ const AppContent = () => {
                 <Route path="ledgers/:id" element={<LedgerView />} />
                 <Route path="receipt" element={<ReceiptVoucher />} />
                 <Route path="payment" element={<PaymentVoucher />} />
+                <Route path="cash-book-entry" element={<CashBookEntry />} />
                 <Route path="journal" element={<JournalVoucher />} />
                 <Route path="outstanding" element={<OutstandingReport />} />
               </Route>
