@@ -161,7 +161,9 @@ const PaymentVoucher = () => {
       const response = await voucherAPI.getAll({
         voucherType: 'Payment',
         startDate: filterDate,
-        endDate: filterDate
+        endDate: filterDate,
+        // The API defaults to 10 per page — show the whole day (Cash Book Entry adds here too)
+        limit: 1000
       });
       setVouchers(response.data || []);
     } catch (error) {

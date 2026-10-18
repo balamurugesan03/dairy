@@ -35,6 +35,7 @@ import dayjs from 'dayjs';
 import ImportModal from '../common/ImportModal';
 import { offlineQueue } from '../../utils/offlineQueue';
 import { localDateStr } from '../../utils/dateUtils';
+import { toAgentOptions, groupAgentsByCenter, findOwnAgent, pickDefaultAgent } from '../../utils/senderAgent';
 
 // ── Rate Calculation ─────────────────────────────────────────────────────────
 const fallbackRate = (fat, clr) =>
@@ -204,8 +205,10 @@ const toDate = (d) => {
   return new Date(d);
 };
 
-const MilkPurchase = () => {
-  const { isSuperAdmin, isCompanyAdmin, isUser, isCentreLogin, centreInfo, userCenter, userAgent } = useAuth();
+// asPopup: rendered inside the global F2 popup (MainLayout) instead of as a
+// routed page — Close / P-S swap then go through onClose / onSwap.
+const MilkPurchase = ({ asPopup = false, onSwap, onClose }) => {
+  const { user, isSuperAdmin, isCompanyAdmin, isUser, isCentreLogin, isAgentLogin, centreInfo, userCenter } = useAuth();
   const [centersData, setCentersData] = useState([]);
   const [centreSummary, setCentreSummary] = useState([]);
   const [agentsData,  setAgentsData]  = useState([]);
@@ -235,6 +238,8 @@ const MilkPurchase = () => {
     const onKey = (e) => {
       const k = e.key?.toLowerCase();
       if (k !== 's' && k !== 'p') return;
+      // The routed page stays mounted under an F2/F3 popup — let the popup own the keys
+      if (!asPopup && document.querySelector('[data-milk-popup]')) return;
 
       const ae  = document.activeElement;
       const tag = ae?.tagName;
@@ -248,12 +253,13 @@ const MilkPurchase = () => {
       if (!withMod && !canPlainSwap) return;     // typing letters in a free-text field
 
       e.preventDefault();
-      if (k === 's') navigate('/daily-collections/milk-sales');
-      else           navigate('/daily-collections/milk-purchase');
+      if (asPopup)       { if (k === 's') onSwap?.('sales'); }
+      else if (k === 's') navigate('/daily-collections/milk-sales');
+      else                navigate('/daily-collections/milk-purchase');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [navigate]);
+  }, [navigate, asPopup, onSwap]);
 
   // Persist date across Ctrl+S / Ctrl+P navigation
   useEffect(() => {
@@ -893,23 +899,31 @@ const MilkPurchase = () => {
           setCenter(myId);
           const mine = cl.find(c => c.value === myId);
           if (mine) centerNameRef.current = mine.label;
-        } else {
+        }
+        const al = toAgentOptions(agentRes.data || []);
+        setAgentsData(al);
+        // Sender Agent follows the login: an agent is fixed to themself (and
+        // their centre); an admin defaults to their own agent but may change it.
+        const ownAgent = findOwnAgent(al, user);
+        if (!(isCentreLogin && centreInfo?.centreId)) {
           const userCentreId = userCenter?._id?.toString() || userCenter?.toString();
-          const preferred = userCentreId && cl.find(c => c.value === userCentreId);
+          const lockedCentreId = isAgentLogin && ownAgent?.centerId;
+          const preferred = cl.find(c => c.value === (lockedCentreId || userCentreId));
           const picked = preferred || cl[0];
           if (picked) { setCenter(picked.value); centerNameRef.current = picked.label; }
           // Main centre: fetch today's sub-centre summary
-          try {
-            const sumRes = await milkCollectionAPI.getCentreSummary({ date: dayjs().format('YYYY-MM-DD') });
-            setCentreSummary(sumRes.data || []);
-          } catch { /* non-critical */ }
+          if (!isAgentLogin) {
+            try {
+              const sumRes = await milkCollectionAPI.getCentreSummary({ date: dayjs().format('YYYY-MM-DD') });
+              setCentreSummary(sumRes.data || []);
+            } catch { /* non-critical */ }
+          }
+          const def = isAgentLogin ? ownAgent : pickDefaultAgent(al, user, picked?.value);
+          if (def) setAgent(def.value);
+        } else {
+          const def = pickDefaultAgent(al, user, centreInfo.centreId.toString());
+          if (def) setAgent(def.value);
         }
-        const al = (agentRes.data || []).map(a => ({ value: a._id, label: a.agentName, centerId: a.collectionCenterId?._id || a.collectionCenterId }));
-        setAgentsData(al);
-        const userAgentId = userAgent?._id?.toString() || userAgent?.toString();
-        const preferredAgent = userAgentId && al.find(a => a.value === userAgentId);
-        if (preferredAgent) setAgent(preferredAgent.value);
-        else if (al.length) setAgent(al[0].value);
         const chartType = settingsRes?.data?.activeRateChartType || 'ApplyFormula';
         setActiveChart(chartType);
         await loadChartData(chartType);
@@ -1070,11 +1084,26 @@ const MilkPurchase = () => {
     return () => clearInterval(id);
   }, [cpMode]); // eslint-disable-line
 
-  const filteredAgents = useCallback(() => {
-    if (!center) return agentsData;
-    const f = agentsData.filter(a => !a.centerId || a.centerId === center);
-    return f.length ? f : agentsData;
-  }, [center, agentsData]);
+  // Sender Agent dropdown: agent login → only themself; sub-centre login →
+  // that centre's agents; admin → every agent, grouped by centre.
+  const agentSelectData = useCallback(() => {
+    if (isAgentLogin) return agentsData.filter(a => a.value === agent);
+    if (isCentreLogin) {
+      const f = agentsData.filter(a => !a.centerId || a.centerId === center);
+      return (f.length ? f : agentsData).map(({ value, label }) => ({ value, label }));
+    }
+    return groupAgentsByCenter(agentsData, center);
+  }, [isAgentLogin, isCentreLogin, center, agent, agentsData]);
+
+  // Admin picking an agent from another centre moves the centre with it
+  const handleAgentChange = (v) => {
+    if (isAgentLogin) return;
+    setAgent(v || '');
+    const a = agentsData.find(x => x.value === v);
+    if (a?.centerId && a.centerId !== center && !isCentreLogin && centersData.some(c => c.value === a.centerId)) {
+      setCenter(a.centerId);
+    }
+  };
 
   // SNF = (CLR/4) + (0.20 × FAT) + 0.50
   // Only runs in CLR-FAT mode. Requires BOTH fat AND clr to be entered — no auto-fill defaults.
@@ -1326,9 +1355,9 @@ const MilkPurchase = () => {
     // Add shift incentive if active
     const shiftIncAmount = calcShiftIncentiveAmt(asi || [], netLtr, netLtr, parseFloat(f) || 0, parseFloat(s) || fresh.snf || 0, freshAmount);
     freshAmount = parseFloat((freshAmount + timeIncAmount + shiftIncAmount).toFixed(2));
+    // Built outside the try so the offline fallback in catch can queue it
+    const payload = { date: localDateStr(toDate(d)), shift: sh, collectionCenter: ct || undefined, agent: ag || undefined, farmer: p._id, farmerNumber: p.no, farmerName: p.name, qty: netLtr, ltr: netLtr, clr: parseFloat(c) || 0, fat: parseFloat(f), snf: parseFloat(s) || fresh.snf || 0, addedWater: waterLtr, rate: freshRate, incentive: fresh.incentive, timeIncentiveRate: timeIncRate || undefined, timeIncentiveAmount: timeIncAmount || undefined, shiftIncentiveAmount: shiftIncAmount || undefined, amount: freshAmount };
     try {
-      const payload = { date: localDateStr(toDate(d)), shift: sh, collectionCenter: ct || undefined, agent: ag || undefined, farmer: p._id, farmerNumber: p.no, farmerName: p.name, qty: netLtr, ltr: netLtr, clr: parseFloat(c) || 0, fat: parseFloat(f), snf: parseFloat(s) || fresh.snf || 0, addedWater: waterLtr, rate: freshRate, incentive: fresh.incentive, timeIncentiveRate: timeIncRate || undefined, timeIncentiveAmount: timeIncAmount || undefined, shiftIncentiveAmount: shiftIncAmount || undefined, amount: freshAmount };
-
       if (eid) {
         // UPDATE existing entry
         const res = await milkCollectionAPI.update(eid, payload);
@@ -1387,7 +1416,7 @@ const MilkPurchase = () => {
           const lang = formRef.current.speakLang || 'en-IN';
           const rupees = Math.floor(saved.amount);
           const paise  = Math.round((saved.amount - rupees) * 100);
-          const no     = saved.producerNo;
+          const no     = saved.farmerNumber || p.no;
           const text = lang === 'ml-IN'
             ? `അംഗ നമ്പർ ${no}. തുക ${rupees} രൂപ${paise > 0 ? ` ${paise} പൈസ` : ''}.`
             : lang === 'ta-IN'
@@ -1923,7 +1952,7 @@ const MilkPurchase = () => {
         .mp-calc-row > * { flex: 1 1 100% !important; }
       }
     `}</style>
-    <Box className="mp-root" style={{ height: 'calc(100vh - 120px)', margin: 'calc(-1 * var(--mantine-spacing-md))', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#eef4fb' }}>
+    <Box className="mp-root" style={{ height: asPopup ? '100%' : 'calc(100vh - 120px)', margin: asPopup ? 0 : 'calc(-1 * var(--mantine-spacing-md))', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#eef4fb' }}>
 
       {/* ══ SUB-CENTRE SUMMARY INDICATOR (main centre only) ════════════════ */}
       {!isCentreLogin && centreSummary.length > 0 && (
@@ -1977,22 +2006,31 @@ const MilkPurchase = () => {
           <Group gap={4} align="center" wrap="nowrap">
             <Text size="11px" fw={700} c="#1e3a8a" style={{ whiteSpace: 'nowrap' }}>Center</Text>
             <Select
-              value={center} onChange={v => { if (!isCentreLogin) { setCenter(v); setAgent(''); } }}
+              value={center}
+              onChange={v => {
+                if (isCentreLogin || isAgentLogin) return;
+                setCenter(v);
+                const a = agentsData.find(x => x.value === agent);
+                if (!a || (a.centerId && a.centerId !== v)) setAgent(pickDefaultAgent(agentsData.filter(x => x.centerId === v), user, v)?.value || '');
+              }}
               data={centersData} placeholder="Center..." searchable
               leftSection={<IconBuilding size={14} color="#2563eb" />}
               size="sm" radius="md" style={{ width: 160 }}
-              readOnly={isCentreLogin}
-              styles={{ input: { fontWeight: 600, border: isCentreLogin ? '1.5px solid #86efac' : '1.5px solid #bfdbfe', background: isCentreLogin ? '#f0fdf4' : undefined } }}
+              readOnly={isCentreLogin || isAgentLogin}
+              styles={{ input: { fontWeight: 600, border: (isCentreLogin || isAgentLogin) ? '1.5px solid #86efac' : '1.5px solid #bfdbfe', background: (isCentreLogin || isAgentLogin) ? '#f0fdf4' : undefined } }}
             />
           </Group>
           <Group gap={4} align="center" wrap="nowrap">
-            <Text size="11px" fw={700} c="#1e3a8a" style={{ whiteSpace: 'nowrap' }}>Agent</Text>
+            <Text size="11px" fw={700} c="#1e3a8a" style={{ whiteSpace: 'nowrap' }}>Sender Agent</Text>
             <Select
-              value={agent} onChange={setAgent}
-              data={filteredAgents()} placeholder="Agent..." searchable
+              value={agent || null} onChange={handleAgentChange}
+              data={agentSelectData()} placeholder="Sender agent..." searchable
+              nothingFoundMessage="No agents"
               leftSection={<IconUser size={14} color="#2563eb" />}
-              size="sm" radius="md" style={{ width: 140 }}
-              styles={{ input: { fontWeight: 600, border: '1.5px solid #bfdbfe' } }}
+              size="sm" radius="md" style={{ width: 190 }}
+              readOnly={isAgentLogin}
+              comboboxProps={{ zIndex: 1000 }}
+              styles={{ input: { fontWeight: 600, border: isAgentLogin ? '1.5px solid #86efac' : '1.5px solid #bfdbfe', background: isAgentLogin ? '#f0fdf4' : undefined } }}
             />
           </Group>
           <Button
@@ -2020,7 +2058,8 @@ const MilkPurchase = () => {
                 sessionStorage.removeItem('milkPurchase_date');
                 sessionStorage.removeItem('milkPurchase_form');
               } catch { /* ignore */ }
-              navigate('/');
+              if (asPopup) onClose?.();
+              else navigate('/');
             }}
             size="sm" radius="md" variant="light" color="red"
             style={{ fontWeight: 700, marginLeft: 'auto' }}
@@ -2658,15 +2697,16 @@ const MilkPurchase = () => {
         </Box>
 
         {/* Table */}
-        <Box style={{ flex: 1, overflowY: 'hidden', overflowX: 'auto', background: 'white', borderRadius: '0 0 10px 10px', border: '1px solid #bfdbfe', borderTop: 'none' }}>
-          <ScrollArea h="100%" type="auto" viewportRef={tableScrollRef}>
-            <Table className="mp-tbl" striped highlightOnHover stickyHeader withColumnBorders style={{ fontSize: 14 }}>
+        <Box style={{ flex: 1, minHeight: 240, overflowY: 'hidden', overflowX: 'auto', background: 'white', borderRadius: '0 0 10px 10px', border: '1px solid #93c5fd', borderTop: 'none' }}>
+          <ScrollArea h="100%" type="always" scrollbarSize={10} viewportRef={tableScrollRef}>
+            <Table className="mp-tbl" striped stripedColor="#f1f5fb" highlightOnHover highlightOnHoverColor="#e0ecff" stickyHeader withColumnBorders borderColor="#dbe4f0" style={{ fontSize: 15 }}>
               <Table.Thead style={{ background: 'linear-gradient(180deg,#dbeafe 0%,#bfdbfe 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
                 <Table.Tr>
                   {[
                     { col: '#',         hide: true  },
                     { col: 'Bill No',   hide: true  },
                     { col: 'Far. No',   hide: false },
+                    { col: 'Farmer Name', hide: false },
                     { col: 'Date',      hide: false },
                     { col: 'Shift',     hide: false },
                     { col: 'Litres',    hide: false },
@@ -2678,7 +2718,7 @@ const MilkPurchase = () => {
                     { col: 'Rate/L',    hide: true  },
                     { col: 'Amount',    hide: false },
                   ].map(({ col, hide }) => (
-                    <Table.Th key={col} className={hide ? 'mp-col-hide-mobile' : ''} style={{ fontWeight: 800, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#1e40af', whiteSpace: 'nowrap', padding: '9px 12px', borderBottom: '2px solid #93c5fd' }}>
+                    <Table.Th key={col} className={hide ? 'mp-col-hide-mobile' : ''} style={{ fontWeight: 800, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#ffffff', background: '#1e40af', whiteSpace: 'nowrap', padding: '10px 12px', borderBottom: '2px solid #1e3a8a' }}>
                       {col}
                     </Table.Th>
                   ))}
@@ -2688,7 +2728,7 @@ const MilkPurchase = () => {
               <Table.Tbody>
                 {filteredEntries.length === 0 ? (
                   <Table.Tr>
-                    <Table.Td colSpan={14}>
+                    <Table.Td colSpan={15}>
                       <Center py="xl">
                         <Stack align="center" gap={6}>
                           <IconMilk size={48} color="#bfdbfe" />
@@ -2711,6 +2751,7 @@ const MilkPurchase = () => {
                       <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', fontWeight: 700, color: '#94a3b8', width: 32, fontSize: 15 }}>{entry.sl}</Table.Td>
                       <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', fontWeight: 700, color: '#1e40af', whiteSpace: 'nowrap' }}>{entry.billNo}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px' }}><Badge size="md" color="blue" variant="light" radius="sm">{entry.producerNo}</Badge></Table.Td>
+                      <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }} title={entry.producerName}>{entry.producerName || '—'}</Table.Td>
                       <Table.Td style={{ padding: '6px 8px', color: '#475569', fontSize: 15, whiteSpace: 'nowrap' }}>{entry.date ? new Date(entry.date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit' }) : '—'}</Table.Td>
                       <Table.Td style={{ padding: '6px 8px' }}><Badge size="sm" color={entry.shift === 'AM' ? 'orange' : 'indigo'} variant="light" radius="sm">{entry.shift || '—'}</Badge></Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0369a1', textAlign: 'right' }}>{(entry.ltr ?? entry.qty).toFixed(2)}</Table.Td>
@@ -2731,7 +2772,7 @@ const MilkPurchase = () => {
                   <Table.Tr style={{ background: '#1e3a8a' }}>
                     <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px' }} />
                     <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px' }} />
-                    <Table.Td colSpan={3} style={{ padding: '8px 12px', fontWeight: 700, color: '#93c5fd', fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
+                    <Table.Td colSpan={4} style={{ padding: '8px 12px', fontWeight: 700, color: '#93c5fd', fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#7dd3fc', textAlign: 'right', fontSize: 16 }}>{totalLtr.toFixed(2)}</Table.Td>
                     <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px', fontWeight: 900, color: '#38bdf8', textAlign: 'right', fontSize: 16 }}>{totalKg.toFixed(2)}</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#fdba74', textAlign: 'right', fontSize: 15 }}>{avgFat.toFixed(1)}</Table.Td>

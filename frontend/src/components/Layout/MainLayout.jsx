@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { useNavigate, Outlet, useLocation } from 'react-router-dom';
 import {
   AppShell,
@@ -17,6 +17,9 @@ import {
   Paper,
   ScrollArea,
   ThemeIcon,
+  Modal,
+  Center,
+  Loader,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
@@ -31,6 +34,9 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { ThemeSwitcherCompact } from '../common/ThemeSwitcher';
 import CompanySwitcher from '../company/CompanySwitcher';
+
+const MilkPurchase = lazy(() => import('../daily-collections/MilkPurchase'));
+const MilkSales    = lazy(() => import('../daily-collections/MilkSales'));
 
 const MainLayout = () => {
   const [mobileOpened, { toggle: toggleMobile }] = useDisclosure();
@@ -72,12 +78,17 @@ const MainLayout = () => {
 
   const isBankTransferPage = location.pathname === '/payments/bank-transfer';
 
+  // F2 / F3 milk entry popup: null | 'purchase' | 'sales'
+  const [milkPopup, setMilkPopup] = useState(null);
+  const closeMilkPopup = useCallback(() => setMilkPopup(null), []);
+
   // ── Global hotkeys ──────────────────────────────────────────────────────
   useEffect(() => {
     const handleKey = (e) => {
       // F2 / F3 work everywhere (even inside inputs)
-      if (e.key === 'F2') { e.preventDefault(); navigate('/daily-collections/milk-purchase'); return; }
-      if (e.key === 'F3') { e.preventDefault(); navigate('/daily-collections/milk-sales'); return; }
+      // F2 / F3 open Milk Purchase / Milk Sales as a popup over the current page
+      if (e.key === 'F2') { e.preventDefault(); setMilkPopup('purchase'); return; }
+      if (e.key === 'F3') { e.preventDefault(); setMilkPopup('sales'); return; }
       if (e.key === 'F4') { e.preventDefault(); navigate('/sales/new'); return; }
       // F5 also carries a one-shot "open the New Cash Advance form" signal via
       // navigation state, so a single press opens the form directly instead
@@ -362,6 +373,7 @@ const MainLayout = () => {
         { key: '/accounting/ledgers',     label: 'Ledgers' },
         { key: '/accounting/receipt',     label: 'Receipt Voucher' },
         { key: '/accounting/payment',     label: 'Payment Voucher' },
+        { key: '/accounting/cash-book-entry', label: 'Cash Book Entry' },
         { key: '/accounting/journal',     label: 'Adjustment/Journal Entry' },
         { key: '/accounting/vouchers',    label: 'Vouchers Management' },
         {
@@ -1098,6 +1110,38 @@ const MainLayout = () => {
         )}
         <Outlet />
       </AppShell.Main>
+
+      {/* F2 Milk Purchase / F3 Milk Sales popup — Sales is a little smaller */}
+      <Modal
+        opened={!!milkPopup}
+        onClose={closeMilkPopup}
+        withCloseButton={false}
+        closeOnEscape={false}
+        closeOnClickOutside={false}
+        centered
+        radius="md"
+        padding={0}
+        size={milkPopup === 'sales' ? '90vw' : '97vw'}
+        transitionProps={{ transition: 'fade', duration: 120 }}
+        overlayProps={{ backgroundOpacity: 0.55, blur: 2 }}
+        styles={{
+          content: {
+            height: milkPopup === 'sales' ? '88vh' : '95vh',
+            maxHeight: milkPopup === 'sales' ? '88vh' : '95vh',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            border: `3px solid ${milkPopup === 'sales' ? '#16a34a' : '#2563eb'}`,
+            boxShadow: '0 24px 60px rgba(15,23,42,0.45)',
+          },
+          body: { flex: 1, minHeight: 0, padding: 0, overflowY: 'auto', overflowX: 'hidden' },
+        }}
+      >
+        <Box data-milk-popup={milkPopup || undefined} style={{ height: '100%' }}>
+          <Suspense fallback={<Center h="100%"><Loader /></Center>}>
+            {milkPopup === 'purchase' && <MilkPurchase asPopup onSwap={setMilkPopup} onClose={closeMilkPopup} />}
+            {milkPopup === 'sales'    && <MilkSales    asPopup onSwap={setMilkPopup} onClose={closeMilkPopup} />}
+          </Suspense>
+        </Box>
+      </Modal>
     </AppShell>
   );
 };

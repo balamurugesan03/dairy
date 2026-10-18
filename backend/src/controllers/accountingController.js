@@ -164,7 +164,10 @@ export const getAllVouchers = async (req, res) => {
     if (startDate || endDate) {
       query.voucherDate = {};
       if (startDate) query.voucherDate.$gte = new Date(startDate);
-      if (endDate) query.voucherDate.$lte = new Date(endDate);
+      // A plain YYYY-MM-DD end date covers that whole day, not just its midnight
+      if (endDate) query.voucherDate.$lte = /^\d{4}-\d{2}-\d{2}$/.test(endDate)
+        ? new Date(`${endDate}T23:59:59.999Z`)
+        : new Date(endDate);
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -192,6 +195,101 @@ export const getAllVouchers = async (req, res) => {
       success: false,
       message: error.message || 'Error fetching vouchers'
     });
+  }
+};
+
+// Cash Book Entry — one day's cash position from the Voucher collection.
+// Every voucher with a Cash leg (Receipt/Payment Voucher screens, plus any
+// auto-posted cash voucher) is a row, so Receipt/Payment entries show here
+// without being stored twice. Opening = Cash ledger opening balance + all
+// cash legs before the date, so each day's opening equals the previous
+// day's closing exactly.
+// GET /api/vouchers/cash-book-entry?date=YYYY-MM-DD
+export const getCashBookEntry = async (req, res) => {
+  try {
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '')
+      ? req.query.date
+      : new Date().toISOString().slice(0, 10);
+    const dayStart = new Date(`${date}T00:00:00.000Z`);
+    const dayEnd = new Date(`${date}T23:59:59.999Z`);
+    const companyId = new mongoose.Types.ObjectId(String(req.companyId));
+
+    const cashLedgers = await Ledger.find({ companyId, ledgerType: { $in: ['Cash', 'Cash in Hand'] } })
+      .select('ledgerName ledgerType openingBalance openingBalanceType status')
+      .lean();
+    const cashIds = cashLedgers.map(l => l._id);
+    const isCash = (id) => cashIds.some(c => c.equals(id?._id || id));
+
+    // Cash is a debit-nature account: Dr opening adds, Cr opening subtracts
+    const ledgerOpening = cashLedgers.reduce((s, l) =>
+      s + ((l.openingBalanceType === 'Cr' ? -1 : 1) * (l.openingBalance || 0)), 0);
+
+    const notCancelled = { status: { $ne: 'Cancelled' } };
+    const [prior] = cashIds.length ? await Voucher.aggregate([
+      { $match: { companyId, ...notCancelled, voucherDate: { $lt: dayStart }, 'entries.ledgerId': { $in: cashIds } } },
+      { $unwind: '$entries' },
+      { $match: { 'entries.ledgerId': { $in: cashIds } } },
+      { $group: { _id: null, dr: { $sum: '$entries.debitAmount' }, cr: { $sum: '$entries.creditAmount' } } }
+    ]) : [];
+    const openingBalance = ledgerOpening + (prior?.dr || 0) - (prior?.cr || 0);
+
+    const vouchers = cashIds.length ? await Voucher.find({
+      companyId, ...notCancelled,
+      voucherDate: { $gte: dayStart, $lte: dayEnd },
+      'entries.ledgerId': { $in: cashIds }
+    })
+      .sort({ voucherDate: 1, createdAt: 1 })
+      .populate('entries.ledgerId', 'ledgerName ledgerType')
+      .lean() : [];
+
+    const rows = vouchers.map(v => {
+      let cashIn = 0, cashOut = 0;
+      const heads = [];
+      (v.entries || []).forEach(e => {
+        if (isCash(e.ledgerId)) {
+          cashIn += e.debitAmount || 0;
+          cashOut += e.creditAmount || 0;
+        } else {
+          heads.push({
+            ledgerId: e.ledgerId?._id || e.ledgerId,
+            ledgerName: e.ledgerId?.ledgerName || e.ledgerName,
+            amount: (e.debitAmount || 0) + (e.creditAmount || 0),
+            narration: e.narration || ''
+          });
+        }
+      });
+      return {
+        voucher: v,
+        side: cashIn >= cashOut ? 'receipt' : 'payment',
+        cashIn,
+        cashOut,
+        heads,
+        // Only plain manual Receipt/Payment vouchers are edited here —
+        // everything else belongs to the module that posted it
+        editable: v.referenceType === 'Manual' && ['Receipt', 'Payment'].includes(v.voucherType)
+          && (v.entries || []).length === 2 && heads.length === 1
+      };
+    });
+
+    const totalReceipts = rows.reduce((s, r) => s + r.cashIn, 0);
+    const totalPayments = rows.reduce((s, r) => s + r.cashOut, 0);
+    const primaryCash = cashLedgers.find(l => l.ledgerType === 'Cash' && l.status !== 'Inactive') || cashLedgers[0] || null;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        date,
+        cashLedger: primaryCash && { _id: primaryCash._id, ledgerName: primaryCash.ledgerName },
+        openingBalance,
+        totalReceipts,
+        totalPayments,
+        closingBalance: openingBalance + totalReceipts - totalPayments,
+        rows
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching cash book entry:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error fetching cash book entry' });
   }
 };
 

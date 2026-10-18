@@ -215,6 +215,8 @@ export const AuthProvider = ({ children }) => {
     permissions: user?.permissionsObject || {},
     userCenter: user?.collectionCenter || null,
     userAgent: user?.agentId || null,
+    // Society agent login: a non-admin User linked to an Agent — Sender Agent is fixed to them
+    isAgentLogin: user?.loginType === 'user' && user?.role === 'user' && !!user?.agentId,
     // Permission helper functions
     hasPermission,
     canRead,

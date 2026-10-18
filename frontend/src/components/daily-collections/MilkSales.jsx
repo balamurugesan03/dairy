@@ -22,6 +22,7 @@ import {
   IconAlertCircle, IconCash, IconCreditCard, IconUpload, IconFilter, IconBook, IconBrandWhatsapp,
 } from '@tabler/icons-react';
 import { customerAPI, collectionCenterAPI, milkSalesAPI, agentAPI, milkSalesRateAPI, thermalPrintAPI, whatsappAPI } from '../../services/api';
+import { toAgentOptions, groupAgentsByCenter, findOwnAgent, pickDefaultAgent } from '../../utils/senderAgent';
 import { useAuth } from '../../context/AuthContext';
 import ImportModal from '../common/ImportModal';
 
@@ -151,9 +152,11 @@ const toDate = (d) => {
 };
 
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
-export default function MilkSales() {
+// asPopup: rendered inside the global F3 popup (MainLayout) instead of as a
+// routed page — Close / P-S swap then go through onClose / onSwap.
+export default function MilkSales({ asPopup = false, onSwap, onClose }) {
   const navigate = useNavigate();
-  const { isUser, userCenter, userAgent } = useAuth();
+  const { user, isUser, isCentreLogin, isAgentLogin, centreInfo, userCenter } = useAuth();
 
   // Keyboard swap:
   //   • Ctrl/⌘ + S | plain S → Milk Sales (this page)
@@ -171,6 +174,8 @@ export default function MilkSales() {
     const onKey = (e) => {
       const k = e.key?.toLowerCase();
       if (k !== 's' && k !== 'p') return;
+      // The routed page stays mounted under an F2/F3 popup — let the popup own the keys
+      if (!asPopup && document.querySelector('[data-milk-popup]')) return;
 
       const ae  = document.activeElement;
       const tag = ae?.tagName;
@@ -184,12 +189,13 @@ export default function MilkSales() {
       if (!withMod && !canPlainSwap) return;     // typing letters in a free-text field
 
       e.preventDefault();
-      if (k === 's') navigate('/daily-collections/milk-sales');
-      else           navigate('/daily-collections/milk-purchase');
+      if (asPopup)       { if (k === 'p') onSwap?.('purchase'); }
+      else if (k === 's') navigate('/daily-collections/milk-sales');
+      else                navigate('/daily-collections/milk-purchase');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [navigate]);
+  }, [navigate, asPopup, onSwap]);
 
   // Saved form fields helper (lazy — only parsed once per mount)
   const _msf = () => { try { return JSON.parse(sessionStorage.getItem('milkSales_form') || 'null') || {}; } catch { return {}; } };
@@ -365,7 +371,7 @@ export default function MilkSales() {
   // Auto-select first center/agent for all modes when none is selected
   useEffect(() => {
     if (!center && centers.length) setCenter(centers[0].value);
-    if (!agent  && agents.length)  setAgent(agents[0].value);
+    if (!agent  && agents.length)  setAgent(defaultAgentFor(center)?.value || null);
   }, [mode, centers, agents]); // eslint-disable-line
 
   // ── Load data ─────────────────────────────────────────────────────────────
@@ -405,22 +411,23 @@ export default function MilkSales() {
       setCustomersRaw(raw);
       setCustomers(raw.map(x => ({ value: x._id, label: x.name || x.customerName || '—', category: x.category || 'Others' })));
       const centerList = (cc?.data || []).map(x => ({ value: x._id, label: x.centerName || x.name || '—' }));
-      const agentList  = (ag?.data || []).map(x => ({ value: x._id, label: x.agentName || '—' }));
+      const agentList  = toAgentOptions(ag?.data || []);
       setCenters(centerList);
       setAgents(agentList);
-      // Auto-select user's assigned center/agent (or first) for all modes
-      if (!formRef.current.center) {
+      // Sender Agent follows the login: an agent is fixed to themself (and
+      // their centre); an admin defaults to their own agent but may change it.
+      const ownAgent = findOwnAgent(agentList, user);
+      const lockedCentreId = isCentreLogin ? centreInfo?.centreId?.toString()
+        : isAgentLogin ? ownAgent?.centerId : null;
+      if (lockedCentreId) setCenter(lockedCentreId);
+      else if (!formRef.current.center) {
         const userCentreId = userCenter?._id?.toString() || userCenter?.toString();
         const preferred = userCentreId && centerList.find(c => c.value === userCentreId);
         if (preferred) setCenter(preferred.value);
         else if (centerList.length) setCenter(centerList[0].value);
       }
-      if (!formRef.current.agent) {
-        const userAgentId = userAgent?._id?.toString() || userAgent?.toString();
-        const preferred = userAgentId && agentList.find(a => a.value === userAgentId);
-        if (preferred) setAgent(preferred.value);
-        else if (agentList.length) setAgent(agentList[0].value);
-      }
+      if (isAgentLogin) setAgent(ownAgent?.value || null);
+      else if (!formRef.current.agent) setAgent(pickDefaultAgent(agentList, user, lockedCentreId || formRef.current.center)?.value || null);
     } catch { /* silent */ }
   };
 
@@ -452,8 +459,8 @@ export default function MilkSales() {
   const handleNew = () => {
     setEditingId(null); setSelRow(null);
     fetchNextBillNo();
-    const defaultCenter = centers[0]?.value || null;
-    const defaultAgent  = agents[0]?.value  || null;
+    const defaultCenter = (isCentreLogin || isAgentLogin) ? center : (centers[0]?.value || null);
+    const defaultAgent  = defaultAgentFor(defaultCenter)?.value || null;
     setCenter(defaultCenter); setAgent(defaultAgent); setCategory(null); setCreditor(null);
     setOpCr(''); setLitre(''); setRate(''); setAmount(0); setPType('Cash');
     fetchRate({ mode, creditor: null, agent: defaultAgent, date });
@@ -544,7 +551,27 @@ export default function MilkSales() {
 
   const handleSaveClose = async () => {
     await handleSave();
-    window.history.back();
+    if (asPopup) onClose?.();
+    else window.history.back();
+  };
+
+  // ── Sender Agent ──────────────────────────────────────────────────────────
+  const defaultAgentFor = (ct) => isAgentLogin ? findOwnAgent(agents, user) : pickDefaultAgent(agents, user, ct);
+
+  // Agent login → only themself; sub-centre login → that centre's agents;
+  // admin → every agent under every centre, grouped by centre.
+  const agentSelectData = () => {
+    if (isAgentLogin) return agents.filter(a => a.value === agent).map(({ value, label }) => ({ value, label }));
+    if (isCentreLogin) return agents.filter(a => !a.centerId || a.centerId === center).map(({ value, label }) => ({ value, label }));
+    return groupAgentsByCenter(agents, center);
+  };
+
+  // Admin picking an agent from another centre moves the centre with it
+  const handleAgentChange = (v) => {
+    if (isAgentLogin) return;
+    setAgent(v);
+    const a = agents.find(x => x.value === v);
+    if (a?.centerId && a.centerId !== center && !isCentreLogin && centers.some(c => c.value === a.centerId)) setCenter(a.centerId);
   };
 
   const handleEdit = () => {
@@ -819,9 +846,9 @@ export default function MilkSales() {
   const SortTh = ({ label, sk, style = {} }) => (
     <Table.Th
       onClick={() => sk && handleSort(sk)}
-      style={{ fontWeight:800, fontSize:10, textTransform:'uppercase', letterSpacing:'0.5px',
-               color:'#14532d', whiteSpace:'nowrap', padding:'9px 12px',
-               borderBottom:'2px solid #86efac', cursor: sk ? 'pointer' : 'default',
+      style={{ fontWeight:800, fontSize:12, textTransform:'uppercase', letterSpacing:'0.5px',
+               color:'#ffffff', background:'#166534', whiteSpace:'nowrap', padding:'10px 12px',
+               borderBottom:'2px solid #14532d', cursor: sk ? 'pointer' : 'default',
                userSelect:'none', ...style }}
     >
       {label}{sk && sortKey === sk ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
@@ -854,7 +881,7 @@ export default function MilkSales() {
 
   // ─── RENDER ───────────────────────────────────────────────────────────────
   return (
-    <Box className="ms-root" style={{ height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#eef4fb' }}>
+    <Box className="ms-root" style={{ height: asPopup ? '100%' : 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#eef4fb' }}>
       <style>{`
         @media (max-width: 768px) {
           .ms-root { height: auto !important; min-height: calc(100dvh - 60px); overflow-y: auto !important; }
@@ -971,6 +998,11 @@ export default function MilkSales() {
             <Button leftSection={<IconX size={14} />} onClick={handleNew} radius="md" size="sm" variant="default" style={{ fontWeight: 700 }}>
               Clear
             </Button>
+            {asPopup && (
+              <Button leftSection={<IconX size={14} />} onClick={() => onClose?.()} radius="md" size="sm" variant="light" color="red" style={{ fontWeight: 700 }}>
+                Close
+              </Button>
+            )}
           </Group>
         </Group>
       </Box>
@@ -1041,13 +1073,15 @@ export default function MilkSales() {
             <Stack gap={6}>
               <Box>
                 <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Collection Center</Text>
-                <Select data={centers} value={center} onChange={setCenter} placeholder="Select center..." searchable clearable
-                  size="xs" radius="sm" styles={{ input: { fontWeight: 600, border: `1.5px solid ${mode === 'CREDIT' ? '#c4b5fd' : '#86efac'}`, height: 28 } }} />
+                <Select data={centers} value={center} onChange={setCenter} placeholder="Select center..." searchable
+                  clearable={!(isCentreLogin || isAgentLogin)} readOnly={isCentreLogin || isAgentLogin}
+                  size="xs" radius="sm" styles={{ input: { fontWeight: 600, border: `1.5px solid ${mode === 'CREDIT' ? '#c4b5fd' : '#86efac'}`, height: 28, background: (isCentreLogin || isAgentLogin) ? '#f0fdf4' : undefined } }} />
               </Box>
               <Box>
-                <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Collection Agent</Text>
-                <Select data={agents} value={agent} onChange={setAgent} placeholder="Select agent..." searchable clearable
-                  size="xs" radius="sm" styles={{ input: { fontWeight: 600, border: `1.5px solid ${mode === 'CREDIT' ? '#c4b5fd' : '#86efac'}`, height: 28 } }} />
+                <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Sender Agent</Text>
+                <Select data={agentSelectData()} value={agent} onChange={handleAgentChange} placeholder="Select sender agent..." searchable
+                  clearable={!isAgentLogin} readOnly={isAgentLogin} nothingFoundMessage="No agents" comboboxProps={{ zIndex: 1000 }}
+                  size="xs" radius="sm" styles={{ input: { fontWeight: 600, border: `1.5px solid ${mode === 'CREDIT' ? '#c4b5fd' : '#86efac'}`, height: 28, background: isAgentLogin ? '#f0fdf4' : undefined } }} />
               </Box>
               {mode === 'CREDIT' && (
                 <>
@@ -1346,9 +1380,9 @@ export default function MilkSales() {
         </Box>
 
         {/* Table */}
-        <Box style={{ flex: 1, overflow: 'hidden', background: 'white', borderRadius: '0 0 10px 10px', border: '1px solid #bbf7d0', borderTop: 'none' }}>
-          <ScrollArea h="100%" type="auto">
-            <Table striped highlightOnHover stickyHeader withColumnBorders style={{ fontSize: 12 }}>
+        <Box style={{ flex: 1, minHeight: 220, overflow: 'hidden', background: 'white', borderRadius: '0 0 10px 10px', border: '1px solid #86efac', borderTop: 'none' }}>
+          <ScrollArea h="100%" type="always" scrollbarSize={10}>
+            <Table striped stripedColor="#f3faf5" highlightOnHover highlightOnHoverColor="#dcfce7" stickyHeader withColumnBorders borderColor="#d9ebdf" style={{ fontSize: 14 }}>
               <Table.Thead style={{ background: 'linear-gradient(180deg,#dcfce7 0%,#bbf7d0 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
                 <Table.Tr>
                   <SortTh label="#"        sk={null} />
@@ -1357,21 +1391,23 @@ export default function MilkSales() {
                   <SortTh label="Sess"     sk="session" />
                   <SortTh label="Mode"     sk="saleMode" />
                   <SortTh label="Party"    sk="creditorName" />
-                  <SortTh label="Agent"    sk="agentName" />
+                  {!isLocal && <SortTh label="Op. Credit" sk="openingCredit" />}
+                  {!isLocal && <SortTh label="Center"     sk="centerName" />}
+                  <SortTh label="Sender Agent" sk="agentName" />
                   <SortTh label="Litres"   sk="litre" />
                   <SortTh label="Rate/L"   sk="rate" />
                   <SortTh label="Amount"   sk="amount" />
-                  <SortTh label="Type"     sk="paymentType" />
+                  {isLocal && <SortTh label="Type" sk="paymentType" />}
                   <SortTh label=""         sk={null} />
                 </Table.Tr>
               </Table.Thead>
 
               <Table.Tbody>
                 {loading ? (
-                  <Table.Tr><Table.Td colSpan={12}><Center py="xl"><Loader size="sm" color="green" /></Center></Table.Td></Table.Tr>
+                  <Table.Tr><Table.Td colSpan={13}><Center py="xl"><Loader size="sm" color="green" /></Center></Table.Td></Table.Tr>
                 ) : filteredEntries.length === 0 ? (
                   <Table.Tr>
-                    <Table.Td colSpan={12}>
+                    <Table.Td colSpan={13}>
                       <Center py="xl">
                         <Stack align="center" gap={6}>
                           <IconMilk size={48} color="#bbf7d0" />
@@ -1388,7 +1424,7 @@ export default function MilkSales() {
                   return (
                     <Table.Tr key={e._id} onClick={() => setSelRow(isSel ? null : e)}
                       style={{ cursor: 'pointer', background: isEdit ? '#fffbeb' : isSel ? '#f0fdf4' : undefined, borderLeft: isEdit ? '3px solid #d97706' : isSel ? '3px solid #16a34a' : '3px solid transparent', transition: 'background 0.1s' }}>
-                      <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#94a3b8', width: 32 }}>{idx + 1}</Table.Td>
+                      <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#64748b', width: 32 }}>{idx + 1}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#166534', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{e.billNo}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', color: '#475569', whiteSpace: 'nowrap' }}>
                         {e.date ? new Date(e.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}
@@ -1422,7 +1458,7 @@ export default function MilkSales() {
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0369a1', textAlign: 'right' }}>{parseFloat(e.litre || 0).toFixed(2)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', fontWeight: 600, color: '#c2410c', textAlign: 'right' }}>&#8377;{parseFloat(e.rate || 0).toFixed(2)}</Table.Td>
                       <Table.Td style={{ padding: '6px 12px', textAlign: 'right' }}>
-                        <Text size="13px" fw={800} c="green.7">&#8377;{parseFloat(e.amount || 0).toFixed(2)}</Text>
+                        <Text size="15px" fw={800} c="green.8">&#8377;{parseFloat(e.amount || 0).toFixed(2)}</Text>
                       </Table.Td>
                       {isLocal && (
                         <Table.Td style={{ padding: '6px 12px' }}>
@@ -1442,10 +1478,10 @@ export default function MilkSales() {
               {filteredEntries.length > 0 && (
                 <Table.Tfoot>
                   <Table.Tr style={{ background: '#14532d' }}>
-                    <Table.Td colSpan={isLocal ? 7 : 9} style={{ padding: '8px 12px', fontWeight: 700, color: '#86efac', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#7dd3fc', textAlign: 'right', fontSize: 13 }}>{totL.toFixed(2)}</Table.Td>
+                    <Table.Td colSpan={isLocal ? 7 : 9} style={{ padding: '8px 12px', fontWeight: 700, color: '#86efac', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
+                    <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#7dd3fc', textAlign: 'right', fontSize: 15 }}>{totL.toFixed(2)}</Table.Td>
                     <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#fdba74', textAlign: 'right' }}>&#8377;{avgR.toFixed(2)}</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', textAlign: 'right' }}><Text size="14px" fw={900} c="white">&#8377;{totA.toFixed(2)}</Text></Table.Td>
+                    <Table.Td style={{ padding: '8px 12px', textAlign: 'right' }}><Text size="16px" fw={900} c="white">&#8377;{totA.toFixed(2)}</Text></Table.Td>
                     {isLocal && <Table.Td />}
                     <Table.Td />
                   </Table.Tr>

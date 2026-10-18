@@ -2,6 +2,7 @@ import express from 'express';
 import {
   createVoucher,
   getAllVouchers,
+  getCashBookEntry,
   getVoucherById,
   updateVoucher,
   deleteVoucher,
@@ -20,6 +21,7 @@ router.use(protect, addCompanyFilter);
 // Voucher routes
 router.post('/vouchers', createVoucher);
 router.get('/vouchers', getAllVouchers);
+router.get('/vouchers/cash-book-entry', getCashBookEntry);
 router.get('/vouchers/:id', getVoucherById);
 router.put('/vouchers/:id', updateVoucher);
 router.delete('/vouchers/:id', deleteVoucher);
