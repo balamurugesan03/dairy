@@ -78,9 +78,17 @@ const MainLayout = () => {
 
   const isBankTransferPage = location.pathname === '/payments/bank-transfer';
 
-  // F2 / F3 milk entry popup: null | 'purchase' | 'sales'
-  const [milkPopup, setMilkPopup] = useState(null);
-  const closeMilkPopup = useCallback(() => setMilkPopup(null), []);
+  // F2 / F3 milk entry popups — Sales opens in front of Purchase, so both can be open at once
+  const [purchasePopupOpen, setPurchasePopupOpen] = useState(false);
+  const [salesPopupOpen,    setSalesPopupOpen]    = useState(false);
+  const setMilkPopup = useCallback((which) => {
+    if (which === 'sales') { setSalesPopupOpen(true); return; }
+    // Purchase: bring it to the front by closing Sales on top of it
+    setSalesPopupOpen(false);
+    setPurchasePopupOpen(true);
+  }, []);
+  const closePurchasePopup = useCallback(() => setPurchasePopupOpen(false), []);
+  const closeSalesPopup    = useCallback(() => setSalesPopupOpen(false), []);
 
   // ── Global hotkeys ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -1111,34 +1119,64 @@ const MainLayout = () => {
         <Outlet />
       </AppShell.Main>
 
-      {/* F2 Milk Purchase / F3 Milk Sales popup — Sales is a little smaller */}
+      {/* F2 Milk Purchase popup — the larger one */}
       <Modal
-        opened={!!milkPopup}
-        onClose={closeMilkPopup}
+        opened={purchasePopupOpen}
+        onClose={closePurchasePopup}
         withCloseButton={false}
         closeOnEscape={false}
         closeOnClickOutside={false}
         centered
         radius="md"
         padding={0}
-        size={milkPopup === 'sales' ? '90vw' : '97vw'}
+        size="97vw"
         transitionProps={{ transition: 'fade', duration: 120 }}
         overlayProps={{ backgroundOpacity: 0.55, blur: 2 }}
         styles={{
           content: {
-            height: milkPopup === 'sales' ? '88vh' : '95vh',
-            maxHeight: milkPopup === 'sales' ? '88vh' : '95vh',
+            height: '95vh', maxHeight: '95vh',
             display: 'flex', flexDirection: 'column', overflow: 'hidden',
-            border: `3px solid ${milkPopup === 'sales' ? '#16a34a' : '#2563eb'}`,
+            border: '3px solid #2563eb',
             boxShadow: '0 24px 60px rgba(15,23,42,0.45)',
           },
           body: { flex: 1, minHeight: 0, padding: 0, overflowY: 'auto', overflowX: 'hidden' },
         }}
       >
-        <Box data-milk-popup={milkPopup || undefined} style={{ height: '100%' }}>
+        <Box data-milk-popup="purchase" style={{ height: '100%' }}>
           <Suspense fallback={<Center h="100%"><Loader /></Center>}>
-            {milkPopup === 'purchase' && <MilkPurchase asPopup onSwap={setMilkPopup} onClose={closeMilkPopup} />}
-            {milkPopup === 'sales'    && <MilkSales    asPopup onSwap={setMilkPopup} onClose={closeMilkPopup} />}
+            <MilkPurchase asPopup onSwap={setMilkPopup} onClose={closePurchasePopup} />
+          </Suspense>
+        </Box>
+      </Modal>
+
+      {/* F3 Milk Sales popup — smaller, stacked in front of the Purchase popup */}
+      <Modal
+        opened={salesPopupOpen}
+        onClose={closeSalesPopup}
+        withCloseButton={false}
+        closeOnEscape={false}
+        closeOnClickOutside={false}
+        centered
+        radius="md"
+        padding={0}
+        size="84vw"
+        zIndex={210}
+        transitionProps={{ transition: 'fade', duration: 120 }}
+        // Lighter dim when stacked so the Purchase popup still shows behind
+        overlayProps={{ backgroundOpacity: purchasePopupOpen ? 0.3 : 0.55, blur: purchasePopupOpen ? 0 : 2 }}
+        styles={{
+          content: {
+            height: '84vh', maxHeight: '84vh',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            border: '3px solid #16a34a',
+            boxShadow: '0 24px 60px rgba(15,23,42,0.55)',
+          },
+          body: { flex: 1, minHeight: 0, padding: 0, overflowY: 'auto', overflowX: 'hidden' },
+        }}
+      >
+        <Box data-milk-popup="sales" style={{ height: '100%' }}>
+          <Suspense fallback={<Center h="100%"><Loader /></Center>}>
+            <MilkSales asPopup onSwap={setMilkPopup} onClose={closeSalesPopup} />
           </Suspense>
         </Box>
       </Modal>

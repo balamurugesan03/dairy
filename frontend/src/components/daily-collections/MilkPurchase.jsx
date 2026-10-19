@@ -23,6 +23,7 @@ import {
   IconDroplet, IconFlame, IconChartBar,
   IconPlus, IconEdit, IconBan, IconHistory,
   IconPlugConnected, IconPlugConnectedX, IconScale, IconUpload, IconFilter, IconDownload, IconSettings,
+  IconChevronLeft, IconChevronRight,
 } from '@tabler/icons-react';
 import {
   agentAPI, collectionCenterAPI, farmerAPI,
@@ -221,6 +222,10 @@ const MilkPurchase = ({ asPopup = false, onSwap, onClose }) => {
   });
   const navigate = useNavigate();
 
+  // True when a popup sits in front of this form: the F3 Sales popup stacks over
+  // the F2 popup, and either popup covers the routed page underneath.
+  const isCovered = () => document.querySelector(asPopup ? '[data-milk-popup="sales"]' : '[data-milk-popup]') != null;
+
   // Keyboard swap:
   //   • Ctrl/⌘ + S | plain S → Milk Sales
   //   • Ctrl/⌘ + P | plain P → Milk Purchase (this page)
@@ -238,8 +243,8 @@ const MilkPurchase = ({ asPopup = false, onSwap, onClose }) => {
     const onKey = (e) => {
       const k = e.key?.toLowerCase();
       if (k !== 's' && k !== 'p') return;
-      // The routed page stays mounted under an F2/F3 popup — let the popup own the keys
-      if (!asPopup && document.querySelector('[data-milk-popup]')) return;
+      // A popup in front of this form owns the keys
+      if (isCovered()) return;
 
       const ae  = document.activeElement;
       const tag = ae?.tagName;
@@ -375,7 +380,13 @@ const MilkPurchase = ({ asPopup = false, onSwap, onClose }) => {
   const [speakEnabled, setSpeakEnabled] = useState(false);
   const [speakLang,    setSpeakLang]    = useState('en-IN'); // 'en-IN' | 'ml-IN'
   const [cpMode,      setCpMode]      = useState([]);
-  const [showAdminPanel, setShowAdminPanel] = useState(false); // right control panel — hidden until the Administrator button is clicked
+  // Right control panel — open by default; collapsed via its arrow (or the Administrator button) to give the grid more width
+  const [showAdminPanel, setShowAdminPanel] = useState(() => {
+    try { return localStorage.getItem('mp.rightPanelOpen') !== '0'; } catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('mp.rightPanelOpen', showAdminPanel ? '1' : '0'); } catch { /* storage unavailable */ }
+  }, [showAdminPanel]);
   const [paramCombo,  setParamCombo]  = useState('CLR-FAT'); // 'CLR-FAT' | 'FAT-SNF'
   const [qtyUnit,     setQtyUnit]     = useState('Litre');   // 'Litre' | 'KG'
   const whatsAppSettingsRef = useRef({ enabled: false });
@@ -1219,6 +1230,7 @@ const MilkPurchase = ({ asPopup = false, onSwap, onClose }) => {
     const onEnter = async (e) => {
       if (e.key !== 'Enter') return;
       if (formRef.current.dupBlocked) return;
+      if (isCovered()) return;
       const ae = document.activeElement;
       const tag = ae?.tagName;
       const isFormEl = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || ae?.isContentEditable;
@@ -2151,25 +2163,26 @@ const MilkPurchase = ({ asPopup = false, onSwap, onClose }) => {
         <Group className="mp-cards-group" gap={12} align="stretch" wrap="wrap" style={{ pointerEvents: (dupBlocked || !formEnabled) ? 'none' : 'all', opacity: dupBlocked ? 0.45 : (!formEnabled ? 0.35 : 1), transition: 'opacity 0.2s' }}>
 
           {/* ── CARD 1: Bill Information ── */}
-          <Card shadow="xs" radius="lg" withBorder style={{ flex: '0 0 280px', borderColor: '#bfdbfe', borderTop: '3px solid #2563eb', padding: '8px 12px' }}>
+          <Card shadow="xs" radius="lg" withBorder style={{ flex: '0 0 280px', borderColor: '#bfdbfe', borderTop: '3px solid #2563eb', padding: '8px 12px', overflow: 'visible' }}>
             <Group gap={6} mb={6}>
               <Box style={{ background: '#dbeafe', borderRadius: 7, padding: '4px 6px' }}><IconReceipt size={15} color="#2563eb" /></Box>
               <Text size="12px" fw={800} c="#1e3a8a" tt="uppercase" style={{ letterSpacing: '0.5px' }}>Bill Information</Text>
             </Group>
 
-            {/* Bill No */}
-            <Box mb={5}>
+            {/* Bill No + Member No share one row so this card is no taller than the other two */}
+            <Group gap={8} mb={5} wrap="nowrap" align="flex-start">
+            <Box style={{ flex: '0 0 108px' }}>
               <Text size="10px" fw={700} c="#64748b" mb={4} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Bill No</Text>
               <TextInput
                 value={billNo || '—'}
                 readOnly
                 size="sm" radius="md"
-                styles={{ input: { fontWeight: 800, fontSize: 13, background: '#f8fafc', border: '1.5px solid #e2e8f0', color: '#2563eb' } }}
+                styles={{ input: { fontWeight: 800, fontSize: 12, background: '#f8fafc', border: '1.5px solid #e2e8f0', color: '#2563eb', paddingLeft: 8, paddingRight: 8 } }}
               />
             </Box>
 
             {/* Member No */}
-            <Box mb={5} style={{ position: 'relative' }}>
+            <Box style={{ position: 'relative', flex: 1, minWidth: 0 }}>
               <Text size="10px" fw={700} c="#64748b" mb={4} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Farmer No / Name</Text>
               <TextInput
                 ref={memberRef}
@@ -2186,7 +2199,7 @@ const MilkPurchase = ({ asPopup = false, onSwap, onClose }) => {
 
               {/* Dropdown */}
               {showDropdown && searchResults.length > 0 && (
-                <Box ref={dropdownRef} style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 2000, background: 'white', border: '1.5px solid #bfdbfe', borderRadius: 10, boxShadow: '0 8px 24px rgba(37,99,235,0.12)', maxHeight: 200, overflowY: 'auto', marginTop: 3 }}>
+                <Box ref={dropdownRef} style={{ position: 'absolute', top: '100%', left: 0, width: 260, zIndex: 2000, background: 'white', border: '1.5px solid #bfdbfe', borderRadius: 10, boxShadow: '0 8px 24px rgba(37,99,235,0.12)', maxHeight: 200, overflowY: 'auto', marginTop: 3 }}>
                   {searchResults.map((f, idx) => (
                     <Box key={f._id} onClick={() => selectProducer(f)}
                       style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: idx < searchResults.length - 1 ? '1px solid #f1f5f9' : 'none', transition: 'background 0.1s' }}
@@ -2209,6 +2222,7 @@ const MilkPurchase = ({ asPopup = false, onSwap, onClose }) => {
                 </Box>
               )}
             </Box>
+            </Group>
 
             {/* Name (auto-filled) */}
             <Box>
@@ -2861,26 +2875,45 @@ const MilkPurchase = ({ asPopup = false, onSwap, onClose }) => {
       </Box>
 
       {/* ══ RIGHT CONTROL PANEL ══════════════════════════════════════════════ */}
+      {/* Collapsed: a thin strip with an arrow to reopen the panel */}
+      {!showAdminPanel && (
+        <Box
+          onClick={() => setShowAdminPanel(true)}
+          title="Show panel"
+          style={{
+            width: 18, flexShrink: 0, cursor: 'pointer',
+            background: 'linear-gradient(180deg, #e0f7fa 0%, #b2ebf2 40%, #e0f2f1 100%)',
+            borderLeft: '2px solid #80deea',
+            display: 'flex', justifyContent: 'center', paddingTop: 4,
+          }}
+        >
+          <IconChevronLeft size={14} color="#006064" stroke={3} />
+        </Box>
+      )}
       <Box className="mp-right-panel" style={{
         width: 200, flexShrink: 0,
-        // Kept mounted (scale / analyzer / display connections live here) — only hidden
-        ...(showAdminPanel ? {} : { display: 'none' }),
         background: 'linear-gradient(180deg, #e0f7fa 0%, #b2ebf2 40%, #e0f2f1 100%)',
         borderLeft: '2px solid #80deea',
         display: 'flex', flexDirection: 'column',
+        // Kept mounted (scale / analyzer / display connections live here) — only hidden
+        ...(showAdminPanel ? {} : { display: 'none' }),
         fontFamily: '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif',
         fontSize: 11,
         overflowY: 'auto',
       }}>
 
         {/* Top Menu Bar */}
-        <Box style={{ background: '#006064', padding: '3px 0', display: 'flex', gap: 0 }}>
+        <Box style={{ background: '#006064', padding: '3px 0', display: 'flex', gap: 0, alignItems: 'center' }}>
           {['Administrator', 'Help'].map(m => (
             <Box key={m} style={{ padding: '2px 8px', color: '#e0f7fa', fontSize: 10, cursor: 'pointer', userSelect: 'none' }}
               onMouseEnter={e => e.currentTarget.style.background = '#00838f'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >{m}</Box>
           ))}
+          <ActionIcon size={18} variant="subtle" title="Hide panel" onClick={() => setShowAdminPanel(false)}
+            style={{ marginLeft: 'auto', marginRight: 4, color: '#e0f7fa' }}>
+            <IconChevronRight size={14} stroke={3} />
+          </ActionIcon>
         </Box>
 
         {/* Speak Button */}
