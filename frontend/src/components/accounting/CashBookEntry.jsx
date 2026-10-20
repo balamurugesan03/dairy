@@ -25,8 +25,7 @@ import {
   Modal,
   LoadingOverlay,
   Card,
-  Flex,
-  SegmentedControl
+  Flex
 } from '@mantine/core';
 import {
   IconCalendar,
@@ -36,15 +35,12 @@ import {
   IconTrash,
   IconCash,
   IconDeviceFloppy,
-  IconRotate,
   IconReceipt,
   IconCreditCard,
   IconFileText,
   IconX,
   IconChevronLeft,
-  IconChevronRight,
-  IconWallet,
-  IconBuildingBank
+  IconChevronRight
 } from '@tabler/icons-react';
 import DateField from '../common/DateField';
 
@@ -74,17 +70,183 @@ const getLedgerGroup = (ledgerType) => {
   return 'Other';
 };
 
-// One summary figure inside a side panel
-const SummaryFigure = ({ label, value, sub, color, icon }) => (
-  <Box style={{ flex: 1, padding: '10px 14px' }}>
-    <Group gap={6} mb={2}>
-      {icon}
-      <Text size="xs" fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: '0.4px' }}>{label}</Text>
-    </Group>
-    <Text fw={800} size="xl" ff="monospace" c={color}>{value}</Text>
-    {sub && <Text size="xs" c="dimmed">{sub}</Text>}
-  </Box>
-);
+// ─ Split-panel styles — same look as the Adjustment / Journal Entry screen ──
+// Full column height + flex column so the Cash and Payment panels always
+// match heights and both TOTAL bars sit on the same line.
+const sectionBorder = {
+  border: '1px solid var(--mantine-color-gray-3)',
+  borderRadius: '6px',
+  overflow: 'hidden',
+  height: '100%',
+  display: 'flex',
+  flexDirection: 'column'
+};
+
+const TONES = {
+  teal: { head: 'linear-gradient(135deg, #e6f9e8 0%, #f0fdf0 100%)', bar: 'linear-gradient(135deg, #c8e6c9 0%, #e8f5e9 100%)', line: '#4caf50' },
+  red:  { head: 'linear-gradient(135deg, #ffebee 0%, #fff5f5 100%)', bar: 'linear-gradient(135deg, #ffcdd2 0%, #ffebee 100%)', line: '#ef5350' }
+};
+
+// Every list row has this fixed height, and the shorter side is padded with
+// blank rows to the longer side's count.
+const LIST_ROW_H = 34;
+
+// ─ SidePanel OUTSIDE the component — prevents remount on every keystroke ──
+// One side of the cash book: its own entry line (always visible — Receipt
+// fields on the Cash side, Payment fields on the Payment side), the balance
+// strip, that day's rows and the TOTAL bar.
+const SidePanel = ({
+  title, icon, color, balanceLabel, balance, rows, rowCount, amountOf,
+  draft, onDraftChange, onSave, onCancel, isEditing, saving, ledgerOptions,
+  ledgerRef, amountRef, narrationRef, selectedId, editingId, onSelect, onOpen, onEdit, onDelete, total, describe
+}) => {
+  const tone = TONES[color];
+  const blanks = Math.max(0, rowCount - rows.length);
+  const onEnter = (next) => (e) => { if (e.key === 'Enter') { e.preventDefault(); next(); } };
+  return (
+    <Box style={{ ...sectionBorder, borderColor: isEditing ? '#ff9800' : undefined }}>
+      <Flex justify="space-between" align="center" style={{ background: tone.head, borderBottom: `2px solid ${tone.line}`, padding: '10px 16px' }}>
+        <Group gap={8}>
+          {icon}
+          <Text fw={700} size="sm" tt="uppercase" c={`${color}.8`}>{title}</Text>
+          {isEditing && <Badge color="orange" variant="filled" size="xs" radius="sm">Editing</Badge>}
+        </Group>
+        <Badge variant="filled" color={color} size="sm" radius="sm">{rows.length}</Badge>
+      </Flex>
+
+      {/* Entry line */}
+      <Flex gap={6} align="flex-end" px={10} py={8} style={{ background: '#f8f9fa', borderBottom: '1px solid #dee2e6' }}>
+        <Select
+          ref={ledgerRef}
+          label="Head of Account"
+          placeholder="Select account"
+          data={ledgerOptions}
+          searchable
+          clearable
+          size="xs"
+          value={draft.ledgerId || null}
+          onChange={(val) => { onDraftChange('ledgerId', val || ''); if (val) setTimeout(() => amountRef.current?.focus(), 30); }}
+          styles={compactInput}
+          nothingFoundMessage="No accounts found"
+          style={{ flex: '1 1 38%', minWidth: 0 }}
+        />
+        <NumberInput
+          ref={amountRef}
+          label="Amount"
+          placeholder="0.00"
+          min={0}
+          decimalScale={2}
+          size="xs"
+          hideControls
+          value={draft.amount}
+          onChange={(val) => onDraftChange('amount', val)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); narrationRef.current?.focus(); } }}
+          styles={compactNumber}
+          leftSection={<IconCurrencyRupee size={13} color="#868e96" />}
+          leftSectionWidth={24}
+          style={{ flex: '0 0 22%', minWidth: 0 }}
+        />
+        <TextInput
+          ref={narrationRef}
+          label="Narration"
+          placeholder="Narration"
+          size="xs"
+          value={draft.narration}
+          onChange={(e) => onDraftChange('narration', e.target.value)}
+          onKeyDown={onEnter(onSave)}
+          styles={compactInput}
+          style={{ flex: '1 1 28%', minWidth: 0 }}
+        />
+        {isEditing && (
+          <Tooltip label="Cancel edit" withArrow>
+            <ActionIcon variant="subtle" color="gray" size={32} onClick={onCancel}><IconX size={14} /></ActionIcon>
+          </Tooltip>
+        )}
+        <Button
+          size="xs"
+          color={color}
+          leftSection={<IconDeviceFloppy size={13} />}
+          onClick={onSave}
+          loading={saving}
+          styles={{ root: { height: '32px', paddingInline: 8 } }}
+        >
+          {isEditing ? 'Update' : 'Save'}
+        </Button>
+      </Flex>
+
+      {/* Balance strip — Opening on the Cash side, Closing on the Payment side */}
+      <Flex justify="space-between" align="center" px={10} style={{ height: LIST_ROW_H, background: '#f1f8e9', borderBottom: '1px solid #e9ecef' }}>
+        <Text size="xs" fw={700} c="dark.6" tt="uppercase">{balanceLabel}</Text>
+        <Text size="sm" fw={700} ff="monospace" c={balance < 0 ? 'red.7' : 'dark.7'}>{fmtBal(balance)}</Text>
+      </Flex>
+
+      {/* flex: 1 takes up the spare height so the TOTAL bar stays at the bottom */}
+      <ScrollArea.Autosize mah={LIST_ROW_H * 10} offsetScrollbars style={{ flex: 1 }}>
+        <Table withRowBorders={false} style={{ tableLayout: 'fixed' }}>
+          <Table.Tbody>
+            {rows.map(row => {
+              const v = row.voucher;
+              const text = describe(row);
+              const isSel = selectedId === v._id;
+              const isEdit = editingId === v._id;
+              return (
+                <Table.Tr
+                  key={v._id}
+                  onClick={() => onSelect(v._id)}
+                  onDoubleClick={() => onOpen(row)}
+                  style={{
+                    height: LIST_ROW_H,
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    borderBottom: '1px solid #f1f3f5',
+                    background: isEdit ? '#fff8e1' : isSel ? '#e7f5ff' : undefined
+                  }}
+                >
+                  <Table.Td style={{ width: 92, padding: '0 6px 0 10px' }}>
+                    <Badge variant="outline" color={color} size="xs" radius="sm">{v.voucherNumber || '-'}</Badge>
+                  </Table.Td>
+                  <Table.Td title={text} style={{ padding: '0 6px', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {text}
+                  </Table.Td>
+                  <Table.Td style={{ width: '26%', padding: '0 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, fontSize: '13px' }}>
+                    {fmtAmt(amountOf(row))}
+                  </Table.Td>
+                  <Table.Td style={{ width: 84, padding: '0 4px', textAlign: 'center' }}>
+                    <Group gap={2} justify="center" wrap="nowrap">
+                      <ActionIcon size="sm" variant="subtle" color="blue" onClick={(e) => { e.stopPropagation(); onOpen(row); }}>
+                        <IconEye size={14} />
+                      </ActionIcon>
+                      {row.editable && (
+                        <>
+                          <ActionIcon size="sm" variant="subtle" color="orange" onClick={(e) => { e.stopPropagation(); onEdit(row); }}>
+                            <IconEdit size={14} />
+                          </ActionIcon>
+                          <ActionIcon size="sm" variant="subtle" color="red" onClick={(e) => { e.stopPropagation(); onDelete(row); }}>
+                            <IconTrash size={14} />
+                          </ActionIcon>
+                        </>
+                      )}
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              );
+            })}
+            {Array.from({ length: blanks }, (_, i) => (
+              <Table.Tr key={`blank-${i}`} style={{ height: LIST_ROW_H }}>
+                <Table.Td colSpan={4} />
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      </ScrollArea.Autosize>
+
+      <Flex justify="space-between" align="center" style={{ background: tone.bar, borderTop: `2px solid ${tone.line}`, padding: '10px 16px' }}>
+        <Text fw={700} size="sm" c={`${color}.9`}>TOTAL</Text>
+        <Text fw={800} size="md" c={`${color}.9`} ff="monospace">{fmtAmt(total)}</Text>
+      </Flex>
+    </Box>
+  );
+};
 
 const CashBookEntry = () => {
   const [date, setDate] = useState(dayjs().format('YYYY-MM-DD'));
@@ -93,18 +255,18 @@ const CashBookEntry = () => {
   const [saving, setSaving] = useState(false);
   const [ledgers, setLedgers] = useState([]);
 
-  // Manual entry line — side decides whether it becomes a Receipt or a Payment voucher
-  const [side, setSide] = useState('Receipt');
-  const [draft, setDraft] = useState(EMPTY_DRAFT);
-  const [editingId, setEditingId] = useState(null);
+  // One entry line per side — the Cash side saves a Receipt voucher, the
+  // Payment side a Payment voucher. Both are always on screen.
+  const [drafts, setDrafts] = useState({ Receipt: EMPTY_DRAFT, Payment: EMPTY_DRAFT });
+  const [editing, setEditing] = useState(null); // { side, id } while a row is loaded for edit
 
   const [selectedId, setSelectedId] = useState(null);
   const [detailRow, setDetailRow] = useState(null);
 
-  const ledgerRef = useRef(null);
-  const amountRef = useRef(null);
-  const narrationRef = useRef(null);
-  const saveRef = useRef(null);
+  const refs = {
+    Receipt: { ledger: useRef(null), amount: useRef(null), narration: useRef(null) },
+    Payment: { ledger: useRef(null), amount: useRef(null), narration: useRef(null) }
+  };
 
   useEffect(() => {
     ledgerAPI.getAll()
@@ -129,30 +291,43 @@ const CashBookEntry = () => {
     }
   };
 
-  const shiftDate = (days) => setDate(d => dayjs(d).add(days, 'day').format('YYYY-MM-DD'));
+  // Future dates have no transactions to show, so Next stops at today.
+  const today = dayjs().format('YYYY-MM-DD');
+  const isToday = date === today;
+  const canGoNext = date < today;
+  const shiftDate = (days) => setDate(d => {
+    const next = dayjs(d).add(days, 'day').format('YYYY-MM-DD');
+    return next > today ? today : next;
+  });
 
   // Head of Account options — the same def_voucher_type rule as the
   // Receipt (no 'P' ledgers) and Payment (no 'R' ledgers) screens. Cash
   // itself is never a head: its leg is added automatically.
   const ledgerOptions = useMemo(() => {
-    const groups = {};
-    ledgers
-      .filter(l => !CASH_TYPES.includes(l.ledgerType))
-      .filter(l => l.voucherType !== (side === 'Receipt' ? 'P' : 'R'))
-      .forEach(l => {
-        const group = getLedgerGroup(l.ledgerType);
-        if (!groups[group]) groups[group] = [];
-        groups[group].push({ value: l._id, label: `${l.ledgerName} (${l.ledgerType})` });
-      });
-    return Object.entries(groups).map(([group, items]) => ({ group, items }));
-  }, [ledgers, side]);
+    const build = (side) => {
+      const groups = {};
+      ledgers
+        .filter(l => !CASH_TYPES.includes(l.ledgerType))
+        .filter(l => l.voucherType !== (side === 'Receipt' ? 'P' : 'R'))
+        .forEach(l => {
+          const group = getLedgerGroup(l.ledgerType);
+          if (!groups[group]) groups[group] = [];
+          groups[group].push({ value: l._id, label: `${l.ledgerName} (${l.ledgerType})` });
+        });
+      return Object.entries(groups).map(([group, items]) => ({ group, items }));
+    };
+    return { Receipt: build('Receipt'), Payment: build('Payment') };
+  }, [ledgers]);
 
   const focus = (ref) => setTimeout(() => ref.current?.focus(), 30);
 
-  const resetDraft = () => {
-    setDraft(EMPTY_DRAFT);
-    setEditingId(null);
-    focus(ledgerRef);
+  const setDraftField = (side) => (field, value) =>
+    setDrafts(d => ({ ...d, [side]: { ...d[side], [field]: value } }));
+
+  const resetDraft = (side) => {
+    setDrafts(d => ({ ...d, [side]: EMPTY_DRAFT }));
+    if (editing?.side === side) setEditing(null);
+    focus(refs[side].ledger);
   };
 
   // Cash ledger for the automatic leg — same one the voucher screens use,
@@ -165,10 +340,12 @@ const CashBookEntry = () => {
     return res?.data || null;
   };
 
-  const handleSave = async () => {
+  const handleSave = async (side) => {
+    const draft = drafts[side];
+    const editingId = editing?.side === side ? editing.id : null;
     const amount = parseFloat(draft.amount);
-    if (!draft.ledgerId) { message.error('Select a Head of Account'); focus(ledgerRef); return; }
-    if (!(amount > 0)) { message.error('Enter an amount'); focus(amountRef); return; }
+    if (!draft.ledgerId) { message.error('Select a Head of Account'); focus(refs[side].ledger); return; }
+    if (!(amount > 0)) { message.error('Enter an amount'); focus(refs[side].amount); return; }
 
     setSaving(true);
     try {
@@ -202,7 +379,7 @@ const CashBookEntry = () => {
         await voucherAPI.create(payload);
         message.success(`${side} voucher saved — also listed in ${side} Voucher`);
       }
-      resetDraft();
+      resetDraft(side);
       fetchBook();
     } catch (error) {
       message.error(error.message || `Failed to save ${side.toLowerCase()} voucher`);
@@ -211,13 +388,19 @@ const CashBookEntry = () => {
     }
   };
 
+  // Loads the row into its own side's entry line (Receipt → Cash side,
+  // Payment → Payment side); a row being edited on the other side is dropped.
   const startEdit = (row) => {
+    const side = row.voucher.voucherType;
     const head = row.heads[0];
-    setSide(row.voucher.voucherType);
-    setDraft({ ledgerId: head?.ledgerId || '', amount: head?.amount || '', narration: head?.narration || row.voucher.narration || '' });
-    setEditingId(row.voucher._id);
+    setDrafts(d => ({
+      ...d,
+      ...(editing && editing.side !== side ? { [editing.side]: EMPTY_DRAFT } : {}),
+      [side]: { ledgerId: head?.ledgerId || '', amount: head?.amount || '', narration: head?.narration || row.voucher.narration || '' }
+    }));
+    setEditing({ side, id: row.voucher._id });
     setDetailRow(null);
-    focus(amountRef);
+    focus(refs[side].amount);
   };
 
   const handleDelete = async (row) => {
@@ -225,7 +408,7 @@ const CashBookEntry = () => {
     try {
       await voucherAPI.delete(row.voucher._id);
       message.success('Voucher deleted');
-      if (editingId === row.voucher._id) resetDraft();
+      if (editing?.id === row.voucher._id) resetDraft(editing.side);
       setDetailRow(null);
       fetchBook();
     } catch (error) {
@@ -242,8 +425,14 @@ const CashBookEntry = () => {
     });
   }, [book]);
 
-  const receiptCount = rowsWithBalance.filter(r => r.side === 'receipt').length;
-  const paymentCount = rowsWithBalance.length - receiptCount;
+  // Cash side lists every row that brings cash in, Payment side every row
+  // that takes cash out.
+  const receiptRows = rowsWithBalance.filter(r => r.cashIn > 0);
+  const paymentRows = rowsWithBalance.filter(r => r.cashOut > 0);
+  const receiptCount = receiptRows.length;
+  const paymentCount = paymentRows.length;
+  const panelRowCount = Math.max(receiptCount, paymentCount, 4);
+  const editingId = editing?.id || null;
 
   const typeBadge = (row) => {
     const t = row.voucher.voucherType;
@@ -261,8 +450,28 @@ const CashBookEntry = () => {
     }).join(', ');
   };
 
-  const isToday = date === dayjs().format('YYYY-MM-DD');
-  const onEnter = (next) => (e) => { if (e.key === 'Enter') { e.preventDefault(); next(); } };
+  const panelProps = (side) => ({
+    rows: side === 'Receipt' ? receiptRows : paymentRows,
+    rowCount: panelRowCount,
+    draft: drafts[side],
+    onDraftChange: setDraftField(side),
+    onSave: () => handleSave(side),
+    onCancel: () => resetDraft(side),
+    isEditing: editing?.side === side,
+    saving,
+    ledgerOptions: ledgerOptions[side],
+    ledgerRef: refs[side].ledger,
+    amountRef: refs[side].amount,
+    narrationRef: refs[side].narration,
+    selectedId,
+    editingId,
+    onSelect: setSelectedId,
+    onOpen: setDetailRow,
+    onEdit: startEdit,
+    onDelete: handleDelete,
+    describe: particulars
+  });
+
   const thStyle = { padding: '8px 10px', fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap' };
 
   return (
@@ -280,17 +489,23 @@ const CashBookEntry = () => {
             <DateField
               label="Transaction Date"
               value={date}
-              onChange={(e) => e.target.value && setDate(e.target.value)}
+              max={today}
+              onChange={(e) => e.target.value && setDate(e.target.value > today ? today : e.target.value)}
               size="xs"
               leftSection={<IconCalendar size={14} />}
               styles={{ input: { fontWeight: 600, fontSize: '13px', width: '150px' }, root: { width: 'auto' } }}
             />
-            <Button size="xs" variant="default" rightSection={<IconChevronRight size={14} />} onClick={() => shiftDate(1)}
-              styles={{ root: { height: 30 } }}>
-              Next
-            </Button>
+            <Tooltip label="No entries after today" disabled={canGoNext} withArrow>
+              {/* span keeps the tooltip working on the disabled button */}
+              <span>
+                <Button size="xs" variant="default" rightSection={<IconChevronRight size={14} />} onClick={() => shiftDate(1)}
+                  disabled={!canGoNext} styles={{ root: { height: 30 } }}>
+                  Next
+                </Button>
+              </span>
+            </Tooltip>
             {!isToday && (
-              <Button size="xs" variant="subtle" onClick={() => setDate(dayjs().format('YYYY-MM-DD'))} styles={{ root: { height: 30 } }}>
+              <Button size="xs" variant="subtle" onClick={() => setDate(today)} styles={{ root: { height: 30 } }}>
                 Today
               </Button>
             )}
@@ -309,117 +524,39 @@ const CashBookEntry = () => {
         </Flex>
       </Paper>
 
-      {/* =============== BALANCE SUMMARY — CASH SIDE | PAYMENT SIDE =============== */}
+      {/* =============== CASH (RECEIPT) | PAYMENT — SPLIT PANELS, SAME LAYOUT AS ADJUSTMENT ENTRY =============== */}
       <Grid gutter="sm" mb="sm">
+        {/* LEFT PANEL — CASH (Receipt, cash in) */}
         <Grid.Col span={{ base: 12, md: 6 }}>
-          <Paper withBorder radius="sm" style={{ borderColor: '#4caf50', overflow: 'hidden' }}>
-            <Box px="md" py={6} style={{ background: 'linear-gradient(135deg, #e6f9e8 0%, #f0fdf0 100%)', borderBottom: '2px solid #4caf50' }}>
-              <Group gap={6}><IconReceipt size={15} color="#2e7d32" /><Text fw={700} size="sm" c="green.8" tt="uppercase">Cash / Receipt Side</Text></Group>
-            </Box>
-            <Flex>
-              <SummaryFigure label="Opening Balance" value={fmtBal(book.openingBalance)} color={book.openingBalance < 0 ? 'red.7' : 'dark.7'}
-                sub={`Closing of ${dayjs(date).subtract(1, 'day').format('DD-MM-YYYY')}`} icon={<IconWallet size={14} color="#868e96" />} />
-              <Divider orientation="vertical" />
-              <SummaryFigure label="Cash Entry" value={fmtAmt(book.totalReceipts)} color="green.7"
-                sub={`${receiptCount} receipt(s) on this date`} icon={<IconCurrencyRupee size={14} color="#2e7d32" />} />
-            </Flex>
-          </Paper>
+          <SidePanel
+            title="Cash (Receipt)"
+            icon={<IconReceipt size={16} color="#2e7d32" />}
+            color="teal"
+            balanceLabel={`Opening Balance (closing of ${dayjs(date).subtract(1, 'day').format('DD-MM-YYYY')})`}
+            balance={book.openingBalance}
+            amountOf={(r) => r.cashIn}
+            total={book.totalReceipts}
+            {...panelProps('Receipt')}
+          />
         </Grid.Col>
+
+        {/* RIGHT PANEL — PAYMENT (cash out) */}
         <Grid.Col span={{ base: 12, md: 6 }}>
-          <Paper withBorder radius="sm" style={{ borderColor: '#ef5350', overflow: 'hidden' }}>
-            <Box px="md" py={6} style={{ background: 'linear-gradient(135deg, #ffebee 0%, #fff5f5 100%)', borderBottom: '2px solid #ef5350' }}>
-              <Group gap={6}><IconCreditCard size={15} color="#c62828" /><Text fw={700} size="sm" c="red.8" tt="uppercase">Payment Side</Text></Group>
-            </Box>
-            <Flex>
-              <SummaryFigure label="Payment" value={fmtAmt(book.totalPayments)} color="red.7"
-                sub={`${paymentCount} payment(s) on this date`} icon={<IconCurrencyRupee size={14} color="#c62828" />} />
-              <Divider orientation="vertical" />
-              <SummaryFigure label="Closing Balance" value={fmtBal(book.closingBalance)} color={book.closingBalance < 0 ? 'red.7' : 'blue.8'}
-                sub="Opening + Cash Entry − Payment" icon={<IconBuildingBank size={14} color="#1976d2" />} />
-            </Flex>
-          </Paper>
+          <SidePanel
+            title="Payment"
+            icon={<IconCreditCard size={16} color="#c62828" />}
+            color="red"
+            balanceLabel="Closing Balance (Opening + Cash − Payment)"
+            balance={book.closingBalance}
+            amountOf={(r) => r.cashOut}
+            total={book.totalPayments}
+            {...panelProps('Payment')}
+          />
         </Grid.Col>
       </Grid>
-
-      {/* =============== MANUAL ENTRY =============== */}
-      <Paper withBorder radius="sm" mb="sm" style={{ borderColor: editingId ? '#ff9800' : '#dee2e6', overflow: 'hidden' }}>
-        <Flex gap={8} align="flex-end" wrap="wrap" px={12} py={10} style={{ background: '#f8f9fa' }}>
-          <Box>
-            <Text size="xs" fw={500} mb={3}>Entry Type</Text>
-            <SegmentedControl
-              size="xs"
-              value={side}
-              onChange={(v) => { if (!editingId) { setSide(v); setDraft(d => ({ ...d, ledgerId: '' })); } }}
-              disabled={!!editingId}
-              data={[{ value: 'Receipt', label: 'Receipt (Cash In)' }, { value: 'Payment', label: 'Payment (Cash Out)' }]}
-              color={side === 'Receipt' ? 'teal' : 'red'}
-            />
-          </Box>
-          <Select
-            ref={ledgerRef}
-            label="Head of Account"
-            placeholder="Select account"
-            data={ledgerOptions}
-            searchable
-            clearable
-            size="xs"
-            value={draft.ledgerId || null}
-            onChange={(val) => { setDraft(d => ({ ...d, ledgerId: val || '' })); if (val) focus(amountRef); }}
-            styles={compactInput}
-            nothingFoundMessage="No accounts found"
-            style={{ flex: '1 1 260px', minWidth: 200 }}
-          />
-          <NumberInput
-            ref={amountRef}
-            label="Amount"
-            placeholder="0.00"
-            min={0}
-            decimalScale={2}
-            size="xs"
-            hideControls
-            value={draft.amount}
-            onChange={(val) => setDraft(d => ({ ...d, amount: val }))}
-            onKeyDown={onEnter(() => focus(narrationRef))}
-            styles={compactNumber}
-            leftSection={<IconCurrencyRupee size={13} color="#868e96" />}
-            leftSectionWidth={24}
-            style={{ flex: '0 0 150px' }}
-          />
-          <TextInput
-            ref={narrationRef}
-            label="Narration"
-            placeholder="Narration"
-            size="xs"
-            value={draft.narration}
-            onChange={(e) => setDraft(d => ({ ...d, narration: e.target.value }))}
-            onKeyDown={onEnter(() => focus(saveRef))}
-            styles={compactInput}
-            style={{ flex: '1 1 220px', minWidth: 160 }}
-          />
-          {editingId && (
-            <Button size="xs" variant="subtle" color="gray" leftSection={<IconX size={14} />} onClick={resetDraft} styles={{ root: { height: 32 } }}>
-              Cancel Edit
-            </Button>
-          )}
-          <Button size="xs" variant="default" leftSection={<IconRotate size={14} />} onClick={resetDraft} styles={{ root: { height: 32 } }}>
-            Clear
-          </Button>
-          <Button
-            ref={saveRef}
-            size="xs"
-            color={side === 'Receipt' ? 'teal' : 'red'}
-            leftSection={<IconDeviceFloppy size={14} />}
-            onClick={handleSave}
-            loading={saving}
-            styles={{ root: { height: 32 } }}
-          >
-            {editingId ? `Update ${side}` : `Save ${side}`}
-          </Button>
-        </Flex>
-        <Text size="xs" c="dimmed" px={12} py={4} style={{ borderTop: '1px solid #f1f3f5' }}>
-          Saved as a {side} Voucher dated {dayjs(date).format('DD-MM-YYYY')} — Cash is {side === 'Receipt' ? 'debited' : 'credited'} automatically, and the entry also appears in the {side} Voucher screen.
-        </Text>
-      </Paper>
+      <Text size="xs" c="dimmed" mb="sm" px={4}>
+        Entries are saved as Receipt / Payment Vouchers dated {dayjs(date).format('DD-MM-YYYY')} — Cash is debited (Receipt) or credited (Payment) automatically, and each entry also appears in its voucher screen.
+      </Text>
 
       {/* =============== COMBINED RECEIPT + PAYMENT GRID =============== */}
       <Paper withBorder radius="sm" style={{ borderColor: '#dee2e6', overflow: 'hidden', position: 'relative' }}>

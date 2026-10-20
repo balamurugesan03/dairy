@@ -13,7 +13,7 @@ import * as XLSX from 'xlsx';
 import dayjs from 'dayjs';
 import { reportAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
-import { printRDStatement } from './shared/rdPrint';
+import { printRDStatement, rdSheetStyle } from './shared/rdPrint';
 
 // ── Date presets ──────────────────────────────────────────────────────────
 const PRESETS = [
@@ -589,13 +589,11 @@ const CooperativeRDReport = () => {
     notifications.show({ title: 'Exported', message: 'Excel downloaded', color: 'green' });
   };
 
+  // Same A4 sheet (size + margins) the print uses, so the preview isn't wider than the paper
   const DOC_STYLE = {
-    maxWidth: viewMode === 'two' ? 1100 : viewMode === 'three' ? 1050 : 820,
-    background: '#fff',
+    ...rdSheetStyle(viewMode),
     border: '1px solid #ccc',
-    padding: '22px 28px 32px',
-    fontFamily: FF,
-    margin: '0 auto'
+    fontFamily: FF
   };
 
   return (
@@ -683,7 +681,7 @@ const CooperativeRDReport = () => {
 
       {/* ── Document ── */}
       {!loading && reportData && (
-        <Box ref={printRef}>
+        <Box ref={printRef} p="md" style={{ overflowX: 'auto', background: '#e9ecef' }}>
           <div style={DOC_STYLE}>
             <DocHeader
               companyName={companyName}

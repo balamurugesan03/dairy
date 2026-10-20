@@ -4,7 +4,7 @@ import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
 import { reportAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
-import { printRDStatement, rdDocHtml, RD_CSS } from './shared/rdPrint';
+import { printRDStatement, rdDocHtml, rdSheetStyle, RD_CSS } from './shared/rdPrint';
 import {
   Box, Paper, Group, Text, Title, Button, Select,
   Stack, Loader, Center, ThemeIcon, Container
@@ -195,8 +195,6 @@ const ReceiptsDisbursement = () => {
     { label: 'Closing Balance', value: cb,            color: 'teal',  bg: 'teal.0',  Icon: IconCurrencyRupee }
   ];
 
-  const DOC_MAXW = columnFormat === 'single' ? 820 : columnFormat === 'two' ? 1000 : 1200;
-
   return (
     <Container size="xl" py="sm">
       <Group justify="space-between" align="center" mb="xs" wrap="wrap" gap="sm">
@@ -263,7 +261,8 @@ const ReceiptsDisbursement = () => {
             ))}
           </Group>
 
-          <Paper withBorder shadow="sm" style={{ overflow: 'auto', background: '#fff' }}>
+          {/* Print preview — the actual A4 sheet (size, margins, font) the print uses */}
+          <Paper withBorder style={{ overflow: 'auto', background: '#e9ecef' }}>
             <Box p="md">
               <style>{RD_CSS}</style>
               {reportData.sections.length === 0 ? (
@@ -271,7 +270,7 @@ const ReceiptsDisbursement = () => {
               ) : (
                 <div
                   className="rd-doc"
-                  style={{ maxWidth: DOC_MAXW, margin: '0 auto' }}
+                  style={rdSheetStyle(columnFormat)}
                   dangerouslySetInnerHTML={{ __html: rdDocHtml(docOpts) }}
                 />
               )}

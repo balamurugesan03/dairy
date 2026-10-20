@@ -21,6 +21,7 @@ import {
   openLyssaImportCollections,
   dairysoftImportCollections,
   getCentreSummary,
+  getDaySummary,
   getFarmerCriteriaSummary,
   getCollectionAnalysis,
   getSocietyReport,
@@ -31,6 +32,7 @@ const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 500 * 1024 * 1024
 
 // Summary / aggregate routes — BEFORE /:id
 router.get('/centre-summary',              getCentreSummary);
+router.get('/day-summary',                 getDaySummary);
 router.get('/summary/farmer-criteria',     getFarmerCriteriaSummary);
 router.get('/summary/collection-analysis', getCollectionAnalysis);
 router.get('/summary/society-report',      getSocietyReport);

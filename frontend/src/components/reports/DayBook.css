@@ -850,3 +850,44 @@
   border-color: var(--mantine-color-gray-6);
   color: var(--mantine-color-gray-2);
 }
+
+/* =========================================================
+   OPENING / CLOSING BALANCE HIGHLIGHT + SIGNATURE LAYOUT
+   (Subtotal → Balance → Grand Total; mirrored in dayBookPrint.js)
+   ========================================================= */
+.db-ledger--footer .db-balance-row td {
+  background: #dde9fb;
+  color: #0b3d91;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  vertical-align: middle;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+[data-mantine-color-scheme="dark"] .db-ledger--footer .db-balance-row td {
+  background: #1a2f52;
+  color: #a9c8ff;
+}
+
+/* President bottom-left, Secretary bottom-right */
+.db-card-sign {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.db-card-sign__box:first-child,
+.db-card-sign__box:last-child {
+  grid-column: auto;
+  justify-self: auto;
+  margin-left: 0;
+}
+
+.db-card-generated {
+  text-align: center;
+  font-size: 11px;
+  color: var(--mantine-color-dimmed);
+  padding: 0 24px 10px;
+}

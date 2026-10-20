@@ -8,6 +8,7 @@ import MilkSales from '../models/MilkSales.js';
 import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances, findOrCreateLedger } from '../utils/accountingHelper.js';
 import { recomputeFarmerEligibility, recomputeFarmersEligibility } from '../utils/farmerEligibilityHelper.js';
 import { resolveCenterFromAgent } from '../utils/resolveAgentCenter.js';
+import { healMilkAssignments, healAfterImport, staffScope } from '../utils/milkScope.js';
 
 // ── Auto-post bulk milk purchase to PRODUCERS DUES / MILK PURCHASE ────────────
 // Day Book derives the milk-purchase entry directly from MilkCollection
@@ -102,10 +103,11 @@ export const getAllCollections = async (req, res) => {
       lean,
     } = req.query;
 
+    await healMilkAssignments(req.companyId);
     const query = { companyId: req.companyId };
-    // Staff/agent logins ('user' type) only see the entries they themselves
-    // entered — company and centre logins keep seeing everything in scope.
-    if (req.userType === 'user') query.createdBy = req.user._id;
+    // Regular staff logins only see their own agent's / centre's entries
+    const scope = await staffScope(req, { centreField: 'collectionCenter', agentField: 'agent' });
+    if (scope) query.$and = [scope];
 
     if (date) {
       const d = new Date(date);
@@ -158,7 +160,8 @@ export const getAllCollections = async (req, res) => {
 export const getCollectionById = async (req, res) => {
   try {
     const idQuery = { _id: req.params.id, companyId: req.companyId };
-    if (req.userType === 'user') idQuery.createdBy = req.user._id;
+    const scope = await staffScope(req, { centreField: 'collectionCenter', agentField: 'agent' });
+    if (scope) idQuery.$and = [scope];
     const record = await MilkCollection.findOne(idQuery)
       .populate('collectionCenter', 'centerName')
       .populate('agent', 'agentName')
@@ -401,6 +404,8 @@ export const zibittBrowserImportCollections = async (req, res) => {
     if (duplicates)            msg += `, ${duplicates} skipped (duplicate)`;
     if (uniqueUnlinked.length) msg += ` | ${uniqueUnlinked.length} Supplier IDs not linked to farmer`;
 
+    // Imports carry no centre/agent — assign them before the next read
+    await healAfterImport(req.companyId);
     res.status(201).json({
       success: true,
       data: { inserted, skipped: duplicates, unlinked: uniqueUnlinked.length, total: records.length },
@@ -498,6 +503,8 @@ export const linzaImportCollections = async (req, res) => {
       ? `${inserted} imported (${uniqueUnmatched.length} Nos not found: ${uniqueUnmatched.slice(0, 5).join(', ')}${uniqueUnmatched.length > 5 ? '…' : ''})`
       : `${inserted} records imported`;
 
+    // Imports carry no centre/agent — assign them before the next read
+    await healAfterImport(req.companyId);
     res.status(201).json({ success: true, data: { inserted, skipped: dupSkipped, unmatchedFarmers: uniqueUnmatched.length }, message: msg });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -595,6 +602,8 @@ export const openLyssaImportCollections = async (req, res) => {
       ? `${inserted} imported (${um.length} producer IDs not matched: ${um.slice(0,5).join(', ')}${um.length > 5 ? '…' : ''})`
       : `${inserted} records imported`;
 
+    // Imports carry no centre/agent — assign them before the next read
+    await healAfterImport(req.companyId);
     res.status(201).json({ success: true, data: { inserted, skipped: dupSkipped, unmatched: um.length }, message: msg });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -666,6 +675,8 @@ export const bulkImportCollections = async (req, res) => {
       ? `${inserted} imported, ${skipped.length} skipped (farmer not found: ${unknown}${skipped.length > 5 ? '…' : ''})`
       : `${inserted} records imported`;
 
+    // Imports carry no centre/agent — assign them before the next read
+    await healAfterImport(req.companyId);
     res.status(201).json({ success: true, data: { inserted, skipped: skipped.length }, message: msg });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -844,6 +855,8 @@ export const fileUploadImportCollections = async (req, res) => {
     await postBulkMilkPurchaseVouchers(insertedDocs, req.companyId);
     await recomputeFarmersEligibility(insertedDocs.map(d => d.farmer), req.companyId);
 
+    // Imports carry no centre/agent — assign them before the next read
+    await healAfterImport(req.companyId);
     res.json({ success: true, data: { inserted, unlinked: uniqueUnlinked.length, total: rows.length }, message: msg });
   } catch (err) {
     console.error('[MilkCollection fileImport] Error:', err.message);
@@ -1434,6 +1447,8 @@ export const dairysoftImportCollections = async (req, res) => {
       ? `${inserted} imported (${uniqueUnmatched.length} Farmer Nos not in system: ${uniqueUnmatched.slice(0, 5).join(', ')}${uniqueUnmatched.length > 5 ? '…' : ''} — imported with file name)`
       : `${inserted} records imported`;
 
+    // Imports carry no centre/agent — assign them before the next read
+    await healAfterImport(req.companyId);
     res.status(201).json({ success: true, data: { inserted, skipped: dupSkipped, unmatchedFarmers: uniqueUnmatched.length }, message: msg });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -1449,6 +1464,7 @@ export const getCentreSummary = async (req, res) => {
     const end = new Date(start);
     end.setHours(23, 59, 59, 999);
 
+    await healMilkAssignments(req.companyId);
     const rows = await MilkCollection.aggregate([
       { $match: { companyId: req.companyId, date: { $gte: start, $lte: end } } },
       {
@@ -1467,7 +1483,7 @@ export const getCentreSummary = async (req, res) => {
           as: 'centre'
         }
       },
-      { $unwind: { path: '$centre', preserveNullAndEmpty: true } },
+      { $unwind: { path: '$centre', preserveNullAndEmptyArrays: true } },
       {
         $project: {
           centreId:    '$_id',
@@ -1667,3 +1683,88 @@ export const getSocietyReport = async (req, res) => {
   }
 };
 
+
+// ── DAY SUMMARY — Milk Purchase screen summary + Best Farmer ──────────────────
+// GET /day-summary?date=&shift=&collectionCenter=&agent=
+// Admin / company logins: every centre & agent unless filtered. Regular staff
+// logins: always limited to their own centre / agent (staffScope).
+export const getDaySummary = async (req, res) => {
+  try {
+    const { date, shift, collectionCenter, agent } = req.query;
+    const start = new Date(date || new Date()); start.setHours(0, 0, 0, 0);
+    const end   = new Date(start);              end.setHours(23, 59, 59, 999);
+    const companyId = new mongoose.Types.ObjectId(String(req.companyId));
+    const oid = (v) => { try { return new mongoose.Types.ObjectId(String(v)); } catch { return null; } };
+
+    await healMilkAssignments(companyId);
+
+    const mcMatch = { companyId, date: { $gte: start, $lte: end } };
+    const msMatch = { companyId, date: { $gte: start, $lte: end } };
+    if (shift) { mcMatch.shift = shift; msMatch.session = shift; }
+    if (collectionCenter && oid(collectionCenter)) { mcMatch.collectionCenter = oid(collectionCenter); msMatch.centerId = oid(collectionCenter); }
+    if (agent && oid(agent))                       { mcMatch.agent = oid(agent);                       msMatch.agentId  = oid(agent); }
+    const [mcScope, msScope] = await Promise.all([
+      staffScope(req, { centreField: 'collectionCenter', agentField: 'agent' }),
+      staffScope(req, { centreField: 'centerId',         agentField: 'agentId' }),
+    ]);
+    if (mcScope) mcMatch.$and = [mcScope];
+    if (msScope) msMatch.$and = [msScope];
+
+    const [totals, best, centres, sales] = await Promise.all([
+      MilkCollection.aggregate([
+        { $match: mcMatch },
+        { $group: {
+          _id: null,
+          count:   { $sum: 1 },
+          farmers: { $addToSet: '$farmerNumber' },
+          qty:     { $sum: '$qty' },
+          kg:      { $sum: { $multiply: ['$qty', { $add: [1, { $divide: [{ $cond: [{ $gt: ['$clr', 0] }, '$clr', 26] }, 1000] }] }] } },
+          amount:  { $sum: '$amount' },
+          avgFat:  { $avg: '$fat' },
+          avgClr:  { $avg: '$clr' },
+          avgSnf:  { $avg: '$snf' },
+          avgRate: { $avg: '$rate' },
+        } },
+        { $project: { _id: 0, count: 1, farmers: { $size: '$farmers' }, qty: 1, kg: 1, amount: 1, avgFat: 1, avgClr: 1, avgSnf: 1, avgRate: 1 } },
+      ]),
+      // Best Farmer — same rule the screen always used: highest rate, then more litres
+      MilkCollection.aggregate([
+        { $match: mcMatch },
+        { $sort: { rate: -1, qty: -1 } },
+        { $limit: 1 },
+        { $lookup: { from: 'collectioncenters', localField: 'collectionCenter', foreignField: '_id', as: 'c' } },
+        { $project: { _id: 0, farmerNumber: 1, farmerName: 1, rate: 1, qty: 1, amount: 1, fat: 1, snf: 1, clr: 1, shift: 1,
+          centreName: { $ifNull: [{ $arrayElemAt: ['$c.centerName', 0] }, ''] } } },
+      ]),
+      MilkCollection.aggregate([
+        { $match: mcMatch },
+        { $group: { _id: '$collectionCenter', count: { $sum: 1 }, qty: { $sum: '$qty' }, amount: { $sum: '$amount' } } },
+        { $lookup: { from: 'collectioncenters', localField: '_id', foreignField: '_id', as: 'c' } },
+        { $project: { _id: 0, centreId: '$_id', count: 1, qty: 1, amount: 1,
+          centreName: { $ifNull: [{ $arrayElemAt: ['$c.centerName', 0] }, 'Unassigned'] } } },
+        { $sort: { centreName: 1 } },
+      ]),
+      MilkSales.aggregate([
+        { $match: msMatch },
+        { $group: { _id: '$saleMode', litre: { $sum: '$litre' }, amount: { $sum: '$amount' }, count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const salesBy = { LOCAL: { litre: 0, amount: 0, count: 0 }, CREDIT: { litre: 0, amount: 0, count: 0 }, SAMPLE: { litre: 0, amount: 0, count: 0 } };
+    sales.forEach(s => { if (salesBy[s._id]) salesBy[s._id] = { litre: s.litre, amount: s.amount, count: s.count }; });
+
+    res.json({
+      success: true,
+      data: {
+        purchase: totals[0] || { count: 0, farmers: 0, qty: 0, kg: 0, amount: 0, avgFat: 0, avgClr: 0, avgSnf: 0, avgRate: 0 },
+        sales: salesBy,
+        bestFarmer: best[0] || null,
+        centres,
+        restricted: !!mcScope,
+      },
+    });
+  } catch (error) {
+    console.error('Error building day summary:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

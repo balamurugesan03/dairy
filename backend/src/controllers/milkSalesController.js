@@ -6,6 +6,7 @@ import Ledger    from '../models/Ledger.js';
 import CollectionCenter from '../models/CollectionCenter.js';
 import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances, findOrCreateLedger } from '../utils/accountingHelper.js';
 import { resolveCenterFromAgent } from '../utils/resolveAgentCenter.js';
+import { healMilkAssignments, healAfterImport, staffScope } from '../utils/milkScope.js';
 
 // Mobile-app milk-sale submissions are entered agent-wise and may omit
 // centerId — derive it (and its display name) from the agent so the sale
@@ -204,10 +205,11 @@ export const getMilkSales = async (req, res) => {
     const { date, fromDate, toDate, month, year, session, saleMode, centreId, centerId, agentId, page = 1, limit = 500 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
+    await healMilkAssignments(req.companyId);
     const filter = { companyId: req.companyId };
-    // Staff/agent logins ('user' type) only see the entries they themselves
-    // entered — company and centre logins keep seeing everything in scope.
-    if (req.userType === 'user') filter.createdBy = req.user._id;
+    // Regular staff logins only see their own agent's / centre's entries
+    const scope = await staffScope(req, { centreField: 'centerId', agentField: 'agentId' });
+    if (scope) filter.$and = [scope];
 
     if (month && year) {
       const start = new Date(parseInt(year), parseInt(month) - 1, 1);
@@ -255,7 +257,8 @@ export const getMilkSales = async (req, res) => {
 export const getMilkSaleById = async (req, res) => {
   try {
     const idQuery = { _id: req.params.id, companyId: req.companyId };
-    if (req.userType === 'user') idQuery.createdBy = req.user._id;
+    const scope = await staffScope(req, { centreField: 'centerId', agentField: 'agentId' });
+    if (scope) idQuery.$and = [scope];
     const sale = await MilkSales.findOne(idQuery).lean();
     if (!sale) return res.status(404).json({ success: false, message: 'Record not found' });
     res.json({ success: true, data: sale });
@@ -493,6 +496,8 @@ export const zibittRawImport = async (req, res) => {
 
     const inserted = insertedDocs.length;
     const totalSkipped = skipped.length + (docs.length - inserted);
+    // Imports carry no centre/agent — assign them before the next read
+    await healAfterImport(req.companyId);
     res.status(201).json({
       success: true,
       data: {
@@ -548,6 +553,8 @@ export const bulkImportMilkSales = async (req, res) => {
       }
     }
 
+    // Imports carry no centre/agent — assign them before the next read
+    await healAfterImport(req.companyId);
     res.status(201).json({
       success: true,
       data: {
@@ -667,6 +674,8 @@ export const openLyssaImport = async (req, res) => {
 
     const inserted     = insertedDocs.length;
     const totalSkipped = skipped.length + (docs.length - inserted);
+    // Imports carry no centre/agent — assign them before the next read
+    await healAfterImport(req.companyId);
     res.status(201).json({
       success: true,
       data: {

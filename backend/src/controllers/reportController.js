@@ -1836,7 +1836,12 @@ export const getCooperativeRDReport = async (req, res) => {
       });
 
       if (others.items.length > 0) sectionData.push(others);
-      return sectionData.filter(s => s.items.length > 0);
+      // Headings A→Z, and the ledgers inside each heading A→Z.
+      const byName = (a = '', b = '') => String(a).localeCompare(String(b), 'en', { sensitivity: 'base', numeric: true });
+      return sectionData
+        .filter(s => s.items.length > 0)
+        .map(s => ({ ...s, items: s.items.sort((a, b) => byName(a.ledgerName, b.ledgerName)) }))
+        .sort((a, b) => byName(a.name, b.name));
     };
 
     const activeSections = buildSections();

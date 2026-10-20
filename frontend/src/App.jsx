@@ -109,8 +109,6 @@ const JournalVoucher = lazy(() => import('./components/accounting/JournalVoucher
 const OutstandingReport = lazy(() => import('./components/accounting/OutstandingReport'));
 
 // Daily Collections Components
-const MilkPurchase           = lazy(() => import('./components/daily-collections/MilkPurchase'));
-const MilkSales              = lazy(() => import('./components/daily-collections/MilkSales'));
 const DailyCollectionList    = lazy(() => import('./components/daily-collections/DailyCollectionList'));
 const FarmerWiseSummary      = lazy(() => import('./components/daily-collections/FarmerWiseSummary'));
 const FarmerCriteriaReport   = lazy(() => import('./components/daily-collections/FarmerCriteriaReport'));
@@ -447,8 +445,9 @@ const AppContent = () => {
 
               {/* Daily Collections Routes */}
               <Route path="daily-collections">
-                <Route path="milk-purchase"          element={<MilkPurchase />} />
-                <Route path="milk-sales"             element={<MilkSales />} />
+                {/* Milk Purchase / Milk Sales are popups — MainLayout opens them for these URLs */}
+                <Route path="milk-purchase"          element={null} />
+                <Route path="milk-sales"             element={null} />
                 <Route path="list"                   element={<DailyCollectionList />} />
                 <Route path="farmer-wise-summary"    element={<FarmerWiseSummary />} />
                 <Route path="farmer-criteria-report" element={<FarmerCriteriaReport />} />
