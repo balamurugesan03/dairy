@@ -34,6 +34,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { ThemeSwitcherCompact } from '../common/ThemeSwitcher';
 import CompanySwitcher from '../company/CompanySwitcher';
+import { MILK_POPUP_EVENT, MILK_POPUP_ROUTES } from '../../utils/milkPopup';
 
 const MilkPurchase = lazy(() => import('../daily-collections/MilkPurchase'));
 const MilkSales    = lazy(() => import('../daily-collections/MilkSales'));
@@ -78,17 +79,43 @@ const MainLayout = () => {
 
   const isBankTransferPage = location.pathname === '/payments/bank-transfer';
 
-  // F2 / F3 milk entry popups — Sales opens in front of Purchase, so both can be open at once
+  // Milk Purchase / Milk Sales popups — the ONE way both screens open (F2/F3,
+  // P/S, menu, other pages via openMilkPopup). They are independent: both can
+  // be open, opening/swapping only changes which is in front, and closing one
+  // never touches the other.
   const [purchasePopupOpen, setPurchasePopupOpen] = useState(false);
   const [salesPopupOpen,    setSalesPopupOpen]    = useState(false);
+  const [milkFront,         setMilkFront]         = useState('purchase');
   const setMilkPopup = useCallback((which) => {
-    if (which === 'sales') { setSalesPopupOpen(true); return; }
-    // Purchase: bring it to the front by closing Sales on top of it
-    setSalesPopupOpen(false);
-    setPurchasePopupOpen(true);
+    if (which === 'sales') setSalesPopupOpen(true);
+    else                   setPurchasePopupOpen(true);
+    setMilkFront(which === 'sales' ? 'sales' : 'purchase');
   }, []);
-  const closePurchasePopup = useCallback(() => setPurchasePopupOpen(false), []);
-  const closeSalesPopup    = useCallback(() => setSalesPopupOpen(false), []);
+  const closePurchasePopup = useCallback(() => {
+    setPurchasePopupOpen(false);
+    setMilkFront('sales');
+  }, []);
+  const closeSalesPopup = useCallback(() => {
+    setSalesPopupOpen(false);
+    setMilkFront('purchase');
+  }, []);
+  const purchaseInFront = purchasePopupOpen && (milkFront === 'purchase' || !salesPopupOpen);
+  const salesInFront    = salesPopupOpen    && (milkFront === 'sales'    || !purchasePopupOpen);
+
+  // Other pages open the popups through this event (see utils/milkPopup.js)
+  useEffect(() => {
+    const onOpen = (e) => setMilkPopup(e.detail);
+    window.addEventListener(MILK_POPUP_EVENT, onOpen);
+    return () => window.removeEventListener(MILK_POPUP_EVENT, onOpen);
+  }, [setMilkPopup]);
+
+  // The old full-page routes (bookmarks, typed URLs) now open the popup instead
+  useEffect(() => {
+    const which = MILK_POPUP_ROUTES[location.pathname];
+    if (!which) return;
+    setMilkPopup(which); // eslint-disable-line react-hooks/set-state-in-effect
+    navigate('/', { replace: true });
+  }, [location.pathname, navigate, setMilkPopup]);
 
   // ── Global hotkeys ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -105,12 +132,22 @@ const MainLayout = () => {
       if (e.key === 'F5') { e.preventDefault(); navigate('/payments/cash-advance/voucher', { state: { openNewCashAdvance: true } }); return; }
 
       // Other shortcuts: ignore when typing inside an input / textarea / select
-      const tag = document.activeElement?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const ae  = document.activeElement;
+      const tag = ae?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ae?.isContentEditable) return;
+
+      // P / S open Milk Purchase / Milk Sales. Once a milk popup is open it owns
+      // P/S itself (swap), and any other open dialog keeps its own keys.
+      const k = e.key?.toLowerCase();
+      if ((k === 'p' || k === 's') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
+        if (document.querySelector('[data-milk-popup], [role="dialog"]')) return;
+        e.preventDefault();
+        setMilkPopup(k === 's' ? 'sales' : 'purchase');
+      }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [navigate]);
+  }, [navigate, setMilkPopup]);
 
   // Header gradient based on theme
   const headerGradient = isDark
@@ -624,7 +661,9 @@ const MainLayout = () => {
   const rightMenuItems = allMenuItems.filter(item => rightKeys.includes(item.key));
 
   const handleMenuClick = (key) => {
-    navigate(key);
+    // Milk Purchase / Milk Sales open the same popups as F2 / F3
+    if (MILK_POPUP_ROUTES[key]) setMilkPopup(MILK_POPUP_ROUTES[key]);
+    else navigate(key);
     if (mobileOpened) {
       toggleMobile();
     }
@@ -1119,19 +1158,23 @@ const MainLayout = () => {
         <Outlet />
       </AppShell.Main>
 
-      {/* F2 Milk Purchase popup — the larger one */}
+      {/* Milk Purchase popup (F2 / P / menu) — the larger one. Whichever popup
+          is in front sits on top; the other stays open behind it. */}
       <Modal
         opened={purchasePopupOpen}
         onClose={closePurchasePopup}
         withCloseButton={false}
         closeOnEscape={false}
         closeOnClickOutside={false}
+        trapFocus={purchaseInFront}
+        returnFocus={false}
         centered
         radius="md"
         padding={0}
         size="97vw"
+        zIndex={purchaseInFront ? 210 : 200}
         transitionProps={{ transition: 'fade', duration: 120 }}
-        overlayProps={{ backgroundOpacity: 0.55, blur: 2 }}
+        overlayProps={purchaseInFront && salesPopupOpen ? { backgroundOpacity: 0.3, blur: 0 } : { backgroundOpacity: 0.55, blur: 2 }}
         styles={{
           content: {
             height: '95vh', maxHeight: '95vh',
@@ -1142,28 +1185,30 @@ const MainLayout = () => {
           body: { flex: 1, minHeight: 0, padding: 0, overflowY: 'auto', overflowX: 'hidden' },
         }}
       >
-        <Box data-milk-popup="purchase" style={{ height: '100%' }}>
+        <Box data-milk-popup="purchase" data-milk-front={purchaseInFront || undefined} style={{ height: '100%' }}>
           <Suspense fallback={<Center h="100%"><Loader /></Center>}>
-            <MilkPurchase asPopup onSwap={setMilkPopup} onClose={closePurchasePopup} />
+            <MilkPurchase asPopup inFront={purchaseInFront} onSwap={setMilkPopup} onClose={closePurchasePopup} />
           </Suspense>
         </Box>
       </Modal>
 
-      {/* F3 Milk Sales popup — smaller, stacked in front of the Purchase popup */}
+      {/* Milk Sales popup (F3 / S / menu) — smaller than Purchase */}
       <Modal
         opened={salesPopupOpen}
         onClose={closeSalesPopup}
         withCloseButton={false}
         closeOnEscape={false}
         closeOnClickOutside={false}
+        trapFocus={salesInFront}
+        returnFocus={false}
         centered
         radius="md"
         padding={0}
         size="84vw"
-        zIndex={210}
+        zIndex={salesInFront ? 210 : 200}
         transitionProps={{ transition: 'fade', duration: 120 }}
-        // Lighter dim when stacked so the Purchase popup still shows behind
-        overlayProps={{ backgroundOpacity: purchasePopupOpen ? 0.3 : 0.55, blur: purchasePopupOpen ? 0 : 2 }}
+        // Lighter dim when stacked so the popup behind still shows
+        overlayProps={salesInFront && purchasePopupOpen ? { backgroundOpacity: 0.3, blur: 0 } : { backgroundOpacity: 0.55, blur: 2 }}
         styles={{
           content: {
             height: '84vh', maxHeight: '84vh',
@@ -1174,9 +1219,9 @@ const MainLayout = () => {
           body: { flex: 1, minHeight: 0, padding: 0, overflowY: 'auto', overflowX: 'hidden' },
         }}
       >
-        <Box data-milk-popup="sales" style={{ height: '100%' }}>
+        <Box data-milk-popup="sales" data-milk-front={salesInFront || undefined} style={{ height: '100%' }}>
           <Suspense fallback={<Center h="100%"><Loader /></Center>}>
-            <MilkSales asPopup onSwap={setMilkPopup} onClose={closeSalesPopup} />
+            <MilkSales asPopup inFront={salesInFront} onSwap={setMilkPopup} onClose={closeSalesPopup} />
           </Suspense>
         </Box>
       </Modal>

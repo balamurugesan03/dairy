@@ -2662,16 +2662,10 @@ export const getRDStatementUnified = async (req, res) => {
       return acc;
     }, { ...ZERO_TOT });
 
-    const pgOrder = ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE', 'OTHER'];
-    const catOrder = ['ASSETS', 'LIABILITIES', 'INCOME', 'EXPENSES', 'CAPITAL', 'OTHER'];
+    // Headings A→Z (the ledgers inside each heading are already A→Z above).
     const sections = Object.values(groupMap)
       .map(g => ({ ...g, groupTotal: sumFields(g.ledgers) }))
-      .sort((a, b) => {
-        if (groupBy === 'category') return catOrder.indexOf(a.sectionName) - catOrder.indexOf(b.sectionName);
-        if (groupBy === 'ledger') return 0;
-        const ai = pgOrder.indexOf(a.parentGroup), bi = pgOrder.indexOf(b.parentGroup);
-        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi) || a.sectionName.localeCompare(b.sectionName);
-      });
+      .sort((a, b) => byNameCI(a.sectionName, b.sectionName));
 
     const grandTotal = sumFields(records);
 

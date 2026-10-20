@@ -22,6 +22,7 @@ import * as XLSX from 'xlsx';
 import { milkCollectionAPI, collectionCenterAPI, milkSalesAPI, agentAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 import dayjs from 'dayjs';
+import { openMilkPopup } from '../../utils/milkPopup';
 
 const PAGE_SIZE = 50;
 
@@ -668,7 +669,7 @@ const DailyCollectionList = () => {
             </Menu.Dropdown>
           </Menu>
 
-          <Button leftSection={<IconPlus size={16} />} onClick={() => navigate('/daily-collections/milk-purchase')}>
+          <Button leftSection={<IconPlus size={16} />} onClick={() => openMilkPopup('purchase')}>
             New Entry
           </Button>
           <Button leftSection={<IconX size={16} />} variant="default" onClick={() => navigate('/')}>

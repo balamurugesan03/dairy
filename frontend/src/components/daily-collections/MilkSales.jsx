@@ -23,6 +23,7 @@ import {
 } from '@tabler/icons-react';
 import { customerAPI, collectionCenterAPI, milkSalesAPI, agentAPI, milkSalesRateAPI, thermalPrintAPI, whatsappAPI } from '../../services/api';
 import { toAgentOptions, groupAgentsByCenter, findOwnAgent, pickDefaultAgent } from '../../utils/senderAgent';
+import { openMilkPopup } from '../../utils/milkPopup';
 import { useAuth } from '../../context/AuthContext';
 import ImportModal from '../common/ImportModal';
 
@@ -154,9 +155,12 @@ const toDate = (d) => {
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 // asPopup: rendered inside the global F3 popup (MainLayout) instead of as a
 // routed page — Close / P-S swap then go through onClose / onSwap.
-export default function MilkSales({ asPopup = false, onSwap, onClose }) {
+export default function MilkSales({ asPopup = false, inFront = true, onSwap, onClose }) {
   const navigate = useNavigate();
   const { user, isUser, isCentreLogin, isAgentLogin, centreInfo, userCenter } = useAuth();
+  // Regular staff login with an assigned centre stays on that centre (as in Milk Purchase)
+  const isStaffUser  = user?.loginType === 'user' && user?.role === 'user';
+  const centreLocked = isCentreLogin || isAgentLogin || (isStaffUser && !!userCenter);
 
   // Keyboard swap:
   //   • Ctrl/⌘ + S | plain S → Milk Sales (this page)
@@ -174,8 +178,10 @@ export default function MilkSales({ asPopup = false, onSwap, onClose }) {
     const onKey = (e) => {
       const k = e.key?.toLowerCase();
       if (k !== 's' && k !== 'p') return;
-      // The routed page stays mounted under an F2/F3 popup — let the popup own the keys
-      if (!asPopup && document.querySelector('[data-milk-popup]')) return;
+      // Only the milk screen in front owns the keys: a popup behind the
+      // Purchase popup, or a routed page under any popup, ignores them
+      if (asPopup ? !document.querySelector('[data-milk-popup="sales"][data-milk-front]')
+                  : document.querySelector('[data-milk-popup]')) return;
 
       const ae  = document.activeElement;
       const tag = ae?.tagName;
@@ -189,9 +195,8 @@ export default function MilkSales({ asPopup = false, onSwap, onClose }) {
       if (!withMod && !canPlainSwap) return;     // typing letters in a free-text field
 
       e.preventDefault();
-      if (asPopup)       { if (k === 'p') onSwap?.('purchase'); }
-      else if (k === 's') navigate('/daily-collections/milk-sales');
-      else                navigate('/daily-collections/milk-purchase');
+      if (asPopup) { if (k === 'p') onSwap?.('purchase'); }
+      else         openMilkPopup(k === 's' ? 'sales' : 'purchase');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -286,6 +291,11 @@ export default function MilkSales({ asPopup = false, onSwap, onClose }) {
   const focusLastActiveField = () => {
     litrRef.current?.focus({ preventScroll: true });
   };
+
+  // Brought back in front of the other milk popup → resume where the user was
+  useEffect(() => {
+    if (asPopup && inFront) setTimeout(focusLastActiveField, 80);
+  }, [inFront]); // eslint-disable-line
 
   // ── Auto-calc amount ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -459,7 +469,7 @@ export default function MilkSales({ asPopup = false, onSwap, onClose }) {
   const handleNew = () => {
     setEditingId(null); setSelRow(null);
     fetchNextBillNo();
-    const defaultCenter = (isCentreLogin || isAgentLogin) ? center : (centers[0]?.value || null);
+    const defaultCenter = centreLocked ? center : (centers[0]?.value || null);
     const defaultAgent  = defaultAgentFor(defaultCenter)?.value || null;
     setCenter(defaultCenter); setAgent(defaultAgent); setCategory(null); setCreditor(null);
     setOpCr(''); setLitre(''); setRate(''); setAmount(0); setPType('Cash');
@@ -1074,8 +1084,8 @@ export default function MilkSales({ asPopup = false, onSwap, onClose }) {
               <Box>
                 <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Collection Center</Text>
                 <Select data={centers} value={center} onChange={setCenter} placeholder="Select center..." searchable
-                  clearable={!(isCentreLogin || isAgentLogin)} readOnly={isCentreLogin || isAgentLogin}
-                  size="xs" radius="sm" styles={{ input: { fontWeight: 600, border: `1.5px solid ${mode === 'CREDIT' ? '#c4b5fd' : '#86efac'}`, height: 28, background: (isCentreLogin || isAgentLogin) ? '#f0fdf4' : undefined } }} />
+                  clearable={!centreLocked} readOnly={centreLocked}
+                  size="xs" radius="sm" styles={{ input: { fontWeight: 600, border: `1.5px solid ${mode === 'CREDIT' ? '#c4b5fd' : '#86efac'}`, height: 28, background: centreLocked ? '#f0fdf4' : undefined } }} />
               </Box>
               <Box>
                 <Text size="9px" fw={700} c="#64748b" mb={2} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Sender Agent</Text>

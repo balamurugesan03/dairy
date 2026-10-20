@@ -27,7 +27,7 @@ import {
 } from '@tabler/icons-react';
 import {
   agentAPI, collectionCenterAPI, farmerAPI,
-  milkCollectionAPI, milkPurchaseSettingsAPI, rateChartAPI, milkSalesAPI,
+  milkCollectionAPI, milkPurchaseSettingsAPI, rateChartAPI,
   thermalPrintAPI, machineConfigAPI, timeIncentiveAPI, shiftIncentiveAPI,
   milmaChartAPI, whatsappAPI, SERVER_URL,
 } from '../../services/api';
@@ -37,6 +37,8 @@ import ImportModal from '../common/ImportModal';
 import { offlineQueue } from '../../utils/offlineQueue';
 import { localDateStr } from '../../utils/dateUtils';
 import { toAgentOptions, groupAgentsByCenter, findOwnAgent, pickDefaultAgent } from '../../utils/senderAgent';
+import { openMilkPopup } from '../../utils/milkPopup';
+import MilkDaySummary from './MilkDaySummary';
 
 // ── Rate Calculation ─────────────────────────────────────────────────────────
 const fallbackRate = (fat, clr) =>
@@ -208,7 +210,7 @@ const toDate = (d) => {
 
 // asPopup: rendered inside the global F2 popup (MainLayout) instead of as a
 // routed page — Close / P-S swap then go through onClose / onSwap.
-const MilkPurchase = ({ asPopup = false, onSwap, onClose }) => {
+const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
   const { user, isSuperAdmin, isCompanyAdmin, isUser, isCentreLogin, isAgentLogin, centreInfo, userCenter } = useAuth();
   const [centersData, setCentersData] = useState([]);
   const [centreSummary, setCentreSummary] = useState([]);
@@ -221,10 +223,16 @@ const MilkPurchase = ({ asPopup = false, onSwap, onClose }) => {
     return new Date();
   });
   const navigate = useNavigate();
+  // Regular staff login (not admin / company / centre) — fixed to their own
+  // centre & agent; the server also limits what they can see.
+  const isStaffUser = user?.loginType === 'user' && user?.role === 'user';
+  const centreLocked = isCentreLogin || isAgentLogin || (isStaffUser && !!userCenter);
 
-  // True when a popup sits in front of this form: the F3 Sales popup stacks over
-  // the F2 popup, and either popup covers the routed page underneath.
-  const isCovered = () => document.querySelector(asPopup ? '[data-milk-popup="sales"]' : '[data-milk-popup]') != null;
+  // True when this form is not the one in front: as a popup, the Sales popup is
+  // in front of it (MainLayout marks the front popup); as a page, any popup is.
+  const isCovered = () => (asPopup
+    ? !document.querySelector('[data-milk-popup="purchase"][data-milk-front]')
+    : document.querySelector('[data-milk-popup]') != null);
 
   // Keyboard swap:
   //   • Ctrl/⌘ + S | plain S → Milk Sales
@@ -258,9 +266,8 @@ const MilkPurchase = ({ asPopup = false, onSwap, onClose }) => {
       if (!withMod && !canPlainSwap) return;     // typing letters in a free-text field
 
       e.preventDefault();
-      if (asPopup)       { if (k === 's') onSwap?.('sales'); }
-      else if (k === 's') navigate('/daily-collections/milk-sales');
-      else                navigate('/daily-collections/milk-purchase');
+      if (asPopup) { if (k === 's') onSwap?.('sales'); }
+      else         openMilkPopup(k === 's' ? 'sales' : 'purchase');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -373,8 +380,12 @@ const MilkPurchase = ({ asPopup = false, onSwap, onClose }) => {
     (lastFilled ? lastFilled.ref : memberRef).current?.focus({ preventScroll: true });
   };
 
+  // Brought back in front of the other milk popup → resume where the user was
+  useEffect(() => {
+    if (asPopup && inFront) setTimeout(focusLastActiveField, 80);
+  }, [inFront]); // eslint-disable-line
+
   // ── Control Panel State ────────────────────────────────────────────────────
-  const [salesSummary, setSalesSummary] = useState({ localLtr: 0, localAmt: 0, creditLtr: 0, creditAmt: 0, sampleLtr: 0, sampleAmt: 0 });
   const [dupBlocked,  setDupBlocked]  = useState(false);
   const [dupInfo,     setDupInfo]     = useState(null); // { name, billNo, amount, center }
   const [speakEnabled, setSpeakEnabled] = useState(false);
@@ -1022,25 +1033,6 @@ const MilkPurchase = ({ asPopup = false, onSwap, onClose }) => {
       setFormEnabled(false);
     }
   }, [date, shift, center]); // eslint-disable-line
-
-  // Load milk sales summary for the day
-  useEffect(() => {
-    const fetchSalesSummary = async () => {
-      try {
-        const res = await milkSalesAPI.getDailySummary({ date: localDateStr(date) });
-        const rows = res?.data || [];
-        let localLtr = 0, localAmt = 0, creditLtr = 0, creditAmt = 0, sampleLtr = 0, sampleAmt = 0;
-        rows.forEach(r => {
-          if (r._id?.session !== shift) return;
-          if (r._id?.saleMode === 'LOCAL')  { localLtr  += r.totalLitre;  localAmt  += r.totalAmount; }
-          if (r._id?.saleMode === 'CREDIT') { creditLtr += r.totalLitre;  creditAmt += r.totalAmount; }
-          if (r._id?.saleMode === 'SAMPLE') { sampleLtr += r.totalLitre;  sampleAmt += r.totalAmount; }
-        });
-        setSalesSummary({ localLtr, localAmt, creditLtr, creditAmt, sampleLtr, sampleAmt });
-      } catch { /* silent */ }
-    };
-    fetchSalesSummary();
-  }, [date, shift]); // eslint-disable-line
 
   // ── Auto-detect active time incentive for current center + shift + date ───
   useEffect(() => {
@@ -2020,7 +2012,7 @@ const MilkPurchase = ({ asPopup = false, onSwap, onClose }) => {
             <Select
               value={center}
               onChange={v => {
-                if (isCentreLogin || isAgentLogin) return;
+                if (centreLocked) return;
                 setCenter(v);
                 const a = agentsData.find(x => x.value === agent);
                 if (!a || (a.centerId && a.centerId !== v)) setAgent(pickDefaultAgent(agentsData.filter(x => x.centerId === v), user, v)?.value || '');
@@ -2028,8 +2020,8 @@ const MilkPurchase = ({ asPopup = false, onSwap, onClose }) => {
               data={centersData} placeholder="Center..." searchable
               leftSection={<IconBuilding size={14} color="#2563eb" />}
               size="sm" radius="md" style={{ width: 160 }}
-              readOnly={isCentreLogin || isAgentLogin}
-              styles={{ input: { fontWeight: 600, border: (isCentreLogin || isAgentLogin) ? '1.5px solid #86efac' : '1.5px solid #bfdbfe', background: (isCentreLogin || isAgentLogin) ? '#f0fdf4' : undefined } }}
+              readOnly={centreLocked}
+              styles={{ input: { fontWeight: 600, border: centreLocked ? '1.5px solid #86efac' : '1.5px solid #bfdbfe', background: centreLocked ? '#f0fdf4' : undefined } }}
             />
           </Group>
           <Group gap={4} align="center" wrap="nowrap">
@@ -2802,73 +2794,17 @@ const MilkPurchase = ({ asPopup = false, onSwap, onClose }) => {
           </ScrollArea>
         </Box>
 
-        {/* Footer summary strip — hidden for sub-centre login */}
-        {!isCentreLogin && <Box className="mp-footer-box" style={{ background: 'white', border: '1px solid #bfdbfe', borderTop: '2px solid #dbeafe', borderRadius: '0 0 10px 10px', padding: '4px 12px' }}>
-          <style>{`@media(max-width:768px){.mp-footer-box{padding:6px 8px !important;}}`}</style>
-          <Group className="mp-footer-strip" gap={10} wrap="nowrap" align="center">
-            <Box style={{ flexShrink: 0 }}>
-              <Text size="13px" fw={800} c="#1e3a8a" tt="uppercase" style={{ letterSpacing: '0.5px' }}>Summary</Text>
-              <Text size="11px" c="#94a3b8">{entries.length} records</Text>
-            </Box>
-            <Divider className="mp-footer-divider" orientation="vertical" style={{ height: 36 }} />
-            {[
-              { label: 'FAT Avg',   val: avgFat.toFixed(1),              c: '#c2410c', bg: '#fff7ed', border: '#fed7aa' },
-              { label: 'CLR Avg',   val: avgClr.toFixed(1),              c: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe' },
-              { label: 'SNF Avg',   val: avgSnf.toFixed(2),              c: '#166534', bg: '#f0fdf4', border: '#86efac' },
-              { label: 'Rate Avg',  val: `\u20B9${avgRate.toFixed(2)}`,  c: '#1e40af', bg: '#eff6ff', border: '#bfdbfe' },
-              { label: 'Total Ltr / KG', val: `${totalLtr.toFixed(2)} L`, val2: `${totalKg.toFixed(2)} KG`, c: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' },
-              { label: 'Total Amt', val: `\u20B9${totalAmt.toFixed(2)}`, c: 'white',   bg: '#1e40af', border: '#1e40af', bold: true },
-            ].map(({ label, val, val2, c, bg, border, bold }) => (
-              <Box key={label} style={{ background: bg, border: `1.5px solid ${border}`, borderRadius: 8, padding: '3px 12px', textAlign: 'center', flexShrink: 0 }}>
-                <Text size="12px" fw={600} c={bold ? 'rgba(255,255,255,0.75)' : '#64748b'} tt="uppercase" style={{ letterSpacing: '0.4px' }}>{label}</Text>
-                <Text size={bold ? '22px' : '19px'} fw={900} style={{ color: c, lineHeight: 1.2 }}>{val}</Text>
-                {val2 && <Text size="17px" fw={800} style={{ color: c, lineHeight: 1.1 }}>{val2}</Text>}
-              </Box>
-            ))}
-
-            <Divider className="mp-footer-divider" orientation="vertical" style={{ height: 36 }} />
-
-            {/* Local & Credit Sales Summary */}
-            {[
-              { label: 'Local Sale',  ltr: salesSummary.localLtr,  amt: salesSummary.localAmt,  c: '#065f46', bg: '#ecfdf5', border: '#6ee7b7' },
-              { label: 'Credit Sale', ltr: salesSummary.creditLtr, amt: salesSummary.creditAmt, c: '#92400e', bg: '#fffbeb', border: '#fcd34d' },
-              { label: 'Sample Sale', ltr: salesSummary.sampleLtr, amt: salesSummary.sampleAmt, c: '#0369a1', bg: '#f0f9ff', border: '#7dd3fc' },
-            ].map(({ label, ltr, amt, c, bg, border }) => (
-              <Box key={label} style={{ background: bg, border: `1.5px solid ${border}`, borderRadius: 8, padding: '5px 14px', textAlign: 'center', flexShrink: 0 }}>
-                <Text size="12px" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>{label}</Text>
-                <Text size="16px" fw={800} style={{ color: c, lineHeight: 1.3 }}>{ltr.toFixed(2)} L</Text>
-                <Text size="18px" fw={900} style={{ color: c, lineHeight: 1.2 }}>&#8377;{amt.toFixed(2)}</Text>
-              </Box>
-            ))}
-
-            {/* Union Sale = Purchase - Local - Credit */}
-            {(() => {
-              const unionLtr = Math.max(0, totalLtr - salesSummary.localLtr - salesSummary.creditLtr - salesSummary.sampleLtr);
-              return (
-                <Box style={{ background: '#eff6ff', border: '1.5px solid #93c5fd', borderRadius: 8, padding: '5px 14px', textAlign: 'center', flexShrink: 0 }}>
-                  <Text size="12px" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>Union Sale</Text>
-                  <Text size="11px" c="#94a3b8" style={{ lineHeight: 1.2 }}>{totalLtr.toFixed(2)} − {salesSummary.localLtr.toFixed(2)} − {salesSummary.creditLtr.toFixed(2)} − {salesSummary.sampleLtr.toFixed(2)}</Text>
-                  <Text size="18px" fw={900} style={{ color: '#1e40af', lineHeight: 1.2 }}>{unionLtr.toFixed(2)} L</Text>
-                </Box>
-              );
-            })()}
-
-            {/* Best Farmer */}
-            {entries.length > 0 && (() => {
-              const best = entries.reduce((b, e) => e.rate > b.rate ? e : b, entries[0]);
-              return (
-                <Box style={{ background: 'linear-gradient(135deg,#fef9c3,#fde68a)', border: '1.5px solid #f59e0b', borderRadius: 8, padding: '5px 12px', flexShrink: 0 }}>
-                  <Text size="15px" fw={700} c="#78350f" tt="uppercase" style={{ letterSpacing: '0.4px' }}>⭐ Today's Best Farmer</Text>
-                  <Text size="22px" fw={800} c="#92400e" style={{ lineHeight: 1.3, whiteSpace: 'nowrap' }}>{best.producerName}</Text>
-                  <Group gap={4}>
-                    <Badge size="xs" color="orange" variant="filled" radius="sm">{best.producerNo}</Badge>
-                    <Text size="22px" fw={900} c="#b45309">&#8377;{best.rate.toFixed(2)}/Ltr</Text>
-                  </Group>
-                </Box>
-              );
-            })()}
-          </Group>
-        </Box>}
+        {/* Day summary + Best Farmer — hidden for sub-centre login. Admins get
+            every centre & agent combined (filterable); staff users only their own. */}
+        {!isCentreLogin && (
+          <MilkDaySummary
+            date={date} shift={shift}
+            adminView={!isStaffUser}
+            centres={centersData} agents={agentsData}
+            scopeLabel={[centersData.find(c => c.value === center)?.label, agentsData.find(a => a.value === agent)?.label].filter(Boolean).join(' · ') || 'My entries'}
+            refreshKey={`${entries.length}|${totalAmt.toFixed(2)}`}
+          />
+        )}
       </Box>
 
       {/* ── End left column ── */}

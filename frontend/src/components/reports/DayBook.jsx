@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { message } from '../../utils/toast';
 import dayjs from 'dayjs';
 import { dayBookAPI } from '../../services/api';
-import { useCompany } from '../../context/CompanyContext';
 import {
   Container, Paper, Text, Group, LoadingOverlay, Button,
   Title, Divider, Menu, Badge, Select, ActionIcon
@@ -23,6 +22,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import A4PrintPreview from './shared/A4PrintPreview';
 import { buildDayBookPrintHtml } from './dayBookPrint';
+import useSocietyHeader from './shared/useSocietyHeader';
 import './DayBook.css';
 
 const PRESETS = [
@@ -53,7 +53,6 @@ const getPresetRange = (preset) => {
 
 const DayBook = () => {
   const navigate = useNavigate();
-  const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
   const [preset,    setPreset]    = useState('thisMonth');
   const [dateRange, setDateRange] = useState(getPresetRange('thisMonth'));
@@ -80,9 +79,8 @@ const DayBook = () => {
     setDateRange([dayjs(val).startOf('day').toDate(), dayjs(val).endOf('day').toDate()]);
   };
 
-  const companyName = selectedCompany?.societyName || selectedCompany?.companyName || 'Dairy Co-operative Society';
-  const societyCode = selectedCompany?.societyCode || '';
-  const societyPlace = selectedCompany?.address || selectedCompany?.district || '';
+  // Header details from the Society Info menu (not the login society code)
+  const { societyName: companyName, societyCode, societyPlace } = useSocietyHeader();
 
   // --- Fetch ---
   const fetchDayBook = async (start, end) => {
@@ -311,22 +309,22 @@ const DayBook = () => {
         <div className="db-side__footer">
           <table className="db-ledger db-ledger--footer">
             <tbody>
+              <tr className="db-summary-row db-day-total">
+                <td className="db-footer-label">Transaction (Subtotal)</td>
+                <td className="db-footer-vno"></td>
+                <td className="db-footer-amt">{fmtAlways(totals.cash)}</td>
+                <td className="db-footer-amt">{fmtAlways(totals.adj)}</td>
+                <td className="db-footer-total">{fmtAlways(totals.total)}</td>
+                <td className="db-no-print"></td>
+              </tr>
               {/* Opening Balance (Receipt side) and Closing Balance (Payment side)
-                  sit on the same line */}
+                  sit on the same line, below the subtotal */}
               <tr className="db-summary-row db-balance-row">
                 <td className="db-footer-label">{balanceLabel}</td>
                 <td className="db-footer-vno"></td>
                 <td className="db-footer-amt">{fmtAlways(balanceAmount)}</td>
                 <td className="db-footer-amt"></td>
                 <td className="db-footer-total">{fmtAlways(balanceAmount)}</td>
-                <td className="db-no-print"></td>
-              </tr>
-              <tr className="db-summary-row db-day-total">
-                <td className="db-footer-label">Transactions</td>
-                <td className="db-footer-vno"></td>
-                <td className="db-footer-amt">{fmtAlways(totals.cash)}</td>
-                <td className="db-footer-amt">{fmtAlways(totals.adj)}</td>
-                <td className="db-footer-total">{fmtAlways(totals.total)}</td>
                 <td className="db-no-print"></td>
               </tr>
               {/* Grand Total = Balance + Transactions */}
@@ -369,18 +367,22 @@ const DayBook = () => {
         {renderSideTable('payment', card.payments, card.paymentTotals, card.openingBalance, card.closingBalance)}
       </div>
 
-      {/* Signatures under every date — President centred, Secretary beside it */}
+      {/* Signatures under every date — President left, Secretary right, Generated date centred */}
       <div className="db-card-sign">
         <div className="db-card-sign__box">President</div>
         <div className="db-card-sign__box">Secretary</div>
+      </div>
+      <div className="db-card-generated">
+        Generated On : {formatGeneratedDate(generatedDate)} | By ADM
       </div>
     </div>
   );
 
   // --- PRINT ---
-  // Dedicated black & white A4 layout built from the day cards (one date per
-  // page, signatures under every date). The Print menu opens a preview that
-  // renders this exact document at real A4 size; printing goes from there.
+  // Dedicated A4 layout built from the day cards, matching the screen order.
+  // Dates share a sheet when a whole date fits in the space left, otherwise
+  // move to a fresh sheet. The Print menu opens a preview that renders this
+  // exact document at real A4 size; printing goes from there.
   const printHtml = useMemo(() => {
     if (!printOrientation) return '';
     return buildDayBookPrintHtml(dayCards, {
@@ -426,19 +428,20 @@ const DayBook = () => {
       const bg1 = [240, 240, 245];
       const bg2 = [232, 232, 240];
 
+      const balStyle = { fontStyle: 'bold', halign: 'center', fillColor: [221, 233, 251], textColor: [11, 61, 145], fontSize: closingFontSize + 1 };
+
       body.push([
-        { content: balLabel, styles: { ...bold, fillColor: bg1 } },
-        { content: '', styles: { fillColor: bg1 } },
-        { content: fmtAlways(balAmt), styles: { ...boldRight, fillColor: bg1 } },
-        { content: '', styles: { fillColor: bg1 } },
-        { content: fmtAlways(balAmt), styles: { ...boldRight, fillColor: bg1 } }
-      ]);
-      body.push([
-        { content: 'Transactions', styles: { ...bold, fillColor: bg1 } },
+        { content: 'Transaction (Subtotal)', styles: { ...bold, fillColor: bg1 } },
         { content: '', styles: { fillColor: bg1 } },
         { content: fmtAlways(totals.cash), styles: { ...boldRight, fillColor: bg1 } },
         { content: fmtAlways(totals.adj), styles: { ...boldRight, fillColor: bg1 } },
         { content: fmtAlways(totals.total), styles: { ...boldRight, fillColor: bg1 } }
+      ]);
+      body.push([
+        { content: balLabel, colSpan: 2, styles: balStyle },
+        { content: fmtAlways(balAmt), styles: balStyle },
+        { content: '', styles: balStyle },
+        { content: fmtAlways(balAmt), styles: balStyle }
       ]);
       // Grand Total = Balance + Transactions
       body.push([
@@ -543,12 +546,12 @@ const DayBook = () => {
       const ob = card.openingBalance;
       const cb = card.closingBalance;
       rows.push([
-        'Opening Balance', '', ob, '', ob,
-        '', 'Closing Balance', '', cb, '', cb
+        'Transaction (Subtotal)', '', rt.cash, rt.adj, rt.total,
+        '', 'Transaction (Subtotal)', '', pt.cash, pt.adj, pt.total
       ]);
       rows.push([
-        'Transactions', '', rt.cash, rt.adj, rt.total,
-        '', 'Transactions', '', pt.cash, pt.adj, pt.total
+        'Opening Balance', '', ob, '', ob,
+        '', 'Closing Balance', '', cb, '', cb
       ]);
       rows.push([
         'Grand Total', '', ob + rt.cash, rt.adj, ob + rt.total,
@@ -763,11 +766,6 @@ const DayBook = () => {
         {dayBookData && !loading && dayCards.length > 0 && (
           <div ref={printRef}>
             {dayCards.map((card) => renderDayCard(card))}
-
-            {/* Signatures now sit under each date card; only the generated-on line remains here */}
-            <div className="db-signature-meta">
-              Generated on {formatGeneratedDate(generatedDate)} | By ADM
-            </div>
           </div>
         )}
 

@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { message } from '../../utils/toast';
 import dayjs from 'dayjs';
 import { reportAPI, dayBookAPI } from '../../services/api';
-import { useCompany } from '../../context/CompanyContext';
 import {
   Container, Paper, Text, Group, LoadingOverlay, Button,
   Title, Divider, Menu, Badge, Stack, Box, Select, ActionIcon
@@ -22,6 +21,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import A4PrintPreview from './shared/A4PrintPreview';
 import { buildCashBookPrintHtml } from './cashBookPrint';
+import useSocietyHeader from './shared/useSocietyHeader';
 
 const CB_FONT = "'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
 const CB_LINE = '1px solid #9AA0A6';
@@ -55,7 +55,6 @@ const getPresetRange = (preset) => {
 
 const CashBook = () => {
   const navigate = useNavigate();
-  const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
   const [preset,     setPreset]    = useState('thisMonth');
   const [dateRange,  setDateRange]  = useState(getPresetRange('thisMonth'));
@@ -81,9 +80,8 @@ const CashBook = () => {
     setDateRange([dayjs(val).startOf('day').toDate(), dayjs(val).endOf('day').toDate()]);
   };
 
-  const companyName = selectedCompany?.societyName || selectedCompany?.companyName || 'Dairy Co-operative Society';
-  const societyCode = selectedCompany?.societyCode || '';
-  const societyPlace = selectedCompany?.address || selectedCompany?.district || '';
+  // Header details from the Society Info menu (not the login society code)
+  const { societyName: companyName, societyCode, societyPlace } = useSocietyHeader();
 
   const fetchCashBook = async (start, end) => {
     if (!start || !end) return;
@@ -213,6 +211,8 @@ const CashBook = () => {
     const head = { ...cell, background: '#E9ECEF', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6 };
     const num = { textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
     const bold = { fontWeight: 700 };
+    // Opening / Closing Balance: centred, own colour, larger (matches Day Book)
+    const balRow = { fontWeight: 700, fontSize: 15, textAlign: 'center', verticalAlign: 'middle', background: '#DDE9FB', color: '#0B3D91', padding: '7px 8px' };
     const balLabel = isReceipt ? 'Opening Balance' : 'Closing Balance';
     const balAmt = isReceipt ? openBal : closeBal;
 
@@ -272,20 +272,20 @@ const CashBook = () => {
               ))
             )}
           </tbody>
-          {/* Footer — same rows as the Day Book: Opening (receipt side) and
-              Closing (payment side) on one row, the day's transactions, then
-              a Grand Total where both sides balance:
-              Opening + Receipts = Payments + Closing. */}
+          {/* Footer — same rows as the Day Book: the day's Transaction
+              (Subtotal), then Opening (receipt side) / Closing (payment side)
+              highlighted on one row, then a Grand Total where both sides
+              balance: Opening + Receipts = Payments + Closing. */}
           <tfoot>
             <tr>
-              <td colSpan={2} style={{ ...cell, ...bold, borderTop: CB_RULE }}>{balLabel}</td>
-              <td style={{ ...cell, ...num, ...bold, borderTop: CB_RULE }}>{fmtAlways(balAmt)}</td>
-              <td className="cb-no-print" style={{ ...cell, borderTop: CB_RULE }} />
+              <td colSpan={2} style={{ ...cell, ...bold, borderTop: CB_RULE, background: '#F4F5F7' }}>Transaction (Subtotal)</td>
+              <td style={{ ...cell, ...num, ...bold, borderTop: CB_RULE, background: '#F4F5F7' }}>{fmtAlways(total)}</td>
+              <td className="cb-no-print" style={{ ...cell, borderTop: CB_RULE, background: '#F4F5F7' }} />
             </tr>
             <tr>
-              <td colSpan={2} style={{ ...cell, ...bold }}>Transactions</td>
-              <td style={{ ...cell, ...num, ...bold }}>{fmtAlways(total)}</td>
-              <td className="cb-no-print" style={cell} />
+              <td colSpan={2} style={{ ...cell, ...balRow }}>{balLabel}</td>
+              <td style={{ ...cell, ...balRow }}>{fmtAlways(balAmt)}</td>
+              <td className="cb-no-print" style={{ ...cell, ...balRow }} />
             </tr>
             <tr>
               <td colSpan={2} style={{ ...cell, ...bold, borderTop: CB_RULE, borderBottom: '3px double #3A3F47' }}>Grand Total</td>
@@ -347,15 +347,18 @@ const CashBook = () => {
         </Box>
       </Group>
 
-      {/* Signatures under every date — President centred, Secretary beside it */}
-      <Box style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', padding: '26px 24px 10px', borderTop: CB_LINE }}>
-        <Box style={{ gridColumn: 2, minWidth: 150, borderTop: '1px solid #3A3F47', paddingTop: 3, textAlign: 'center', fontSize: 12.5, fontWeight: 600 }}>
+      {/* Signatures under every date — President left, Secretary right, Generated date centred */}
+      <Box style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', padding: '26px 24px 6px', borderTop: CB_LINE }}>
+        <Box style={{ minWidth: 150, borderTop: '1px solid #3A3F47', paddingTop: 3, textAlign: 'center', fontSize: 12.5, fontWeight: 600 }}>
           President
         </Box>
-        <Box style={{ gridColumn: 3, justifySelf: 'start', marginLeft: 60, minWidth: 150, borderTop: '1px solid #3A3F47', paddingTop: 3, textAlign: 'center', fontSize: 12.5, fontWeight: 600 }}>
+        <Box style={{ minWidth: 150, borderTop: '1px solid #3A3F47', paddingTop: 3, textAlign: 'center', fontSize: 12.5, fontWeight: 600 }}>
           Secretary
         </Box>
       </Box>
+      <Text ta="center" fz={11} c="dimmed" pb={10} style={{ fontFamily: CB_FONT }}>
+        Generated On : {dayjs(generatedDate).format('DD/MM/YYYY HH:mm:ss')} | By ADM
+      </Text>
     </Paper>
   );
 
@@ -394,14 +397,15 @@ const CashBook = () => {
       const boldRight = { halign: 'right', fontStyle: 'bold' };
       const bg1 = [240, 240, 245];
       const bg2 = [232, 232, 240];
+      const balStyle = { fontStyle: 'bold', halign: 'center', fillColor: [221, 233, 251], textColor: [11, 61, 145], fontSize: 9 };
       body.push([
-        { content: balLabel, styles: { ...bold, fillColor: bg1 } },
-        { content: '',       styles: { fillColor: bg1 } },
-        { content: fmtAlways(balAmt), styles: { ...boldRight, fillColor: bg1 } }
+        { content: 'Transaction (Subtotal)', styles: { ...bold, fillColor: bg1 } },
+        { content: '', styles: { fillColor: bg1 } },
+        { content: fmtAlways(total), styles: { ...boldRight, fillColor: bg1 } }
       ]);
       body.push([
-        { content: 'Transactions', styles: bold }, '',
-        { content: fmtAlways(total), styles: boldRight }
+        { content: balLabel, colSpan: 2, styles: balStyle },
+        { content: fmtAlways(balAmt), styles: balStyle }
       ]);
       body.push([
         { content: 'Grand Total', styles: { ...bold, fillColor: bg2, fontSize: 8 } },
@@ -487,8 +491,8 @@ const CashBook = () => {
         ]);
       }
 
+      rows.push(['Transaction (Subtotal)', '', card.receiptTotal, '', 'Transaction (Subtotal)', '', card.paymentTotal]);
       rows.push(['Opening Balance', '', card.openingBalance, '', 'Closing Balance', '', card.closingBalance]);
-      rows.push(['Transactions', '', card.receiptTotal, '', 'Transactions', '', card.paymentTotal]);
       rows.push(['Grand Total', '', card.openingBalance + card.receiptTotal, '', 'Grand Total', '', card.paymentTotal + card.closingBalance]);
       rows.push([]);
     }
@@ -658,11 +662,6 @@ const CashBook = () => {
         {reportData && !loading && dayCards.length > 0 && (
           <Stack gap={0}>
             {dayCards.map((card) => renderDayCard(card))}
-
-            {/* Signatures now sit under each date card; only the generated-on line remains here */}
-            <Text c="dimmed" fz={11} ta="left" mb={8} style={{ fontFamily: CB_FONT }}>
-              Generated On : {dayjs(generatedDate).format('DD/MM/YYYY HH:mm:ss')} | By ADM
-            </Text>
           </Stack>
         )}
 

@@ -1,5 +1,5 @@
 import dayjs from 'dayjs';
-import { openA4Print, escapeHtml } from '../../../utils/printA4';
+import { openA4Print, escapeHtml, A4_SIZE } from '../../../utils/printA4';
 
 // Receipt and Disbursements statement (Single / Two / Three Column) — one
 // HTML builder shared by the on-screen view and the A4 print, so the two
@@ -159,13 +159,38 @@ export const rdDocHtml = ({ data, columnFormat, showGroups = true, totalLabel = 
     ${table}`;
 };
 
+/** Page used by the print: portrait for Single / Two Column, landscape for Three Column. */
+export const rdPageSpec = (columnFormat) => ({
+  orientation: columnFormat === 'three' ? 'landscape' : 'portrait',
+  fontSize: columnFormat === 'single' ? '10pt' : '9pt'
+});
+
+/**
+ * On-screen preview sheet — the A4 page at its real size with the same
+ * margins (openA4Print's @page 10mm 8mm) and font as the print, so the
+ * preview shows exactly what fits on paper.
+ */
+export const rdSheetStyle = (columnFormat) => {
+  const { orientation, fontSize } = rdPageSpec(columnFormat);
+  return {
+    width: A4_SIZE[orientation].w,
+    minHeight: A4_SIZE[orientation].h,
+    padding: '10mm 8mm',
+    margin: '0 auto',
+    background: '#fff',
+    boxShadow: '0 1px 6px rgba(0,0,0,0.18)',
+    '--rd-fs': fontSize
+  };
+};
+
 /** A4 print — portrait for Single / Two Column, landscape for Three Column. */
 export const printRDStatement = (opts) => {
   const { columnFormat, companyName } = opts;
+  const { orientation, fontSize } = rdPageSpec(columnFormat);
   openA4Print({
     title: `Receipt and Disbursements – ${companyName}`,
-    orientation: columnFormat === 'three' ? 'landscape' : 'portrait',
+    orientation,
     css: RD_CSS,
-    bodyHtml: `<div class="rd-doc" style="--rd-fs:${columnFormat === 'single' ? '10pt' : '9pt'}">${rdDocHtml(opts)}</div>`
+    bodyHtml: `<div class="rd-doc" style="--rd-fs:${fontSize}">${rdDocHtml(opts)}</div>`
   });
 };
