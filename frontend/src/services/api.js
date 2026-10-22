@@ -876,7 +876,13 @@ export const rateChartAPI = {
   getSlabRates: ()            => api.get('/rate-charts/slab-rates').then(r => r.data).catch(handleError),
   createSlabRate: (data)      => api.post('/rate-charts/slab-rates', data).then(r => r.data).catch(handleError),
   updateSlabRate: (id, d)     => api.put(`/rate-charts/slab-rates/${id}`, d).then(r => r.data).catch(handleError),
-  deleteSlabRate: (id)        => api.delete(`/rate-charts/slab-rates/${id}`).then(r => r.data).catch(handleError)
+  deleteSlabRate: (id)        => api.delete(`/rate-charts/slab-rates/${id}`).then(r => r.data).catch(handleError),
+  // TS (Total Solid) Rate Charge
+  getTsRates: ()              => api.get('/rate-charts/ts-rates').then(r => r.data).catch(handleError),
+  getApplicableTsRate: (date) => api.get('/rate-charts/ts-rates/applicable', { params: { date } }).then(r => r.data).catch(handleError),
+  createTsRate: (data)        => api.post('/rate-charts/ts-rates', data).then(r => r.data).catch(handleError),
+  updateTsRate: (id, d)       => api.put(`/rate-charts/ts-rates/${id}`, d).then(r => r.data).catch(handleError),
+  deleteTsRate: (id)          => api.delete(`/rate-charts/ts-rates/${id}`).then(r => r.data).catch(handleError)
 };
 
 // AGENT APIs (Dairy Cooperative - Collection Agents)

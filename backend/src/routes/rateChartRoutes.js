@@ -4,7 +4,8 @@ import {
   getFormulas,       createFormula,      updateFormula,      deleteFormula,
   getLowCharts,      createLowChart,     updateLowChart,     deleteLowChart,
   getGoldLessCharts, createGoldLessChart,updateGoldLessChart,deleteGoldLessChart,
-  getSlabRates,      createSlabRate,     updateSlabRate,     deleteSlabRate
+  getSlabRates,      createSlabRate,     updateSlabRate,     deleteSlabRate,
+  getTsRates, getApplicableTsRate, createTsRate, updateTsRate, deleteTsRate
 } from '../controllers/rateChartController.js';
 
 const router = express.Router();
@@ -38,5 +39,12 @@ router.get('/slab-rates',             getSlabRates);
 router.post('/slab-rates',            createSlabRate);
 router.put('/slab-rates/:id',         updateSlabRate);
 router.delete('/slab-rates/:id',      deleteSlabRate);
+
+// ── TS (Total Solid) Rate Charge ──────────────────────────────────
+router.get('/ts-rates',               getTsRates);
+router.get('/ts-rates/applicable',    getApplicableTsRate);
+router.post('/ts-rates',              createTsRate);
+router.put('/ts-rates/:id',           updateTsRate);
+router.delete('/ts-rates/:id',        deleteTsRate);
 
 export default router;
