@@ -239,6 +239,7 @@ const MainLayout = () => {
             // Rate Chart Settings is not available to restricted (newly created) users
             ...(isUser ? [] : [{ key: '/daily-collections/rate-chart-settings', label: 'Rate Chart Settings' }]),
             { key: '/daily-collections/milk-purchase-settings', label: 'Machine Configuration' },
+            { key: '/daily-collections/rate-charge-table',      label: 'Rate Charge Table'      },
             { key: '/daily-collections/milk-sales-rate',        label: 'Milk Sales Rate'        },
             { key: '/daily-collections/shift-incentive',        label: 'Shift Incentive'        },
             { key: '/daily-collections/time-incentive',         label: 'Time Incentive'         },

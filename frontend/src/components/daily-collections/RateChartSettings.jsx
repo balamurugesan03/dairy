@@ -9,7 +9,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Box, Grid, Paper, Title, Text, Group, Stack, Button,
-  NumberInput, Select, Table, Badge, Divider, ThemeIcon,
+  NumberInput, TextInput, Select, Table, Badge, Divider, ThemeIcon,
   ActionIcon, Tooltip, SegmentedControl, Center, ScrollArea,
   SimpleGrid, Alert, Loader
 } from '@mantine/core';
@@ -24,6 +24,7 @@ import {
   IconRefresh, IconChevronDown, IconFilter, IconSettings
 } from '@tabler/icons-react';
 import { rateChartAPI, milkPurchaseSettingsAPI } from '../../services/api';
+import { formulaRate, tsRateValue, findTsPeriod } from '../../utils/rateChart';
 import dayjs from 'dayjs';
 
 // ─── Shared card wrapper ──────────────────────────────────────────────────────
@@ -103,7 +104,9 @@ const DataGrid = ({ columns, rows, onEdit, onDelete, loading }) => {
                 <Table.Td key={c.key}>
                   {c.key === 'fromDate'
                     ? dayjs(row[c.key]).format('DD-MM-YYYY')
-                    : row[c.key] ?? '-'}
+                    : c.key === 'toDate'
+                      ? (row.toDate ? dayjs(row.toDate).format('DD-MM-YYYY') : 'Open')
+                      : row[c.key] ?? '-'}
                 </Table.Td>
               ))}
               <Table.Td>
@@ -176,6 +179,11 @@ const RateChartSettings = () => {
   const [slabLoading,setSlabLoading]= useState(false);
   const [editingSlab,setEditingSlab]= useState(null);
 
+  // ── TS (Total Solid) Rate Charge state ──────────────────────────────────────
+  const [tsRows,     setTsRows]     = useState([]);
+  const [tsLoading,  setTsLoading]  = useState(false);
+  const [editingTs,  setEditingTs]  = useState(null);
+
   // ── Forms ────────────────────────────────────────────────────────────────────
   const manualForm = useForm({
     initialValues: { fromDate: null, clr: '', fat: '', snf: '', rate: '' },
@@ -223,10 +231,23 @@ const RateChartSettings = () => {
     }
   });
 
+  const tsForm = useForm({
+    initialValues: { tsRate: '', fromDate: null, toDate: null, remarks: '' },
+    validate: {
+      tsRate:   v => (v === '' || v === null) ? 'TS Rate is required' : null,
+      fromDate: v => !v ? 'From Date is required' : null,
+      toDate:   (v, values) => (v && values.fromDate && dayjs(v).isBefore(dayjs(values.fromDate), 'day'))
+        ? 'To Date must be on or after From Date' : null
+    }
+  });
+
   // ── Formula live calculation ─────────────────────────────────────────────────
-  const { fatRate, snfRate } = formulaForm.values;
-  const A = fatRate  ? (fat *  Number(fatRate/100)).toFixed(4)  : null;
-  const B = snfRate  ?  (snf* Number(snfRate/100)).toFixed(4)  : null;
+  // Min/Max FAT & SNF define the Rate Charge Table range; the formula itself is
+  // always evaluated at Minimum FAT and Minimum SNF.
+  const { fatRate, snfRate, minFAT, minSNF } = formulaForm.values;
+  const hasNum = v => v !== '' && v !== null && v !== undefined;
+  const A = hasNum(fatRate) && hasNum(minFAT) ? formulaRate(minFAT, 0, { fatRate }).toFixed(4) : null;
+  const B = hasNum(snfRate) && hasNum(minSNF) ? formulaRate(0, minSNF, { snfRate }).toFixed(4) : null;
   const formulaResult = (A && B) ? (Number(A) + Number(B)).toFixed(4) : null;
 
   // ── Data loaders ─────────────────────────────────────────────────────────────
@@ -275,16 +296,26 @@ const RateChartSettings = () => {
     finally { setSlabLoading(false); }
   }, []);
 
+  const loadTs = useCallback(async () => {
+    setTsLoading(true);
+    try {
+      const res = await rateChartAPI.getTsRates();
+      setTsRows(res.data || []);
+    } catch { /* silent */ }
+    finally { setTsLoading(false); }
+  }, []);
+
   useEffect(() => {
     loadManual();
     loadFormulas();
     loadLow();
     loadGl();
     loadSlab();
+    loadTs();
     milkPurchaseSettingsAPI.getSettings()
       .then(res => { if (res?.data?.activeRateChartType) setActiveRateChartType(res.data.activeRateChartType); })
       .catch(() => {});
-  }, [loadManual, loadFormulas, loadLow, loadGl, loadSlab]);
+  }, [loadManual, loadFormulas, loadLow, loadGl, loadSlab, loadTs]);
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
   const notify = (msg, color = 'green') =>
@@ -299,7 +330,7 @@ const RateChartSettings = () => {
     try {
       await milkPurchaseSettingsAPI.saveSettings({ activeRateChartType: type });
       setActiveRateChartType(type);
-      notify(`${type.replace(/([A-Z])/g, ' $1').trim()} set as active rate chart`);
+      notify(`${type === 'TSRate' ? 'TS Rate' : type.replace(/([A-Z])/g, ' $1').trim()} set as active rate chart`);
     } catch (e) {
       notify(e?.message || 'Failed to update active chart', 'red');
     }
@@ -482,6 +513,52 @@ const RateChartSettings = () => {
     try { await rateChartAPI.deleteSlabRate(id); notify('Deleted'); loadSlab(); }
     catch (e) { notify(e.message || 'Error', 'red'); }
   };
+
+  // ── TS Rate Charge CRUD ───────────────────────────────────────────────────────
+  // Saved milk entries keep the rate they were billed at, so editing a period
+  // only affects entries calculated afterwards.
+  const handleTsSave = async () => {
+    const { hasErrors } = tsForm.validate();
+    if (hasErrors) return;
+    const v = tsForm.values;
+    const payload = {
+      tsRate:   v.tsRate,
+      fromDate: dayjs(v.fromDate).format('YYYY-MM-DD'),
+      toDate:   v.toDate ? dayjs(v.toDate).format('YYYY-MM-DD') : null,
+      remarks:  v.remarks
+    };
+    try {
+      if (editingTs) {
+        await rateChartAPI.updateTsRate(editingTs._id, payload);
+        notify('TS Rate updated'); setEditingTs(null);
+      } else {
+        await rateChartAPI.createTsRate(payload);
+        notify('TS Rate saved');
+      }
+      tsForm.reset();
+      loadTs();
+    } catch (e) { notify(e.message || 'Error saving TS Rate', 'red'); }
+  };
+
+  const handleTsEdit = (row) => {
+    setEditingTs(row);
+    tsForm.setValues({
+      tsRate: row.tsRate,
+      fromDate: new Date(row.fromDate),
+      toDate: row.toDate ? new Date(row.toDate) : null,
+      remarks: row.remarks || ''
+    });
+  };
+
+  const handleTsDelete = async (id) => {
+    if (!window.confirm('Delete this TS Rate period?')) return;
+    try { await rateChartAPI.deleteTsRate(id); notify('Deleted'); loadTs(); }
+    catch (e) { notify(e.message || 'Error', 'red'); }
+  };
+
+  const tsCurrent    = findTsPeriod(tsRows);
+  const tsFormRate   = hasNum(tsForm.values.tsRate) ? Number(tsForm.values.tsRate) : null;
+  const tsSamples    = [[3.5, 8.5], [4.5, 8.5], [6.0, 9.0]]; // Cow · Mixed · Buffalo sample milk
 
   // ── Shared input style helper ─────────────────────────────────────────────────
   const inputSx = { flex: 1, minWidth: 110 };
@@ -854,8 +931,13 @@ const RateChartSettings = () => {
                 <Text size="xs" c="dimmed" mb={2}>A (Fat Component)</Text>
                 <Paper p="xs" radius="sm" style={{ background: 'white', border: '1px solid var(--mantine-color-violet-2)' }}>
                   <Text size="xs" c="dark.5" style={{ fontFamily: 'monospace' }}>
-                    A = Fat × Fat Rate/100
+                    A = Min FAT × Fat Rate/100
                   </Text>
+                  {A && (
+                    <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace' }}>
+                      = {minFAT} × {fatRate}/100
+                    </Text>
+                  )}
                   {A && (
                     <Text size="sm" fw={700} c="violet.7" mt={2}>= {A}</Text>
                   )}
@@ -865,8 +947,13 @@ const RateChartSettings = () => {
                 <Text size="xs" c="dimmed" mb={2}>B (SNF Component)</Text>
                 <Paper p="xs" radius="sm" style={{ background: 'white', border: '1px solid var(--mantine-color-violet-2)' }}>
                   <Text size="xs" c="dark.5" style={{ fontFamily: 'monospace' }}>
-                    B = SNF × SNF Rate/100
+                    B = Min SNF × SNF Rate/100
                   </Text>
+                  {B && (
+                    <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace' }}>
+                      = {minSNF} × {snfRate}/100
+                    </Text>
+                  )}
                   {B && (
                     <Text size="sm" fw={700} c="violet.7" mt={2}>= {B}</Text>
                   )}
@@ -892,11 +979,14 @@ const RateChartSettings = () => {
                       ₹ {formulaResult}
                     </Text>
                   ) : (
-                    <Text size="xs" c="dimmed">Enter Fat Rate &amp; SNF Rate</Text>
+                    <Text size="xs" c="dimmed">Enter Min FAT, Min SNF, Fat Rate &amp; SNF Rate</Text>
                   )}
                 </Paper>
               </Box>
             </SimpleGrid>
+            <Text size="xs" c="dimmed" mt="xs">
+              The formula uses Minimum FAT and Minimum SNF. Min / Max FAT and SNF set the range of the Rate Charge Table.
+            </Text>
           </Paper>
 
           <Group mt="md" gap="sm">
@@ -952,6 +1042,150 @@ const RateChartSettings = () => {
               onEdit={handleFormulaEdit}
               onDelete={handleFormulaDelete}
               loading={formulaLoading}
+            />
+          </Box>
+        </SectionCard>
+
+        {/* ══════════════════════════════════════════════════════════════════
+            SECTION 3b ─ TS (Total Solid) Rate Charge
+        ══════════════════════════════════════════════════════════════════ */}
+        <SectionCard
+          icon={<IconLayersIntersect size={20} />}
+          title="TS Rate Charge (Total Solid)"
+          color="cyan"
+          isActive={activeRateChartType === 'TSRate'}
+          onEnable={() => handleEnableChart('TSRate')}
+        >
+          {editingTs && (
+            <Alert color="cyan" radius="md" mb="sm" icon={<IconEdit size={16} />}>
+              Editing TS Rate period — milk entries already saved keep the rate they were billed at
+            </Alert>
+          )}
+
+          <Grid gutter="sm" align="flex-end">
+            <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+              <NumberInput
+                label="Total Solid Rate (₹ / kg TS)"
+                placeholder="e.g. 377.35"
+                decimalScale={2}
+                min={0}
+                leftSection={<IconCurrencyRupee size={14} />}
+                radius="md"
+                {...tsForm.getInputProps('tsRate')}
+              />
+            </Grid.Col>
+            <Grid.Col span={{ base: 6, sm: 3, md: 3 }}>
+              <DatePickerInput
+                label="Apply From Date"
+                placeholder="DD-MM-YYYY"
+                leftSection={<IconCalendar size={16} />}
+                valueFormat="DD/MM/YYYY"
+                radius="md"
+                clearable
+                {...tsForm.getInputProps('fromDate')}
+              />
+            </Grid.Col>
+            <Grid.Col span={{ base: 6, sm: 3, md: 3 }}>
+              <DatePickerInput
+                label="Apply To Date"
+                placeholder="Open (no end)"
+                leftSection={<IconCalendar size={16} />}
+                valueFormat="DD/MM/YYYY"
+                radius="md"
+                clearable
+                minDate={tsForm.values.fromDate || undefined}
+                {...tsForm.getInputProps('toDate')}
+              />
+            </Grid.Col>
+            <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+              <TextInput
+                label="Remarks"
+                placeholder="Optional"
+                radius="md"
+                {...tsForm.getInputProps('remarks')}
+              />
+            </Grid.Col>
+          </Grid>
+          <Text size="xs" c="dimmed" mt={6}>
+            Leave To Date empty for an open period. Saving a new rate closes the current open period the day before; periods cannot overlap.
+          </Text>
+
+          {/* TS Formula Preview */}
+          <Paper
+            radius="md"
+            p="md"
+            mt="lg"
+            style={{
+              background: 'linear-gradient(135deg, #e3fafc 0%, #e8f4fd 100%)',
+              border: '1px solid var(--mantine-color-cyan-2)'
+            }}
+          >
+            <Group gap="sm" mb="sm" justify="space-between">
+              <Group gap="sm">
+                <ThemeIcon color="cyan" variant="light" size={28} radius="sm">
+                  <IconCalculator size={16} />
+                </ThemeIcon>
+                <Text size="sm" fw={700} c="cyan.8">TS Formula Preview</Text>
+              </Group>
+              <Text size="xs" c="dark.5" style={{ fontFamily: 'monospace' }}>
+                TS% = FAT% + SNF% · Rate / Litre = TS% × TS Rate / 100
+              </Text>
+            </Group>
+            <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+              {tsSamples.map(([f, s]) => (
+                <Paper key={`${f}-${s}`} p="xs" radius="sm" style={{ background: 'white', border: '1px solid var(--mantine-color-cyan-2)' }}>
+                  <Text size="xs" c="dimmed">FAT {f.toFixed(1)} + SNF {s.toFixed(1)} = TS {(f + s).toFixed(1)}</Text>
+                  {tsFormRate !== null ? (
+                    <Text size="sm" fw={700} c="cyan.8" mt={2}>
+                      {(f + s).toFixed(1)} × {tsFormRate} / 100 = ₹ {tsRateValue(f, s, tsFormRate).toFixed(2)}
+                    </Text>
+                  ) : (
+                    <Text size="xs" c="dimmed" mt={2}>Enter Total Solid Rate</Text>
+                  )}
+                </Paper>
+              ))}
+            </SimpleGrid>
+            <Text size="xs" c="dimmed" mt="xs">
+              {tsCurrent
+                ? <>Applicable today: <strong>₹ {tsCurrent.tsRate}</strong> ({dayjs(tsCurrent.fromDate).format('DD-MM-YYYY')} → {tsCurrent.toDate ? dayjs(tsCurrent.toDate).format('DD-MM-YYYY') : 'Open'}). Full chart: Machine Configuration → TS Rate Chart, or Rate Charge Table.</>
+                : 'No TS rate applies to today yet.'}
+            </Text>
+          </Paper>
+
+          <Group mt="md" gap="sm">
+            <Button leftSection={<IconCheck size={16} />} color="cyan" radius="md" onClick={handleTsSave}>
+              {editingTs ? 'Update' : 'Save'}
+            </Button>
+            {editingTs && (
+              <Button variant="outline" color="gray" radius="md" leftSection={<IconX size={16} />}
+                onClick={() => { setEditingTs(null); tsForm.reset(); }}>
+                Cancel
+              </Button>
+            )}
+            <Button variant="outline" color="gray" radius="md" leftSection={<IconX size={16} />}
+              onClick={() => { setEditingTs(null); tsForm.reset(); }}>
+              Close
+            </Button>
+          </Group>
+
+          <Box mt="lg">
+            <Group justify="space-between" mb="sm">
+              <Text size="sm" fw={600} c="dark.5">TS Rate Periods</Text>
+              <ActionIcon variant="light" color="cyan" onClick={loadTs}>
+                <IconRefresh size={16} />
+              </ActionIcon>
+            </Group>
+            <DataGrid
+              columns={[
+                { key: 'fromDate', label: 'From Date' },
+                { key: 'toDate',   label: 'To Date' },
+                { key: 'tsRate',   label: 'TS Rate (₹)' },
+                { key: 'remarks',  label: 'Remarks' }
+              ]}
+              rows={tsRows}
+              onEdit={handleTsEdit}
+              onDelete={handleTsDelete}
+              loading={tsLoading}
             />
           </Box>
         </SectionCard>

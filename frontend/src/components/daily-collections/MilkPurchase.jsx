@@ -39,14 +39,20 @@ import { localDateStr } from '../../utils/dateUtils';
 import { toAgentOptions, groupAgentsByCenter, findOwnAgent, pickDefaultAgent } from '../../utils/senderAgent';
 import { openMilkPopup } from '../../utils/milkPopup';
 import MilkDaySummary from './MilkDaySummary';
+import { findTsPeriod, tsRateValue } from '../../utils/rateChart';
 
 // ── Rate Calculation ─────────────────────────────────────────────────────────
 const fallbackRate = (fat, clr) =>
   parseFloat((fat * 5.5 + (clr || 26) * 0.15 + 10).toFixed(2));
 
-const calcRateFromChart = (fat, clr, snf, chartType, chartRows, milmaRate = null) => {
+const calcRateFromChart = (fat, clr, snf, chartType, chartRows, milmaRate = null, onDate = new Date()) => {
   if (chartType === 'MilmaChart') return milmaRate; // async-fetched; null when not yet resolved
   if (!chartRows?.length) return null;
+  if (chartType === 'TSRate') {
+    // TS period in force on the entry date; saved entries keep their billed rate
+    const p = findTsPeriod(chartRows, onDate);
+    return p ? parseFloat(tsRateValue(fat, snf, p.tsRate).toFixed(4)) : null;
+  }
   const today = new Date();
   const effective = chartRows.filter(r => new Date(r.fromDate) <= today);
   if (!effective.length) return null;
@@ -99,14 +105,15 @@ const calcShiftIncentiveAmt = (incentives, netKg, netLtr, fat, snf, baseAmount) 
   return parseFloat(total.toFixed(2));
 };
 
-const calcValues = (qty, fat, clr, snf, chartType, chartRows, milmaRate = null) => {
+const calcValues = (qty, fat, clr, snf, chartType, chartRows, milmaRate = null, onDate = new Date()) => {
   if (!qty || !fat) return { snf: snf || 0, incentive: 0, rate: 0, amount: 0 };
-  const chartRate = calcRateFromChart(fat, clr || 0, snf || 0, chartType, chartRows, milmaRate);
+  // SNF = (CLR/4) + (0.20 × FAT) + 0.50  — only auto-derive when CLR is known and SNF not yet set
+  const autoSnf = snf || (clr ? parseFloat(((clr / 4) + (0.20 * fat) + 0.50).toFixed(2)) : 0);
+  // TS needs SNF even in CLR + Fat mode, so it uses the derived SNF
+  const chartRate = calcRateFromChart(fat, clr || 0, chartType === 'TSRate' ? autoSnf : (snf || 0), chartType, chartRows, milmaRate, onDate);
   const rate = chartRate !== null ? chartRate : fallbackRate(fat, clr || 0);
   const incentive = 0;
   const amount = parseFloat((qty * rate).toFixed(2));
-  // SNF = (CLR/4) + (0.20 × FAT) + 0.50  — only auto-derive when CLR is known and SNF not yet set
-  const autoSnf = snf || (clr ? parseFloat(((clr / 4) + (0.20 * fat) + 0.50).toFixed(2)) : 0);
   return { snf: autoSnf, incentive, rate: parseFloat(rate.toFixed(2)), amount };
 };
 
@@ -899,7 +906,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
 
   const loadChartData = useCallback(async (chartType) => {
     try {
-      const loaders = { ManualEntry: () => rateChartAPI.getManualEntries(), ApplyFormula: () => rateChartAPI.getFormulas(), LowChart: () => rateChartAPI.getLowCharts(), GoldLessChart: () => rateChartAPI.getGoldLessCharts(), SlabRate: () => rateChartAPI.getSlabRates() };
+      const loaders = { ManualEntry: () => rateChartAPI.getManualEntries(), ApplyFormula: () => rateChartAPI.getFormulas(), LowChart: () => rateChartAPI.getLowCharts(), GoldLessChart: () => rateChartAPI.getGoldLessCharts(), SlabRate: () => rateChartAPI.getSlabRates(), TSRate: () => rateChartAPI.getTsRates() };
       const loader = loaders[chartType];
       if (loader) { const res = await loader(); setChartRows(res.data || []); }
     } catch { /* silent */ }
@@ -1192,7 +1199,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
       return;
     }
 
-    const base = calcValues(netLtr, fatVal, clrVal, snfVal, activeChart, chartRows, milmaLookedUpRate);
+    const base = calcValues(netLtr, fatVal, clrVal, snfVal, activeChart, chartRows, milmaLookedUpRate, toDate(date));
     if (entryMode === 'rate' && manualRate !== '') {
       const rate = parseFloat(manualRate) || 0;
       const amount = parseFloat((netLtr * rate + base.incentive).toFixed(2));
@@ -1206,7 +1213,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
     } else {
       setCalcResult(base);
     }
-  }, [ltr, water, fat, clr, snf, activeChart, chartRows, entryMode, manualRate, manualAmount, milmaLookedUpRate, paramCombo]); // eslint-disable-line
+  }, [ltr, water, fat, clr, snf, activeChart, chartRows, entryMode, manualRate, manualAmount, milmaLookedUpRate, paramCombo, date]); // eslint-disable-line
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -1348,7 +1355,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
     }
 
     // Always recalculate fresh to avoid stale calcResult (race condition on fast Enter)
-    const fresh = calcValues(netLtr, parseFloat(f) || 0, parseFloat(c) || 0, parseFloat(s) || 0, chart, chartRows, milmaRate);
+    const fresh = calcValues(netLtr, parseFloat(f) || 0, parseFloat(c) || 0, parseFloat(s) || 0, chart, chartRows, milmaRate, toDate(d));
     let freshRate   = fresh.rate;
     let freshAmount = fresh.amount;
     if (em === 'rate' && mr !== '') { freshRate = parseFloat(mr) || 0; freshAmount = parseFloat((netLtr * freshRate).toFixed(2)); }

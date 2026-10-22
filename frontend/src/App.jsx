@@ -115,6 +115,7 @@ const FarmerCriteriaReport   = lazy(() => import('./components/daily-collections
 const ProducerReport         = lazy(() => import('./components/reports/ProducerReport'));
 const RateChartSettings      = lazy(() => import('./components/daily-collections/RateChartSettings'));
 const MilkPurchaseSettings   = lazy(() => import('./components/daily-collections/MilkPurchaseSettings'));
+const RateChargeTable        = lazy(() => import('./components/daily-collections/RateChargeTable'));
 const UnionSalesSlip         = lazy(() => import('./components/daily-collections/UnionSalesSlip'));
 const MilkSalesRateList      = lazy(() => import('./components/daily-collections/MilkSalesRateList'));
 const ShiftIncentiveList     = lazy(() => import('./components/daily-collections/ShiftIncentiveList'));
@@ -456,6 +457,7 @@ const AppContent = () => {
                   <Route path="rate-chart-settings"    element={<RateChartSettings />} />
                 </Route>
                 <Route path="milk-purchase-settings" element={<PasswordGate><MilkPurchaseSettings /></PasswordGate>} />
+                <Route path="rate-charge-table"      element={<RateChargeTable />} />
                 <Route path="union-sales-slip"       element={<UnionSalesSlip />} />
                 <Route path="milk-sales-rate"        element={<MilkSalesRateList />} />
                 <Route path="shift-incentive"        element={<ShiftIncentiveList />} />

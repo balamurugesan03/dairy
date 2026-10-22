@@ -48,8 +48,11 @@ import {
   IconPlugConnectedX,
   IconCircleCheck,
   IconCircleX,
+  IconStack2,
 } from '@tabler/icons-react';
 import { milkPurchaseSettingsAPI, machineConfigAPI, milmaChartAPI, whatsappAPI } from '../../services/api';
+import RateChargeTable from './RateChargeTable';
+import { CHART_TYPES } from '../../utils/rateChart';
 import { useInterval } from '@mantine/hooks';
 import dayjs from 'dayjs';
 
@@ -80,11 +83,21 @@ const MENU_ITEMS = [
   { id: 'milk-chart',  label: 'Milma Chart',       icon: IconMilk,       desc: 'Fat based milk rate'    },
   { id: 'kg-chart',    label: 'KG Chart',          icon: IconWeight,     desc: 'Weight based rate'      },
   { id: 'sns-chart',   label: 'SNF Chart',         icon: IconChartBar,   desc: 'SNF parameter rate'     },
+  { id: 'ts-chart',    label: 'TS Rate Chart',     icon: IconStack2,     desc: 'Total Solid (FAT + SNF)' },
   { id: 'clr-chart',   label: 'CLR Chart',         icon: IconPalette,    desc: 'CLR based rate chart'   },
   { id: 'formula',     label: 'Formula',           icon: IconCalculator, desc: 'Formula based rate'     },
   { id: 'slab-rate',   label: 'Slab Rate',         icon: IconTable,      desc: 'Slab based pricing'     },
   { id: 'manual-rate', label: 'Manual Rate Entry', icon: IconPencil,     desc: 'Litrex Rate'            },
 ];
+
+// Sidebar menus backed by saved rate chart data → their Rate Charge Table
+const MENU_CHART_TYPE = {
+  'milk-chart' : 'MilmaChart',
+  'ts-chart'   : 'TSRate',
+  'formula'    : 'ApplyFormula',
+  'slab-rate'  : 'SlabRate',
+  'manual-rate': 'ManualEntry',
+};
 
 // ─── Machine device list ───────────────────────────────────────────────────────
 const MACHINE_LIST = [
@@ -768,6 +781,7 @@ export default function MilkPurchaseSettings() {
                     { value: 'LowChart',      label: 'Low Chart — Table lookup for below-standard milk' },
                     { value: 'GoldLessChart', label: 'Add / Less Chart — Adjust existing chart by ±value' },
                     { value: 'SlabRate',      label: 'Slab Rate — Fixed flat rate per litre' },
+                    { value: 'TSRate',        label: 'TS Rate — Total Solid (FAT + SNF) × TS Rate / 100' },
                   ]}
                   radius="sm"
                   size="sm"
@@ -861,6 +875,21 @@ export default function MilkPurchaseSettings() {
                       : 'Enter Litre and Amount — Rate is auto-calculated (Amount ÷ Litre)'}
                   </HintBox>
                 </Stack>
+              </SectionCard>
+            )}
+
+            {/* ──────────────────────────────────────
+                Rate Charge Table for the selected sidebar chart
+            ────────────────────────────────────── */}
+            {MENU_CHART_TYPE[activeMenu] && (
+              <SectionCard
+                icon={IconTable}
+                title={`${MENU_ITEMS.find(m => m.id === activeMenu)?.label} — Rate Charge Table`}
+                badge={form.activeRateChartType === MENU_CHART_TYPE[activeMenu]
+                  ? 'Active'
+                  : CHART_TYPES.find(c => c.value === MENU_CHART_TYPE[activeMenu])?.label}
+              >
+                <RateChargeTable chartType={MENU_CHART_TYPE[activeMenu]} embedded />
               </SectionCard>
             )}
 

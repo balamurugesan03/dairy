@@ -95,7 +95,7 @@ const milkPurchaseSettingsSchema = new mongoose.Schema(
     // ── Active rate chart type used for rate calculation ──────────────────
      activeRateChartType: {
       type    : String,
-      enum    : ['MilmaChart', 'ManualEntry', 'ApplyFormula', 'LowChart', 'GoldLessChart', 'SlabRate'],
+      enum    : ['MilmaChart', 'ManualEntry', 'ApplyFormula', 'LowChart', 'GoldLessChart', 'SlabRate', 'TSRate'],
       default : 'ApplyFormula',
     },
     // ── Manual rate entry mode: litre×rate=amount OR litre+amount→rate ───────
