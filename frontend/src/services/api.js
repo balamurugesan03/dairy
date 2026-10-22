@@ -108,7 +108,8 @@ export const farmerAPI = {
   bulkImportShares: (shares) => api.post('/farmers/bulk-import-shares', { shares }).then(res => res.data).catch(handleError),
   bulkDelete: (ids) => api.post('/farmers/bulk-delete', { ids }).then(res => res.data).catch(handleError),
   getReport: () => api.get('/farmers/report').then(res => res.data).catch(handleError),
-  getProducerReport: (params) => api.get('/farmers/producer-report', { params }).then(res => res.data).catch(handleError)
+  getProducerReport: (params) => api.get('/farmers/producer-report', { params }).then(res => res.data).catch(handleError),
+  getProducerReportOptions: () => api.get('/farmers/producer-report/options').then(res => res.data).catch(handleError)
 };
 
 // FARMER MANAGEMENT SETTINGS APIs

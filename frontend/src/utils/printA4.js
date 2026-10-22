@@ -159,6 +159,25 @@ export const SIGN_CSS = `
   .sign__meta { margin-top: 4px; font-size: 7.5px; color: #333; }
 `;
 
+// One row: President (left) | Generated date (exactly centred) | Secretary (right).
+// Three equal columns, so the middle one is centred on the printable width.
+export const SIGN3_CSS = `
+  .sign3 { margin-top: 10px; padding-top: 26px; display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: end;
+    page-break-inside: avoid; break-inside: avoid; }
+  .sign3 > div { font-size: 1em; }
+  .sign3__l { justify-self: start; }
+  .sign3__c { justify-self: center; text-align: center; font-size: 0.9em !important; }
+  .sign3__r { justify-self: end; }
+  .sign3__l, .sign3__r { min-width: 120px; text-align: center; border-top: 1px solid #000; padding-top: 2px; font-weight: 700; }
+`;
+
+export const signRow3Html = (generatedOn = '') => `
+  <div class="sign3">
+    <div class="sign3__l">President</div>
+    <div class="sign3__c">${generatedOn ? `Generated On : ${escapeHtml(generatedOn)}` : ''}</div>
+    <div class="sign3__r">Secretary</div>
+  </div>`;
+
 export const signRowHtml = (generatedOn = '') => `
   <div class="sign">
     <div class="sign__row">

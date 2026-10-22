@@ -1,780 +1,528 @@
-import { useState, useEffect, useCallback } from 'react';
-import {
-  Box, Paper, Title, Text, Button, Group, Stack, TextInput, Select,
-  NumberInput, Checkbox, ActionIcon, Tooltip, Divider, Badge, Collapse,
-  Table, Pagination, Loader, Center, ScrollArea, Radio
-} from '@mantine/core';
-import { DatePickerInput } from '@mantine/dates';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import { notifications } from '@mantine/notifications';
-import {
-  IconSearch, IconFilter, IconDownload, IconPrinter, IconChevronDown,
-  IconChevronUp, IconRefresh, IconUsers, IconX, IconFileTypeXls,
-  IconChevronLeft, IconChevronRight, IconAlertCircle
-} from '@tabler/icons-react';
-import { farmerAPI, collectionCenterAPI } from '../../services/api';
-import { useCompany } from '../../context/CompanyContext';
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { farmerAPI, collectionCenterAPI } from '../../services/api';
+import { useCompany } from '../../context/CompanyContext';
 
-const COND_OPTIONS = [
-  { value: '>', label: '>' },
-  { value: '<', label: '<' },
-  { value: '=', label: '=' },
-  { value: '>=', label: '>=' },
-  { value: '<=', label: '<=' },
-];
+/* Producer Report — compact admin-dashboard layout: four collapsible filter
+   cards on the left (~33%), one data-table card on the right (~65%).
+   Data comes from GET /farmers/producer-report (all rows, paged here). */
 
-const HAS_OPTIONS = [
-  { value: '', label: 'All' },
-  { value: 'yes', label: 'Has' },
-  { value: 'no', label: "Hasn't" },
-];
+const PAGE_SIZE = 30;
+
+const COND_OPTIONS = ['>=', '<=', '>', '<', '='];
+const ENROLL_OPTIONS = [{ value: 'yes', label: 'Enrolled' }, { value: 'no', label: 'Not Enrolled' }];
 
 const INIT_FILTERS = {
   collectionCenter: '', memberType: '', farmerNumberFrom: '', farmerNumberTo: '',
-  activeOnly: false, localLanguage: false, gender: '', caste: '', farmerType: '',
-  dbtHas: '', welfareHas: '', mobileHas: '', bankHas: '',
-  localBody: '', ward: '',
-  fromDate: null, toDate: null,
-  daysCondition: '>=', daysValue: '', qtyCondition: '>=', qtyValue: '', daysQtyLogic: 'AND',
+  activeOnly: false, localLanguage: false,
+  gender: 'Male', caste: '', occupation: '', category: '',
+  dbtHas: 'yes', welfareHas: 'yes', mobileHas: 'yes', bankHas: 'yes',
+  localBody: '', wards: [],
+  fromDate: '', toDate: '',
+  daysCondition: '>=', daysValue: '', daysQtyLogic: 'AND', qtyCondition: '>=', qtyValue: '',
 };
+// Advanced / Local Body filters only apply while their checkbox is ticked
+const TICKABLE = ['gender', 'caste', 'occupation', 'category', 'dbtHas', 'welfareHas', 'mobileHas', 'bankHas', 'localBody', 'wards'];
+const INIT_TICKED = TICKABLE.reduce((a, k) => ({ ...a, [k]: false }), {});
 
-// Advanced Filter options — each one is gated by its own tick/checkbox: a
-// field only takes part in report generation when its checkbox is ticked,
-// regardless of whether a value has been picked for it.
-const ADV_FILTER_KEYS = ['gender', 'caste', 'farmerType', 'dbtHas', 'welfareHas', 'mobileHas', 'bankHas', 'localBody', 'ward'];
-const INIT_ADV_ENABLED = ADV_FILTER_KEYS.reduce((acc, k) => ({ ...acc, [k]: false }), {});
+const COLUMNS = [
+  { key: 'farmerNumber', label: 'Pro ID',            get: r => r.farmerNumber, numeric: true },
+  { key: 'memberId',     label: 'Mem No',            get: r => r.memberId },
+  { key: 'name',         label: 'Name',              get: r => r.personalDetails?.name },
+  { key: 'fatherName',   label: 'Father/Hus Name',   get: r => r.personalDetails?.fatherName },
+  { key: 'houseName',    label: 'House Name',        get: r => r.address?.houseName },
+  { key: 'post',         label: 'Post',              get: r => r.address?.post },
+  { key: 'place',        label: 'Place',             get: r => r.address?.place },
+  { key: 'sex',          label: 'Sex',               get: r => (r.personalDetails?.gender || '').charAt(0) },
+  { key: 'phone',        label: 'Mobile No',         get: r => r.personalDetails?.phone },
+  { key: 'dbt',          label: 'DBT Enroll No',     get: r => r.identityDetails?.ksheerasreeId },
+  { key: 'welfare',      label: 'Welfare Enroll No', get: r => r.identityDetails?.welfareNo },
+];
 
-function SectionHeader({ label, sKey, sections, toggle, color }) {
+// Fields that don't fit on screen — shown in the (+) detail row
+const DETAIL_FIELDS = [
+  ['Collection Centre', r => r._center?.centerName],
+  ['Status',            r => r.status],
+  ['Member Type',       r => (r.isMembership ? 'Member' : 'Non-Member')],
+  ['Local Body',        r => r.address?.panchayat],
+  ['Ward',              r => r.address?.ward],
+  ['Village',           r => r.address?.village],
+  ['PIN',               r => r.address?.pin],
+  ['Caste',             r => r.personalDetails?.caste],
+  ['Occupation',        r => r.farmerType],
+  ['Category',          r => r.cowType],
+  ['Bank A/C',          r => r.bankDetails?.accountNumber],
+  ['Bank / IFSC',       r => [r.bankDetails?.bankName, r.bankDetails?.ifsc].filter(Boolean).join(' / ')],
+  ['Pouring Days',      r => (r._pouringDays != null ? String(r._pouringDays) : '')],
+  ['Quantity (L)',      r => (r._totalQty != null ? Number(r._totalQty).toFixed(2) : '')],
+];
+
+const val = (v) => (v == null ? '' : String(v));
+
+const CSS = `
+.pr-root { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #333; background: #ecf0f5;
+  padding: 10px; display: flex; gap: 12px; align-items: flex-start; min-height: calc(100vh - 60px); box-sizing: border-box; }
+.pr-left  { flex: 0 0 33%; max-width: 33%; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.pr-right { flex: 1 1 65%; min-width: 0; }
+.pr-card { background: #fff; border: 1px solid #d2d6de; border-radius: 3px; box-shadow: 0 1px 1px rgba(0,0,0,.08); }
+.pr-card-h { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px;
+  border-bottom: 1px solid #d2d6de; cursor: pointer; user-select: none; }
+.pr-card-h h3 { margin: 0; font-size: 13px; font-weight: 700; color: #333; }
+.pr-card-h .pr-tools { display: flex; gap: 8px; font-size: 13px; color: #555; }
+.pr-card-h .pr-tools button { background: none; border: 0; padding: 0 2px; cursor: pointer; color: #555; font-size: 14px; line-height: 1; }
+.pr-blue  { background: #d9edf7; } .pr-green { background: #dff0d8; } .pr-red { background: #f2dede; } .pr-gray { background: #f4f4f4; }
+.pr-card-b { padding: 8px 10px 10px; }
+.pr-row { display: flex; gap: 10px; margin-bottom: 7px; }
+.pr-row > * { flex: 1; min-width: 0; }
+.pr-lbl { display: block; font-size: 11px; font-weight: 700; margin-bottom: 2px; }
+.pr-in, .pr-sel { width: 100%; box-sizing: border-box; height: 26px; padding: 2px 6px; font-size: 12px;
+  font-family: inherit; border: 1px solid #ccc; border-radius: 0; background: #fff; color: #333; }
+.pr-in:focus, .pr-sel:focus { border-color: #3c8dbc; outline: none; }
+.pr-sel[multiple] { height: 44px; padding: 1px 4px; }
+.pr-chk { display: flex; align-items: center; gap: 5px; font-size: 12px; cursor: pointer; }
+.pr-chk input { margin: 0; }
+.pr-adv { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.pr-adv .pr-chk, .pr-adv .pr-advlbl { flex: 1; min-width: 0; }
+.pr-adv .pr-advlbl { font-size: 12px; padding-left: 18px; }
+.pr-adv .pr-sel { flex: 0 0 55%; width: 55%; }
+.pr-btns { display: flex; justify-content: center; gap: 8px; margin-top: 4px; }
+.pr-btn { background: #3c8dbc; border: 1px solid #367fa9; color: #fff; font-size: 12px; font-family: inherit;
+  padding: 4px 14px; border-radius: 3px; cursor: pointer; }
+.pr-btn:hover { background: #367fa9; }
+.pr-btn:disabled { opacity: .6; cursor: default; }
+.pr-btn.pr-btn-def { background: #f4f4f4; border-color: #ddd; color: #444; }
+.pr-btn.pr-btn-def:hover { background: #e7e7e7; }
+.pr-pd { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 6px 8px; align-items: center; }
+.pr-pd3 { display: grid; grid-template-columns: 62px 64px 1fr 70px; gap: 6px; align-items: center; margin-top: 7px; }
+.pr-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.pr-toolbar .pr-search { display: flex; align-items: center; gap: 5px; }
+.pr-toolbar .pr-search input { width: 170px; }
+.pr-tblwrap { overflow-x: auto; }
+.pr-tbl { width: 100%; border-collapse: collapse; font-size: 11px; }
+.pr-tbl th { background: #f4f4f4; font-weight: 700; text-align: left; vertical-align: bottom; padding: 5px 16px 5px 5px;
+  border-bottom: 2px solid #ddd; position: relative; cursor: pointer; white-space: normal; line-height: 1.2; min-width: 42px; }
+.pr-tbl th.pr-nosort { cursor: default; padding-right: 5px; width: 22px; min-width: 22px; }
+.pr-tbl th .pr-sort { position: absolute; right: 3px; bottom: 5px; font-size: 8px; line-height: 7px; color: #bbb; display: flex; flex-direction: column; }
+.pr-tbl th .pr-sort .on { color: #333; }
+.pr-tbl td { padding: 4px 5px; border-top: 1px solid #eee; text-transform: uppercase; text-align: left; vertical-align: middle; }
+.pr-tbl tbody tr.pr-r:hover td { background: #f5f5f5; }
+.pr-plus { width: 15px; height: 15px; border-radius: 50%; background: #00a65a; color: #fff; border: 1px solid #fff;
+  box-shadow: 0 0 2px #444; font: bold 12px/13px 'Courier New', monospace; text-align: center; cursor: pointer; padding: 0; }
+.pr-plus.open { background: #d33333; }
+.pr-detail td { background: #fafafa; text-transform: none; }
+.pr-detail ul { list-style: none; margin: 0; padding: 2px 0 2px 22px; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 3px 16px; }
+.pr-detail b { display: inline-block; min-width: 110px; }
+.pr-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; }
+.pr-pager { display: flex; }
+.pr-pager button { border: 1px solid #ddd; margin-left: -1px; background: #fff; color: #337ab7; font-size: 12px;
+  font-family: inherit; padding: 4px 10px; cursor: pointer; }
+.pr-pager button:first-child { border-radius: 3px 0 0 3px; } .pr-pager button:last-child { border-radius: 0 3px 3px 0; }
+.pr-pager button.on { background: #337ab7; border-color: #337ab7; color: #fff; cursor: default; position: relative; }
+.pr-pager button:disabled:not(.on) { color: #999; cursor: default; }
+.pr-pager span { border: 1px solid #ddd; margin-left: -1px; padding: 4px 8px; color: #999; }
+.pr-empty { text-align: center; color: #777; padding: 18px 0 !important; text-transform: none !important; }
+@media (max-width: 900px) {
+  .pr-root { flex-direction: column; padding: 8px 16px; }
+  .pr-left, .pr-right { flex: 1 1 auto; max-width: 100%; width: 100%; }
+}
+`;
+
+function Card({ title, tone, open, onToggle, tools, children }) {
   return (
-    <Box
-      onClick={() => toggle(sKey)}
-      style={{
-        background: color,
-        borderRadius: sections[sKey] ? '6px 6px 0 0' : 6,
-        padding: '6px 12px',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-      }}
-    >
-      <Text fw={600} c="white" size="xs">{label}</Text>
-      {sections[sKey] ? <IconChevronUp size={13} color="white" /> : <IconChevronDown size={13} color="white" />}
-    </Box>
+    <div className="pr-card">
+      <div className={`pr-card-h ${tone}`} onClick={onToggle}>
+        <h3>{title}</h3>
+        <div className="pr-tools" onClick={e => e.stopPropagation()}>
+          {tools}
+          <button type="button" title={open ? 'Collapse' : 'Expand'} onClick={onToggle}>{open ? '˅' : '˄'}</button>
+        </div>
+      </div>
+      {open && <div className="pr-card-b">{children}</div>}
+    </div>
+  );
+}
+
+// "‹ Previous [1] 2 3 Next ›" with ellipses for long ranges
+function Pager({ page, pages, onPage }) {
+  if (pages < 1) return null;
+  const nums = [];
+  for (let p = 1; p <= pages; p++) {
+    if (p === 1 || p === pages || Math.abs(p - page) <= 1) nums.push(p);
+    else if (nums[nums.length - 1] !== '…') nums.push('…');
+  }
+  return (
+    <div className="pr-pager">
+      <button type="button" disabled={page <= 1} onClick={() => onPage(page - 1)}>‹ Previous</button>
+      {nums.map((n, i) => n === '…'
+        ? <span key={`e${i}`}>…</span>
+        : <button type="button" key={n} className={n === page ? 'on' : ''} onClick={() => n !== page && onPage(n)}>{n}</button>)}
+      <button type="button" disabled={page >= pages} onClick={() => onPage(page + 1)}>Next ›</button>
+    </div>
   );
 }
 
 export default function ProducerReport() {
   const { selectedCompany } = useCompany();
-
   const [filters, setFilters] = useState(INIT_FILTERS);
-  // Which Advanced Filter options are ticked — only ticked ones are applied
-  // when the report is generated.
-  const [advEnabled, setAdvEnabled] = useState(INIT_ADV_ENABLED);
+  const [ticked, setTicked]   = useState(INIT_TICKED);
+  const [open, setOpen]       = useState({ centre: true, advanced: true, local: true, pouring: true, table: true });
   const [centers, setCenters] = useState([]);
-  const [panelOpen, setPanelOpen] = useState(true);
-  const [sections, setSections] = useState({ basic: true, advanced: true, pouring: true });
-  const [data, setData] = useState([]);
-  const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 1, limit: 50 });
+  const [options, setOptions] = useState({ castes: [], occupations: [], categories: [], localBodies: [] });
+  const [data, setData]       = useState([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [search, setSearch] = useState('');
+  const [search, setSearch]   = useState('');
+  const [sort, setSort]       = useState({ key: 'farmerNumber', dir: 'asc' });
+  const [page, setPage]       = useState(1);
+  const [expanded, setExpanded] = useState(() => new Set());
 
   useEffect(() => {
     collectionCenterAPI.getAll({ limit: 500 })
+      .then(res => setCenters((res?.data || res || []).map(c => ({ value: c._id, label: c.centerName }))))
+      .catch(() => {});
+    farmerAPI.getProducerReportOptions()
       .then(res => {
-        const list = res?.data || res || [];
-        setCenters([{ value: '', label: 'All Centres' }, ...list.map(c => ({ value: c._id, label: c.centerName }))]);
+        const o = res?.data || {};
+        setOptions({ castes: o.castes || [], occupations: o.occupations || [], categories: o.categories || [], localBodies: o.localBodies || [] });
+        // Default the Local Body dropdown to the first one on record
+        if (o.localBodies?.length) setFilters(f => (f.localBody ? f : { ...f, localBody: o.localBodies[0].name }));
       })
       .catch(() => {});
   }, [selectedCompany]);
 
-  const setFilter = (key, val) => setFilters(prev => ({ ...prev, [key]: val }));
-  const toggleSection = (key) => setSections(prev => ({ ...prev, [key]: !prev[key] }));
-  const toggleAdvEnabled = (key) => setAdvEnabled(prev => ({ ...prev, [key]: !prev[key] }));
+  const setF = (k, v) => setFilters(p => ({ ...p, [k]: v }));
+  const tick = (k) => setTicked(p => ({ ...p, [k]: !p[k] }));
+  const toggle = (k) => setOpen(p => ({ ...p, [k]: !p[k] }));
 
-  const buildParams = useCallback(() => {
-    // Always fetch all records — pagination handled client-side
+  const wardOptions = useMemo(
+    () => options.localBodies.find(b => b.name === filters.localBody)?.wards || [],
+    [options.localBodies, filters.localBody]);
+
+  const buildParams = () => {
+    const f = filters;
     const p = { page: 1, limit: 9999 };
-    if (filters.collectionCenter) p.collectionCenter = filters.collectionCenter;
-    if (filters.memberType) p.memberType = filters.memberType;
-    if (filters.farmerNumberFrom) p.farmerNumberFrom = filters.farmerNumberFrom;
-    if (filters.farmerNumberTo) p.farmerNumberTo = filters.farmerNumberTo;
-    if (filters.activeOnly) p.activeOnly = 'true';
-    // Advanced Filter options only take part when their checkbox is ticked.
-    if (advEnabled.gender && filters.gender) p.gender = filters.gender;
-    if (advEnabled.caste && filters.caste) p.caste = filters.caste;
-    if (advEnabled.farmerType && filters.farmerType) p.farmerType = filters.farmerType;
-    if (advEnabled.dbtHas && filters.dbtHas) p.dbtHas = filters.dbtHas;
-    if (advEnabled.welfareHas && filters.welfareHas) p.welfareHas = filters.welfareHas;
-    if (advEnabled.mobileHas && filters.mobileHas) p.mobileHas = filters.mobileHas;
-    if (advEnabled.bankHas && filters.bankHas) p.bankHas = filters.bankHas;
-    if (advEnabled.localBody && filters.localBody) p.localBody = filters.localBody;
-    if (advEnabled.ward && filters.ward) p.ward = filters.ward;
-    if (filters.fromDate) p.fromDate = dayjs(filters.fromDate).format('YYYY-MM-DD');
-    if (filters.toDate) p.toDate = dayjs(filters.toDate).format('YYYY-MM-DD');
-    if (filters.daysCondition) p.daysCondition = filters.daysCondition;
-    if (filters.daysValue !== '') p.daysValue = filters.daysValue;
-    if (filters.qtyCondition) p.qtyCondition = filters.qtyCondition;
-    if (filters.qtyValue !== '') p.qtyValue = filters.qtyValue;
-    p.daysQtyLogic = filters.daysQtyLogic;
+    if (f.collectionCenter) p.collectionCenter = f.collectionCenter;
+    if (f.memberType) p.memberType = f.memberType;
+    if (f.farmerNumberFrom) p.farmerNumberFrom = f.farmerNumberFrom;
+    if (f.farmerNumberTo) p.farmerNumberTo = f.farmerNumberTo;
+    if (f.activeOnly) p.activeOnly = 'true';
+    if (ticked.gender && f.gender) p.gender = f.gender;
+    if (ticked.caste && f.caste) p.caste = f.caste;
+    if (ticked.occupation && f.occupation) p.farmerType = f.occupation;
+    if (ticked.category && f.category) p.cowType = f.category;
+    if (ticked.dbtHas) p.dbtHas = f.dbtHas;
+    if (ticked.welfareHas) p.welfareHas = f.welfareHas;
+    if (ticked.mobileHas) p.mobileHas = f.mobileHas;
+    if (ticked.bankHas) p.bankHas = f.bankHas;
+    if (ticked.localBody && f.localBody) p.localBody = f.localBody;
+    if (ticked.wards && f.wards.length) p.ward = f.wards.join(',');
+    if (f.fromDate && f.toDate) {
+      p.fromDate = f.fromDate; p.toDate = f.toDate;
+      if (f.daysValue !== '') { p.daysCondition = f.daysCondition; p.daysValue = f.daysValue; }
+      if (f.qtyValue !== '')  { p.qtyCondition = f.qtyCondition;  p.qtyValue = f.qtyValue; }
+      p.daysQtyLogic = f.daysQtyLogic;
+    }
     return p;
-  }, [filters, advEnabled]);
+  };
 
-  const handleSearch = async () => {
+  const handleDisplay = async () => {
+    if ((filters.daysValue !== '' || filters.qtyValue !== '') && !(filters.fromDate && filters.toDate)) {
+      notifications.show({ color: 'yellow', message: 'Select From and To dates to filter by pouring days / quantity' });
+      return;
+    }
     setLoading(true);
-    setSearched(true);
     try {
       const res = await farmerAPI.getProducerReport(buildParams());
-      const rows = res?.data || [];
-      setData(rows);
-      setPagination({ total: rows.length, page: 1, pages: 1, limit: 9999 });
+      setData(res?.data || []);
+      setSearched(true); setPage(1); setExpanded(new Set());
     } catch (err) {
       notifications.show({ color: 'red', message: err?.message || 'Failed to load report' });
-      setData([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleReset = () => {
-    setFilters(INIT_FILTERS);
-    setAdvEnabled(INIT_ADV_ENABLED);
-    setData([]);
-    setSearched(false);
-    setSearch('');
+  const handleClear = () => {
+    setFilters({ ...INIT_FILTERS, localBody: options.localBodies[0]?.name || '' });
+    setTicked(INIT_TICKED);
+    setData([]); setSearched(false); setSearch(''); setPage(1); setExpanded(new Set());
   };
 
-  const filteredData = search
-    ? data.filter(r => {
-        const s = search.toLowerCase();
-        return (r.farmerNumber || '').toLowerCase().includes(s) ||
-               (r.personalDetails?.name || '').toLowerCase().includes(s) ||
-               (r.memberId || '').toLowerCase().includes(s) ||
-               (r.address?.place || '').toLowerCase().includes(s);
-      })
-    : data;
+  // Search box → sort → page
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = q
+      ? data.filter(r => COLUMNS.some(c => val(c.get(r)).toLowerCase().includes(q)))
+      : data.slice();
+    const col = COLUMNS.find(c => c.key === sort.key);
+    if (col) {
+      const sign = sort.dir === 'asc' ? 1 : -1;
+      list.sort((a, b) => {
+        const x = val(col.get(a)), y = val(col.get(b));
+        if (col.numeric) {
+          const nx = parseInt(x, 10), ny = parseInt(y, 10);
+          if (!isNaN(nx) && !isNaN(ny) && nx !== ny) return (nx - ny) * sign;
+        }
+        return x.localeCompare(y, undefined, { numeric: true }) * sign;
+      });
+    }
+    return list;
+  }, [data, search, sort]);
 
-  // Whether pouring data (Days / Qty) was returned for this fetch
-  const hasPouringCols = data.some(r => r._pouringDays != null || r._totalQty != null);
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const curPage = Math.min(page, pages);
+  const pageRows = rows.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
+  const from = rows.length ? (curPage - 1) * PAGE_SIZE + 1 : 0;
+  const to = Math.min(curPage * PAGE_SIZE, rows.length);
 
-  const handleExport = () => {
-    if (!data.length) return notifications.show({ message: 'No data to export', color: 'yellow' });
+  const onSort = (key) => setSort(s => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
+  const toggleRow = (id) => setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-    const rows = data.map((r, i) => {
-      const row = {
-        'Sr.':                 i + 1,
-        'Status':              r.status || 'Active',
-        'Pro No':              r.farmerNumber || '',
-        'Mem No':              r.memberId || '',
-        'Name':                r.personalDetails?.name || '',
-        'Father/Husband Name': r.personalDetails?.fatherName || '',
-        'House Name':          r.address?.houseName || '',
-        'Post':                r.address?.post || '',
-        'Place':               r.address?.place || '',
-        'Panchayat':           r.address?.panchayat || '',
-        'Ward':                r.address?.ward || '',
-        'Sex':                 r.personalDetails?.gender || '',
-        'Mobile No':           r.personalDetails?.phone || '',
-        'DBT Enroll No':       r.identityDetails?.ksheerasreeId || '',
-        'Collection Centre':   r._center?.centerName || '',
-      };
-      if (hasPouringCols) {
-        row['Pouring Days']   = r._pouringDays ?? '';
-        row['Total Qty (L)']  = r._totalQty != null ? Number(r._totalQty).toFixed(2) : '';
-      }
-      return row;
+  // ── Download / Export / Export PDF (all filtered rows, current sort) ────
+  const companyName = selectedCompany?.companyName || selectedCompany?.name || 'Dairy Cooperative Society';
+  const exportRows = () => rows.map(r => COLUMNS.map(c => val(c.get(r)).toUpperCase()));
+  const stamp = () => dayjs().format('YYYYMMDD_HHmm');
+  const guard = () => {
+    if (rows.length) return true;
+    notifications.show({ color: 'yellow', message: 'No data — click Display first' });
+    return false;
+  };
+
+  // Download → Excel workbook, with the detail-row fields too
+  const handleDownload = () => {
+    if (!guard()) return;
+    const sheet = rows.map(r => {
+      const o = {};
+      COLUMNS.forEach(c => { o[c.label] = val(c.get(r)).toUpperCase(); });
+      DETAIL_FIELDS.forEach(([label, get]) => { o[label] = val(get(r)); });
+      return o;
     });
-
-    const ws = XLSX.utils.json_to_sheet(rows);
-    // Auto column widths
-    const colWidths = Object.keys(rows[0] || {}).map(k => ({ wch: Math.max(k.length, 12) }));
-    ws['!cols'] = colWidths;
-
+    const ws = XLSX.utils.json_to_sheet(sheet);
+    ws['!cols'] = Object.keys(sheet[0]).map(k => ({ wch: Math.max(k.length + 2, 12) }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Producer Report');
-    XLSX.writeFile(wb, `producer_report_${dayjs().format('YYYYMMDD_HHmm')}.xlsx`);
-    notifications.show({ title: 'Exported', message: 'Excel file downloaded successfully', color: 'green' });
+    XLSX.writeFile(wb, `producer_report_${stamp()}.xlsx`);
   };
 
-  const handlePrint = () => {
-    if (!data.length) return notifications.show({ message: 'No data to print', color: 'yellow' });
+  // Export → CSV of the table columns
+  const handleExport = () => {
+    if (!guard()) return;
+    const csv = [COLUMNS.map(c => c.label), ...exportRows()]
+      .map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
+      .join('\r\n');
+    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = `producer_report_${stamp()}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
 
-    const companyName = selectedCompany?.companyName || selectedCompany?.name || 'Dairy Cooperative Society';
-    const today = dayjs().format('DD/MM/YYYY HH:mm');
-    const dateRange = filters.fromDate && filters.toDate
-      ? `${dayjs(filters.fromDate).format('DD/MM/YYYY')} – ${dayjs(filters.toDate).format('DD/MM/YYYY')}`
-      : '';
+  const handleExportPDF = () => {
+    if (!guard()) return;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const w = doc.internal.pageSize.getWidth();
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+    doc.text(companyName.toUpperCase(), w / 2, 12, { align: 'center' });
+    doc.setFontSize(10);
+    doc.text('PRODUCER REPORT', w / 2, 18, { align: 'center' });
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+    const period = filters.fromDate && filters.toDate
+      ? `Period: ${dayjs(filters.fromDate).format('DD/MM/YYYY')} - ${dayjs(filters.toDate).format('DD/MM/YYYY')}   |   ` : '';
+    doc.text(`${period}Total: ${rows.length} producers   |   Printed: ${dayjs().format('DD/MM/YYYY HH:mm')}`, w / 2, 23, { align: 'center' });
+    autoTable(doc, {
+      startY: 27,
+      head: [['Sl', ...COLUMNS.map(c => c.label)]],
+      body: exportRows().map((r, i) => [i + 1, ...r]),
+      styles: { fontSize: 7, cellPadding: 1.4, lineColor: [210, 210, 210], lineWidth: 0.1 },
+      headStyles: { fillColor: [244, 244, 244], textColor: 30, fontStyle: 'bold' },
+      margin: { left: 8, right: 8 },
+    });
+    doc.save(`producer_report_${stamp()}.pdf`);
+  };
 
-    const extraCols = hasPouringCols ? '<th>Days</th><th>Qty (L)</th>' : '';
-
-    const rows = filteredData.map((r, i) => {
-      const extra = hasPouringCols
-        ? `<td style="text-align:center">${r._pouringDays ?? '—'}</td>
-           <td style="text-align:right">${r._totalQty != null ? Number(r._totalQty).toFixed(2) : '—'}</td>`
-        : '';
-      return `<tr>
-        <td style="text-align:center">${i + 1}</td>
-        <td style="color:${r.status === 'Active' ? '#166534' : '#991b1b'};font-weight:700">${r.status || 'Active'}</td>
-        <td>${r.farmerNumber || '—'}</td>
-        <td>${r.memberId || '—'}</td>
-        <td>${r.personalDetails?.name || '—'}</td>
-        <td>${r.personalDetails?.fatherName || '—'}</td>
-        <td>${r.address?.houseName || '—'}</td>
-        <td>${r.address?.post || '—'}</td>
-        <td>${r.address?.place || '—'}</td>
-        <td>${r.personalDetails?.gender || '—'}</td>
-        <td>${r.personalDetails?.phone || '—'}</td>
-        <td>${r.identityDetails?.ksheerasreeId || '—'}</td>
-        ${extra}
-      </tr>`;
-    }).join('');
-
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Producer Report</title>
-    <style>
-      @page { size: A4 portrait; margin: 10mm; }
-      * { box-sizing: border-box; margin: 0; padding: 0; }
-      body { font-family: Arial, sans-serif; font-size: 8px; color: #111;
-             -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .hdr { text-align: center; border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 10px; }
-      .hdr h1 { font-size: 14px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
-      .hdr h2 { font-size: 10px; font-weight: 600; margin-top: 3px; letter-spacing: 2px; text-transform: uppercase; }
-      .hdr p  { font-size: 8px; color: #555; margin-top: 3px; }
-      table { width: 100%; border-collapse: collapse; }
-      th { background: #1a237e; color: #fff; padding: 3px 4px; font-size: 7.5px;
-           text-align: left; border: 0.5pt solid #666; text-transform: uppercase; }
-      td { padding: 2.5px 4px; border: 0.5pt solid #ccc; font-size: 8px; }
-      tr:nth-child(even) td { background: #f5f7ff; }
-    </style>
-    </head><body>
-    <div class="hdr">
-      <h1>${companyName}</h1>
-      <h2>Producer Report</h2>
-      ${dateRange ? `<p>Period: ${dateRange}</p>` : ''}
-      <p>Total: ${filteredData.length} producers &nbsp;|&nbsp; Printed: ${today}</p>
+  const sel = (key, list, disabled) => (
+    <select className="pr-sel" value={filters[key]} disabled={disabled} onChange={e => setF(key, e.target.value)}>
+      {list.map(o => (typeof o === 'string'
+        ? <option key={o} value={o}>{o}</option>
+        : <option key={o.value} value={o.value}>{o.label}</option>))}
+    </select>
+  );
+  const advRow = (key, label, list) => (
+    <div className="pr-adv" key={key}>
+      <label className="pr-chk"><input type="checkbox" checked={ticked[key]} onChange={() => tick(key)} />{label}</label>
+      {sel(key, list, !ticked[key])}
     </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Sr.</th><th>Status</th><th>Pro No</th><th>Mem No</th><th>Name</th>
-          <th>Father/Husband</th><th>House Name</th><th>Post</th><th>Place</th>
-          <th>Sex</th><th>Mobile</th><th>DBT No</th>
-          ${extraCols}
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <script>window.onload=function(){window.print();setTimeout(function(){window.close();},1500);}</script>
-    </body></html>`;
-
-    const w = window.open('', '_blank');
-    if (!w) { alert('Pop-up blocked — please allow pop-ups and try again.'); return; }
-    w.document.write(html);
-    w.document.close();
-  };
-
-  const inputSz = 'xs';
+  );
+  const withAll = (list) => [{ value: '', label: 'ALL' }, ...list.map(v => ({ value: v, label: v.toUpperCase() }))];
 
   return (
-    <Box style={{ display: 'flex', height: 'calc(100vh - 60px)', overflow: 'hidden', background: '#f0f2f8' }}>
+    <div className="pr-root">
+      <style>{CSS}</style>
 
-      {/* ===== LEFT FILTER PANEL ===== */}
-      {panelOpen && (
-        <Box style={{
-          width: 288, minWidth: 288, display: 'flex', flexDirection: 'column',
-          background: '#fff', borderRight: '1px solid #dde1ef', boxShadow: '2px 0 8px rgba(0,0,0,0.06)',
-        }}>
-          {/* Panel header */}
-          <Box style={{
-            background: 'linear-gradient(135deg,#1565c0,#1a237e)',
-            padding: '10px 14px',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          }}>
-            <Group gap={6}>
-              <IconFilter size={15} color="white" />
-              <Text fw={700} c="white" size="sm">Filter Producers</Text>
-            </Group>
-            <ActionIcon variant="transparent" c="white" size="sm" onClick={() => setPanelOpen(false)}>
-              <IconChevronLeft size={15} />
-            </ActionIcon>
-          </Box>
+      {/* ═════ LEFT — FILTER CARDS ═════ */}
+      <div className="pr-left">
+        <Card title="Collection Center" tone="pr-blue" open={open.centre} onToggle={() => toggle('centre')}>
+          <div className="pr-row">
+            <div>
+              <label className="pr-lbl">Collection Center</label>
+              {sel('collectionCenter', [{ value: '', label: 'ALL' }, ...centers])}
+            </div>
+            <div>
+              <label className="pr-lbl">Member Type</label>
+              {sel('memberType', [{ value: '', label: 'ALL' }, { value: 'Member', label: 'MEMBER' }, { value: 'NonMember', label: 'NON-MEMBER' }])}
+            </div>
+          </div>
+          <div className="pr-row">
+            <div>
+              <label className="pr-lbl">Prod No From</label>
+              <input className="pr-in" inputMode="numeric" value={filters.farmerNumberFrom} onChange={e => setF('farmerNumberFrom', e.target.value)} />
+            </div>
+            <div>
+              <label className="pr-lbl">Prod No To</label>
+              <input className="pr-in" inputMode="numeric" value={filters.farmerNumberTo} onChange={e => setF('farmerNumberTo', e.target.value)} />
+            </div>
+          </div>
+          <div className="pr-row">
+            <label className="pr-chk"><input type="checkbox" checked={filters.activeOnly} onChange={e => setF('activeOnly', e.target.checked)} />Active Producer</label>
+            <label className="pr-chk"><input type="checkbox" checked={filters.localLanguage} onChange={e => setF('localLanguage', e.target.checked)} />Local Language</label>
+          </div>
+          <div className="pr-btns">
+            <button type="button" className="pr-btn" onClick={handleDisplay} disabled={loading}>{loading ? 'Loading…' : 'Display'}</button>
+            <button type="button" className="pr-btn" onClick={handleClear}>Clear</button>
+          </div>
+        </Card>
 
-          {/* Scrollable filter sections */}
-          <Box style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
+        <Card title="Advanced Filter" tone="pr-green" open={open.advanced} onToggle={() => toggle('advanced')}>
+          {advRow('gender', 'Sex', [{ value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }])}
+          {advRow('caste', 'Caste', withAll(options.castes))}
+          {advRow('occupation', 'Occupation', withAll(options.occupations))}
+          {advRow('category', 'Category', withAll(options.categories))}
+          {advRow('dbtHas', 'DBT', ENROLL_OPTIONS)}
+          {advRow('welfareHas', 'Welfare Fund', ENROLL_OPTIONS)}
+          {advRow('mobileHas', 'Mobile Number', ENROLL_OPTIONS)}
+          {advRow('bankHas', 'Bank A/C', ENROLL_OPTIONS)}
+          <div className="pr-adv">
+            <span className="pr-advlbl">Select Scheme</span>
+            <select className="pr-sel" defaultValue="DBT (CF)"><option>DBT (CF)</option></select>
+          </div>
+        </Card>
 
-            {/* ── Section 1: Collection Center ── */}
-            <Paper withBorder mb={8} style={{ borderRadius: 6, overflow: 'hidden' }}>
-              <SectionHeader label="Collection Center" sKey="basic" sections={sections} toggle={toggleSection} color="#1565c0" />
-              <Collapse in={sections.basic}>
-                <Stack gap={7} p={10}>
-                  <Select
-                    label="Collection Centre"
-                    data={centers}
-                    value={filters.collectionCenter}
-                    onChange={v => setFilter('collectionCenter', v || '')}
-                    clearable size={inputSz}
-                  />
-                  <Select
-                    label="Member Type"
-                    data={[{ value: '', label: 'All' }, { value: 'Member', label: 'Member' }, { value: 'NonMember', label: 'Non-Member' }]}
-                    value={filters.memberType}
-                    onChange={v => setFilter('memberType', v || '')}
-                    clearable size={inputSz}
-                  />
-                  <Group gap={6} grow>
-                    <TextInput
-                      label="Pro No From"
-                      placeholder="1"
-                      value={filters.farmerNumberFrom}
-                      onChange={e => setFilter('farmerNumberFrom', e.currentTarget.value)}
-                      size={inputSz}
-                    />
-                    <TextInput
-                      label="Pro No To"
-                      placeholder="9999"
-                      value={filters.farmerNumberTo}
-                      onChange={e => setFilter('farmerNumberTo', e.currentTarget.value)}
-                      size={inputSz}
-                    />
-                  </Group>
-                  <Group gap={20} mt={2}>
-                    <Checkbox
-                      label="Active Only"
-                      checked={filters.activeOnly}
-                      onChange={e => setFilter('activeOnly', e.currentTarget.checked)}
-                      size={inputSz}
-                    />
-                    <Checkbox
-                      label="Local Language"
-                      checked={filters.localLanguage}
-                      onChange={e => setFilter('localLanguage', e.currentTarget.checked)}
-                      size={inputSz}
-                    />
-                  </Group>
-                </Stack>
-              </Collapse>
-            </Paper>
+        <Card title="Local Body & Wards" tone="pr-red" open={open.local} onToggle={() => toggle('local')}>
+          <div className="pr-adv">
+            <label className="pr-chk"><input type="checkbox" checked={ticked.localBody} onChange={() => tick('localBody')} />Local Body</label>
+            <select className="pr-sel" value={filters.localBody} disabled={!ticked.localBody}
+              onChange={e => setFilters(p => ({ ...p, localBody: e.target.value, wards: [] }))}>
+              {options.localBodies.length === 0 && <option value="">—</option>}
+              {options.localBodies.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
+            </select>
+          </div>
+          <div className="pr-adv" style={{ alignItems: 'flex-start' }}>
+            <label className="pr-chk" style={{ paddingTop: 3 }}><input type="checkbox" checked={ticked.wards} onChange={() => tick('wards')} />Wards</label>
+            <select className="pr-sel" multiple value={filters.wards} disabled={!ticked.wards}
+              onChange={e => setF('wards', Array.from(e.target.selectedOptions, o => o.value))}>
+              {wardOptions.map(w => <option key={w} value={w}>{w}</option>)}
+            </select>
+          </div>
+        </Card>
 
-            {/* ── Section 2: Advanced Filter ── */}
-            <Paper withBorder mb={8} style={{ borderRadius: 6, overflow: 'hidden' }}>
-              <SectionHeader label="Advanced Filter" sKey="advanced" sections={sections} toggle={toggleSection} color="#2e7d32" />
-              <Collapse in={sections.advanced}>
-                <Stack gap={7} p={10}>
-                  <Text size={9} c="dimmed" fw={600} tt="uppercase" mb={-3}>Tick to include a filter in the report</Text>
-                  <Group gap={6} align="flex-end" wrap="nowrap">
-                    <Checkbox
-                      mb={2}
-                      checked={advEnabled.gender}
-                      onChange={() => toggleAdvEnabled('gender')}
-                      size={inputSz}
-                    />
-                    <Select
-                      label="Sex"
-                      data={[{ value: '', label: 'All' }, { value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }]}
-                      value={filters.gender}
-                      onChange={v => setFilter('gender', v || '')}
-                      disabled={!advEnabled.gender}
-                      clearable size={inputSz}
-                      style={{ flex: 1 }}
-                    />
-                  </Group>
-                  <Group gap={6} align="flex-end" wrap="nowrap">
-                    <Checkbox
-                      mb={2}
-                      checked={advEnabled.caste}
-                      onChange={() => toggleAdvEnabled('caste')}
-                      size={inputSz}
-                    />
-                    <Select
-                      label="Caste"
-                      data={[{ value: '', label: 'All' }, { value: 'OC', label: 'OC' }, { value: 'OBC', label: 'OBC' }, { value: 'SC', label: 'SC' }, { value: 'ST', label: 'ST' }]}
-                      value={filters.caste}
-                      onChange={v => setFilter('caste', v || '')}
-                      disabled={!advEnabled.caste}
-                      clearable size={inputSz}
-                      style={{ flex: 1 }}
-                    />
-                  </Group>
-                  <Group gap={6} align="flex-end" wrap="nowrap">
-                    <Checkbox
-                      mb={2}
-                      checked={advEnabled.farmerType}
-                      onChange={() => toggleAdvEnabled('farmerType')}
-                      size={inputSz}
-                    />
-                    <Select
-                      label="Category"
-                      data={[{ value: '', label: 'All' }, { value: 'Regular', label: 'Regular' }, { value: 'Seasonal', label: 'Seasonal' }]}
-                      value={filters.farmerType}
-                      onChange={v => setFilter('farmerType', v || '')}
-                      disabled={!advEnabled.farmerType}
-                      clearable size={inputSz}
-                      style={{ flex: 1 }}
-                    />
-                  </Group>
-                  <Group gap={6} align="flex-end" wrap="nowrap">
-                    <Checkbox
-                      mb={2}
-                      checked={advEnabled.dbtHas}
-                      onChange={() => toggleAdvEnabled('dbtHas')}
-                      size={inputSz}
-                    />
-                    <Select
-                      label="DBT (Ksheerasree)"
-                      data={HAS_OPTIONS}
-                      value={filters.dbtHas}
-                      onChange={v => setFilter('dbtHas', v || '')}
-                      disabled={!advEnabled.dbtHas}
-                      size={inputSz}
-                      style={{ flex: 1 }}
-                    />
-                  </Group>
-                  <Group gap={6} align="flex-end" wrap="nowrap">
-                    <Checkbox
-                      mb={2}
-                      checked={advEnabled.welfareHas}
-                      onChange={() => toggleAdvEnabled('welfareHas')}
-                      size={inputSz}
-                    />
-                    <Select
-                      label="Welfare Fund"
-                      data={HAS_OPTIONS}
-                      value={filters.welfareHas}
-                      onChange={v => setFilter('welfareHas', v || '')}
-                      disabled={!advEnabled.welfareHas}
-                      size={inputSz}
-                      style={{ flex: 1 }}
-                    />
-                  </Group>
-                  <Group gap={6} align="flex-end" wrap="nowrap">
-                    <Checkbox
-                      mb={2}
-                      checked={advEnabled.mobileHas}
-                      onChange={() => toggleAdvEnabled('mobileHas')}
-                      size={inputSz}
-                    />
-                    <Select
-                      label="Mobile Number"
-                      data={HAS_OPTIONS}
-                      value={filters.mobileHas}
-                      onChange={v => setFilter('mobileHas', v || '')}
-                      disabled={!advEnabled.mobileHas}
-                      size={inputSz}
-                      style={{ flex: 1 }}
-                    />
-                  </Group>
-                  <Group gap={6} align="flex-end" wrap="nowrap">
-                    <Checkbox
-                      mb={2}
-                      checked={advEnabled.bankHas}
-                      onChange={() => toggleAdvEnabled('bankHas')}
-                      size={inputSz}
-                    />
-                    <Select
-                      label="Bank A/C"
-                      data={HAS_OPTIONS}
-                      value={filters.bankHas}
-                      onChange={v => setFilter('bankHas', v || '')}
-                      disabled={!advEnabled.bankHas}
-                      size={inputSz}
-                      style={{ flex: 1 }}
-                    />
-                  </Group>
-                  <Group gap={6} align="flex-end" wrap="nowrap">
-                    <Checkbox
-                      mb={2}
-                      checked={advEnabled.localBody}
-                      onChange={() => toggleAdvEnabled('localBody')}
-                      size={inputSz}
-                    />
-                    <TextInput
-                      label="Local Body / Panchayat"
-                      placeholder="Search panchayat..."
-                      value={filters.localBody}
-                      onChange={e => setFilter('localBody', e.currentTarget.value)}
-                      disabled={!advEnabled.localBody}
-                      size={inputSz}
-                      style={{ flex: 1 }}
-                    />
-                  </Group>
-                  <Group gap={6} align="flex-end" wrap="nowrap">
-                    <Checkbox
-                      mb={2}
-                      checked={advEnabled.ward}
-                      onChange={() => toggleAdvEnabled('ward')}
-                      size={inputSz}
-                    />
-                    <TextInput
-                      label="Ward"
-                      placeholder="Ward name or number"
-                      value={filters.ward}
-                      onChange={e => setFilter('ward', e.currentTarget.value)}
-                      disabled={!advEnabled.ward}
-                      size={inputSz}
-                      style={{ flex: 1 }}
-                    />
-                  </Group>
-                </Stack>
-              </Collapse>
-            </Paper>
+        <Card title="Pouring Days & Quantity" tone="pr-red" open={open.pouring} onToggle={() => toggle('pouring')}>
+          <div className="pr-pd">
+            <span>From</span>
+            <input className="pr-in" type="date" value={filters.fromDate} onChange={e => setF('fromDate', e.target.value)} />
+            <span>To</span>
+            <input className="pr-in" type="date" value={filters.toDate} onChange={e => setF('toDate', e.target.value)} />
+          </div>
+          <div className="pr-pd3">
+            <span>Days</span>
+            {sel('daysCondition', COND_OPTIONS)}
+            <input className="pr-in" type="number" min="0" value={filters.daysValue} onChange={e => setF('daysValue', e.target.value)} />
+            {sel('daysQtyLogic', ['AND', 'OR'])}
+          </div>
+          <div className="pr-pd3">
+            <span>Quantity</span>
+            {sel('qtyCondition', COND_OPTIONS)}
+            <input className="pr-in" type="number" min="0" step="0.01" value={filters.qtyValue} onChange={e => setF('qtyValue', e.target.value)} />
+            <span />
+          </div>
+        </Card>
+      </div>
 
-            {/* ── Section 3: Pouring Days & Quantity ── */}
-            <Paper withBorder mb={8} style={{ borderRadius: 6, overflow: 'hidden' }}>
-              <SectionHeader label="Pouring Days & Quantity" sKey="pouring" sections={sections} toggle={toggleSection} color="#c62828" />
-              <Collapse in={sections.pouring}>
-                <Stack gap={7} p={10}>
-                  <Group gap={6} grow>
-                    <DatePickerInput
-                      label="From Date"
-                      placeholder="DD/MM/YYYY"
-                      value={filters.fromDate}
-                      onChange={v => setFilter('fromDate', v)}
-                      valueFormat="DD/MM/YYYY"
-                      size={inputSz}
-                      clearable
-                    />
-                    <DatePickerInput
-                      label="To Date"
-                      placeholder="DD/MM/YYYY"
-                      value={filters.toDate}
-                      onChange={v => setFilter('toDate', v)}
-                      valueFormat="DD/MM/YYYY"
-                      size={inputSz}
-                      clearable
-                    />
-                  </Group>
+      {/* ═════ RIGHT — DATA TABLE CARD ═════ */}
+      <div className="pr-right">
+        <Card title="Producer Report" tone="pr-gray" open={open.table} onToggle={() => toggle('table')}
+          tools={<button type="button" title="Close — clear the results" onClick={() => { setData([]); setSearched(false); setExpanded(new Set()); }}>×</button>}>
+          <div className="pr-toolbar">
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button type="button" className="pr-btn pr-btn-def" onClick={handleDownload} title="Download as Excel (.xlsx)">Download</button>
+              <button type="button" className="pr-btn pr-btn-def" onClick={handleExport} title="Export as CSV">Export</button>
+              <button type="button" className="pr-btn pr-btn-def" onClick={handleExportPDF} title="Export as PDF">Export PDF</button>
+            </div>
+            <label className="pr-search">Search:
+              <input className="pr-in" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+            </label>
+          </div>
 
-                  <Divider label="Pouring Days" labelPosition="center" my={2} styles={{ label: { fontSize: 10, color: '#888' } }} />
-                  <Group gap={6} align="flex-end">
-                    <Select
-                      label="Condition"
-                      data={COND_OPTIONS}
-                      value={filters.daysCondition}
-                      onChange={v => setFilter('daysCondition', v || '')}
-                      clearable size={inputSz}
-                      style={{ flex: 1 }}
-                    />
-                    <NumberInput
-                      label="Days"
-                      placeholder="0"
-                      value={filters.daysValue}
-                      onChange={v => setFilter('daysValue', v)}
-                      min={0}
-                      size={inputSz}
-                      style={{ flex: 1 }}
-                    />
-                  </Group>
-
-                  <Divider label="Quantity (Litres)" labelPosition="center" my={2} styles={{ label: { fontSize: 10, color: '#888' } }} />
-                  <Group gap={6} align="flex-end">
-                    <Select
-                      label="Condition"
-                      data={COND_OPTIONS}
-                      value={filters.qtyCondition}
-                      onChange={v => setFilter('qtyCondition', v || '')}
-                      clearable size={inputSz}
-                      style={{ flex: 1 }}
-                    />
-                    <NumberInput
-                      label="Qty (L)"
-                      placeholder="0"
-                      value={filters.qtyValue}
-                      onChange={v => setFilter('qtyValue', v)}
-                      min={0}
-                      size={inputSz}
-                      style={{ flex: 1 }}
-                    />
-                  </Group>
-
-                  <Radio.Group value={filters.daysQtyLogic} onChange={v => setFilter('daysQtyLogic', v)} label={<Text size="xs" c="dimmed">Days &amp; Qty Logic</Text>}>
-                    <Group mt={4} gap={16}>
-                      <Radio value="AND" label="AND" size="xs" />
-                      <Radio value="OR" label="OR" size="xs" />
-                    </Group>
-                  </Radio.Group>
-                </Stack>
-              </Collapse>
-            </Paper>
-          </Box>
-
-          {/* Action buttons */}
-          <Box style={{ borderTop: '1px solid #e8eaf0', padding: '10px 12px', background: '#fafafa' }}>
-            <Stack gap={6}>
-              <Button fullWidth leftSection={<IconSearch size={14} />} onClick={() => handleSearch()} loading={loading} size="sm">
-                Generate Report
-              </Button>
-              <Button fullWidth variant="light" color="gray" leftSection={<IconRefresh size={14} />} onClick={handleReset} size="sm">
-                Reset Filters
-              </Button>
-            </Stack>
-          </Box>
-        </Box>
-      )}
-
-      {/* ===== RIGHT CONTENT AREA ===== */}
-      <Box style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-
-        {/* Toolbar */}
-        <Box style={{ background: '#fff', borderBottom: '1px solid #dde1ef', padding: '8px 16px', flexShrink: 0 }}>
-          <Group justify="space-between" wrap="nowrap">
-            <Group gap={8} wrap="nowrap">
-              {!panelOpen && (
-                <Tooltip label="Show Filters">
-                  <ActionIcon variant="subtle" onClick={() => setPanelOpen(true)}>
-                    <IconChevronRight size={18} />
-                  </ActionIcon>
-                </Tooltip>
-              )}
-              <IconUsers size={20} color="#1565c0" />
-              <Title order={5} c="#1a237e" style={{ whiteSpace: 'nowrap' }}>Producer Report</Title>
-              {searched && (
-                <Badge color="blue" variant="light" size="sm">{pagination.total} producers</Badge>
-              )}
-            </Group>
-            <Group gap={8} wrap="nowrap">
-              <TextInput
-                placeholder="Search name, pro no, place..."
-                value={search}
-                onChange={e => setSearch(e.currentTarget.value)}
-                leftSection={<IconSearch size={13} />}
-                rightSection={search ? (
-                  <ActionIcon size="xs" variant="transparent" onClick={() => setSearch('')}>
-                    <IconX size={11} />
-                  </ActionIcon>
-                ) : null}
-                size="xs"
-                style={{ width: 220 }}
-              />
-              <Tooltip label="Export to Excel">
-                <ActionIcon variant="light" color="green" onClick={handleExport} disabled={!data.length} size="md">
-                  <IconFileTypeXls size={16} />
-                </ActionIcon>
-              </Tooltip>
-              <Tooltip label="Print">
-                <ActionIcon variant="light" color="blue" onClick={handlePrint} disabled={!data.length} size="md">
-                  <IconPrinter size={16} />
-                </ActionIcon>
-              </Tooltip>
-            </Group>
-          </Group>
-        </Box>
-
-        {/* Table area */}
-        <Box style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          {loading ? (
-            <Center style={{ flex: 1 }}>
-              <Stack align="center" gap={10}>
-                <Loader size="lg" />
-                <Text size="sm" c="dimmed">Loading producers...</Text>
-              </Stack>
-            </Center>
-          ) : !searched ? (
-            <Center style={{ flex: 1 }}>
-              <Stack align="center" gap={10}>
-                <IconUsers size={56} color="#c5cae9" />
-                <Text c="dimmed" size="sm">Set filters and click "Generate Report"</Text>
-                <Text c="dimmed" size="xs">Use the left panel to apply filters</Text>
-              </Stack>
-            </Center>
-          ) : filteredData.length === 0 ? (
-            <Center style={{ flex: 1 }}>
-              <Stack align="center" gap={10}>
-                <IconAlertCircle size={48} color="#ef9a9a" />
-                <Text c="dimmed" size="sm">No producers found matching the criteria</Text>
-                <Button variant="subtle" size="xs" onClick={handleReset} leftSection={<IconRefresh size={13} />}>
-                  Reset Filters
-                </Button>
-              </Stack>
-            </Center>
-          ) : (
-            <ScrollArea style={{ flex: 1 }}>
-              <Table
-                id="producer-print-table"
-                striped
-                highlightOnHover
-                withColumnBorders
-                withTableBorder
-                style={{ fontSize: 12 }}
-              >
-                <Table.Thead>
-                  <Table.Tr style={{ background: '#1a237e' }}>
-                    <Table.Th style={{ color: '#fff', width: 44, textAlign: 'center', padding: '8px 6px' }}>Sr.</Table.Th>
-                    <Table.Th style={{ color: '#fff', width: 80, padding: '8px 10px' }}>Status</Table.Th>
-                    <Table.Th style={{ color: '#fff', padding: '8px 10px' }}>Pro No</Table.Th>
-                    <Table.Th style={{ color: '#fff', padding: '8px 10px' }}>Mem No</Table.Th>
-                    <Table.Th style={{ color: '#fff', minWidth: 150, padding: '8px 10px' }}>Name</Table.Th>
-                    <Table.Th style={{ color: '#fff', minWidth: 140, padding: '8px 10px' }}>Father/Husband Name</Table.Th>
-                    <Table.Th style={{ color: '#fff', minWidth: 120, padding: '8px 10px' }}>House Name</Table.Th>
-                    <Table.Th style={{ color: '#fff', padding: '8px 10px' }}>Post</Table.Th>
-                    <Table.Th style={{ color: '#fff', padding: '8px 10px' }}>Place</Table.Th>
-                    <Table.Th style={{ color: '#fff', padding: '8px 10px' }}>Sex</Table.Th>
-                    <Table.Th style={{ color: '#fff', minWidth: 110, padding: '8px 10px' }}>Mobile No</Table.Th>
-                    <Table.Th style={{ color: '#fff', minWidth: 130, padding: '8px 10px' }}>DBT Enroll No</Table.Th>
-                    {hasPouringCols && <>
-                      <Table.Th style={{ color: '#fff', width: 70, textAlign: 'right', padding: '8px 10px' }}>Days</Table.Th>
-                      <Table.Th style={{ color: '#fff', width: 90, textAlign: 'right', padding: '8px 10px' }}>Qty (L)</Table.Th>
-                    </>}
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {filteredData.map((r, i) => (
-                    <Table.Tr key={r._id || i}>
-                      <Table.Td ta="center" c="dimmed" style={{ padding: '6px', fontSize: 11 }}>{i + 1}</Table.Td>
-                      <Table.Td style={{ padding: '6px 8px' }}>
-                        <Badge size="xs" color={r.status === 'Active' ? 'teal' : 'red'} variant="light" radius="sm">
-                          {r.status || 'Active'}
-                        </Badge>
-                      </Table.Td>
-                      <Table.Td fw={600} c="blue.7" style={{ padding: '6px 10px' }}>{r.farmerNumber || '-'}</Table.Td>
-                      <Table.Td style={{ padding: '6px 10px' }}>{r.memberId || '-'}</Table.Td>
-                      <Table.Td fw={500} style={{ padding: '6px 10px' }}>{r.personalDetails?.name || '-'}</Table.Td>
-                      <Table.Td style={{ padding: '6px 10px' }}>{r.personalDetails?.fatherName || '-'}</Table.Td>
-                      <Table.Td style={{ padding: '6px 10px' }}>{r.address?.houseName || '-'}</Table.Td>
-                      <Table.Td style={{ padding: '6px 10px' }}>{r.address?.post || '-'}</Table.Td>
-                      <Table.Td style={{ padding: '6px 10px' }}>{r.address?.place || '-'}</Table.Td>
-                      <Table.Td style={{ padding: '6px 10px' }}>{r.personalDetails?.gender || '-'}</Table.Td>
-                      <Table.Td style={{ padding: '6px 10px' }}>{r.personalDetails?.phone || '-'}</Table.Td>
-                      <Table.Td style={{ padding: '6px 10px' }}>{r.identityDetails?.ksheerasreeId || '-'}</Table.Td>
-                      {hasPouringCols && <>
-                        <Table.Td ta="right" fw={600} c="cyan.8" style={{ padding: '6px 10px' }}>
-                          {r._pouringDays ?? '—'}
-                        </Table.Td>
-                        <Table.Td ta="right" fw={600} c="green.8" style={{ padding: '6px 10px' }}>
-                          {r._totalQty != null ? Number(r._totalQty).toFixed(2) : '—'}
-                        </Table.Td>
-                      </>}
-                    </Table.Tr>
+          <div className="pr-tblwrap">
+            <table className="pr-tbl">
+              <thead>
+                <tr>
+                  <th className="pr-nosort" />
+                  {COLUMNS.map(c => (
+                    <th key={c.key} onClick={() => onSort(c.key)}>
+                      {c.label}
+                      <span className="pr-sort">
+                        <span className={sort.key === c.key && sort.dir === 'asc' ? 'on' : ''}>▲</span>
+                        <span className={sort.key === c.key && sort.dir === 'desc' ? 'on' : ''}>▼</span>
+                      </span>
+                    </th>
                   ))}
-                </Table.Tbody>
-              </Table>
-            </ScrollArea>
-          )}
-        </Box>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td className="pr-empty" colSpan={COLUMNS.length + 1}>Loading…</td></tr>
+                ) : pageRows.length === 0 ? (
+                  <tr><td className="pr-empty" colSpan={COLUMNS.length + 1}>
+                    {searched ? 'No matching records found' : 'Set the filters and click Display'}
+                  </td></tr>
+                ) : pageRows.map(r => {
+                  const isOpen = expanded.has(r._id);
+                  return (
+                    <Fragment key={r._id}>
+                      <tr className="pr-r">
+                        <td>
+                          <button type="button" className={`pr-plus${isOpen ? ' open' : ''}`} onClick={() => toggleRow(r._id)}
+                            aria-label={isOpen ? 'Hide details' : 'Show details'}>{isOpen ? '−' : '+'}</button>
+                        </td>
+                        {COLUMNS.map(c => <td key={c.key}>{val(c.get(r))}</td>)}
+                      </tr>
+                      {isOpen && (
+                        <tr className="pr-detail">
+                          <td colSpan={COLUMNS.length + 1}>
+                            <ul>
+                              {DETAIL_FIELDS.map(([label, get]) => (
+                                <li key={label}><b>{label}</b> {val(get(r))}</li>
+                              ))}
+                            </ul>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
-        {/* Pagination footer */}
-        {searched && data.length > 0 && (
-          <Box style={{
-            background: '#fff', borderTop: '1px solid #dde1ef',
-            padding: '8px 16px', flexShrink: 0,
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-          }}>
-            <Text size="xs" c="dimmed">
-              Showing {Math.min((pagination.page - 1) * pagination.limit + 1, pagination.total)}–{Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} producers
-            </Text>
-            {pagination.pages > 1 && (
-              <Pagination
-                value={pagination.page}
-                onChange={handlePageChange}
-                total={pagination.pages}
-                size="sm"
-                siblings={1}
-                boundaries={1}
-              />
-            )}
-          </Box>
-        )}
-      </Box>
-    </Box>
+          <div className="pr-foot">
+            <span>Showing {from} to {to} of {rows.length} entries{search && data.length !== rows.length ? ` (filtered from ${data.length} total entries)` : ''}</span>
+            <Pager page={curPage} pages={pages} onPage={setPage} />
+          </div>
+        </Card>
+      </div>
+    </div>
   );
 }

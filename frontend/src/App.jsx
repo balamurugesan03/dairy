@@ -104,7 +104,7 @@ const LedgerList = lazy(() => import('./components/accounting/LedgerList'));
 const LedgerView = lazy(() => import('./components/accounting/LedgerView'));
 const ReceiptVoucher = lazy(() => import('./components/accounting/ReceiptVoucher'));
 const PaymentVoucher = lazy(() => import('./components/accounting/PaymentVoucher'));
-const CashBookEntry = lazy(() => import('./components/accounting/CashBookEntry'));
+// Cash Book Entry is rendered by MainLayout as a popup (see CASH_BOOK_ENTRY_ROUTE)
 const JournalVoucher = lazy(() => import('./components/accounting/JournalVoucher'));
 const OutstandingReport = lazy(() => import('./components/accounting/OutstandingReport'));
 
@@ -129,7 +129,7 @@ const MilkCollectionAnalysis = lazy(() => import('./components/daily-collections
 // Payment Components
 const IndividualMilkPayment = lazy(() => import('./components/payments/IndividualMilkPayment'));
 const MilkPaymentRegister = lazy(() => import('./components/payments/MilkPaymentRegister'));
-const PaymentRegisterLedger = lazy(() => import('./components/payments/PaymentRegisterLedger'));
+// Payment Register Detailed is rendered by MainLayout as a popup (see PAYMENT_REGISTER_ROUTE)
 const LedgerPaymentHistory  = lazy(() => import('./components/payments/LedgerPaymentHistory'));
 const CattleFeedAdvance = lazy(() => import('./components/payments/CattleFeedAdvance'));
 
@@ -429,7 +429,7 @@ const AppContent = () => {
                 <Route path="ledgers/:id" element={<LedgerView />} />
                 <Route path="receipt" element={<ReceiptVoucher />} />
                 <Route path="payment" element={<PaymentVoucher />} />
-                <Route path="cash-book-entry" element={<CashBookEntry />} />
+                <Route path="cash-book-entry" element={null} />{/* opens as the MainLayout popup */}
                 <Route path="journal" element={<JournalVoucher />} />
                 <Route path="outstanding" element={<OutstandingReport />} />
               </Route>
@@ -473,7 +473,7 @@ const AppContent = () => {
               <Route path="payments">
                 <Route index element={<Navigate to="/payments/producer-payment" replace />} />
                 <Route path="register" element={<MilkPaymentRegister />} />
-                <Route path="register-ledger" element={<PaymentRegisterLedger />} />
+                <Route path="register-ledger" element={null} />{/* opens as the MainLayout popup */}
                 <Route path="ledger-history"  element={<LedgerPaymentHistory />} />
                 <Route path="individual" element={<IndividualMilkPayment />} />
                 <Route path="loans" element={<LoanAdvanceSummary />} />

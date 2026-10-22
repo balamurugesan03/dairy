@@ -10,6 +10,7 @@ import { notifications } from '@mantine/notifications';
 import {
   IconCalendar, IconPrinter, IconRefresh, IconFileSpreadsheet,
   IconDownload, IconCheck, IconDeviceFloppy, IconBuildingBank,
+  IconX,
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { useReactToPrint } from 'react-to-print';
@@ -60,17 +61,17 @@ const BORDER_DARK = '1px solid #a0aec0';
 
 const thSection = (bg) => ({
   background: bg, color: '#fff', textAlign: 'center',
-  fontSize: 11, fontWeight: 700, padding: '6px 4px',
+  fontSize: 11, fontWeight: 700, padding: '3px 4px',
   border: BORDER_DARK, letterSpacing: 0.8, userSelect: 'none',
 });
 const thCol = (bg) => ({
   background: bg, color: '#e2e8f0', textAlign: 'center',
-  fontSize: 10, fontWeight: 600, padding: '5px 2px',
+  fontSize: 10, fontWeight: 600, padding: '3px 2px',
   border: BORDER_DARK, whiteSpace: 'nowrap', userSelect: 'none',
 });
 const td = (extra = {}) => ({
   border: BORDER, padding: 0, textAlign: 'center',
-  height: 28, verticalAlign: 'middle', ...extra,
+  height: 24, verticalAlign: 'middle', ...extra,
 });
 const tdTotal = {
   border: BORDER_DARK, padding: '3px 4px', textAlign: 'center',
@@ -82,17 +83,17 @@ const tdBal = { ...tdTotal, background: '#e6fffa', color: '#276749' };
 const EDIT_STYLE = { borderBottom: '1px dashed #a0aec0', background: 'transparent' };
 const numProps = (extra = {}) => ({
   variant: 'unstyled', size: 'xs', hideControls: true, decimalScale: 2,
-  styles: { input: { textAlign: 'center', fontSize: 11, height: 26, padding: '0 2px', width: '100%', ...EDIT_STYLE } },
+  styles: { input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, padding: '0 2px', width: '100%', ...EDIT_STYLE } },
   ...extra,
 });
 const numPropsRO = (extra = {}) => ({
   variant: 'unstyled', size: 'xs', hideControls: true, decimalScale: 2, readOnly: true,
-  styles: { input: { textAlign: 'center', fontSize: 11, height: 26, padding: '0 2px', width: '100%', cursor: 'default' } },
+  styles: { input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, padding: '0 2px', width: '100%', cursor: 'default' } },
   ...extra,
 });
 const txtProps = (extra = {}) => ({
   variant: 'unstyled', size: 'xs',
-  styles: { input: { textAlign: 'center', fontSize: 11, height: 26, padding: '0 2px', width: '100%', ...EDIT_STYLE } },
+  styles: { input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, padding: '0 2px', width: '100%', ...EDIT_STYLE } },
   ...extra,
 });
 
@@ -175,117 +176,117 @@ const PaymentRow = React.memo(function PaymentRow({ row, idx, quantityUnit, onUp
       {/* QTY */}
       <td style={td()}>
         <NumberInput {...numPropsRO({ decimalScale: 1 })} value={row.qty} placeholder="—"
-          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, width: '100%', cursor: 'default' } }} />
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, width: '100%', cursor: 'default' } }} />
       </td>
       {/* Milk Value */}
       <td style={td({ background: '#fffff0' })}>
         <NumberInput {...numPropsRO()} value={row.milkValue} placeholder="—"
-          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 600, color: '#1a365d', width: '100%', cursor: 'default' } }} />
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, fontWeight: 600, color: '#1a365d', width: '100%', cursor: 'default' } }} />
       </td>
       {/* Prev Balance */}
       <td style={td({ background: '#ebf8ff' })}>
         <NumberInput {...numPropsRO()} value={row.prevBalance} placeholder="—"
-          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#2b6cb0', width: '100%', cursor: 'default' } }} />
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, color: '#2b6cb0', width: '100%', cursor: 'default' } }} />
       </td>
       {/* Other Earnings */}
       <td style={td({ background: '#f0fff4' })}>
         {(isPaid || row.locked)
           ? <NumberInput {...numPropsRO()} value={row.otherEarnings} placeholder="—"
-              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#276749', width: '100%', cursor: 'default' } }} />
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, color: '#276749', width: '100%', cursor: 'default' } }} />
           : <NumberInput {...numProps()} value={row.otherEarnings} placeholder="0.00"
               onChange={(v) => onUpdate(idx, 'otherEarnings', v)}
-              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#276749', width: '100%', ...EDIT_STYLE } }} />
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, color: '#276749', width: '100%', ...EDIT_STYLE } }} />
         }
       </td>
       {/* Total Earnings */}
       <td style={td({ background: '#e6fffa' })}>
         <NumberInput {...numPropsRO()} value={row.totalEarnings} placeholder="—"
-          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 700, color: '#276749', width: '100%', cursor: 'default' } }} />
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, fontWeight: 700, color: '#276749', width: '100%', cursor: 'default' } }} />
       </td>
 
       {/* Welfare */}
       <td style={td({ background: '#fff3cd' })}>
         {(isPaid || row.locked)
           ? <NumberInput {...numPropsRO()} value={row.welfare} placeholder="—"
-              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#92400e', width: '100%', cursor: 'default' } }} />
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, color: '#92400e', width: '100%', cursor: 'default' } }} />
           : <NumberInput {...numProps()} value={row.welfare} placeholder="0"
               onChange={(v) => onUpdate(idx, 'welfare', v)}
-              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#92400e', width: '100%' } }} />
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, color: '#92400e', width: '100%' } }} />
         }
       </td>
       {/* CF Advance */}
       <td style={td({ background: '#fffaf0' })}>
         <NumberInput {...numPropsRO()} value={row.cfAdv} placeholder="—"
-          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#7b341e', width: '100%', cursor: 'default' } }} />
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, color: '#7b341e', width: '100%', cursor: 'default' } }} />
       </td>
       {/* CF Recovery */}
       <td style={td({ background: '#fff9f0' })}>
         {(isPaid || row.locked)
           ? <NumberInput {...numPropsRO()} value={row.cfRec} placeholder="—"
-              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', cursor: 'default' } }} />
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, color: '#c05621', width: '100%', cursor: 'default' } }} />
           : <NumberInput {...numProps()} value={row.cfRec}
               onChange={(v) => onUpdate(idx, 'cfRec', v)} placeholder="0.00"
-              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', ...EDIT_STYLE } }} />
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, color: '#c05621', width: '100%', ...EDIT_STYLE } }} />
         }
       </td>
       {/* Cash Advance */}
       <td style={td({ background: '#fffaf0' })}>
         <NumberInput {...numPropsRO()} value={row.cashAdv} placeholder="—"
-          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#7b341e', width: '100%', cursor: 'default' } }} />
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, color: '#7b341e', width: '100%', cursor: 'default' } }} />
       </td>
       {/* Cash Recovery */}
       <td style={td({ background: '#fff9f0' })}>
         {(isPaid || row.locked)
           ? <NumberInput {...numPropsRO()} value={row.cashRec} placeholder="—"
-              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', cursor: 'default' } }} />
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, color: '#c05621', width: '100%', cursor: 'default' } }} />
           : <NumberInput {...numProps()} value={row.cashRec}
               onChange={(v) => onUpdate(idx, 'cashRec', v)} placeholder="0.00"
-              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', ...EDIT_STYLE } }} />
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, color: '#c05621', width: '100%', ...EDIT_STYLE } }} />
         }
       </td>
       {/* Loan Advance */}
       <td style={td({ background: '#fffaf0' })}>
         <NumberInput {...numPropsRO()} value={row.loanAdv} placeholder="—"
-          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#7b341e', width: '100%', cursor: 'default' } }} />
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, color: '#7b341e', width: '100%', cursor: 'default' } }} />
       </td>
       {/* Loan Recovery */}
       <td style={td({ background: '#fff9f0' })}>
         {(isPaid || row.locked)
           ? <NumberInput {...numPropsRO()} value={row.loanRec} placeholder="—"
-              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', cursor: 'default' } }} />
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, color: '#c05621', width: '100%', cursor: 'default' } }} />
           : <NumberInput {...numProps()} value={row.loanRec}
               onChange={(v) => onUpdate(idx, 'loanRec', v)} placeholder="0.00"
-              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, color: '#c05621', width: '100%', ...EDIT_STYLE } }} />
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, color: '#c05621', width: '100%', ...EDIT_STYLE } }} />
         }
       </td>
       {/* Other Deductions */}
       <td style={td({ background: '#fffaf0' })}>
         {(isPaid || row.locked)
           ? <NumberInput {...numPropsRO()} value={row.otherDed} placeholder="—"
-              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, width: '100%', cursor: 'default' } }} />
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, width: '100%', cursor: 'default' } }} />
           : <NumberInput {...numProps()} value={row.otherDed} placeholder="0.00"
               onChange={(v) => onUpdate(idx, 'otherDed', v)}
-              styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, width: '100%', ...EDIT_STYLE } }} />
+              styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, width: '100%', ...EDIT_STYLE } }} />
         }
       </td>
       {/* Total Deductions */}
       <td style={td({ background: '#ffe0b2' })}>
         <NumberInput {...numPropsRO()} value={row.totalDed} placeholder="—"
-          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 700, color: '#7b341e', width: '100%', cursor: 'default' } }} />
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, fontWeight: 700, color: '#7b341e', width: '100%', cursor: 'default' } }} />
       </td>
       {/* Net Pay */}
       <td style={td({ background: netBg })}>
         <NumberInput {...numPropsRO()} value={row.netPay} placeholder="—"
-          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 700, color: netClr, width: '100%', cursor: 'default' } }} />
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, fontWeight: 700, color: netClr, width: '100%', cursor: 'default' } }} />
       </td>
       {/* To Transfer */}
       <td style={td({ background: '#f0f4ff' })}>
         <NumberInput {...numPropsRO()} value={row.netPay} placeholder="—"
-          styles={{ input: { textAlign: 'center', fontSize: 11, height: 26, fontWeight: 600, color: '#1a365d', width: '100%', cursor: 'default' } }} />
+          styles={{ input: { textAlign: 'center', fontSize: 11, height: 22, minHeight: 22, fontWeight: 600, color: '#1a365d', width: '100%', cursor: 'default' } }} />
       </td>
       {/* Signature — only rendered while printing */}
       {isPrinting && (
-        <td style={{ ...td(), height: 28, borderBottom: '1px solid #999' }}>
+        <td style={{ ...td(), height: 24, borderBottom: '1px solid #999' }}>
           {/* Empty cell for handwritten sign on the printout */}
         </td>
       )}
@@ -305,7 +306,7 @@ const PaymentRow = React.memo(function PaymentRow({ row, idx, quantityUnit, onUp
               </Group>
             )
           ) : (
-            <Group justify="center" align="center" style={{ height: 28 }} gap={0}>
+            <Group justify="center" align="center" style={{ height: 24 }} gap={0}>
               <Checkbox
                 size="xs"
                 checked={row.locked}
@@ -325,7 +326,9 @@ const PaymentRow = React.memo(function PaymentRow({ row, idx, quantityUnit, onUp
 /* ════════════════════════════════════════════════════════════
    COMPONENT
 ════════════════════════════════════════════════════════════ */
-const PaymentRegisterLedger = () => {
+// asPopup: rendered inside the MainLayout popup (same model as Milk Purchase).
+// initialFrom / initialTo replace the ?from=&to= URL params in that case.
+const PaymentRegisterLedger = ({ asPopup = false, onClose, initialFrom, initialTo }) => {
   const { selectedCompany } = useCompany();
   const printRef = useRef();
   const [searchParams] = useSearchParams();
@@ -425,8 +428,8 @@ const PaymentRegisterLedger = () => {
   /* ─── Load settings on mount → auto-advance to next unpaid cycle ─── */
   /* If navigated from Ledger History with ?from=&to= params, use those dates directly */
   useEffect(() => {
-    const paramFrom = searchParams.get('from');
-    const paramTo   = searchParams.get('to');
+    const paramFrom = initialFrom || searchParams.get('from');
+    const paramTo   = initialTo   || searchParams.get('to');
 
     // If URL params supplied (reverse-navigate from history), skip auto-advance and use them
     if (paramFrom && paramTo) {
@@ -1040,8 +1043,15 @@ const PaymentRegisterLedger = () => {
     ? Math.round((saveProgress.current / saveProgress.total) * 100)
     : 0;
 
+  // In the popup the page is a fixed-height column: compact header on top, the
+  // grid takes the rest and only its rows scroll (header row stays put).
+  const Root = asPopup ? Box : Container;
+  const rootProps = asPopup
+    ? { p: 8, style: { background: '#f0f2f5', height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 } }
+    : { fluid: true, p: 'md', style: { background: '#f0f2f5', minHeight: '100vh' } };
+
   return (
-    <Container fluid p="md" style={{ background: '#f0f2f5', minHeight: '100vh' }}>
+    <Root {...rootProps}>
       <style>{`@media print { .no-print { display: none !important; } .print-show { display: table-cell !important; } .print-header { display: block !important; } }`}</style>
 
       {/* ── SAVE PROGRESS MODAL ── */}
@@ -1053,6 +1063,7 @@ const PaymentRegisterLedger = () => {
         closeOnEscape={false}
         centered
         size="sm"
+        zIndex={320}  // above the Payment Register popup itself
         title={
           <Group gap="xs">
             <IconDeviceFloppy size={18} color="#2c5282" />
@@ -1085,19 +1096,38 @@ const PaymentRegisterLedger = () => {
       </Modal>
 
       {/* ── HEADER ── */}
-      <Paper withBorder shadow="sm" p="md" mb="md" style={{ background: '#fff' }} className="no-print">
-        <Group justify="space-between" align="flex-start" wrap="nowrap">
+      <Paper withBorder shadow="sm" p={asPopup ? 'xs' : 'md'} mb={asPopup ? 6 : 'md'} style={{ background: '#fff', flexShrink: 0 }} className="no-print">
+        <Group justify="space-between" align={asPopup ? 'flex-end' : 'flex-start'} wrap="nowrap">
           <Box>
             <Group gap="xs" align="center">
-              <IconFileSpreadsheet size={22} color="#2c5282" />
-              <Title order={3} style={{ color: '#1a365d', letterSpacing: 0.3 }}>
-                Payment Register Detailed 
+              <IconFileSpreadsheet size={asPopup ? 18 : 22} color="#2c5282" />
+              <Title order={asPopup ? 4 : 3} style={{ color: '#1a365d', letterSpacing: 0.3 }}>
+                Payment Register Detailed
               </Title>
             </Group>
             <Text size="xs" c="dimmed" mt={2}>
               {selectedCompany?.companyName || 'Dairy Cooperative Society'} · Cycle: {settingsDays} days
             </Text>
           </Box>
+          {/* Popup: the date pickers share the header row instead of a second band */}
+          {asPopup && (
+            <Group gap="sm" wrap="nowrap" align="flex-end" style={{ flex: 1, justifyContent: 'center' }}>
+              <DateInput
+                label="From Date" value={fromDate} onChange={handleFromDateChange}
+                leftSection={<IconCalendar size={14} />} minDate={minPickDate}
+                excludeDate={(d) => isOutsideCycleBoundary(d, 'from')}
+                title={latestPaidTo ? `Locked up to ${dayjs(latestPaidTo).format('DD/MM/YYYY')} (already paid)` : `Only cycle starts (${settingsDays}-day) are selectable`}
+                size="xs" w={150} popoverProps={{ zIndex: 330 }}
+              />
+              <DateInput
+                label="To Date" value={toDate} onChange={handleToDateChange}
+                leftSection={<IconCalendar size={14} />} minDate={fromDate || minPickDate}
+                excludeDate={(d) => isOutsideCycleBoundary(d, 'to')}
+                title={`Only cycle ends (${settingsDays}-day) are selectable`}
+                size="xs" w={150} popoverProps={{ zIndex: 330 }}
+              />
+            </Group>
+          )}
           <Group gap="xs">
             <Button
               size="xs"
@@ -1126,13 +1156,18 @@ const PaymentRegisterLedger = () => {
             <Button size="xs" leftSection={<IconPrinter size={13} />} onClick={handlePrint} disabled={!dateConfirmed}>
               Print
             </Button>
+            {asPopup && (
+              <Button size="xs" variant="light" color="red" leftSection={<IconX size={13} />} onClick={onClose}>
+                Close
+              </Button>
+            )}
           </Group>
         </Group>
 
-        <Divider my="sm" />
+        {!asPopup && <Divider my="sm" />}
 
-        {/* Filter row */}
-        <Grid gutter="sm">
+        {/* Filter row (page layout only — the popup has it in the header row) */}
+        {!asPopup && <Grid gutter="sm">
           <Grid.Col span={{ base: 12, sm: 6, md: 2 }}>
             <DateInput
               label="From Date"
@@ -1159,11 +1194,14 @@ const PaymentRegisterLedger = () => {
               size="sm"
             />
           </Grid.Col>
-        </Grid>
+        </Grid>}
       </Paper>
 
       {/* ── LEDGER TABLE ── */}
-      <Paper ref={printRef} withBorder shadow="sm" style={{ background: '#fff' }}>
+      <Paper ref={printRef} withBorder shadow="sm"
+        style={asPopup
+          ? { background: '#fff', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }
+          : { background: '#fff' }}>
 
         {/* Print-only header */}
         <Box style={{ display: 'none' }} className="print-header">
@@ -1175,8 +1213,10 @@ const PaymentRegisterLedger = () => {
           <Divider my={4} />
         </Box>
 
-        <ScrollArea type="scroll" scrollbarSize={8} scrollHideDelay={0}>
-          <Box className="print-fit-wrap" style={{ minWidth: isPrinting ? 0 : 2180 }}>
+        <ScrollArea type="scroll" scrollbarSize={8} scrollHideDelay={0}
+          style={asPopup && !isPrinting ? { flex: 1, minHeight: 0 } : undefined}
+          h={asPopup && !isPrinting ? '100%' : undefined}>
+          <Box className="print-fit-wrap" style={{ minWidth: isPrinting ? 0 : 1320 }}>
             <table style={{ borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed' }}>
               <colgroup>
                 {/* SN */}<col style={{ width: 34 }} />
@@ -1294,7 +1334,7 @@ const PaymentRegisterLedger = () => {
         </ScrollArea>
 
         {/* FOOTER STATS */}
-        <Box px="md" py="xs" style={{ borderTop: '2px solid #e2e8f0', background: '#f8fafc' }} className="no-print">
+        <Box px="md" py={asPopup ? 4 : 'xs'} style={{ borderTop: '2px solid #e2e8f0', background: '#f8fafc', flexShrink: 0 }} className="no-print">
           <Group justify="space-between" wrap="wrap" gap="xs">
             <Text size="xs" c="dimmed">
               Period: <strong>{fromDate ? dayjs(fromDate).format('DD MMM YYYY') : '—'} – {toDate ? dayjs(toDate).format('DD MMM YYYY') : '—'}</strong>
@@ -1335,7 +1375,7 @@ const PaymentRegisterLedger = () => {
           )}
         </Box>
       </Paper>
-    </Container>
+    </Root>
   );
 };
 

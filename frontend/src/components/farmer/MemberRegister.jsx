@@ -17,6 +17,7 @@ import { notifications } from '@mantine/notifications';
 import dayjs from 'dayjs';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 import { farmerAPI, collectionCenterAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 
@@ -530,38 +531,56 @@ const MemberRegister = () => {
     }
   };
 
-  // ── CSV Export ─────────────────────────────────────────────────────────────
-  const handleExportCSV = () => {
-    if (!data.length) return notifications.show({ message: 'No data to export', color: 'yellow' });
-    const headers = [
-      'Farmer Number','Member No','Name','House Name','Address',
-      'Date of Birth','Age','Sex','Date of Admission',
-      'Total Share Nos','Total Share Value','Resolution No','Resolution Date',
-      'Quantity (L)','Days'
-    ];
-    const rows = data.map(f => [
-      f.farmerNumber,
-      f.memberId || '',
-      f.personalDetails?.name || '',
-      f.address?.houseName || '',
-      fmtAddress(f.address),
-      f.personalDetails?.dob ? dayjs(f.personalDetails.dob).format('DD/MM/YYYY') : '',
-      calcAge(f.personalDetails?.dob),
-      f.personalDetails?.gender || '',
-      f.admissionDate ? dayjs(f.admissionDate).format('DD/MM/YYYY') : '',
-      f.financialDetails?.totalShares || 0,
-      ((f.financialDetails?.totalShares || 0) * (f.financialDetails?.shareValue || 0)).toFixed(2),
-      f.financialDetails?.resolutionNo || '',
-      f.financialDetails?.resolutionDate ? dayjs(f.financialDetails.resolutionDate).format('DD/MM/YYYY') : '',
-      f._totalQty ?? '',
-      f._pouringDays ?? ''
-    ]);
-    const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+  // ── Export (CSV) / Download (Excel) — every matching record, not just this page ──
+  const EXPORT_HEADERS = [
+    'Farmer Number','Member No','Name','House Name','Address',
+    'Date of Birth','Age','Sex','Date of Admission',
+    'Total Share Nos','Total Share Value','Resolution No','Resolution Date',
+    'Quantity (L)','Days'
+  ];
+  const exportRow = (f) => [
+    f.farmerNumber,
+    f.memberId || '',
+    f.personalDetails?.name || '',
+    f.address?.houseName || '',
+    fmtAddress(f.address),
+    f.personalDetails?.dob ? dayjs(f.personalDetails.dob).format('DD/MM/YYYY') : '',
+    calcAge(f.personalDetails?.dob),
+    f.personalDetails?.gender || '',
+    f.admissionDate ? dayjs(f.admissionDate).format('DD/MM/YYYY') : '',
+    f.financialDetails?.totalShares || 0,
+    ((f.financialDetails?.totalShares || 0) * (f.financialDetails?.shareValue || 0)).toFixed(2),
+    f.financialDetails?.resolutionNo || '',
+    f.financialDetails?.resolutionDate ? dayjs(f.financialDetails.resolutionDate).format('DD/MM/YYYY') : '',
+    f._totalQty ?? '',
+    f._pouringDays ?? ''
+  ];
+  const loadExportRows = async () => {
+    const all = await fetchAllRecords();
+    if (!all.length) notifications.show({ message: 'No data to export', color: 'yellow' });
+    return all;
+  };
+
+  const handleExportCSV = async () => {
+    const all = await loadExportRows();
+    if (!all.length) return;
+    const csv = [EXPORT_HEADERS, ...all.map(exportRow)].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'member-register.csv'; a.click();
     URL.revokeObjectURL(url);
     notifications.show({ title: 'Exported', message: 'CSV downloaded successfully', color: 'green' });
+  };
+
+  const handleDownloadExcel = async () => {
+    const all = await loadExportRows();
+    if (!all.length) return;
+    const ws = XLSX.utils.aoa_to_sheet([EXPORT_HEADERS, ...all.map(exportRow)]);
+    ws['!cols'] = EXPORT_HEADERS.map(h => ({ wch: Math.max(h.length + 2, 12) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Member Register');
+    XLSX.writeFile(wb, `member-register_${dayjs().format('YYYYMMDD_HHmm')}.xlsx`);
+    notifications.show({ title: 'Downloaded', message: 'Excel file downloaded successfully', color: 'green' });
   };
 
   // ── Sort Icon ──────────────────────────────────────────────────────────────
@@ -774,10 +793,16 @@ const MemberRegister = () => {
               </Button>
             </Group>
             <Group gap={6}>
+              <Button size="xs" variant="light" color="teal" style={{ flex: 1 }}
+                leftSection={<IconDownload size={13} />} onClick={handleDownloadExcel}>
+                Download
+              </Button>
               <Button size="xs" variant="light" color="green" style={{ flex: 1 }}
                 leftSection={<IconFileSpreadsheet size={13} />} onClick={handleExportCSV}>
                 Export
               </Button>
+            </Group>
+            <Group gap={6}>
               <Button size="xs" variant="light" color="violet" style={{ flex: 1 }}
                 leftSection={<IconPrinter size={13} />}
                 onClick={handlePrint} loading={printing}>
@@ -825,9 +850,14 @@ const MemberRegister = () => {
                   <IconX size={12} />
                 </ActionIcon>
               ) : null} />
-            <Tooltip label="Export CSV">
-              <ActionIcon size="lg" variant="light" color="green" onClick={handleExportCSV} radius="md">
+            <Tooltip label="Download (Excel)">
+              <ActionIcon size="lg" variant="light" color="teal" onClick={handleDownloadExcel} radius="md">
                 <IconDownload size={16} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label="Export (CSV)">
+              <ActionIcon size="lg" variant="light" color="green" onClick={handleExportCSV} radius="md">
+                <IconFileSpreadsheet size={16} />
               </ActionIcon>
             </Tooltip>
             <Tooltip label="Print Report">

@@ -248,7 +248,9 @@ const SidePanel = ({
   );
 };
 
-const CashBookEntry = () => {
+// asPopup: rendered inside the MainLayout popup (same model as Milk Purchase)
+// instead of as a routed page — Close then goes through onClose.
+const CashBookEntry = ({ asPopup = false, onClose }) => {
   const [date, setDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [book, setBook] = useState({ openingBalance: 0, totalReceipts: 0, totalPayments: 0, closingBalance: 0, rows: [], cashLedger: null });
   const [fetching, setFetching] = useState(false);
@@ -474,8 +476,11 @@ const CashBookEntry = () => {
 
   const thStyle = { padding: '8px 10px', fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap' };
 
+  const Root = asPopup ? Box : Container;
+  const rootProps = asPopup ? { p: 'sm', style: { background: '#f8fafc', minHeight: '100%' } } : { size: 1500, py: 'sm', px: 'md' };
+
   return (
-    <Container size={1500} py="sm" px="md">
+    <Root {...rootProps}>
       <LoadingOverlay visible={saving} overlayProps={{ blur: 2 }} />
 
       {/* =============== HEADER — DATE NAVIGATION =============== */}
@@ -520,6 +525,12 @@ const CashBookEntry = () => {
           <Group gap={6}>
             <Badge variant="filled" color="teal" size="sm" radius="sm">{receiptCount} Receipt</Badge>
             <Badge variant="filled" color="red" size="sm" radius="sm">{paymentCount} Payment</Badge>
+            {asPopup && (
+              <Button size="xs" variant="light" color="red" leftSection={<IconX size={14} />} onClick={onClose}
+                ml={6} styles={{ root: { height: 30, fontWeight: 700 } }}>
+                Close
+              </Button>
+            )}
           </Group>
         </Flex>
       </Paper>
@@ -704,6 +715,7 @@ const CashBookEntry = () => {
         title={<Group gap="xs"><IconEye size={18} /><Text fw={600} size="sm">Transaction Details</Text></Group>}
         size="lg"
         centered
+        zIndex={320}  // above the Cash Book Entry popup itself
       >
         {detailRow && (() => {
           const v = detailRow.voucher;
@@ -811,7 +823,7 @@ const CashBookEntry = () => {
           );
         })()}
       </Modal>
-    </Container>
+    </Root>
   );
 };
 

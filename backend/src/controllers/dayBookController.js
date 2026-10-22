@@ -11,6 +11,21 @@ import Sales from '../models/Sales.js';
 import IncentiveRegister from '../models/IncentiveRegister.js';
 import BonusRegister from '../models/BonusRegister.js';
 import { updateLedgerBalances } from '../utils/accountingHelper.js';
+import { getCashInHandOpening } from '../utils/cashInHandOpening.js';
+
+// Display order within a day (stable): Producer Due / Milk Purchase first, then
+// the other automatic (system-generated) entries, then manual voucher entries.
+// Shared with the Cash Book report.
+const PRIORITY_LEDGER = /producers?['’]?\s*dues?|milk\s*purchase/i;
+export const dayBookEntryRank = (e) => {
+  if (e.isManual) return 2;
+  if (e.voucherType === 'MilkPurchase' || e.voucherType === 'ProducersDue' || PRIORITY_LEDGER.test(e.ledgerName || '')) return 0;
+  return 1;
+};
+export const orderDayBookEntries = (list) =>
+  list.map((e, i) => ({ e, i }))
+    .sort((a, b) => (dayBookEntryRank(a.e) - dayBookEntryRank(b.e)) || (a.i - b.i))
+    .map(x => x.e);
 
 // Get Day Book report with date-wise grouping
 export const getDayBook = async (req, res) => {
@@ -41,37 +56,10 @@ export const getDayBook = async (req, res) => {
       .sort({ voucherDate: 1, voucherNumber: 1 })
       .populate('entries.ledgerId', 'ledgerName ledgerType');
 
-    // --- Calculate opening balance from Cash/Bank ledgers before startDate ---
-    const cashBankLedgers = await Ledger.find({
-      companyId,
-      ledgerType: { $in: ['Cash', 'Bank'] },
-      status: 'Active'
-    });
-
-    // Start with ledger opening balances (Dr = positive, Cr = negative for asset accounts)
-    let openingBalance = 0;
-    for (const ledger of cashBankLedgers) {
-      const bal = ledger.openingBalance || 0;
-      openingBalance += ledger.openingBalanceType === 'Dr' ? bal : -bal;
-    }
-
-    // Add net effect of all vouchers before startDate on Cash/Bank accounts
-    const cashBankLedgerIds = cashBankLedgers.map(l => l._id.toString());
-
-    const preVouchers = await Voucher.find({
-      companyId,
-      voucherDate: { $lt: start }
-    }).populate('entries.ledgerId', 'ledgerName ledgerType');
-
-    for (const voucher of preVouchers) {
-      for (const entry of voucher.entries) {
-        const ledgerId = entry.ledgerId?._id?.toString();
-        if (ledgerId && cashBankLedgerIds.includes(ledgerId)) {
-          // For asset accounts: debit increases, credit decreases
-          openingBalance += (entry.debitAmount || 0) - (entry.creditAmount || 0);
-        }
-      }
-    }
+    // --- Opening balance: Cash in Hand ledger's opening + cash legs before startDate ---
+    // (Bank ledgers used to be summed in too, which inflated the Day Book opening;
+    // Day Book, Cash Book and Cash Book Entry now share one source.)
+    const { openingBalance } = await getCashInHandOpening(companyId, start);
 
     // --- Categorize entries into Receipt and Payment, grouped by date ---
     const dateMap = {};
@@ -205,7 +193,9 @@ export const getDayBook = async (req, res) => {
           ledgerName: entry.ledgerName,
           ledgerType,
           narration: entry.narration || voucher.narration,
-          voucherId: voucher._id
+          voucherId: voucher._id,
+          // Typed in by a user (Receipt / Payment / Journal voucher screens) — listed after automatic entries
+          isManual: !voucher.referenceType || voucher.referenceType === 'Manual'
         };
 
         if (isReceiptVoucher) {
@@ -1201,6 +1191,8 @@ export const getDayBook = async (req, res) => {
 
     for (const dateKey of sortedDates) {
       const day = dateMap[dateKey];
+      day.receiptSide = orderDayBookEntries(day.receiptSide);
+      day.paymentSide = orderDayBookEntries(day.paymentSide);
       day.openingBalance = runningBalance;
       day.closingBalance = runningBalance + day.totalReceipts - day.totalPayments;
       runningBalance = day.closingBalance;

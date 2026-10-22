@@ -188,10 +188,9 @@ export default function MilkSales({ asPopup = false, inFront = true, onSwap, onC
       const isFormEl = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ae?.isContentEditable;
       const withMod  = e.ctrlKey || e.metaKey;
 
-      let bothOpened = false;
-      try { bothOpened = !!sessionStorage.getItem('milkPurchase_opened') && !!sessionStorage.getItem('milkSales_opened'); } catch { /* ignore */ }
+      // Numeric fields never accept letters, so a plain S/P there is always the shortcut
       const isNumericField = ae?.inputMode === 'decimal' || ae?.inputMode === 'numeric';
-      const canPlainSwap = !isFormEl || (bothOpened && isNumericField);
+      const canPlainSwap = !isFormEl || isNumericField;
       if (!withMod && !canPlainSwap) return;     // typing letters in a free-text field
 
       e.preventDefault();

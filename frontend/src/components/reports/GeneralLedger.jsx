@@ -18,6 +18,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import A4PrintPreview from './shared/A4PrintPreview';
 import { buildGeneralLedgerPrintHtml } from './generalLedgerPrint';
+import { RPT, RPT_FONT } from './shared/reportTypography';
 
 /* ── number formatting ──────────────────────────────────────── */
 const fmt = (v) => {
@@ -31,15 +32,16 @@ const fmtA = (v) =>
 /* ── register grid styles ───────────────────────────────────────
    Only the header row is shaded; data rows stay plain white. Month, total
    and balance rows are set apart with bold text and heavier rules. */
-const FONT = "'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+// Typography = Receipt & Disbursement standard (shared/reportTypography.js)
+const FONT = RPT_FONT;
 const LINE = '1px solid #9AA0A6';
 const RULE = '1.5px solid #3A3F47';
 
 const S = {
   base: {
     fontFamily: FONT,
-    fontSize: 13,
-    padding: '5px 8px',
+    fontSize: RPT.body,
+    padding: '4px 8px',
     verticalAlign: 'middle',
     border: LINE,
     background: '#fff',
@@ -49,7 +51,10 @@ const S = {
   day: { textAlign: 'center', fontWeight: 600 },
   desc: { textAlign: 'left' },
   bal: { fontWeight: 700 },
-  balType: { fontSize: 11, fontWeight: 600, marginLeft: 4 },
+  balType: { fontSize: RPT.small, fontWeight: 600, marginLeft: 4 },
+  // Head of Account (contra ledger) in the Description column — a touch larger
+  // than the other columns; single line, so the row height doesn't grow
+  head: { fontSize: '10.75pt', fontWeight: 600 },
   total: { fontWeight: 700, borderTop: RULE, borderBottom: RULE },
   grand: { fontWeight: 700, borderTop: RULE, borderBottom: '3px double #3A3F47' },
 };
@@ -60,7 +65,7 @@ const TH = {
   padding: '7px 6px',
   fontFamily: FONT,
   fontWeight: 700,
-  fontSize: 12,
+  fontSize: RPT.th,
   letterSpacing: 0.5,
   textTransform: 'uppercase',
   color: '#1a1a1a',
@@ -354,47 +359,37 @@ const GeneralLedger = () => {
       >
         {/* ── HEADER ── */}
         <Box style={{ textAlign: 'center', padding: '16px 24px 12px', borderBottom: '1.5px solid #3A3F47' }}>
-          <Text style={{ fontFamily: FONT, fontSize: 20, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', lineHeight: 1.3 }}>
+          <Text style={{ fontFamily: FONT, fontSize: RPT.org, fontWeight: 400, textTransform: 'uppercase', lineHeight: 1.35 }}>
             {companyName}
           </Text>
-          {societyCode && <Text style={{ fontFamily: FONT, fontSize: 13 }}>Society Code: {societyCode}</Text>}
-          {societyPlace && <Text style={{ fontFamily: FONT, fontSize: 13 }}>{societyPlace}</Text>}
-          <Box my={8}>
+          {societyCode && <Text style={{ fontFamily: FONT, fontSize: RPT.body }}>Society Code: {societyCode}</Text>}
+          {societyPlace && <Text style={{ fontFamily: FONT, fontSize: RPT.body }}>{societyPlace}</Text>}
+          <Box my={4}>
             <Text
               component="span"
-              style={{
-                display: 'inline-block',
-                fontFamily: FONT,
-                fontSize: 15,
-                fontWeight: 700,
-                letterSpacing: 6,
-                textTransform: 'uppercase',
-                padding: '3px 22px',
-                borderTop: '1.5px solid #3A3F47',
-                borderBottom: '1.5px solid #3A3F47',
-              }}
+              style={{ fontFamily: FONT, fontSize: RPT.title, fontWeight: 700, textTransform: 'uppercase', textDecoration: 'underline' }}
             >
               GENERAL LEDGER
             </Text>
           </Box>
           <Group justify="space-between" align="flex-end" pt={6} px={4}>
             <Stack gap={2} style={{ textAlign: 'left' }}>
-              <Text style={{ fontFamily: FONT, fontSize: 15 }}>
+              <Text style={{ fontFamily: FONT, fontSize: '11pt' }}>
                 <Text component="span" fw={600} inherit>Head of Account : </Text>
-                <Text component="span" fw={700} tt="uppercase" inherit style={{ fontSize: 17, letterSpacing: 0.5 }}>
+                <Text component="span" fw={700} tt="uppercase" inherit style={{ fontSize: '13.5pt', letterSpacing: 0.5 }}>
                   {processedData.ledgerName}
                 </Text>
               </Text>
-              <Text style={{ fontFamily: FONT, fontSize: 13 }} c="dimmed">
+              <Text style={{ fontFamily: FONT, fontSize: RPT.small }} c="dimmed">
                 Period : {formatDate(fromDate)} to {formatDate(toDate)}
               </Text>
             </Stack>
             <Stack gap={2} style={{ textAlign: 'right' }}>
-              <Text style={{ fontFamily: FONT, fontSize: 14 }}>
+              <Text style={{ fontFamily: FONT, fontSize: RPT.body }}>
                 <Text component="span" fw={600} inherit>F.Y. : </Text>
                 <Text component="span" fw={700} inherit>{getFinancialYear()}</Text>
               </Text>
-              <Text style={{ fontFamily: FONT, fontSize: 13 }} c="dimmed">Ledger Type : {processedData.ledgerType}</Text>
+              <Text style={{ fontFamily: FONT, fontSize: RPT.small }} c="dimmed">Ledger Type : {processedData.ledgerType}</Text>
             </Stack>
           </Group>
         </Box>
@@ -477,9 +472,9 @@ const GeneralLedger = () => {
                       style={{ ...S.base, ...S.desc, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 0 }}
                       title={row.particulars}
                     >
-                      {row.particulars}
+                      <span style={S.head}>{row.particulars}</span>
                       {row.narration && (
-                        <span style={{ display: 'block', fontSize: 11.5, color: '#555', fontStyle: 'italic', marginTop: 1 }}>
+                        <span style={{ display: 'block', fontSize: RPT.small, color: '#555', fontStyle: 'italic', marginTop: 1 }}>
                           {row.narration}
                         </span>
                       )}
@@ -521,19 +516,19 @@ const GeneralLedger = () => {
           </tbody>
         </table>
 
-        {/* ── FOOTER: President centred, Secretary beside it, Generated On ── */}
+        {/* ── FOOTER: President (left) | Generated On (centred) | Secretary (right) — same as print ── */}
         <Box style={{ padding: '30px 24px 10px', borderTop: '1.5px solid #3A3F47', fontFamily: FONT }}>
-          <Box style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr' }}>
-            <Box style={{ gridColumn: 2, minWidth: 150, borderTop: '1px solid #3A3F47', paddingTop: 3, textAlign: 'center', fontSize: 13, fontWeight: 600 }}>
+          <Box style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'end' }}>
+            <Box style={{ justifySelf: 'start', minWidth: 150, borderTop: '1px solid #3A3F47', paddingTop: 3, textAlign: 'center', fontSize: RPT.body, fontWeight: 700 }}>
               President
             </Box>
-            <Box style={{ gridColumn: 3, justifySelf: 'start', marginLeft: 60, minWidth: 150, borderTop: '1px solid #3A3F47', paddingTop: 3, textAlign: 'center', fontSize: 13, fontWeight: 600 }}>
+            <Box style={{ justifySelf: 'center', textAlign: 'center', fontSize: RPT.small, color: '#555' }}>
+              Generated On : {dayjs(generatedAt).format('DD/MM/YYYY HH:mm:ss')}
+            </Box>
+            <Box style={{ justifySelf: 'end', minWidth: 150, borderTop: '1px solid #3A3F47', paddingTop: 3, textAlign: 'center', fontSize: RPT.body, fontWeight: 700 }}>
               Secretary
             </Box>
           </Box>
-          <Text mt={8} style={{ fontFamily: FONT, fontSize: 11.5, color: '#555' }}>
-            Generated On : {dayjs(generatedAt).format('DD/MM/YYYY HH:mm:ss')}
-          </Text>
         </Box>
       </Box>
     );
