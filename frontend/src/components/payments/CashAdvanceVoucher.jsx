@@ -80,6 +80,8 @@ const CashAdvanceVoucher = () => {
   const navigate = useNavigate();
   const farmerFieldRef = useRef(null);
   const amountRef      = useRef(null);
+  const saveRef        = useRef(null);
+  const farmerIdRef    = useRef(null);   // latest picked producer, readable inside key handlers
 
   const handlePrint = useReactToPrint({
     contentRef: printRef,
@@ -117,6 +119,7 @@ const CashAdvanceVoucher = () => {
     remarks:                '',
   });
   const [form, setForm] = useState(emptyForm());
+  farmerIdRef.current = form.farmerId;
   const [errors, setErrors] = useState({});
 
   /* ── F5 → open New Cash Advance modal ──────────────────────────────────
@@ -489,6 +492,8 @@ const CashAdvanceVoucher = () => {
         }}
         onEnterTransitionEnd={() => farmerFieldRef.current?.focus()}
       >
+        {/* Keyboard flow: Producer —Enter/Tab/click→ Advance Amount —Enter→ Save.
+            Tab from Advance Amount follows the normal field order. */}
         <Stack gap="md">
 
           {/* ── Balance Summary Cards ── always shown (zeros until a producer
@@ -543,15 +548,27 @@ const CashAdvanceVoucher = () => {
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
             <Select
               ref={farmerFieldRef}
+              data-autofocus
+              selectFirstOptionOnChange
               label="Producer"
               placeholder="Search and select producer"
               data={farmers}
               value={form.farmerId}
               onChange={v => {
+                farmerIdRef.current = v;
                 setField('farmerId', v);
                 // Producer chosen (typed number + Enter, or clicked) → move
-                // straight to Advance Amount, same as Tab order.
+                // straight to Advance Amount
                 if (v) setTimeout(() => amountRef.current?.focus(), 50);
+              }}
+              onKeyDown={e => {
+                // Tab skips the locked Date / Advance Type fields and lands on Amount
+                if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); amountRef.current?.focus(); return; }
+                // Enter with a producer already picked (dropdown closed) → Amount.
+                // Enter that picks an option is handled by onChange above.
+                if (e.key === 'Enter') {
+                  setTimeout(() => { if (farmerIdRef.current) amountRef.current?.focus(); }, 60);
+                }
               }}
               searchable clearable
               leftSection={<IconUser size={16} color="#666" />}
@@ -586,7 +603,8 @@ const CashAdvanceVoucher = () => {
               value={form.advanceAmount}
               onChange={v => setField('advanceAmount', v)}
               onKeyDown={e => {
-                if (e.key === 'Enter') { e.preventDefault(); handleSubmit(); }
+                // Enter → focus Save (a second Enter saves); Tab keeps the normal order
+                if (e.key === 'Enter') { e.preventDefault(); saveRef.current?.focus(); }
               }}
               leftSection={<IconCurrencyRupee size={16} color="#666" />}
               min={1}
@@ -743,6 +761,7 @@ const CashAdvanceVoucher = () => {
               Cancel
             </Button>
             <Button
+              ref={saveRef}
               leftSection={<IconCheck size={16} />}
               radius="md"
               loading={submitting}

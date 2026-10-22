@@ -16,6 +16,7 @@ import ProducerLoan from '../models/ProducerLoan.js';
 import { getDateRange } from '../utils/dateFilters.js';
 import { findOrCreateLedger } from '../utils/accountingHelper.js';
 import { getCashBankLedgerIds, classifyVoucherEntry } from '../utils/cashAdjustmentClassifier.js';
+import { getCashInHandOpening } from '../utils/cashInHandOpening.js';
 import {
   calculateOpeningBalance,
   calculateClosingBalance,
@@ -61,8 +62,10 @@ export const getCashBook = async (req, res) => {
     const cfSalesLedgerName  = cfSalesLedgerDoc?.ledgerName  || 'CATTLE FEED SALES';
     const cfAdvanceLedgerName = cfAdvLedgerDoc?.ledgerName   || 'CATTLE FEED ADVANCE';
 
-    // Find cash ledger — auto-create if missing
-    let cashLedger = await Ledger.findOne({ ledgerType: 'Cash', status: 'Active', companyId: req.companyId });
+    // Find cash ledger (the one named Cash in Hand first) — auto-create if missing
+    let cashLedger =
+      await Ledger.findOne({ ledgerType: 'Cash', status: 'Active', companyId: req.companyId, ledgerName: { $regex: /^cash\s*in\s*hand$/i } }) ||
+      await Ledger.findOne({ ledgerType: 'Cash', status: 'Active', companyId: req.companyId });
     if (!cashLedger) {
       cashLedger = new Ledger({
         ledgerName: 'Cash in Hand',
@@ -75,14 +78,9 @@ export const getCashBook = async (req, res) => {
       await cashLedger.save();
     }
 
-    // Calculate opening balance
-    const openingBalance = await calculateOpeningBalance(
-      Ledger,
-      Voucher,
-      cashLedger._id,
-      dateFilter.startDate,
-      req.companyId
-    );
+    // Opening balance — Cash in Hand ledger opening + cash legs before the period
+    // (same source as Day Book and Cash Book Entry; cancelled vouchers excluded)
+    const { openingBalance } = await getCashInHandOpening(req.companyId, dateFilter.startDate);
 
     // Get all vouchers affecting cash in the period
     const vouchers = await Voucher.find({
@@ -211,7 +209,9 @@ export const getCashBook = async (req, res) => {
             voucherId: voucher._id,
             debit: isReceipt ? amount : 0,
             credit: isReceipt ? 0 : amount,
-            narration: entry.narration || voucher.narration
+            narration: entry.narration || voucher.narration,
+            // User-entered voucher — the Cash Book lists these after automatic entries
+            isManual: !voucher.referenceType || voucher.referenceType === 'Manual'
           });
         }
       });

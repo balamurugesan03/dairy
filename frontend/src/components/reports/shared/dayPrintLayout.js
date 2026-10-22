@@ -16,6 +16,7 @@
  * margin 0), so content width is identical in preview and print.
  */
 import { escapeHtml } from '../../../utils/printA4';
+import { RPT_FONT, rptPrintSize } from './reportTypography';
 
 const PAD_MM = 8;     // sheet padding (= printed margin)
 const SAFETY_MM = 4;  // slack so rounding never pushes a packed sheet onto two pages
@@ -28,7 +29,8 @@ export const dayLayoutCss = (orientation) => {
   @page { size: A4 ${orientation}; margin: 0; }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { background: #fff; }
-  body { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: ${portrait ? '8.5px' : '9.5px'};
+  /* Typography = Receipt & Disbursement standard (reportTypography.js) */
+  body { font-family: ${RPT_FONT}; color: #000; font-size: ${rptPrintSize(orientation)};
     -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
   .page, .measure { width: ${w}; padding: ${PAD_MM}mm; }
@@ -39,37 +41,38 @@ export const dayLayoutCss = (orientation) => {
   .measure .day + .day { margin-top: ${GAP_MM * 2}mm; }  /* margin only: kept out of the measured height */
 
   .hdr { text-align: center; padding-bottom: 5px; margin-bottom: 6px; border-bottom: 1.5px solid #000; }
-  .hdr__org { font-size: ${portrait ? '14px' : '16px'}; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
-  .hdr__sub { font-size: ${portrait ? '9.5px' : '10.5px'}; margin-top: 1px; }
-  .hdr__title { display: inline-block; margin-top: 4px; padding: 1px 16px; font-size: ${portrait ? '11px' : '12px'};
-    font-weight: 700; letter-spacing: 4px; text-transform: uppercase; border-top: 1px solid #000; border-bottom: 1px solid #000; }
-  .hdr__date { margin-top: 4px; font-size: ${portrait ? '12px' : '13.5px'}; font-weight: 700; }
-  .hdr__contd { font-size: 0.75em; font-weight: 400; font-style: italic; }
-  .hdr__meta { margin-top: 3px; display: flex; justify-content: space-between; font-size: ${portrait ? '8.5px' : '9.5px'}; }
+  .hdr { line-height: 1.35; }
+  .hdr__org { font-size: 1.25em; text-transform: uppercase; }
+  .hdr__sub { font-size: 1em; }
+  .hdr__title { margin-top: 2px; font-size: 1em; font-weight: 700; text-decoration: underline; text-transform: uppercase; }
+  .hdr__date { margin-top: 2px; font-size: 1em; font-weight: 700; }
+  .hdr__contd { font-size: 0.9em; font-weight: 400; font-style: italic; }
+  .hdr__meta { margin-top: 3px; display: flex; justify-content: space-between; font-size: 0.9em; }
 
   .day table { width: 100%; border-collapse: collapse; table-layout: fixed; }
   .day table th, .day table td { border: 0.75px solid #444; padding: 2px 3px; vertical-align: top;
     overflow-wrap: anywhere; word-break: break-word; }
+  /* The header row is the only shaded part — all report content prints on plain white */
   .day table th { background: #e6e6e6; font-weight: 700; text-transform: uppercase; text-align: center; vertical-align: middle;
-    font-size: ${portrait ? '7.5px' : '8.5px'}; }
-  .day table th.side { font-size: ${portrait ? '9px' : '10px'}; letter-spacing: 1px; }
+    font-size: 0.8em; padding: 2px 2px; overflow-wrap: normal; word-break: normal; hyphens: manual; }  /* split only at a soft hyphen (Adjust-ment) */
+  .day table th.side { font-size: 1em; letter-spacing: 1px; }
   .day table thead { display: table-header-group; }
   .day table tr { page-break-inside: avoid; break-inside: avoid; }
   .amt { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .ctr { text-align: center; }
   .split { border-left: 1.75px solid #000 !important; }
-  .narr { display: block; font-size: 0.85em; font-style: italic; color: #333; }
-  .row-txn td { font-weight: 700; background: #f2f2f2; }
-  .day table .row-bal td { font-weight: 700; font-size: 1.3em; text-align: center; vertical-align: middle;
-    color: #0b3d91; background: #dde9fb; padding-top: 3px; padding-bottom: 3px; }
-  .row-grand td { font-weight: 700; background: #e0e0e0; border-top: 1.5px solid #000; border-bottom: 2.5px double #000; }
+  .narr { display: block; font-size: 0.9em; font-style: italic; color: #333; }
+  .row-txn td { font-weight: 700; border-top: 1.5px solid #000; }
+  .day table .row-bal td { font-weight: 700; font-style: italic; text-align: center; vertical-align: middle;
+    padding-top: 3px; padding-bottom: 3px; }
+  .row-grand td { font-weight: 700; border-top: 3px double #000; border-bottom: 3px double #000; }
   .empty td { text-align: center; font-style: italic; color: #444; }
 
   .dsign { margin-top: 8px; break-inside: avoid; page-break-inside: avoid; }
   .dsign__row { display: flex; justify-content: space-between; align-items: flex-end; }
   .dsign__box { min-width: 130px; padding-top: 24px; text-align: center; }
-  .dsign__line { border-top: 1px solid #000; padding-top: 2px; font-size: 10px; font-weight: 700; }
-  .dsign__meta { margin-top: 4px; text-align: center; font-size: ${portrait ? '7.5px' : '8.5px'}; color: #333; }
+  .dsign__line { border-top: 1px solid #000; padding-top: 2px; font-size: 1em; font-weight: 700; }
+  .dsign__meta { margin-top: 4px; text-align: center; font-size: 0.9em; color: #333; }
 
   /* Preview only: draw each page as an A4 sheet on a grey desk. */
   @media screen {

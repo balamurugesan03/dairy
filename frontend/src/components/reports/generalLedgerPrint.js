@@ -10,7 +10,8 @@
  * and print.
  */
 import dayjs from 'dayjs';
-import { escapeHtml, SIGN_CSS, signRowHtml, A4_SIZE } from '../../utils/printA4';
+import { escapeHtml, SIGN3_CSS, signRow3Html, A4_SIZE } from '../../utils/printA4';
+import { RPT_FONT, rptPrintSize } from './shared/reportTypography';
 
 const fmtAmt = (n) =>
   parseFloat(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -25,24 +26,25 @@ const css = (orientation) => {
   @page { size: A4 ${orientation}; margin: ${MARGIN}; }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { background: #fff; }
-  body { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: ${portrait ? '8.5px' : '9.5px'};
+  /* Typography = Receipt & Disbursement standard (shared/reportTypography.js) */
+  body { font-family: ${RPT_FONT}; color: #000; font-size: ${rptPrintSize(orientation)};
     -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
-  .hdr { text-align: center; padding-bottom: 5px; margin-bottom: 6px; border-bottom: 1.5px solid #000; }
-  .hdr__org { font-size: ${portrait ? '14px' : '16px'}; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
-  .hdr__sub { font-size: ${portrait ? '9.5px' : '10.5px'}; margin-top: 1px; }
-  .hdr__title { display: inline-block; margin-top: 4px; padding: 1px 16px; font-size: ${portrait ? '11px' : '12px'};
-    font-weight: 700; letter-spacing: 4px; text-transform: uppercase; border-top: 1px solid #000; border-bottom: 1px solid #000; }
+  .hdr { text-align: center; padding-bottom: 5px; margin-bottom: 6px; border-bottom: 1.5px solid #000; line-height: 1.35; }
+  .hdr__org { font-size: 1.25em; text-transform: uppercase; }
+  .hdr__sub { font-size: 1em; }
+  .hdr__title { margin-top: 2px; font-size: 1em; font-weight: 700; text-decoration: underline; text-transform: uppercase; }
   .hdr__meta { margin-top: 5px; display: flex; justify-content: space-between; align-items: flex-end; text-align: left;
-    font-size: ${portrait ? '8.5px' : '9.5px'}; }
+    font-size: 0.9em; }
   .hdr__meta > div:last-child { text-align: right; }
-  .hdr__head { font-size: ${portrait ? '11px' : '12.5px'}; font-weight: 700; text-transform: uppercase; }
+  .hdr__head { font-size: 1.5em; font-weight: 700; text-transform: uppercase; }
+  .hoa { font-size: 1.07em; font-weight: 600; }
 
   table.gl { width: 100%; border-collapse: collapse; table-layout: fixed; }
   table.gl th, table.gl td { border: 0.75px solid #444; padding: 2px 4px; vertical-align: top;
     overflow-wrap: anywhere; word-break: break-word; }
   table.gl th { background: #e6e6e6; font-weight: 700; text-transform: uppercase; text-align: center; vertical-align: middle;
-    font-size: ${portrait ? '7.5px' : '8.5px'}; }
+    font-size: 0.9em; }
   table.gl thead { display: table-header-group; }
   table.gl tr { page-break-inside: avoid; break-inside: avoid; }
   .amt { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -56,7 +58,7 @@ const css = (orientation) => {
   .row-grand td { font-weight: 700; border-top: 1.5px solid #000; border-bottom: 2.5px double #000; }
   .empty td { text-align: center; font-style: italic; color: #444; padding: 8px; }
 
-  ${SIGN_CSS}
+  ${SIGN3_CSS}
 
   @media print { .page { width: auto; padding: 0; } }
   /* Preview only: draw the report on an A4 sheet on a grey desk. */
@@ -86,7 +88,7 @@ export const buildGeneralLedgerPrintHtml = (data, ctx, orientation = 'landscape'
         <td class="amt">${fmtBlank(r.payment)}</td>
         <td class="amt">${r.payment > 0 ? fmtAmt(r.progPayment) : ''}</td>
         <td class="amt b">${fmtAmt(r.runningBalance)}<span class="bt">${escapeHtml(r.balType)}</span></td>
-        <td>${escapeHtml(r.particulars)}${r.narration ? `<span class="narr">${escapeHtml(r.narration)}</span>` : ''}</td>
+        <td><span class="hoa">${escapeHtml(r.particulars)}</span>${r.narration ? `<span class="narr">${escapeHtml(r.narration)}</span>` : ''}</td>
       </tr>`).join('')}
     <tr class="row-mtot">
       <td></td><td class="amt">${fmtAmt(m.monthReceipt)}</td><td></td>
@@ -135,7 +137,7 @@ export const buildGeneralLedgerPrintHtml = (data, ctx, orientation = 'landscape'
         </tr>
       </tbody>
     </table>
-    ${signRowHtml(ctx.generatedOn)}
+    ${signRow3Html(ctx.generatedOn)}
   </section>`;
 
   return `<!DOCTYPE html>

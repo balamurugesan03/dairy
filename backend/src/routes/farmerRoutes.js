@@ -17,7 +17,8 @@ import {
   bulkImportShares,
   bulkDeleteFarmers,
   getFarmerReport,
-  getProducerReport
+  getProducerReport,
+  getProducerReportOptions
 } from '../controllers/farmerController.js';
 import { protect, addCompanyFilter } from '../middleware/auth.js';
 
@@ -47,6 +48,7 @@ router.get('/report', getFarmerReport);
 
 // Producer report — filterable list with pouring days/qty conditions
 router.get('/producer-report', getProducerReport);
+router.get('/producer-report/options', getProducerReportOptions);
 
 // Farmers eligible for membership (500L supplied or 180-day tenure reached)
 router.get('/eligible-for-membership', getEligibleFarmers);

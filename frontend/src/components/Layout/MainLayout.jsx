@@ -38,6 +38,13 @@ import { MILK_POPUP_EVENT, MILK_POPUP_ROUTES } from '../../utils/milkPopup';
 
 const MilkPurchase = lazy(() => import('../daily-collections/MilkPurchase'));
 const MilkSales    = lazy(() => import('../daily-collections/MilkSales'));
+const CashBookEntry = lazy(() => import('../accounting/CashBookEntry'));
+
+// Cash Book Entry opens as a popup (same model as Milk Purchase), never as a page
+const CASH_BOOK_ENTRY_ROUTE = '/accounting/cash-book-entry';
+// Payment Register Detailed — same popup model; ?from=&to= are handed to the popup
+const PaymentRegisterLedger = lazy(() => import('../payments/PaymentRegisterLedger'));
+const PAYMENT_REGISTER_ROUTE = '/payments/register-ledger';
 
 const MainLayout = () => {
   const [mobileOpened, { toggle: toggleMobile }] = useDisclosure();
@@ -99,6 +106,9 @@ const MainLayout = () => {
     setSalesPopupOpen(false);
     setMilkFront('purchase');
   }, []);
+  const [cashBookPopupOpen, setCashBookPopupOpen] = useState(false);
+  // null = closed; otherwise { from, to, key } (key remounts it for new dates)
+  const [registerPopup, setRegisterPopup] = useState(null);
   const purchaseInFront = purchasePopupOpen && (milkFront === 'purchase' || !salesPopupOpen);
   const salesInFront    = salesPopupOpen    && (milkFront === 'sales'    || !purchasePopupOpen);
 
@@ -111,11 +121,22 @@ const MainLayout = () => {
 
   // The old full-page routes (bookmarks, typed URLs) now open the popup instead
   useEffect(() => {
+    if (location.pathname === PAYMENT_REGISTER_ROUTE) {
+      const q = new URLSearchParams(location.search);
+      setRegisterPopup({ from: q.get('from') || undefined, to: q.get('to') || undefined, key: Date.now() }); // eslint-disable-line react-hooks/set-state-in-effect
+      navigate('/', { replace: true });
+      return;
+    }
+    if (location.pathname === CASH_BOOK_ENTRY_ROUTE) {
+      setCashBookPopupOpen(true); // eslint-disable-line react-hooks/set-state-in-effect
+      navigate('/', { replace: true });
+      return;
+    }
     const which = MILK_POPUP_ROUTES[location.pathname];
     if (!which) return;
     setMilkPopup(which); // eslint-disable-line react-hooks/set-state-in-effect
     navigate('/', { replace: true });
-  }, [location.pathname, navigate, setMilkPopup]);
+  }, [location.pathname, location.search, navigate, setMilkPopup]);
 
   // ── Global hotkeys ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -664,6 +685,8 @@ const MainLayout = () => {
   const handleMenuClick = (key) => {
     // Milk Purchase / Milk Sales open the same popups as F2 / F3
     if (MILK_POPUP_ROUTES[key]) setMilkPopup(MILK_POPUP_ROUTES[key]);
+    else if (key === CASH_BOOK_ENTRY_ROUTE) setCashBookPopupOpen(true);
+    else if (key === PAYMENT_REGISTER_ROUTE) setRegisterPopup({ key: Date.now() });
     else navigate(key);
     if (mobileOpened) {
       toggleMobile();
@@ -1225,6 +1248,78 @@ const MainLayout = () => {
             <MilkSales asPopup inFront={salesInFront} onSwap={setMilkPopup} onClose={closeSalesPopup} />
           </Suspense>
         </Box>
+      </Modal>
+
+      {/* Cash Book Entry popup (Accounts menu) — same popup model as Milk Purchase */}
+      <Modal
+        opened={cashBookPopupOpen}
+        onClose={() => setCashBookPopupOpen(false)}
+        withCloseButton={false}
+        closeOnEscape={false}
+        closeOnClickOutside={false}
+        returnFocus={false}
+        centered
+        radius="md"
+        padding={0}
+        size="97vw"
+        zIndex={220}
+        transitionProps={{ transition: 'fade', duration: 120 }}
+        overlayProps={{ backgroundOpacity: 0.55, blur: 2 }}
+        styles={{
+          content: {
+            height: '95vh', maxHeight: '95vh',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            border: '3px solid #0d9488',
+            boxShadow: '0 24px 60px rgba(15,23,42,0.45)',
+          },
+          body: { flex: 1, minHeight: 0, padding: 0, overflowY: 'auto', overflowX: 'hidden' },
+        }}
+      >
+        <Box data-cashbook-popup style={{ height: '100%' }}>
+          <Suspense fallback={<Center h="100%"><Loader /></Center>}>
+            <CashBookEntry asPopup onClose={() => setCashBookPopupOpen(false)} />
+          </Suspense>
+        </Box>
+      </Modal>
+
+      {/* Payment Register Detailed popup (Producer Dues → Payments) — Milk Purchase popup model */}
+      <Modal
+        opened={!!registerPopup}
+        onClose={() => setRegisterPopup(null)}
+        withCloseButton={false}
+        closeOnEscape={false}
+        closeOnClickOutside={false}
+        returnFocus={false}
+        centered
+        radius="md"
+        padding={0}
+        size="97vw"
+        zIndex={220}
+        transitionProps={{ transition: 'fade', duration: 120 }}
+        overlayProps={{ backgroundOpacity: 0.55, blur: 2 }}
+        styles={{
+          content: {
+            height: '95vh', maxHeight: '95vh',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            border: '3px solid #2c5282',
+            boxShadow: '0 24px 60px rgba(15,23,42,0.45)',
+          },
+          body: { flex: 1, minHeight: 0, padding: 0, overflow: 'hidden' },
+        }}
+      >
+        {registerPopup && (
+          <Box style={{ height: '100%' }}>
+            <Suspense fallback={<Center h="100%"><Loader /></Center>}>
+              <PaymentRegisterLedger
+                key={registerPopup.key}
+                asPopup
+                initialFrom={registerPopup.from}
+                initialTo={registerPopup.to}
+                onClose={() => setRegisterPopup(null)}
+              />
+            </Suspense>
+          </Box>
+        )}
       </Modal>
     </AppShell>
   );

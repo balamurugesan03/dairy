@@ -1354,6 +1354,44 @@ export const getFarmerReport = async (req, res) => {
   }
 };
 
+const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Dropdown values for the Producer Report / Member Register filter panels,
+// taken from the company's own producer records.
+// GET /api/farmers/producer-report/options
+export const getProducerReportOptions = async (req, res) => {
+  try {
+    const companyId = new mongoose.Types.ObjectId(req.companyId);
+    const clean = (arr) => [...new Set(arr.map(v => String(v || '').trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b));
+    const [castes, occupations, categories, bodies] = await Promise.all([
+      Farmer.distinct('personalDetails.caste', { companyId }),
+      Farmer.distinct('farmerType', { companyId }),
+      Farmer.distinct('cowType', { companyId }),
+      Farmer.aggregate([
+        { $match: { companyId, 'address.panchayat': { $nin: [null, ''] } } },
+        { $group: { _id: { $toUpper: { $trim: { input: '$address.panchayat' } } }, wards: { $addToSet: '$address.ward' } } },
+        { $sort: { _id: 1 } }
+      ])
+    ]);
+    res.status(200).json({
+      success: true,
+      data: {
+        castes: clean(castes),
+        occupations: clean(occupations),
+        categories: clean(categories),
+        localBodies: bodies.map(b => ({
+          name: b._id,
+          wards: clean(b.wards).sort((a, b2) => (parseInt(a, 10) || 0) - (parseInt(b2, 10) || 0) || a.localeCompare(b2)),
+        })),
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching producer report options:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error fetching report options' });
+  }
+};
+
 export const getProducerReport = async (req, res) => {
   try {
     const {
@@ -1366,6 +1404,7 @@ export const getProducerReport = async (req, res) => {
       gender = '',
       caste = '',
       farmerType = '',
+      cowType = '',
       dbtHas = '',
       welfareHas = '',
       mobileHas = '',
@@ -1393,8 +1432,13 @@ export const getProducerReport = async (req, res) => {
     if (gender) query['personalDetails.gender'] = gender;
     if (caste) query['personalDetails.caste'] = { $regex: caste, $options: 'i' };
     if (farmerType) query.farmerType = farmerType;
-    if (ward) query['address.ward'] = { $regex: ward, $options: 'i' };
-    if (localBody) query['address.panchayat'] = { $regex: localBody, $options: 'i' };
+    if (cowType) query.cowType = cowType;
+    // Ward: one value (partial match) or a comma-separated list from the Wards
+    // multi-select (exact, case-insensitive)
+    const wardList = String(ward).split(',').map(w => w.trim()).filter(Boolean);
+    if (wardList.length > 1) query['address.ward'] = { $in: wardList.map(w => new RegExp(`^${escapeRegex(w)}$`, 'i')) };
+    else if (wardList.length === 1) query['address.ward'] = { $regex: escapeRegex(wardList[0]), $options: 'i' };
+    if (localBody) query['address.panchayat'] = { $regex: `^\\s*${escapeRegex(String(localBody).trim())}\\s*$`, $options: 'i' };
     if (nameSearch) query['personalDetails.name'] = { $regex: nameSearch, $options: 'i' };
 
     // Presence filters collected into $and

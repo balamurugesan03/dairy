@@ -22,8 +22,23 @@ import * as XLSX from 'xlsx';
 import A4PrintPreview from './shared/A4PrintPreview';
 import { buildCashBookPrintHtml } from './cashBookPrint';
 import useSocietyHeader from './shared/useSocietyHeader';
+import { RPT, RPT_FONT } from './shared/reportTypography';
 
-const CB_FONT = "'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+// Display order within a day (stable): Producer Due / Milk Purchase / producer
+// payments first, then other automatic entries, then manual voucher entries.
+const PRIORITY_RE = /producers?['’]?\s*dues?|milk\s*purchase/i;
+const cashBookRank = (e) => {
+  if (e.isManual) return 2;
+  if (['MilkPurchase', 'ProducersDue', 'FarmerPayment'].includes(e.voucherType) || PRIORITY_RE.test(e.description || '')) return 0;
+  return 1;
+};
+const orderCashBookEntries = (list) =>
+  list.map((e, i) => ({ e, i }))
+    .sort((a, b) => (cashBookRank(a.e) - cashBookRank(b.e)) || (a.i - b.i))
+    .map(x => x.e);
+
+// Typography = Receipt & Disbursement standard (shared/reportTypography.js)
+const CB_FONT = RPT_FONT;
 const CB_LINE = '1px solid #9AA0A6';
 const CB_RULE = '1.5px solid #3A3F47';
 
@@ -155,6 +170,7 @@ const CashBook = () => {
           narration: txn.narration || '',
           voucherId: txn.voucherId || null,
           voucherType: txn.voucherType || null,
+          isManual: !!txn.isManual,
           entryDate: dateKey
         });
       }
@@ -166,9 +182,15 @@ const CashBook = () => {
           narration: txn.narration || '',
           voucherId: txn.voucherId || null,
           voucherType: txn.voucherType || null,
+          isManual: !!txn.isManual,
           entryDate: dateKey
         });
       }
+    }
+    // Same order as the Day Book: Producer Due / Milk Purchase, other automatic, then manual
+    for (const group of dayMap.values()) {
+      group.receipts = orderCashBookEntries(group.receipts);
+      group.payments = orderCashBookEntries(group.payments);
     }
 
     const cards = [];
@@ -207,12 +229,12 @@ const CashBook = () => {
   // column / row rules. Balance and total rows are set apart by weight + rules.
   const renderSideTable = (side, entries, total, openBal, closeBal) => {
     const isReceipt = side === 'receipt';
-    const cell = { fontFamily: CB_FONT, fontSize: 13, border: CB_LINE, padding: '5px 8px', background: '#fff', color: '#1a1a1a' };
-    const head = { ...cell, background: '#E9ECEF', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6 };
+    const cell = { fontFamily: CB_FONT, fontSize: RPT.body, border: CB_LINE, padding: '5px 8px', background: '#fff', color: '#1a1a1a' };
+    const head = { ...cell, background: '#E9ECEF', fontSize: RPT.th, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6 };
     const num = { textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
     const bold = { fontWeight: 700 };
-    // Opening / Closing Balance: centred, own colour, larger (matches Day Book)
-    const balRow = { fontWeight: 700, fontSize: 15, textAlign: 'center', verticalAlign: 'middle', background: '#DDE9FB', color: '#0B3D91', padding: '7px 8px' };
+    // Opening / Closing Balance: centred, bold italic (R&D standard; matches Day Book)
+    const balRow = { fontWeight: 700, fontStyle: 'italic', fontSize: RPT.body, textAlign: 'center', verticalAlign: 'middle', background: '#DDE9FB', color: '#0B3D91', padding: '5px 8px' };
     const balLabel = isReceipt ? 'Opening Balance' : 'Closing Balance';
     const balAmt = isReceipt ? openBal : closeBal;
 
@@ -227,7 +249,7 @@ const CashBook = () => {
           </colgroup>
           <thead>
             <tr>
-              <th colSpan={4} style={{ ...head, fontSize: 13, letterSpacing: 2, textAlign: 'center' }}>
+              <th colSpan={4} style={{ ...head, letterSpacing: 2, textAlign: 'center' }}>
                 {isReceipt ? 'Receipt (Dr)' : 'Payment (Cr)'}
               </th>
             </tr>
@@ -249,9 +271,9 @@ const CashBook = () => {
               entries.map((entry, idx) => (
                 <tr key={idx}>
                   <td title={entry.description} style={{ ...cell, overflow: 'hidden', maxWidth: 0 }}>
-                    <Text className="cb-desc" fz={13} fw={500} truncate style={{ fontFamily: CB_FONT }}>{entry.description}</Text>
+                    <Text className="cb-desc" fz={RPT.body} fw={500} truncate style={{ fontFamily: CB_FONT }}>{entry.description}</Text>
                     {entry.narration && (
-                      <Text className="cb-narr" fz={11.5} c="dimmed" fs="italic" style={{ whiteSpace: 'pre-line', fontFamily: CB_FONT }}>{entry.narration}</Text>
+                      <Text className="cb-narr" fz={RPT.small} c="dimmed" fs="italic" style={{ whiteSpace: 'pre-line', fontFamily: CB_FONT }}>{entry.narration}</Text>
                     )}
                   </td>
                   <td style={{ ...cell, textAlign: 'center', color: '#555' }}>{entry.voucherNumber}</td>
@@ -306,34 +328,20 @@ const CashBook = () => {
     >
       {/* Header */}
       <Box ta="center" px="lg" pt="md" pb={10} style={{ borderBottom: CB_RULE, color: '#1a1a1a' }}>
-        <Text fz={18} fw={700} tt="uppercase" style={{ letterSpacing: 1.5, fontFamily: CB_FONT }}>
+        <Text fz={RPT.org} fw={400} tt="uppercase" style={{ fontFamily: CB_FONT }}>
           {companyName}
         </Text>
-        {societyCode && <Text fz={12} fw={500} style={{ fontFamily: CB_FONT }}>Society Code: {societyCode}</Text>}
-        {societyPlace && <Text fz={12} fw={500} style={{ fontFamily: CB_FONT }}>{societyPlace}</Text>}
-        <Box mt={6} mb={4}>
-          <Text
-            component="span"
-            display="inline-block"
-            fz={14}
-            fw={700}
-            tt="uppercase"
-            px={20}
-            py={3}
-            style={{
-              fontFamily: CB_FONT,
-              letterSpacing: 6,
-              borderTop: CB_RULE,
-              borderBottom: CB_RULE,
-            }}
-          >
+        {societyCode && <Text fz={RPT.body} style={{ fontFamily: CB_FONT }}>Society Code: {societyCode}</Text>}
+        {societyPlace && <Text fz={RPT.body} style={{ fontFamily: CB_FONT }}>{societyPlace}</Text>}
+        <Box mt={2}>
+          <Text component="span" fz={RPT.title} fw={700} tt="uppercase" td="underline" style={{ fontFamily: CB_FONT }}>
             CASH BOOK
           </Text>
         </Box>
-        <Text fz={15} fw={600} mt={4} style={{ fontFamily: CB_FONT }}>{dayjs(card.date).format('DD / MM / YYYY  (dddd)')}</Text>
+        <Text fz={RPT.body} fw={700} mt={2} style={{ fontFamily: CB_FONT }}>{dayjs(card.date).format('DD / MM / YYYY  (dddd)')}</Text>
         <Group justify="space-between" px={40} mt={6} style={{ fontVariantNumeric: 'tabular-nums' }}>
-          <Text fz={12.5} fw={600} style={{ fontFamily: CB_FONT }}>Opening: {fmtAlways(card.openingBalance)}</Text>
-          <Text fz={12.5} fw={600} style={{ fontFamily: CB_FONT }}>Closing: {fmtAlways(card.closingBalance)}</Text>
+          <Text fz={RPT.body} fw={700} fs="italic" style={{ fontFamily: CB_FONT }}>Opening: {fmtAlways(card.openingBalance)}</Text>
+          <Text fz={RPT.body} fw={700} fs="italic" style={{ fontFamily: CB_FONT }}>Closing: {fmtAlways(card.closingBalance)}</Text>
         </Group>
       </Box>
 
@@ -349,14 +357,14 @@ const CashBook = () => {
 
       {/* Signatures under every date — President left, Secretary right, Generated date centred */}
       <Box style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', padding: '26px 24px 6px', borderTop: CB_LINE }}>
-        <Box style={{ minWidth: 150, borderTop: '1px solid #3A3F47', paddingTop: 3, textAlign: 'center', fontSize: 12.5, fontWeight: 600 }}>
+        <Box style={{ minWidth: 150, borderTop: '1px solid #3A3F47', paddingTop: 3, textAlign: 'center', fontSize: RPT.body, fontWeight: 700 }}>
           President
         </Box>
-        <Box style={{ minWidth: 150, borderTop: '1px solid #3A3F47', paddingTop: 3, textAlign: 'center', fontSize: 12.5, fontWeight: 600 }}>
+        <Box style={{ minWidth: 150, borderTop: '1px solid #3A3F47', paddingTop: 3, textAlign: 'center', fontSize: RPT.body, fontWeight: 700 }}>
           Secretary
         </Box>
       </Box>
-      <Text ta="center" fz={11} c="dimmed" pb={10} style={{ fontFamily: CB_FONT }}>
+      <Text ta="center" fz={RPT.small} c="dimmed" pb={10} style={{ fontFamily: CB_FONT }}>
         Generated On : {dayjs(generatedDate).format('DD/MM/YYYY HH:mm:ss')} | By ADM
       </Text>
     </Paper>

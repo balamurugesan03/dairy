@@ -4,7 +4,7 @@
  * Keyboard: Member No Enter→lookup, Tab→LTR→FAT→CLR→SNF, Enter=Save, Enter again=Print
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { io as socketIO } from 'socket.io-client';
 import {
@@ -185,10 +185,33 @@ const printBill = (entry, dateStr, shift, centerName) => {
 
 // ── Small stat card for 10-day avg ───────────────────────────────────────────
 const AvgCard = ({ label, value, unit, icon, color, bg }) => (
-  <Box style={{ background: bg, border: `1.5px solid ${color}33`, borderRadius: 10, padding: '10px 14px', textAlign: 'center', flex: 1 }}>
-    <Group gap={4} justify="center" mb={4}>{icon}<Text size="10px" fw={700} c={color} tt="uppercase" style={{ letterSpacing: '0.5px' }}>{label}</Text></Group>
-    <Text size="22px" fw={900} style={{ color, lineHeight: 1 }}>{value}</Text>
-    {unit && <Text size="9px" c="dimmed" mt={2}>{unit}</Text>}
+  <Box style={{ background: bg, border: `1.5px solid ${color}33`, borderRadius: 8, padding: '4px 8px', textAlign: 'center', flex: 1 }}>
+    <Group gap={4} justify="center" mb={2}>{icon}<Text size="10px" fw={700} c={color} tt="uppercase" style={{ letterSpacing: '0.5px' }}>{label}</Text></Group>
+    <Text size="18px" fw={900} style={{ color, lineHeight: 1.1 }}>{value}</Text>
+    {unit && <Text size="9px" c="dimmed">{unit}</Text>}
+  </Box>
+);
+
+// ── Farmer search dropdown (shared by Farmer No and Farmer Name fields) ─────
+const FarmerDropdown = ({ boxRef, results, hiIdx, onPick }) => results.length > 0 && (
+  <Box ref={boxRef} style={{ position: 'absolute', top: '100%', left: 0, width: 280, zIndex: 2000, background: 'white', border: '1.5px solid #bfdbfe', borderRadius: 10, boxShadow: '0 8px 24px rgba(37,99,235,0.12)', maxHeight: 220, overflowY: 'auto', marginTop: 3 }}>
+    {results.map((f, idx) => (
+      <Box key={f._id} onMouseDown={e => e.preventDefault()} onClick={() => onPick(f)}
+        style={{ padding: '6px 12px', cursor: 'pointer', borderBottom: idx < results.length - 1 ? '1px solid #f1f5f9' : 'none', background: idx === hiIdx ? '#eff6ff' : 'white' }}
+      >
+        <Group gap={8} wrap="nowrap">
+          <Avatar size={24} radius="xl" color="blue" variant="light"><IconUser size={12} /></Avatar>
+          <Box style={{ flex: 1, minWidth: 0 }}>
+            <Text size="12px" fw={700} style={{ lineHeight: 1.2 }}>{f.personalDetails?.name || 'Unknown'}</Text>
+            <Group gap={4}>
+              <Badge size="xs" color="blue" radius="sm">{f.farmerNumber}</Badge>
+              {f.memberId && f.memberId !== f.farmerNumber && <Badge size="xs" color="violet" radius="sm" variant="outline">M:{f.memberId}</Badge>}
+              {f.personalDetails?.phone && <Text size="9px" c="dimmed">{f.personalDetails.phone}</Text>}
+            </Group>
+          </Box>
+        </Group>
+      </Box>
+    ))}
   </Box>
 );
 
@@ -244,14 +267,11 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
   // Keyboard swap:
   //   • Ctrl/⌘ + S | plain S → Milk Sales
   //   • Ctrl/⌘ + P | plain P → Milk Purchase (this page)
-  // Once BOTH F2 (Milk Purchase) and F3 (Milk Sales) have been opened in this
-  // session, plain S/P also swap screens instantly from INSIDE a numeric
-  // entry field (LTR/Water/FAT/CLR/SNF) — those never accept letters anyway
-  // (Mantine's NumberInput sets inputMode="decimal"), so hijacking the key
-  // there never eats a real keystroke. Free-text fields (Farmer No / Name
-  // search, etc.) still need Ctrl, so typing a farmer's name containing
-  // 'p' or 's' isn't hijacked. Outside any form element, plain S/P have
-  // always worked with no modifier and no such prerequisite.
+  // Plain S/P also swap screens from INSIDE a numeric field (Farmer No,
+  // LTR/Water/FAT/CLR/SNF) — those never accept letters (inputMode numeric /
+  // decimal), so hijacking the key never eats a real keystroke. The free-text
+  // Farmer Name search still needs Ctrl, so typing a name containing 'p' or
+  // 's' isn't hijacked.
   useEffect(() => {
     try { sessionStorage.setItem('milkPurchase_opened', '1'); } catch { /* ignore */ }
 
@@ -266,10 +286,10 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
       const isFormEl = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ae?.isContentEditable;
       const withMod  = e.ctrlKey || e.metaKey;
 
-      let bothOpened = false;
-      try { bothOpened = !!sessionStorage.getItem('milkPurchase_opened') && !!sessionStorage.getItem('milkSales_opened'); } catch { /* ignore */ }
+      // Numeric fields (Farmer No, LTR, FAT, …) never accept letters, so a plain
+      // S/P there is always the shortcut; only the Name search keeps the letter
       const isNumericField = ae?.inputMode === 'decimal' || ae?.inputMode === 'numeric';
-      const canPlainSwap = !isFormEl || (bothOpened && isNumericField);
+      const canPlainSwap = !isFormEl || isNumericField;
       if (!withMod && !canPlainSwap) return;     // typing letters in a free-text field
 
       e.preventDefault();
@@ -294,6 +314,9 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
   const [agent,  setAgent]  = useState(() => _mpf().agent  || '');
 
   const [memberInput,   setMemberInput]   = useState(() => _mpf().memberInput || '');
+  const [nameInput,     setNameInput]     = useState('');      // Farmer Name search (shows producer.name once selected)
+  const [searchSource,  setSearchSource]  = useState('no');    // which field the dropdown belongs to: 'no' | 'name'
+  const [hiIdx,         setHiIdx]         = useState(0);       // keyboard-highlighted dropdown row
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [showDropdown,  setShowDropdown]  = useState(false);
@@ -358,6 +381,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
   }); // true immediately on return navigation; false only on first visit
 
   const memberRef   = useRef(null);
+  const nameRef     = useRef(null);
   const dropdownRef = useRef(null);
   const ltrRef      = useRef(null);
   const waterRef    = useRef(null);
@@ -467,7 +491,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
   const [displayConnected, setDisplayConnected] = useState(false);
   const [displayStarting,  setDisplayStarting]  = useState(false);
   const displaySendTimerRef = useRef(null);  // debounce for display sends
-  formRef.current = { producer, ltr, water, fat, clr, snf, date, shift, center, agent, calcResult, editingId, speakEnabled, speakLang, entries, dupBlocked, entryMode, manualRate, manualAmount, activeTimeIncentive, activeShiftIncentives, cpMode, scaleConnected, displayConnected, milmaLookedUpRate, paramCombo, activeChart };
+  formRef.current = { producer, memberInput, nameInput, ltr, water, fat, clr, snf, date, shift, center, agent, calcResult, editingId, speakEnabled, speakLang, entries, dupBlocked, entryMode, manualRate, manualAmount, activeTimeIncentive, activeShiftIncentives, cpMode, scaleConnected, displayConnected, milmaLookedUpRate, paramCombo, activeChart };
 
   // ── Send to LED Display whenever entry values change ──────────────────────
   useEffect(() => {
@@ -1217,7 +1241,10 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
 
   // Close dropdown on outside click
   useEffect(() => {
-    const h = (e) => { if (dropdownRef.current && !dropdownRef.current.contains(e.target) && memberRef.current && !memberRef.current.contains(e.target)) setShowDropdown(false); };
+    const h = (e) => {
+      const inside = [dropdownRef, memberRef, nameRef].some(r => r.current?.contains(e.target));
+      if (!inside) setShowDropdown(false);
+    };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
@@ -1268,27 +1295,53 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
     return () => document.removeEventListener('keydown', block, true);
   }, [dupBlocked]);
 
-  // Search debounce — skip when producer already selected with this number
+  // Farmer search. Farmer No (digits) and Name are separate fields; numeric
+  // lookups are cached so re-entering a number needs no round trip.
+  const searchCacheRef = useRef(new Map());
+  const searchFarmers = async (query) => {
+    const key = query.trim().toLowerCase();
+    if (searchCacheRef.current.has(key)) return searchCacheRef.current.get(key);
+    const res = await farmerAPI.search(query.trim());
+    const list = res?.data || [];
+    if (list.length) searchCacheRef.current.set(key, list);   // never cache a miss — a new farmer may be added
+    return list;
+  };
+
+  // Farmer No — skip when producer already selected with this number
   useEffect(() => {
     // If producer is already set and input matches, skip (prevents dropdown reopening after selectProducer)
     if (producer && producer.no === memberInput.trim()) return;
-    if (memberInput.trim().length < 1) { setSearchResults([]); setShowDropdown(false); return; }
+    if (memberInput.trim().length < 1) { if (searchSource === 'no') { setSearchResults([]); setShowDropdown(false); } return; }
+    const q = memberInput.trim();
     const t = setTimeout(async () => {
       setSearchLoading(true);
       try {
-        const res = await farmerAPI.search(memberInput.trim());
-        const list = res?.data || [];
-        // If exactly 1 result and it's a numeric exact match → auto-select, no dropdown
-        if (list.length === 1 && /^\d+$/.test(memberInput.trim())) {
-          selectProducer(list[0]);
-        } else {
-          setSearchResults(list); setShowDropdown(list.length > 0);
-        }
+        const list = await searchFarmers(q);
+        if (formRef.current.memberInput.trim() !== q) return;   // user typed on meanwhile
+        // Exactly 1 exact match → auto-select, no dropdown
+        if (list.length === 1) selectProducer(list[0]);
+        else { setSearchSource('no'); setHiIdx(0); setSearchResults(list); setShowDropdown(list.length > 0); }
+      } catch { setSearchResults([]); setShowDropdown(false); }
+      finally { setSearchLoading(false); }
+    }, searchCacheRef.current.has(q.toLowerCase()) ? 0 : 250);
+    return () => clearTimeout(t);
+  }, [memberInput]); // eslint-disable-line
+
+  // Farmer Name search — dropdown only, never auto-selects
+  useEffect(() => {
+    const q = nameInput.trim();
+    if (!q) { if (searchSource === 'name') { setSearchResults([]); setShowDropdown(false); } return; }
+    const t = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const list = await searchFarmers(q);
+        if (formRef.current.nameInput.trim() !== q) return;
+        setSearchSource('name'); setHiIdx(0); setSearchResults(list); setShowDropdown(list.length > 0);
       } catch { setSearchResults([]); setShowDropdown(false); }
       finally { setSearchLoading(false); }
     }, 300);
     return () => clearTimeout(t);
-  }, [memberInput]); // eslint-disable-line
+  }, [nameInput]); // eslint-disable-line
 
   const selectProducer = async (farmer) => {
     const base = { _id: farmer._id, no: farmer.farmerNumber, memberId: farmer.memberId || '', name: farmer.personalDetails?.name || '', phone: farmer.personalDetails?.phone || '', avg: { qty: 0, clr: 0, fat: 0 } };
@@ -1303,6 +1356,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
 
     setProducer(base);
     setMemberInput(farmer.farmerNumber);
+    setNameInput('');
     setShowDropdown(false);
     setTimeout(() => ltrRef.current?.focus({ preventScroll: true }), 50);
     try {
@@ -1316,15 +1370,14 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
     if (!query.trim()) return;
     setSearchLoading(true);
     try {
-      const res = await farmerAPI.search(query.trim());
-      const farmers = res?.data || [];
+      const farmers = await searchFarmers(query);
       const q = query.trim().toLowerCase();
       const exact =
         farmers.find(f => f.farmerNumber?.toLowerCase() === q) ||
         farmers.find(f => f.memberId?.toLowerCase() === q);
       if (exact) { selectProducer(exact); }
       else if (farmers.length === 1) { selectProducer(farmers[0]); }
-      else { setSearchResults(farmers); setShowDropdown(farmers.length > 0); }
+      else { setSearchSource('no'); setHiIdx(0); setSearchResults(farmers); setShowDropdown(farmers.length > 0); }
     } catch { /* silent */ }
     finally { setSearchLoading(false); }
   };
@@ -1468,7 +1521,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
   };
 
   const handleClear = () => {
-    setMemberInput(''); setProducer(null); setSearchResults([]); setShowDropdown(false);
+    setMemberInput(''); setNameInput(''); setProducer(null); setSearchResults([]); setShowDropdown(false);
     setLtr(''); setWater(''); setFat(''); setClr(''); setSnf('');
     setManualRate(''); setManualAmount('');
     setSelectedRow(null); setEditingId(null);
@@ -1491,6 +1544,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
     setClr(String(selectedRow.clr));
     setSnf(String(selectedRow.snf));
     setMemberInput(selectedRow.producerNo);
+    setNameInput('');
     setProducer({ _id: null, no: selectedRow.producerNo, name: selectedRow.producerName, memberId: '', phone: '', avg: { qty: 0, clr: 0, fat: 0 } });
     // Load full producer data in background
     farmerAPI.search(selectedRow.producerNo).then(res => {
@@ -1808,11 +1862,25 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
   };
 
   // ── Keyboard ──────────────────────────────────────────────────────────────
+  // ↑/↓ move through the open dropdown, Enter picks the highlighted farmer
+  const dropdownNav = (e, source) => {
+    if (!showDropdown || searchSource !== source || !searchResults.length) return false;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHiIdx(i => Math.min(i + 1, searchResults.length - 1)); return true; }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); setHiIdx(i => Math.max(i - 1, 0)); return true; }
+    if (e.key === 'Escape')    { e.preventDefault(); e.stopPropagation(); setShowDropdown(false); return true; }
+    if (e.key === 'Enter' && searchResults[hiIdx]) { e.preventDefault(); selectProducer(searchResults[hiIdx]); return true; }
+    return false;
+  };
+  const handleNameKeyDown = (e) => {
+    if (dropdownNav(e, 'name')) return;
+    if (e.key === 'Enter') { e.preventDefault(); if (producer) ltrRef.current?.focus(); }
+  };
   const handleMemberKeyDown = (e) => {
+    if (dropdownNav(e, 'no')) return;
     if (e.key === 'Enter') {
       e.preventDefault();
       const q = memberInput.trim().toLowerCase();
-      if (!q) return;
+      if (!q) { nameRef.current?.focus(); return; }   // no number → search by name instead
       // Use already-loaded results first (instant, no extra API call)
       const cached =
         searchResults.find(f => f.farmerNumber?.toLowerCase() === q) ||
@@ -1833,7 +1901,8 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
   };
 
   // Filtered entries for history search
-  const filteredEntries = historySearch.trim()
+  // Memoised so typing in the entry form doesn't re-filter / re-render the grid
+  const filteredEntries = useMemo(() => historySearch.trim()
     ? entries.filter(e => {
         const q = historySearch.trim();
         if (/^\d+$/.test(q)) {
@@ -1843,7 +1912,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
         return e.producerName.toLowerCase().includes(q.toLowerCase()) ||
                e.billNo.toLowerCase().includes(q.toLowerCase());
       })
-    : entries;
+    : entries, [entries, historySearch]);
 
   const WA_DEFAULT_TEMPLATE = '🐄 Milk Bill\nDate: {date} {shift}\nBill No: {billNo}\nFarmer: {name} ({farmerNo})\nQty: {qty} Ltr\nFat: {fat} | CLR: {clr} | SNF: {snf}\nRate: ₹{rate}/Ltr\nAmount: ₹{amount}';
 
@@ -1896,18 +1965,55 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
   };
 
   // Aggregates
-  const totalLtr = entries.reduce((s, e) => s + (e.ltr ?? e.qty), 0);
-  const totalKg  = entries.reduce((s, e) => s + (e.ltr ?? e.qty) * (1 + (e.clr || 26) / 1000), 0);
-  const totalAmt = entries.reduce((s, e) => s + e.amount, 0);
-  const avgFat   = entries.length ? entries.reduce((s, e) => s + e.fat, 0) / entries.length : 0;
-  const avgClr   = entries.length ? entries.reduce((s, e) => s + e.clr, 0) / entries.length : 0;
-  const avgSnf   = entries.length ? entries.reduce((s, e) => s + (e.snf || 0), 0) / entries.length : 0;
-  const avgRate  = entries.length ? entries.reduce((s, e) => s + e.rate, 0) / entries.length : 0;
+  const { totalLtr, totalKg, totalAmt, avgFat, avgClr, avgSnf, avgRate } = useMemo(() => {
+    const n = entries.length;
+    const sum = (fn) => entries.reduce((s, e) => s + fn(e), 0);
+    return {
+      totalLtr: sum(e => e.ltr ?? e.qty),
+      totalKg:  sum(e => (e.ltr ?? e.qty) * (1 + (e.clr || 26) / 1000)),
+      totalAmt: sum(e => e.amount),
+      avgFat:   n ? sum(e => e.fat) / n : 0,
+      avgClr:   n ? sum(e => e.clr) / n : 0,
+      avgSnf:   n ? sum(e => e.snf || 0) / n : 0,
+      avgRate:  n ? sum(e => e.rate) / n : 0,
+    };
+  }, [entries]);
+
+  // Grid rows — rebuilt only when the data / selection changes, not on every
+  // keystroke in Farmer No / LTR / FAT (this was the main cause of input lag)
+  const gridRows = useMemo(() => filteredEntries.map(entry => {
+    const isSel = selectedRow?.id === entry.id;
+    const isEditing = editingId === entry.id;
+    return (
+      <Table.Tr key={entry.id} onClick={() => setSelectedRow(isSel ? null : entry)}
+        style={{ cursor: 'pointer', background: isEditing ? '#fffbeb' : isSel ? '#eff6ff' : undefined, borderLeft: isEditing ? '3px solid #d97706' : isSel ? '3px solid #2563eb' : '3px solid transparent' }}>
+        <Table.Td className="mp-col-hide-mobile" style={{ fontWeight: 700, color: '#94a3b8', width: 32 }}>{entry.sl}</Table.Td>
+        <Table.Td className="mp-col-hide-mobile" style={{ fontWeight: 700, color: '#1e40af', whiteSpace: 'nowrap' }}>{entry.billNo}</Table.Td>
+        <Table.Td><Badge size="sm" color="blue" variant="light" radius="sm">{entry.producerNo}</Badge></Table.Td>
+        <Table.Td style={{ fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }} title={entry.producerName}>{entry.producerName || '—'}</Table.Td>
+        <Table.Td style={{ color: '#475569', whiteSpace: 'nowrap' }}>{entry.date ? new Date(entry.date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit' }) : '—'}</Table.Td>
+        <Table.Td><Badge size="xs" color={entry.shift === 'AM' ? 'orange' : 'indigo'} variant="light" radius="sm">{entry.shift || '—'}</Badge></Table.Td>
+        <Table.Td style={{ fontWeight: 800, color: '#0369a1', textAlign: 'right' }}>{(entry.ltr ?? entry.qty).toFixed(2)}</Table.Td>
+        <Table.Td className="mp-col-hide-mobile" style={{ fontWeight: 800, color: '#0284c7', textAlign: 'right' }}>{((entry.ltr ?? entry.qty) * (1 + (entry.clr || 26) / 1000)).toFixed(2)}</Table.Td>
+        <Table.Td style={{ fontWeight: 700, color: '#c2410c', textAlign: 'right' }}>{entry.fat.toFixed(1)}</Table.Td>
+        <Table.Td style={{ color: '#6d28d9', textAlign: 'right' }}>{entry.clr.toFixed(1)}</Table.Td>
+        <Table.Td className="mp-col-hide-mobile" style={{ color: '#166534', textAlign: 'right' }}>{entry.snf.toFixed(2)}</Table.Td>
+        <Table.Td className="mp-col-hide-mobile" style={{ textAlign: 'right' }}>&#8377;{entry.incentive.toFixed(2)}</Table.Td>
+        <Table.Td className="mp-col-hide-mobile" style={{ fontWeight: 600, textAlign: 'right' }}>&#8377;{entry.rate.toFixed(2)}</Table.Td>
+        <Table.Td style={{ textAlign: 'right', fontWeight: 800, color: 'var(--mantine-color-blue-7)' }}>&#8377;{entry.amount.toFixed(2)}</Table.Td>
+      </Table.Tr>
+    );
+  }), [filteredEntries, selectedRow, editingId]);
 
   // ─── RENDER ───────────────────────────────────────────────────────────────
   return (
     <>
     <style>{`
+      /* Totals row stays pinned to the bottom of the grid while the rows scroll */
+      .mp-tbl .mp-tfoot { position: sticky; bottom: 0; z-index: 9; box-shadow: 0 -2px 6px rgba(15,23,42,0.18); }
+      /* Panel content keeps its width while the panel slides closed */
+      .mp-right-panel > * { min-width: 196px; }
+
       @media (max-width: 768px) {
         .mp-root { height: auto !important; min-height: calc(100dvh - 60px); overflow-y: auto !important; }
 
@@ -1924,6 +2030,8 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
 
         .mp-right-panel { width: 100% !important; border-left: none !important; border-top: 2px solid #80deea !important; border-bottom: 2px solid #80deea !important; flex-direction: row !important; flex-wrap: wrap !important; align-items: flex-start !important; overflow-y: visible !important; padding: 12px !important; gap: 12px !important; }
         .mp-right-panel > div { flex: 1 1 auto !important; min-width: 140px !important; }
+        .mp-right-panel.mp-collapsed { display: none !important; }
+        .mp-panel-tab { display: none !important; }
 
         .mp-cards-group { flex-wrap: wrap !important; }
         .mp-cards-group > * { flex: 1 1 100% !important; min-width: 0 !important; margin-bottom: 8px !important; }
@@ -2087,7 +2195,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
       <Box className="mp-left-col" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
 
       {/* ══ CARD ROW ════════════════════════════════════════════════════════ */}
-      <Box style={{ flexShrink: 0, padding: '6px 14px 0' }}>
+      <Box style={{ flexShrink: 0, padding: '4px 10px 0' }}>
 
         {/* Duplicate alert — centered overlay */}
         {dupBlocked && dupInfo && (
@@ -2162,15 +2270,15 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
         <Group className="mp-cards-group" gap={12} align="stretch" wrap="wrap" style={{ pointerEvents: (dupBlocked || !formEnabled) ? 'none' : 'all', opacity: dupBlocked ? 0.45 : (!formEnabled ? 0.35 : 1), transition: 'opacity 0.2s' }}>
 
           {/* ── CARD 1: Bill Information ── */}
-          <Card shadow="xs" radius="lg" withBorder style={{ flex: '0 0 280px', borderColor: '#bfdbfe', borderTop: '3px solid #2563eb', padding: '8px 12px', overflow: 'visible' }}>
+          <Card shadow="xs" radius="lg" withBorder style={{ flex: '0 0 370px', borderColor: '#bfdbfe', borderTop: '3px solid #2563eb', padding: '8px 12px', overflow: 'visible' }}>
             <Group gap={6} mb={6}>
               <Box style={{ background: '#dbeafe', borderRadius: 7, padding: '4px 6px' }}><IconReceipt size={15} color="#2563eb" /></Box>
               <Text size="12px" fw={800} c="#1e3a8a" tt="uppercase" style={{ letterSpacing: '0.5px' }}>Bill Information</Text>
             </Group>
 
-            {/* Bill No + Member No share one row so this card is no taller than the other two */}
-            <Group gap={8} mb={5} wrap="nowrap" align="flex-start">
-            <Box style={{ flex: '0 0 108px' }}>
+            {/* Bill No | Farmer No | Farmer Name / Search — one row keeps this card short */}
+            <Group gap={8} wrap="nowrap" align="flex-start">
+            <Box style={{ flex: '0 0 88px' }}>
               <Text size="10px" fw={700} c="#64748b" mb={4} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Bill No</Text>
               <TextInput
                 value={billNo || '—'}
@@ -2180,66 +2288,54 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
               />
             </Box>
 
-            {/* Member No */}
-            <Box style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-              <Text size="10px" fw={700} c="#64748b" mb={4} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Farmer No / Name</Text>
+            {/* Farmer No — digits only (inputMode numeric), so plain S / P stay keyboard shortcuts */}
+            <Box style={{ position: 'relative', flex: '0 0 96px' }}>
+              <Text size="10px" fw={700} c="#64748b" mb={4} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Farmer No</Text>
               <TextInput
                 ref={memberRef}
-                placeholder="Type No or Name, press Enter..."
+                placeholder="No..."
+                inputMode="numeric"
                 value={memberInput}
-                onChange={e => { setMemberInput(e.currentTarget.value); if (producer) setProducer(null); }}
+                onChange={e => {
+                  const v = e.currentTarget.value.replace(/\D/g, '');
+                  setMemberInput(v);
+                  if (producer) { setProducer(null); setNameInput(''); }
+                }}
                 onKeyDown={handleMemberKeyDown}
-                onFocus={() => searchResults.length > 0 && setShowDropdown(true)}
-                leftSection={searchLoading ? <Loader size={13} color="#2563eb" /> : <IconSearch size={14} color="#2563eb" />}
-                rightSection={memberInput ? <ActionIcon size={18} variant="subtle" color="gray" onClick={() => { setMemberInput(''); setProducer(null); setShowDropdown(false); }}><IconX size={11} /></ActionIcon> : null}
+                onFocus={() => searchSource === 'no' && searchResults.length > 0 && setShowDropdown(true)}
+                rightSection={searchLoading && searchSource === 'no' ? <Loader size={12} color="#2563eb" /> : null}
                 size="sm" radius="md"
-                styles={{ input: { fontWeight: 600, border: '1.5px solid #bfdbfe', fontSize: 13 } }}
+                styles={{ input: { fontWeight: 800, border: '1.5px solid #bfdbfe', fontSize: 14, paddingLeft: 8, paddingRight: 22 } }}
               />
+              {showDropdown && searchSource === 'no' && (
+                <FarmerDropdown boxRef={dropdownRef} results={searchResults} hiIdx={hiIdx} onPick={selectProducer} />
+              )}
+            </Box>
 
-              {/* Dropdown */}
-              {showDropdown && searchResults.length > 0 && (
-                <Box ref={dropdownRef} style={{ position: 'absolute', top: '100%', left: 0, width: 260, zIndex: 2000, background: 'white', border: '1.5px solid #bfdbfe', borderRadius: 10, boxShadow: '0 8px 24px rgba(37,99,235,0.12)', maxHeight: 200, overflowY: 'auto', marginTop: 3 }}>
-                  {searchResults.map((f, idx) => (
-                    <Box key={f._id} onClick={() => selectProducer(f)}
-                      style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: idx < searchResults.length - 1 ? '1px solid #f1f5f9' : 'none', transition: 'background 0.1s' }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#eff6ff'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'white'}
-                    >
-                      <Group gap={8} wrap="nowrap">
-                        <Avatar size={26} radius="xl" color="blue" variant="light"><IconUser size={13} /></Avatar>
-                        <Box style={{ flex: 1, minWidth: 0 }}>
-                          <Text size="12px" fw={700} style={{ lineHeight: 1.2 }}>{f.personalDetails?.name || 'Unknown'}</Text>
-                          <Group gap={4}>
-                            <Badge size="xs" color="blue" radius="sm">{f.farmerNumber}</Badge>
-                            {f.memberId && f.memberId !== f.farmerNumber && <Badge size="xs" color="violet" radius="sm" variant="outline">M:{f.memberId}</Badge>}
-                            {f.personalDetails?.phone && <Text size="9px" c="dimmed">{f.personalDetails.phone}</Text>}
-                          </Group>
-                        </Box>
-                      </Group>
-                    </Box>
-                  ))}
-                </Box>
+            {/* Farmer Name / Search — the only free-text field; shows the name once a farmer is picked */}
+            <Box style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+              <Text size="10px" fw={700} c="#64748b" mb={4} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Farmer Name / Search</Text>
+              <TextInput
+                ref={nameRef}
+                placeholder="Search name or phone..."
+                value={producer ? producer.name : nameInput}
+                onChange={e => {
+                  setNameInput(e.currentTarget.value);
+                  if (producer) { setProducer(null); setMemberInput(''); }
+                }}
+                onKeyDown={handleNameKeyDown}
+                onFocus={e => { if (producer) e.currentTarget.select(); else if (searchSource === 'name' && searchResults.length > 0) setShowDropdown(true); }}
+                title={producer ? `${producer.no}${producer.phone ? ` · ${producer.phone}` : ''}` : undefined}
+                leftSection={searchLoading && searchSource === 'name' ? <Loader size={13} color="#2563eb" /> : <IconSearch size={14} color="#2563eb" />}
+                rightSection={(producer || nameInput) ? <ActionIcon size={18} variant="subtle" color="gray" onClick={() => { setMemberInput(''); setNameInput(''); setProducer(null); setShowDropdown(false); memberRef.current?.focus(); }}><IconX size={11} /></ActionIcon> : null}
+                size="sm" radius="md"
+                styles={{ input: { fontWeight: producer ? 800 : 600, border: '1.5px solid #bfdbfe', fontSize: 13, color: producer ? '#1e3a8a' : undefined, background: producer ? '#eff6ff' : undefined } }}
+              />
+              {showDropdown && searchSource === 'name' && (
+                <FarmerDropdown boxRef={dropdownRef} results={searchResults} hiIdx={hiIdx} onPick={selectProducer} />
               )}
             </Box>
             </Group>
-
-            {/* Name (auto-filled) */}
-            <Box>
-              <Text size="10px" fw={700} c="#64748b" mb={4} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Name <Text span size="8px" c="blue">(Auto)</Text></Text>
-              <Box style={{ background: producer ? '#eff6ff' : '#f8fafc', border: '1.5px solid ' + (producer ? '#bfdbfe' : '#e2e8f0'), borderRadius: 8, padding: '8px 12px', minHeight: 38, display: 'flex', alignItems: 'center', gap: 8 }}>
-                {producer ? (
-                  <Group gap={8} wrap="nowrap" style={{ width: '100%' }}>
-                    <Avatar size={28} radius="xl" color="blue" variant="filled"><IconUser size={14} /></Avatar>
-                    <Box style={{ flex: 1, minWidth: 0 }}>
-                      <Text fw={800} size="13px" c="#1e3a8a" style={{ lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{producer.name}</Text>
-                      <Text size="10px" c="#64748b">{producer.no}{producer.phone ? ` · ${producer.phone}` : ''}</Text>
-                    </Box>
-                  </Group>
-                ) : (
-                  <Text size="11px" c="#94a3b8">Select a member to auto-fill</Text>
-                )}
-              </Box>
-            </Box>
           </Card>
 
           {/* ── CARD 2: Last 10-Day Average ── */}
@@ -2248,7 +2344,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
               <Box style={{ background: '#dcfce7', borderRadius: 7, padding: '4px 6px' }}><IconChartBar size={15} color="#16a34a" /></Box>
               <Text size="12px" fw={800} c="#14532d" tt="uppercase" style={{ letterSpacing: '0.5px' }}>10-Day Average</Text>
             </Group>
-            <Group gap={8} grow style={{ height: 68 }}>
+            <Group gap={8} grow style={{ height: 52 }}>
               <AvgCard label="FAT" value={producer?.avg.fat || '—'} unit="%" icon={<IconFlame size={11} color="#c2410c" />} color="#c2410c" bg="#fff7ed" />
               <AvgCard label="CLR" value={producer?.avg.clr || '—'} unit="" icon={<IconDroplet size={11} color="#6d28d9" />} color="#6d28d9" bg="#f5f3ff" />
               <AvgCard label="LTR" value={producer?.avg.qty || '—'} unit="Litres" icon={<IconMilk size={11} color="#0369a1" />} color="#0369a1" bg="#f0f9ff" />
@@ -2379,7 +2475,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
                     }
                     step={step} decimalScale={dec} min={0}
                     size="sm" radius="md" hideControls
-                    styles={{ input: { height: 36, fontSize: 15, fontWeight: 900, background: bg, border: `2px solid ${border}`, color, textAlign: 'center' } }}
+                    styles={{ input: { height: 32, minHeight: 32, fontSize: 15, fontWeight: 900, background: bg, border: `2px solid ${border}`, color, textAlign: 'center' } }}
                   />
                 </Box>
               ))}
@@ -2486,7 +2582,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
       </Box>
 
       {/* ══ TABLE SECTION ═══════════════════════════════════════════════════ */}
-      <Box style={{ flex: 1, overflow: 'hidden', minHeight: 0, padding: '6px 14px 8px', display: 'flex', flexDirection: 'column', gap: 0 }}>
+      <Box style={{ flex: 1, overflow: 'hidden', minHeight: 0, padding: '4px 10px 4px', display: 'flex', flexDirection: 'column', gap: 0 }}>
 
         {/* Table header bar */}
         <Box style={{ background: '#1e3a8a', borderRadius: '10px 10px 0 0', padding: '4px 10px' }}>
@@ -2710,9 +2806,10 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
         </Box>
 
         {/* Table */}
-        <Box style={{ flex: 1, minHeight: 240, overflowY: 'hidden', overflowX: 'auto', background: 'white', borderRadius: '0 0 10px 10px', border: '1px solid #93c5fd', borderTop: 'none' }}>
+        {/* Only the data rows scroll — header sticks to the top, Totals row to the bottom */}
+        <Box style={{ flex: 1, minHeight: 150, overflowY: 'hidden', overflowX: 'auto', background: 'white', borderRadius: '0 0 10px 10px', border: '1px solid #93c5fd', borderTop: 'none' }}>
           <ScrollArea h="100%" type="always" scrollbarSize={10} viewportRef={tableScrollRef}>
-            <Table className="mp-tbl" striped stripedColor="#f1f5fb" highlightOnHover highlightOnHoverColor="#e0ecff" stickyHeader withColumnBorders borderColor="#dbe4f0" style={{ fontSize: 15 }}>
+            <Table className="mp-tbl" striped stripedColor="#f1f5fb" highlightOnHover highlightOnHoverColor="#e0ecff" stickyHeader withColumnBorders borderColor="#dbe4f0" verticalSpacing={3} horizontalSpacing={8} fz={13}>
               <Table.Thead style={{ background: 'linear-gradient(180deg,#dbeafe 0%,#bfdbfe 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
                 <Table.Tr>
                   {[
@@ -2731,7 +2828,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
                     { col: 'Rate/L',    hide: true  },
                     { col: 'Amount',    hide: false },
                   ].map(({ col, hide }) => (
-                    <Table.Th key={col} className={hide ? 'mp-col-hide-mobile' : ''} style={{ fontWeight: 800, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#ffffff', background: '#1e40af', whiteSpace: 'nowrap', padding: '10px 12px', borderBottom: '2px solid #1e3a8a' }}>
+                    <Table.Th key={col} className={hide ? 'mp-col-hide-mobile' : ''} style={{ fontWeight: 800, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#ffffff', background: '#1e40af', whiteSpace: 'nowrap', padding: '5px 8px', borderBottom: '2px solid #1e3a8a' }}>
                       {col}
                     </Table.Th>
                   ))}
@@ -2755,45 +2852,23 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
                       </Center>
                     </Table.Td>
                   </Table.Tr>
-                ) : filteredEntries.map(entry => {
-                  const isSel = selectedRow?.id === entry.id;
-                  const isEditing = editingId === entry.id;
-                  return (
-                    <Table.Tr key={entry.id} onClick={() => setSelectedRow(isSel ? null : entry)}
-                      style={{ cursor: 'pointer', fontSize: 15, background: isEditing ? '#fffbeb' : isSel ? '#eff6ff' : undefined, borderLeft: isEditing ? '3px solid #d97706' : isSel ? '3px solid #2563eb' : '3px solid transparent', transition: 'background 0.1s' }}>
-                      <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', fontWeight: 700, color: '#94a3b8', width: 32, fontSize: 15 }}>{entry.sl}</Table.Td>
-                      <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', fontWeight: 700, color: '#1e40af', whiteSpace: 'nowrap' }}>{entry.billNo}</Table.Td>
-                      <Table.Td style={{ padding: '6px 12px' }}><Badge size="md" color="blue" variant="light" radius="sm">{entry.producerNo}</Badge></Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }} title={entry.producerName}>{entry.producerName || '—'}</Table.Td>
-                      <Table.Td style={{ padding: '6px 8px', color: '#475569', fontSize: 15, whiteSpace: 'nowrap' }}>{entry.date ? new Date(entry.date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit' }) : '—'}</Table.Td>
-                      <Table.Td style={{ padding: '6px 8px' }}><Badge size="sm" color={entry.shift === 'AM' ? 'orange' : 'indigo'} variant="light" radius="sm">{entry.shift || '—'}</Badge></Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', fontWeight: 800, color: '#0369a1', textAlign: 'right' }}>{(entry.ltr ?? entry.qty).toFixed(2)}</Table.Td>
-                      <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', fontWeight: 800, color: '#0284c7', textAlign: 'right' }}>{((entry.ltr ?? entry.qty) * (1 + (entry.clr || 26) / 1000)).toFixed(2)}</Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#c2410c', textAlign: 'right' }}>{entry.fat.toFixed(1)}</Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', color: '#6d28d9', textAlign: 'right' }}>{entry.clr.toFixed(1)}</Table.Td>
-                      <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', color: '#166534', textAlign: 'right' }}>{entry.snf.toFixed(2)}</Table.Td>
-                      <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', textAlign: 'right' }}>&#8377;{entry.incentive.toFixed(2)}</Table.Td>
-                      <Table.Td className="mp-col-hide-mobile" style={{ padding: '6px 12px', fontWeight: 600, textAlign: 'right' }}>&#8377;{entry.rate.toFixed(2)}</Table.Td>
-                      <Table.Td style={{ padding: '6px 12px', textAlign: 'right' }}><Text size="16px" fw={800} c="blue.7">&#8377;{entry.amount.toFixed(2)}</Text></Table.Td>
-                    </Table.Tr>
-                  );
-                })}
+                ) : gridRows}
               </Table.Tbody>
 
               {entries.length > 0 && (
-                <Table.Tfoot>
+                <Table.Tfoot className="mp-tfoot">
                   <Table.Tr style={{ background: '#1e3a8a' }}>
-                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px' }} />
-                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px' }} />
-                    <Table.Td colSpan={4} style={{ padding: '8px 12px', fontWeight: 700, color: '#93c5fd', fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 900, color: '#7dd3fc', textAlign: 'right', fontSize: 16 }}>{totalLtr.toFixed(2)}</Table.Td>
-                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px', fontWeight: 900, color: '#38bdf8', textAlign: 'right', fontSize: 16 }}>{totalKg.toFixed(2)}</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#fdba74', textAlign: 'right', fontSize: 15 }}>{avgFat.toFixed(1)}</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', fontWeight: 700, color: '#a78bfa', textAlign: 'right', fontSize: 15 }}>{avgClr.toFixed(1)}</Table.Td>
-                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px', fontWeight: 700, color: '#4ade80', textAlign: 'right', fontSize: 15 }}>{avgSnf.toFixed(2)}</Table.Td>
+                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '5px 8px' }} />
+                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '5px 8px' }} />
+                    <Table.Td colSpan={4} style={{ padding: '5px 8px', fontWeight: 700, color: '#93c5fd', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Totals &amp; Averages</Table.Td>
+                    <Table.Td style={{ padding: '5px 8px', fontWeight: 900, color: '#7dd3fc', textAlign: 'right', fontSize: 14 }}>{totalLtr.toFixed(2)}</Table.Td>
+                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '5px 8px', fontWeight: 900, color: '#38bdf8', textAlign: 'right', fontSize: 14 }}>{totalKg.toFixed(2)}</Table.Td>
+                    <Table.Td style={{ padding: '5px 8px', fontWeight: 700, color: '#fdba74', textAlign: 'right', fontSize: 13 }}>{avgFat.toFixed(1)}</Table.Td>
+                    <Table.Td style={{ padding: '5px 8px', fontWeight: 700, color: '#a78bfa', textAlign: 'right', fontSize: 13 }}>{avgClr.toFixed(1)}</Table.Td>
+                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '5px 8px', fontWeight: 700, color: '#4ade80', textAlign: 'right', fontSize: 13 }}>{avgSnf.toFixed(2)}</Table.Td>
                     <Table.Td className="mp-col-hide-mobile" />
-                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '8px 12px', fontWeight: 700, color: '#e2e8f0', textAlign: 'right', fontSize: 15 }}>&#8377;{avgRate.toFixed(2)}</Table.Td>
-                    <Table.Td style={{ padding: '8px 12px', textAlign: 'right' }}><Text size="17px" fw={900} c="white">&#8377;{totalAmt.toFixed(2)}</Text></Table.Td>
+                    <Table.Td className="mp-col-hide-mobile" style={{ padding: '5px 8px', fontWeight: 700, color: '#e2e8f0', textAlign: 'right', fontSize: 13 }}>&#8377;{avgRate.toFixed(2)}</Table.Td>
+                    <Table.Td style={{ padding: '5px 8px', textAlign: 'right' }}><Text size="15px" fw={900} c="white">&#8377;{totalAmt.toFixed(2)}</Text></Table.Td>
                   </Table.Tr>
                 </Table.Tfoot>
               )}
@@ -2818,31 +2893,33 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
       </Box>
 
       {/* ══ RIGHT CONTROL PANEL ══════════════════════════════════════════════ */}
-      {/* Collapsed: a thin strip with an arrow to reopen the panel */}
+      {/* Collapsed: a slim tab with an arrow to reopen the panel — the grid gets the space */}
       {!showAdminPanel && (
         <Box
+          className="mp-panel-tab"
           onClick={() => setShowAdminPanel(true)}
-          title="Show panel"
+          title="Show Administrator / Help panel"
           style={{
-            width: 18, flexShrink: 0, cursor: 'pointer',
-            background: 'linear-gradient(180deg, #e0f7fa 0%, #b2ebf2 40%, #e0f2f1 100%)',
-            borderLeft: '2px solid #80deea',
-            display: 'flex', justifyContent: 'center', paddingTop: 4,
+            width: 22, flexShrink: 0, cursor: 'pointer',
+            background: '#006064', borderLeft: '2px solid #80deea',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, paddingTop: 6,
           }}
         >
-          <IconChevronLeft size={14} color="#006064" stroke={3} />
+          <IconChevronLeft size={16} color="#e0f7fa" stroke={3} />
+          <Text size="10px" fw={700} c="#e0f7fa" style={{ writingMode: 'vertical-rl', letterSpacing: '1px', userSelect: 'none' }}>ADMINISTRATOR · HELP</Text>
         </Box>
       )}
-      <Box className="mp-right-panel" style={{
-        width: 200, flexShrink: 0,
+      <Box className={`mp-right-panel${showAdminPanel ? '' : ' mp-collapsed'}`} style={{
+        // Kept mounted (scale / analyzer / display connections live here) — collapse slides the width to 0
+        width: showAdminPanel ? 200 : 0, flexShrink: 0,
+        transition: 'width 0.2s ease',
         background: 'linear-gradient(180deg, #e0f7fa 0%, #b2ebf2 40%, #e0f2f1 100%)',
-        borderLeft: '2px solid #80deea',
+        borderLeft: showAdminPanel ? '2px solid #80deea' : 'none',
         display: 'flex', flexDirection: 'column',
-        // Kept mounted (scale / analyzer / display connections live here) — only hidden
-        ...(showAdminPanel ? {} : { display: 'none' }),
         fontFamily: '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif',
         fontSize: 11,
-        overflowY: 'auto',
+        overflowX: 'hidden',
+        overflowY: showAdminPanel ? 'auto' : 'hidden',
       }}>
 
         {/* Top Menu Bar */}
@@ -2853,9 +2930,9 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >{m}</Box>
           ))}
-          <ActionIcon size={18} variant="subtle" title="Hide panel" onClick={() => setShowAdminPanel(false)}
-            style={{ marginLeft: 'auto', marginRight: 4, color: '#e0f7fa' }}>
-            <IconChevronRight size={14} stroke={3} />
+          <ActionIcon size={20} variant="filled" title="Collapse panel" onClick={() => setShowAdminPanel(false)}
+            style={{ marginLeft: 'auto', marginRight: 4, background: '#00838f', color: '#e0f7fa' }}>
+            <IconChevronRight size={15} stroke={3} />
           </ActionIcon>
         </Box>
 

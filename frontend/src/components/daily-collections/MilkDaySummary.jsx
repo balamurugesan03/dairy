@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Box, Group, Text, Select, Badge, ActionIcon, Loader } from '@mantine/core';
 import { IconChevronDown, IconChevronUp, IconBuilding, IconUser, IconTrophy } from '@tabler/icons-react';
 import { milkCollectionAPI } from '../../services/api';
@@ -21,30 +21,30 @@ const Tile = ({ label, value, sub, tone = '#1e3a8a', bg = '#f8fafc', border = '#
   <Box className="mds-tile" style={{
     gridColumn: `span ${span}`, background: strong ? tone : bg,
     border: `1.5px solid ${strong ? tone : border}`, borderRadius: 8,
-    padding: '6px 10px', minHeight: 58, minWidth: 0,
+    padding: '2px 8px', minHeight: 40, minWidth: 0,
     display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center',
   }}>
-    <Text size="11px" fw={700} tt="uppercase" c={strong ? 'rgba(255,255,255,0.8)' : '#64748b'} style={{ letterSpacing: '0.4px', lineHeight: 1.2 }} truncate="end">{label}</Text>
-    <Text size="19px" fw={900} c={strong ? 'white' : tone} style={{ lineHeight: 1.25, whiteSpace: 'nowrap' }}>{value}</Text>
-    {sub != null && <Text size="12px" fw={700} c={strong ? 'rgba(255,255,255,0.85)' : tone} style={{ lineHeight: 1.2, opacity: strong ? 1 : 0.8, whiteSpace: 'nowrap' }}>{sub}</Text>}
+    <Text size="10px" fw={700} tt="uppercase" c={strong ? 'rgba(255,255,255,0.8)' : '#64748b'} style={{ letterSpacing: '0.4px', lineHeight: 1.2 }} truncate="end">{label}</Text>
+    <Text size="15px" fw={900} c={strong ? 'white' : tone} style={{ lineHeight: 1.25, whiteSpace: 'nowrap' }}>{value}</Text>
+    {sub != null && <Text size="11px" fw={700} c={strong ? 'rgba(255,255,255,0.85)' : tone} style={{ lineHeight: 1.2, opacity: strong ? 1 : 0.8, whiteSpace: 'nowrap' }}>{sub}</Text>}
   </Box>
 );
 
 const RowLabel = ({ children, color }) => (
   <Box className="mds-rowlabel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: color, borderRadius: 8, padding: '0 4px' }}>
-    <Text size="11px" fw={800} c="white" tt="uppercase" ta="center" style={{ letterSpacing: '0.5px', lineHeight: 1.25 }}>{children}</Text>
+    <Text size="10px" fw={800} c="white" tt="uppercase" ta="center" style={{ letterSpacing: '0.5px', lineHeight: 1.25 }}>{children}</Text>
   </Box>
 );
 
 /**
  * Milk Purchase screen summary: purchase + sales totals for the day / shift
- * with a Best Farmer card on the right.
+ * with a Best Farmer ticker in the header.
  *   • Admin view   — combined totals of every centre & agent, with optional
  *                    Centre / Agent filters.
  *   • Regular user — the server limits the totals to the user's own centre /
  *                    agent; no filters are offered.
  */
-export default function MilkDaySummary({ date, shift, adminView, centres = [], agents = [], scopeLabel, refreshKey }) {
+function MilkDaySummary({ date, shift, adminView, centres = [], agents = [], scopeLabel, refreshKey }) {
   const [data, setData]       = useState(EMPTY);
   const [loading, setLoading] = useState(false);
   const [fCentre, setFCentre] = useState(null);
@@ -94,41 +94,69 @@ export default function MilkDaySummary({ date, shift, adminView, centres = [], a
     : scopeLabel;
 
   return (
-    <Box className="mds-root" style={{ background: 'white', border: '1px solid #bfdbfe', borderTop: '2px solid #dbeafe', borderRadius: '0 0 10px 10px', padding: '6px 10px 8px' }}>
+    <Box className="mds-root" style={{ background: 'white', border: '1px solid #bfdbfe', borderTop: '2px solid #dbeafe', borderRadius: '0 0 10px 10px', padding: '4px 8px 5px', flexShrink: 0 }}>
       <style>{`
-        .mds-body { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 8px; }
-        .mds-grid { display: grid; grid-template-columns: 74px repeat(7, minmax(0, 1fr)); gap: 6px; }
+        .mds-grid { display: grid; grid-template-columns: 64px repeat(7, minmax(0, 1fr)); gap: 4px; }
+        .mds-ticker { flex: 1; min-width: 120px; overflow: hidden; position: relative; height: 24px;
+          background: linear-gradient(90deg,#fef9c3,#fde68a); border: 1px solid #f59e0b; border-radius: 6px; }
+        .mds-ticker-track { position: absolute; top: 0; left: 0; height: 100%; display: flex; align-items: center;
+          white-space: nowrap; padding-left: 100%; animation: mds-scroll 18s linear infinite; }
+        .mds-ticker:hover .mds-ticker-track { animation-play-state: paused; }
+        @keyframes mds-scroll { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+        @media (prefers-reduced-motion: reduce) {
+          .mds-ticker-track { animation: none; padding-left: 8px; }
+        }
         @media (max-width: 1100px) {
-          .mds-body { grid-template-columns: minmax(0, 1fr); }
           .mds-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
           .mds-grid .mds-tile { grid-column: span 1 !important; }
-          .mds-grid .mds-rowlabel { grid-column: span 2; min-height: 22px; }
+          .mds-grid .mds-rowlabel { grid-column: span 2; min-height: 20px; }
         }
       `}</style>
 
-      {/* Header — title, scope and (admin) Centre / Agent filters */}
-      <Group justify="space-between" wrap="wrap" gap={8} mb={open ? 6 : 0}>
-        <Group gap={8} wrap="nowrap">
-          <Text size="13px" fw={800} c="#1e3a8a" tt="uppercase" style={{ letterSpacing: '0.5px' }}>Summary</Text>
-          <Badge size="md" radius="sm" variant="light" color="blue">{dateStr.split('-').reverse().join('-')} · {shift}</Badge>
-          <Badge size="md" radius="sm" variant="light" color={adminView ? 'grape' : 'teal'}>{scopeText}</Badge>
-          {loading && <Loader size={14} />}
+      {/* Header — title, scope, Best Farmer ticker (fills the gap) and (admin) Centre / Agent filters */}
+      <Group justify="space-between" wrap="nowrap" gap={8} mb={open ? 4 : 0}>
+        <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
+          <Text size="12px" fw={800} c="#1e3a8a" tt="uppercase" style={{ letterSpacing: '0.5px' }}>Summary</Text>
+          <Badge size="sm" radius="sm" variant="light" color="blue">{dateStr.split('-').reverse().join('-')} · {shift}</Badge>
+          <Badge size="sm" radius="sm" variant="light" color={adminView ? 'grape' : 'teal'}>{scopeText}</Badge>
+          {loading && <Loader size={12} />}
         </Group>
-        <Group gap={6} wrap="nowrap">
+
+        {/* Best Farmer — highest rate of the day / shift in this scope, as a news ticker */}
+        <Box className="mds-ticker" title={best ? `Best Farmer: ${best.farmerNumber} ${best.farmerName || ''}` : 'Best Farmer'}>
+          <Box className="mds-ticker-track">
+            <IconTrophy size={14} color="#b45309" style={{ flexShrink: 0 }} />
+            <Text span size="11px" fw={800} c="#78350f" tt="uppercase" ml={4} mr={8} style={{ letterSpacing: '0.5px' }}>Best Farmer</Text>
+            {best ? (
+              <>
+                <Badge size="sm" color="orange" variant="filled" radius="sm" mr={6}>{best.farmerNumber}</Badge>
+                <Text span size="13px" fw={800} c="#92400e" mr={10}>{best.farmerName || '—'}</Text>
+                {best.centreName && <Text span size="11px" fw={600} c="#a16207" mr={10}>{best.centreName}</Text>}
+                <Text span size="13px" fw={900} c="#b45309" mr={10}>{rs(best.rate)}/Ltr</Text>
+                <Text span size="11px" fw={700} c="#78350f" mr={10}>{n2(best.qty)} L · FAT {n1(best.fat)} · SNF {n2(best.snf)}</Text>
+                <Text span size="12px" fw={800} c="#92400e">{rs(best.amount)}</Text>
+              </>
+            ) : (
+              <Text span size="11px" c="#a16207" fw={600}>No entries yet</Text>
+            )}
+          </Box>
+        </Box>
+
+        <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
           {adminView && open && (
             <>
               <Select
                 value={fCentre} onChange={v => { setFCentre(v); setFAgent(null); }}
                 data={centres} placeholder="All Centres" clearable searchable
                 leftSection={<IconBuilding size={13} color="#7c3aed" />}
-                size="xs" radius="md" style={{ width: 170 }} comboboxProps={{ zIndex: 1000 }}
+                size="xs" radius="md" style={{ width: 145 }} comboboxProps={{ zIndex: 1000 }}
               />
               <Select
                 value={fAgent} onChange={setFAgent}
                 data={agentOptions} placeholder="All Agents" clearable searchable
                 nothingFoundMessage="No agents"
                 leftSection={<IconUser size={13} color="#7c3aed" />}
-                size="xs" radius="md" style={{ width: 170 }} comboboxProps={{ zIndex: 1000 }}
+                size="xs" radius="md" style={{ width: 145 }} comboboxProps={{ zIndex: 1000 }}
               />
             </>
           )}
@@ -139,7 +167,6 @@ export default function MilkDaySummary({ date, shift, adminView, centres = [], a
       </Group>
 
       {open && (
-        <Box className="mds-body">
           <Box className="mds-grid">
             <RowLabel color="#1e40af">Milk Purchase</RowLabel>
             <Tile label="Farmers" value={p.farmers} sub={`${p.count} records`} tone="#334155" />
@@ -157,37 +184,10 @@ export default function MilkDaySummary({ date, shift, adminView, centres = [], a
             <Tile label="Total Sales" value={`${n2(salesLtr)} L`} sub={rs(salesAmt)} tone="#047857" bg="#f0fdf4" border="#86efac" span={2} />
             <Tile label="Union Sale (Purchase − Sales)" value={`${n2(unionLtr)} L`} sub={`${n2(p.qty)} − ${n2(salesLtr)}`} tone="#1e40af" bg="#eff6ff" border="#93c5fd" span={2} />
           </Box>
-
-          {/* Best Farmer — highest rate of the day / shift in this scope */}
-          <Box style={{
-            background: 'linear-gradient(135deg,#fef9c3,#fde68a)', border: '1.5px solid #f59e0b', borderRadius: 10,
-            padding: '8px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 0,
-          }}>
-            <Group gap={6} wrap="nowrap" mb={2}>
-              <IconTrophy size={16} color="#b45309" />
-              <Text size="12px" fw={800} c="#78350f" tt="uppercase" style={{ letterSpacing: '0.5px' }}>Best Farmer</Text>
-            </Group>
-            {best ? (
-              <>
-                <Group gap={6} wrap="nowrap">
-                  <Badge size="md" color="orange" variant="filled" radius="sm">{best.farmerNumber}</Badge>
-                  <Text size="18px" fw={800} c="#92400e" truncate="end" style={{ lineHeight: 1.25 }}>{best.farmerName || '—'}</Text>
-                </Group>
-                {best.centreName && <Text size="11px" fw={600} c="#a16207">{best.centreName}</Text>}
-                <Text size="24px" fw={900} c="#b45309" style={{ lineHeight: 1.2 }}>{rs(best.rate)}<Text span size="13px" fw={700}>/Ltr</Text></Text>
-                <Group gap={10} wrap="nowrap">
-                  <Text size="12px" fw={700} c="#78350f">{n2(best.qty)} L</Text>
-                  <Text size="12px" fw={700} c="#78350f">FAT {n1(best.fat)}</Text>
-                  <Text size="12px" fw={700} c="#78350f">SNF {n2(best.snf)}</Text>
-                </Group>
-                <Text size="13px" fw={800} c="#92400e">{rs(best.amount)}</Text>
-              </>
-            ) : (
-              <Text size="13px" c="#a16207" fw={600}>No entries yet</Text>
-            )}
-          </Box>
-        </Box>
       )}
     </Box>
   );
 }
+
+// Memoised: the Milk Purchase form re-renders on every keystroke, the summary only needs its own props
+export default memo(MilkDaySummary);

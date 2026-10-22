@@ -891,3 +891,32 @@
   color: var(--mantine-color-dimmed);
   padding: 0 24px 10px;
 }
+
+/* =========================================================
+   TYPOGRAPHY STANDARD — same as Receipt & Disbursement
+   (see shared/reportTypography.js): Times New Roman, 10pt body,
+   society name 12.5pt, bold underlined title, 9pt secondary text,
+   bold totals, bold-italic opening / closing balances.
+   ========================================================= */
+@media screen and (min-width: 641px) {
+  .db-card { font-family: 'Times New Roman', Times, serif; }
+  .db-card .db-card__company { font-family: inherit; font-size: 12.5pt; font-weight: 400; letter-spacing: 0; }
+  .db-card .db-card__society { font-size: 10pt; }
+  .db-card .db-card__title { font-family: inherit; font-size: 10pt; font-weight: 700; letter-spacing: 0; text-decoration: underline;
+    padding: 0; border: none; }
+  .db-card .db-card__date { font-size: 10pt; font-weight: 700; letter-spacing: 0; }
+  .db-card .db-card__meta { font-family: inherit; font-size: 9pt; }
+  .db-card .db-side__title { font-size: 10pt; }
+  .db-card .db-side__subtitle { font-size: 9pt; }
+  .db-card .db-ledger thead th { font-family: inherit; font-size: 10pt; }
+  .db-card .db-ledger tbody td,
+  .db-card .db-cell-desc, .db-card .db-cell-vno, .db-card .db-cell-amt, .db-card .db-cell-total { font-family: inherit; font-size: 10pt; }
+  .db-card .db-cell-narration { font-size: 9pt; }
+  .db-card .db-ledger--footer td,
+  .db-card .db-footer-label, .db-card .db-footer-vno, .db-card .db-footer-amt, .db-card .db-footer-total { font-family: inherit; font-size: 10pt; }
+  .db-card .db-day-total td { font-weight: 700; }
+  .db-card .db-ledger--footer .db-balance-row td,
+  .db-card .db-closing-row td { font-size: 10pt; font-weight: 700; font-style: italic; }
+  .db-card .db-card-sign__box { font-size: 10pt; }
+  .db-card .db-card-generated, .db-card .db-signature-meta { font-size: 9pt; }
+}

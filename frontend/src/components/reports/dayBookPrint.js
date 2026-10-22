@@ -56,8 +56,8 @@ const dayHtml = (card, ctx) => {
       <thead>
         <tr><th class="side" colspan="5">Receipt (Dr)</th><th class="side split" colspan="5">Payment (Cr)</th></tr>
         <tr>
-          <th>Description</th><th>Rcpt No</th><th>Cash</th><th>Adjustment</th><th>Total</th>
-          <th class="split">Description</th><th>Vr No</th><th>Cash</th><th>Adjustment</th><th>Total</th>
+          <th>Description</th><th>Rcpt No</th><th>Cash</th><th>Adjust&shy;ment</th><th>Total</th>
+          <th class="split">Description</th><th>Vr No</th><th>Cash</th><th>Adjust&shy;ment</th><th>Total</th>
         </tr>
       </thead>
       <tbody class="rows">${body}</tbody>
