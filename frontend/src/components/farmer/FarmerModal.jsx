@@ -27,9 +27,11 @@ import { IconUpload, IconTrash } from '@tabler/icons-react';
 import { farmerAPI, collectionCenterAPI, ledgerAPI, bankMasterAPI } from '../../services/api';
 import { message } from '../../utils/toast';
 import { useAuth } from '../../context/AuthContext';
+import useDefaultCentreAgent from '../../utils/defaultCentreAgent';
 
 const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep = 0, autoCheckMembership = false, membershipFunction = 'SubmitLinks' }) => {
   const { isCentreLogin, centreInfo } = useAuth();
+  const centreDefaults = useDefaultCentreAgent();
   const [loading, setLoading] = useState(false);
   const [active, setActive] = useState(0);
   const [collectionCenters, setCollectionCenters] = useState([]);
@@ -148,10 +150,17 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
         fetchFarmer();
       } else {
         resetForm();
-        fetchNextFarmerNumber();
       }
     }
   }, [isOpen, farmerId, initialStep]);
+
+  // New farmer: preselect the login's default centre, then suggest the next number for it
+  useEffect(() => {
+    if (!isOpen || isEditMode || !centreDefaults.loaded) return;
+    const centreId = isCentreLogin ? (centreInfo?.centreId || '') : centreDefaults.centreId;
+    if (centreId && !isCentreLogin) form.setFieldValue('collectionCenter', centreId);
+    fetchNextFarmerNumber(centreId);
+  }, [isOpen, isEditMode, centreDefaults.loaded, centreDefaults.centreId]);
 
   useEffect(() => {
     if (isEditMode && bankMasterList.length > 0 && form.values.bankDetails.bankName) {
@@ -167,18 +176,15 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
     setSelectedBankMasterId('');
   };
 
-  const fetchNextFarmerNumber = async () => {
+  // Next number from Producer Management → Settings → Farmer Number Series
+  // (Existing: common 1, 2, 3 …; Center-wise: centre code + its own sequence)
+  const fetchNextFarmerNumber = async (centreId) => {
     try {
-      const response = await farmerAPI.getAll({ sortBy: 'farmerNumber', sortOrder: 'desc', limit: 1 });
-      const farmers = response.data || [];
-      if (farmers.length === 0) {
-        form.setFieldValue('farmerNumber', '1');
-      } else {
-        const last = parseInt(farmers[0].farmerNumber, 10);
-        form.setFieldValue('farmerNumber', isNaN(last) ? '' : String(last + 1));
-      }
-    } catch {
-      form.setFieldValue('farmerNumber', '1');
+      const res = await farmerAPI.getNextFarmerNumber(centreId ? { collectionCenter: centreId } : {});
+      form.setFieldValue('farmerNumber', res?.data?.nextFarmerNumber || '');
+    } catch (err) {
+      form.setFieldValue('farmerNumber', '');
+      message.error(err.message || 'Could not get the next farmer number');
     }
   };
 
@@ -628,7 +634,8 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
       const payload = {
         farmerNumber: values.farmerNumber,
         personalDetails: { name: values.personalDetails.name, phone: values.personalDetails.phone },
-        collectionCenter: centreInfo?._id || null,
+        // centreInfo is the parent company; the centre's own id is centreInfo.centreId
+        collectionCenter: centreInfo?.centreId || null,
       };
       await farmerAPI.create(payload);
       message.success('Farmer added successfully');
@@ -819,6 +826,11 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
                     }))}
                     searchable
                     {...form.getInputProps('collectionCenter')}
+                    onChange={(v) => {
+                      form.setFieldValue('collectionCenter', v || '');
+                      // Center-wise series: the suggested number depends on the centre
+                      if (!isEditMode) fetchNextFarmerNumber(v || '');
+                    }}
                   />
                 </Grid.Col>
                 <Grid.Col span={6}>

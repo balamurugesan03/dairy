@@ -87,6 +87,14 @@ const collectionCenterSchema = new mongoose.Schema({
   allowedModules: {
     type: [String],
     default: ['milkCollection', 'milkSales']
+  },
+  // Numeric prefix for the Centre-wise Farmer Number series (code 1 → 1001, 1002 …).
+  // Unique per company — checked in the controller.
+  farmerNoCode: {
+    type: String,
+    trim: true,
+    match: [/^\d{0,4}$/, 'Farmer No Code must be digits only (max 4)'],
+    default: ''
   }
 }, {
   timestamps: true

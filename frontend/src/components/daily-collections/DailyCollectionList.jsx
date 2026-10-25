@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Container, Title, Text, Button, Group, Paper, TextInput, Select,
@@ -14,7 +14,7 @@ import {
   IconMilk, IconDroplet, IconFlame, IconScale,
   IconCurrencyRupee, IconCalendar, IconFilter,
   IconSun, IconBuildingStore, IconUser, IconPrinter,
-  IconFileTypeXls, IconFileTypePdf, IconChevronDown, IconX,
+  IconFileTypeXls, IconFileTypePdf, IconChevronDown, IconX, IconUpload,
 } from '@tabler/icons-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -25,6 +25,66 @@ import dayjs from 'dayjs';
 import { openMilkPopup } from '../../utils/milkPopup';
 
 const PAGE_SIZE = 50;
+
+// ── Import: analyzer-software export ──────────────────────────────────────────
+// Columns: Date  Shift(M/E)  CenterCode  ProducerCode  SampleNo  MilkType  Qty_Kg
+//          Qty_Ltr  Temperature  Fat  Snf  LR  RTPL  Amount  Water  Time  Auto  FarmerName  MobileNo
+// Accepts tab / comma / multi-space separated text (.txt/.csv/.tsv) or .xls/.xlsx
+const normHeader = (h) => String(h ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+const toIsoDate = (v) => {
+  if (v instanceof Date) return dayjs(v).format('YYYY-MM-DD');
+  if (typeof v === 'number') return dayjs(new Date(Math.round((v - 25569) * 86400000))).format('YYYY-MM-DD');
+  const m = String(v ?? '').trim().match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : null;
+};
+
+const readImportRows = async (file) => {
+  if (/\.xlsx?$/i.test(file.name)) {
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+    return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
+  }
+  const lines = (await file.text()).split(/\r?\n/).filter(l => l.trim());
+  const first = lines[0] || '';
+  const sep = first.includes('\t') ? '\t' : first.includes(',') ? ',' : /\s{2,}/;
+  return lines.map(l => l.split(sep).map(c => c.trim()));
+};
+
+const buildImportRecords = (rows) => {
+  const hIdx = rows.findIndex(r => r.some(c => normHeader(c) === 'producercode'));
+  if (hIdx === -1) throw new Error('Header row with "ProducerCode" not found');
+  const header = rows[hIdx].map(normHeader);
+  const at = (row, name) => { const i = header.indexOf(name); return i === -1 ? '' : row[i]; };
+  const num = (v) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+
+  const records = [];
+  for (const row of rows.slice(hIdx + 1)) {
+    const producer = String(at(row, 'producercode') ?? '').trim();
+    const date = toIsoDate(at(row, 'date'));
+    if (!producer || !date) continue;
+
+    const s = String(at(row, 'shift') ?? '').trim().toUpperCase();
+    const shift = s === 'E' || s === 'PM' ? 'PM' : 'AM';
+    const center = String(at(row, 'centercode') ?? '').trim();
+    const sample = String(at(row, 'sampleno') ?? '').trim();
+
+    records.push({
+      billNo:       `FS-${date.replace(/-/g, '')}-${shift === 'AM' ? 'M' : 'E'}-${center}-${sample}-${producer}`,
+      date,
+      shift,
+      farmerNumber: producer,
+      farmerName:   String(at(row, 'farmername') ?? '').trim(),
+      qty:          num(at(row, 'qtyltr')) || num(at(row, 'qtykg')),
+      fat:          num(at(row, 'fat')),
+      snf:          num(at(row, 'snf')),
+      clr:          num(at(row, 'lr')),
+      rate:         num(at(row, 'rtpl')),
+      amount:       num(at(row, 'amount')),
+      addedWater:   num(at(row, 'water')),
+    });
+  }
+  return records;
+};
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 const StatCard = ({ label, value, sub, color, icon }) => (
@@ -46,6 +106,8 @@ const DailyCollectionList = () => {
   const { selectedCompany } = useCompany();
 
   const [loading,    setLoading]    = useState(false);
+  const [importing,  setImporting]  = useState(false);
+  const importInputRef = useRef(null);
   const [records,    setRecords]    = useState([]);   // ALL records for current filters
   const [centers,    setCenters]    = useState([]);
   const [agents,     setAgents]     = useState([]);
@@ -629,6 +691,56 @@ const DailyCollectionList = () => {
     win.document.close();
   };
 
+  // ─── Import ────────────────────────────────────────────────────────────────
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    let records;
+    try {
+      records = buildImportRecords(await readImportRows(file));
+    } catch (err) {
+      notifications.show({ title: 'Import failed', message: err.message, color: 'red' });
+      return;
+    }
+    if (!records.length) {
+      notifications.show({ title: 'Import', message: 'No rows found in file', color: 'orange' });
+      return;
+    }
+
+    setImporting(true);
+    const BATCH = 500;
+    let inserted = 0, duplicates = 0;
+    const unknown = new Set();
+    const errors = [];
+    for (let i = 0; i < records.length; i += BATCH) {
+      const batch = records.slice(i, i + BATCH);
+      try {
+        const res = await milkCollectionAPI.bulkImport(batch, { allowUnlinked: true });
+        inserted   += res.data?.inserted   || 0;
+        duplicates += res.data?.duplicates || 0;
+        (res.data?.unknownFarmers || []).forEach(n => unknown.add(n));
+      } catch (err) {
+        // Whole batch had no matching farmers
+        if (/No matching farmers/i.test(err.message || '')) batch.forEach(r => unknown.add(r.farmerNumber));
+        else errors.push(err.message || 'Unknown error');
+      }
+    }
+    setImporting(false);
+
+    const u = [...unknown];
+    let msg = `${inserted} of ${records.length} imported`;
+    if (duplicates) msg += `, ${duplicates} already existed`;
+    if (u.length)   msg += `. Imported without farmer link (producer not in master): ${u.slice(0, 10).join(', ')}${u.length > 10 ? '…' : ''}`;
+    if (errors.length) msg += `. Errors: ${errors[0]}`;
+    notifications.show({
+      title: 'Milk Collection Import', message: msg, autoClose: u.length || errors.length ? false : 6000,
+      color: errors.length ? 'red' : u.length ? 'orange' : 'green',
+    });
+    fetchRecords();
+  };
+
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <Container size="xl" py="md">
@@ -668,6 +780,22 @@ const DailyCollectionList = () => {
               </Menu.Item>
             </Menu.Dropdown>
           </Menu>
+
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".txt,.csv,.tsv,.xls,.xlsx"
+            style={{ display: 'none' }}
+            onChange={handleImportFile}
+          />
+          <Button
+            variant="default"
+            leftSection={<IconUpload size={16} />}
+            loading={importing}
+            onClick={() => importInputRef.current?.click()}
+          >
+            Import From Everest DPU
+          </Button>
 
           <Button leftSection={<IconPlus size={16} />} onClick={() => openMilkPopup('purchase')}>
             New Entry

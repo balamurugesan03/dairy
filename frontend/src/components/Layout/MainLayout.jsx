@@ -249,6 +249,8 @@ const MainLayout = () => {
         { key: '/daily-collections/list',           label: 'Daily Collection List' },
         { key: '/daily-collections/milk-sales',     label: 'Milk Sales' },
         { key: '/daily-collections/union-sales-slip', label: 'Union Sales' },
+        { key: '/daily-collections/transport', label: 'Transport' },
+        { key: '/daily-collections/milk-receipt', label: 'Milk Receipt & Shortage' },
         { key: '/daily-collections/farmer-wise-summary',   label: 'Farmer-Wise Summary' },
        
        
@@ -277,6 +279,7 @@ const MainLayout = () => {
              { key: '/reports/milk-purchase-report', label: 'Milk Purchase Report' },
              { key: '/reports/milk-sales-report',    label: 'Milk Sales Report'    },
              { key: '/reports/union-sales-report',   label: 'Union Sales Report'   },
+             { key: '/reports/union-sale-quality-comparison', label: 'Union Sale Quality Comparison' },
           ]
         },
       ]

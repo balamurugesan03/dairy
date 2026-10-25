@@ -1,4 +1,5 @@
 import MilkPurchaseSettings from '../models/MilkPurchaseSettings.js';
+import SocietyInfo from '../models/SocietyInfo.js';
 
 /**
  * milkPurchaseSettingsController.js
@@ -101,6 +102,7 @@ export const upsertSettings = async (req, res) => {
       ledDisplayConfig,
       milkAnalyzerConfig,
       otherAnalyzerConfig,
+      toDairy,
     } = req.body;
 
     const update = {};
@@ -124,6 +126,7 @@ export const upsertSettings = async (req, res) => {
     flattenConfig('ledDisplayConfig',    ledDisplayConfig,    update);
     flattenConfig('milkAnalyzerConfig',  milkAnalyzerConfig,  update);
     flattenConfig('otherAnalyzerConfig', otherAnalyzerConfig, update);
+    flattenConfig('toDairy',             toDairy,             update);
 
     if (req.user?._id) update.lastUpdatedBy = req.user._id;
 
@@ -246,9 +249,20 @@ export const fixComPorts = async (req, res) => {
 // ══════════════════════════════════════════════════════════════════════════════
 export const getSettingsSummary = async (req, res) => {
   try {
-    const settings = await MilkPurchaseSettings
-      .findOne({ companyId: req.companyId })
-      .select('quantityUnit manualEntryCombination activeRateChartType printSize machines milkAnalyzerConfig manualEntryMode whatsApp -_id');
+    const [settings, society] = await Promise.all([
+      MilkPurchaseSettings
+        .findOne({ companyId: req.companyId })
+        .select('quantityUnit manualEntryCombination activeRateChartType printSize machines milkAnalyzerConfig manualEntryMode whatsApp toDairy -_id'),
+      SocietyInfo.findOne({ companyId: req.companyId }).select('societyCode societyName city phone -_id').lean(),
+    ]);
+
+    // From Dairy = this society (Society Info, unchanged); To Dairy = Machine Configuration setting
+    const fromDairy = {
+      code    : society?.societyCode || '',
+      name    : society?.societyName || '',
+      address : society?.city || '',
+      phone   : society?.phone || '',
+    };
 
     const data = settings ? {
       quantityUnit           : settings.quantityUnit           ?? DEFAULTS.quantityUnit,
@@ -259,7 +273,9 @@ export const getSettingsSummary = async (req, res) => {
       machines               : settings.machines               ?? DEFAULTS.machines,
       milkAnalyzerConfig     : settings.milkAnalyzerConfig     ?? DEFAULTS.milkAnalyzerConfig,
       whatsApp               : settings.whatsApp               ?? DEFAULTS.whatsApp,
-    } : DEFAULTS;
+    } : { ...DEFAULTS };
+    data.fromDairy = fromDairy;
+    data.toDairy   = settings?.toDairy || { code: '', name: '', address: '', phone: '' };
 
     res.json({ success: true, data });
   } catch (err) {

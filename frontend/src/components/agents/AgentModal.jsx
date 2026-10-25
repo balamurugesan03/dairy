@@ -25,6 +25,7 @@ import {
 import { DateInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import { agentAPI, collectionCenterAPI } from '../../services/api';
+import useDefaultCentreAgent from '../../utils/defaultCentreAgent';
 
 const AgentModal = ({ isOpen, onClose, onSuccess, agentId = null }) => {
   const isEditMode = Boolean(agentId);
@@ -48,6 +49,8 @@ const AgentModal = ({ isOpen, onClose, onSuccess, agentId = null }) => {
     fetchCenters();
   }, []);
 
+  const centreDefaults = useDefaultCentreAgent();
+
   useEffect(() => {
     if (isOpen && agentId) {
       fetchAgent();
@@ -55,6 +58,13 @@ const AgentModal = ({ isOpen, onClose, onSuccess, agentId = null }) => {
       resetForm();
     }
   }, [isOpen, agentId]);
+
+  // New agent: preselect the login's default centre
+  useEffect(() => {
+    if (isOpen && !agentId && centreDefaults.centreId) {
+      setFormData(prev => (prev.collectionCenterId ? prev : { ...prev, collectionCenterId: centreDefaults.centreId }));
+    }
+  }, [isOpen, agentId, centreDefaults.centreId]);
 
   const fetchCenters = async () => {
     try {
@@ -70,7 +80,7 @@ const AgentModal = ({ isOpen, onClose, onSuccess, agentId = null }) => {
     setFormData({
       agentCode: '',
       agentName: '',
-      collectionCenterId: '',
+      collectionCenterId: centreDefaults.centreId || '',
       phone: '',
       email: '',
       address: '',

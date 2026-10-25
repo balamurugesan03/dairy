@@ -75,11 +75,11 @@ import {
 import { modals } from '@mantine/modals';
 import { farmerAPI, itemAPI, salesAPI, customerAPI, collectionCenterAPI, subsidyAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
-import { useAuth } from '../../context/AuthContext';
+import useDefaultCentreAgent from '../../utils/defaultCentreAgent';
 
 const BillingForm = () => {
   const navigate = useNavigate();
-  const { userCenter } = useAuth();
+  const centreDefaults = useDefaultCentreAgent();
   const printRef = useRef();
   const itemSelectRef = useRef(null);
   const farmerSelectRef = useRef(null);
@@ -167,17 +167,15 @@ const BillingForm = () => {
     }
   }, []);
 
-  // Auto-apply user's assigned center as default whenever auth or centers list becomes available
+  // Auto-apply the login's default centre (staff → assigned centre, admin → configured default)
   useEffect(() => {
-    if (!collectionCenters.length) return;
-    const userCentreId = userCenter?._id?.toString() || userCenter?.toString();
-    if (!userCentreId) return;
-    const preferred = collectionCenters.find(c => c._id.toString() === userCentreId);
+    if (!collectionCenters.length || !centreDefaults.centreId) return;
+    const preferred = collectionCenters.find(c => c._id.toString() === centreDefaults.centreId);
     if (preferred) {
       form.setFieldValue('collectionCenterId', preferred._id);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userCenter, collectionCenters]);
+  }, [centreDefaults.centreId, collectionCenters]);
 
   // Auto-focus farmer select on mount
   useEffect(() => {
@@ -315,8 +313,7 @@ const BillingForm = () => {
       const active = Array.isArray(centersData) ? centersData.filter(c => c.status === 'Active') : [];
       setCollectionCenters(active);
       if (active.length && !form.values.collectionCenterId) {
-        const userCentreId = userCenter?._id?.toString() || userCenter?.toString();
-        const preferred = userCentreId && active.find(c => c._id.toString() === userCentreId);
+        const preferred = centreDefaults.centreId && active.find(c => c._id.toString() === centreDefaults.centreId);
         form.setFieldValue('collectionCenterId', preferred ? preferred._id : active[0]._id);
       }
     } catch (error) {

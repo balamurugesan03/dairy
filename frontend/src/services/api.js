@@ -94,6 +94,8 @@ export const farmerAPI = {
   activateMembership: (id, data) => api.post(`/farmers/${id}/membership/activate`, data).then(res => res.data).catch(handleError),
   getEligibleForMembership: () => api.get('/farmers/eligible-for-membership').then(res => res.data).catch(handleError),
   getNextMemberNumber: () => api.get('/farmers/next-member-number').then(res => res.data).catch(handleError),
+  getNextFarmerNumber: (params) => api.get('/farmers/next-farmer-number', { params }).then(res => res.data).catch(handleError),
+  getNumberSeriesPreview: (params) => api.get('/farmers/number-series-preview', { params }).then(res => res.data).catch(handleError),
   search: (query) => {
     // Validate query parameter - must be non-empty string
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
@@ -484,7 +486,7 @@ export const milkCollectionAPI = {
   delete: (id) => api.delete(`/milk-collections/${id}`).then(res => res.data).catch(handleError),
   dateSummary: (params) => api.get('/milk-collections/date-summary', { params }).then(res => res.data).catch(handleError),
   bulkDelete:  (slots)  => api.post('/milk-collections/bulk-delete', { slots }).then(res => res.data).catch(handleError),
-  bulkImport:      (records) => api.post('/milk-collections/bulk-import',   { records }).then(res => res.data).catch(handleError),
+  bulkImport:      (records, opts = {}) => api.post('/milk-collections/bulk-import', { records, ...opts }).then(res => res.data).catch(handleError),
   zibittImport:    (records) => api.post('/milk-collections/zibitt-import',    { records }).then(res => res.data).catch(handleError),
   linzaImport:     (records) => api.post('/milk-collections/linza-import',     { records }).then(res => res.data).catch(handleError),
   openLyssaImport: (records) => api.post('/milk-collections/openlyssa-import', { records }).then(res => res.data).catch(handleError),
@@ -545,6 +547,10 @@ export const unionSalesSlipAPI = {
   zibittRawImport: (records) => api.post('/union-sales-slips/zibitt-raw-import', { records }).then(res => res.data).catch(handleError),
   backfillVouchers: ()       => api.post('/union-sales-slips/backfill-vouchers', {}, { timeout: 5 * 60 * 1000 }).then(res => res.data).catch(handleError),
   getReport:        (params) => api.get('/union-sales-slips/report', { params }).then(res => res.data).catch(handleError),
+  getQualityComparison: (params) => api.get('/union-sales-slips/quality-comparison', { params }).then(res => res.data).catch(handleError),
+  getSettings:      ()       => api.get('/union-sales-slips/settings').then(res => res.data).catch(handleError),
+  saveSettings:     (data)   => api.put('/union-sales-slips/settings', data).then(res => res.data).catch(handleError),
+  getToDairyRate:   (date)   => api.get('/union-sales-slips/settings/to-dairy-rate', { params: { date } }).then(res => res.data).catch(handleError),
   fileImport: (file, onUploadProgress) => {
     const form = new FormData();
     form.append('file', file);
@@ -929,6 +935,27 @@ export const milkPurchaseSettingsAPI = {
 };
 
 // MILK SALES RATE APIs
+export const transportRouteAPI = {
+  getAll: (params) => api.get('/transport-routes', { params }).then(res => res.data).catch(handleError),
+  getById: (id) => api.get(`/transport-routes/${id}`).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/transport-routes', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/transport-routes/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/transport-routes/${id}`).then(res => res.data).catch(handleError),
+  getCharges: (params) => api.get('/transport-routes/charges', { params }).then(res => res.data).catch(handleError),
+  postCharges: (data) => api.post('/transport-routes/charges/post', data).then(res => res.data).catch(handleError),
+  getBills: (params) => api.get('/transport-routes/bills', { params }).then(res => res.data).catch(handleError),
+  deleteBill: (id) => api.delete(`/transport-routes/bills/${id}`).then(res => res.data).catch(handleError),
+};
+
+export const milkReceiptAPI = {
+  getAll: (params) => api.get('/milk-receipts', { params }).then(res => res.data).catch(handleError),
+  getExpected: (params) => api.get('/milk-receipts/expected', { params }).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/milk-receipts', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/milk-receipts/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/milk-receipts/${id}`).then(res => res.data).catch(handleError),
+  getShortageReport: (params) => api.get('/milk-receipts/shortage-report', { params }).then(res => res.data).catch(handleError),
+};
+
 export const milkSalesRateAPI = {
   // Get all rates with optional pagination/search/filter
   getAll: (params = {}) =>
@@ -1096,7 +1123,7 @@ export const machineConfigAPI = {
   startScale:     (data) => api.post('/machine-config/scale/start', data || {}).then(r => r.data).catch(handleError),
   stopScale:      ()     => api.post('/machine-config/scale/stop').then(r => r.data).catch(handleError),
   getScaleStatus: ()     => api.get('/machine-config/scale/status').then(r => r.data).catch(handleError),
-  scaleTare:      ()     => api.post('/machine-config/scale/tare').then(r => r.data).catch(handleError),
+  scaleTare:      (opts = {}) => api.post('/machine-config/scale/tare', opts).then(r => r.data).catch(handleError),
   // LED Display
   startDisplay:      (data) => api.post('/machine-config/display/start', data || {}).then(r => r.data).catch(handleError),
   stopDisplay:       ()     => api.post('/machine-config/display/stop').then(r => r.data).catch(handleError),

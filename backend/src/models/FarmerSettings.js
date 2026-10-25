@@ -32,6 +32,29 @@ const farmerSettingsSchema = new mongoose.Schema(
       default: 'SubmitLinks', // preserves the old Yes-was-the-common-choice behavior by default
     },
 
+    // Farmer Number series for NEW farmers (existing numbers are never changed):
+    //   'Existing' — one common sequence 1, 2, 3 … (the original behaviour)
+    //   'Centre'   — each centre has its own sequence, prefixed with the centre's
+    //                numeric Farmer No Code: code 1 → 1001, 1002 …; code 2 → 2001 …
+    // Numbers stay digits-only (Milk Purchase Farmer No is numeric) and unique.
+    numberSeries: {
+      type:    String,
+      enum:    ['Existing', 'Centre'],
+      default: 'Existing',
+    },
+    // Digits in the per-centre sequence part (3 → code 1 gives 1001)
+    centreSeriesWidth: {
+      type:    Number,
+      min:     1,
+      max:     6,
+      default: 3,
+    },
+
+    // Default Centre / Agent preselected for admin logins on entry forms.
+    // Staff and agent logins always use their own assigned centre / agent.
+    defaultCentre: { type: mongoose.Schema.Types.ObjectId, ref: 'CollectionCenter', default: null },
+    defaultAgent:  { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },
+
     lastUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },
   {

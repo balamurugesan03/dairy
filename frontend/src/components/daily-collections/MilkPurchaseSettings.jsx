@@ -49,6 +49,7 @@ import {
   IconCircleCheck,
   IconCircleX,
   IconStack2,
+  IconBuildingFactory2,
 } from '@tabler/icons-react';
 import { milkPurchaseSettingsAPI, machineConfigAPI, milmaChartAPI, whatsappAPI } from '../../services/api';
 import RateChargeTable from './RateChargeTable';
@@ -71,7 +72,7 @@ const GREEN_HINT  = '#16a34a';
 const COM_PORTS = [
   'ttyS0','ttyS1','ttyS2','ttyS3',
   'ttyUSB0','ttyUSB1','ttyUSB2',
-  'COM1','COM2','COM3','COM4','COM5',
+  ...Array.from({ length: 20 }, (_, i) => `COM${i + 1}`),
 ];
 const BAUD_RATES       = ['1200','2400','4800','9600','19200','38400','57600','115200'];
 const LED_DEVICES      = ['COMIENZ','ARIES','GENERIC','NONE'];
@@ -330,6 +331,9 @@ export default function MilkPurchaseSettings() {
       snfPosEnd  : 0,
       outputLen  : 0,
     },
+
+    // To Dairy — where the society sends its milk (From Dairy = Society Info)
+    toDairy: { code: '', name: '', address: '', phone: '' },
   });
 
   // ── Load settings from server ──────────────────────────────────────────────
@@ -370,6 +374,9 @@ export default function MilkPurchaseSettings() {
       setAnalyzerRunning(res?.isOpen || false);
     } catch { /* silent */ }
   };
+
+  // Ports detected on this PC + COM1–COM20 + the saved value (so any port can be picked)
+  const portOptions = (current) => [...new Set([...dynamicPorts, ...COM_PORTS, current].filter(Boolean))];
 
   const fetchDynamicPorts = async () => {
     setPortsLoading(true);
@@ -450,6 +457,10 @@ export default function MilkPurchaseSettings() {
       otherAnalyzerConfig: {
         ...prev.otherAnalyzerConfig,
         ...(data.otherAnalyzerConfig || {}),
+      },
+      toDairy: {
+        ...prev.toDairy,
+        ...(data.toDairy || {}),
       },
     }));
   }
@@ -1064,6 +1075,34 @@ export default function MilkPurchaseSettings() {
             </Grid>
 
             {/* ──────────────────────────────────────
+                To Dairy — shown next to Session in Milk Purchase & Sales
+            ────────────────────────────────────── */}
+            <SectionCard icon={IconBuildingFactory2} title="To Dairy" badge="Milk Purchase & Sales">
+              <Text size="xs" c="dimmed" mb="sm">
+                The dairy / union this society sends its milk to. From Dairy is this society itself and comes from
+                Society Info (unchanged). Both are shown next to Session in Milk Purchase and Milk Sales.
+              </Text>
+              <Grid gutter="sm">
+                <Grid.Col span={{ base: 12, sm: 3 }}>
+                  <TextInput label="Dairy Code" value={form.toDairy.code}
+                    onChange={e => setSub('toDairy', 'code', e.currentTarget.value)} />
+                </Grid.Col>
+                <Grid.Col span={{ base: 12, sm: 9 }}>
+                  <TextInput label="Dairy Name" placeholder="e.g. MILMA Union Dairy" value={form.toDairy.name}
+                    onChange={e => setSub('toDairy', 'name', e.currentTarget.value)} />
+                </Grid.Col>
+                <Grid.Col span={{ base: 12, sm: 8 }}>
+                  <TextInput label="Address / Place" value={form.toDairy.address}
+                    onChange={e => setSub('toDairy', 'address', e.currentTarget.value)} />
+                </Grid.Col>
+                <Grid.Col span={{ base: 12, sm: 4 }}>
+                  <TextInput label="Phone" value={form.toDairy.phone}
+                    onChange={e => setSub('toDairy', 'phone', e.currentTarget.value)} />
+                </Grid.Col>
+              </Grid>
+            </SectionCard>
+
+            {/* ──────────────────────────────────────
                 WhatsApp Integration — QR Scan
             ────────────────────────────────────── */}
             <SectionCard icon={IconWifi} title="WhatsApp Bill Messaging" badge="QR Link">
@@ -1249,7 +1288,8 @@ export default function MilkPurchaseSettings() {
                     <Box>
                       <FieldLabel>Com Port</FieldLabel>
                       <Select
-                        data={COM_PORTS}
+                        data={portOptions(form.weighingScaleConfig.comPort)}
+                        searchable
                         value={form.weighingScaleConfig.comPort}
                         onChange={v => setSub('weighingScaleConfig', 'comPort', v)}
                         size="sm"
@@ -1330,7 +1370,8 @@ export default function MilkPurchaseSettings() {
                     <Box>
                       <FieldLabel>Com Port</FieldLabel>
                       <Select
-                        data={COM_PORTS}
+                        data={portOptions(form.ledDisplayConfig.comPort)}
+                        searchable
                         value={form.ledDisplayConfig.comPort}
                         onChange={v => setSub('ledDisplayConfig', 'comPort', v)}
                         size="sm"

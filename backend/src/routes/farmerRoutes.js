@@ -10,6 +10,8 @@ import {
   activateMembership,
   getEligibleFarmers,
   getNextMemberNumber,
+  getNextFarmerNumber,
+  getNumberSeriesPreview,
   addShareToFarmer,
   getShareHistory,
   terminateFarmer,
@@ -55,6 +57,8 @@ router.get('/eligible-for-membership', getEligibleFarmers);
 
 // Next available Member Number (continues from the last assigned Member Number)
 router.get('/next-member-number', getNextMemberNumber);
+router.get('/next-farmer-number', getNextFarmerNumber);
+router.get('/number-series-preview', getNumberSeriesPreview);
 
 // Get farmer by ID
 router.get('/:id', getFarmerById);

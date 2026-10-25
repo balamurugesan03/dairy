@@ -90,7 +90,7 @@ const voucherSchema = new mongoose.Schema({
       'LoanDisbursal', 'AdvancePayment', 'Opening',
       'ShareCapital', 'AdmissionFee', 'BankTransfer',
       'UnionSales', 'PurchaseReturn', 'SalesReturn',
-      'IncentiveRegister', 'BonusRegister'
+      'IncentiveRegister', 'BonusRegister', 'TransportCharges'
     ],
     default: 'Manual'
   },

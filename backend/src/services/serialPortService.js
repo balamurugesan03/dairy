@@ -7,8 +7,15 @@
  *   inside[0..3]  = FAT raw (÷100)  e.g. "1025" → 10.25
  *   inside[4..7]  = SNF raw (÷100)  e.g. "0954" → 9.54
  *   inside[8..11] = Density         e.g. "0002" → 2
- *   inside[12..13]= Added Water %   e.g. "00"   → 0
- *   inside[14..28]= reserved
+ *   inside[12..15]= Added Water (÷100) e.g. "1556" → 15.56
+ *   inside[16..28]= reserved
+ *
+ * Fatscan: 18-char ASCII frame  (0363071825241325)
+ *   inside[0..3]  = FAT (÷100)           "0363" → 3.63
+ *   inside[4..7]  = SNF (÷100)           "0718" → 7.18
+ *   inside[8..11] = CLR / density (÷100) "2524" → 25.24
+ *   inside[12..13]= Added Water %        "13"   → 13
+ *   inside[14..15]= Temperature °C       "25"   → 25
  *
  * Fallback formats (other machines):
  *   Lactoscan:  F=4.50 SNF=8.35 D=26.50 L=5.000 W=0.0
@@ -29,6 +36,9 @@ let scalePath    = null;
 let scaleBaud    = null;
 let scaleBuffer  = '';
 let scaleDebounceTimer = null;
+let scaleIdleTimer     = null;
+let scaleLastGross     = null;   // latest raw weight from the scale
+let scaleTareOffset    = 0;      // software tare — for scales that ignore the tare command
 let scaleLastValue     = null;
 
 // ── Parse 31-char frame  (XXXXXXXXXXXXXXXXXXXXXXXXXXXXX) ──────────────────────
@@ -41,7 +51,7 @@ function parse31Char(frame) {
   const fatRaw      = parseInt(inner.slice(0, 4),  10);
   const snfRaw      = parseInt(inner.slice(4, 8),  10);
   const densityRaw  = parseInt(inner.slice(8, 12), 10);
-  const waterRaw    = parseInt(inner.slice(14, 16),10);  // positions 15-16
+  const waterRaw    = parseInt(inner.slice(12, 16),10);  // "1556" → 15.56
 
   if (isNaN(fatRaw) || isNaN(snfRaw)) return null;
 
@@ -51,7 +61,30 @@ function parse31Char(frame) {
     clr:        null,
     ltr:        null,
     density:    isNaN(densityRaw) ? null : densityRaw,
-    addedWater: isNaN(waterRaw)   ? 0    : waterRaw,
+    addedWater: isNaN(waterRaw)   ? 0    : waterRaw / 100,
+    rawData:    frame,
+  };
+}
+
+// ── Parse Fatscan 18-char frame  (0363071825241325) ───────────────────────────
+function parseFatscan(frame) {
+  if (frame.length !== 18) return null;
+  if (frame[0] !== '(' || frame[17] !== ')') return null;
+  const inner = frame.slice(1, 17); // 16 digits
+  if (!/^\d{16}$/.test(inner)) return null;
+
+  const fatRaw   = parseInt(inner.slice(0, 4),   10);
+  const snfRaw   = parseInt(inner.slice(4, 8),   10);
+  const clrRaw   = parseInt(inner.slice(8, 12),  10);
+  const waterRaw = parseInt(inner.slice(12, 14), 10);
+
+  return {
+    fat:        parseFloat((fatRaw / 100).toFixed(1)),
+    snf:        parseFloat((snfRaw / 100).toFixed(2)),
+    clr:        parseFloat((clrRaw / 100).toFixed(1)),
+    ltr:        null,
+    density:    clrRaw / 100,
+    addedWater: waterRaw,
     rawData:    frame,
   };
 }
@@ -109,6 +142,11 @@ function parseAnalyzerData(text) {
     const result = parse31Char(frame);
     if (result) return result;
   }
+  // Fatscan 18-char frame
+  if (idx !== -1 && text.length >= idx + 18) {
+    const result = parseFatscan(text.substring(idx, idx + 18));
+    if (result) return result;
+  }
   // Fallback
   return parseFallback(text);
 }
@@ -124,9 +162,9 @@ function processBuffer(io) {
     const frame = dataBuffer.substring(start, end + 1);
     dataBuffer  = dataBuffer.substring(end + 1);
 
-    const parsed = parse31Char(frame);
+    const parsed = parse31Char(frame) || parseFatscan(frame);
     if (parsed) {
-      console.log(`[SerialPort] 31-char: FAT=${parsed.fat} SNF=${parsed.snf} Density=${parsed.density} Water=${parsed.addedWater}`);
+      console.log(`[SerialPort] ${frame.length}-char: FAT=${parsed.fat} SNF=${parsed.snf} Density=${parsed.density} Water=${parsed.addedWater}`);
       io.emit('milk-analyzer-data', { ...parsed, timestamp: new Date().toISOString() });
       return; // processed one frame — loop will continue
     }
@@ -296,28 +334,61 @@ export async function listPorts() {
 }
 
 // ── Weight Scale: parse one ASCII line from encoder/scale ─────────────────────
-// Accepts:  "L0002.10"  "L 0002.1"  "U0002.1"  etc.
+// Accepts:  "L0002.10"  "L 0002.1"  "U0002.1"         (L = stable, U = unstable)
+//           "ST,GS,+  2.150kg"  "US,GS,+ 2.1kg"       (ST = stable, US = unstable)
+//           "  2.150 kg"  "+002.15"  "0002.15"        (no flag — stable when repeated)
 // Returns:  { stable: bool, value: float } or null
+let scalePrevPlain = null;
 function parseScaleLine(line) {
-  const text = line.trim();
+  const text = line.replace(/[\x00-\x1F\x7F]/g, ' ').trim();
   if (!text) return null;
-  const match = text.match(/^([A-Za-z])\s*(\d+\.?\d*)/);
-  if (!match) return null;
-  const stable = match[1].toUpperCase() === 'L';
-  const value  = parseFloat(match[2]);
+
+  const lettered = text.match(/^([A-Za-z])\s*(\d+\.?\d*)$/) || text.match(/^([LU])\s*(\d+\.?\d*)/i);
+  if (lettered) {
+    const value = parseFloat(lettered[2]);
+    return isNaN(value) ? null : { stable: lettered[1].toUpperCase() !== 'U', value };
+  }
+
+  const num = text.match(/[+-]?\s*\d+(?:\.\d+)?/);
+  if (!num) return null;
+  const value = parseFloat(num[0].replace(/\s/g, ''));
   if (isNaN(value)) return null;
+
+  if (/^ST\b/i.test(text)) return { stable: true,  value };
+  if (/^US\b/i.test(text)) return { stable: false, value };
+
+  // No stability flag: treat as stable once the same value arrives twice in a row
+  const stable = scalePrevPlain === value;
+  scalePrevPlain = value;
   return { stable, value };
 }
 
+let scaleRawLogAt = 0;
+function logScaleRaw(line, parsed) {
+  const now = Date.now();
+  if (now - scaleRawLogAt < 2000) return;   // throttle: one log every 2s
+  scaleRawLogAt = now;
+  console.log(`[ScalePort] raw=${JSON.stringify(line)} → ${parsed ? `${parsed.value} kg (${parsed.stable ? 'stable' : 'unstable'})` : 'NOT PARSED'}`);
+}
+
 // ── Weight Scale: process buffer → emit debounced stable reading ───────────────
-function processScaleBuffer(io) {
-  const lines = scaleBuffer.split(/[\r\n]+/);
-  scaleBuffer = lines.pop(); // keep partial last segment
+function processScaleBuffer(io, flushAll = false) {
+  // Frames end with CR/LF, or are wrapped in STX(0x02)/ETX(0x03)
+  const lines = scaleBuffer.split(/[\r\n\x02\x03]+/);
+  scaleBuffer = flushAll ? '' : lines.pop(); // keep partial last segment
 
   for (const line of lines) {
     if (!line.trim()) continue;
     const parsed = parseScaleLine(line);
-    if (!parsed) continue;
+    logScaleRaw(line, parsed);
+    if (!parsed) {
+      io.emit('weight-scale-data', { stable: false, value: null, raw: line.trim(), timestamp: new Date().toISOString() });
+      continue;
+    }
+
+    // Software tare: subtract the weight captured when TARE was pressed
+    scaleLastGross = parsed.value;
+    parsed.value = parseFloat((parsed.value - scaleTareOffset).toFixed(3));
 
     // Always emit raw (unstable too) so frontend can show live weight
     io.emit('weight-scale-data', {
@@ -363,28 +434,32 @@ export function startScale({ port: portPath, baudRate }, io) {
     scalePath   = null;
     scaleBaud   = null;
     clearTimeout(scaleDebounceTimer);
-    scaleLastValue = null;
+    scaleLastValue  = null;
+    scaleTareOffset = 0;
+    scaleLastGross  = null;
 
     setTimeout(() => openScalePort(), 500);
 
     async function openScalePort() {
       const requestedBaud = parseInt(baudRate, 10);
-      const baudList = [requestedBaud, ...COMMON_BAUDS.filter(b => b !== requestedBaud)];
+      // Scale: never fall back to another baud — a wrong baud gives garbage weights.
+      // Error 31 / Access denied right after a stop is Windows still releasing the
+      // port, so retry the SAME baud a few times instead.
+      const baudList = [requestedBaud];
 
       let lastErr = null;
       let openedPort = null;
       let openedBaud = null;
 
-      for (const baud of baudList) {
-        const result = await tryOpenPort(portPath, baud);
-        if (result.port) { openedPort = result.port; openedBaud = baud; break; }
+      for (let attempt = 1; attempt <= 5 && !openedPort; attempt++) {
+        const result = await tryOpenPort(portPath, requestedBaud);
+        if (result.port) { openedPort = result.port; openedBaud = requestedBaud; break; }
         lastErr = result.error;
-        const isError31 = lastErr.message.includes('31') ||
-          lastErr.message.toLowerCase().includes('gen_failure') ||
-          lastErr.message.toLowerCase().includes('unknown error code 31');
-        if (!isError31) break;
-        console.warn(`[ScalePort] ${portPath} @ ${baud} baud → Error 31, trying next…`);
-        await new Promise(r => setTimeout(r, 300));
+        const msg = lastErr.message.toLowerCase();
+        const transient = msg.includes('31') || msg.includes('gen_failure') || msg.includes('access denied');
+        if (!transient) break;
+        console.warn(`[ScalePort] ${portPath} @ ${requestedBaud} baud → ${lastErr.message} (attempt ${attempt}/5), retrying…`);
+        await new Promise(r => setTimeout(r, 700));
       }
 
       if (!openedPort) {
@@ -394,7 +469,7 @@ export function startScale({ port: portPath, baudRate }, io) {
         } else if (lastErr.message.includes('File not found') || lastErr.message.includes('ENOENT')) {
           msg = `${portPath} not found — check the USB-Serial adapter is connected.`;
         } else if (lastErr.message.includes('31') || lastErr.message.toLowerCase().includes('gen_failure') || lastErr.message.toLowerCase().includes('unknown error code 31')) {
-          msg = `Cannot configure scale port ${portPath} (Error 31) — tried baud rates ${baudList.join(', ')} and all failed. Reconnect the USB-Serial adapter or reinstall its driver.`;
+          msg = `Cannot configure scale port ${portPath} @ ${baudList[0]} baud (Error 31) — wait a few seconds and press Start again, or reconnect the USB-Serial adapter.`;
         }
         console.warn(`[ScalePort] ${msg}`);
         return resolve({ success: false, message: msg });
@@ -411,6 +486,9 @@ export function startScale({ port: portPath, baudRate }, io) {
       openedPort.on('data', (chunk) => {
         scaleBuffer += chunk.toString('ascii');
         processScaleBuffer(io);
+        // Scales that send no line ending: treat a 150 ms pause as end of frame
+        clearTimeout(scaleIdleTimer);
+        scaleIdleTimer = setTimeout(() => { if (scaleBuffer.trim()) processScaleBuffer(io, true); }, 150);
       });
 
       openedPort.on('error', (err) => {
@@ -438,9 +516,15 @@ export function startScale({ port: portPath, baudRate }, io) {
 
 // ── Send tare command to scale ─────────────────────────────────────────────────
 // tareString comes from MilkPurchaseSettings.weighingScaleConfig.tareString (default 'T')
-export function sendScaleTare(tareString = 'T') {
+export function sendScaleTare(tareString = 'T', { software = false } = {}) {
   if (!scalePort || !scalePort.isOpen) {
     return { success: false, message: 'Scale port is not open' };
+  }
+  // Software tare — works even when the scale ignores the command below
+  if (software) {
+    scaleTareOffset = scaleLastGross ?? 0;
+    scaleLastValue  = null;
+    console.log(`[ScalePort] Software tare: ${scaleTareOffset} kg`);
   }
   try {
     const cmd = Buffer.from(tareString + '\r\n', 'ascii');

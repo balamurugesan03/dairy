@@ -3,6 +3,8 @@ import Ledger from '../models/Ledger.js';
 import MilkCollection from '../models/MilkCollection.js';
 import BankTransfer from '../models/BankTransfer.js';
 import FarmerNumberHistory from '../models/FarmerNumberHistory.js';
+import FarmerSettings from '../models/FarmerSettings.js';
+import CollectionCenter from '../models/CollectionCenter.js';
 import mongoose from 'mongoose';
 import { createShareCapitalVoucher, createAdmissionFeeVoucher } from '../utils/accountingHelper.js';
 
@@ -672,6 +674,117 @@ export const getNextMemberNumber = async (req, res) => {
   } catch (error) {
     console.error('Error fetching next member number:', error);
     res.status(500).json({ success: false, message: error.message || 'Error fetching next member number' });
+  }
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  FARMER NUMBER SERIES  (Producer Management → Settings)
+//    Existing → one common sequence: highest numeric farmer number + 1
+//    Centre   → centre's numeric code + padded sequence: code 1, width 3 → 1001, 1002 …
+//  Numbers already taken (by any farmer) are always skipped, and existing
+//  farmers are never renumbered.
+// ══════════════════════════════════════════════════════════════════════════════
+const loadTakenNumbers = async (companyId) => {
+  const rows = await Farmer.find({ companyId }, 'farmerNumber collectionCenter').lean();
+  return rows;
+};
+
+const nextExistingSeries = (rows) => {
+  const taken = new Set(rows.map(r => String(r.farmerNumber)));
+  let max = 0;
+  for (const r of rows) {
+    const s = String(r.farmerNumber || '');
+    if (/^\d+$/.test(s)) max = Math.max(max, parseInt(s, 10));
+  }
+  let n = max + 1;
+  while (taken.has(String(n))) n += 1;
+  return String(n);
+};
+
+const nextCentreSeries = (rows, centre, width) => {
+  const code = String(centre.farmerNoCode || '');
+  const taken = new Set(rows.map(r => String(r.farmerNumber)));
+  const pattern = new RegExp(`^${code}(\\d{${width},})$`);
+  // Continue from this centre's own highest number in its series
+  let seq = 0;
+  for (const r of rows) {
+    if (String(r.collectionCenter || '') !== String(centre._id)) continue;
+    const m = String(r.farmerNumber || '').match(pattern);
+    if (m) seq = Math.max(seq, parseInt(m[1], 10));
+  }
+  let candidate;
+  do {
+    seq += 1;
+    candidate = `${code}${String(seq).padStart(width, '0')}`;
+  } while (taken.has(candidate));
+  return candidate;
+};
+
+// GET /farmers/next-farmer-number?collectionCenter=<id>
+export const getNextFarmerNumber = async (req, res) => {
+  try {
+    const settings = await FarmerSettings.getOrCreate(req.companyId);
+    const rows = await loadTakenNumbers(req.companyId);
+
+    if (settings.numberSeries !== 'Centre') {
+      return res.json({ success: true, data: { series: 'Existing', nextFarmerNumber: nextExistingSeries(rows) } });
+    }
+
+    const { collectionCenter } = req.query;
+    if (!collectionCenter) {
+      return res.json({ success: true, data: { series: 'Centre', nextFarmerNumber: '', needsCentre: true } });
+    }
+    const centre = await CollectionCenter.findOne({ _id: collectionCenter, companyId: req.companyId })
+      .select('centerName farmerNoCode').lean();
+    if (!centre) return res.status(404).json({ success: false, message: 'Collection centre not found' });
+    if (!centre.farmerNoCode) {
+      return res.status(400).json({
+        success: false,
+        message: `Set a Farmer No Code for ${centre.centerName} (Collection Centre → Edit) to use the centre-wise series`
+      });
+    }
+    res.json({
+      success: true,
+      data: {
+        series: 'Centre',
+        nextFarmerNumber: nextCentreSeries(rows, centre, settings.centreSeriesWidth || 3),
+        centreCode: centre.farmerNoCode
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching next farmer number:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error fetching next farmer number' });
+  }
+};
+
+// GET /farmers/number-series-preview?width=3 — next number per centre for the Settings screen
+export const getNumberSeriesPreview = async (req, res) => {
+  try {
+    const settings = await FarmerSettings.getOrCreate(req.companyId);
+    const width = Math.min(6, Math.max(1, Number(req.query.width) || settings.centreSeriesWidth || 3));
+    const [rows, centres] = await Promise.all([
+      loadTakenNumbers(req.companyId),
+      CollectionCenter.find({ companyId: req.companyId, status: 'Active' }).select('centerName farmerNoCode').sort({ centerName: 1 }).lean()
+    ]);
+    let maxExisting = 0;
+    for (const r of rows) {
+      const s = String(r.farmerNumber || '');
+      if (/^\d+$/.test(s)) maxExisting = Math.max(maxExisting, parseInt(s, 10));
+    }
+    const perCentre = centres.map(c => {
+      if (!c.farmerNoCode) return { centreId: c._id, centerName: c.centerName, code: '', next: '' };
+      const next = nextCentreSeries(rows, c, width);
+      const first = `${c.farmerNoCode}${'1'.padStart(width, '0')}`;
+      // The series' first number is already used by another farmer → numbers will be skipped
+      const overlapsExisting = rows.some(r => String(r.farmerNumber) === first && String(r.collectionCenter || '') !== String(c._id));
+      return { centreId: c._id, centerName: c.centerName, code: c.farmerNoCode, next, overlapsExisting };
+    });
+    res.json({
+      success: true,
+      data: { width, nextExisting: nextExistingSeries(rows), maxExisting, perCentre }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 

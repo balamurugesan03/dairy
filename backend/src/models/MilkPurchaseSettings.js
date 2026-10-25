@@ -66,6 +66,17 @@ const otherAnalyzerConfigSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// ─── Sub-schema: To Dairy (same fields shown for From Dairy / Society Info) ────
+const toDairySchema = new mongoose.Schema(
+  {
+    code    : { type: String, trim: true, default: '' },
+    name    : { type: String, trim: true, default: '' },
+    address : { type: String, trim: true, default: '' },
+    phone   : { type: String, trim: true, default: '' },
+  },
+  { _id: false }
+);
+
 // ─── Main Settings Schema ────────────────────────────────────────────────────
 const milkPurchaseSettingsSchema = new mongoose.Schema(
   {
@@ -155,6 +166,13 @@ const milkPurchaseSettingsSchema = new mongoose.Schema(
     // ── Other Analyzer manual configuration ───────────────────────────────
     otherAnalyzerConfig: {
       type    : otherAnalyzerConfigSchema,
+      default : () => ({}),
+    },
+
+    // ── To Dairy — the dairy / union this society sends milk to ────────────
+    // From Dairy is this society itself (Society Info) and is not stored here.
+    toDairy: {
+      type    : toDairySchema,
       default : () => ({}),
     },
 

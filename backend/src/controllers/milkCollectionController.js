@@ -613,7 +613,8 @@ export const openLyssaImportCollections = async (req, res) => {
 // ── BULK IMPORT  (Zibitt DailyCollection / CSV — no accounting vouchers) ──────
 export const bulkImportCollections = async (req, res) => {
   try {
-    const { records } = req.body;
+    // allowUnlinked: keep rows whose producer isn't in Farmer master (farmer: null, name from file)
+    const { records, allowUnlinked } = req.body;
     if (!Array.isArray(records) || records.length === 0) {
       return res.status(400).json({ success: false, message: 'No records provided' });
     }
@@ -645,8 +646,11 @@ export const bulkImportCollections = async (req, res) => {
     for (const r of records) {
       const fn = String(r.farmerNumber || '');
       const fm = farmerMap[fn];
-      if (!fm) { skipped.push(fn); continue; }
-      docs.push({ ...r, date: parseAnyDate(r.date), farmer: fm.id, farmerName: r.farmerName || fm.name, farmerNumber: fn, companyId: req.companyId });
+      if (!fm) {
+        skipped.push(fn);
+        if (!allowUnlinked) continue;
+      }
+      docs.push({ ...r, date: parseAnyDate(r.date), farmer: fm ? fm.id : null, farmerName: r.farmerName || fm?.name || '', farmerNumber: fn, companyId: req.companyId });
     }
 
     if (docs.length === 0) {
@@ -655,12 +659,14 @@ export const bulkImportCollections = async (req, res) => {
     }
 
     let inserted = 0;
+    let duplicates = 0;
     try {
       const result = await MilkCollection.insertMany(docs, { ordered: false });
       inserted = result.length;
     } catch (err) {
-      if (err.name === 'BulkWriteError' || err.code === 11000) {
-        inserted = err.result?.nInserted ?? 0;
+      if (err.name === 'MongoBulkWriteError' || err.name === 'BulkWriteError' || err.code === 11000) {
+        inserted = err.result?.insertedCount ?? err.result?.nInserted ?? err.insertedDocs?.length ?? 0;
+        duplicates = docs.length - inserted;
       } else {
         throw err;
       }
@@ -671,13 +677,15 @@ export const bulkImportCollections = async (req, res) => {
     await recomputeFarmersEligibility(docs.map(d => d.farmer), req.companyId);
 
     const unknown = [...new Set(skipped)].slice(0, 5).join(', ');
-    const msg = skipped.length
-      ? `${inserted} imported, ${skipped.length} skipped (farmer not found: ${unknown}${skipped.length > 5 ? '…' : ''})`
-      : `${inserted} records imported`;
+    let msg = `${inserted} records imported`;
+    if (duplicates)     msg += `, ${duplicates} skipped (already exists)`;
+    if (skipped.length) msg += allowUnlinked
+      ? ` (${skipped.length} not linked to a farmer: ${unknown}${skipped.length > 5 ? '…' : ''})`
+      : `, ${skipped.length} skipped (farmer not found: ${unknown}${skipped.length > 5 ? '…' : ''})`;
 
     // Imports carry no centre/agent — assign them before the next read
     await healAfterImport(req.companyId);
-    res.status(201).json({ success: true, data: { inserted, skipped: skipped.length }, message: msg });
+    res.status(201).json({ success: true, data: { inserted, duplicates, skipped: skipped.length, unknownFarmers: [...new Set(skipped)] }, message: msg });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
