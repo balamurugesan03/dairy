@@ -144,7 +144,9 @@ export const scaleTareHandler = async (req, res) => {
     if (settings?.weighingScaleConfig?.tareString) {
       tareString = settings.weighingScaleConfig.tareString;
     }
-    const result = sendScaleTare(tareString);
+    // software: true only for the manual TARE button — auto-tare after save must not
+    // capture the full milk can as the offset
+    const result = sendScaleTare(tareString, { software: req.body?.software === true });
     if (result.success) {
       res.json({ success: true, message: `Tare sent: ${JSON.stringify(tareString)}` });
     } else {

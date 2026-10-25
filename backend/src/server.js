@@ -289,6 +289,12 @@ import milkSalesRoutes from './routes/milkSalesRoutes.js';
 // Milk Sales Rate routes
 import milkSalesRateRoutes from './routes/milkSalesRateRoutes.js';
 
+// Transport Route routes
+import transportRouteRoutes from './routes/transportRouteRoutes.js';
+
+// Milk Receipt (main centre) / Shortage routes
+import milkReceiptRoutes from './routes/milkReceiptRoutes.js';
+
 // Shift Incentive routes
 import shiftIncentiveRoutes from './routes/shiftIncentiveRoutes.js';
 
@@ -513,6 +519,12 @@ app.use('/api/milma-charts',       protect, addCompanyFilter, milmaUserRoutes);
 
 // Milk Sales Rate routes
 app.use('/api/milk-sales-rates', protect, addCompanyFilter, milkSalesRateRoutes);
+
+// Transport Route routes
+app.use('/api/transport-routes', protect, addCompanyFilter, transportRouteRoutes);
+
+// Milk Receipt (main centre) / Shortage routes
+app.use('/api/milk-receipts', protect, addCompanyFilter, milkReceiptRoutes);
 
 // Shift Incentive routes
 app.use('/api/shift-incentives', protect, addCompanyFilter, shiftIncentiveRoutes);

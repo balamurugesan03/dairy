@@ -118,6 +118,8 @@ const MilkPurchaseSettings   = lazy(() => import('./components/daily-collections
 const RateChargeTable        = lazy(() => import('./components/daily-collections/RateChargeTable'));
 const UnionSalesSlip         = lazy(() => import('./components/daily-collections/UnionSalesSlip'));
 const MilkSalesRateList      = lazy(() => import('./components/daily-collections/MilkSalesRateList'));
+const TransportRouteList     = lazy(() => import('./components/daily-collections/TransportRouteList'));
+const MilkReceiptShortage    = lazy(() => import('./components/daily-collections/MilkReceiptShortage'));
 const ShiftIncentiveList     = lazy(() => import('./components/daily-collections/ShiftIncentiveList'));
 const TimeIncentiveList      = lazy(() => import('./components/daily-collections/TimeIncentiveList'));
 const IncentiveRegister      = lazy(() => import('./components/reports/IncentiveRegister'));
@@ -186,6 +188,7 @@ const InspectionReport    = lazy(() => import('./components/reports/InspectionRe
 const MilkPurchaseReport  = lazy(() => import('./components/reports/MilkPurchaseReport'));
 const MilkSalesReport     = lazy(() => import('./components/reports/MilkSalesReport'));
 const UnionSalesReport    = lazy(() => import('./components/reports/UnionSalesReport'));
+const UnionQualityComparison = lazy(() => import('./components/reports/UnionQualityComparison'));
 const MilkStatementReport        = lazy(() => import('./components/reports/MilkStatementReport'));
 const BMCCOperatingCostReport    = lazy(() => import('./components/reports/BMCCOperatingCostReport'));
 
@@ -460,6 +463,8 @@ const AppContent = () => {
                 <Route path="rate-charge-table"      element={<RateChargeTable />} />
                 <Route path="union-sales-slip"       element={<UnionSalesSlip />} />
                 <Route path="milk-sales-rate"        element={<MilkSalesRateList />} />
+                <Route path="transport"              element={<TransportRouteList />} />
+                <Route path="milk-receipt"           element={<MilkReceiptShortage />} />
                 <Route path="shift-incentive"        element={<ShiftIncentiveList />} />
                 <Route path="time-incentive"         element={<TimeIncentiveList />} />
                 <Route path="incentive-register"     element={<IncentiveRegister />} />
@@ -562,6 +567,7 @@ const AppContent = () => {
                 <Route path="milk-purchase-report"  element={<MilkPurchaseReport />} />
                 <Route path="milk-sales-report"     element={<MilkSalesReport />} />
                 <Route path="union-sales-report"    element={<UnionSalesReport />} />
+                <Route path="union-sale-quality-comparison" element={<UnionQualityComparison />} />
                 <Route path="milk-statement"        element={<MilkStatementReport />} />
                 <Route path="cc-operating-cost"     element={<BMCCOperatingCostReport />} />
               </Route>

@@ -13,6 +13,12 @@ import {
   backfillVouchers,
   getUnionSalesReport,
 } from '../controllers/unionSalesSlipController.js';
+import {
+  getUnionSaleSettings,
+  saveUnionSaleSettings,
+  getToDairyRate,
+  getQualityComparison,
+} from '../controllers/unionSaleQualityController.js';
 
 const router = express.Router();
 
@@ -28,6 +34,14 @@ router.post('/backfill-vouchers', backfillVouchers);
 
 // Report — before /:id
 router.get('/report', getUnionSalesReport);
+
+// Union Sale Quality Comparison (procurement vs To Dairy) — before /:id
+router.get('/quality-comparison', getQualityComparison);
+
+// Settings: From Dairy / To Dairy TS Rate Settings — before /:id
+router.get('/settings',                  getUnionSaleSettings);
+router.put('/settings',                  saveUnionSaleSettings);
+router.get('/settings/to-dairy-rate',    getToDairyRate);
 
 // Main CRUD
 router.post('/',      createSlip);

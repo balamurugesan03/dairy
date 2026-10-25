@@ -37,6 +37,8 @@ import ImportModal from '../common/ImportModal';
 import { offlineQueue } from '../../utils/offlineQueue';
 import { localDateStr } from '../../utils/dateUtils';
 import { toAgentOptions, groupAgentsByCenter, findOwnAgent, pickDefaultAgent } from '../../utils/senderAgent';
+import { resolveDefaultCentreAgent } from '../../utils/defaultCentreAgent';
+import DairyRouteButtons from './DairyRouteButtons';
 import { openMilkPopup } from '../../utils/milkPopup';
 import MilkDaySummary from './MilkDaySummary';
 import { findTsPeriod, tsRateValue } from '../../utils/rateChart';
@@ -244,6 +246,8 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
   const { user, isSuperAdmin, isCompanyAdmin, isUser, isCentreLogin, isAgentLogin, centreInfo, userCenter } = useAuth();
   const [centersData, setCentersData] = useState([]);
   const [centreSummary, setCentreSummary] = useState([]);
+  // From Dairy (Society Info) / To Dairy (Machine Configuration) shown next to Session
+  const [dairies, setDairies] = useState({ fromDairy: null, toDairy: null });
   const [agentsData,  setAgentsData]  = useState([]);
   const [date,   setDate]   = useState(() => {
     try {
@@ -521,7 +525,8 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
 
   // ── Machine Serial Data Parser ────────────────────────────────────────────
   // Format 0: 31-char ASCII  (XXXXXXXXXXXXXXXXXXXXXXXXXXXXX)
-  //   inside[0..3]=FAT/100  inside[4..7]=SNF/100  inside[8..11]=Density  inside[12..13]=Water%
+  //   inside[0..3]=FAT/100  inside[4..7]=SNF/100  inside[8..11]=Density  inside[12..15]=Water/100
+  // Format 0b: Fatscan 18-char (0363071825241325)  FAT/100 | SNF/100 | CLR/100 | Water% | Temp°C
   // Format 1: Lactoscan      F=4.50 SNF=8.35 D=26.50 L=5.000 W=0.0
   // Format 2: CSV            5.00,4.50,26.5,8.30,0.00  (LTR,FAT,CLR,SNF,WATER)
   // Format 3: Key:Value      FAT:4.5 CLR:26.5 SNF:8.3 LTR:5.0
@@ -539,13 +544,21 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
         const inner = text.slice(frameIdx + 1, frameIdx + 30);
         const fat4  = parseInt(inner.slice(0, 4),  10);
         const snf4  = parseInt(inner.slice(4, 8),  10);
-        const water2= parseInt(inner.slice(14, 16),10);  // positions 15-16
+        const water4= parseInt(inner.slice(12, 16),10);  // "1556" → 15.56
         if (!isNaN(fat4) && !isNaN(snf4)) {
           fatVal   = fat4 / 100;
           snfVal   = snf4 / 100;
-          waterVal = isNaN(water2) ? 0 : water2;
+          waterVal = isNaN(water4) ? 0 : water4 / 100;
           // no CLR or LTR in this format
         }
+      }
+      // Format 0b — Fatscan 18-char frame: (0363071825241325)
+      const fsInner = closeIdx !== -1 ? text.slice(frameIdx + 1, closeIdx) : '';
+      if (fatVal == null && /^\d{16}$/.test(fsInner)) {
+        fatVal   = parseInt(fsInner.slice(0, 4),  10) / 100;
+        snfVal   = parseInt(fsInner.slice(4, 8),  10) / 100;
+        clrVal   = parseInt(fsInner.slice(8, 12), 10) / 100;
+        waterVal = parseInt(fsInner.slice(12, 14),10);
       }
     }
 
@@ -678,9 +691,10 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
 
   const sendTare = useCallback(async () => {
     try {
-      await machineConfigAPI.scaleTare();
+      const res = await machineConfigAPI.scaleTare({ software: true });
       scaleLastFilledRef.current = null; // reset so next stable reading fills LTR again
       setScaleStatus('⚖ Tare sent — scale zeroed');
+      notifications.show({ title: 'Tare', message: res?.message || 'Tare sent to scale', color: 'teal', autoClose: 1500 });
     } catch (err) {
       notifications.show({ title: 'Tare Failed', message: err.message, color: 'red', autoClose: 3000 });
     }
@@ -834,6 +848,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
 };
 
     socket.on('weight-scale-data', (data) => {
+      if (data.value == null) { setScaleStatus(`Unknown scale data: ${data.raw}`); return; }
       const kg = Number(data.value);
       setScaleStatus(`${data.stable ? '⚖ Stable' : '~ Unstable'} — ${kg.toFixed(2)} kg`);
       if (!data.stable) scaleLastFilledRef.current = null;
@@ -958,10 +973,12 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
         // Sender Agent follows the login: an agent is fixed to themself (and
         // their centre); an admin defaults to their own agent but may change it.
         const ownAgent = findOwnAgent(al, user);
+        // Login-based defaults (admin → Producer Management settings; staff → own centre/agent)
+        const loginDefaults = await resolveDefaultCentreAgent({ user, isCentreLogin, centreInfo });
         if (!(isCentreLogin && centreInfo?.centreId)) {
           const userCentreId = userCenter?._id?.toString() || userCenter?.toString();
           const lockedCentreId = isAgentLogin && ownAgent?.centerId;
-          const preferred = cl.find(c => c.value === (lockedCentreId || userCentreId));
+          const preferred = cl.find(c => c.value === (lockedCentreId || userCentreId || loginDefaults.centreId));
           const picked = preferred || cl[0];
           if (picked) { setCenter(picked.value); centerNameRef.current = picked.label; }
           // Main centre: fetch today's sub-centre summary
@@ -971,12 +988,14 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
               setCentreSummary(sumRes.data || []);
             } catch { /* non-critical */ }
           }
-          const def = isAgentLogin ? ownAgent : pickDefaultAgent(al, user, picked?.value);
+          const configured = al.find(a => a.value === loginDefaults.agentId && (!a.centerId || a.centerId === picked?.value));
+          const def = isAgentLogin ? ownAgent : (configured || pickDefaultAgent(al, user, picked?.value));
           if (def) setAgent(def.value);
         } else {
           const def = pickDefaultAgent(al, user, centreInfo.centreId.toString());
           if (def) setAgent(def.value);
         }
+        setDairies({ fromDairy: settingsRes?.data?.fromDairy || null, toDairy: settingsRes?.data?.toDairy || null });
         const chartType = settingsRes?.data?.activeRateChartType || 'ApplyFormula';
         setActiveChart(chartType);
         await loadChartData(chartType);
@@ -2122,6 +2141,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
             size="sm" radius="md" style={{ width: 110 }}
             styles={{ input: { fontWeight: 700, border: '1.5px solid #bfdbfe' } }}
           />
+          <DairyRouteButtons fromDairy={dairies.fromDairy} toDairy={dairies.toDairy} />
           <Group gap={4} align="center" wrap="nowrap">
             <Text size="11px" fw={700} c="#1e3a8a" style={{ whiteSpace: 'nowrap' }}>Center</Text>
             <Select
@@ -3314,9 +3334,9 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
         <Box style={{ padding: '10px 10px 14px', display: 'flex', gap: 8 }}>
           {[
             // { label: 'CAN', bg: '#b71c1c', hover: '#c62828' },
-            { label: 'TARE', bg: '#1b5e20', hover: '#2e7d32' },
-          ].map(({ label, bg, hover }) => (
-            <Box key={label} style={{
+            { label: 'TARE', bg: '#1b5e20', hover: '#2e7d32', onClick: sendTare },
+          ].map(({ label, bg, hover, onClick }) => (
+            <Box key={label} onClick={onClick} style={{
               flex: 1, height: 32,
               background: bg,
               border: '1px solid rgba(0,0,0,0.3)',

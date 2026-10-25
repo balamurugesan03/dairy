@@ -47,7 +47,8 @@ const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) 
       email: '',
       incharge: ''
     },
-    description: ''
+    description: '',
+    farmerNoCode: ''
   });
 
   const [errors, setErrors] = useState({});
@@ -100,7 +101,8 @@ const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) 
         email: '',
         incharge: ''
       },
-      description: ''
+      description: '',
+      farmerNoCode: ''
     });
     setErrors({});
   };
@@ -111,6 +113,7 @@ const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) 
       const center = response.data;
       setFormData({
         ...center,
+        farmerNoCode: center.farmerNoCode || '',
         startDate: center.startDate ? new Date(center.startDate) : new Date(),
         address: center.address || {
           street: '',
@@ -183,6 +186,10 @@ const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) 
 
     if (formData.contactDetails.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.contactDetails.email)) {
       newErrors['contactDetails.email'] = 'Invalid email format';
+    }
+
+    if (formData.farmerNoCode && !/^[0-9]{1,4}$/.test(formData.farmerNoCode)) {
+      newErrors.farmerNoCode = 'Digits only (max 4)';
     }
 
     if (formData.address.pincode && !/^[0-9]{6}$/.test(formData.address.pincode)) {
@@ -309,6 +316,18 @@ const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) 
                 { value: 'Active', label: 'Active' },
                 { value: 'Inactive', label: 'Inactive' }
               ]}
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <TextInput
+              label="Farmer No Code"
+              description="Prefix for the Center-wise farmer number series (code 1 → 1001, 1002 …)"
+              placeholder="e.g. 1"
+              inputMode="numeric"
+              maxLength={4}
+              value={formData.farmerNoCode}
+              onChange={(e) => handleChange('farmerNoCode', e.target.value.replace(/\D/g, ''))}
+              error={errors.farmerNoCode}
             />
           </Grid.Col>
           <Grid.Col span={12}>

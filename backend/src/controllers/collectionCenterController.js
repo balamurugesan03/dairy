@@ -1,8 +1,21 @@
 import CollectionCenter from '../models/CollectionCenter.js';
 
+// Farmer No Code must be unique per company, or two centres would hand out the same farmer numbers
+const farmerNoCodeClash = async (code, companyId, excludeId) => {
+  const c = String(code || '').trim();
+  if (!c) return null;
+  const filter = { companyId, farmerNoCode: c };
+  if (excludeId) filter._id = { $ne: excludeId };
+  const other = await CollectionCenter.findOne(filter).select('centerName').lean();
+  return other ? `Farmer No Code ${c} is already used by ${other.centerName}` : null;
+};
+
 // Create new collection center
 export const createCollectionCenter = async (req, res) => {
   try {
+    const clash = await farmerNoCodeClash(req.body.farmerNoCode, req.companyId);
+    if (clash) return res.status(400).json({ success: false, message: clash });
+
     const collectionCenter = new CollectionCenter({ ...req.body, companyId: req.companyId });
     await collectionCenter.save();
 
@@ -108,6 +121,9 @@ export const getCollectionCenterById = async (req, res) => {
 // Update collection center
 export const updateCollectionCenter = async (req, res) => {
   try {
+    const clash = await farmerNoCodeClash(req.body.farmerNoCode, req.companyId, req.params.id);
+    if (clash) return res.status(400).json({ success: false, message: clash });
+
     const center = await CollectionCenter.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId },
       req.body,

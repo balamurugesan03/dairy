@@ -14,11 +14,13 @@ import {
   IconPlus, IconEdit, IconX, IconSearch, IconRefresh,
   IconTrash, IconPrinter, IconMilk, IconFilter,
   IconDeviceFloppy, IconCheck, IconReceipt, IconDroplet,
-  IconAlertTriangle, IconHistory, IconBan, IconUpload, IconBook,
+  IconAlertTriangle, IconHistory, IconBan, IconUpload, IconBook, IconSettings,
 } from '@tabler/icons-react';
 import { SegmentedControl } from '@mantine/core';
 import { unionSalesSlipAPI } from '../../services/api';
 import ImportModal from '../common/ImportModal';
+import UnionSaleSettingsModal from './UnionSaleSettingsModal';
+import { tsRateValue } from '../../utils/rateChart';
 import { useAuth } from '../../context/AuthContext';
 import dayjs from 'dayjs';
 
@@ -70,7 +72,25 @@ export default function UnionSalesSlip() {
   const formRef = useRef(form);
   useEffect(() => { formRef.current = form; }, [form]);
 
-  const setField = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  // To Dairy TS Rate Settings (Union Sales → Settings): when enabled for the slip
+  // date, the rate is filled in from FAT + SNF × the manually entered To Dairy TS rate.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [toDairyTs, setToDairyTs] = useState({ enabled: false, tsRate: null });
+  const [settingsVersion, setSettingsVersion] = useState(0);
+  const slipDay = dayjs(form.date).format('YYYY-MM-DD');
+  useEffect(() => {
+    unionSalesSlipAPI.getToDairyRate(slipDay)
+      .then(res => setToDairyTs(res?.data || { enabled: false, tsRate: null }))
+      .catch(() => setToDairyTs({ enabled: false, tsRate: null }));
+  }, [slipDay, settingsVersion]);
+
+  const setField = (k, v) => setForm(p => {
+    const next = { ...p, [k]: v };
+    if ((k === 'fat' || k === 'snf') && toDairyTs.enabled && toDairyTs.tsRate !== null && (next.fat !== '' || next.snf !== '')) {
+      next.rate = String(Number(tsRateValue(next.fat, next.snf, toDairyTs.tsRate).toFixed(2)));
+    }
+    return next;
+  });
 
   const amount = parseFloat(
     ((parseFloat(form.qty) || 0) * (parseFloat(form.rate) || 0)).toFixed(2)
@@ -458,9 +478,16 @@ export default function UnionSalesSlip() {
           </Group>
 
           {/* RIGHT */}
-          <Button leftSection={<IconX size={14} />} onClick={handleClear} radius="md" size="sm" variant="default" style={{ fontWeight: 700, flexShrink: 0 }}>
-            Clear
-          </Button>
+          <Group gap={8} wrap="nowrap" style={{ flexShrink: 0 }}>
+            {!isUser && (
+              <Button leftSection={<IconSettings size={14} />} onClick={() => setSettingsOpen(true)} radius="md" size="sm" variant="light" color="teal" style={{ fontWeight: 700 }}>
+                Settings
+              </Button>
+            )}
+            <Button leftSection={<IconX size={14} />} onClick={handleClear} radius="md" size="sm" variant="default" style={{ fontWeight: 700 }}>
+              Clear
+            </Button>
+          </Group>
         </Group>
       </Box>
 
@@ -566,7 +593,9 @@ export default function UnionSalesSlip() {
             {/* Rate + Amount */}
             <Group gap={8} align="flex-end" mb={8}>
               <Box ref={rateRef} style={{ flex: 1 }}>
-                <Text size="9px" fw={700} c="#c2410c" tt="uppercase" mb={2} style={{ letterSpacing: '0.4px' }}>Rate ₹/L</Text>
+                <Text size="9px" fw={700} c="#c2410c" tt="uppercase" mb={2} style={{ letterSpacing: '0.4px' }}>
+                  Rate ₹/L{toDairyTs.enabled && toDairyTs.tsRate !== null ? ` · TS ₹${toDairyTs.tsRate}` : ''}
+                </Text>
                 <NumberInput
                   placeholder="0.00"
                   value={form.rate === '' ? '' : parseFloat(form.rate)}
@@ -985,6 +1014,13 @@ export default function UnionSalesSlip() {
         )}
       </Stack>
     </Modal>
+
+    {/* ══ SETTINGS — From Dairy / To Dairy TS Rate Settings ═══════════════ */}
+    <UnionSaleSettingsModal
+      opened={settingsOpen}
+      onClose={() => setSettingsOpen(false)}
+      onSaved={() => setSettingsVersion(v => v + 1)}
+    />
     </>
   );
 }

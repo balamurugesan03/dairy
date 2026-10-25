@@ -21,8 +21,10 @@ import {
   IconTrash, IconPrinter, IconRefresh, IconSearch, IconHistory,
   IconAlertCircle, IconCash, IconCreditCard, IconUpload, IconFilter, IconBook, IconBrandWhatsapp,
 } from '@tabler/icons-react';
-import { customerAPI, collectionCenterAPI, milkSalesAPI, agentAPI, milkSalesRateAPI, thermalPrintAPI, whatsappAPI } from '../../services/api';
+import { customerAPI, collectionCenterAPI, milkSalesAPI, agentAPI, milkSalesRateAPI, thermalPrintAPI, whatsappAPI, milkPurchaseSettingsAPI } from '../../services/api';
+import DairyRouteButtons from './DairyRouteButtons';
 import { toAgentOptions, groupAgentsByCenter, findOwnAgent, pickDefaultAgent } from '../../utils/senderAgent';
+import { resolveDefaultCentreAgent } from '../../utils/defaultCentreAgent';
 import { openMilkPopup } from '../../utils/milkPopup';
 import { useAuth } from '../../context/AuthContext';
 import ImportModal from '../common/ImportModal';
@@ -275,6 +277,9 @@ export default function MilkSales({ asPopup = false, inFront = true, onSwap, onC
   const litrRef   = useRef(null);
   const rateRef   = useRef(null);
   const lastEntryRef = useRef(null);
+  const loginDefaultsRef = useRef({ centreId: '', agentId: '' });
+  // From Dairy (Society Info) / To Dairy (Machine Configuration) shown next to Session
+  const [dairies, setDairies] = useState({ fromDairy: null, toDairy: null });
   const formRef      = useRef({});
   formRef.current = { mode, session, date, billNo, center, agent, category, creditor, opCr, litre, rate, amount, pType, editingId, waEnabled, waConnected: waStatus.connected };
 
@@ -388,6 +393,9 @@ export default function MilkSales({ asPopup = false, inFront = true, onSwap, onC
     loadDropdowns();
     loadByDate(new Date(), session);
     fetchNextBillNo();
+    milkPurchaseSettingsAPI.getSummary()
+      .then(res => setDairies({ fromDairy: res?.data?.fromDairy || null, toDairy: res?.data?.toDairy || null }))
+      .catch(() => { /* header buttons just show "Not set" */ });
     // Auto-focus when the page opens (e.g. via F2/F3 swap) — resumes on Rate
     // if the user had already progressed past Litre, else Litre as before.
     setTimeout(focusLastActiveField, 300);
@@ -426,17 +434,21 @@ export default function MilkSales({ asPopup = false, inFront = true, onSwap, onC
       // Sender Agent follows the login: an agent is fixed to themself (and
       // their centre); an admin defaults to their own agent but may change it.
       const ownAgent = findOwnAgent(agentList, user);
+      // Login-based defaults (admin → Producer Management settings; staff → own centre/agent)
+      loginDefaultsRef.current = await resolveDefaultCentreAgent({ user, isCentreLogin, centreInfo });
       const lockedCentreId = isCentreLogin ? centreInfo?.centreId?.toString()
         : isAgentLogin ? ownAgent?.centerId : null;
+      let chosenCentre = lockedCentreId || formRef.current.center;
       if (lockedCentreId) setCenter(lockedCentreId);
       else if (!formRef.current.center) {
         const userCentreId = userCenter?._id?.toString() || userCenter?.toString();
-        const preferred = userCentreId && centerList.find(c => c.value === userCentreId);
-        if (preferred) setCenter(preferred.value);
-        else if (centerList.length) setCenter(centerList[0].value);
+        const wanted = userCentreId || loginDefaultsRef.current.centreId;
+        const preferred = wanted && centerList.find(c => c.value === wanted);
+        chosenCentre = preferred?.value || centerList[0]?.value || null;
+        setCenter(chosenCentre);
       }
       if (isAgentLogin) setAgent(ownAgent?.value || null);
-      else if (!formRef.current.agent) setAgent(pickDefaultAgent(agentList, user, lockedCentreId || formRef.current.center)?.value || null);
+      else if (!formRef.current.agent) setAgent(configuredOrDefaultAgent(agentList, chosenCentre)?.value || null);
     } catch { /* silent */ }
   };
 
@@ -468,7 +480,8 @@ export default function MilkSales({ asPopup = false, inFront = true, onSwap, onC
   const handleNew = () => {
     setEditingId(null); setSelRow(null);
     fetchNextBillNo();
-    const defaultCenter = centreLocked ? center : (centers[0]?.value || null);
+    const preferredCentre = centers.find(c => c.value === loginDefaultsRef.current.centreId)?.value;
+    const defaultCenter = centreLocked ? center : (preferredCentre || centers[0]?.value || null);
     const defaultAgent  = defaultAgentFor(defaultCenter)?.value || null;
     setCenter(defaultCenter); setAgent(defaultAgent); setCategory(null); setCreditor(null);
     setOpCr(''); setLitre(''); setRate(''); setAmount(0); setPType('Cash');
@@ -565,7 +578,11 @@ export default function MilkSales({ asPopup = false, inFront = true, onSwap, onC
   };
 
   // ── Sender Agent ──────────────────────────────────────────────────────────
-  const defaultAgentFor = (ct) => isAgentLogin ? findOwnAgent(agents, user) : pickDefaultAgent(agents, user, ct);
+  // Admin's configured default agent wins when it belongs to the chosen centre
+  const configuredOrDefaultAgent = (list, ct) =>
+    list.find(a => a.value === loginDefaultsRef.current.agentId && (!a.centerId || a.centerId === ct))
+    || pickDefaultAgent(list, user, ct);
+  const defaultAgentFor = (ct) => isAgentLogin ? findOwnAgent(agents, user) : configuredOrDefaultAgent(agents, ct);
 
   // Agent login → only themself; sub-centre login → that centre's agents;
   // admin → every agent under every centre, grouped by centre.
@@ -980,6 +997,11 @@ export default function MilkSales({ asPopup = false, inFront = true, onSwap, onC
                 size="xs" radius="md"
                 styles={{ root: { background: '#f1f5f9', border: '1.5px solid #bfdbfe' } }}
               />
+            </Box>
+
+            {/* From Dairy (Society Info) / To Dairy (Machine Configuration) */}
+            <Box style={{ flexShrink: 0 }}>
+              <DairyRouteButtons fromDairy={dairies.fromDairy} toDairy={dairies.toDairy} />
             </Box>
 
             {/* Sale Type */}
