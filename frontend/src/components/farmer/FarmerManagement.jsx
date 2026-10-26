@@ -95,10 +95,15 @@ const FarmerManagement = () => {
   // dialog shown when activating membership with a different Member Number) ──
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [membershipFunction, setMembershipFunction] = useState('SubmitLinks');
+  // Center-wise Farmer Number series → grid starts with Center, Center Code, Farmer No.
+  const [centreWise, setCentreWise] = useState(false);
 
   useEffect(() => {
     farmerSettingsAPI.getSettings()
-      .then(res => { if (res?.data?.membershipFunction) setMembershipFunction(res.data.membershipFunction); })
+      .then(res => {
+        if (res?.data?.membershipFunction) setMembershipFunction(res.data.membershipFunction);
+        setCentreWise(res?.data?.numberSeries === 'Centre');
+      })
       .catch(() => { /* keep default */ });
   }, []);
 
@@ -731,7 +736,23 @@ const FarmerManagement = () => {
     }
   };
 
+  const centreColumns = centreWise ? [
+    {
+      accessor: 'collectionCenter.centerName',
+      title: 'Center',
+      width: 150,
+      render: (farmer) => <Text size="sm">{farmer.collectionCenter?.centerName || '-'}</Text>
+    },
+    {
+      accessor: 'collectionCenter.centerCode',
+      title: 'Center Code',
+      width: 100,
+      render: (farmer) => <Text size="sm" fw={600}>{farmer.collectionCenter?.centerCode || '-'}</Text>
+    },
+  ] : [];
+
   const columns = [
+    ...centreColumns,
     {
       accessor: 'farmerNumber',
       title: (
@@ -1434,7 +1455,10 @@ const FarmerManagement = () => {
       <FarmerSettingsModal
         opened={showSettingsModal}
         onClose={() => setShowSettingsModal(false)}
-        onSaved={(s) => { if (s?.membershipFunction) setMembershipFunction(s.membershipFunction); }}
+        onSaved={(s) => {
+          if (s?.membershipFunction) setMembershipFunction(s.membershipFunction);
+          if (s?.numberSeries) { setCentreWise(s.numberSeries === 'Centre'); fetchFarmers(); }
+        }}
       />
 
       <ImportModal

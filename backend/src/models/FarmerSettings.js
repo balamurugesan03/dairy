@@ -33,27 +33,16 @@ const farmerSettingsSchema = new mongoose.Schema(
     },
 
     // Farmer Number series for NEW farmers (existing numbers are never changed):
-    //   'Existing' — one common sequence 1, 2, 3 … (the original behaviour)
-    //   'Centre'   — each centre has its own sequence, prefixed with the centre's
-    //                numeric Farmer No Code: code 1 → 1001, 1002 …; code 2 → 2001 …
-    // Numbers stay digits-only (Milk Purchase Farmer No is numeric) and unique.
+    //   'Existing' — one common sequence 1, 2, 3 … for the company (the original behaviour)
+    //   'Centre'   — each centre (C1, C2 …) has its own sequence 1, 2, 3 …, so the same
+    //                number can exist in two centres; numbers are system-generated and locked
     numberSeries: {
       type:    String,
       enum:    ['Existing', 'Centre'],
       default: 'Existing',
     },
-    // Digits in the per-centre sequence part (3 → code 1 gives 1001)
-    centreSeriesWidth: {
-      type:    Number,
-      min:     1,
-      max:     6,
-      default: 3,
-    },
 
-    // Default Centre / Agent preselected for admin logins on entry forms.
-    // Staff and agent logins always use their own assigned centre / agent.
-    defaultCentre: { type: mongoose.Schema.Types.ObjectId, ref: 'CollectionCenter', default: null },
-    defaultAgent:  { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },
+    // Default Centre / Agent now come from the logged-in user (User Management), not here.
 
     lastUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },

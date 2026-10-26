@@ -3,8 +3,9 @@ import Ledger from '../models/Ledger.js';
 import MilkCollection from '../models/MilkCollection.js';
 import BankTransfer from '../models/BankTransfer.js';
 import FarmerNumberHistory from '../models/FarmerNumberHistory.js';
-import FarmerSettings from '../models/FarmerSettings.js';
 import CollectionCenter from '../models/CollectionCenter.js';
+import { getNumberSeries, nextFarmerNumber, nextFarmerNumbersByCentre, farmerNumberTaken, farmerRefText, findFarmerByNumber, FARMER_KEY } from '../utils/farmerSeries.js';
+import { ensureCentreCodes } from '../utils/centreCode.js';
 import mongoose from 'mongoose';
 import { createShareCapitalVoucher, createAdmissionFeeVoucher } from '../utils/accountingHelper.js';
 
@@ -13,14 +14,16 @@ export const createFarmer = async (req, res) => {
   try {
     const companyId = req.companyId;
     const farmerData = { ...req.body, companyId };
+    if (!farmerData.collectionCenter) farmerData.collectionCenter = null;
 
-    // Check for duplicate farmerNumber within this company
-    const existingFarmer = await Farmer.findOne({
-      farmerNumber: farmerData.farmerNumber,
-      companyId
-    });
-
-    if (existingFarmer) {
+    const series = await getNumberSeries(companyId);
+    if (series === 'Centre') {
+      // Centre-wise: the number is always system-generated from the selected centre
+      if (!farmerData.collectionCenter) {
+        return res.status(400).json({ success: false, message: 'Select the Center first — the Farmer Number is generated from it' });
+      }
+      farmerData.farmerNumber = await nextFarmerNumber(companyId, { series, centreId: farmerData.collectionCenter });
+    } else if (await farmerNumberTaken(companyId, farmerData.farmerNumber, { series })) {
       return res.status(400).json({
         success: false,
         message: 'Farmer Number already exists'
@@ -65,11 +68,21 @@ export const createFarmer = async (req, res) => {
       });
     }
 
-    await farmer.save();
+    // Centre-wise: two saves racing for the same number → the unique index rejects one; take the next
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await farmer.save();
+        break;
+      } catch (err) {
+        if (series !== 'Centre' || err?.code !== 11000 || attempt >= 5) throw err;
+        farmer.farmerNumber = farmerData.farmerNumber =
+          await nextFarmerNumber(companyId, { series, centreId: farmerData.collectionCenter });
+      }
+    }
 
     // Auto-create ledger for farmer
     const ledger = new Ledger({
-      ledgerName: `${farmerData.personalDetails.name} (${farmerData.farmerNumber})`,
+      ledgerName: `${farmerData.personalDetails.name} (${await farmerRefText(farmer, series)})`,
       ledgerType: 'Party',
       linkedEntity: {
         entityType: 'Farmer',
@@ -246,18 +259,30 @@ export const getAllFarmers = async (req, res) => {
 
     let farmers;
     if (sortField === 'farmerNumber') {
-      // Numeric sort: convert farmerNumber string to integer before sorting
+      // Numeric sort: convert farmerNumber string to integer before sorting.
+      // Centre-wise series: numbers repeat per centre, so sort by centre code (C1, C2 …) first.
+      const centreWise = (await getNumberSeries(req.companyId)) === 'Centre';
+      if (centreWise) await ensureCentreCodes(req.companyId).catch(() => {});
+      const centreSort = centreWise
+        ? [
+            { $lookup: { from: 'collectioncenters', localField: 'collectionCenter', foreignField: '_id', as: '_cc' } },
+            { $addFields: { _ccNum: { $convert: { input: { $substrCP: [{ $ifNull: [{ $arrayElemAt: ['$_cc.centerCode', 0] }, 'C999999'] }, 1, 9] }, to: 'int', onError: 999999, onNull: 999999 } } } },
+          ]
+        : [];
       farmers = await Farmer.aggregate([
         { $match: query },
+        ...centreSort,
         { $addFields: { _farmerNumInt: { $convert: { input: '$farmerNumber', to: 'int', onError: 999999, onNull: 999999 } } } },
-        { $sort: { _farmerNumInt: sortDir, farmerNumber: sortDir } },
+        { $sort: centreWise
+            ? { _ccNum: sortDir, _farmerNumInt: sortDir, farmerNumber: sortDir }
+            : { _farmerNumInt: sortDir, farmerNumber: sortDir } },
         { $skip: skip },
         { $limit: parseInt(limit) },
         { $lookup: { from: 'ledgers', localField: 'ledgerId', foreignField: '_id', as: 'ledgerId' } },
         { $unwind: { path: '$ledgerId', preserveNullAndEmptyArrays: true } },
         { $lookup: { from: 'collectioncenters', localField: 'collectionCenter', foreignField: '_id', as: 'collectionCenter' } },
         { $unwind: { path: '$collectionCenter', preserveNullAndEmptyArrays: true } },
-        { $project: { _farmerNumInt: 0 } }
+        { $project: { _farmerNumInt: 0, _cc: 0, _ccNum: 0, 'collectionCenter.password': 0 } }
       ]);
     } else {
       farmers = await Farmer.find(query)
@@ -265,7 +290,7 @@ export const getAllFarmers = async (req, res) => {
         .skip(skip)
         .limit(parseInt(limit))
         .populate('ledgerId', 'ledgerName currentBalance balanceType')
-        .populate('collectionCenter', 'centerName centerType');
+        .populate('collectionCenter', 'centerName centerType centerCode');
     }
 
     const total = await Farmer.countDocuments(query);
@@ -293,7 +318,7 @@ export const getFarmerById = async (req, res) => {
   try {
     const farmer = await Farmer.findOne({ _id: req.params.id, companyId: req.companyId })
       .populate('ledgerId', 'ledgerName currentBalance balanceType')
-      .populate('collectionCenter', 'centerName centerType')
+      .populate('collectionCenter', 'centerName centerType centerCode')
       .populate('bankDetails.bankLedgerId', 'ledgerName');
 
     if (!farmer) {
@@ -319,9 +344,38 @@ export const getFarmerById = async (req, res) => {
 // Update farmer
 export const updateFarmer = async (req, res) => {
   try {
+    const current = await Farmer.findOne({ _id: req.params.id, companyId: req.companyId })
+      .select('farmerNumber collectionCenter').lean();
+    if (!current) {
+      return res.status(404).json({
+        success: false,
+        message: 'Farmer not found'
+      });
+    }
+
+    const { companyId, ...updates } = req.body;
+    const series = await getNumberSeries(req.companyId);
+    if (series === 'Centre') {
+      // Centre-wise: the number is system-generated and stays with its centre
+      delete updates.farmerNumber;
+      if (current.collectionCenter) {
+        delete updates.collectionCenter;
+      } else if (updates.collectionCenter &&
+                 await farmerNumberTaken(req.companyId, current.farmerNumber, { series, centreId: updates.collectionCenter, excludeId: current._id })) {
+        return res.status(400).json({
+          success: false,
+          message: `Farmer Number ${current.farmerNumber} is already used in the selected Center`
+        });
+      }
+    } else if (updates.farmerNumber !== undefined && String(updates.farmerNumber).trim() !== current.farmerNumber &&
+               await farmerNumberTaken(req.companyId, updates.farmerNumber, { series, excludeId: current._id })) {
+      return res.status(400).json({ success: false, message: 'Farmer Number already exists' });
+    }
+    if (updates.collectionCenter === '') updates.collectionCenter = null;
+
     const farmer = await Farmer.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId },
-      req.body,
+      updates,
       { new: true, runValidators: true }
     ).populate('ledgerId');
 
@@ -335,7 +389,7 @@ export const updateFarmer = async (req, res) => {
     // Update ledger name if farmer name changed
     if (req.body.personalDetails?.name && farmer.ledgerId) {
       await Ledger.findByIdAndUpdate(farmer.ledgerId, {
-        ledgerName: `${req.body.personalDetails.name} (${farmer.farmerNumber})`
+        ledgerName: `${req.body.personalDetails.name} (${await farmerRefText(farmer, series)})`
       });
     }
 
@@ -418,21 +472,35 @@ export const searchFarmer = async (req, res) => {
       });
     }
 
-    const isNumeric = /^\d+$/.test(query);
+    // Centre-wise series repeats numbers per centre: a number is looked up within the
+    // screen's centre (?collectionCenter=) or written with its centre code — "C2/15".
+    const coded = String(query).trim().match(/^C(\d+)\s*[/-]\s*(\d+)$/i);
+    let numberCentre = null;
+    if (coded) {
+      const centre = await CollectionCenter.findOne({ companyId: req.companyId, centerCode: `C${parseInt(coded[1], 10)}` }).select('_id').lean();
+      if (!centre) return res.status(200).json({ success: true, data: [] });
+      numberCentre = centre._id;
+    } else if (req.query.collectionCenter && (await getNumberSeries(req.companyId)) === 'Centre') {
+      numberCentre = req.query.collectionCenter;
+    }
+    const number = coded ? coded[2] : query;
+
+    const isNumeric = /^\d+$/.test(number);
     const farmers = await Farmer.find({
       $or: isNumeric
         ? [
-            { farmerNumber: query },   // exact match — typing 12 returns only 12, not 112/120
-            { memberId: query }
+            { farmerNumber: number },   // exact match — typing 12 returns only 12, not 112/120
+            { memberId: number }
           ]
         : [
             { 'personalDetails.name': { $regex: query, $options: 'i' } },
             { 'personalDetails.phone': { $regex: query, $options: 'i' } }
           ],
+      ...(isNumeric && numberCentre ? { collectionCenter: numberCentre } : {}),
       status: 'Active',
       companyId: req.companyId
     }).populate('ledgerId', 'ledgerName currentBalance balanceType')
-      .populate('collectionCenter', 'centerName centerType')
+      .populate('collectionCenter', 'centerName centerType centerCode')
       .limit(10);
 
     res.status(200).json({
@@ -501,7 +569,10 @@ export const activateMembership = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Member Number is required' });
     }
 
-    const numberChanging = newNumber !== farmer.farmerNumber;
+    // Centre-wise series: the Farmer Number is system-generated and never replaced —
+    // the Member Number is only stored in memberId.
+    const centreWise = (await getNumberSeries(companyId)) === 'Centre';
+    const numberChanging = !centreWise && newNumber !== farmer.farmerNumber;
 
     // numberDecision: 'replace' (user confirmed Yes) | 'keep' (user confirmed No).
     // If the number differs and the frontend hasn't asked the user yet, force it to.
@@ -527,7 +598,10 @@ export const activateMembership = async (req, res) => {
 
       // No transactions available in this codebase — rename the denormalized copies
       // first (idempotent, safe to retry), then update the Farmer doc last.
-      await MilkCollection.updateMany({ farmerNumber: oldNumber, companyId }, { $set: { farmerNumber: newNumber } });
+      await MilkCollection.updateMany(
+        { companyId, $or: [{ farmer: farmer._id }, { farmer: null, farmerNumber: oldNumber }] },
+        { $set: { farmerNumber: newNumber } }
+      );
       await BankTransfer.updateMany({ producerId: oldNumber, companyId }, { $set: { producerId: newNumber } });
 
       await FarmerNumberHistory.create({
@@ -678,77 +752,34 @@ export const getNextMemberNumber = async (req, res) => {
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  FARMER NUMBER SERIES  (Producer Management → Settings)
+//  FARMER NUMBER SERIES  (Producer Management → Settings) — see utils/farmerSeries.js
 //    Existing → one common sequence: highest numeric farmer number + 1
-//    Centre   → centre's numeric code + padded sequence: code 1, width 3 → 1001, 1002 …
-//  Numbers already taken (by any farmer) are always skipped, and existing
-//  farmers are never renumbered.
+//    Centre   → each centre (C1, C2 …) has its own sequence 1, 2, 3 …
 // ══════════════════════════════════════════════════════════════════════════════
-const loadTakenNumbers = async (companyId) => {
-  const rows = await Farmer.find({ companyId }, 'farmerNumber collectionCenter').lean();
-  return rows;
-};
-
-const nextExistingSeries = (rows) => {
-  const taken = new Set(rows.map(r => String(r.farmerNumber)));
-  let max = 0;
-  for (const r of rows) {
-    const s = String(r.farmerNumber || '');
-    if (/^\d+$/.test(s)) max = Math.max(max, parseInt(s, 10));
-  }
-  let n = max + 1;
-  while (taken.has(String(n))) n += 1;
-  return String(n);
-};
-
-const nextCentreSeries = (rows, centre, width) => {
-  const code = String(centre.farmerNoCode || '');
-  const taken = new Set(rows.map(r => String(r.farmerNumber)));
-  const pattern = new RegExp(`^${code}(\\d{${width},})$`);
-  // Continue from this centre's own highest number in its series
-  let seq = 0;
-  for (const r of rows) {
-    if (String(r.collectionCenter || '') !== String(centre._id)) continue;
-    const m = String(r.farmerNumber || '').match(pattern);
-    if (m) seq = Math.max(seq, parseInt(m[1], 10));
-  }
-  let candidate;
-  do {
-    seq += 1;
-    candidate = `${code}${String(seq).padStart(width, '0')}`;
-  } while (taken.has(candidate));
-  return candidate;
-};
 
 // GET /farmers/next-farmer-number?collectionCenter=<id>
 export const getNextFarmerNumber = async (req, res) => {
   try {
-    const settings = await FarmerSettings.getOrCreate(req.companyId);
-    const rows = await loadTakenNumbers(req.companyId);
+    const series = await getNumberSeries(req.companyId);
 
-    if (settings.numberSeries !== 'Centre') {
-      return res.json({ success: true, data: { series: 'Existing', nextFarmerNumber: nextExistingSeries(rows) } });
+    if (series !== 'Centre') {
+      return res.json({ success: true, data: { series: 'Existing', nextFarmerNumber: await nextFarmerNumber(req.companyId, { series }) } });
     }
 
     const { collectionCenter } = req.query;
     if (!collectionCenter) {
       return res.json({ success: true, data: { series: 'Centre', nextFarmerNumber: '', needsCentre: true } });
     }
+    await ensureCentreCodes(req.companyId).catch(() => {});
     const centre = await CollectionCenter.findOne({ _id: collectionCenter, companyId: req.companyId })
-      .select('centerName farmerNoCode').lean();
+      .select('centerName centerCode').lean();
     if (!centre) return res.status(404).json({ success: false, message: 'Collection centre not found' });
-    if (!centre.farmerNoCode) {
-      return res.status(400).json({
-        success: false,
-        message: `Set a Farmer No Code for ${centre.centerName} (Collection Centre → Edit) to use the centre-wise series`
-      });
-    }
     res.json({
       success: true,
       data: {
         series: 'Centre',
-        nextFarmerNumber: nextCentreSeries(rows, centre, settings.centreSeriesWidth || 3),
-        centreCode: centre.farmerNoCode
+        nextFarmerNumber: await nextFarmerNumber(req.companyId, { series, centreId: centre._id }),
+        centreCode: centre.centerCode || ''
       }
     });
   } catch (error) {
@@ -757,31 +788,28 @@ export const getNextFarmerNumber = async (req, res) => {
   }
 };
 
-// GET /farmers/number-series-preview?width=3 — next number per centre for the Settings screen
+// GET /farmers/number-series-preview — next number per centre for the Settings screen
 export const getNumberSeriesPreview = async (req, res) => {
   try {
-    const settings = await FarmerSettings.getOrCreate(req.companyId);
-    const width = Math.min(6, Math.max(1, Number(req.query.width) || settings.centreSeriesWidth || 3));
-    const [rows, centres] = await Promise.all([
-      loadTakenNumbers(req.companyId),
-      CollectionCenter.find({ companyId: req.companyId, status: 'Active' }).select('centerName farmerNoCode').sort({ centerName: 1 }).lean()
+    await ensureCentreCodes(req.companyId).catch(() => {});
+    const [next, centres] = await Promise.all([
+      nextFarmerNumbersByCentre(req.companyId),
+      CollectionCenter.find({ companyId: req.companyId, status: 'Active' }).select('centerName centerType centerCode').lean()
     ]);
-    let maxExisting = 0;
-    for (const r of rows) {
-      const s = String(r.farmerNumber || '');
-      if (/^\d+$/.test(s)) maxExisting = Math.max(maxExisting, parseInt(s, 10));
-    }
-    const perCentre = centres.map(c => {
-      if (!c.farmerNoCode) return { centreId: c._id, centerName: c.centerName, code: '', next: '' };
-      const next = nextCentreSeries(rows, c, width);
-      const first = `${c.farmerNoCode}${'1'.padStart(width, '0')}`;
-      // The series' first number is already used by another farmer → numbers will be skipped
-      const overlapsExisting = rows.some(r => String(r.farmerNumber) === first && String(r.collectionCenter || '') !== String(c._id));
-      return { centreId: c._id, centerName: c.centerName, code: c.farmerNoCode, next, overlapsExisting };
-    });
+    const codeNum = (c) => parseInt(String(c.centerCode || '').slice(1), 10) || 999999;
+    centres.sort((a, b) => codeNum(a) - codeNum(b));
     res.json({
       success: true,
-      data: { width, nextExisting: nextExistingSeries(rows), maxExisting, perCentre }
+      data: {
+        nextExisting: next.existing,
+        perCentre: centres.map(c => ({
+          centreId: c._id,
+          centerName: c.centerName,
+          centerType: c.centerType,
+          code: c.centerCode || '',
+          next: next.forCentre(c._id)
+        }))
+      }
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -1072,10 +1100,7 @@ export const bulkImportFarmers = async (req, res) => {
         }
 
         // Check if farmer exists (within this company)
-        const existingFarmer = await Farmer.findOne({
-          farmerNumber: farmerData.farmerNumber,
-          companyId: req.companyId
-        });
+        const existingFarmer = await findFarmerByNumber(req.companyId, farmerData.farmerNumber);
 
         if (existingFarmer) {
           // UPDATE existing farmer
@@ -1268,10 +1293,7 @@ export const bulkImportShares = async (req, res) => {
           continue;
         }
 
-        const farmer = await Farmer.findOne({
-          farmerNumber: String(row.memberNo),
-          companyId: req.companyId
-        });
+        const farmer = await findFarmerByNumber(req.companyId, row.memberNo);
 
         if (!farmer) {
           results.errors.push({ row: rowNumber, memberNo: row.memberNo, message: `Farmer not found for MemberNo ${row.memberNo}` });
@@ -1579,11 +1601,14 @@ export const getProducerReport = async (req, res) => {
     if (farmerNumberFrom) pipeline.push({ $match: { _farmerNum: { $gte: parseInt(farmerNumberFrom) } } });
     if (farmerNumberTo) pipeline.push({ $match: { _farmerNum: { $lte: parseInt(farmerNumberTo) } } });
 
+    // Centre-wise series: numbers repeat per centre, so order by centre code (C1, C2 …) first
+    const centreWise = (await getNumberSeries(companyId)) === 'Centre';
     pipeline.push(
-      { $sort: { _farmerNum: 1 } },
       { $lookup: { from: 'collectioncenters', localField: 'collectionCenter', foreignField: '_id', as: '_center' } },
       { $unwind: { path: '$_center', preserveNullAndEmptyArrays: true } },
-      { $project: { _farmerNum: 0 } }
+      { $addFields: { _ccNum: { $convert: { input: { $substrCP: [{ $ifNull: ['$_center.centerCode', 'C999999'] }, 1, 9] }, to: 'int', onError: 999999, onNull: 999999 } } } },
+      { $sort: centreWise ? { _ccNum: 1, _farmerNum: 1 } : { _farmerNum: 1 } },
+      { $project: { _farmerNum: 0, _ccNum: 0, '_center.password': 0 } }
     );
 
     let farmers = await Farmer.aggregate(pipeline);
@@ -1598,21 +1623,24 @@ export const getProducerReport = async (req, res) => {
       const start = new Date(fromDate); start.setUTCHours(0, 0, 0, 0);
       const end = new Date(toDate); end.setUTCHours(23, 59, 59, 999);
       const farmerNumbers = farmers.map(f => f.farmerNumber);
+      const farmerIds = farmers.map(f => f._id);
 
+      // Per farmer (numbers can repeat across centres); rows without a farmer link by number
       const pData = await MilkCollection.aggregate([
-        { $match: { companyId, date: { $gte: start, $lte: end }, farmerNumber: { $in: farmerNumbers } } },
-        { $group: { _id: '$farmerNumber', dates: { $addToSet: { $dateToString: { format: '%Y-%m-%d', date: '$date' } } }, totalQty: { $sum: '$qty' } } },
+        { $match: { companyId, date: { $gte: start, $lte: end }, $or: [{ farmer: { $in: farmerIds } }, { farmer: null, farmerNumber: { $in: farmerNumbers } }] } },
+        { $group: { _id: FARMER_KEY, dates: { $addToSet: { $dateToString: { format: '%Y-%m-%d', date: '$date' } } }, totalQty: { $sum: '$qty' } } },
         { $addFields: { pouringDays: { $size: '$dates' } } }
       ]);
 
       const pMap = {};
-      pData.forEach(p => { pMap[p._id] = { days: p.pouringDays, qty: p.totalQty }; });
+      pData.forEach(p => { pMap[String(p._id)] = { days: p.pouringDays, qty: p.totalQty }; });
+      const statsOf = (f) => pMap[String(f._id)] || pMap[f.farmerNumber];
 
       // Attach pouring stats to every farmer in the result
       farmers = farmers.map(f => ({
         ...f,
-        _pouringDays: pMap[f.farmerNumber]?.days ?? 0,
-        _totalQty:    pMap[f.farmerNumber]?.qty  ?? 0,
+        _pouringDays: statsOf(f)?.days ?? 0,
+        _totalQty:    statsOf(f)?.qty  ?? 0,
       }));
 
       // Apply days/qty filter conditions only when the user explicitly set them

@@ -9,6 +9,8 @@ import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances, fin
 import { recomputeFarmerEligibility, recomputeFarmersEligibility } from '../utils/farmerEligibilityHelper.js';
 import { resolveCenterFromAgent } from '../utils/resolveAgentCenter.js';
 import { healMilkAssignments, healAfterImport, staffScope } from '../utils/milkScope.js';
+import { addFarmerKeys, FARMER_KEY } from '../utils/farmerSeries.js';
+import { queueFromDairySync } from '../utils/unionFromDairySync.js';
 
 // ── Auto-post bulk milk purchase to PRODUCERS DUES / MILK PURCHASE ────────────
 // Day Book derives the milk-purchase entry directly from MilkCollection
@@ -85,6 +87,9 @@ export const createCollection = async (req, res) => {
       try { await recomputeFarmerEligibility(entry.farmer, req.companyId); }
       catch (elErr) { console.warn('[MilkCollection] Eligibility recompute failed (non-fatal):', elErr.message); }
     }
+
+    // Union Sales → From Dairy: refresh that date's automatic slip
+    queueFromDairySync(req.companyId, [entry.date]);
 
     res.status(201).json({ success: true, data: populated });
   } catch (error) {
@@ -187,7 +192,7 @@ export const updateCollection = async (req, res) => {
 
     const existing = await MilkCollection.findOne(
       { _id: req.params.id, companyId: req.companyId },
-      { farmer: 1 }
+      { farmer: 1, date: 1 }
     );
 
     const record = await MilkCollection.findOneAndUpdate(
@@ -197,6 +202,9 @@ export const updateCollection = async (req, res) => {
     );
 
     if (!record) return res.status(404).json({ success: false, message: 'Record not found' });
+
+    // Union Sales → From Dairy: refresh the old and new date's automatic slips
+    queueFromDairySync(req.companyId, [existing?.date, record.date]);
 
     try {
       const farmersToRecompute = new Set();
@@ -222,6 +230,8 @@ export const deleteCollection = async (req, res) => {
     });
 
     if (!record) return res.status(404).json({ success: false, message: 'Record not found' });
+
+    queueFromDairySync(req.companyId, [record.date]);   // Union Sales → From Dairy
 
     if (record.farmer) {
       try { await recomputeFarmerEligibility(record.farmer, req.companyId); }
@@ -306,7 +316,7 @@ export const bulkDeleteCollections = async (req, res) => {
 
     const filter = { companyId, $or: orConditions };
 
-    const records = await MilkCollection.find(filter, { _id: 1, voucherId: 1 }).lean();
+    const records = await MilkCollection.find(filter, { _id: 1, voucherId: 1, date: 1 }).lean();
     if (records.length === 0) {
       return res.json({ success: true, deleted: 0, message: 'No records found for selected dates' });
     }
@@ -327,6 +337,7 @@ export const bulkDeleteCollections = async (req, res) => {
 
     const ids = records.map(r => r._id);
     await MilkCollection.deleteMany({ _id: { $in: ids } });
+    queueFromDairySync(companyId, records.map(r => r.date));   // Union Sales → From Dairy
 
     res.json({ success: true, deleted: records.length, message: `${records.length} records deleted` });
   } catch (err) {
@@ -356,18 +367,16 @@ export const zibittBrowserImportCollections = async (req, res) => {
       { farmerNumber: { $in: uniqueNums }, companyId },
       { farmerNumber: 1, memberId: 1, 'personalDetails.name': 1 }
     ).lean();
-    const farmerMap = {};
-    for (const f of farmers)
-      farmerMap[String(f.farmerNumber)] = { id: f._id, name: f.personalDetails?.name || '' };
+    // Numbers repeated across centres (centre-wise series) stay unlinked — see addFarmerKeys
+    const farmerMap = addFarmerKeys({}, farmers, f => f.farmerNumber);
 
-    const unresolved = uniqueNums.filter(n => !farmerMap[n]);
+    const unresolved = uniqueNums.filter(n => !(n in farmerMap));
     if (unresolved.length) {
       const byMember = await Farmer.find(
         { memberId: { $in: unresolved }, companyId },
         { memberId: 1, 'personalDetails.name': 1 }
       ).lean();
-      for (const f of byMember)
-        if (f.memberId) farmerMap[String(f.memberId)] = { id: f._id, name: f.personalDetails?.name || '' };
+      addFarmerKeys(farmerMap, byMember, f => f.memberId, { fallback: true });
     }
 
     const unlinked = [];
@@ -406,6 +415,7 @@ export const zibittBrowserImportCollections = async (req, res) => {
 
     // Imports carry no centre/agent — assign them before the next read
     await healAfterImport(req.companyId);
+    queueFromDairySync(req.companyId, docs.map(d => d.date));   // Union Sales → From Dairy
     res.status(201).json({
       success: true,
       data: { inserted, skipped: duplicates, unlinked: uniqueUnlinked.length, total: records.length },
@@ -426,21 +436,9 @@ export const linzaImportCollections = async (req, res) => {
     const companyId = req.companyId;
 
     const allFarmers = await Farmer.find({ companyId }, 'farmerNumber memberId personalDetails.name _id').lean();
-    const farmerMap = {};
-    const addToMap = (key, val) => {
-      const k = String(key).trim();
-      if (!k) return;
-      farmerMap[k] = val;
-      const numeric = String(parseInt(k, 10));
-      if (numeric !== k && numeric !== 'NaN') farmerMap[numeric] = val;
-    };
-    for (const f of allFarmers) {
-      if (f.farmerNumber) addToMap(f.farmerNumber, { id: f._id, name: f.personalDetails?.name || '' });
-    }
-    for (const f of allFarmers) {
-      if (f.memberId && !farmerMap[String(f.memberId)])
-        addToMap(f.memberId, { id: f._id, name: f.personalDetails?.name || '' });
-    }
+    // Numbers repeated across centres (centre-wise series) stay unlinked — see addFarmerKeys
+    const farmerMap = addFarmerKeys({}, allFarmers, f => f.farmerNumber, { numericAlias: true });
+    addFarmerKeys(farmerMap, allFarmers, f => f.memberId, { fallback: true, numericAlias: true });
 
     const parseLinZADate = (val) => {
       if (!val) return new Date();
@@ -505,6 +503,7 @@ export const linzaImportCollections = async (req, res) => {
 
     // Imports carry no centre/agent — assign them before the next read
     await healAfterImport(req.companyId);
+    queueFromDairySync(req.companyId, docs.map(d => d.date));   // Union Sales → From Dairy
     res.status(201).json({ success: true, data: { inserted, skipped: dupSkipped, unmatchedFarmers: uniqueUnmatched.length }, message: msg });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -522,14 +521,9 @@ export const openLyssaImportCollections = async (req, res) => {
 
     // Build farmer lookup map by farmerNumber and memberId
     const allFarmers = await Farmer.find({ companyId }, 'farmerNumber memberId personalDetails.name _id').lean();
-    const farmerMap = {};
-    for (const f of allFarmers) {
-      if (f.farmerNumber) farmerMap[String(f.farmerNumber).trim()] = { id: f._id, name: f.personalDetails?.name || '' };
-    }
-    for (const f of allFarmers) {
-      const mid = String(f.memberId || '').trim();
-      if (mid && !farmerMap[mid]) farmerMap[mid] = { id: f._id, name: f.personalDetails?.name || '' };
-    }
+    // Numbers repeated across centres (centre-wise series) stay unlinked — see addFarmerKeys
+    const farmerMap = addFarmerKeys({}, allFarmers, f => f.farmerNumber);
+    addFarmerKeys(farmerMap, allFarmers, f => f.memberId, { fallback: true });
 
     const parseOLDate = (val) => {
       if (!val) return new Date();
@@ -604,6 +598,7 @@ export const openLyssaImportCollections = async (req, res) => {
 
     // Imports carry no centre/agent — assign them before the next read
     await healAfterImport(req.companyId);
+    queueFromDairySync(req.companyId, docs.map(d => d.date));   // Union Sales → From Dairy
     res.status(201).json({ success: true, data: { inserted, skipped: dupSkipped, unmatched: um.length }, message: msg });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -626,19 +621,17 @@ export const bulkImportCollections = async (req, res) => {
       { farmerNumber: { $in: uniqueNumbers }, companyId: req.companyId },
       { farmerNumber: 1, memberId: 1, 'personalDetails.name': 1 }
     ).lean();
-    const farmerMap = {};
-    for (const f of farmers) farmerMap[f.farmerNumber] = { id: f._id, name: f.personalDetails?.name || '' };
+    // Numbers repeated across centres (centre-wise series) stay unlinked — see addFarmerKeys
+    const farmerMap = addFarmerKeys({}, farmers, f => f.farmerNumber);
 
     // Fallback: numbers not found by farmerNumber → try memberId (members in Zibitt/OpenlyPSSA)
-    const unmatched = uniqueNumbers.filter(n => !farmerMap[n]);
+    const unmatched = uniqueNumbers.filter(n => !(n in farmerMap));
     if (unmatched.length > 0) {
       const memberFarmers = await Farmer.find(
         { memberId: { $in: unmatched }, companyId: req.companyId },
         { memberId: 1, farmerNumber: 1, 'personalDetails.name': 1 }
       ).lean();
-      for (const f of memberFarmers) {
-        if (f.memberId) farmerMap[f.memberId] = { id: f._id, name: f.personalDetails?.name || '' };
-      }
+      addFarmerKeys(farmerMap, memberFarmers, f => f.memberId, { fallback: true });
     }
 
     const skipped = [];
@@ -685,6 +678,7 @@ export const bulkImportCollections = async (req, res) => {
 
     // Imports carry no centre/agent — assign them before the next read
     await healAfterImport(req.companyId);
+    queueFromDairySync(req.companyId, docs.map(d => d.date));   // Union Sales → From Dairy
     res.status(201).json({ success: true, data: { inserted, duplicates, skipped: skipped.length, unknownFarmers: [...new Set(skipped)] }, message: msg });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -797,19 +791,17 @@ export const fileUploadImportCollections = async (req, res) => {
       { farmerNumber: { $in: uniqueNums }, companyId: req.companyId },
       { farmerNumber: 1, memberId: 1, 'personalDetails.name': 1 }
     ).lean();
-    const farmerMap = {};
-    for (const f of farmers) farmerMap[f.farmerNumber] = { id: f._id, name: f.personalDetails?.name || '' };
+    // Numbers repeated across centres (centre-wise series) stay unlinked — see addFarmerKeys
+    const farmerMap = addFarmerKeys({}, farmers, f => f.farmerNumber);
 
     // Fallback: numbers not found by farmerNumber → try memberId (members in Zibitt/OpenlyPSSA)
-    const unmatched = uniqueNums.filter(n => !farmerMap[n]);
+    const unmatched = uniqueNums.filter(n => !(n in farmerMap));
     if (unmatched.length > 0) {
       const memberFarmers = await Farmer.find(
         { memberId: { $in: unmatched }, companyId: req.companyId },
         { memberId: 1, farmerNumber: 1, 'personalDetails.name': 1 }
       ).lean();
-      for (const f of memberFarmers) {
-        if (f.memberId) farmerMap[f.memberId] = { id: f._id, name: f.personalDetails?.name || '' };
-      }
+      addFarmerKeys(farmerMap, memberFarmers, f => f.memberId, { fallback: true });
     }
 
     const unlinked = [];
@@ -865,6 +857,7 @@ export const fileUploadImportCollections = async (req, res) => {
 
     // Imports carry no centre/agent — assign them before the next read
     await healAfterImport(req.companyId);
+    queueFromDairySync(req.companyId, docs.map(d => d.date));   // Union Sales → From Dairy
     res.json({ success: true, data: { inserted, unlinked: uniqueUnlinked.length, total: rows.length }, message: msg });
   } catch (err) {
     console.error('[MilkCollection fileImport] Error:', err.message);
@@ -878,9 +871,11 @@ export const fileUploadImportCollections = async (req, res) => {
 export const getFarmerHistory = async (req, res) => {
   try {
     const { farmerNumber } = req.params;
-    const { fromDate, toDate, shift, page = 1, limit = 50 } = req.query;
+    const { fromDate, toDate, shift, page = 1, limit = 50, farmerId } = req.query;
 
+    // ?farmerId= pins the farmer when the number is shared by two centres (centre-wise series)
     const query = { companyId: req.companyId, farmerNumber };
+    if (farmerId && mongoose.isValidObjectId(farmerId)) query.farmer = farmerId;
     if (shift) query.shift = shift;
     if (fromDate || toDate) {
       query.date = {};
@@ -924,10 +919,11 @@ export const getFarmerCriteriaSummary = async (req, res) => {
       {
         $group: {
           _id: {
-            farmerNumber: '$farmerNumber',
+            farmer:  FARMER_KEY,   // per farmer — numbers can repeat across centres
             dateStr: { $dateToString: { format: '%Y-%m-%d', date: '$date', timezone: '+05:30' } }
           },
           farmerId:    { $first: '$farmer' },
+          farmerNumber: { $first: '$farmerNumber' },
           farmerName:  { $first: '$farmerName' },
           shifts:      { $sum: 1 },
           dayQty:      { $sum: '$qty' },
@@ -939,7 +935,8 @@ export const getFarmerCriteriaSummary = async (req, res) => {
       // Stage 2: Aggregate per farmer (each doc = 1 day)
       {
         $group: {
-          _id:         '$_id.farmerNumber',
+          _id:         '$_id.farmer',
+          farmerNumber: { $first: '$farmerNumber' },
           farmerId:    { $first: '$farmerId' },
           farmerName:  { $first: '$farmerName' },
           totalDays:   { $sum: 1 },
@@ -1008,14 +1005,14 @@ export const getFarmerCriteriaSummary = async (req, res) => {
     if (memberType === 'member')    pipeline.push({ $match: { isMember: true } });
     if (memberType === 'nonMember') pipeline.push({ $match: { isMember: { $ne: true } } });
 
-    pipeline.push({ $sort: { _id: 1 } });
+    pipeline.push({ $sort: { farmerNumber: 1 } });
 
     const rows = await MilkCollection.aggregate(pipeline);
 
     const f2 = v => parseFloat(Number(v || 0).toFixed(2));
     const f3 = v => parseFloat(Number(v || 0).toFixed(3));
     const result = rows.map(r => ({
-      farmerNumber: r._id,
+      farmerNumber: r.farmerNumber,
       farmerName:   r.farmerName || '',
       address:      r.address    || '',
       isMember:     r.isMember   || false,
@@ -1055,7 +1052,8 @@ export const getFarmerWiseSummary = async (req, res) => {
       { $addFields: { isMember: { $ifNull: [{ $arrayElemAt: ['$farmerDoc.isMembership', 0] }, false] } } },
       {
         $group: {
-          _id:            '$farmerNumber',
+          _id:            FARMER_KEY,   // per farmer — numbers can repeat across centres
+          farmerNumber:   { $first: '$farmerNumber' },
           farmerName:     { $first: '$farmerName' },
           farmerId:       { $first: '$farmer' },
           isMember:       { $first: '$isMember' },
@@ -1071,13 +1069,13 @@ export const getFarmerWiseSummary = async (req, res) => {
           totalAmount:    { $sum: '$amount' },
         },
       },
-      { $sort: { _id: 1 } },
+      { $sort: { farmerNumber: 1 } },
     ];
 
     const rows = await MilkCollection.aggregate(pipeline);
     const f2 = v => parseFloat(Number(v || 0).toFixed(2));
     const result = rows.map(r => ({
-      farmerNumber:   r._id,
+      farmerNumber:   r.farmerNumber,
       farmerName:     r.farmerName   || '',
       farmerId:       r.farmerId,
       isMember:       r.isMember     || false,
@@ -1130,8 +1128,9 @@ export const getFarmerWiseStatement = async (req, res) => {
     const farmerMap = new Map();
     for (const rec of records) {
       const fn = rec.farmerNumber;
-      if (!farmerMap.has(fn)) farmerMap.set(fn, { farmerNumber: fn, farmerName: rec.farmerName || '', dateMap: new Map() });
-      const farmer = farmerMap.get(fn);
+      const key = String(rec.farmer || fn);   // per farmer — numbers can repeat across centres
+      if (!farmerMap.has(key)) farmerMap.set(key, { farmerNumber: fn, farmerName: rec.farmerName || '', dateMap: new Map() });
+      const farmer = farmerMap.get(key);
       const d = rec.date;
       const dateKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
       if (!farmer.dateMap.has(dateKey)) farmer.dateMap.set(dateKey, { date: dateKey, amList: [], pmList: [] });
@@ -1231,7 +1230,7 @@ export const getDateWiseSummary = async (req, res) => {
       }},
       { $group: {
         _id:       { dateStr: '$dateStr', isMember: '$isMember' },
-        farmerIds: { $addToSet: '$farmerNumber' },
+        farmerIds: { $addToSet: FARMER_KEY },
         qty:       { $sum: '$qty' },
         amount:    { $sum: '$amount' },
       }},
@@ -1320,9 +1319,12 @@ export const getFarmerStats = async (req, res) => {
     const fromDate = new Date();
     fromDate.setDate(fromDate.getDate() - days);
 
+    // ?farmerId= pins the farmer when the number is shared by two centres (centre-wise series)
+    const { farmerId } = req.query;
     const records = await MilkCollection.find({
       companyId: req.companyId,
       farmerNumber,
+      ...(farmerId && mongoose.isValidObjectId(farmerId) ? { farmer: farmerId } : {}),
       date: { $gte: fromDate }
     }).sort({ date: -1 });
 
@@ -1371,21 +1373,9 @@ export const dairysoftImportCollections = async (req, res) => {
     const companyId = req.companyId;
 
     const allFarmers = await Farmer.find({ companyId }, 'farmerNumber memberId personalDetails.name _id').lean();
-    const farmerMap = {};
-    const addToMap = (key, val) => {
-      const k = String(key).trim();
-      if (!k) return;
-      farmerMap[k] = val;
-      const numeric = String(parseInt(k, 10));
-      if (numeric !== k && numeric !== 'NaN') farmerMap[numeric] = val;
-    };
-    for (const f of allFarmers) {
-      if (f.farmerNumber) addToMap(f.farmerNumber, { id: f._id, name: f.personalDetails?.name || '' });
-    }
-    for (const f of allFarmers) {
-      if (f.memberId && !farmerMap[String(f.memberId)])
-        addToMap(f.memberId, { id: f._id, name: f.personalDetails?.name || '' });
-    }
+    // Numbers repeated across centres (centre-wise series) stay unlinked — see addFarmerKeys
+    const farmerMap = addFarmerKeys({}, allFarmers, f => f.farmerNumber, { numericAlias: true });
+    addFarmerKeys(farmerMap, allFarmers, f => f.memberId, { fallback: true, numericAlias: true });
 
     const parseDSDate = (val) => {
       if (!val) return new Date();
@@ -1457,6 +1447,7 @@ export const dairysoftImportCollections = async (req, res) => {
 
     // Imports carry no centre/agent — assign them before the next read
     await healAfterImport(req.companyId);
+    queueFromDairySync(req.companyId, docs.map(d => d.date));   // Union Sales → From Dairy
     res.status(201).json({ success: true, data: { inserted, skipped: dupSkipped, unmatchedFarmers: uniqueUnmatched.length }, message: msg });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -1545,7 +1536,8 @@ export const getCollectionAnalysis = async (req, res) => {
       ...(memberType === 'nonMember' ? [{ $match: { isMember: false } }] : []),
       {
         $group: {
-          _id:            '$farmerNumber',
+          _id:            FARMER_KEY,   // per farmer — numbers can repeat across centres
+          farmerNumber:   { $first: '$farmerNumber' },
           farmerName:     { $first: '$farmerName' },
           memberId:       { $first: '$farmerData.memberId' },
           houseName:      { $first: '$farmerData.address.houseName' },
@@ -1568,7 +1560,7 @@ export const getCollectionAnalysis = async (req, res) => {
         },
       },
       { $addFields: { totalDays: { $size: '$distinctDates' } } },
-      { $sort: { _id: 1 } },
+      { $sort: { farmerNumber: 1 } },
     ];
 
     const rows = await MilkCollection.aggregate(pipeline);
@@ -1577,7 +1569,7 @@ export const getCollectionAnalysis = async (req, res) => {
     const f1 = v => parseFloat(Number(v || 0).toFixed(1));
 
     const result = rows.map(r => ({
-      farmerNumber:   r._id,
+      farmerNumber:   r.farmerNumber,
       memberId:       r.memberId      || '',
       farmerName:     r.farmerName    || '',
       houseName:      r.houseName     || '',
@@ -1640,7 +1632,8 @@ export const getSocietyReport = async (req, res) => {
       ...(memberType === 'nonMember' ? [{ $match: { isMember: false } }] : []),
       {
         $group: {
-          _id:           '$farmerNumber',
+          _id:           FARMER_KEY,   // per farmer — numbers can repeat across centres
+          farmerNumber:  { $first: '$farmerNumber' },
           farmerName:    { $first: '$farmerName' },
           place:         { $first: '$farmerData.address.place' },
           houseName:     { $first: '$farmerData.address.houseName' },
@@ -1664,14 +1657,14 @@ export const getSocietyReport = async (req, res) => {
           },
         },
       },
-      { $sort: { _id: 1 } },
+      { $sort: { farmerNumber: 1 } },
     ];
 
     const rows = await MilkCollection.aggregate(pipeline);
     const f2 = v => parseFloat(Number(v || 0).toFixed(2));
 
     const result = rows.map(r => ({
-      farmerNumber:  r._id,
+      farmerNumber:  r.farmerNumber,
       farmerName:    r.farmerName  || '',
       place:         r.place       || r.houseName || '',
       isMember:      r.isMember    || false,
@@ -1724,7 +1717,7 @@ export const getDaySummary = async (req, res) => {
         { $group: {
           _id: null,
           count:   { $sum: 1 },
-          farmers: { $addToSet: '$farmerNumber' },
+          farmers: { $addToSet: FARMER_KEY },
           qty:     { $sum: '$qty' },
           kg:      { $sum: { $multiply: ['$qty', { $add: [1, { $divide: [{ $cond: [{ $gt: ['$clr', 0] }, '$clr', 26] }, 1000] }] }] } },
           amount:  { $sum: '$amount' },

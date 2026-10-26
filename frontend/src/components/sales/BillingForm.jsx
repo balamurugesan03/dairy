@@ -765,8 +765,12 @@ const BillingForm = () => {
             placeholder="Collection Center"
             value={form.values.collectionCenterId}
             onChange={(value) => form.setFieldValue('collectionCenterId', value)}
-            data={collectionCenters.map(c => ({ value: c._id, label: c.centerName || 'Unnamed Center' }))}
-            clearable
+            data={collectionCenters
+              // Ordinary user / centre login: only their own centre
+              .filter(c => !centreDefaults.locked || c._id.toString() === centreDefaults.centreId)
+              .map(c => ({ value: c._id, label: c.centerName || 'Unnamed Center' }))}
+            clearable={!centreDefaults.locked}
+            readOnly={centreDefaults.locked}
             size="xs"
             leftSection={<IconBuilding size={14} />}
             style={{ minWidth: 160 }}

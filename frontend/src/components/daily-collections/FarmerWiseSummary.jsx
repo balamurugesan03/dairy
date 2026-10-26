@@ -607,8 +607,8 @@ const FarmerWiseSummary = () => {
           {/* One block per farmer */}
           <ScrollArea type="always">
             <Box style={{ minWidth: 1120 }} px={2}>
-              {filteredData.map(farmer => (
-                <FarmerBlock key={farmer.farmerNumber} farmer={farmer} />
+              {filteredData.map((farmer, i) => (
+                <FarmerBlock key={`${farmer.farmerNumber}-${i}`} farmer={farmer} />
               ))}
 
               {/* Grand total */}

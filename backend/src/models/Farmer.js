@@ -347,7 +347,10 @@ const farmerSchema = new mongoose.Schema({
 farmerSchema.index({ 'personalDetails.phone': 1 });
 farmerSchema.index({ status: 1 });
 farmerSchema.index({ companyId: 1 });
-farmerSchema.index({ farmerNumber: 1, companyId: 1 }, { unique: true });
+// Farmer Number is unique per centre: with the Center-wise series C1 and C2 both have a
+// farmer 1. The Existing (single) series is kept company-unique by utils/farmerSeries.js.
+farmerSchema.index({ companyId: 1, collectionCenter: 1, farmerNumber: 1 }, { unique: true });
+farmerSchema.index({ companyId: 1, farmerNumber: 1 });
 
 const Farmer = mongoose.model('Farmer', farmerSchema);
 

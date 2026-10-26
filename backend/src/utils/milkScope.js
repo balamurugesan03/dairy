@@ -120,14 +120,21 @@ export async function healMilkAssignments(companyId, { force = false } = {}) {
 export const healAfterImport = (companyId) => healMilkAssignments(companyId, { force: true });
 
 // ── Login scope ───────────────────────────────────────────────────────────────
-// Company / centre logins and admin-role users see everything in the company.
-// A regular staff user (role 'user') sees their own agent's and centre's
-// records — imported rows included — plus anything they entered themselves.
+// Company / centre logins and admin users see everything in the company.
+// A regular staff user sees their own agent's and centre's records — imported
+// rows included — plus anything they entered themselves.
 // Returns a condition to AND into the query, or null for unrestricted.
+
+// Admin = admin-role account, or a User Management user of type Admin / Superuser.
+// Their own centre / agent is only the default selection, not a restriction.
+export const ADMIN_USER_TYPES = ['admin', 'superuser'];
+export const isAdminUser = (u = {}) =>
+  u.role === 'admin' || u.role === 'superadmin' || ADMIN_USER_TYPES.includes(u.userType);
+
 export async function staffScope(req, { centreField, agentField }) {
   if (req.userType !== 'user') return null;
   const u = req.user || {};
-  if (u.role === 'admin' || u.role === 'superadmin') return null;
+  if (isAdminUser(u)) return null;
 
   const or = [{ createdBy: u._id }];
   const agentId = toId(u.agentId);

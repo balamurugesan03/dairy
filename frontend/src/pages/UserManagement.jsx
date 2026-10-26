@@ -219,7 +219,9 @@ const BUSINESS_ONLY_GROUPS = new Set(['businessInventory', 'businessReports', 'q
 const MODULES = MODULE_GROUPS.flatMap(g => [g.key, ...g.subModules.map(s => s.key)]);
 
 const UserManagement = () => {
-  const { isAdmin, companyInfo } = useAuth();
+  const { isAdminLogin, hasModuleAccess, companyInfo } = useAuth();
+  // Admins, or users granted User Management in User Management → Settings
+  const isAdmin = isAdminLogin || hasModuleAccess('settings.userManagement');
   const isDairy = companyInfo?.businessTypes?.includes('Dairy Cooperative Society');
   const visibleGroups = isDairy ? MODULE_GROUPS.filter(g => !BUSINESS_ONLY_GROUPS.has(g.key)) : MODULE_GROUPS;
   const navigate = useNavigate();
@@ -335,7 +337,7 @@ const UserManagement = () => {
   const handleAgentSelect = (agentId) => {
     setSelectedAgentId(agentId);
     const agent = agents.find(a => a._id === agentId);
-    if (!agent) return;
+    if (!agent || formData.userType !== 'agent') return;
     setFormData(prev => ({
       ...prev,
       displayName: agent.agentName || prev.displayName,
@@ -429,7 +431,8 @@ const UserManagement = () => {
         expireDate: formData.expireDate,
         permissions: formData.permissions,
         collectionCenter: selectedCenterId || null,
-        agentId: formData.userType === 'agent' ? (selectedAgentId || null) : null
+        // Any user may have a default agent (Admin: preselected; ordinary user: fixed to it)
+        agentId: selectedAgentId || null
       };
 
       if (!editingUser) {
@@ -741,32 +744,44 @@ const UserManagement = () => {
               value={formData.userType}
               onChange={(value) => {
                 setFormData({ ...formData, userType: value });
-                if (value !== 'agent') setSelectedAgentId(null);
               }}
             />
-            {formData.userType === 'agent' && (
-              <Select
-                label="Select Agent"
-                placeholder="Choose from Agent Management"
-                required
-                searchable
-                data={agents.map(a => ({
-                  value: a._id,
-                  label: `${a.agentName} (${a.agentCode})`
-                }))}
-                value={selectedAgentId}
-                onChange={handleAgentSelect}
-                description="Agent data will be auto-filled below"
-              />
-            )}
             <Select
               label="Center"
               placeholder="Select collection center"
+              description={['admin', 'superuser'].includes(formData.userType)
+                ? 'Default Center on Milk Purchase / Sales — Admin can still choose others'
+                : 'This user works only in this Center'}
               clearable
               searchable
-              data={centers.map(c => ({ value: c._id, label: c.centerName }))}
+              data={centers.map(c => ({ value: c._id, label: c.centerCode ? `${c.centerCode} - ${c.centerName}` : c.centerName }))}
               value={selectedCenterId}
-              onChange={setSelectedCenterId}
+              onChange={(v) => {
+                setSelectedCenterId(v);
+                const a = agents.find(x => x._id === selectedAgentId);
+                const aCentre = a && String(a.collectionCenterId?._id || a.collectionCenterId || '');
+                if (v && aCentre && aCentre !== v) setSelectedAgentId(null);
+              }}
+            />
+            <Select
+              label={formData.userType === 'agent' ? 'Select Agent' : 'Agent'}
+              placeholder={formData.userType === 'agent' ? 'Choose from Agent Management' : 'Optional'}
+              required={formData.userType === 'agent'}
+              clearable={formData.userType !== 'agent'}
+              searchable
+              data={agents
+                .filter(a => !selectedCenterId || !a.collectionCenterId || String(a.collectionCenterId?._id || a.collectionCenterId) === selectedCenterId)
+                .map(a => ({
+                  value: a._id,
+                  label: `${a.agentName} (${a.agentCode})`
+                }))}
+              value={selectedAgentId}
+              onChange={handleAgentSelect}
+              description={formData.userType === 'agent'
+                ? 'Agent data will be auto-filled below'
+                : ['admin', 'superuser'].includes(formData.userType)
+                  ? 'Default Agent — Admin can still choose others'
+                  : 'This user works only as this Agent'}
             />
             <Select
               label="Designation"

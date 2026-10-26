@@ -1,6 +1,7 @@
 import XLSX from 'xlsx';
 import mongoose from 'mongoose';
 import { MilmaChartMaster, MilmaChartDetail } from '../models/MilmaChart.js';
+import { isAdminUser } from '../utils/milkScope.js';
 
 // ─── Helper: parse Excel date serial (e.g. 43727 → Date) ─────────────────────
 function parseExcelDate(val) {
@@ -69,6 +70,7 @@ export const uploadMilmaChart = async (req, res) => {
             bestTotalSolids: Number(row.best_total_solids) || 0,
             remarks:         String(row.remarks || ''),
             rowCount:        detailCounts[row.chart_id]    || 0,
+            source:          'Import',
           }
         },
         upsert: true,
@@ -77,8 +79,11 @@ export const uploadMilmaChart = async (req, res) => {
     await MilmaChartMaster.bulkWrite(masterOps, { ordered: false });
 
     // ── Bulk replace Chart Detail rows ────────────────────────────────────────
+    // Only the chart versions in this file are replaced — other versions (earlier
+    // imports, or versions the society created itself) are left untouched.
     // Use upsert so duplicate (chartId+fat+clr) rows within the Excel don't crash the import
-    await MilmaChartDetail.deleteMany({ companyId });
+    const fileChartIds = [...new Set(masterRows.map(r => Number(r.chart_id)))];
+    await MilmaChartDetail.deleteMany({ companyId, chartId: { $in: fileChartIds } });
 
     const BATCH = 2000;
     for (let i = 0; i < detailRows.length; i += BATCH) {
@@ -182,6 +187,199 @@ export const getMasters = async (req, res) => {
       .find({ companyId: req.companyId })
       .sort({ chartId: 1 });
     res.json({ success: true, data: masters });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+//  SOCIETY (company login): own chart versions
+//  Every query is scoped to req.companyId, so a society only ever sees and
+//  changes its own charts. Imported versions (source 'Import' / no source) are
+//  read-only here; a society adds versions and may delete only its own.
+//  Society versions get chart ids from 1001 up, so a later super-admin import
+//  (Milma's own ids 1, 2, 3 …) can never land on them.
+// ════════════════════════════════════════════════════════════════════════════
+const SOCIETY_CHART_ID_START = 1001;
+
+const canEditCharts = (req) => {
+  if (req.userType === 'company' || isAdminUser(req.user || {})) return true;
+  const perm = (req.user?.permissions || []).find(p => p.module === 'milkCollection.rateChart');
+  return !!(perm && (perm.write || perm.edit));
+};
+const denyEdit = (res) => res.status(403).json({ success: false, message: 'You do not have permission to change rate charts' });
+
+const dayKey = (d) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+const nextSocietyChartId = async (companyId) => {
+  const last = await MilmaChartMaster.findOne({ companyId }).sort({ chartId: -1 }).select('chartId').lean();
+  return Math.max(SOCIETY_CHART_ID_START, (last?.chartId || 0) + 1);
+};
+
+const masterNumbers = (src = {}, body = {}) => {
+  const pick = (k) => (body[k] !== undefined && body[k] !== '' && body[k] !== null ? Number(body[k]) || 0 : Number(src[k]) || 0);
+  return {
+    rateSNF: pick('rateSNF'), rateFAT: pick('rateFAT'),
+    subSNF: pick('subSNF'), subTotalSolids: pick('subTotalSolids'),
+    bestSNF: pick('bestSNF'), bestTotalSolids: pick('bestTotalSolids'),
+  };
+};
+
+// GET /api/milma-charts/detail?chartId=X&page=1&limit=100 — own company only
+export const getDetail = async (req, res) => {
+  try {
+    const { chartId, page = 1, limit = 100 } = req.query;
+    if (!chartId) return res.status(400).json({ success: false, message: 'chartId is required' });
+    const query = { companyId: req.companyId, chartId: Number(chartId) };
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const [rows, total] = await Promise.all([
+      MilmaChartDetail.find(query).sort({ fat: 1, clr: 1 }).skip(skip).limit(parseInt(limit)).lean(),
+      MilmaChartDetail.countDocuments(query),
+    ]);
+    res.json({ success: true, data: rows, total, page: parseInt(page), limit: parseInt(limit) });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// POST /api/milma-charts/versions
+// { dateFrom, copyFromChartId, rateAdjust, rateSNF, rateFAT, subSNF, subTotalSolids, bestSNF, bestTotalSolids, remarks }
+// New version = copy of an existing version's rate table (imported or own), every
+// rate shifted by rateAdjust (₹/L), effective from dateFrom. The source is not changed.
+export const createVersion = async (req, res) => {
+  try {
+    if (!canEditCharts(req)) return denyEdit(res);
+    const companyId = req.companyId;
+    const { dateFrom, copyFromChartId, rateAdjust = 0, remarks = '' } = req.body || {};
+    if (!dateFrom) return res.status(400).json({ success: false, message: 'Effective From date is required' });
+    const from = new Date(dateFrom);
+    if (Number.isNaN(from.getTime())) return res.status(400).json({ success: false, message: 'Invalid Effective From date' });
+
+    const masters = await MilmaChartMaster.find({ companyId }).lean();
+    const sameDay = masters.find(m => dayKey(m.dateFrom) === dayKey(from));
+    if (sameDay) {
+      return res.status(409).json({ success: false, message: `Chart ${sameDay.chartId} already starts on ${dayKey(from)} — choose another date` });
+    }
+    const source = copyFromChartId != null && copyFromChartId !== ''
+      ? masters.find(m => m.chartId === Number(copyFromChartId))
+      : [...masters].sort((a, b) => new Date(b.dateFrom) - new Date(a.dateFrom))[0];
+    if (!source) return res.status(400).json({ success: false, message: 'Choose an existing chart version to copy the rate table from' });
+
+    const rows = await MilmaChartDetail.find({ companyId, chartId: source.chartId }).select('fat clr snf rate -_id').lean();
+    if (!rows.length) return res.status(400).json({ success: false, message: `Chart ${source.chartId} has no rate rows to copy` });
+
+    const adjust = Number(rateAdjust) || 0;
+    let master;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        master = await MilmaChartMaster.create({
+          companyId,
+          chartId: await nextSocietyChartId(companyId),
+          dateFrom: from,
+          ...masterNumbers(source, req.body),
+          remarks: String(remarks || `Copy of chart ${source.chartId}${adjust ? ` ${adjust > 0 ? '+' : ''}${adjust}/L` : ''}`),
+          rowCount: rows.length,
+          source: 'Society',
+          createdBy: req.user?._id,
+        });
+        break;
+      } catch (err) {
+        if (err.code !== 11000 || attempt === 4) throw err;   // chart id race → take the next
+      }
+    }
+
+    const BATCH = 2000;
+    for (let i = 0; i < rows.length; i += BATCH) {
+      await MilmaChartDetail.insertMany(rows.slice(i, i + BATCH).map(r => ({
+        companyId, chartId: master.chartId, fat: r.fat, clr: r.clr, snf: r.snf,
+        rate: Math.max(0, Number((Number(r.rate) + adjust).toFixed(2))),
+      })), { ordered: false });
+    }
+    res.status(201).json({ success: true, data: master, message: `Chart ${master.chartId} created from chart ${source.chartId} (${rows.length} rates)` });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// POST /api/milma-charts/upload (multipart file) — same 2-sheet Excel as the super-admin
+// upload, for the logged-in society only. Adds versions; a version whose Effective From
+// date already exists is skipped (no duplicates, existing versions untouched).
+export const uploadOwnChart = async (req, res) => {
+  try {
+    if (!canEditCharts(req)) return denyEdit(res);
+    const companyId = req.companyId;
+    if (!req.file) return res.status(400).json({ success: false, message: 'Excel file is required' });
+
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    if (wb.SheetNames.length < 2) {
+      return res.status(400).json({ success: false, message: 'Excel must contain 2 sheets: rate chart detail + chart master' });
+    }
+    const detailRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: 0 });
+    const masterRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[1]], { defval: 0 });
+    if (!detailRows.length || !masterRows.length) {
+      return res.status(400).json({ success: false, message: 'Both the rate chart detail and chart master sheets need rows' });
+    }
+
+    const existingDays = new Set((await MilmaChartMaster.find({ companyId }).select('dateFrom').lean()).map(m => dayKey(m.dateFrom)));
+    const created = [], skipped = [];
+    for (const row of masterRows) {
+      const from = parseExcelDate(row.date_from);
+      if (!from) { skipped.push(`chart ${row.chart_id}: no valid date_from`); continue; }
+      if (existingDays.has(dayKey(from))) { skipped.push(`chart ${row.chart_id}: ${dayKey(from)} already exists`); continue; }
+      const rows = detailRows.filter(d => Number(d.chart_id) === Number(row.chart_id));
+      if (!rows.length) { skipped.push(`chart ${row.chart_id}: no rate rows`); continue; }
+
+      const chartId = await nextSocietyChartId(companyId);
+      await MilmaChartMaster.create({
+        companyId, chartId, dateFrom: from,
+        rateSNF: Number(row.rate_snf) || 0, rateFAT: Number(row.rate_fat) || 0,
+        subSNF: Number(row.sub_snf) || 0, subTotalSolids: Number(row.sub_total_solids) || 0,
+        bestSNF: Number(row.best_snf) || 0, bestTotalSolids: Number(row.best_total_solids) || 0,
+        remarks: String(row.remarks || ''), rowCount: 0, source: 'Society', createdBy: req.user?._id,
+      });
+      // upsert: duplicate (fat, clr) rows inside the file don't fail the import
+      const BATCH = 2000;
+      for (let i = 0; i < rows.length; i += BATCH) {
+        await MilmaChartDetail.bulkWrite(rows.slice(i, i + BATCH).map(d => ({
+          updateOne: {
+            filter: { companyId, chartId, fat: Number(d.fat), clr: Number(d.clr) },
+            update: { $set: { snf: Number(d.snf), rate: Number(d.rate) } },
+            upsert: true,
+          },
+        })), { ordered: false });
+      }
+      const rowCount = await MilmaChartDetail.countDocuments({ companyId, chartId });
+      await MilmaChartMaster.updateOne({ companyId, chartId }, { $set: { rowCount } });
+      existingDays.add(dayKey(from));
+      created.push(chartId);
+    }
+
+    res.json({
+      success: true,
+      created: created.length,
+      skipped,
+      message: `${created.length} chart version(s) added${skipped.length ? `, ${skipped.length} skipped (${skipped.slice(0, 3).join('; ')}${skipped.length > 3 ? ' …' : ''})` : ''}`,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// DELETE /api/milma-charts/versions/:chartId — only versions the society created
+export const deleteVersion = async (req, res) => {
+  try {
+    if (!canEditCharts(req)) return denyEdit(res);
+    const chartId = Number(req.params.chartId);
+    const master = await MilmaChartMaster.findOne({ companyId: req.companyId, chartId });
+    if (!master) return res.status(404).json({ success: false, message: 'Chart version not found' });
+    if (master.source !== 'Society') {
+      return res.status(403).json({ success: false, message: 'Imported chart versions cannot be deleted here' });
+    }
+    await Promise.all([
+      MilmaChartDetail.deleteMany({ companyId: req.companyId, chartId }),
+      master.deleteOne(),
+    ]);
+    res.json({ success: true, message: `Chart ${chartId} deleted` });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

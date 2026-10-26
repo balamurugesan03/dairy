@@ -79,7 +79,7 @@ const MainLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { selectedCompany, selectedBusinessType } = useCompany();
-  const { user, logout, isAdmin, isUser, isCentreLogin } = useAuth();
+  const { user, logout, isAdmin, isAdminLogin, hasModuleAccess, isUser, isCentreLogin } = useAuth();
   const { colorScheme, currentThemeConfig } = useTheme();
 
   const isDark = colorScheme === 'dark';
@@ -606,22 +606,21 @@ const MainLayout = () => {
         { key: '/hrm/loans', label: 'Loans / Advance' }
       ]
     },
-    // Settings — visible to everyone; restricted (newly created) users only get
-    // Payment Settings, admins/superadmins see the full list.
+    // Settings — visible to everyone. Admins see the full list; other users see
+    // Payment Settings plus the pages granted in User Management → Settings.
     {
       key: 'settings-menu',
       icon: <IconAdjustments size={18} />,
       label: 'Settings',
       color: 'violet',
-      children: isAdmin ? [
-        { key: '/society-info',     label: 'Society Info' },
-        { key: '/financial-year',   label: 'Financial Year' },
+      children: [
+        { key: '/society-info',     label: 'Society Info',         perm: 'settings.societyInfo' },
+        { key: '/financial-year',   label: 'Financial Year',       perm: 'settings.financialYear' },
         { key: '/payment-settings', label: 'Payment Settings' },
-        { key: '/openlyssa-merge',  label: 'OpenLyssa Merge Tool' },
-        { key: '/user-management',  label: 'User Management' },
-      ] : [
-        { key: '/payment-settings', label: 'Payment Settings' },
-      ]
+        { key: '/openlyssa-merge',  label: 'OpenLyssa Merge Tool', perm: 'settings.openLyssaMerge' },
+        { key: '/user-management',  label: 'User Management',      perm: 'settings.userManagement' },
+      ].filter(c => !c.perm || isAdminLogin || hasModuleAccess(c.perm))
+       .map(({ perm, ...c }) => c)
     }
     ];
 

@@ -27,7 +27,7 @@ export const getMonthlySummary = async (req, res) => {
           avgFAT:            { $avg: '$fat' },
           avgSNF:            { $avg: '$snf' },
           days:              { $addToSet: { $dateToString: { format: '%Y-%m-%d', date: '$date' } } },
-          producers:         { $addToSet: '$farmerNumber' }
+          producers:         { $addToSet: { $ifNull: ['$farmer', '$farmerNumber'] } }
         }
       },
       {

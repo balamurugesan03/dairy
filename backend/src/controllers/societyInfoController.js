@@ -1,17 +1,20 @@
 import SocietyInfo     from '../models/SocietyInfo.js';
 import SocietyDocument from '../models/SocietyDocument.js';
+import { getSocietyProfile, applyCompanyValues } from '../utils/societyProfile.js';
 
 // ════════════════════════════════════════════════════════════════
 //  GET  /api/society-info
-//  Returns { info: {...}, documents: [...] }
+//  Returns { info: {...}, documents: [...], companyFields: [...] }
+//  info = Society Information merged with the company configuration
+//  (Super Admin); companyFields = the keys that came from the company
 // ════════════════════════════════════════════════════════════════
 export const getSocietyInfo = async (req, res) => {
   try {
-    const [info, documents] = await Promise.all([
-      SocietyInfo.findOne({ companyId: req.companyId }).lean(),
+    const [{ info, companyFields }, documents] = await Promise.all([
+      getSocietyProfile(req.companyId),
       SocietyDocument.find({ companyId: req.companyId }).lean(),
     ]);
-    res.json({ success: true, data: { info: info || {}, documents } });
+    res.json({ success: true, data: { info, documents, companyFields } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -23,9 +26,11 @@ export const getSocietyInfo = async (req, res) => {
 // ════════════════════════════════════════════════════════════════
 export const upsertSocietyInfo = async (req, res) => {
   try {
+    const { _id, companyId, createdAt, updatedAt, __v, ...body } = req.body || {};
     const info = await SocietyInfo.findOneAndUpdate(
       { companyId: req.companyId },
-      { ...req.body, companyId: req.companyId },
+      // company-owned values (Super Admin) are kept whatever the form sends
+      { ...(await applyCompanyValues(req.companyId, body)), companyId: req.companyId },
       { new: true, upsert: true, runValidators: true }
     );
     res.json({ success: true, data: info });

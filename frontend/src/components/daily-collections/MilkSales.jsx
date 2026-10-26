@@ -25,7 +25,7 @@ import { customerAPI, collectionCenterAPI, milkSalesAPI, agentAPI, milkSalesRate
 import DairyRouteButtons from './DairyRouteButtons';
 import { toAgentOptions, groupAgentsByCenter, findOwnAgent, pickDefaultAgent } from '../../utils/senderAgent';
 import { resolveDefaultCentreAgent } from '../../utils/defaultCentreAgent';
-import { openMilkPopup } from '../../utils/milkPopup';
+import { openMilkPopup, POPUP_CHILD_Z } from '../../utils/milkPopup';
 import { useAuth } from '../../context/AuthContext';
 import ImportModal from '../common/ImportModal';
 
@@ -159,9 +159,8 @@ const toDate = (d) => {
 // routed page — Close / P-S swap then go through onClose / onSwap.
 export default function MilkSales({ asPopup = false, inFront = true, onSwap, onClose }) {
   const navigate = useNavigate();
-  const { user, isUser, isCentreLogin, isAgentLogin, centreInfo, userCenter } = useAuth();
-  // Regular staff login with an assigned centre stays on that centre (as in Milk Purchase)
-  const isStaffUser  = user?.loginType === 'user' && user?.role === 'user';
+  const { user, isUser, isCentreLogin, isAgentLogin, isStaffUser, centreInfo, userCenter } = useAuth();
+  // Ordinary user login with an assigned centre stays on that centre (as in Milk Purchase)
   const centreLocked = isCentreLogin || isAgentLogin || (isStaffUser && !!userCenter);
 
   // Keyboard swap:
@@ -434,7 +433,7 @@ export default function MilkSales({ asPopup = false, inFront = true, onSwap, onC
       // Sender Agent follows the login: an agent is fixed to themself (and
       // their centre); an admin defaults to their own agent but may change it.
       const ownAgent = findOwnAgent(agentList, user);
-      // Login-based defaults (admin → Producer Management settings; staff → own centre/agent)
+      // Login-based defaults: the user's own Center / Agent from User Management, else Head Office
       loginDefaultsRef.current = await resolveDefaultCentreAgent({ user, isCentreLogin, centreInfo });
       const lockedCentreId = isCentreLogin ? centreInfo?.centreId?.toString()
         : isAgentLogin ? ownAgent?.centerId : null;
@@ -584,11 +583,11 @@ export default function MilkSales({ asPopup = false, inFront = true, onSwap, onC
     || pickDefaultAgent(list, user, ct);
   const defaultAgentFor = (ct) => isAgentLogin ? findOwnAgent(agents, user) : configuredOrDefaultAgent(agents, ct);
 
-  // Agent login → only themself; sub-centre login → that centre's agents;
-  // admin → every agent under every centre, grouped by centre.
+  // Agent login → only themself; sub-centre login or a user locked to a centre →
+  // that centre's agents; admin → every agent under every centre, grouped by centre.
   const agentSelectData = () => {
     if (isAgentLogin) return agents.filter(a => a.value === agent).map(({ value, label }) => ({ value, label }));
-    if (isCentreLogin) return agents.filter(a => !a.centerId || a.centerId === center).map(({ value, label }) => ({ value, label }));
+    if (centreLocked) return agents.filter(a => !a.centerId || a.centerId === center).map(({ value, label }) => ({ value, label }));
     return groupAgentsByCenter(agents, center);
   };
 
@@ -1551,6 +1550,7 @@ export default function MilkSales({ asPopup = false, inFront = true, onSwap, onC
         onClose={() => setLinzaImportOpen(false)}
         onImport={handleLinZAImport}
         entityType="Milk Sales (LinZA — BillNo, SalesDate, SalesShift, Sales_Qty, RatePerLtr, TotalAmt)"
+        zIndex={POPUP_CHILD_Z}
         requiredFields={['BillNo', 'Sales_Qty', 'RatePerLtr', 'TotalAmt']}
         maxFileSizeMB={50}
       />
@@ -1560,6 +1560,7 @@ export default function MilkSales({ asPopup = false, inFront = true, onSwap, onC
         onClose={() => setImportOpen(false)}
         onImport={handleZibittImport}
         entityType="Milk Sales (Zibitt Local Sales)"
+        zIndex={POPUP_CHILD_Z}
         requiredFields={['BillNo', 'SalesDate', 'Sales_Qty', 'RatePerLtr', 'TotalAmt']}
         maxFileSizeMB={50}
       />
@@ -1569,6 +1570,7 @@ export default function MilkSales({ asPopup = false, inFront = true, onSwap, onC
         onClose={() => setRawImportOpen(false)}
         onImport={handleZibittRawImport}
         entityType="Milk Sales (Zibitt DB — dcs_id/mc_id/cust_id/qty/source_id)"
+        zIndex={POPUP_CHILD_Z}
         requiredFields={[]}
         maxFileSizeMB={50}
       />
@@ -1578,6 +1580,7 @@ export default function MilkSales({ asPopup = false, inFront = true, onSwap, onC
         onClose={() => setOlImportOpen(false)}
         onImport={handleOpenLyssaExcelImport}
         entityType="Milk Sales (OpenLyssa — Date/Shift/Cust_ID/Customer/Sale_Type/Qty/Rate/Amount)"
+        zIndex={POPUP_CHILD_Z}
         requiredFields={['Date', 'Qty', 'Amount']}
         maxFileSizeMB={50}
       />

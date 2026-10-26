@@ -16,6 +16,7 @@ import {
   IconRefresh, IconDeviceFloppy, IconSearch, IconX, IconPrinter,
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
+import { pickFarmerByNumber, ambiguousMessage, bareFarmerNumber } from '../../utils/farmerLookup';
 
 const PAYMENT_MODES = [
   { value: 'Cash',     label: 'Cash' },
@@ -250,9 +251,13 @@ const IndividualMilkPayment = () => {
     try {
       const res  = await farmerAPI.search(num);
       const list = res?.data || [];
+      // Centre-wise series: a number shared by two centres needs the centre code (C2/15)
+      const { farmer: exact, ambiguous } = pickFarmerByNumber(list, num);
+      if (ambiguous) { message.error(ambiguousMessage(ambiguous)); return; }
+      const bare = bareFarmerNumber(num).toLowerCase();
       const match =
-        list.find(f => f.farmerNumber?.toLowerCase() === num.toLowerCase()) ||
-        list.find(f => f.farmerNumber?.toLowerCase().includes(num.toLowerCase())) ||
+        exact ||
+        list.find(f => f.farmerNumber?.toLowerCase().includes(bare)) ||
         list[0];
 
       if (!match) { message.error(`Farmer "${num}" not found`); return; }

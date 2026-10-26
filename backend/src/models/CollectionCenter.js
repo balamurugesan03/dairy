@@ -88,13 +88,10 @@ const collectionCenterSchema = new mongoose.Schema({
     type: [String],
     default: ['milkCollection', 'milkSales']
   },
-  // Numeric prefix for the Centre-wise Farmer Number series (code 1 → 1001, 1002 …).
-  // Unique per company — checked in the controller.
-  farmerNoCode: {
+  // System-generated centre code C1, C2, C3 … (utils/centreCode.js) — never entered by the user
+  centerCode: {
     type: String,
-    trim: true,
-    match: [/^\d{0,4}$/, 'Farmer No Code must be digits only (max 4)'],
-    default: ''
+    trim: true
   }
 }, {
   timestamps: true
@@ -105,6 +102,10 @@ collectionCenterSchema.index({ centerName: 1 });
 collectionCenterSchema.index({ status: 1 });
 collectionCenterSchema.index({ centerType: 1 });
 collectionCenterSchema.index({ companyId: 1 });
+collectionCenterSchema.index(
+  { companyId: 1, centerCode: 1 },
+  { unique: true, partialFilterExpression: { centerCode: { $type: 'string' } } }
+);
 
 // Hash password before saving
 collectionCenterSchema.pre('save', async function () {

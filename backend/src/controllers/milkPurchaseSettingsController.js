@@ -1,5 +1,5 @@
 import MilkPurchaseSettings from '../models/MilkPurchaseSettings.js';
-import SocietyInfo from '../models/SocietyInfo.js';
+import { getSocietyProfile } from '../utils/societyProfile.js';
 
 /**
  * milkPurchaseSettingsController.js
@@ -253,7 +253,8 @@ export const getSettingsSummary = async (req, res) => {
       MilkPurchaseSettings
         .findOne({ companyId: req.companyId })
         .select('quantityUnit manualEntryCombination activeRateChartType printSize machines milkAnalyzerConfig manualEntryMode whatsApp toDairy -_id'),
-      SocietyInfo.findOne({ companyId: req.companyId }).select('societyCode societyName city phone -_id').lean(),
+      // Society Information merged with the company configuration (Super Admin)
+      getSocietyProfile(req.companyId).then(p => p.info),
     ]);
 
     // From Dairy = this society (Society Info, unchanged); To Dairy = Machine Configuration setting

@@ -674,16 +674,19 @@ const AppContent = () => {
                 </Route>
               </Route>
 
-              <Route element={<AdminOnlyGuard />}>
+              {/* Settings pages — admins, or users granted the page in User Management → Settings */}
+              <Route element={<AdminOnlyGuard perm="settings.societyInfo" />}>
                 {/* Society Info & Document Management */}
                 <Route path="society-info" element={<SocietyInfoPage />} />
-
-                {/* User Management - Admin Only */}
+              </Route>
+              <Route element={<AdminOnlyGuard perm="settings.userManagement" />}>
                 <Route path="user-management" element={<UserManagement />} />
-
+              </Route>
+              <Route element={<AdminOnlyGuard perm="settings.financialYear" />}>
                 {/* Financial Year Management */}
                 <Route path="financial-year" element={<FinancialYearManagement />} />
-
+              </Route>
+              <Route element={<AdminOnlyGuard perm="settings.openLyssaMerge" />}>
                 {/* OpenLyssa Data Merge Tool */}
                 <Route path="openlyssa-merge" element={<OpenLyssaMergeTool />} />
               </Route>

@@ -7,6 +7,10 @@ import {
   adminDeleteCharts,
   getMasters,
   lookupRate,
+  getDetail,
+  createVersion,
+  uploadOwnChart,
+  deleteVersion,
 } from '../controllers/milmaChartController.js';
 
 // In-memory storage — we only need the buffer to parse, not save to disk
@@ -23,6 +27,11 @@ adminRouter.delete('/:companyId',       adminDeleteCharts);
 export const userRouter = express.Router();
 userRouter.get('/masters', getMasters);
 userRouter.post('/lookup', lookupRate);
+// Society's own chart versions (imported versions stay read-only)
+userRouter.get('/detail', getDetail);
+userRouter.post('/versions', createVersion);
+userRouter.post('/upload', upload.single('file'), uploadOwnChart);
+userRouter.delete('/versions/:chartId', deleteVersion);
 
 // Default export keeps backward compat (not used)
 export default userRouter;

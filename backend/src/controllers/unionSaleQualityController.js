@@ -3,7 +3,9 @@ import UnionSaleSettings from '../models/UnionSaleSettings.js';
 import UnionSalesSlip from '../models/UnionSalesSlip.js';
 import MilkCollection from '../models/MilkCollection.js';
 import CollectionCenter from '../models/CollectionCenter.js';
-import { TSRateCharge } from '../models/RateChart.js';
+import Company from '../models/Company.js';
+import MilkPurchaseSettings from '../models/MilkPurchaseSettings.js';
+import { syncFromDairySlips } from '../utils/unionFromDairySync.js';
 
 // ════════════════════════════════════════════════════════════════
 //  Union Sale Quality Comparison + Union Sales Settings
@@ -12,10 +14,12 @@ import { TSRateCharge } from '../models/RateChart.js';
 //  To Dairy                  = Union Sales slips (society-level), per date.
 //  TS = FAT + SNF.  TS-based rate = TS × TS rate / 100.
 //  Average Rate:
-//    From Dairy — TS enabled & date ≥ its From Date → TS rate from Machine
-//                 Configuration (TSRateCharge); otherwise Σ amount / Σ qty.
+//    From Dairy — TS enabled & date ≥ its From Date → the From Dairy TS rate
+//                 configured in Union Sales → Settings (NOT the Milk Purchase TS
+//                 rate); otherwise Σ amount / Σ qty.
 //    To Dairy   — TS enabled & date ≥ its From Date → the manually entered
 //                 To Dairy TS rate; otherwise the slips' Σ amount / Σ qty.
+//  Both sides use the same TS formula; only the rate source differs.
 // ════════════════════════════════════════════════════════════════
 
 const toObjectId = (id) => new mongoose.Types.ObjectId(String(id));
@@ -29,33 +33,99 @@ const periodOn = (periods, day) => periods
   .filter(p => ymd(p.fromDate) <= day && (!p.toDate || ymd(p.toDate) >= day))
   .sort((a, b) => ymd(b.fromDate).localeCompare(ymd(a.fromDate)))[0] || null;
 
-// To Dairy periods are defined by their From Date: each one runs until the day
-// before the next starts, the last one is open-ended — so they can never overlap.
-const normalisePeriods = (list = []) => {
+// TS rate periods are defined by their From Date: each one runs until the day before
+// the next starts, the last one is open-ended — so they can never overlap. A period
+// with useToDate keeps the To Date the user fixed (it must end before the next
+// starts); days between that To Date and the next From Date have no TS rate.
+const normalisePeriods = (list = [], label = 'To Dairy') => {
   const rows = list
     .filter(p => p && p.fromDate && Number(p.tsRate) >= 0 && p.tsRate !== '' && p.tsRate !== null)
-    .map(p => ({ tsRate: Number(p.tsRate), fromDate: dayStart(p.fromDate), remarks: p.remarks || '' }))
+    .map(p => ({
+      tsRate: Number(p.tsRate),
+      fromDate: dayStart(p.fromDate),
+      useToDate: !!(p.useToDate && p.toDate),
+      fixedTo: p.useToDate && p.toDate ? dayStart(p.toDate) : null,
+      remarks: p.remarks || ''
+    }))
     .sort((a, b) => a.fromDate - b.fromDate);
-  for (let i = 1; i < rows.length; i++) {
-    if (ymd(rows[i].fromDate) === ymd(rows[i - 1].fromDate)) {
-      throw new Error(`Two To Dairy TS rates start on the same date (${ymd(rows[i].fromDate)})`);
+  for (let i = 0; i < rows.length; i++) {
+    const p = rows[i], next = rows[i + 1];
+    if (p.fixedTo && p.fixedTo < p.fromDate) {
+      throw new Error(`${label}: To Date ${ymd(p.fixedTo)} is before From Date ${ymd(p.fromDate)}`);
+    }
+    if (next && ymd(next.fromDate) === ymd(p.fromDate)) {
+      throw new Error(`Two ${label} TS rates start on the same date (${ymd(p.fromDate)})`);
+    }
+    if (next && p.fixedTo && p.fixedTo >= next.fromDate) {
+      throw new Error(`${label}: the rate from ${ymd(p.fromDate)} ends ${ymd(p.fixedTo)}, after the next rate starts (${ymd(next.fromDate)})`);
     }
   }
-  return rows.map((p, i) => {
+  return rows.map(({ fixedTo, ...p }, i) => {
     const next = rows[i + 1];
-    let toDate = null;
-    if (next) { toDate = new Date(next.fromDate); toDate.setDate(toDate.getDate() - 1); }
+    let toDate = fixedTo;
+    if (!toDate && next) { toDate = new Date(next.fromDate); toDate.setDate(toDate.getDate() - 1); }
     return { ...p, toDate };
   });
 };
+
+const plainPeriods = (list = []) => list.map(p => ({
+  tsRate: p.tsRate, fromDate: p.fromDate, toDate: p.toDate, useToDate: p.useToDate, remarks: p.remarks
+}));
+
+// Dairy names are NOT kept in Union Sales settings — they are read from the existing
+// configuration every time:
+//   From Dairy — this society: Society Name (else Company Name), Region (District) and
+//                State, as set by the Super Admin on the company
+//   To Dairy   — the union: To Dairy name from Machine Configuration, same Region / State
+// label → "TS Rate Settings (<label>)" headings in settings and the report.
+const dairyNames = async (companyId) => {
+  const [company, mps] = await Promise.all([
+    Company.findById(companyId).select('companyName societyName societyCode state district').lean(),
+    MilkPurchaseSettings.findOne({ companyId }).select('toDairy').lean()
+  ]);
+  const state = company?.state || '';
+  const region = company?.district || '';   // the company record has no separate Region — District is it
+  const join = (...parts) => parts.filter(Boolean).join(', ');
+  const fromName = company?.societyName || company?.companyName || '';
+  const toName = mps?.toDairy?.name || '';
+  return {
+    fromDairy: { name: fromName, code: company?.societyCode || '', region, state, label: join(fromName, state) },
+    toDairy:   { name: toName, code: mps?.toDairy?.code || '', region, state, label: join(toName, state) }
+  };
+};
+
+// From Dairy automatic Union Sales slips (utils/unionFromDairySync.js): re-synced from
+// `from` (YYYY-MM-DD; default From Dairy From Date) to today after a settings change.
+const runFromDairySync = async (companyId, from) => {
+  try {
+    return await syncFromDairySlips(companyId, from ? { from } : {});
+  } catch (err) {
+    console.warn('[UnionFromDairy] sync failed (non-fatal):', err.message);
+    return { error: err.message };
+  }
+};
+const syncText = (r) => {
+  if (!r || r.disabled) return '';
+  if (r.error) return ` — automatic Union Sales entries not refreshed: ${r.error}`;
+  const parts = [r.created && `${r.created} created`, r.updated && `${r.updated} updated`, r.removed && `${r.removed} removed`].filter(Boolean);
+  const manual = r.skippedManual ? ` (${r.skippedManual} session(s) kept as entered manually)` : '';
+  return parts.length || manual ? ` — Union Sales entries: ${parts.join(', ') || 'no change'}${manual}` : '';
+};
+const earlier = (...days) => days.filter(Boolean).sort()[0];
 
 // ════════════════════════════════════════════════════════════════
 //  SETTINGS
 // ════════════════════════════════════════════════════════════════
 export const getUnionSaleSettings = async (req, res) => {
   try {
-    const settings = await UnionSaleSettings.getOrCreate(req.companyId);
-    res.json({ success: true, data: settings });
+    const [settings, names] = await Promise.all([
+      UnionSaleSettings.getOrCreate(req.companyId),
+      dairyNames(req.companyId)
+    ]);
+    // Drop any Region / Dairy name saved by the old settings screen — names come from `names`
+    const data = settings.toObject();
+    for (const side of ['fromDairy', 'toDairy']) if (data[side]) delete data[side].regionName;
+    res.json({ success: true, data: { ...data, names } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -64,13 +134,18 @@ export const getUnionSaleSettings = async (req, res) => {
 export const saveUnionSaleSettings = async (req, res) => {
   try {
     const { fromDairy = {}, toDairy = {} } = req.body;
+    const current = await UnionSaleSettings.getOrCreate(req.companyId);
     const side = (s) => ({
       tsEnabled: !!s.tsEnabled,
-      regionName: String(s.regionName || '').trim(),
       fromDate: s.fromDate ? dayStart(s.fromDate) : null
     });
     const update = {
-      fromDairy: side(fromDairy),
+      // From Dairy TS rates are kept unless sent — they are normally changed one at a
+      // time through Apply / Delete (applyFromDairyRate / deleteFromDairyRate)
+      fromDairy: {
+        ...side(fromDairy),
+        tsRates: normalisePeriods(Array.isArray(fromDairy.tsRates) ? fromDairy.tsRates : plainPeriods(current.fromDairy?.tsRates), 'From Dairy')
+      },
       toDairy: { ...side(toDairy), tsRates: normalisePeriods(toDairy.tsRates) }
     };
     if (update.fromDairy.tsEnabled && !update.fromDairy.fromDate) {
@@ -89,7 +164,82 @@ export const saveUnionSaleSettings = async (req, res) => {
       { $set: update },
       { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
     );
-    res.json({ success: true, data: settings, message: 'Union Sales settings saved' });
+    // From Dairy enabled → generate / refresh its entries; a later From Date also drops
+    // automatic entries before it
+    const sync = update.fromDairy.tsEnabled
+      ? await runFromDairySync(req.companyId, earlier(ymd(current.fromDairy?.fromDate), ymd(update.fromDairy.fromDate)))
+      : null;
+    res.json({ success: true, data: settings, sync, message: `Union Sales settings saved${syncText(sync)}` });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+// ── From Dairy TS rates: Apply (add / replace one period) and Delete ──
+// POST /union-sales-slips/settings/from-dairy-rates  { fromDate, useToDate, toDate, tsRate, remarks }
+// A period with the same From Date is replaced; all other (historical) periods are kept.
+export const applyFromDairyRate = async (req, res) => {
+  try {
+    const { fromDate, toDate, useToDate, tsRate, remarks } = req.body || {};
+    if (!fromDate) return res.status(400).json({ success: false, message: 'From Date is required' });
+    if (tsRate === '' || tsRate === null || tsRate === undefined || Number.isNaN(Number(tsRate)) || Number(tsRate) < 0) {
+      return res.status(400).json({ success: false, message: 'Enter a valid TS Rate' });
+    }
+    if (useToDate && !toDate) return res.status(400).json({ success: false, message: 'Select the To Date, or untick "Use To Date"' });
+
+    const settings = await UnionSaleSettings.getOrCreate(req.companyId);
+    const day = ymd(dayStart(fromDate));
+    const kept = plainPeriods(settings.fromDairy?.tsRates).filter(p => ymd(p.fromDate) !== day);
+    const tsRates = normalisePeriods([...kept, { fromDate, toDate, useToDate: !!useToDate, tsRate, remarks }], 'From Dairy');
+
+    const saved = await UnionSaleSettings.findOneAndUpdate(
+      { companyId: req.companyId },
+      { $set: { 'fromDairy.tsRates': tsRates, ...(req.user?._id ? { lastUpdatedBy: req.user._id } : {}) } },
+      { new: true, runValidators: true }
+    );
+    const sync = await runFromDairySync(req.companyId, day);
+    res.json({ success: true, data: saved, sync, message: `From Dairy TS rate applied${syncText(sync)}` });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+// DELETE /union-sales-slips/settings/from-dairy-rates/:rateId — the previous open rate then runs on
+export const deleteFromDairyRate = async (req, res) => {
+  try {
+    const settings = await UnionSaleSettings.getOrCreate(req.companyId);
+    const all = settings.fromDairy?.tsRates || [];
+    if (!all.some(p => String(p._id) === req.params.rateId)) {
+      return res.status(404).json({ success: false, message: 'TS rate not found' });
+    }
+    const removedFrom = ymd(all.find(p => String(p._id) === req.params.rateId).fromDate);
+    const tsRates = normalisePeriods(plainPeriods(all.filter(p => String(p._id) !== req.params.rateId)), 'From Dairy');
+    const saved = await UnionSaleSettings.findOneAndUpdate(
+      { companyId: req.companyId },
+      { $set: { 'fromDairy.tsRates': tsRates } },
+      { new: true, runValidators: true }
+    );
+    const sync = await runFromDairySync(req.companyId, removedFrom);
+    res.json({ success: true, data: saved, sync, message: `From Dairy TS rate deleted${syncText(sync)}` });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+// POST /union-sales-slips/settings/from-dairy-sync  { fromDate?, toDate? }
+// Generate / refresh the automatic From Dairy entries on demand (safe to repeat).
+export const syncFromDairyEntries = async (req, res) => {
+  try {
+    const settings = await UnionSaleSettings.getOrCreate(req.companyId);
+    if (!settings.fromDairy?.tsEnabled) {
+      return res.status(400).json({ success: false, message: 'Enable From Dairy TS Rate Settings first' });
+    }
+    const { fromDate, toDate } = req.body || {};
+    const r = await syncFromDairySlips(req.companyId, {
+      ...(fromDate ? { from: ymd(dayStart(fromDate)) } : {}),
+      ...(toDate ? { to: ymd(dayStart(toDate)) } : {})
+    });
+    res.json({ success: true, data: r, message: `From Dairy entries refreshed${syncText(r) || ' — no change'}` });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
@@ -152,10 +302,9 @@ export const getQualityComparison = async (req, res) => {
     const collMatch = { companyId: toObjectId(companyId), date: { $gte: start, $lte: end } };
     if (centerId) collMatch.collectionCenter = toObjectId(centerId);
 
-    const [settings, centres, tsCharges, procGroups, slipGroups] = await Promise.all([
+    const [settings, centres, procGroups, slipGroups] = await Promise.all([
       UnionSaleSettings.getOrCreate(companyId),
-      CollectionCenter.find({ companyId }).select('centerName centerType farmerNoCode').lean(),
-      TSRateCharge.find({ companyId }).lean(),
+      CollectionCenter.find({ companyId }).select('centerName centerType centerCode').lean(),
       MilkCollection.aggregate([
         { $match: collMatch },
         {
@@ -188,10 +337,11 @@ export const getQualityComparison = async (req, res) => {
 
     const fd = settings.fromDairy || {};
     const td = settings.toDairy || {};
+    const names = await dairyNames(companyId);
     // TS rate per side for a day, or null when the TS rule doesn't apply
     const fromTsRate = (day) => {
       if (!fd.tsEnabled || !fd.fromDate || ymd(fd.fromDate) > day) return null;
-      return periodOn(tsCharges, day)?.tsRate ?? null;
+      return periodOn(fd.tsRates || [], day)?.tsRate ?? null;   // own From Dairy rate, never Milk Purchase's
     };
     const toTsRate = (day) => {
       if (!td.tsEnabled || !td.fromDate || ymd(td.fromDate) > day) return null;
@@ -199,7 +349,7 @@ export const getQualityComparison = async (req, res) => {
     };
 
     const centreById = Object.fromEntries(centres.map(c => [String(c._id), c]));
-    const centreLabel = (c) => (c ? { centreCode: c.farmerNoCode || '', centreName: c.centerName } : { centreCode: '', centreName: 'Unassigned' });
+    const centreLabel = (c) => (c ? { centreCode: c.centerCode || '', centreName: c.centerName } : { centreCode: '', centreName: 'Unassigned' });
     const headOffice = centres.find(c => c.centerType === 'Head Office');
 
     // ── Section 1: Procurement Data (per date + centre) ─────────
@@ -281,9 +431,10 @@ export const getQualityComparison = async (req, res) => {
         comparison,
         totals,
         settings: {
-          fromDairy: { tsEnabled: !!fd.tsEnabled, regionName: fd.regionName || '', fromDate: fd.fromDate },
-          toDairy: { tsEnabled: !!td.tsEnabled, regionName: td.regionName || '', fromDate: td.fromDate }
+          fromDairy: { tsEnabled: !!fd.tsEnabled, label: names.fromDairy.label, fromDate: fd.fromDate },
+          toDairy: { tsEnabled: !!td.tsEnabled, label: names.toDairy.label, fromDate: td.fromDate }
         },
+        names,
         // Union slips are for the whole society; with one centre selected the comparison
         // is that centre's procurement against the whole-society slip
         singleCentre: !!centerId,

@@ -68,6 +68,14 @@ const unionSalesSlipSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Voucher',
   },
+  // 'FromDairy' = generated from the milk purchase data (From Dairy TS rate) and kept in
+  // sync by utils/unionFromDairySync.js. Editing it by hand turns it into 'Manual';
+  // a Manual slip is never overwritten by the automatic process.
+  source: {
+    type: String,
+    enum: ['Manual', 'FromDairy'],
+    default: 'Manual',
+  },
 }, {
   timestamps: true,
 });
