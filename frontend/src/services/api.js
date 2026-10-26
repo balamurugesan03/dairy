@@ -96,12 +96,13 @@ export const farmerAPI = {
   getNextMemberNumber: () => api.get('/farmers/next-member-number').then(res => res.data).catch(handleError),
   getNextFarmerNumber: (params) => api.get('/farmers/next-farmer-number', { params }).then(res => res.data).catch(handleError),
   getNumberSeriesPreview: (params) => api.get('/farmers/number-series-preview', { params }).then(res => res.data).catch(handleError),
-  search: (query) => {
+  // extra.collectionCenter: with the Center-wise series a number is looked up in that centre
+  search: (query, extra = {}) => {
     // Validate query parameter - must be non-empty string
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
       return Promise.reject({ message: 'Search query cannot be empty' });
     }
-    return api.get('/farmers/search', { params: { query: query.trim() } }).then(res => res.data).catch(handleError);
+    return api.get('/farmers/search', { params: { query: query.trim(), ...extra } }).then(res => res.data).catch(handleError);
   },
   addShares: (id, data) => api.post(`/farmers/${id}/shares`, data).then(res => res.data).catch(handleError),
   getShareHistory: (id) => api.get(`/farmers/${id}/shares`).then(res => res.data).catch(handleError),
@@ -287,6 +288,15 @@ export const advanceAPI = {
 export const milmaChartAPI = {
   getMasters: () => api.get('/milma-charts/masters').then(r => r.data).catch(handleError),
   lookup: (data) => api.post('/milma-charts/lookup', data).then(r => r.data).catch(handleError),
+  // Society's own versions — imported versions stay read-only
+  getDetail: (params) => api.get('/milma-charts/detail', { params }).then(r => r.data).catch(handleError),
+  createVersion: (data) => api.post('/milma-charts/versions', data).then(r => r.data).catch(handleError),
+  uploadOwn: (file) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api.post('/milma-charts/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data).catch(handleError);
+  },
+  deleteVersion: (chartId) => api.delete(`/milma-charts/versions/${chartId}`).then(r => r.data).catch(handleError),
 };
 
 // ─── MILMA RATE CHART APIs (super-admin side) ────────────────────────────────
@@ -515,7 +525,7 @@ export const milkCollectionAPI = {
 // INTELLIGENT QUERY APIs
 export const intelligentQueryAPI = {
   getReport:         (params) => api.get('/intelligent-query',                          { params }).then(res => res.data).catch(handleError),
-  getProducerDetail: (farmerNumber) => api.get(`/intelligent-query/producer/${farmerNumber}`).then(res => res.data).catch(handleError),
+  getProducerDetail: (farmerNumber, params) => api.get(`/intelligent-query/producer/${farmerNumber}`, { params }).then(res => res.data).catch(handleError),
 };
 
 // MILK SALES APIs
@@ -551,6 +561,10 @@ export const unionSalesSlipAPI = {
   getSettings:      ()       => api.get('/union-sales-slips/settings').then(res => res.data).catch(handleError),
   saveSettings:     (data)   => api.put('/union-sales-slips/settings', data).then(res => res.data).catch(handleError),
   getToDairyRate:   (date)   => api.get('/union-sales-slips/settings/to-dairy-rate', { params: { date } }).then(res => res.data).catch(handleError),
+  // From Dairy TS rates — own periods, separate from the Milk Purchase TS rate
+  applyFromDairyRate:  (data) => api.post('/union-sales-slips/settings/from-dairy-rates', data).then(res => res.data).catch(handleError),
+  deleteFromDairyRate: (id)   => api.delete(`/union-sales-slips/settings/from-dairy-rates/${id}`).then(res => res.data).catch(handleError),
+  syncFromDairy:       (data) => api.post('/union-sales-slips/settings/from-dairy-sync', data || {}).then(res => res.data).catch(handleError),
   fileImport: (file, onUploadProgress) => {
     const form = new FormData();
     form.append('file', file);

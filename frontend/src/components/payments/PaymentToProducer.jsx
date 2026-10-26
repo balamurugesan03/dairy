@@ -42,6 +42,7 @@ import {
 import { useReactToPrint } from 'react-to-print';
 import dayjs from 'dayjs';
 import { collectionCenterAPI, farmerAPI, producerPaymentAPI, ledgerAPI } from '../../services/api';
+import { pickFarmerByNumber, ambiguousMessage } from '../../utils/farmerLookup';
 
 /* ─── Formatters ─────────────────────────────────────────────────────────────── */
 const fmt = (v) =>
@@ -281,7 +282,13 @@ export default function PaymentToProducer() {
         return null;
       }
 
-      const farmer = farmers[0];
+      // Centre-wise series: a number shared by two centres needs the centre code (C2/15)
+      const { farmer: exact, ambiguous } = pickFarmerByNumber(farmers, producerIdInput);
+      if (ambiguous) {
+        notifications.show({ title: 'Select the centre', message: ambiguousMessage(ambiguous), color: 'orange' });
+        return null;
+      }
+      const farmer = exact || farmers[0];
       const periodParams = {};
       if (!isPartial && selectedCycle) {
         periodParams.fromDate = dayjs(selectedCycle.fromDate).format('YYYY-MM-DD');

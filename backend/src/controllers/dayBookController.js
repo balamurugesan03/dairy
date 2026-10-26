@@ -12,6 +12,7 @@ import IncentiveRegister from '../models/IncentiveRegister.js';
 import BonusRegister from '../models/BonusRegister.js';
 import { updateLedgerBalances } from '../utils/accountingHelper.js';
 import { getCashInHandOpening } from '../utils/cashInHandOpening.js';
+import { queueFromDairySync } from '../utils/unionFromDairySync.js';
 
 // Display order within a day (stable): Producer Due / Milk Purchase first, then
 // the other automatic (system-generated) entries, then manual voucher entries.
@@ -1273,6 +1274,7 @@ export const deleteDayBookEntry = async (req, res) => {
       await reverseAndDeleteVouchers({ voucherType: 'MilkPurchase', voucherDate: dateFilter });
       await reverseAndDeleteVouchers({ voucherType: 'Journal', referenceType: 'Purchase', voucherDate: dateFilter });
       await MilkCollection.deleteMany({ companyId, date: dateFilter });
+      queueFromDairySync(companyId, [start]);   // Union Sales → From Dairy: drop that date's automatic slips
       return res.json({ success: true, message: 'Milk collection data deleted' });
     }
 

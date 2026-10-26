@@ -48,6 +48,9 @@ const AUDIT_CLASSES = ['A', 'B', 'C', 'D', 'AA', 'AB'];
 
 const DRAFT_KEY = 'society_info_draft';
 
+// Keep a configured value selectable even if it isn't in the fixed list
+const withValue = (list, v) => (v && !list.includes(v) ? [v, ...list] : list);
+
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 function StatusBadge({ doc }) {
   if (!doc?.fileData) return <Badge color="gray" variant="light" size="sm">Pending</Badge>;
@@ -241,6 +244,11 @@ export default function SocietyInfoPage() {
   const [searchQuery,  setSearchQuery]  = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [expiredCount, setExpiredCount] = useState(0);
+  // Fields filled from the company configuration (Super Admin) — shown read-only
+  const [companyFields, setCompanyFields] = useState(new Set());
+  const fromCompany = (k) => (companyFields.has(k)
+    ? { readOnly: true, variant: 'filled', description: 'From company configuration (Super Admin)' }
+    : {});
 
   const form = useForm({
     initialValues: {
@@ -267,6 +275,7 @@ export default function SocietyInfoPage() {
       const res = await societyInfoAPI.get();
       if (res?.success) {
         const { info, documents: docs } = res.data;
+        setCompanyFields(new Set(res.data.companyFields || []));
 
         // Populate form
         const vals = { ...form.getValues() };
@@ -314,8 +323,11 @@ export default function SocietyInfoPage() {
 
   // ── Save Society Info ──────────────────────────────────────────
   const handleSaveInfo = async () => {
-    const { hasErrors } = form.validate();
-    if (hasErrors) return;
+    // Company-supplied (read-only) values aren't the society's to fix — don't block on them
+    const { errors } = form.validate();
+    const blocking = Object.keys(errors).filter(k => !companyFields.has(k));
+    companyFields.forEach(k => form.clearFieldError(k));
+    if (blocking.length) return;
 
     setSaving(true);
     try {
@@ -502,6 +514,7 @@ export default function SocietyInfoPage() {
                       label="Society Code"
                       placeholder="e.g. MPCS-001"
                       {...form.getInputProps('societyCode')}
+                      {...fromCompany('societyCode')}
                     />
                   </Tooltip>
                   <Tooltip label="Number of permanent staff members" withArrow position="top">
@@ -518,6 +531,7 @@ export default function SocietyInfoPage() {
                   label="Society Name"
                   placeholder="Full name of the society"
                   {...form.getInputProps('societyName')}
+                  {...fromCompany('societyName')}
                 />
 
                 <TextInput
@@ -544,9 +558,10 @@ export default function SocietyInfoPage() {
                   <Select
                     label="State"
                     placeholder="Select state"
-                    data={INDIAN_STATES}
+                    data={withValue(INDIAN_STATES, form.values.state)}
                     searchable
                     {...form.getInputProps('state')}
+                    {...fromCompany('state')}
                   />
                   <Tooltip label="6-digit postal code" withArrow>
                     <TextInput
@@ -563,6 +578,7 @@ export default function SocietyInfoPage() {
                     label="Phone"
                     placeholder="Phone number"
                     {...form.getInputProps('phone')}
+                    {...fromCompany('phone')}
                   />
                   <TextInput
                     label="Fax"
@@ -575,6 +591,7 @@ export default function SocietyInfoPage() {
                   label="Email"
                   placeholder="society@example.com"
                   {...form.getInputProps('email')}
+                  {...fromCompany('email')}
                 />
 
                 <Divider label="Financial Year" labelPosition="left" color="#f0f4ff" />
@@ -636,12 +653,14 @@ export default function SocietyInfoPage() {
                     label="Audited Year"
                     placeholder="e.g. 2024-25"
                     {...form.getInputProps('auditedYear')}
+                    {...fromCompany('auditedYear')}
                   />
                   <Select
                     label="Audit Classification"
                     placeholder="Select class"
-                    data={AUDIT_CLASSES}
+                    data={withValue(AUDIT_CLASSES, form.values.auditedClassification)}
                     {...form.getInputProps('auditedClassification')}
+                    {...fromCompany('auditedClassification')}
                   />
                 </SimpleGrid>
 

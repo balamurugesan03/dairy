@@ -338,7 +338,7 @@ export default function FarmerCriteriaReport() {
               </Table.Thead>
               <Table.Tbody>
                 {rows.map((r, i) => (
-                  <Table.Tr key={r.farmerNumber} style={{ background: i % 2 === 0 ? '#fff' : '#f8f9fa' }}>
+                  <Table.Tr key={`${r.farmerNumber}-${i}`} style={{ background: i % 2 === 0 ? '#fff' : '#f8f9fa' }}>
                     <Table.Td ta="center">{i + 1}</Table.Td>
                     <Table.Td ta="center">{r.farmerNumber}</Table.Td>
                     <Table.Td>{r.farmerName}</Table.Td>

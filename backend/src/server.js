@@ -78,6 +78,7 @@ mongoose.connect(process.env.MONGODB_URI, {
       { collection: 'agents',                   index: 'agentCode_1' },    // replaced by compound {agentCode,companyId}
       { collection: 'producerpayments',         index: 'paymentNumber_1' }, // replaced by compound {companyId,paymentNumber}
       { collection: 'farmerpayments',           index: 'paymentNumber_1' }, // replaced by compound {companyId,paymentNumber}
+      { collection: 'farmers',                  index: 'farmerNumber_1_companyId_1' }, // replaced by {companyId,collectionCenter,farmerNumber} (centre-wise series)
     ];
     for (const { collection, index } of oldIndexes) {
       try {
@@ -180,6 +181,20 @@ mongoose.connect(process.env.MONGODB_URI, {
       if (fixed > 0) console.log(`PaymentRegister opening-balance fix: corrected ${fixed} Ledger register(s)`);
     } catch (e) {
       console.warn('PaymentRegister opening-balance fix skipped:', e.message);
+    }
+
+    // Centre codes C1, C2 … for every company's existing centres (new ones get theirs on create),
+    // then make sure the centre-scoped farmer number index exists now the old one is gone.
+    try {
+      const { ensureAllCentreCodes } = await import('./utils/centreCode.js');
+      const n = await ensureAllCentreCodes();
+      if (n > 0) console.log(`Centre codes: assigned ${n} missing code(s)`);
+      const { default: CollectionCenter } = await import('./models/CollectionCenter.js');
+      const { default: Farmer } = await import('./models/Farmer.js');
+      await CollectionCenter.createIndexes();
+      await Farmer.createIndexes();
+    } catch (e) {
+      console.warn('Centre code / farmer index setup skipped:', e.message);
     }
   })
   .catch((err) => console.error('MongoDB connection error:', err));

@@ -4,6 +4,12 @@ import { authAPI } from '../services/api';
 const AuthContext = createContext();
 const OFFLINE_SESSION_KEY = 'dairy_offline_session';
 
+// Same rule as backend utils/milkScope.js isAdminUser (centre logins are never admin)
+const ADMIN_USER_TYPES = ['admin', 'superuser'];
+export const isAdminAccount = (u) => !!u && u.loginType !== 'centre' && (
+  u.loginType === 'company' || u.role === 'admin' || u.role === 'superadmin' || ADMIN_USER_TYPES.includes(u.userType)
+);
+
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
@@ -215,8 +221,13 @@ export const AuthProvider = ({ children }) => {
     permissions: user?.permissionsObject || {},
     userCenter: user?.collectionCenter || null,
     userAgent: user?.agentId || null,
+    // Admin = company login, admin-role account, or a User Management user of type Admin / Superuser:
+    // their own Center / Agent is only the default — other centres / agents stay selectable
+    isAdminLogin: isAdminAccount(user),
+    // Ordinary user login: restricted to the Center / Agent assigned in User Management
+    isStaffUser: user?.loginType === 'user' && !isAdminAccount(user),
     // Society agent login: a non-admin User linked to an Agent — Sender Agent is fixed to them
-    isAgentLogin: user?.loginType === 'user' && user?.role === 'user' && !!user?.agentId,
+    isAgentLogin: user?.loginType === 'user' && !isAdminAccount(user) && !!user?.agentId,
     // Permission helper functions
     hasPermission,
     canRead,

@@ -1,23 +1,34 @@
 import CollectionCenter from '../models/CollectionCenter.js';
+import { ensureCentreCodes, nextCentreCode } from '../utils/centreCode.js';
 
-// Farmer No Code must be unique per company, or two centres would hand out the same farmer numbers
-const farmerNoCodeClash = async (code, companyId, excludeId) => {
-  const c = String(code || '').trim();
-  if (!c) return null;
-  const filter = { companyId, farmerNoCode: c };
-  if (excludeId) filter._id = { $ne: excludeId };
-  const other = await CollectionCenter.findOne(filter).select('centerName').lean();
-  return other ? `Farmer No Code ${c} is already used by ${other.centerName}` : null;
+// The centre code (C1, C2 …) is system-generated — never taken from the request
+const stripSystemFields = (body) => {
+  const { centerCode, farmerNoCode, companyId, ...rest } = body || {};
+  return rest;
 };
+
+const isCodeClash = (err) => err?.code === 11000 && /centerCode/.test(err.message || '');
 
 // Create new collection center
 export const createCollectionCenter = async (req, res) => {
   try {
-    const clash = await farmerNoCodeClash(req.body.farmerNoCode, req.companyId);
-    if (clash) return res.status(400).json({ success: false, message: clash });
+    await ensureCentreCodes(req.companyId).catch(() => {});
 
-    const collectionCenter = new CollectionCenter({ ...req.body, companyId: req.companyId });
-    await collectionCenter.save();
+    // Two creates racing for the same code → the unique index rejects one; take the next
+    let collectionCenter;
+    for (let attempt = 0; ; attempt++) {
+      collectionCenter = new CollectionCenter({
+        ...stripSystemFields(req.body),
+        centerCode: await nextCentreCode(req.companyId),
+        companyId: req.companyId
+      });
+      try {
+        await collectionCenter.save();
+        break;
+      } catch (err) {
+        if (!isCodeClash(err) || attempt >= 5) throw err;
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -46,6 +57,7 @@ export const getAllCollectionCenters = async (req, res) => {
   try {
     const { page = 1, limit = 10, search = '', centerType = '', status = '' } = req.query;
 
+    await ensureCentreCodes(req.companyId).catch(() => {});
     const query = { companyId: req.companyId };
 
     if (search) {
@@ -121,12 +133,9 @@ export const getCollectionCenterById = async (req, res) => {
 // Update collection center
 export const updateCollectionCenter = async (req, res) => {
   try {
-    const clash = await farmerNoCodeClash(req.body.farmerNoCode, req.companyId, req.params.id);
-    if (clash) return res.status(400).json({ success: false, message: clash });
-
     const center = await CollectionCenter.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId },
-      req.body,
+      stripSystemFields(req.body),
       { new: true, runValidators: true }
     );
 

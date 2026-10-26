@@ -1,56 +1,67 @@
-// Login-based default Centre / Agent for entry forms.
+// Login-based default Centre / Agent — one rule for every entry form.
+// Source of truth: User Management → user → Center / Agent.
 //
 //   • Centre login            → that centre
-//   • Staff / agent user      → their assigned centre (User.collectionCenter, else the
+//   • Any user login          → their assigned centre (User.collectionCenter, else the
 //                               linked agent's centre) and their assigned agent
-//   • Admin (company login, admin / superadmin users, or staff with nothing assigned)
-//                             → Producer Management → Settings → Default Centre / Agent
+//   • Nothing assigned / company login → the Head Office (lowest centre code, C1)
 //
-// Forms only PRESELECT these; whether the field is locked stays each form's own rule.
+// Admins (isAdminLogin) may still pick other centres / agents; centre logins and ordinary
+// users with an assignment get `locked: true` — only their own centre / agent is offered.
 import { useEffect, useState } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { farmerSettingsAPI, agentAPI } from '../services/api';
+import { useAuth, isAdminAccount } from '../context/AuthContext';
+import { agentAPI, collectionCenterAPI } from '../services/api';
 
 const idOf = (v) => (v?._id ?? v)?.toString?.() || '';
+const codeNum = (c) => parseInt(String(c?.centerCode || '').replace(/^C/i, ''), 10) || 999999;
 
-// Settings rarely change — share one request between forms, refresh after 60 s
-let settingsCache = { at: 0, promise: null };
-const loadAdminDefaults = () => {
-  if (!settingsCache.promise || Date.now() - settingsCache.at > 60 * 1000) {
-    settingsCache = {
+// Head Office = the first centre (C1); centres rarely change — share one request, refresh after 60 s
+let headOfficeCache = { at: 0, promise: null };
+const loadHeadOffice = () => {
+  if (!headOfficeCache.promise || Date.now() - headOfficeCache.at > 60 * 1000) {
+    headOfficeCache = {
       at: Date.now(),
-      promise: farmerSettingsAPI.getSettings()
-        .then((res) => ({ centreId: idOf(res?.data?.defaultCentre), agentId: idOf(res?.data?.defaultAgent) }))
-        .catch(() => ({ centreId: '', agentId: '' })),
+      promise: collectionCenterAPI.getAll({ status: 'Active', limit: 1000 })
+        .then((res) => {
+          const list = [...(res?.data || [])];
+          list.sort((a, b) => (a.centerType === 'Head Office' ? 0 : 1) - (b.centerType === 'Head Office' ? 0 : 1) || codeNum(a) - codeNum(b));
+          return idOf(list[0]);
+        })
+        .catch(() => ''),
     };
   }
-  return settingsCache.promise;
+  return headOfficeCache.promise;
 };
 
-// Call after saving settings so open forms pick up the new defaults
-export const clearDefaultCentreAgentCache = () => { settingsCache = { at: 0, promise: null }; };
+// Call after centres change so open forms pick up the new Head Office
+export const clearDefaultCentreAgentCache = () => { headOfficeCache = { at: 0, promise: null }; };
 
 export async function resolveDefaultCentreAgent({ user, isCentreLogin, centreInfo }) {
-  if (isCentreLogin) return { centreId: idOf(centreInfo?.centreId), agentId: '' };
+  if (isCentreLogin) return { centreId: idOf(centreInfo?.centreId), agentId: '', locked: true };
 
-  if (user?.role === 'user') {
+  if (user?.loginType === 'user') {
     let centreId = idOf(user.collectionCenter);
     const agentId = idOf(user.agentId);
     if (!centreId && agentId) {
-      try {
-        const res = await agentAPI.getById(agentId);
-        centreId = idOf(res?.data?.collectionCenterId);
-      } catch { /* leave empty */ }
+      centreId = idOf(user.agentId?.collectionCenterId);
+      if (!centreId) {
+        try {
+          const res = await agentAPI.getById(agentId);
+          centreId = idOf(res?.data?.collectionCenterId);
+        } catch { /* leave empty */ }
+      }
     }
-    if (centreId || agentId) return { centreId, agentId };
+    if (centreId || agentId) {
+      return { centreId: centreId || await loadHeadOffice(), agentId, locked: !isAdminAccount(user) && !!centreId };
+    }
   }
 
-  return loadAdminDefaults();
+  return { centreId: await loadHeadOffice(), agentId: '', locked: false };
 }
 
 export default function useDefaultCentreAgent() {
   const { user, isCentreLogin, centreInfo } = useAuth();
-  const [defaults, setDefaults] = useState({ centreId: '', agentId: '', loaded: false });
+  const [defaults, setDefaults] = useState({ centreId: '', agentId: '', locked: false, loaded: false });
 
   useEffect(() => {
     let alive = true;

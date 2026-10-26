@@ -47,8 +47,7 @@ const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) 
       email: '',
       incharge: ''
     },
-    description: '',
-    farmerNoCode: ''
+    description: ''
   });
 
   const [errors, setErrors] = useState({});
@@ -101,8 +100,7 @@ const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) 
         email: '',
         incharge: ''
       },
-      description: '',
-      farmerNoCode: ''
+      description: ''
     });
     setErrors({});
   };
@@ -113,7 +111,6 @@ const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) 
       const center = response.data;
       setFormData({
         ...center,
-        farmerNoCode: center.farmerNoCode || '',
         startDate: center.startDate ? new Date(center.startDate) : new Date(),
         address: center.address || {
           street: '',
@@ -186,10 +183,6 @@ const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) 
 
     if (formData.contactDetails.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.contactDetails.email)) {
       newErrors['contactDetails.email'] = 'Invalid email format';
-    }
-
-    if (formData.farmerNoCode && !/^[0-9]{1,4}$/.test(formData.farmerNoCode)) {
-      newErrors.farmerNoCode = 'Digits only (max 4)';
     }
 
     if (formData.address.pincode && !/^[0-9]{6}$/.test(formData.address.pincode)) {
@@ -320,14 +313,11 @@ const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) 
           </Grid.Col>
           <Grid.Col span={{ base: 12, sm: 6 }}>
             <TextInput
-              label="Farmer No Code"
-              description="Prefix for the Center-wise farmer number series (code 1 → 1001, 1002 …)"
-              placeholder="e.g. 1"
-              inputMode="numeric"
-              maxLength={4}
-              value={formData.farmerNoCode}
-              onChange={(e) => handleChange('farmerNoCode', e.target.value.replace(/\D/g, ''))}
-              error={errors.farmerNoCode}
+              label="Center Code"
+              description="Generated automatically (C1, C2, C3 …)"
+              value={formData.centerCode || (centerId ? '' : 'Auto on create')}
+              readOnly
+              variant="filled"
             />
           </Grid.Col>
           <Grid.Col span={12}>

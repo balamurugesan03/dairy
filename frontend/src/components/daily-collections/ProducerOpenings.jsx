@@ -13,6 +13,7 @@ import {
   IconUsers, IconCalendarEvent, IconRefresh, IconTrash, IconEdit,
 } from '@tabler/icons-react';
 import { farmerAPI, producerOpeningAPI } from '../../services/api';
+import { pickFarmerByNumber, ambiguousMessage } from '../../utils/farmerLookup';
 
 // ─────────────────────────────────────────────────────────────────
 //  Constants
@@ -123,8 +124,13 @@ export default function ProducerOpenings() {
         return;
       }
 
-      // Prefer exact farmerNumber match, fall back to first result
-      const farmer = found.find((f) => f.farmerNumber === query) || found[0];
+      // Prefer exact farmerNumber match, fall back to first result — unless centres share the number
+      const { farmer: exact, ambiguous } = pickFarmerByNumber(found, query);
+      if (ambiguous) {
+        notifications.show({ color: 'orange', title: 'Select the centre', message: ambiguousMessage(ambiguous) });
+        return;
+      }
+      const farmer = exact || found[0];
       setFarmerNumberInput(farmer.farmerNumber);
       setSelectedFarmer(farmer);
       setField('farmerId', farmer._id);

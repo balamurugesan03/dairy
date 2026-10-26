@@ -253,7 +253,7 @@ const IntelligentQuery = () => {
     setProducerDetail(null);
     setDetailLoading(true);
     try {
-      const res = await intelligentQueryAPI.getProducerDetail(record.farmerNumber);
+      const res = await intelligentQueryAPI.getProducerDetail(record.farmerNumber, record.farmerId ? { farmerId: record.farmerId } : undefined);
       setProducerDetail(res?.data || null);
     } catch {
       notifications.show({ color: 'red', message: 'Failed to load producer details' });

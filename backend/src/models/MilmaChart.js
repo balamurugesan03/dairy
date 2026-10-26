@@ -15,6 +15,11 @@ const milmaChartMasterSchema = new mongoose.Schema({
   bestTotalSolids: { type: Number, default: 0 },            // High-rate threshold: Total Solids >=
   remarks:         { type: String, default: '' },
   rowCount:        { type: Number, default: 0 },            // denormalised count of detail rows
+  // Who created the version. Records from before this field existed read as 'Import'
+  // (uploaded by the super admin from the previous system) — a society can never
+  // change or delete those; it can only add its own 'Society' versions.
+  source:          { type: String, enum: ['Import', 'Society'], default: 'Import' },
+  createdBy:       { type: mongoose.Schema.Types.ObjectId },
 }, { timestamps: true });
 
 milmaChartMasterSchema.index({ companyId: 1, chartId: 1 }, { unique: true });

@@ -28,7 +28,7 @@ const centreText = (r) => (r.centreCode ? `${r.centreCode} - ${r.centreName}` : 
 const COLS = ['Date', 'Center Code', 'Total Quantity', 'Avg FAT', 'Avg SNF', 'Avg TS', 'Avg Rate'];
 // Days with only one side (e.g. union slip not entered yet) are left out of the Comparison total
 const unmatchedNote = (d) => `${d.totals.comparison.unmatchedDays} day(s) with only Procurement or only To Dairy data are not included in the Comparison total.`;
-const tsTitle = (s) => `TS Rate Settings${s?.regionName ? ` (${s.regionName})` : ''}`;
+const tsTitle = (s) => `TS Rate Settings${s?.label ? ` (${s.label})` : ''}`;
 
 export default function UnionQualityComparison() {
   const { selectedCompany } = useCompany();
@@ -93,8 +93,8 @@ export default function UnionQualityComparison() {
       <tr>${['qty', 'fat', 'snf', 'ts', 'rate'].map(() => '<th>Actual</th><th>To Dairy</th><th>Diff</th>').join('')}</tr>`;
     const body = a4Header({ orgName: companyName, title: 'Union Sale Quality Comparison', period: periodText,
       extra: `Center: ${escapeHtml(data.filters.centreLabel)}` })
-      + qualityTable('Procurement Data', rateNote(data.settings.fromDairy, 'Machine Configuration'), data.procurement, data.totals.actual)
-      + qualityTable('To Diary', rateNote(data.settings.toDairy, 'manual'), data.toDairy, data.totals.toDairy)
+      + qualityTable(`Procurement Data${data.names?.fromDairy?.name ? ` — ${data.names.fromDairy.name}` : ''}`, rateNote(data.settings.fromDairy, 'From Dairy settings'), data.procurement, data.totals.actual)
+      + qualityTable(`To Diary${data.names?.toDairy?.name ? ` — ${data.names.toDairy.name}` : ''}`, rateNote(data.settings.toDairy, 'manual'), data.toDairy, data.totals.toDairy)
       + `<div class="sec">Comparison <span class="note">Actual / Procurement vs To Dairy · Diff = To Dairy − Actual</span></div>
          <table class="a4 cmp"><thead>${cmpHead}</thead><tbody>
          ${data.comparison.map((c) => cmpRow(fmtD(c.date), c.actual, c.toDairy, c.diff)).join('')}
@@ -236,15 +236,15 @@ export default function UnionQualityComparison() {
 
             <Box>
               <Group gap="xs" mb={6}>
-                <Title order={5}>Procurement Data</Title>
-                <Text size="xs" c="dimmed">{rateNote(data.settings.fromDairy, 'Machine Configuration')}</Text>
+                <Title order={5}>Procurement Data{data.names?.fromDairy?.name ? ` — ${data.names.fromDairy.name}` : ''}</Title>
+                <Text size="xs" c="dimmed">{rateNote(data.settings.fromDairy, 'From Dairy settings')}</Text>
               </Group>
               <QualityTable rows={data.procurement} total={data.totals.actual} emptyText="No milk collection in this period." />
             </Box>
 
             <Box>
               <Group gap="xs" mb={6}>
-                <Title order={5}>To Diary</Title>
+                <Title order={5}>To Diary{data.names?.toDairy?.name ? ` — ${data.names.toDairy.name}` : ''}</Title>
                 <Text size="xs" c="dimmed">{rateNote(data.settings.toDairy, 'manual')} · from Union Sales slips</Text>
               </Group>
               <QualityTable rows={data.toDairy} total={data.totals.toDairy} emptyText="No Union Sales slips in this period." />

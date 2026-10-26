@@ -13,7 +13,8 @@ const ImportModal = ({
   entityType = 'records',
   validationSchema = {},
   requiredFields = [],
-  maxFileSizeMB = 5
+  maxFileSizeMB = 5,
+  zIndex            // optional — e.g. POPUP_CHILD_Z when opened from a milk popup
 }) => {
   const [file, setFile] = useState(null);
   const [data, setData] = useState([]);
@@ -273,6 +274,7 @@ const ImportModal = ({
       title={`Import ${entityType}`}
       size="xl"
       closeOnClickOutside={false}
+      {...(zIndex ? { zIndex } : {})}
     >
       <Stack gap="md">
         {/* Step 1: Upload */}

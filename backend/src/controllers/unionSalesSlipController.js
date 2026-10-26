@@ -29,7 +29,7 @@ async function resolveLedger(name, ledgerType, parentGroup, balanceType, company
 // Both legs are non-cash, so nothing shows in Cash Book — Day Book picks the
 // Journal voucher's debit on the payment side and credit on the receipt side.
 // Ledgers are resolved from the user's Ledger Management (case-insensitive).
-async function createUnionSalesVoucher(slip, companyId) {
+export async function createUnionSalesVoucher(slip, companyId) {
   const amount = parseFloat(slip.amount) || 0;
   if (amount <= 0) return null;
 
@@ -61,7 +61,7 @@ async function createUnionSalesVoucher(slip, companyId) {
   return voucher;
 }
 
-async function reverseUnionSalesVoucher(slip) {
+export async function reverseUnionSalesVoucher(slip) {
   if (!slip?.voucherId) return;
   try {
     const voucher = await Voucher.findById(slip.voucherId);
@@ -75,7 +75,7 @@ async function reverseUnionSalesVoucher(slip) {
 }
 
 // ── Auto-generate slip number: USS-YYMM-XXXXX ─────────────────────────────
-const generateSlipNo = async (companyId) => {
+export const generateSlipNo = async (companyId) => {
   const now = new Date();
   const yy = String(now.getFullYear()).slice(2);
   const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -128,6 +128,7 @@ export const createSlip = async (req, res) => {
 
     const slip = new UnionSalesSlip({
       ...req.body,
+      source: 'Manual',
       slipNo,
       amount,
       date: dateObj,
@@ -297,6 +298,7 @@ export const updateSlip = async (req, res) => {
     }
 
     const { slipNo, companyId, createdBy, ...safeUpdates } = updates;
+    safeUpdates.source = 'Manual';
 
     const slip = await UnionSalesSlip.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId },
@@ -522,7 +524,7 @@ const processImportSlips = async (rows, companyId, userId) => {
       if (existing) {
         const updated = await UnionSalesSlip.findByIdAndUpdate(
           existing._id,
-          { $set: { qty, fat, snf, rate, amount, spoilage, unionSpoilage, transportationSpoilage } },
+          { $set: { qty, fat, snf, rate, amount, spoilage, unionSpoilage, transportationSpoilage, source: 'Manual' } },
           { new: true }
         );
         results.updated++;

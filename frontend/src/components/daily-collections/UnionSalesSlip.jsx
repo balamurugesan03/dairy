@@ -78,6 +78,18 @@ export default function UnionSalesSlip() {
   const [toDairyTs, setToDairyTs] = useState({ enabled: false, tsRate: null });
   const [settingsVersion, setSettingsVersion] = useState(0);
   const slipDay = dayjs(form.date).format('YYYY-MM-DD');
+  // Society / To Dairy names — read from the company configuration (Super Admin) and
+  // Machine Configuration; never entered in Union Sales
+  const [dairyNames, setDairyNames] = useState({ fromDairy: {}, toDairy: {} });
+  useEffect(() => {
+    unionSalesSlipAPI.getSettings()
+      .then(res => setDairyNames(res?.data?.names || { fromDairy: {}, toDairy: {} }))
+      .catch(() => {});
+  }, [settingsVersion]);
+  const fd = dairyNames.fromDairy || {};
+  const td = dairyNames.toDairy || {};
+  const societyText = [fd.code && fd.name ? `${fd.code} - ${fd.name}` : fd.name, fd.region, fd.state].filter(Boolean).join(' · ');
+
   useEffect(() => {
     unionSalesSlipAPI.getToDairyRate(slipDay)
       .then(res => setToDairyTs(res?.data || { enabled: false, tsRate: null }))
@@ -408,8 +420,9 @@ export default function UnionSalesSlip() {
         .footer { text-align: center; margin-top: 16px; font-size: 10px; color: #888; }
       </style></head><body>
       <h2>UNION SALES SLIP</h2>
-      <div class="sub">Dairy Society Management System</div>
+      <div class="sub">${societyText || 'Dairy Society Management System'}</div>
       <table>
+        ${td.name ? `<tr><td>To Dairy</td><td>${td.name}</td></tr>` : ''}
         <tr><td>Slip No</td><td>${r.slipNo || '—'}</td></tr>
         <tr><td>Date</td><td>${dayjs(r.date).format('DD/MM/YYYY')}</td></tr>
         <tr><td>Session</td><td>${r.time}</td></tr>
@@ -447,7 +460,9 @@ export default function UnionSalesSlip() {
                 <Text size="16px" fw={800} c="#4c1d95" style={{ lineHeight: 1.1, letterSpacing: '-0.3px' }}>Union Sales Slip</Text>
                 {editingId && <Badge color="orange" size="sm" variant="filled">EDIT MODE</Badge>}
               </Group>
-              <Text size="10px" c="#64748b">Daily Union Sales Entry</Text>
+              <Text size="10px" c="#64748b">
+                {societyText ? <>{societyText}{td.name ? <> → <b>{td.name}</b></> : null}</> : 'Daily Union Sales Entry'}
+              </Text>
             </Box>
 
             <Box style={{ width: 1, height: 36, background: '#dbeafe', flexShrink: 0 }} />
@@ -663,7 +678,9 @@ export default function UnionSalesSlip() {
         <Box style={{ background: '#1e1b4b', borderRadius: '10px 10px 0 0', padding: '7px 14px' }}>
           <Group justify="space-between" align="center" wrap="nowrap">
             <Group gap={8} style={{ flexShrink: 0 }}>
-              <Text fw={700} size="12px" c="white" style={{ letterSpacing: '0.3px' }}>Union Sales Register</Text>
+              <Text fw={700} size="12px" c="white" style={{ letterSpacing: '0.3px' }}>
+                Union Sales Register{fd.name ? ` — ${fd.name}` : ''}{td.name ? ` → ${td.name}` : ''}
+              </Text>
               <Badge size="sm" style={{ background: 'rgba(255,255,255,0.12)', color: '#c4b5fd', border: '1px solid rgba(255,255,255,0.2)' }}>
                 {loading ? <Loader size={10} color="white" /> : `${filteredEntries.length}${historySearch ? ` / ${entries.length}` : ''} records`}
               </Badge>
@@ -840,7 +857,12 @@ export default function UnionSalesSlip() {
                       <Table.Tr key={e._id} onClick={() => setSelRow(isSel ? null : e)}
                         style={{ cursor: 'pointer', background: isEdit ? '#fffbeb' : isSel ? '#f5f3ff' : undefined, borderLeft: isEdit ? '3px solid #d97706' : isSel ? '3px solid #7c3aed' : '3px solid transparent', transition: 'background 0.1s' }}>
                         <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#94a3b8', width: 32 }}>{idx + 1}</Table.Td>
-                        <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#2563eb', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{e.slipNo}</Table.Td>
+                        <Table.Td style={{ padding: '6px 12px', fontWeight: 700, color: '#2563eb', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
+                          {e.slipNo}
+                          {e.source === 'FromDairy' && (
+                            <Badge ml={6} size="xs" color="teal" variant="light" title="Generated from the milk purchase data (From Dairy TS rate). Editing it makes it a manual entry.">Auto</Badge>
+                          )}
+                        </Table.Td>
                         <Table.Td style={{ padding: '6px 12px', color: '#475569', whiteSpace: 'nowrap' }}>{dayjs(e.date).format('DD MMM YYYY')}</Table.Td>
                         <Table.Td style={{ padding: '6px 12px' }}>
                           <Badge size="xs" color={e.time === 'AM' ? 'orange' : 'indigo'} variant="light">{e.time}</Badge>
@@ -1019,7 +1041,7 @@ export default function UnionSalesSlip() {
     <UnionSaleSettingsModal
       opened={settingsOpen}
       onClose={() => setSettingsOpen(false)}
-      onSaved={() => setSettingsVersion(v => v + 1)}
+      onSaved={() => { setSettingsVersion(v => v + 1); loadByDate(formRef.current.date); }}
     />
     </>
   );

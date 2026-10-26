@@ -39,7 +39,7 @@ import { localDateStr } from '../../utils/dateUtils';
 import { toAgentOptions, groupAgentsByCenter, findOwnAgent, pickDefaultAgent } from '../../utils/senderAgent';
 import { resolveDefaultCentreAgent } from '../../utils/defaultCentreAgent';
 import DairyRouteButtons from './DairyRouteButtons';
-import { openMilkPopup } from '../../utils/milkPopup';
+import { openMilkPopup, POPUP_CHILD_Z } from '../../utils/milkPopup';
 import MilkDaySummary from './MilkDaySummary';
 import { findTsPeriod, tsRateValue } from '../../utils/rateChart';
 
@@ -231,6 +231,10 @@ const YEARS = Array.from({ length: _cy - 2009 + 2 }, (_, i) => {
   const y = 2009 + i; return { value: String(y), label: String(y) };
 }).reverse();
 
+// Farmer id of a milk record (populated or raw) — entries are matched by farmer, since
+// the Center-wise series repeats farmer numbers across centres
+const idOfFarmer = (f) => (f?._id ?? f)?.toString?.() || null;
+
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 // Convert any date-like value (Date, dayjs, string) to a native JS Date
 const toDate = (d) => {
@@ -243,7 +247,7 @@ const toDate = (d) => {
 // asPopup: rendered inside the global F2 popup (MainLayout) instead of as a
 // routed page — Close / P-S swap then go through onClose / onSwap.
 const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
-  const { user, isSuperAdmin, isCompanyAdmin, isUser, isCentreLogin, isAgentLogin, centreInfo, userCenter } = useAuth();
+  const { user, isSuperAdmin, isCompanyAdmin, isUser, isCentreLogin, isAgentLogin, isStaffUser, centreInfo, userCenter } = useAuth();
   const [centersData, setCentersData] = useState([]);
   const [centreSummary, setCentreSummary] = useState([]);
   // From Dairy (Society Info) / To Dairy (Machine Configuration) shown next to Session
@@ -257,9 +261,8 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
     return new Date();
   });
   const navigate = useNavigate();
-  // Regular staff login (not admin / company / centre) — fixed to their own
-  // centre & agent; the server also limits what they can see.
-  const isStaffUser = user?.loginType === 'user' && user?.role === 'user';
+  // Ordinary user login (isStaffUser — not admin / company / centre) is fixed to the
+  // Center & Agent assigned in User Management; the server also limits what they can see.
   const centreLocked = isCentreLogin || isAgentLogin || (isStaffUser && !!userCenter);
 
   // True when this form is not the one in front: as a popup, the Sales popup is
@@ -884,7 +887,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
       setEntries(sortByProducerNo(records.map(r => {
         return {
           id: r._id, sl: 0, billNo: r.billNo,
-          producerNo: r.farmerNumber, producerName: r.farmerName || '',
+          producerNo: r.farmerNumber, producerName: r.farmerName || '', farmerId: idOfFarmer(r.farmer),
           qty: r.qty, ltr: r.qty,
           clr: r.clr, fat: r.fat, snf: r.snf,
           incentive: r.incentive, rate: r.rate, amount: r.amount,
@@ -932,7 +935,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
       const records = res?.data || [];
       setEntries(sortByProducerNo(records.map(r => ({
         id: r._id, sl: 0, billNo: r.billNo,
-        producerNo: r.farmerNumber, producerName: r.farmerName || '',
+        producerNo: r.farmerNumber, producerName: r.farmerName || '', farmerId: idOfFarmer(r.farmer),
         qty: r.qty, ltr: r.qty,
         clr: r.clr, fat: r.fat, snf: r.snf,
         incentive: r.incentive, rate: r.rate, amount: r.amount,
@@ -973,7 +976,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
         // Sender Agent follows the login: an agent is fixed to themself (and
         // their centre); an admin defaults to their own agent but may change it.
         const ownAgent = findOwnAgent(al, user);
-        // Login-based defaults (admin → Producer Management settings; staff → own centre/agent)
+        // Login-based defaults: the user's own Center / Agent from User Management, else Head Office
         const loginDefaults = await resolveDefaultCentreAgent({ user, isCentreLogin, centreInfo });
         if (!(isCentreLogin && centreInfo?.centreId)) {
           const userCentreId = userCenter?._id?.toString() || userCenter?.toString();
@@ -1137,16 +1140,16 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
     return () => clearInterval(id);
   }, [cpMode]); // eslint-disable-line
 
-  // Sender Agent dropdown: agent login → only themself; sub-centre login →
-  // that centre's agents; admin → every agent, grouped by centre.
+  // Sender Agent dropdown: agent login → only themself; sub-centre login or a user
+  // locked to a centre → that centre's agents; admin → every agent, grouped by centre.
   const agentSelectData = useCallback(() => {
     if (isAgentLogin) return agentsData.filter(a => a.value === agent);
-    if (isCentreLogin) {
+    if (centreLocked) {
       const f = agentsData.filter(a => !a.centerId || a.centerId === center);
       return (f.length ? f : agentsData).map(({ value, label }) => ({ value, label }));
     }
     return groupAgentsByCenter(agentsData, center);
-  }, [isAgentLogin, isCentreLogin, center, agent, agentsData]);
+  }, [isAgentLogin, centreLocked, center, agent, agentsData]);
 
   // Admin picking an agent from another centre moves the centre with it
   const handleAgentChange = (v) => {
@@ -1317,10 +1320,12 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
   // Farmer search. Farmer No (digits) and Name are separate fields; numeric
   // lookups are cached so re-entering a number needs no round trip.
   const searchCacheRef = useRef(new Map());
+  // Numbers are looked up in the selected centre (Center-wise series repeats them per centre).
   const searchFarmers = async (query) => {
-    const key = query.trim().toLowerCase();
+    const centre = formRef.current.center || '';
+    const key = `${centre}|${query.trim().toLowerCase()}`;
     if (searchCacheRef.current.has(key)) return searchCacheRef.current.get(key);
-    const res = await farmerAPI.search(query.trim());
+    const res = await farmerAPI.search(query.trim(), centre ? { collectionCenter: centre } : {});
     const list = res?.data || [];
     if (list.length) searchCacheRef.current.set(key, list);   // never cache a miss — a new farmer may be added
     return list;
@@ -1342,7 +1347,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
         else { setSearchSource('no'); setHiIdx(0); setSearchResults(list); setShowDropdown(list.length > 0); }
       } catch { setSearchResults([]); setShowDropdown(false); }
       finally { setSearchLoading(false); }
-    }, searchCacheRef.current.has(q.toLowerCase()) ? 0 : 250);
+    }, searchCacheRef.current.has(`${formRef.current.center || ''}|${q.toLowerCase()}`) ? 0 : 250);
     return () => clearTimeout(t);
   }, [memberInput]); // eslint-disable-line
 
@@ -1366,7 +1371,9 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
     const base = { _id: farmer._id, no: farmer.farmerNumber, memberId: farmer.memberId || '', name: farmer.personalDetails?.name || '', phone: farmer.personalDetails?.phone || '', avg: { qty: 0, clr: 0, fat: 0 } };
 
     // Check if this member already has an entry today
-    const existing = formRef.current.entries?.find(e => e.producerNo === farmer.farmerNumber);
+    const existing = formRef.current.entries?.find(e => (e.farmerId && farmer._id)
+      ? String(e.farmerId) === String(farmer._id)
+      : e.producerNo === farmer.farmerNumber);
     if (existing) {
       setDupBlocked(true);
       setDupInfo({ name: farmer.personalDetails?.name || farmer.farmerNumber, billNo: existing.billNo, amount: existing.amount, center: centerNameRef.current || '' });
@@ -1379,7 +1386,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
     setShowDropdown(false);
     setTimeout(() => ltrRef.current?.focus({ preventScroll: true }), 50);
     try {
-      const statsRes = await milkCollectionAPI.getFarmerStats(farmer.farmerNumber, { days: 10 });
+      const statsRes = await milkCollectionAPI.getFarmerStats(farmer.farmerNumber, { days: 10, farmerId: farmer._id });
       const s = statsRes?.data;
       if (s) setProducer(prev => ({ ...prev, avg: { qty: parseFloat(s.avgQty || 0).toFixed(1), clr: parseFloat(s.avgClr || 0).toFixed(1), fat: parseFloat(s.avgFat || 0).toFixed(2) } }));
     } catch { /* keep 0 */ }
@@ -1451,7 +1458,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
         // CREATE new entry
         const res = await milkCollectionAPI.create(payload);
         const saved = res.data;
-        const newEntry = { id: saved._id, billNo: saved.billNo, producerNo: saved.farmerNumber, producerName: saved.farmerName || p.name, qty: saved.qty, ltr: saved.ltr ?? netLtr, clr: saved.clr, fat: saved.fat, snf: saved.snf, incentive: saved.incentive, rate: saved.rate, amount: saved.amount, addedWater: saved.addedWater || 0, date: saved.date, shift: saved.shift };
+        const newEntry = { id: saved._id, billNo: saved.billNo, producerNo: saved.farmerNumber, producerName: saved.farmerName || p.name, farmerId: idOfFarmer(saved.farmer) || p._id, qty: saved.qty, ltr: saved.ltr ?? netLtr, clr: saved.clr, fat: saved.fat, snf: saved.snf, incentive: saved.incentive, rate: saved.rate, amount: saved.amount, addedWater: saved.addedWater || 0, date: saved.date, shift: saved.shift };
         setBillNo(saved.billNo);
         setEntries(prev => sortByProducerNo([...prev, { ...newEntry, sl: 0 }]));
         tableScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1524,7 +1531,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
         const cnt  = offlineQueue.byType('milk-purchase').length;
         const localEntry = {
           id: item.localId, billNo: `OFF-${cnt}`,
-          producerNo: p.no, producerName: p.name,
+          producerNo: p.no, producerName: p.name, farmerId: p._id,
           qty: netLtr, ltr: netLtr, clr: parseFloat(c) || 0, fat: parseFloat(f) || 0,
           snf: parseFloat(s) || fresh.snf || 0, rate: freshRate, amount: freshAmount,
           addedWater: waterLtr, date: localDateStr(toDate(d)), shift: sh, _offline: true,
@@ -1564,11 +1571,13 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
     setSnf(String(selectedRow.snf));
     setMemberInput(selectedRow.producerNo);
     setNameInput('');
-    setProducer({ _id: null, no: selectedRow.producerNo, name: selectedRow.producerName, memberId: '', phone: '', avg: { qty: 0, clr: 0, fat: 0 } });
+    setProducer({ _id: selectedRow.farmerId || null, no: selectedRow.producerNo, name: selectedRow.producerName, memberId: '', phone: '', avg: { qty: 0, clr: 0, fat: 0 } });
     // Load full producer data in background
-    farmerAPI.search(selectedRow.producerNo).then(res => {
+    const ct = formRef.current.center;
+    farmerAPI.search(selectedRow.producerNo, ct ? { collectionCenter: ct } : {}).then(res => {
       const farmers = res?.data || [];
-      const match = farmers.find(f => f.farmerNumber === selectedRow.producerNo);
+      const match = (selectedRow.farmerId && farmers.find(f => String(f._id) === String(selectedRow.farmerId)))
+        || farmers.find(f => f.farmerNumber === selectedRow.producerNo);
       if (match) { setProducer(prev => ({ ...prev, _id: match._id, memberId: match.memberId || '', phone: match.personalDetails?.phone || '' })); setMemberInput(match.farmerNumber); }
     }).catch(() => {});
     setTimeout(() => ltrRef.current?.focus({ preventScroll: true }), 60);
@@ -1580,6 +1589,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
     modals.openConfirmModal({
       title: 'Delete Collection Entry',
       centered: true,
+      zIndex: POPUP_CHILD_Z,
       closeOnClickOutside: false,
       children: (
         <Text size="sm">
@@ -1676,7 +1686,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
       const fetched = res?.data || [];
       const rows = fetched.map(r => ({
         id: r._id, billNo: r.billNo,
-        producerNo: r.farmerNumber, producerName: r.farmerName || '',
+        producerNo: r.farmerNumber, producerName: r.farmerName || '', farmerId: idOfFarmer(r.farmer),
         qty: r.qty, ltr: r.qty,
         clr: r.clr, fat: r.fat, snf: r.snf,
         incentive: r.incentive, rate: r.rate, amount: r.amount,
@@ -1948,12 +1958,14 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
     try {
       const farmersRes = await farmerAPI.getAll({ limit: 2000 });
       const phoneMap = {};
+      const phoneById = {};
       (farmersRes?.data || []).forEach(f => {
         if (f.farmerNumber) phoneMap[f.farmerNumber] = f.personalDetails?.phone || '';
+        phoneById[f._id] = f.personalDetails?.phone || '';
       });
       let done = 0, sent = 0;
       for (const entry of rows) {
-        const phone = phoneMap[entry.producerNo];
+        const phone = (entry.farmerId && phoneById[entry.farmerId]) || phoneMap[entry.producerNo];
         const msg = template
             .replace(/{name}/g,     entry.producerName || '')
             .replace(/{farmerNo}/g, entry.producerNo   || '')
@@ -3369,6 +3381,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
         title={<Text fw={800} size="sm">Export Milk Purchase to Excel</Text>}
         size="sm"
         centered
+        zIndex={POPUP_CHILD_Z}
       >
         <Stack gap={12}>
           <DatePickerInput
@@ -3408,6 +3421,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
         onClose={() => setLinzaImportOpen(false)}
         onImport={handleLinZAImport}
         entityType="Milk Purchase (LinZA — Nos/BillDate/Shift/Ltr/Fat/Clr/Snf/Rate/Incent/Amt)"
+        zIndex={POPUP_CHILD_Z}
         requiredFields={['Nos', 'Ltr']}
         maxFileSizeMB={50}
       />
@@ -3419,6 +3433,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
         title="Bulk Delete — Milk Purchase"
         size="md"
         centered
+        zIndex={POPUP_CHILD_Z}
       >
         <Stack gap="sm">
           {/* Month + Year + Load */}

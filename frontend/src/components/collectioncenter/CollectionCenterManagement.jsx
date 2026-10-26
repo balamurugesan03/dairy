@@ -74,6 +74,7 @@ const CollectionCenterManagement = () => {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [selectedCenters, setSelectedCenters] = useState([]);
   const [visibleColumns, setVisibleColumns] = useState({
+    centerCode: true,
     centerName: true,
     centerType: true,
     village: true,
@@ -276,6 +277,7 @@ const CollectionCenterManagement = () => {
     }
     try {
       const exportData = centers.map(c => ({
+        'Center Code': c.centerCode || '',
         'Center Name': c.centerName,
         'Center Type': c.centerType,
         'Village': c.address?.village || '-',
@@ -402,7 +404,8 @@ const CollectionCenterManagement = () => {
     const d = dir === 'asc' ? 1 : -1;
     return [...centers].sort((a, b) => {
       let av, bv;
-      if (col === 'centerName')  { av = a.centerName;           bv = b.centerName; }
+      if (col === 'centerCode')  { av = parseInt(String(a.centerCode || '').slice(1), 10) || null; bv = parseInt(String(b.centerCode || '').slice(1), 10) || null; }
+      else if (col === 'centerName') { av = a.centerName;       bv = b.centerName; }
       else if (col === 'centerType') { av = a.centerType;       bv = b.centerType; }
       else if (col === 'village')    { av = a.address?.village; bv = b.address?.village; }
       else if (col === 'district')   { av = a.address?.district;bv = b.address?.district; }
@@ -416,6 +419,12 @@ const CollectionCenterManagement = () => {
   };
 
   const columns = [
+    visibleColumns.centerCode && {
+      accessor: 'centerCode',
+      title: 'Code',
+      sortable: true,
+      width: 80
+    },
     visibleColumns.centerName && {
       accessor: 'centerName',
       title: 'Center Name',

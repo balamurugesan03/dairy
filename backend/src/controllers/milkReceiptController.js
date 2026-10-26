@@ -78,7 +78,7 @@ const aggregateCollections = (companyId, start, end, centreIds, shift) => {
         fatQty: { $sum: { $multiply: ['$qty', '$fat'] } },
         snfQty: { $sum: { $multiply: ['$qty', { $ifNull: ['$snf', 0] }] } },
         clrQty: { $sum: { $multiply: ['$qty', { $ifNull: ['$clr', 0] }] } },
-        farmerSet: { $addToSet: '$farmerNumber' }
+        farmerSet: { $addToSet: { $ifNull: ['$farmer', '$farmerNumber'] } }
       }
     },
     { $addFields: { farmers: { $size: '$farmerSet' } } },

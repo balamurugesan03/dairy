@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Modal,
   Stepper,
@@ -24,7 +24,7 @@ import { IconInfoCircle } from '@tabler/icons-react';
 import { DatePickerInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { IconUpload, IconTrash } from '@tabler/icons-react';
-import { farmerAPI, collectionCenterAPI, ledgerAPI, bankMasterAPI } from '../../services/api';
+import { farmerAPI, collectionCenterAPI, ledgerAPI, bankMasterAPI, farmerSettingsAPI } from '../../services/api';
 import { message } from '../../utils/toast';
 import { useAuth } from '../../context/AuthContext';
 import useDefaultCentreAgent from '../../utils/defaultCentreAgent';
@@ -42,6 +42,12 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
   const [bankMasterList, setBankMasterList] = useState([]);
   const [selectedBankMasterId, setSelectedBankMasterId] = useState('');
   const [initialIsMembership, setInitialIsMembership] = useState(false);
+  // Producer Management → Settings → Farmer Number Series. Center-wise: Center is the
+  // first field and the number is generated from it (never typed or edited).
+  const [centreWise, setCentreWise] = useState(false);
+  const centreWiseRef = useRef(false);
+  centreWiseRef.current = centreWise;
+  const [savedCentre, setSavedCentre] = useState('');   // edit mode: the farmer's centre as loaded
 
   const isEditMode = Boolean(farmerId);
 
@@ -110,6 +116,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
     validate: (values) => {
       if (active === 0) {
         return {
+          collectionCenter: centreWiseRef.current && !values.collectionCenter ? 'Select the Center first' : null,
           farmerNumber: !values.farmerNumber ? 'Farmer number is required' : null,
           'personalDetails.name': !values.personalDetails.name ? 'Name is required' : null,
           'personalDetails.phone': values.personalDetails.phone && !/^[0-9]{10}$/.test(values.personalDetails.phone)
@@ -143,6 +150,9 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
   useEffect(() => {
     if (isOpen) {
       setActive(initialStep || 0);
+      farmerSettingsAPI.getSettings()
+        .then((res) => setCentreWise(res?.data?.numberSeries === 'Centre'))
+        .catch(() => {});
       fetchCollectionCenters();
       fetchBankLedgers();
       fetchBankMasterList();
@@ -174,13 +184,15 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
     setActive(0);
     setAdditionalDocs([]);
     setSelectedBankMasterId('');
+    setSavedCentre('');
   };
 
   // Next number from Producer Management → Settings → Farmer Number Series
-  // (Existing: common 1, 2, 3 …; Center-wise: centre code + its own sequence)
+  // (Existing: common 1, 2, 3 …; Center-wise: the selected centre's own 1, 2, 3 …)
   const fetchNextFarmerNumber = async (centreId) => {
     try {
       const res = await farmerAPI.getNextFarmerNumber(centreId ? { collectionCenter: centreId } : {});
+      setCentreWise(res?.data?.series === 'Centre');
       form.setFieldValue('farmerNumber', res?.data?.nextFarmerNumber || '');
     } catch (err) {
       form.setFieldValue('farmerNumber', '');
@@ -251,6 +263,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
       const farmer = response.data;
 
       setInitialIsMembership(farmer.isMembership || false);
+      setSavedCentre(farmer.collectionCenter?._id || '');
       const shouldAutoCheck = autoCheckMembership && !farmer.isMembership;
 
       // Non-members get the next available Member Number (continuing from the
@@ -649,6 +662,31 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
     }
   };
 
+  // Center select — first field with the Center-wise series. Locked for an ordinary user
+  // assigned to a centre, and (Center-wise) once a farmer's number belongs to a centre.
+  const centreLockedHere = centreDefaults.locked || (centreWise && isEditMode && !!savedCentre);
+  const centreSelect = (
+    <Select
+      label={centreWise ? 'Center' : 'Collection Centre'}
+      placeholder="Select collection centre"
+      required={centreWise}
+      data={collectionCenters
+        .filter(c => !centreDefaults.locked || c._id === centreDefaults.centreId || c._id === form.values.collectionCenter)
+        .map(c => ({
+          value: c._id,
+          label: `${c.centerCode ? `${c.centerCode} - ` : ''}${c.centerName} (${c.centerType})`
+        }))}
+      searchable
+      disabled={centreLockedHere}
+      {...form.getInputProps('collectionCenter')}
+      onChange={(v) => {
+        form.setFieldValue('collectionCenter', v || '');
+        // Center-wise series: the number depends on the centre
+        if (!isEditMode) fetchNextFarmerNumber(v || '');
+      }}
+    />
+  );
+
   if (isCentreLogin && !isEditMode) {
     return (
       <Modal opened={isOpen} onClose={onClose} title="Add Farmer" size="sm" padding="lg">
@@ -657,6 +695,8 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
             label="Farmer Number"
             placeholder="Enter farmer number"
             required
+            readOnly={centreWise}
+            description={centreWise ? 'Generated for this centre' : undefined}
             {...form.getInputProps('farmerNumber')}
           />
           <TextInput
@@ -734,12 +774,19 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
               </Group>
               <Text size="xs" c="dimmed" ta="center" mt={-8}>Click photo to upload</Text>
               <Grid>
+                {centreWise && (
+                  <Grid.Col span={6}>
+                    {centreSelect}
+                  </Grid.Col>
+                )}
                 <Grid.Col span={6}>
                   <TextInput
                     label="Farmer Number"
-                    placeholder="Enter farmer number"
+                    placeholder={centreWise ? 'Select the Center first' : 'Enter farmer number'}
                     required
                     disabled={isEditMode}
+                    readOnly={centreWise}
+                    description={centreWise ? 'Generated automatically for the selected Center' : undefined}
                     {...form.getInputProps('farmerNumber')}
                     onKeyDown={handleFarmerNumberKeyDown}
                   />
@@ -816,23 +863,11 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
                     {...form.getInputProps('personalDetails.caste')}
                   />
                 </Grid.Col>
-                <Grid.Col span={6}>
-                  <Select
-                    label="Collection Centre"
-                    placeholder="Select collection centre"
-                    data={collectionCenters.map(c => ({
-                      value: c._id,
-                      label: `${c.centerName} (${c.centerType})`
-                    }))}
-                    searchable
-                    {...form.getInputProps('collectionCenter')}
-                    onChange={(v) => {
-                      form.setFieldValue('collectionCenter', v || '');
-                      // Center-wise series: the suggested number depends on the centre
-                      if (!isEditMode) fetchNextFarmerNumber(v || '');
-                    }}
-                  />
-                </Grid.Col>
+                {!centreWise && (
+                  <Grid.Col span={6}>
+                    {centreSelect}
+                  </Grid.Col>
+                )}
                 <Grid.Col span={6}>
                   <DatePickerInput
                     label="Admission Date"
