@@ -256,9 +256,11 @@ export const applyBankTransfer = async (req, res) => {
       dueByList,
       transferDetails,
       remarks,
+      paymentMethod,
       chequeNumber,
       chequeDate,
     } = req.body;
+    const method = paymentMethod === 'Cash' ? 'Cash' : 'Bank';
 
     const companyId = req.userCompany;
 
@@ -288,7 +290,11 @@ export const applyBankTransfer = async (req, res) => {
     }
 
     // Filter only approved transfers
-    const approvedTransfers = transferDetails.filter(d => d.approved && d.transferAmount > 0);
+    // Payment Method Cash (Finalize Payment popup) pays every approved producer in
+    // cash → one Cash in Hand voucher (Cash Book / Day Book cash column), never the bank side
+    const approvedTransfers = transferDetails
+      .filter(d => d.approved && d.transferAmount > 0)
+      .map(d => (method === 'Cash' ? { ...d, paymentMode: 'Cash', mode: 'Cash' } : d));
 
     if (approvedTransfers.length === 0) {
       throw new Error('No approved transfers to process');
@@ -326,8 +332,9 @@ export const applyBankTransfer = async (req, res) => {
         createdBy: req.user?._id,
         appliedBy: req.user?._id,
         appliedAt: new Date(),
-        chequeNumber: chequeNumber || '',
-        chequeDate:   chequeDate ? new Date(chequeDate) : null,
+        paymentMethod: method,
+        chequeNumber: method === 'Bank' ? String(chequeNumber || '').trim() : '',
+        chequeDate:   method === 'Bank' && chequeDate ? new Date(chequeDate) : null,
         remarks
       }),
     });
@@ -1138,26 +1145,38 @@ export const getBanks = async (req, res) => {
 };
 
 // ── Payment Report ─────────────────────────────────────────────────────────────
-// Combines BankTransfer (applyDate) + ProducerPayment (paymentDate) records
-// within a date range and groups them by payment date.
+// Combines BankTransfer + ProducerPayment records and groups them by payment date.
+// Filter by EITHER a date range (BankTransfer applyDate / ProducerPayment paymentDate)
+// OR a payment cycle (cycleFrom/cycleTo: BankTransfer asOnDate / ProducerPayment
+// processingPeriod ending on the cycle's To Date, ±2 days for IST/UTC offsets).
+// paymentMethod = 'Cash' | 'Bank' keeps only that side (Bank Transfer Statement).
+// Each row carries its accounting head: Cash → Cash in Hand, Bank → Adjustment.
+const PP_BANK_MODES = ['Bank', 'NEFT', 'RTGS', 'UPI', 'Cheque']; // same split as the Day Book
 export const getPaymentReport = async (req, res) => {
   try {
-    const { fromDate, toDate, centerId, bankFilter, reportType } = req.query;
+    const { fromDate, toDate, cycleFrom, cycleTo, centerId, bankFilter, reportType, paymentMethod } = req.query;
     const companyId = new mongoose.Types.ObjectId(req.userCompany);
+    const byCycle = !!(cycleFrom && cycleTo);
 
-    if (!fromDate || !toDate) {
-      return res.status(400).json({ success: false, message: 'fromDate and toDate are required' });
+    if (!byCycle && (!fromDate || !toDate)) {
+      return res.status(400).json({ success: false, message: 'Select a date range or a cycle' });
     }
 
-    const from = new Date(fromDate);
+    const from = new Date(byCycle ? cycleFrom : fromDate);
     from.setHours(0, 0, 0, 0);
-    const to = new Date(toDate);
+    const to = new Date(byCycle ? cycleTo : toDate);
     to.setHours(23, 59, 59, 999);
+    // Cycle match window on the cycle's To Date
+    const dayMs = 24 * 60 * 60 * 1000;
+    const cycleEnd = byCycle ? new Date(cycleTo) : null;
+    const cycleWindow = byCycle
+      ? { $gte: new Date(cycleEnd.getTime() - 2 * dayMs), $lte: new Date(cycleEnd.getTime() + 2 * dayMs) }
+      : null;
 
-    // BankTransfer records (applied / completed) in date range
+    // BankTransfer records (applied / completed) in the date range or for the cycle
     const btFilter = {
       companyId,
-      applyDate: { $gte: from, $lte: to },
+      ...(byCycle ? { asOnDate: cycleWindow } : { applyDate: { $gte: from, $lte: to } }),
       status: { $in: ['Applied', 'Completed'] },
     };
     if (centerId && centerId !== 'all') {
@@ -1173,7 +1192,7 @@ export const getPaymentReport = async (req, res) => {
     if (reportType !== 'bankOnly') {
       const ppFilter = {
         companyId,
-        paymentDate: { $gte: from, $lte: to },
+        ...(byCycle ? { 'processingPeriod.toDate': cycleWindow } : { paymentDate: { $gte: from, $lte: to } }),
         status: 'Active',
       };
       if (centerId && centerId !== 'all') {
@@ -1209,6 +1228,7 @@ export const getPaymentReport = async (req, res) => {
           accountNumber: det.bankDetails?.accountNumber || '',
           ifscCode: det.bankDetails?.ifscCode || '',
           branch: det.bankDetails?.branch || '',
+          account: det.paymentMode === 'Cash' ? 'Cash in Hand' : 'Adjustment (Bank)',
         };
         if (det.paymentMode === 'Cash') group.cashRows.push(row);
         else group.bankRows.push(row);
@@ -1228,8 +1248,17 @@ export const getPaymentReport = async (req, res) => {
         paymentMode: pp.paymentMode || 'Cash',
         bankName: pp.bankLedgerName || '',
       };
-      if (['Bank', 'NEFT', 'RTGS'].includes(pp.paymentMode)) group.bankRows.push(row);
-      else group.cashRows.push(row);
+      if (PP_BANK_MODES.includes(pp.paymentMode)) group.bankRows.push({ ...row, account: 'Adjustment (Bank)' });
+      else group.cashRows.push({ ...row, account: 'Cash in Hand' });
+    }
+
+    // Bank Transfer Statement → Cash or Bank only
+    if (paymentMethod === 'Cash' || paymentMethod === 'Bank') {
+      for (const g of Object.values(groupMap)) {
+        if (paymentMethod === 'Cash') g.bankRows = [];
+        else g.cashRows = [];
+        if (!g.bankRows.length && !g.cashRows.length) delete groupMap[g.date];
+      }
     }
 
     const groups = Object.values(groupMap)
@@ -1250,7 +1279,10 @@ export const getPaymentReport = async (req, res) => {
       dateCount: groups.length,
     };
 
-    res.json({ success: true, data: { groups, summary } });
+    res.json({
+      success: true,
+      data: { groups, summary, period: { fromDate: from, toDate: to, byCycle } },
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

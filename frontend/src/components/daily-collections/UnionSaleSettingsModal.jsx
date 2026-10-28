@@ -13,7 +13,7 @@ import { unionSalesSlipAPI } from '../../services/api';
 import { findTsPeriod } from '../../utils/rateChart';
 import { parseDateInput } from '../../utils/dateUtils';
 
-const emptySide = { tsEnabled: false, fromDate: null };
+const emptySide = { tsEnabled: false };
 
 // "TS Rate Settings (Society Name, State)" — read from the company configuration
 // (Super Admin), never entered here
@@ -31,24 +31,12 @@ const ymd = (d) => (d ? dayjs(d).format('YYYY-MM-DD') : null);
  *   To Dairy:   TS rates entered / uploaded here; Qty / FAT / SNF from the Union Sales slips.
  *   Both use the same TS formula: rate = (FAT + SNF) × TS rate ÷ 100.
  */
-// Read-only dairy name + state, fetched from the existing configuration
+// Read-only dairy name, fetched from the existing configuration
 function ConfiguredName({ side = {}, source }) {
   return (
     <Paper withBorder radius="sm" p="xs" bg="gray.0">
-      <Group gap="lg" wrap="nowrap">
-        <div>
-          <Text size="xs" c="dimmed">Dairy</Text>
-          <Text size="sm" fw={600}>{side.name ? `${side.code ? `${side.code} - ` : ''}${side.name}` : 'Not configured'}</Text>
-        </div>
-        <div>
-          <Text size="xs" c="dimmed">Region</Text>
-          <Text size="sm" fw={600}>{side.region || '—'}</Text>
-        </div>
-        <div>
-          <Text size="xs" c="dimmed">State</Text>
-          <Text size="sm" fw={600}>{side.state || '—'}</Text>
-        </div>
-      </Group>
+      <Text size="xs" c="dimmed">Dairy</Text>
+      <Text size="sm" fw={600}>{side.name ? `${side.code ? `${side.code} - ` : ''}${side.name}` : 'Not configured'}</Text>
       <Text size="xs" c="dimmed" mt={4}>From: {source}</Text>
     </Paper>
   );
@@ -77,7 +65,7 @@ export default function UnionSaleSettingsModal({ opened, onClose, onSaved }) {
     setEntry(emptyEntry);
     unionSalesSlipAPI.getSettings().catch(() => ({})).then((s) => {
       const d = s?.data || {};
-      const side = (x = {}) => ({ tsEnabled: !!x.tsEnabled, fromDate: x.fromDate ? new Date(x.fromDate) : null });
+      const side = (x = {}) => ({ tsEnabled: !!x.tsEnabled });
       setNames(d.names || { fromDairy: {}, toDairy: {} });
       setFromDairy(side(d.fromDairy));
       setToDairy(side(d.toDairy));
@@ -192,10 +180,9 @@ export default function UnionSaleSettingsModal({ opened, onClose, onSaved }) {
     try {
       // From Dairy TS rates are not sent — they are saved one by one with Apply
       const res = await unionSalesSlipAPI.saveSettings({
-        fromDairy: { ...fromDairy, fromDate: ymd(fromDairy.fromDate) },
+        fromDairy,
         toDairy: {
           ...toDairy,
-          fromDate: ymd(toDairy.fromDate),
           tsRates: toRates.filter((r) => r.fromDate && r.tsRate !== '' && r.tsRate !== null)
             .map((r) => ({ fromDate: ymd(r.fromDate), tsRate: Number(r.tsRate), remarks: r.remarks })),
         },
@@ -210,7 +197,7 @@ export default function UnionSaleSettingsModal({ opened, onClose, onSaved }) {
     }
   };
 
-  const fromRateNow = findTsPeriod(fromRates, fromDairy.fromDate && fromDairy.fromDate > new Date() ? fromDairy.fromDate : new Date())?.tsRate ?? null;
+  const fromRateNow = findTsPeriod(fromRates, new Date())?.tsRate ?? null;
 
   return (
     <Modal opened={opened} onClose={onClose} title={<Text fw={700}>Union Sales Settings</Text>} size="xl" centered zIndex={1000}>
@@ -230,12 +217,9 @@ export default function UnionSaleSettingsModal({ opened, onClose, onSaved }) {
                 <Group justify="space-between" wrap="nowrap">
                   <Text fw={600} size="sm">{tsTitle(names.fromDairy?.label)}</Text>
                   <Switch label="Enable" checked={fromDairy.tsEnabled}
-                    onChange={(e) => setFromDairy((p) => ({ ...p, tsEnabled: e.currentTarget.checked }))} />
+                    onChange={(e) => { const tsEnabled = e.currentTarget.checked; setFromDairy((p) => ({ ...p, tsEnabled })); }} />
                 </Group>
-                <ConfiguredName side={names.fromDairy} source="Company configuration (Super Admin): Society Name, District, State" />
-                <DatePickerInput label="From Date" placeholder="TS rate applies from" valueFormat="DD/MM/YYYY" clearable
-                  value={fromDairy.fromDate} onChange={(v) => setFromDairy((p) => ({ ...p, fromDate: v ? new Date(v) : null }))}
-                  withAsterisk={fromDairy.tsEnabled} popoverProps={{ zIndex: 1100 }} />
+                <ConfiguredName side={names.fromDairy} source="Company configuration (Super Admin): Society Name" />
                 <Alert color="teal" variant="light" icon={<IconInfoCircle size={16} />} p="xs">
                   <Text size="xs">
                     Qty, FAT, SNF and TS are taken from the milk purchase data; the rate is calculated as
@@ -259,12 +243,9 @@ export default function UnionSaleSettingsModal({ opened, onClose, onSaved }) {
                 <Group justify="space-between" wrap="nowrap">
                   <Text fw={600} size="sm">{tsTitle(names.toDairy?.label)}</Text>
                   <Switch label="Enable" checked={toDairy.tsEnabled}
-                    onChange={(e) => setToDairy((p) => ({ ...p, tsEnabled: e.currentTarget.checked }))} />
+                    onChange={(e) => { const tsEnabled = e.currentTarget.checked; setToDairy((p) => ({ ...p, tsEnabled })); }} />
                 </Group>
-                <ConfiguredName side={names.toDairy} source="To Dairy in Machine Configuration; Region / State from the company configuration" />
-                <DatePickerInput label="From Date" placeholder="TS rate applies from" valueFormat="DD/MM/YYYY" clearable
-                  value={toDairy.fromDate} onChange={(v) => setToDairy((p) => ({ ...p, fromDate: v ? new Date(v) : null }))}
-                  withAsterisk={toDairy.tsEnabled} popoverProps={{ zIndex: 1100 }} />
+                <ConfiguredName side={names.toDairy} source="To Dairy in Machine Configuration" />
                 <Alert color="grape" variant="light" icon={<IconInfoCircle size={16} />} p="xs">
                   <Text size="xs">
                     Not taken from Machine Configuration. Qty, FAT and SNF come from the Union Sales slips you enter or
@@ -307,7 +288,7 @@ export default function UnionSaleSettingsModal({ opened, onClose, onSaved }) {
                 <NumberInput label="TS Rate (₹)" withAsterisk min={0} decimalScale={2} hideControls w={120}
                   value={entry.tsRate} onChange={(v) => setEntry((p) => ({ ...p, tsRate: v }))} />
                 <TextInput label="Remarks" w={180} value={entry.remarks}
-                  onChange={(e) => setEntry((p) => ({ ...p, remarks: e.currentTarget.value }))} />
+                  onChange={(e) => { const remarks = e.currentTarget.value; setEntry((p) => ({ ...p, remarks })); }} />
                 <Button color="teal" leftSection={<IconCheck size={14} />} loading={applying} onClick={handleApply}>Apply</Button>
               </Group>
               <Table withTableBorder withColumnBorders fz="sm">

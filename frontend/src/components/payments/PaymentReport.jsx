@@ -11,7 +11,7 @@ import {
   IconBuildingBank, IconCash, IconSearch, IconFileExport, IconMail,
 } from '@tabler/icons-react';
 import * as XLSX from 'xlsx';
-import { bankTransferAPI } from '../../services/api';
+import { bankTransferAPI, producerPaymentAPI } from '../../services/api';
 import { localDateStr } from '../../utils/dateUtils';
 import { useCompany } from '../../context/CompanyContext';
 
@@ -223,7 +223,7 @@ function buildDetailHtml(groups, societyName, fromDate, toDate, isBankMode, isML
         <td>${esc(r.center)}</td>
         ${isBankMode ? `<td>${esc(r.bankName)}</td><td>${esc(r.accountNumber)}</td>` : ''}
         <td class="right">₹${esc(fmt(r.amount))}</td>
-        <td>${esc(r.paymentMode)}</td>
+        <td>${esc(r.paymentMode)}${r.account ? `<br><span style="font-size:8px;color:#555">${esc(r.account)}</span>` : ''}</td>
       </tr>`;
     });
 
@@ -382,16 +382,17 @@ export default function PaymentReport() {
 
   const [modalOpen,   setModalOpen]   = useState(true);
   const [centers,     setCenters]     = useState([{ value: 'all', label: 'All Centers' }]);
-  const [banks,       setBanks]       = useState([{ value: 'all', label: 'All Banks' }]);
+  const [cycles,      setCycles]      = useState([]); // saved payment cycles { value: 'from|to', label }
 
   // filters
   const [fromDate,              setFromDate]              = useState(null);
   const [toDate,                setToDate]                = useState(null);
+  const [cycle,                 setCycle]                 = useState(null); // 'from|to' — used instead of the date range, never both
   const [center,                setCenter]                = useState('all');
   const [displayType,           setDisplayType]           = useState('detail');
   const [orderByProdNo,         setOrderByProdNo]         = useState(true);
   const [bankTransferStatement, setBankTransferStatement] = useState(false);
-  const [selectedBank,          setSelectedBank]          = useState('all');
+  const [statementMethod,       setStatementMethod]       = useState('Bank'); // Bank Transfer Statement: 'Cash' | 'Bank'
   const [malayalam,             setMalayalam]             = useState(false);
 
   // report data
@@ -406,27 +407,32 @@ export default function PaymentReport() {
       const list = (res?.data || []).map(c => ({ value: String(c._id), label: c.name || c.centerName || 'Center' }));
       setCenters([{ value: 'all', label: 'All Centers' }, ...list]);
     }).catch(() => {});
-    bankTransferAPI.getBanks().then(res => {
-      const list = (res?.data || []).filter(b => b.name).map(b => ({ value: b.name, label: `${b.name} (${b.count || 0})` }));
-      setBanks([{ value: 'all', label: 'All Banks' }, ...list]);
+    producerPaymentAPI.getCycles().then(res => {
+      setCycles((res?.data || []).map(c => ({
+        value: `${localDateStr(new Date(c.fromDate))}|${localDateStr(new Date(c.toDate))}`,
+        label: c.label,
+      })));
     }).catch(() => {});
   }, []);
 
   const handleViewReport = async () => {
-    if (!fromDate || !toDate) { notifications.show({ color: 'orange', message: 'Please select Date From and To' }); return; }
-    if (new Date(fromDate) > new Date(toDate)) { notifications.show({ color: 'orange', message: '"Date From" must be before "To"' }); return; }
+    // Either a Cycle or a Date Range — the other one is disabled in the filter form
+    if (!cycle) {
+      if (!fromDate || !toDate) { notifications.show({ color: 'orange', message: 'Select Date From and To, or a Cycle' }); return; }
+      if (new Date(fromDate) > new Date(toDate)) { notifications.show({ color: 'orange', message: '"Date From" must be before "To"' }); return; }
+    }
 
     setGenerating(true);
     setModalOpen(false);
-    const fd = localDateStr(fromDate);
-    const td = localDateStr(toDate);
+    const [fd, td] = cycle ? cycle.split('|') : [localDateStr(fromDate), localDateStr(toDate)];
 
     try {
       const res = await bankTransferAPI.getPaymentReport({
-        fromDate: fd, toDate: td,
+        ...(cycle ? { cycleFrom: fd, cycleTo: td } : { fromDate: fd, toDate: td }),
         centerId:   center,
-        bankFilter: bankTransferStatement ? selectedBank : 'all',
-        reportType: bankTransferStatement ? 'bankOnly' : 'all',
+        bankFilter: 'all',
+        reportType: 'all',
+        ...(bankTransferStatement ? { paymentMethod: statementMethod } : {}),
       });
 
       let grps = res?.data?.groups || [];
@@ -441,7 +447,10 @@ export default function PaymentReport() {
       setGroups(grps);
       setSummary(res?.data?.summary || null);
       setGenerated(true);
-      setAppliedFilters({ fromDate: fd, toDate: td, center, displayType, bankTransferStatement, selectedBank, malayalam });
+      setAppliedFilters({
+        fromDate: fd, toDate: td, cycleLabel: cycle ? cycles.find(c => c.value === cycle)?.label : '',
+        center, displayType, bankTransferStatement, statementMethod, malayalam,
+      });
     } catch (err) {
       notifications.show({ color: 'red', message: err?.message || 'Failed to generate report' });
       setModalOpen(true);
@@ -454,10 +463,12 @@ export default function PaymentReport() {
   const reopenFilters = () => setModalOpen(true);
 
   const isML       = appliedFilters.malayalam;
-  const isBankMode = appliedFilters.bankTransferStatement;
+  // Bank Transfer Statement: Bank → bank-wise statement layouts; Cash → date-wise cash rows
+  const isBankMode = !!appliedFilters.bankTransferStatement && appliedFilters.statementMethod === 'Bank';
+  const isCashStmt = !!appliedFilters.bankTransferStatement && appliedFilters.statementMethod === 'Cash';
   const viewType   = appliedFilters.displayType || displayType;
-  const selBank    = appliedFilters.selectedBank || 'all';
-  const allBanks   = selBank === 'all';
+  const selBank    = 'all';   // Bank statement always lists every bank, with bank-wise sub-totals
+  const allBanks   = true;
 
   // ── Print ───────────────────────────────────────────────────────────────────
   const printDetail   = () => printHtml(buildDetailHtml(groups, societyName, appliedFilters.fromDate, appliedFilters.toDate, isBankMode, isML));
@@ -587,16 +598,25 @@ export default function PaymentReport() {
             <Grid.Col span={6}>
               <Text size="11px" fw={700} c="#374151" mb={4}>Date From</Text>
               <DatePickerInput placeholder="dd/mm/yyyy" value={fromDate} onChange={setFromDate}
-                valueFormat="DD/MM/YYYY" clearable size="sm" radius="md"
+                valueFormat="DD/MM/YYYY" clearable size="sm" radius="md" disabled={!!cycle}
                 styles={{ input: { border: '1.5px solid #cbd5e1' } }} />
             </Grid.Col>
             <Grid.Col span={6}>
               <Text size="11px" fw={700} c="#374151" mb={4}>To</Text>
               <DatePickerInput placeholder="dd/mm/yyyy" value={toDate} onChange={setToDate}
-                valueFormat="DD/MM/YYYY" clearable size="sm" radius="md"
+                valueFormat="DD/MM/YYYY" clearable size="sm" radius="md" disabled={!!cycle}
                 styles={{ input: { border: '1.5px solid #cbd5e1' } }} />
             </Grid.Col>
           </Grid>
+
+          {/* Cycle — the alternative to Date From / To (only one can be used) */}
+          <Box>
+            <Text size="11px" fw={700} c="#374151" mb={4}>Cycle</Text>
+            <Select data={cycles} value={cycle} onChange={setCycle} clearable searchable
+              placeholder={fromDate || toDate ? 'Clear Date From / To to use a cycle' : 'Select cycle'}
+              disabled={!!(fromDate || toDate)} nothingFoundMessage="No saved cycles"
+              size="sm" radius="md" styles={{ input: { border: '1.5px solid #cbd5e1' } }} />
+          </Box>
 
           {/* Center */}
           <Box>
@@ -632,9 +652,12 @@ export default function PaymentReport() {
               <Checkbox checked={bankTransferStatement} onChange={e => setBankTransferStatement(e.currentTarget.checked)}
                 label={<Text size="12px">Bank Transfer Statement</Text>} size="sm" />
               {bankTransferStatement && (
-                <Select data={banks} value={selectedBank} onChange={v => setSelectedBank(v || 'all')}
-                  size="xs" radius="md" searchable style={{ minWidth: 160 }}
-                  styles={{ input: { border: '1.5px solid #cbd5e1' } }} />
+                <Radio.Group value={statementMethod} onChange={setStatementMethod}>
+                  <Group gap={14}>
+                    <Radio value="Cash" label={<Text size="12px">Cash</Text>} size="sm" />
+                    <Radio value="Bank" label={<Text size="12px">Bank</Text>} size="sm" />
+                  </Group>
+                </Radio.Group>
               )}
             </Group>
           </Box>
@@ -671,7 +694,7 @@ export default function PaymentReport() {
               <Text size="16px" fw={800} c="#1e3a8a" style={{ lineHeight: 1.1 }}>Payment Report</Text>
               <Text size="10px" c="#64748b">
                 {generated
-                  ? `${fmtDate(appliedFilters.fromDate)} — ${fmtDate(appliedFilters.toDate)}${isBankMode ? ` · Bank Statement${allBanks ? ' (All Banks)' : ` — ${selBank}`}` : ''}`
+                  ? `${appliedFilters.cycleLabel ? `Cycle ${appliedFilters.cycleLabel}` : `${fmtDate(appliedFilters.fromDate)} — ${fmtDate(appliedFilters.toDate)}`}${appliedFilters.bankTransferStatement ? ` · Bank Transfer Statement — ${appliedFilters.statementMethod}` : ''}`
                   : 'Configure filters and click View Report'}
               </Text>
             </Box>
@@ -694,16 +717,16 @@ export default function PaymentReport() {
                 </Button>
 
                 {isBankMode && (
-                  <>
-                    <Button leftSection={<IconBuildingBank size={14} />} onClick={printBankList}
-                      size="sm" radius="md" style={{ background: '#6d28d9', fontWeight: 700 }}>
-                      {isML ? 'ബാങ്ക് ലിസ്റ്റ്' : allBanks ? 'Print Bank List (All)' : 'Print Bank List'}
-                    </Button>
-                    <Button leftSection={<IconCash size={14} />} onClick={printCashList}
-                      size="sm" radius="md" style={{ background: '#b45309', fontWeight: 700 }}>
-                      {isML ? 'ക്യാഷ് ലിസ്റ്റ്' : 'Print Cash List'}
-                    </Button>
-                  </>
+                  <Button leftSection={<IconBuildingBank size={14} />} onClick={printBankList}
+                    size="sm" radius="md" style={{ background: '#6d28d9', fontWeight: 700 }}>
+                    {isML ? 'ബാങ്ക് ലിസ്റ്റ്' : 'Print Bank List'}
+                  </Button>
+                )}
+                {isCashStmt && (
+                  <Button leftSection={<IconCash size={14} />} onClick={printCashList}
+                    size="sm" radius="md" style={{ background: '#b45309', fontWeight: 700 }}>
+                    {isML ? 'ക്യാഷ് ലിസ്റ്റ്' : 'Print Cash List'}
+                  </Button>
                 )}
 
                 <Button leftSection={<IconFileExport size={14} />} onClick={doExport}
@@ -754,9 +777,9 @@ export default function PaymentReport() {
               <Group justify="space-between" wrap="nowrap">
                 <Group gap={8}>
                   <Text fw={700} size="13px" c="white">{isML ? 'പേമെന്‍റ് റിപ്പോർട്ട്' : 'Payment Report'}</Text>
-                  {isBankMode && (
-                    <Badge color="blue" variant="filled" size="sm">
-                      Bank Statement{allBanks ? ' — All Banks' : ` — ${selBank}`}
+                  {appliedFilters.bankTransferStatement && (
+                    <Badge color={isBankMode ? 'blue' : 'orange'} variant="filled" size="sm">
+                      Bank Transfer Statement — {appliedFilters.statementMethod}
                     </Badge>
                   )}
                   <Badge color="teal" variant="light" size="sm">{viewType === 'detail' ? 'Detail' : 'Summary'}</Badge>
@@ -946,7 +969,10 @@ export default function PaymentReport() {
                                   <TD>{r.center || '—'}</TD>
                                   {isBankMode && (<><TD c={r._t === 'bank' ? '#1d4ed8' : '#64748b'}>{r.bankName || '—'}</TD><TD c="#475569">{r.accountNumber || '—'}</TD></>)}
                                   <TD right bold c={r._t === 'bank' ? '#1d4ed8' : '#b45309'}>{fmt(r.amount)}</TD>
-                                  <TD><Badge size="xs" color={r._t === 'bank' ? 'blue' : 'orange'} variant="light">{r.paymentMode || (r._t === 'bank' ? 'Bank' : 'Cash')}</Badge></TD>
+                                  <TD>
+                                    <Badge size="xs" color={r._t === 'bank' ? 'blue' : 'orange'} variant="light">{r.paymentMode || (r._t === 'bank' ? 'Bank' : 'Cash')}</Badge>
+                                    {r.account && <Text size="9px" c="dimmed">{r.account}</Text>}
+                                  </TD>
                                 </tr>
                               ))}
                               <tr key={`tot-${g.date}`} style={{ background: '#f0fdf4' }}>
