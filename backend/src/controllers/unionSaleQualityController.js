@@ -68,6 +68,9 @@ const normalisePeriods = (list = [], label = 'To Dairy') => {
   });
 };
 
+// A side's TS rule starts with its earliest TS rate (no separate From Date is entered)
+const firstFrom = (periods = []) => periods.reduce((min, p) => (!min || p.fromDate < min ? p.fromDate : min), null);
+
 const plainPeriods = (list = []) => list.map(p => ({
   tsRate: p.tsRate, fromDate: p.fromDate, toDate: p.toDate, useToDate: p.useToDate, remarks: p.remarks
 }));
@@ -135,24 +138,16 @@ export const saveUnionSaleSettings = async (req, res) => {
   try {
     const { fromDairy = {}, toDairy = {} } = req.body;
     const current = await UnionSaleSettings.getOrCreate(req.companyId);
-    const side = (s) => ({
-      tsEnabled: !!s.tsEnabled,
-      fromDate: s.fromDate ? dayStart(s.fromDate) : null
-    });
+    // From Date is no longer entered: each side starts with its earliest TS rate
+    const side = (s, tsRates) => ({ tsEnabled: !!s.tsEnabled, fromDate: firstFrom(tsRates), tsRates });
     const update = {
       // From Dairy TS rates are kept unless sent — they are normally changed one at a
       // time through Apply / Delete (applyFromDairyRate / deleteFromDairyRate)
-      fromDairy: {
-        ...side(fromDairy),
-        tsRates: normalisePeriods(Array.isArray(fromDairy.tsRates) ? fromDairy.tsRates : plainPeriods(current.fromDairy?.tsRates), 'From Dairy')
-      },
-      toDairy: { ...side(toDairy), tsRates: normalisePeriods(toDairy.tsRates) }
+      fromDairy: side(fromDairy, normalisePeriods(Array.isArray(fromDairy.tsRates) ? fromDairy.tsRates : plainPeriods(current.fromDairy?.tsRates), 'From Dairy')),
+      toDairy: side(toDairy, normalisePeriods(toDairy.tsRates))
     };
-    if (update.fromDairy.tsEnabled && !update.fromDairy.fromDate) {
-      return res.status(400).json({ success: false, message: 'From Dairy: set the From Date for TS Rate Settings' });
-    }
-    if (update.toDairy.tsEnabled && !update.toDairy.fromDate) {
-      return res.status(400).json({ success: false, message: 'To Dairy: set the From Date for TS Rate Settings' });
+    if (update.fromDairy.tsEnabled && !update.fromDairy.tsRates.length) {
+      return res.status(400).json({ success: false, message: 'From Dairy: apply at least one TS rate' });
     }
     if (update.toDairy.tsEnabled && !update.toDairy.tsRates.length) {
       return res.status(400).json({ success: false, message: 'To Dairy: add at least one TS rate' });
@@ -194,7 +189,7 @@ export const applyFromDairyRate = async (req, res) => {
 
     const saved = await UnionSaleSettings.findOneAndUpdate(
       { companyId: req.companyId },
-      { $set: { 'fromDairy.tsRates': tsRates, ...(req.user?._id ? { lastUpdatedBy: req.user._id } : {}) } },
+      { $set: { 'fromDairy.tsRates': tsRates, 'fromDairy.fromDate': firstFrom(tsRates), ...(req.user?._id ? { lastUpdatedBy: req.user._id } : {}) } },
       { new: true, runValidators: true }
     );
     const sync = await runFromDairySync(req.companyId, day);
@@ -216,7 +211,7 @@ export const deleteFromDairyRate = async (req, res) => {
     const tsRates = normalisePeriods(plainPeriods(all.filter(p => String(p._id) !== req.params.rateId)), 'From Dairy');
     const saved = await UnionSaleSettings.findOneAndUpdate(
       { companyId: req.companyId },
-      { $set: { 'fromDairy.tsRates': tsRates } },
+      { $set: { 'fromDairy.tsRates': tsRates, 'fromDairy.fromDate': firstFrom(tsRates) } },
       { new: true, runValidators: true }
     );
     const sync = await runFromDairySync(req.companyId, removedFrom);

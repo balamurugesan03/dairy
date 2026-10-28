@@ -519,11 +519,16 @@ export const getGeneralLedger = async (req, res) => {
           e => e.ledgerId && e.ledgerId._id.toString() !== ledgerId.toString()
         );
         const { column } = classifyVoucherEntry(voucher.entries, cashBankIds);
+        // Producer Dues → Bank Transfer paid in cash: the Cash in Hand line reads
+        // "Producer Cash Payment" (the ledger and amounts are unchanged)
+        const isProducerCashPayment =
+          voucher.referenceType === 'BankTransfer' && voucher.voucherType === 'Payment' &&
+          entry.ledgerId.ledgerType === 'Cash' && (entry.creditAmount || 0) > 0;
         rawTxns.push({
           date:          voucher.voucherDate,
           voucherNumber: voucher.voucherNumber,
           voucherType:   voucher.voucherType,
-          particulars:   contraEntry?.ledgerName || voucher.narration || 'Various',
+          particulars:   isProducerCashPayment ? 'Producer Cash Payment' : (contraEntry?.ledgerName || voucher.narration || 'Various'),
           voucherId:     voucher._id,
           debit:         entry.debitAmount  || 0,
           credit:        entry.creditAmount || 0,

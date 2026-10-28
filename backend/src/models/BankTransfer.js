@@ -127,7 +127,9 @@ const bankTransferSchema = new mongoose.Schema({
     ref: 'Voucher'
   },
 
-  // Cheque details (captured in the Finalize Payment popup at apply time)
+  // Payment method + cheque details (captured in the Finalize Payment popup at apply time).
+  // Cheque details apply only to Bank; a Cash payment never carries them.
+  paymentMethod: { type: String, enum: ['Cash', 'Bank'], default: 'Bank' },
   chequeNumber: { type: String, default: '' },
   chequeDate:   { type: Date,   default: null },
 

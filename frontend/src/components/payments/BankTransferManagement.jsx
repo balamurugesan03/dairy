@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Container, Card, Paper, Title, Text, Group, Stack, Grid, Box,
   Button, Select, Checkbox, Table, ScrollArea, Badge, NumberInput,
-  Loader, Center, Tabs, ActionIcon, Menu, Pagination, Modal, TextInput
+  Loader, Center, Tabs, ActionIcon, Menu, Pagination, Modal, TextInput, SegmentedControl
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
@@ -126,6 +126,7 @@ const BankTransferManagement = () => {
 
   /* finalize-payment modal (cheque info captured at apply) */
   const [finalizeModal,  setFinalizeModal]  = useState(false);
+  const [payMethod,      setPayMethod]      = useState('Bank'); // 'Cash' | 'Bank' — cheque fields only for Bank
   const [chequeNumber,   setChequeNumber]   = useState('');
   const [chequeDate,     setChequeDate]     = useState(null);
 
@@ -423,7 +424,14 @@ const BankTransferManagement = () => {
     }
     setChequeNumber('');
     setChequeDate(null);
+    setPayMethod(approved.some(r => (r.mode || 'Bank Transfer') === 'Bank Transfer') ? 'Bank' : 'Cash');
     setFinalizeModal(true);
+  };
+
+  // Cash has no cheque — switching to it clears and locks Cheque Number / Date
+  const changePayMethod = (v) => {
+    setPayMethod(v);
+    if (v === 'Cash') { setChequeNumber(''); setChequeDate(null); }
   };
 
   // Step 2: actually submit when Finalize Payment is clicked in the popup.
@@ -432,6 +440,16 @@ const BankTransferManagement = () => {
     if (!approved.length) {
       notifications.show({ message: 'No approved rows to apply', color: 'orange' });
       setFinalizeModal(false);
+      return;
+    }
+    const isBank = payMethod === 'Bank';
+    // Cheque details are checked only for Bank: number and date go together
+    if (isBank && chequeNumber.trim() && !chequeDate) {
+      notifications.show({ message: 'Select the Cheque Date for the cheque number entered', color: 'red' });
+      return;
+    }
+    if (isBank && chequeDate && !chequeNumber.trim()) {
+      notifications.show({ message: 'Enter the Cheque Number for the cheque date selected', color: 'red' });
       return;
     }
     setApplying(true);
@@ -446,8 +464,9 @@ const BankTransferManagement = () => {
         bankName:              banks.find(b => b.value === bankFilter)?.label || 'All',
         roundDownAmount:       roundDown,
         dueByList,
-        chequeNumber:          chequeNumber || '',
-        chequeDate:            toISO(chequeDate),
+        paymentMethod:         payMethod,
+        chequeNumber:          isBank ? chequeNumber.trim() : '',
+        chequeDate:            isBank ? toISO(chequeDate) : null,
         transferDetails:       approved.map(r => ({
           ...r,
           transferAmount: r.paymentAmount,
@@ -1858,26 +1877,37 @@ const BankTransferManagement = () => {
         >
           <Stack gap="md">
             <Text size="sm" c="dimmed">
-              Enter the cheque details (if applicable) and click Finalize Payment to
-              post the bank transfer and record entries in Day Book / Cash Book.
+              Select the payment method, enter the cheque details for Bank, and click Finalize
+              Payment to post the bank transfer and record entries in Day Book / Cash Book.
             </Text>
+
+            <div>
+              <Text size="sm" fw={500} mb={4}>Payment Method</Text>
+              <SegmentedControl
+                fullWidth
+                value={payMethod}
+                onChange={changePayMethod}
+                disabled={applying}
+                data={[{ value: 'Cash', label: 'Cash' }, { value: 'Bank', label: 'Bank' }]}
+              />
+            </div>
 
             <TextInput
               label="Cheque Number"
-              placeholder="e.g. 123456"
+              placeholder={payMethod === 'Bank' ? 'e.g. 123456' : 'Not applicable for Cash'}
               value={chequeNumber}
               onChange={(e) => setChequeNumber(e.currentTarget.value)}
-              disabled={applying}
+              disabled={applying || payMethod !== 'Bank'}
             />
 
             <DatePickerInput
               label="Cheque Date"
-              placeholder="Select cheque date"
+              placeholder={payMethod === 'Bank' ? 'Select cheque date' : 'Not applicable for Cash'}
               value={chequeDate}
               onChange={setChequeDate}
               valueFormat="DD/MM/YYYY"
               clearable
-              disabled={applying}
+              disabled={applying || payMethod !== 'Bank'}
             />
 
             <Group justify="flex-end" mt="sm">
