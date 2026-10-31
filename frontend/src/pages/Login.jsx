@@ -107,7 +107,7 @@ const Login = () => {
               <path d="M2 12l10 5 10-5"/>
             </svg>
           </div>
-          <h1>DairySoft ERP</h1>
+          <h1>Dairy Software</h1>
           <p>Company Login</p>
         </div>
 
@@ -200,7 +200,7 @@ const Login = () => {
         </form>
 
         <div className="login-footer">
-          <p>Dairy Cooperative Management System</p>
+          <p>Dairy Software — Dairy Management System</p>
         </div>
       </div>
     </div>

@@ -159,7 +159,7 @@ const toDate = (d) => {
 // routed page — Close / P-S swap then go through onClose / onSwap.
 export default function MilkSales({ asPopup = false, inFront = true, onSwap, onClose }) {
   const navigate = useNavigate();
-  const { user, isUser, isCentreLogin, isAgentLogin, isStaffUser, centreInfo, userCenter } = useAuth();
+  const { user, isUser, isSuperAdminLogin, isCentreLogin, isAgentLogin, isStaffUser, centreInfo, userCenter } = useAuth();
   // Ordinary user login with an assigned centre stays on that centre (as in Milk Purchase)
   const centreLocked = isCentreLogin || isAgentLogin || (isStaffUser && !!userCenter);
 
@@ -272,6 +272,17 @@ export default function MilkSales({ asPopup = false, inFront = true, onSwap, onC
       }));
     } catch { /* ignore */ }
   }, [mode, session, billNo, center, agent, category, creditor, litre, rate, pType]); // eslint-disable-line
+
+  // Closing the popup (Close, Save & Close, X) unmounts it — the next open must
+  // be a fresh blank form, so drop the saved fields. Swapping with Purchase
+  // keeps both popups mounted, so in-progress entry still survives a swap.
+  useEffect(() => () => {
+    if (!asPopup) return;
+    try {
+      sessionStorage.removeItem('milkSales_date');
+      sessionStorage.removeItem('milkSales_form');
+    } catch { /* ignore */ }
+  }, [asPopup]);
 
   const litrRef   = useRef(null);
   const rateRef   = useRef(null);
@@ -1350,8 +1361,8 @@ export default function MilkSales({ asPopup = false, inFront = true, onSwap, onC
                 style={{ background: '#0891b2', border: '1px solid #67e8f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
                 Refresh
               </Button>
-              {/* Import LinZA, Zibitt, OpenLyssa & Sync Day Book — not available to restricted users */}
-              {!isUser && (
+              {/* Import LinZA, Zibitt, OpenLyssa & Sync Day Book — Super Admin only */}
+              {isSuperAdminLogin && (
                 <>
                   <Button leftSection={<IconUpload size={12} />} onClick={() => setLinzaImportOpen(true)} size="compact-xs" radius="sm"
                     style={{ background: '#15803d', border: '1px solid #4ade80', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>

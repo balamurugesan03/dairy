@@ -21,6 +21,25 @@ export const getSocietyInfo = async (req, res) => {
 };
 
 // ════════════════════════════════════════════════════════════════
+//  GET  /api/society-info/branding
+//  Print-header branding only (logo + names) — light enough to load once per
+//  session without the society documents
+// ════════════════════════════════════════════════════════════════
+export const getSocietyBranding = async (req, res) => {
+  try {
+    const { info } = await getSocietyProfile(req.companyId);
+    res.json({ success: true, data: {
+      logo: info.logo || '',
+      societyName: info.societyName || '',
+      registeredName: info.registeredName || '',
+      societyCode: info.societyCode || '',
+    } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ════════════════════════════════════════════════════════════════
 //  PUT  /api/society-info
 //  Upsert society basic + board info
 // ════════════════════════════════════════════════════════════════

@@ -120,6 +120,12 @@ const bankTransferSchema = new mongoose.Schema({
     ref: 'User'
   },
   appliedAt: Date,
+  // Cancel Transfer: the record and its producer rows are kept as they were
+  cancelledBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  cancelledAt: Date,
 
   // Voucher reference
   voucherId: {

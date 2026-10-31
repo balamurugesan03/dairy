@@ -4,7 +4,11 @@ import {
   Text, Paper, ScrollArea, Divider, Stack
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
+import { IconDatabaseImport } from '@tabler/icons-react';
 import { agriStatsAPI } from '../../services/api';
+import {
+  useFarmerFormData, PanchayatInput, FarmerNumberLookup
+} from './FarmerReportSelectors';
 
 const MONTHS = [
   'January','February','March','April','May','June',
@@ -19,6 +23,9 @@ const defaultForm = () => ({
   district: '',
   month: MONTHS[new Date().getMonth()],
   year: currentYear,
+  panchayat: '',
+  farmerId: null,       // whose uploaded documents follow the report in print
+  farmerName: '',
   status: 'Draft',
   generalInfo: [
     { slNo: 1, details: 'Name of Local Body',  value1: '', value2: '', value3: '' },
@@ -63,6 +70,9 @@ export default function AgriStatsReportForm({ reportId, onClose }) {
           district: d.district || '',
           month:    d.month    || MONTHS[0],
           year:     d.year     || currentYear,
+          panchayat:  d.panchayat  || '',
+          farmerId:   d.farmerId?._id || d.farmerId || null,
+          farmerName: d.farmerName || '',
           status:   d.status   || 'Draft',
           generalInfo:         d.generalInfo         || defaultForm().generalInfo,
           populationDetails:   d.populationDetails   || defaultForm().populationDetails,
@@ -76,6 +86,51 @@ export default function AgriStatsReportForm({ reportId, onClose }) {
   }, [reportId]);
 
   const set = (field, value) => setForm(p => ({ ...p, [field]: value }));
+
+  const { panchayats, farmers } = useFarmerFormData();
+  const [fetching, setFetching] = useState(false);
+  const selectedFarmer = farmers.find(f => f._id === form.farmerId);
+
+  // Figures already in Farmer Management / milk purchase for the Panchayat + month:
+  // Local Body, Village, Farmers (SC / ST / Female / Male / Total), milk litres, FAT, SNF, price.
+  // Everything stays editable afterwards.
+  const fetchFromRecords = async (panchayat = form.panchayat, month = form.month, year = form.year) => {
+    if (!String(panchayat || '').trim()) {
+      notifications.show({ message: 'Select or type the Panchayat first', color: 'orange' });
+      return;
+    }
+    setFetching(true);
+    try {
+      const res = await agriStatsAPI.prefill({ panchayat, month, year });
+      const d = res?.data;
+      if (!d) return;
+      setForm(p => {
+        const generalInfo = p.generalInfo.map(r => {
+          if (r.details === 'Name of Local Body') return { ...r, value1: d.panchayat };
+          if (r.details === 'Name of Village' && d.village && !r.value1) return { ...r, value1: d.village };
+          return r;
+        });
+        const populationDetails = p.populationDetails.map(r => (r.category === 'Farmers' && d.population.farmers
+          ? { ...r, sc: d.population.sc, st: d.population.st, female: d.population.female, male: d.population.male, total: d.population.farmers }
+          : r));
+        const livestockProduction = p.livestockProduction.map(r => (r.category === 'Milk Production' && d.milk
+          ? { ...r, value: d.milk.qty, avgPerDay: d.milk.avgPerDay }
+          : r));
+        const priceDetails = p.priceDetails.map(r => (r.product === 'Milk' && d.milk
+          ? { ...r, fat: d.milk.fat, snf: d.milk.snf, avgPriceLtr: d.milk.avgPrice }
+          : r));
+        return { ...p, generalInfo, populationDetails, livestockProduction, priceDetails };
+      });
+      notifications.show({
+        color: 'green',
+        message: `${d.population.farmers} farmers in ${d.panchayat}${d.milk ? `, ${d.milk.qty} L milk in ${month}` : ' — no milk purchase in this month'}`,
+      });
+    } catch (err) {
+      notifications.show({ message: err.message || 'Could not fetch', color: 'red' });
+    } finally {
+      setFetching(false);
+    }
+  };
 
   // Generic array-row updater
   const setRow = (section, idx, field, value) => {
@@ -144,6 +199,32 @@ export default function AgriStatsReportForm({ reportId, onClose }) {
           <Grid.Col span={2}>
             <Select label="Status" data={['Draft','Submitted','Approved']} value={form.status}
               onChange={v => set('status', v)} size="sm" />
+          </Grid.Col>
+          <Grid.Col span={4}>
+            <PanchayatInput value={form.panchayat} onChange={v => set('panchayat', v)} panchayats={panchayats}
+              onPick={v => fetchFromRecords(v)} size="sm" />
+          </Grid.Col>
+          <Grid.Col span={5}>
+            {/* Optional: whose uploaded Bank / Aadhaar / Ration Card pages follow the report */}
+            <FarmerNumberLookup
+              label="Farmer Number (documents to attach)"
+              farmers={farmers}
+              farmer={selectedFarmer}
+              onPick={f => setForm(p => ({ ...p, farmerId: f._id, farmerName: f.name || '' }))}
+              size="sm"
+            />
+            {selectedFarmer && (
+              <Button size="compact-xs" variant="subtle" color="gray" mt={4}
+                onClick={() => setForm(p => ({ ...p, farmerId: null, farmerName: '' }))}>
+                Remove farmer
+              </Button>
+            )}
+          </Grid.Col>
+          <Grid.Col span={3} style={{ display: 'flex', alignItems: 'flex-start', paddingTop: 30 }}>
+            <Button fullWidth variant="light" leftSection={<IconDatabaseImport size={15} />} loading={fetching}
+              onClick={() => fetchFromRecords()} size="sm">
+              Fetch from records
+            </Button>
           </Grid.Col>
         </Grid>
       </Paper>

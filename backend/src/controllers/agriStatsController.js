@@ -1,14 +1,16 @@
 import AgriStatsReport from '../models/AgriStatsReport.js';
+import { panchayatRegex } from './farmerFormController.js';
 
 // ── GET ALL ──────────────────────────────────────────────────────────────────
 export const getAllReports = async (req, res) => {
   try {
-    const { search = '', status = '', month = '', year = '', page = 1, limit = 20 } = req.query;
+    const { search = '', status = '', month = '', year = '', panchayat = '', page = 1, limit = 20 } = req.query;
     const query = { companyId: req.companyId };
 
     if (status) query.status = status;
     if (month)  query.month  = month;
     if (year)   query.year   = +year;
+    if (panchayat) query.panchayat = panchayatRegex(panchayat);
     if (search) {
       query.$or = [
         { reportNo: { $regex: search, $options: 'i' } },
@@ -18,7 +20,7 @@ export const getAllReports = async (req, res) => {
 
     const total = await AgriStatsReport.countDocuments(query);
     const reports = await AgriStatsReport.find(query)
-      .select('reportNo district month year status reportDate createdAt')
+      .select('reportNo district month year panchayat farmerName status reportDate createdAt')
       .sort({ createdAt: -1 })
       .skip((+page - 1) * +limit)
       .limit(+limit);

@@ -1490,13 +1490,15 @@ const BankTransferManagement = () => {
                                     >
                                       View Details
                                     </Menu.Item>
-                                    <Menu.Item
-                                      leftSection={<IconEdit size={14} />}
-                                      color="blue"
-                                      onClick={() => openEdit(log)}
-                                    >
-                                      Edit
-                                    </Menu.Item>
+                                    {log.status !== 'Cancelled' && (
+                                      <Menu.Item
+                                        leftSection={<IconEdit size={14} />}
+                                        color="blue"
+                                        onClick={() => openEdit(log)}
+                                      >
+                                        Edit
+                                      </Menu.Item>
+                                    )}
                                     {log.status === 'Applied' && (
                                       <>
                                         <Menu.Item
@@ -1514,10 +1516,15 @@ const BankTransferManagement = () => {
                                           leftSection={<IconX size={14} />}
                                           color="orange"
                                           onClick={async () => {
-                                            if (!confirm('Cancel this transfer?')) return;
-                                            await bankTransferAPI.cancel(log._id);
-                                            notifications.show({ message: 'Transfer cancelled', color: 'orange' });
+                                            if (!confirm(`Cancel transfer ${log.transferNumber}?\n\nThe transfer and all its producer details stay in the Transfer Log (status Cancelled). Its Day Book / Cash Book entries are removed and these producers' payments go back to pending.`)) return;
+                                            try {
+                                              const res = await bankTransferAPI.cancel(log._id);
+                                              notifications.show({ title: 'Transfer cancelled', message: res?.message || 'Details kept in the Transfer Log', color: 'orange' });
+                                            } catch (err) {
+                                              notifications.show({ title: 'Error', message: err.message || 'Cancel failed', color: 'red' });
+                                            }
                                             loadLogs();
+                                            loadPaymentCycles();
                                           }}
                                         >
                                           Cancel Transfer

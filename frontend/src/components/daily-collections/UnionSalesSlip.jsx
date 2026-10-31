@@ -15,6 +15,7 @@ import {
   IconTrash, IconPrinter, IconMilk, IconFilter,
   IconDeviceFloppy, IconCheck, IconReceipt, IconDroplet,
   IconAlertTriangle, IconHistory, IconBan, IconUpload, IconBook, IconSettings,
+  IconBuildingStore, IconBuildingFactory2,
 } from '@tabler/icons-react';
 import { SegmentedControl } from '@mantine/core';
 import { unionSalesSlipAPI } from '../../services/api';
@@ -61,7 +62,7 @@ const years = Array.from({ length: currentYear - 2010 + 2 }, (_, i) => {
    MAIN COMPONENT
 ══════════════════════════════════════════════════════════════════ */
 export default function UnionSalesSlip() {
-  const { isUser } = useAuth();
+  const { isUser, isSuperAdminLogin } = useAuth();
 
   const initForm = () => ({
     date: new Date(), time: 'AM',
@@ -69,12 +70,16 @@ export default function UnionSalesSlip() {
     rate: '', spoilage: false, unionSpoilage: '', transportationSpoilage: '',
   });
   const [form, setForm] = useState(initForm());
+  const [editingId,     setEditingId]     = useState(null);
   const formRef = useRef(form);
   useEffect(() => { formRef.current = form; }, [form]);
 
   // To Dairy TS Rate Settings (Union Sales → Settings): when enabled for the slip
   // date, the rate is filled in from FAT + SNF × the manually entered To Dairy TS rate.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // null = full Settings; 'from' / 'to' = the From Dairy / To Dairy buttons next to Session
+  const [settingsSide, setSettingsSide] = useState(null);
+  const openSettings = (side = null) => { setSettingsSide(side); setSettingsOpen(true); };
   const [toDairyTs, setToDairyTs] = useState({ enabled: false, tsRate: null });
   const [settingsVersion, setSettingsVersion] = useState(0);
   const slipDay = dayjs(form.date).format('YYYY-MM-DD');
@@ -96,6 +101,25 @@ export default function UnionSalesSlip() {
       .catch(() => setToDairyTs({ enabled: false, tsRate: null }));
   }, [slipDay, settingsVersion]);
 
+  // Qty sent to the union = milk purchased this date + session − milk sold locally
+  // (Dairy Register "Send Qty"). Filled into an empty Qty on a new slip; never
+  // overwrites a typed quantity or a slip being edited.
+  const [sendInfo, setSendInfo] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    unionSalesSlipAPI.getSendQty(slipDay, form.time)
+      .then(res => {
+        if (!alive) return;
+        const d = res?.data || null;
+        setSendInfo(d);
+        if (d && d.sendQty > 0 && !editingId) {
+          setForm(p => (p.qty === '' ? { ...p, qty: String(d.sendQty) } : p));
+        }
+      })
+      .catch(() => alive && setSendInfo(null));
+    return () => { alive = false; };
+  }, [slipDay, form.time, editingId]);
+
   const setField = (k, v) => setForm(p => {
     const next = { ...p, [k]: v };
     if ((k === 'fat' || k === 'snf') && toDairyTs.enabled && toDairyTs.tsRate !== null && (next.fat !== '' || next.snf !== '')) {
@@ -108,7 +132,6 @@ export default function UnionSalesSlip() {
     ((parseFloat(form.qty) || 0) * (parseFloat(form.rate) || 0)).toFixed(2)
   );
 
-  const [editingId,     setEditingId]     = useState(null);
   const [saving,        setSaving]        = useState(false);
   const [loading,       setLoading]       = useState(false);
   const [showSearch,    setShowSearch]    = useState(false);
@@ -488,14 +511,30 @@ export default function UnionSalesSlip() {
               />
             </Box>
 
-            {/* Month filter */}
-          
+            {/* From Dairy / To Dairy — each opens its own TS rate form */}
+            {!isUser && (
+              <Box style={{ flexShrink: 0 }}>
+                <Text size="9px" fw={700} c="#64748b" tt="uppercase" mb={3} style={{ letterSpacing: '0.4px' }}>Dairy</Text>
+                <Group gap={6} wrap="nowrap">
+                  <Button size="compact-sm" radius="md" variant="light" color="teal" h={28}
+                    leftSection={<IconBuildingStore size={14} />} onClick={() => openSettings('from')}
+                    title={fd.name ? `From Dairy: ${fd.name}` : 'From Dairy'} style={{ fontWeight: 700 }}>
+                    From Dairy
+                  </Button>
+                  <Button size="compact-sm" radius="md" variant="light" color="grape" h={28}
+                    leftSection={<IconBuildingFactory2 size={14} />} onClick={() => openSettings('to')}
+                    title={td.name ? `To Dairy: ${td.name}` : 'To Dairy'} style={{ fontWeight: 700 }}>
+                    To Dairy
+                  </Button>
+                </Group>
+              </Box>
+            )}
           </Group>
 
           {/* RIGHT */}
           <Group gap={8} wrap="nowrap" style={{ flexShrink: 0 }}>
             {!isUser && (
-              <Button leftSection={<IconSettings size={14} />} onClick={() => setSettingsOpen(true)} radius="md" size="sm" variant="light" color="teal" style={{ fontWeight: 700 }}>
+              <Button leftSection={<IconSettings size={14} />} onClick={() => openSettings()} radius="md" size="sm" variant="light" color="teal" style={{ fontWeight: 700 }}>
                 Settings
               </Button>
             )}
@@ -547,7 +586,10 @@ export default function UnionSalesSlip() {
             </Group>
             <Group gap={8} align="flex-end">
               <Box ref={qtyRef} style={{ flex: 1.3 }}>
-                <Text size="9px" fw={700} c="#0369a1" tt="uppercase" mb={2} style={{ letterSpacing: '0.4px' }}>Qty (L)</Text>
+                <Text size="9px" fw={700} c="#0369a1" tt="uppercase" mb={2} style={{ letterSpacing: '0.4px' }}
+                  title={sendInfo ? `Purchase ${sendInfo.purchaseQty} L − Milk Sales ${sendInfo.salesQty} L = ${sendInfo.sendQty} L to send` : undefined}>
+                  Qty (L){sendInfo && sendInfo.purchaseQty > 0 ? ` · Send ${sendInfo.sendQty}` : ''}
+                </Text>
                 <NumberInput
                   placeholder="0.000"
                   value={form.qty === '' ? '' : parseFloat(form.qty)}
@@ -787,8 +829,8 @@ export default function UnionSalesSlip() {
 
               <Divider orientation="vertical" color="rgba(255,255,255,0.2)" style={{ height: 20 }} />
 
-              {/* Import Dairy DB, Import DB & Sync Day Book — not available to restricted users */}
-              {!isUser && (
+              {/* Import Dairy DB, Import DB & Sync Day Book — Super Admin only */}
+              {isSuperAdminLogin && (
                 <>
                   <Button leftSection={<IconUpload size={12} />}
                     onClick={() => document.getElementById('union-dairy-file-input').click()}
@@ -1040,6 +1082,7 @@ export default function UnionSalesSlip() {
     {/* ══ SETTINGS — From Dairy / To Dairy TS Rate Settings ═══════════════ */}
     <UnionSaleSettingsModal
       opened={settingsOpen}
+      side={settingsSide}
       onClose={() => setSettingsOpen(false)}
       onSaved={() => { setSettingsVersion(v => v + 1); loadByDate(formRef.current.date); }}
     />

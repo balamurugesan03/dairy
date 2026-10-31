@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
 import MilkCollection from '../models/MilkCollection.js';
@@ -80,16 +81,22 @@ export const getCashBook = async (req, res) => {
 
     // Opening balance — Cash in Hand ledger opening + cash legs before the period
     // (same source as Day Book and Cash Book Entry; cancelled vouchers excluded)
-    const { openingBalance } = await getCashInHandOpening(req.companyId, dateFilter.startDate);
+    const { openingBalance, cashIds: openingCashIds } = await getCashInHandOpening(req.companyId, dateFilter.startDate);
+    // Every Cash / Cash in Hand ledger — the same set the opening balance and
+    // Cash Book Entry use. Reading only one cash ledger here used to drop the
+    // vouchers Cash Book Entry posted to another cash ledger.
+    const cashIdSet = new Set([String(cashLedger._id), ...(openingCashIds || []).map(String)]);
+    const isCashLeg = (entry) => cashIdSet.has(String(entry.ledgerId?._id || entry.ledgerId || ''));
 
-    // Get all vouchers affecting cash in the period
+    // Get all (non-cancelled) vouchers affecting cash in the period
     const vouchers = await Voucher.find({
       companyId: req.companyId,
+      status: { $ne: 'Cancelled' },
       voucherDate: {
         $gte: dateFilter.startDate,
         $lte: dateFilter.endDate
       },
-      'entries.ledgerId': cashLedger._id
+      'entries.ledgerId': { $in: [...cashIdSet].map(id => new mongoose.Types.ObjectId(id)) }
     })
       .sort({ voucherDate: 1, voucherNumber: 1 })
       .populate('entries.ledgerId', 'ledgerName ledgerType');
@@ -188,16 +195,21 @@ export const getCashBook = async (req, res) => {
       if (voucher.referenceType === 'IncentiveRegister') return;
       if (voucher.referenceType === 'BonusRegister') return;
       if (voucher.referenceType === 'Sales' && voucher.voucherType === 'Receipt') return;
+      const heads = voucher.entries.filter(e => !isCashLeg(e));
       voucher.entries.forEach(entry => {
-        if (entry.ledgerId._id.toString() === cashLedger._id.toString()) {
+        if (isCashLeg(entry)) {
           const isReceipt = entry.debitAmount > 0;
           const amount = isReceipt ? entry.debitAmount : entry.creditAmount;
-          const contraEntry = voucher.entries.find(
-            e => e.ledgerId._id.toString() !== cashLedger._id.toString()
-          );
+          // Heads on the other side of this cash leg (Receipt → credited heads,
+          // Payment → debited heads). One cash leg against several heads gets a
+          // line per head, so no head of account is hidden behind the first one.
+          const opposite = heads.filter(e => (isReceipt ? e.creditAmount : e.debitAmount) > 0);
+          const lines = opposite.length > 1
+            ? opposite.map(e => ({ contraEntry: e, amount: isReceipt ? e.creditAmount : e.debitAmount, narration: e.narration }))
+            : [{ contraEntry: opposite[0] || heads[0], amount, narration: entry.narration }];
           // For Sales vouchers show the income ledger name directly (no "From/To" prefix)
           const isSalesVoucher = voucher.voucherType === 'Sales';
-          rawTransactions.push({
+          lines.forEach(({ contraEntry, amount, narration: lineNarration }) => rawTransactions.push({
             date: voucher.voucherDate,
             voucherNumber: voucher.voucherNumber,
             voucherType: voucher.voucherType,
@@ -209,10 +221,10 @@ export const getCashBook = async (req, res) => {
             voucherId: voucher._id,
             debit: isReceipt ? amount : 0,
             credit: isReceipt ? 0 : amount,
-            narration: entry.narration || voucher.narration,
+            narration: lineNarration || voucher.narration,
             // User-entered voucher — the Cash Book lists these after automatic entries
             isManual: !voucher.referenceType || voucher.referenceType === 'Manual'
-          });
+          }));
         }
       });
     });
@@ -402,6 +414,7 @@ export const getCashBook = async (req, res) => {
     // cash running balance above.
     const journalVouchers = await Voucher.find({
       companyId: req.companyId,
+      status: { $ne: 'Cancelled' },
       voucherType: 'Journal',
       voucherDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate }
     }).select('voucherDate totalDebit totalCredit');
@@ -499,9 +512,10 @@ export const getGeneralLedger = async (req, res) => {
       Ledger, Voucher, ledgerId, dateFilter.startDate, req.companyId
     );
 
-    // ── Collect raw transactions from Vouchers ─────────────────────────────────
+    // ── Collect raw transactions from (non-cancelled) Vouchers ─────────────────
     const vouchers = await Voucher.find({
       companyId: req.companyId,
+      status: { $ne: 'Cancelled' },
       voucherDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
       'entries.ledgerId': ledgerId
     })
@@ -885,23 +899,13 @@ export const getGeneralLedger = async (req, res) => {
     // ── Sort all transactions by date, then compute running balance ────────────
     rawTxns.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    // Receipt/Payment classification for real Voucher-sourced rows (t.voucherId
-    // set) is derived from THIS ledger's own def_voucher_type (ledger.voucherType:
-    // R/P/B), not from which screen posted the voucher — same rule and rationale
-    // as Ledger Abstract (getGeneralLedgerAbstract): an R-only ledger only ever
-    // shows its credit side as Receipt, a P-only ledger only its debit side as
-    // Payment, and a B ledger shows both — except Cash/Bank ledgers, which are
-    // cash itself (Dr = received, Cr = paid out), the reverse of the generic B
-    // polarity used for non-cash B ledgers like PRODUCERS DUES. This no longer
-    // depends on voucher.voucherType: the def_voucher_type guards on Receipt/
-    // Payment/Journal Voucher posting (accountingController.createVoucher)
-    // guarantee a Receipt Voucher only ever credits R/B ledgers and always
-    // debits Cash, and a Payment Voucher only ever debits P/B ledgers and
-    // always credits Cash, so this always agrees with what voucher.voucherType
-    // would have said for those two voucher types anyway — while now also
-    // correctly handling Journal/Contra/Purchase/Sales-type entries touching
-    // an R-only or P-only ledger (previously always shown via a fixed
-    // Dr=Payment/Cr=Receipt convention regardless of the ledger's own R/P/B).
+    // Receipt/Payment side for real Voucher-sourced rows (t.voucherId set):
+    //   Cash / Bank ledger → Dr = Receipt (money in), Cr = Payment (money out)
+    //   any other ledger   → Cr = Receipt, Dr = Payment — so a Receipt Voucher /
+    //     Cash Book Entry receipt shows on the head's Receipt side and a
+    //     Payment Voucher / cash payment on its Payment side.
+    // Both sides are always shown (2026-10-31): the ledger's R/P/B type used to
+    // blank the "other" side, which hid Adjustment Entry legs from the GL.
     // Synthetic dairy-flow rows (no voucherId — milk purchase, CF commission,
     // etc.) keep the original Dr = Receipt / Cr = Payment mapping; their
     // debit/credit fields already encode the intended display side.
@@ -909,9 +913,6 @@ export const getGeneralLedger = async (req, res) => {
     // debit/credit values.
     const CASH_BANK_TYPES = ['Cash', 'Bank', 'Cash in Hand', 'Bank Accounts'];
     const isCashBankLedger = CASH_BANK_TYPES.includes(ledger.ledgerType);
-    const ledgerVoucherType = ['R', 'P', 'B'].includes(ledger.voucherType)
-      ? ledger.voucherType
-      : getDefaultVoucherType(ledger.ledgerType);
 
     let runningBalance = openingBalance;
     const transactions = rawTxns.map(t => {
@@ -926,8 +927,12 @@ export const getGeneralLedger = async (req, res) => {
           receiptAmount = t.debit;
           paymentAmount = t.credit;
         } else {
-          receiptAmount = ['R', 'B'].includes(ledgerVoucherType) ? t.credit : 0;
-          paymentAmount = ['P', 'B'].includes(ledgerVoucherType) ? t.debit : 0;
+          // Cr = Receipt, Dr = Payment for every non-cash ledger. The ledger's
+          // R/P/B type used to blank the "other" side (e.g. an Adjustment
+          // Entry debiting an R-only ledger), so the amount vanished from the
+          // General Ledger while Day Book showed it — never drop an amount.
+          receiptAmount = t.credit;
+          paymentAmount = t.debit;
         }
       }
 
@@ -1020,6 +1025,7 @@ export const getGeneralLedgerAbstract = async (req, res) => {
         // Get transactions in period
         const vouchers = await Voucher.find({
           companyId: req.companyId,
+          status: { $ne: 'Cancelled' },
           voucherDate: {
             $gte: dateFilter.startDate,
             $lte: dateFilter.endDate
@@ -1061,9 +1067,6 @@ export const getGeneralLedgerAbstract = async (req, res) => {
         // credits Cash — so the two signals can no longer disagree.
         const CASH_BANK_TYPES = ['Cash', 'Bank', 'Cash in Hand', 'Bank Accounts'];
         const isCashBankLedger = CASH_BANK_TYPES.includes(ledger.ledgerType);
-        const ledgerVoucherType = ['R', 'P', 'B'].includes(ledger.voucherType)
-          ? ledger.voucherType
-          : getDefaultVoucherType(ledger.ledgerType);
         let totalReceipt = 0, totalPayment = 0;
 
         vouchers.forEach(voucher => {
@@ -1083,8 +1086,9 @@ export const getGeneralLedgerAbstract = async (req, res) => {
                 totalReceipt += entry.debitAmount;
                 totalPayment += entry.creditAmount;
               } else {
-                if (['R', 'B'].includes(ledgerVoucherType)) totalReceipt += entry.creditAmount;
-                if (['P', 'B'].includes(ledgerVoucherType)) totalPayment += entry.debitAmount;
+                // Never drop a side (same rule as getGeneralLedger) — Cr = Receipt, Dr = Payment
+                totalReceipt += entry.creditAmount;
+                totalPayment += entry.debitAmount;
               }
             }
           });
@@ -2156,6 +2160,7 @@ export const getLedgerAbstractGrouped = async (req, res) => {
     const cashBankIds = await getCashBankLedgerIds(req.companyId);
     const splitVouchers = await Voucher.find({
       companyId: req.companyId,
+      status: { $ne: 'Cancelled' },
       voucherDate: { $gte: start, $lte: end }
     }).select('entries voucherType').lean();
     const splitMap = {};
@@ -2186,15 +2191,13 @@ export const getLedgerAbstractGrouped = async (req, res) => {
         }
         const entryLedger = ledgerById.get(lid);
         const isCashBankLedger = entryLedger && CASH_BANK_TYPES.includes(entryLedger.ledgerType);
-        const ledgerVoucherType = entryLedger && ['R', 'P', 'B'].includes(entryLedger.voucherType)
-          ? entryLedger.voucherType
-          : getDefaultVoucherType(entryLedger?.ledgerType);
         if (isCashBankLedger) {
           splitMap[lid].receipt += entry.debitAmount || 0;
           splitMap[lid].payment += entry.creditAmount || 0;
         } else {
-          if (['R', 'B'].includes(ledgerVoucherType)) splitMap[lid].receipt += entry.creditAmount || 0;
-          if (['P', 'B'].includes(ledgerVoucherType)) splitMap[lid].payment += entry.debitAmount || 0;
+          // Never drop a side (same rule as getGeneralLedger) — Cr = Receipt, Dr = Payment
+          splitMap[lid].receipt += entry.creditAmount || 0;
+          splitMap[lid].payment += entry.debitAmount || 0;
         }
       });
     });

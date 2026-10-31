@@ -12,20 +12,34 @@ import IncentiveRegister from '../models/IncentiveRegister.js';
 import BonusRegister from '../models/BonusRegister.js';
 import { updateLedgerBalances } from '../utils/accountingHelper.js';
 import { getCashInHandOpening } from '../utils/cashInHandOpening.js';
+import { getCashBankLedgerIds, classifyVoucherEntry } from '../utils/cashAdjustmentClassifier.js';
 import { queueFromDairySync } from '../utils/unionFromDairySync.js';
 
-// Display order within a day (stable): Producer Due / Milk Purchase first, then
-// the other automatic (system-generated) entries, then manual voucher entries.
-// Shared with the Cash Book report.
-const PRIORITY_LEDGER = /producers?['’]?\s*dues?|milk\s*purchase/i;
+// Display order within a day — the same fixed sequence on the Receipt and the
+// Payment side, so the two sides line up row by row (user rule 2026-10-31):
+//   0  Producer Dues (Receipt)  /  Milk Purchase (Payment)   — the day's milk purchase
+//   1  Local Sale                                             — milk local / sample / credit sales
+//   2  Milma Union                                            — union sales
+//   3  Local Cash Transactions                                — manual cash Receipt / Payment vouchers
+//   4  other automatic entries (advances, CF, producer payments, bank transfers …)
+//   5  any other manual entry (Adjustment / Journal …)
+// Manual entries (3, 5) keep the order they were created in, so a newly added
+// entry always lands at the bottom of its group and never shifts the rows above
+// it. A ledger NAME no longer moves an entry to the top (a Producer Dues payment
+// used to jump above Milk Purchase that way).
 export const dayBookEntryRank = (e) => {
-  if (e.isManual) return 2;
-  if (e.voucherType === 'MilkPurchase' || e.voucherType === 'ProducersDue' || PRIORITY_LEDGER.test(e.ledgerName || '')) return 0;
-  return 1;
+  if (e.voucherType === 'MilkPurchase' || e.voucherType === 'ProducersDue') return 0;
+  if (e.voucherType === 'MilkSales' || e.voucherType === 'MilkCreditSales') return 1;
+  if (e.voucherType === 'UnionSales') return 2;
+  if (e.isManual) return (e.voucherType === 'Receipt' || e.voucherType === 'Payment') ? 3 : 5;
+  return 4;
 };
+const createdMs = (e) => (e.createdAt ? new Date(e.createdAt).getTime() : 0);
 export const orderDayBookEntries = (list) =>
-  list.map((e, i) => ({ e, i }))
-    .sort((a, b) => (dayBookEntryRank(a.e) - dayBookEntryRank(b.e)) || (a.i - b.i))
+  list.map((e, i) => ({ e, i, r: dayBookEntryRank(e) }))
+    .sort((a, b) => (a.r - b.r)
+      || ((a.r === 3 || a.r === 5) ? (createdMs(a.e) - createdMs(b.e)) : 0)
+      || (a.i - b.i))
     .map(x => x.e);
 
 // Get Day Book report with date-wise grouping
@@ -52,6 +66,7 @@ export const getDayBook = async (req, res) => {
     // Fetch all vouchers in date range for this company
     const vouchers = await Voucher.find({
       companyId,
+      status: { $ne: 'Cancelled' },
       voucherDate: { $gte: start, $lte: end }
     })
       .sort({ voucherDate: 1, voucherNumber: 1 })
@@ -67,7 +82,10 @@ export const getDayBook = async (req, res) => {
     const receiptSide = []; // All credit entries (flat list for backward compat)
     const paymentSide = []; // All debit entries (flat list for backward compat)
 
-    const cashBankTypes = new Set(['Cash', 'Bank']);
+    const cashBankTypes = new Set(['Cash', 'Cash in Hand', 'Bank', 'Bank Accounts']);
+    // Cash vs Adjustment column of each voucher — the same shared rule as the
+    // General Ledger: a Cash leg → Cash, a Bank leg or no cash/bank leg → Adjustment
+    const cashBankIds = await getCashBankLedgerIds(companyId);
 
     for (const voucher of vouchers) {
       // Skip milk-purchase vouchers — Day Book derives a single combined
@@ -133,7 +151,7 @@ export const getDayBook = async (req, res) => {
 
       if (isProducerDuesPayment) {
         const hasCashLeg = (voucher.entries || []).some(
-          (e) => e.ledgerId?.ledgerType === 'Cash'
+          (e) => e.ledgerId?.ledgerType === 'Cash' || e.ledgerId?.ledgerType === 'Cash in Hand'
         );
         if (!hasCashLeg) {
           for (const entry of voucher.entries) {
@@ -179,6 +197,7 @@ export const getDayBook = async (req, res) => {
       const isReceiptVoucher  = voucher.voucherType === 'Receipt';
       const isPaymentVoucher  = voucher.voucherType === 'Payment';
       const isPurchaseVoucher = voucher.voucherType === 'Purchase';
+      const { column } = classifyVoucherEntry(voucher.entries, cashBankIds);
 
       for (const entry of voucher.entries) {
         const ledgerType = entry.ledgerId?.ledgerType;
@@ -195,7 +214,9 @@ export const getDayBook = async (req, res) => {
           ledgerType,
           narration: entry.narration || voucher.narration,
           voucherId: voucher._id,
-          // Typed in by a user (Receipt / Payment / Journal voucher screens) — listed after automatic entries
+          createdAt: voucher.createdAt,
+          column,   // 'cash' | 'adjustment' — the Day Book column (see cashAdjustmentClassifier)
+          // Typed in by a user (Receipt / Payment / Journal voucher screens) — see dayBookEntryRank
           isManual: !voucher.referenceType || voucher.referenceType === 'Manual'
         };
 
@@ -1289,6 +1310,7 @@ export const deleteDayBookEntry = async (req, res) => {
     if (voucherType === 'MilkSales') {
       await reverseAndDeleteVouchers({ referenceType: 'MilkSales', voucherDate: dateFilter });
       await MilkSales.deleteMany({ companyId, date: dateFilter, saleMode: { $in: ['LOCAL', 'SAMPLE'] } });
+      queueFromDairySync(companyId, [start]);   // Union Sales → From Dairy qty sent
       return res.json({ success: true, message: 'Milk sales data deleted' });
     }
 
@@ -1296,6 +1318,7 @@ export const deleteDayBookEntry = async (req, res) => {
     if (voucherType === 'MilkCreditSales') {
       await reverseAndDeleteVouchers({ referenceType: 'MilkSales', voucherDate: dateFilter });
       await MilkSales.deleteMany({ companyId, date: dateFilter, saleMode: 'CREDIT' });
+      queueFromDairySync(companyId, [start]);   // Union Sales → From Dairy qty sent
       return res.json({ success: true, message: 'Milk credit sales data deleted' });
     }
 

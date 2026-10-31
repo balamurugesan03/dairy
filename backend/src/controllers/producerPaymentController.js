@@ -124,60 +124,93 @@ export const getCyclePendingFarmers = async (req, res) => {
 };
 
 // ─── Get Bank-Transfer-Paid Farmers for a Cycle ────────────────────────────────
+// Source of truth = the Applied / Completed Bank Transfers of the cycle (asOnDate
+// = cycle end ±2 days): every approved row with an amount. FarmerPayment rows
+// (Paid OR Partial — a round-down transfer leaves the row Partial) fill in any
+// farmer not found in a transfer document. centerId → the transfer's centre, or
+// the farmer's own centre for an "All centres" transfer.
 export const getBankTransferPaid = async (req, res) => {
   try {
-    const { cycleFromDate, cycleToDate } = req.query;
+    const { cycleFromDate, cycleToDate, centerId } = req.query;
     const companyId = new mongoose.Types.ObjectId(req.userCompany);
 
     if (!cycleFromDate || !cycleToDate) return res.json({ success: true, data: [] });
 
-    const fps = await FarmerPayment.find({
-      companyId,
-      paymentSource: 'BankTransfer',
-      status: 'Paid',
-      'paymentPeriod.fromDate': cycleDateRange(cycleFromDate),
-      'paymentPeriod.toDate':   cycleDateRange(cycleToDate),
-    })
-      .populate('farmerId', 'farmerNumber personalDetails')
-      .select('farmerId farmerName paidAmount netPayable paymentDate')
-      .lean();
-
-    // Build farmerId -> applyDate map from BankTransfer documents (source of truth).
-    // This corrects records that were saved before the paymentDate fix was applied.
     const dayMs = 24 * 60 * 60 * 1000;
     const cycleEnd = new Date(cycleToDate);
-    const bankTransfers = await BankTransfer.find({
-      companyId,
-      status: { $in: ['Applied', 'Completed'] },
-      asOnDate: {
-        $gte: new Date(cycleEnd.getTime() - 2 * dayMs),
-        $lte: new Date(cycleEnd.getTime() + 2 * dayMs),
-      },
-    }).select('applyDate transferDetails').lean();
+    const [bankTransfers, fps] = await Promise.all([
+      BankTransfer.find({
+        companyId,
+        status: { $in: ['Applied', 'Completed'] },
+        asOnDate: {
+          $gte: new Date(cycleEnd.getTime() - 2 * dayMs),
+          $lte: new Date(cycleEnd.getTime() + 2 * dayMs),
+        },
+      }).select('applyDate transferNumber paymentMethod collectionCenter transferDetails').lean(),
+      FarmerPayment.find({
+        companyId,
+        paymentSource: 'BankTransfer',
+        status: { $in: ['Paid', 'Partial'] },
+        'paymentPeriod.fromDate': cycleDateRange(cycleFromDate),
+        'paymentPeriod.toDate':   cycleDateRange(cycleToDate),
+      }).select('farmerId farmerName paidAmount netPayable paymentDate').lean(),
+    ]);
 
-    const farmerApplyDateMap = new Map();
+    const rows = new Map();   // farmerId → row (one per farmer per cycle)
     for (const bt of bankTransfers) {
-      for (const detail of bt.transferDetails || []) {
-        if (detail.farmerId) {
-          farmerApplyDateMap.set(detail.farmerId.toString(), bt.applyDate);
-        }
+      for (const d of bt.transferDetails || []) {
+        if (!d.farmerId || !(d.transferAmount > 0) || d.approved === false) continue;
+        rows.set(String(d.farmerId), {
+          _id:            `${bt._id}-${d.farmerId}`,
+          farmerId:       d.farmerId,
+          producerNumber: d.producerId || '',
+          producerName:   d.producerName || '',
+          amountPaid:     d.transferAmount,
+          paymentDate:    bt.applyDate,
+          paymentMode:    bt.paymentMethod === 'Cash' ? 'Cash (Bank Transfer)' : 'Bank Transfer',
+          refNo:          bt.transferNumber || '',
+          paymentType:    'BankTransfer',
+          status:         'Paid',
+          _centre:        bt.collectionCenter ? String(bt.collectionCenter) : null,
+        });
       }
     }
-
-    const data = fps.map(fp => {
-      const farmerIdStr = fp.farmerId?._id?.toString() || fp.farmerId?.toString();
-      return {
+    for (const fp of fps) {
+      const id = String(fp.farmerId);
+      if (rows.has(id)) continue;
+      rows.set(id, {
         _id:            fp._id,
         farmerId:       fp.farmerId,
-        producerNumber: fp.farmerId?.farmerNumber || '',
-        producerName:   fp.farmerName || fp.farmerId?.personalDetails?.name || '',
+        producerNumber: '',
+        producerName:   fp.farmerName || '',
         amountPaid:     fp.paidAmount || fp.netPayable || 0,
-        paymentDate:    farmerApplyDateMap.get(farmerIdStr) || fp.paymentDate,
+        paymentDate:    fp.paymentDate,
         paymentMode:    'Bank Transfer',
         paymentType:    'BankTransfer',
         status:         'Paid',
-      };
-    });
+        _centre:        null,
+      });
+    }
+
+    // Farmer number / name / centre
+    const farmers = await Farmer.find({ _id: { $in: [...rows.keys()].map(id => new mongoose.Types.ObjectId(id)) } })
+      .select('farmerNumber personalDetails collectionCenter').lean();
+    const farmerById = new Map(farmers.map(f => [String(f._id), f]));
+
+    const data = [];
+    for (const [id, r] of rows) {
+      const f = farmerById.get(id);
+      const centre = r._centre || (f?.collectionCenter ? String(f.collectionCenter) : null);
+      if (centerId && centerId !== 'all' && centre !== String(centerId)) continue;
+      const { _centre, ...row } = r;
+      data.push({
+        ...row,
+        farmerId:       f ? { _id: f._id, farmerNumber: f.farmerNumber, personalDetails: f.personalDetails } : r.farmerId,
+        producerNumber: row.producerNumber || f?.farmerNumber || '',
+        producerName:   row.producerName || f?.personalDetails?.name || '',
+      });
+    }
+    data.sort((x, y) => String(x.producerNumber).localeCompare(String(y.producerNumber), undefined, { numeric: true }));
 
     res.json({ success: true, data });
   } catch (err) {
@@ -395,19 +428,27 @@ export const getPayments = async (req, res) => {
     }
 
     // Collection center filter
+    // (saved with that centre, or saved under "All" for a farmer of that centre)
+    const and = [];
     if (centerId && centerId !== 'all') {
-      filter.paymentCenter = new mongoose.Types.ObjectId(centerId);
+      const cid = new mongoose.Types.ObjectId(centerId);
+      const centreFarmers = await Farmer.find({ companyId: filter.companyId, collectionCenter: cid }).distinct('_id');
+      and.push({ $or: [
+        { paymentCenter: cid },
+        { paymentCenter: null, farmerId: { $in: centreFarmers } },
+      ] });
     }
 
     // Search filter
     if (search && search.trim()) {
       const searchRegex = new RegExp(search.trim(), 'i');
-      filter.$or = [
+      and.push({ $or: [
         { producerNumber: searchRegex },
         { producerName: searchRegex },
         { refNo: searchRegex }
-      ];
+      ] });
     }
+    if (and.length) filter.$and = and;
 
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);

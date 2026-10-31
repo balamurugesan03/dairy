@@ -27,7 +27,7 @@ export const calculateOpeningBalance = async (Ledger, Voucher, ledgerId, startDa
     const isDebitNature = [
       'Asset', 'Fixed Assets', 'Movable Assets', 'Immovable Assets', 'Other Assets',
       'Expense', 'Purchases A/c', 'Trade Expenses', 'Establishment Charges', 'Miscellaneous Expenses',
-      'Cash', 'Bank', 'Other Receivable', 'Sundry Debtors', 'Customer', 'Party'
+      'Cash', 'Cash in Hand', 'Bank', 'Bank Accounts', 'Other Receivable', 'Sundry Debtors', 'Customer', 'Party'
     ].includes(ledger.ledgerType);
 
     // openingBalance is stored as an absolute (positive) number.
@@ -49,6 +49,7 @@ export const calculateOpeningBalance = async (Ledger, Voucher, ledgerId, startDa
 
     const voucherQuery = {
       voucherDate: { $lt: startDateObj },
+      status: { $ne: 'Cancelled' },
       'entries.ledgerId': ledgerId
     };
     if (companyId) voucherQuery.companyId = companyId;

@@ -1,7 +1,10 @@
 import express from 'express';
-import { getMilkBill, getMilkBillByCycle } from '../controllers/milkBillController.js';
+import { getMilkBill, getMilkBillByCycle, getAllMilkBillsByCycle } from '../controllers/milkBillController.js';
 
 const router = express.Router();
+
+// GET /api/milk-bill/all/cycle?fromDate=&toDate=&centerId=  — every producer of the cycle (before /:farmerId)
+router.get('/all/cycle', getAllMilkBillsByCycle);
 
 // GET /api/milk-bill/:farmerId/cycle?fromDate=&toDate=  — cycle-based (new)
 router.get('/:farmerId/cycle', getMilkBillByCycle);

@@ -35,6 +35,9 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { ThemeSwitcherCompact } from '../common/ThemeSwitcher';
 import CompanySwitcher from '../company/CompanySwitcher';
 import { MILK_POPUP_EVENT, MILK_POPUP_ROUTES } from '../../utils/milkPopup';
+import { societyInfoAPI } from '../../services/api';
+import { setPrintBranding, SOCIETY_BRANDING_EVENT } from '../../utils/printLogo';
+import { filterMenuForUser, canOpenPath, canOpenRoute } from '../../utils/modulePermissions';
 
 const MilkPurchase = lazy(() => import('../daily-collections/MilkPurchase'));
 const MilkSales    = lazy(() => import('../daily-collections/MilkSales'));
@@ -79,10 +82,32 @@ const MainLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { selectedCompany, selectedBusinessType } = useCompany();
-  const { user, logout, isAdmin, isAdminLogin, hasModuleAccess, isUser, isCentreLogin } = useAuth();
+  const { user, logout, isAdmin, isCentreLogin } = useAuth();
+  // Screens opened as popups follow the same module permissions as the menu
+  const canOpenScreen = useCallback((route, moduleKey) => isCentreLogin || canOpenRoute(user, route, moduleKey), [user, isCentreLogin]);
   const { colorScheme, currentThemeConfig } = useTheme();
 
   const isDark = colorScheme === 'dark';
+
+  // Society logo + names for every print header (utils/printLogo.js); reloaded
+  // when the company changes or Society Information is saved
+  useEffect(() => {
+    if (!selectedCompany?._id) return undefined;
+    let alive = true;
+    const load = () => societyInfoAPI.getBranding()
+      .then((res) => {
+        if (!alive) return;
+        const b = res?.data || {};
+        const names = [b.societyName, b.registeredName, selectedCompany.societyName, selectedCompany.companyName];
+        const code = b.societyCode || selectedCompany.societyCode;
+        if (code) names.forEach((n) => { if (n) names.push(`${code} - ${n}`, `${code}-${n}`); });
+        setPrintBranding({ logo: b.logo, names });
+      })
+      .catch(() => {});
+    load();
+    window.addEventListener(SOCIETY_BRANDING_EVENT, load);
+    return () => { alive = false; window.removeEventListener(SOCIETY_BRANDING_EVENT, load); };
+  }, [selectedCompany?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isBankTransferPage = location.pathname === '/payments/bank-transfer';
 
@@ -94,10 +119,11 @@ const MainLayout = () => {
   const [salesPopupOpen,    setSalesPopupOpen]    = useState(false);
   const [milkFront,         setMilkFront]         = useState('purchase');
   const setMilkPopup = useCallback((which) => {
+    if (!canOpenScreen(which === 'sales' ? '/daily-collections/milk-sales' : '/daily-collections/milk-purchase', 'milkCollection')) return;
     if (which === 'sales') setSalesPopupOpen(true);
     else                   setPurchasePopupOpen(true);
     setMilkFront(which === 'sales' ? 'sales' : 'purchase');
-  }, []);
+  }, [canOpenScreen]);
   const closePurchasePopup = useCallback(() => {
     setPurchasePopupOpen(false);
     setMilkFront('sales');
@@ -122,12 +148,14 @@ const MainLayout = () => {
   // The old full-page routes (bookmarks, typed URLs) now open the popup instead
   useEffect(() => {
     if (location.pathname === PAYMENT_REGISTER_ROUTE) {
+      if (!canOpenScreen(PAYMENT_REGISTER_ROUTE, 'payments')) return;
       const q = new URLSearchParams(location.search);
       setRegisterPopup({ from: q.get('from') || undefined, to: q.get('to') || undefined, key: Date.now() }); // eslint-disable-line react-hooks/set-state-in-effect
       navigate('/', { replace: true });
       return;
     }
     if (location.pathname === CASH_BOOK_ENTRY_ROUTE) {
+      if (!canOpenScreen(CASH_BOOK_ENTRY_ROUTE, 'accounting')) return;
       setCashBookPopupOpen(true); // eslint-disable-line react-hooks/set-state-in-effect
       navigate('/', { replace: true });
       return;
@@ -136,7 +164,7 @@ const MainLayout = () => {
     if (!which) return;
     setMilkPopup(which); // eslint-disable-line react-hooks/set-state-in-effect
     navigate('/', { replace: true });
-  }, [location.pathname, location.search, navigate, setMilkPopup]);
+  }, [location.pathname, location.search, navigate, setMilkPopup, canOpenScreen]);
 
   // ── Global hotkeys ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -259,8 +287,8 @@ const MainLayout = () => {
           key: 'milk-settings-sub',
           label: 'Settings & Configuration',
           children: [
-            // Rate Chart Settings is not available to restricted (newly created) users
-            ...(isUser ? [] : [{ key: '/daily-collections/rate-chart-settings', label: 'Rate Chart Settings' }]),
+            // Super Admin only (utils/modulePermissions.js SUPER_ADMIN_ONLY_ROUTES)
+            { key: '/daily-collections/rate-chart-settings', label: 'Rate Chart Settings' },
             { key: '/daily-collections/milk-purchase-settings', label: 'Machine Configuration' },
             { key: '/daily-collections/rate-charge-table',      label: 'Rate Charge Table'      },
             { key: '/daily-collections/milk-sales-rate',        label: 'Milk Sales Rate'        },
@@ -614,13 +642,12 @@ const MainLayout = () => {
       label: 'Settings',
       color: 'violet',
       children: [
-        { key: '/society-info',     label: 'Society Info',         perm: 'settings.societyInfo' },
-        { key: '/financial-year',   label: 'Financial Year',       perm: 'settings.financialYear' },
+        { key: '/society-info',     label: 'Society Info' },
+        { key: '/financial-year',   label: 'Financial Year' },
         { key: '/payment-settings', label: 'Payment Settings' },
-        { key: '/openlyssa-merge',  label: 'OpenLyssa Merge Tool', perm: 'settings.openLyssaMerge' },
-        { key: '/user-management',  label: 'User Management',      perm: 'settings.userManagement' },
-      ].filter(c => !c.perm || isAdminLogin || hasModuleAccess(c.perm))
-       .map(({ perm, ...c }) => c)
+        { key: '/openlyssa-merge',  label: 'OpenLyssa Merge Tool' },   // Super Admin only
+        { key: '/user-management',  label: 'User Management' },        // Super Admin + Admin
+      ]
     }
     ];
 
@@ -678,7 +705,12 @@ const MainLayout = () => {
     return allMenuItems;
   };
 
-  const allMenuItems = getFilteredMenuItems();
+  // Full menu for the business type; each user then sees only the modules assigned
+  // in User Management (Super Admin sees all). Centre logins keep their fixed menu.
+  const fullMenuItems = getFilteredMenuItems();
+  const allMenuItems = isCentreLogin ? fullMenuItems : filterMenuForUser(user, fullMenuItems);
+  // Typed / bookmarked URLs of modules not assigned to this user
+  const pathAllowed = isCentreLogin || canOpenPath(user, location.pathname, fullMenuItems);
   // Separate right-floated items (HRM, User Management)
   const rightKeys = ['hrm-menu', 'settings-menu'];
   const menuItems = allMenuItems.filter(item => !rightKeys.includes(item.key));
@@ -934,11 +966,12 @@ const MainLayout = () => {
                   <IconBuildingStore size={24} color="white" />
                 </ThemeIcon>
                 <Box>
+                  {/* Fixed product name — the society name no longer replaces it (user rule 2026-10-31) */}
                   <Text fw={700} size="lg" c="white" style={{ lineHeight: 1.2 }}>
-                    {selectedCompany?.companyName || 'Dairy Cooperative'}
+                    Dairy Software
                   </Text>
                   <Text size="xs" c="rgba(255,255,255,0.8)">
-                    Management System
+                    Dairy Management System
                   </Text>
                 </Box>
               </Group>
@@ -1181,7 +1214,23 @@ const MainLayout = () => {
             </Button>
           </Box>
         )}
-        <Outlet />
+        {pathAllowed ? <Outlet /> : (
+          <Box p="xl" style={{ display: 'flex', justifyContent: 'center' }}>
+            <Box style={{ maxWidth: 460, textAlign: 'center', background: 'white', border: '1px solid #e2e8f0', borderRadius: 12, padding: '28px 24px' }}>
+              {location.pathname === '/' ? (
+                <>
+                  <Text fw={800} size="lg">Welcome{user?.displayName ? `, ${user.displayName}` : ''}</Text>
+                  <Text size="sm" c="dimmed" mt={6}>Choose a module from the menu above.</Text>
+                </>
+              ) : (
+                <>
+                  <Text fw={800} size="lg" c="red.7">No access</Text>
+                  <Text size="sm" c="dimmed" mt={6}>This module is not assigned to your login. Ask your Admin to assign it in User Management.</Text>
+                </>
+              )}
+            </Box>
+          </Box>
+        )}
       </AppShell.Main>
 
       {/* Milk Purchase popup (F2 / P / menu) — the larger one. Whichever popup

@@ -49,6 +49,9 @@ import {
 import DateField from '../common/DateField';
 
 // ─ Module-level styles (prevent remount on every parent re-render) ──────────
+// Ledger types that make a Receipt / Payment a Cash in Hand voucher (kept out of the Adjustment grid)
+const CASH_LEDGER_TYPES = ['Cash', 'Cash in Hand'];
+
 // Full column height + flex column: the Receipt and Payment panels always
 // match heights, so both TOTAL bars sit on the same line whatever the row
 // count on either side.
@@ -258,8 +261,9 @@ const JournalVoucher = () => {
   const fetchVouchers = async () => {
     setFetchingVouchers(true);
     try {
-      // Adjustment (Journal) entries drive the form; the same date's Cash
-      // Receipt/Payment vouchers are listed alongside them (view only).
+      // Adjustment (Journal) entries drive the form; the same date's
+      // Receipt/Payment vouchers are fetched too — only the bank ones (Bank
+      // Transfer etc., no Cash in Hand leg) are listed, view only.
       const params = { startDate: voucherDate, endDate: voucherDate, limit: 1000 };
       const [journalRes, receiptRes, paymentRes] = await Promise.all([
         voucherAPI.getAll({ ...params, voucherType: 'Journal' }),
@@ -490,12 +494,24 @@ const JournalVoucher = () => {
     setViewModalOpened(true);
   };
 
-  // Grid rows — the date's Adjustment entries first, then its Cash
-  // Receipt / Payment vouchers.
+  // Grid = Adjustment entries only: the date's Journal (Adjustment) vouchers,
+  // then its Receipt / Payment vouchers that never touch Cash in Hand — Bank
+  // Transfer and other bank-ledger entries, which post to the Adjustment
+  // column. Cash in Hand vouchers (a Cash-ledger leg) are left out.
+  const cashLedgerIds = useMemo(() => new Set(
+    ledgers.filter(l => CASH_LEDGER_TYPES.includes(l.ledgerType)).map(l => String(l._id))
+  ), [ledgers]);
+  const bankAdjVouchers = useMemo(() => cashVouchers.filter(v => !(v.entries || []).some(e => {
+    const id = String(e.ledgerId?._id || e.ledgerId || '');
+    const name = e.ledgerName || e.ledgerId?.ledgerName || '';
+    return CASH_LEDGER_TYPES.includes(e.ledgerId?.ledgerType) || cashLedgerIds.has(id)
+      || /^cash(\s+in\s+hand)?$/i.test(name.trim());
+  })), [cashVouchers, cashLedgerIds]);
+  const adjustmentVouchers = useMemo(() => [...vouchers, ...bankAdjVouchers], [vouchers, bankAdjVouchers]);
   const gridRows = useMemo(() => [
     ...vouchers.map(voucher => ({ voucher, kind: 'adjustment' })),
-    ...cashVouchers.map(voucher => ({ voucher, kind: voucher.voucherType === 'Receipt' ? 'receipt' : 'payment' }))
-  ], [vouchers, cashVouchers]);
+    ...bankAdjVouchers.map(voucher => ({ voucher, kind: voucher.voucherType === 'Receipt' ? 'receipt' : 'payment', bank: true }))
+  ], [vouchers, bankAdjVouchers]);
 
   // Each ledger on one side of a voucher as its own line — "Head (narration)"
   // with that head's own amount, never a comma-joined list. Cash vouchers
@@ -517,11 +533,6 @@ const JournalVoucher = () => {
 
   const fmtAmt = (n) => `₹ ${(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
-  const cashTotals = useMemo(() => cashVouchers.reduce((acc, v) => {
-    if (v.voucherType === 'Receipt') acc.receipts += v.totalDebit || 0;
-    else acc.payments += v.totalCredit || 0;
-    return acc;
-  }, { receipts: 0, payments: 0 }), [cashVouchers]);
 
   return (
     // 1500px (wider than "xl" 1320px) gives the Receipt / Payment panels more room
@@ -719,14 +730,14 @@ const JournalVoucher = () => {
           <Group gap={8}>
             <IconFileText size={16} color="#1976d2" />
             <Text fw={700} size="sm" c="blue.8" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-              Adjustment + Cash Transaction Details — {dayjs(voucherDate).format('DD-MM-YYYY')}
+              Adjustment Transaction Details — {dayjs(voucherDate).format('DD-MM-YYYY')}
             </Text>
             <Group gap={6} ml="auto">
               <Badge variant="filled" color="blue" size="sm" radius="sm">
-                {vouchers.length} Adjustment
+                {vouchers.length} Journal
               </Badge>
-              <Badge variant="filled" color="teal" size="sm" radius="sm">
-                {cashVouchers.length} Cash
+              <Badge variant="filled" color="indigo" size="sm" radius="sm">
+                {bankAdjVouchers.length} Bank Transfer / Bank
               </Badge>
             </Group>
           </Group>
@@ -737,7 +748,7 @@ const JournalVoucher = () => {
         {gridRows.length === 0 ? (
           <Box p="xl" style={{ textAlign: 'center' }}>
             <IconArrowsExchange size={40} color="#adb5bd" style={{ marginBottom: '8px' }} />
-            <Text c="dimmed" size="sm">No adjustment or cash entries on {dayjs(voucherDate).format('DD-MM-YYYY')}. Create one above.</Text>
+            <Text c="dimmed" size="sm">No adjustment entries on {dayjs(voucherDate).format('DD-MM-YYYY')}. Create one above.</Text>
           </Box>
         ) : (
           <ScrollArea style={{ maxHeight: '360px' }}>
@@ -774,17 +785,16 @@ const JournalVoucher = () => {
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {gridRows.map(({ voucher, kind }, index) => {
+                {gridRows.map(({ voucher, kind, bank }, index) => {
                   const drLegs = voucherLegs(voucher, 'debit', kind);
                   const crLegs = voucherLegs(voucher, 'credit', kind);
                   const lineCount = Math.max(drLegs.length, crLegs.length, 1);
                   const isAdj = kind === 'adjustment';
                   const isManual = voucher.referenceType === 'Manual';
+                  // Bank-ledger Receipt / Payment (e.g. Bank Transfer) = an Adjustment entry too
                   const typeBadge = isAdj
                     ? { label: 'Adjustment', color: 'blue' }
-                    : kind === 'receipt'
-                      ? { label: 'Cash Receipt', color: 'teal' }
-                      : { label: 'Cash Payment', color: 'red' };
+                    : { label: voucher.referenceType === 'BankTransfer' ? 'Adj · Bank Transfer' : 'Adj · Bank', color: 'indigo' };
                   // One table row per account line; the voucher-level cells
                   // span all of them. Banded per voucher (not per line).
                   const rowBg = index % 2 === 0 ? '#ffffff' : '#f8f9fa';
@@ -864,7 +874,9 @@ const JournalVoucher = () => {
                                   <Tooltip
                                     label={isAdj
                                       ? 'Auto-generated — edit/delete from its originating module'
-                                      : `Edit/delete from the ${kind === 'receipt' ? 'Receipt' : 'Payment'} Voucher screen`}
+                                      : bank && voucher.referenceType === 'BankTransfer'
+                                        ? 'Posted by Producer Dues → Bank Transfer — change it there'
+                                        : `Edit/delete from the ${kind === 'receipt' ? 'Receipt' : 'Payment'} Voucher screen`}
                                     withArrow
                                   >
                                     <Text size="9px" c="dimmed" fs="italic">View only</Text>
@@ -879,7 +891,7 @@ const JournalVoucher = () => {
                   });
                 })}
               </Table.Tbody>
-              {/* Table Footer — Adjustment and Cash totals kept apart */}
+              {/* Table Footer — Adjustment total (Journal + Bank Transfer / bank entries) */}
               <Table.Tfoot>
                 <Table.Tr style={{ background: '#e3f2fd', fontWeight: 700 }}>
                   <Table.Td colSpan={4} style={{ textAlign: 'right', padding: '8px 10px' }}>
@@ -887,36 +899,17 @@ const JournalVoucher = () => {
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'right', padding: '8px 10px' }}>
                     <Text size="sm" fw={700} c="red.7" ff="monospace">
-                      {'₹'} {vouchers.reduce((sum, v) => sum + (v.totalDebit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {'₹'} {adjustmentVouchers.reduce((sum, v) => sum + (v.totalDebit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Text>
                   </Table.Td>
                   <Table.Td style={{ padding: '8px 10px' }}></Table.Td>
                   <Table.Td style={{ textAlign: 'right', padding: '8px 10px' }}>
                     <Text size="sm" fw={700} c="green.7" ff="monospace">
-                      {'₹'} {vouchers.reduce((sum, v) => sum + (v.totalCredit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {'₹'} {adjustmentVouchers.reduce((sum, v) => sum + (v.totalCredit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Text>
                   </Table.Td>
                   <Table.Td colSpan={2} style={{ textAlign: 'center', padding: '8px 10px' }}>
-                    <Text size="xs" c="dimmed">{vouchers.length} voucher(s)</Text>
-                  </Table.Td>
-                </Table.Tr>
-                <Table.Tr style={{ background: '#e6fcf5', fontWeight: 700 }}>
-                  <Table.Td colSpan={4} style={{ textAlign: 'right', padding: '8px 10px' }}>
-                    <Text size="xs" fw={700} c="dark.6">CASH RECEIPTS / CASH PAYMENTS</Text>
-                  </Table.Td>
-                  <Table.Td style={{ textAlign: 'right', padding: '8px 10px' }}>
-                    <Text size="sm" fw={700} c="teal.7" ff="monospace">
-                      {'₹'} {cashTotals.receipts.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </Text>
-                  </Table.Td>
-                  <Table.Td style={{ padding: '8px 10px' }}></Table.Td>
-                  <Table.Td style={{ textAlign: 'right', padding: '8px 10px' }}>
-                    <Text size="sm" fw={700} c="red.7" ff="monospace">
-                      {'₹'} {cashTotals.payments.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </Text>
-                  </Table.Td>
-                  <Table.Td colSpan={2} style={{ textAlign: 'center', padding: '8px 10px' }}>
-                    <Text size="xs" c="dimmed">{cashVouchers.length} voucher(s)</Text>
+                    <Text size="xs" c="dimmed">{adjustmentVouchers.length} voucher(s)</Text>
                   </Table.Td>
                 </Table.Tr>
               </Table.Tfoot>

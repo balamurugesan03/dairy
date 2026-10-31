@@ -17,6 +17,29 @@ import {
   IconX, IconRefresh, IconInfoCircle, IconFilter,
 } from '@tabler/icons-react';
 import { societyInfoAPI } from '../../services/api';
+import { SOCIETY_BRANDING_EVENT } from '../../utils/printLogo';
+
+// Society logo → small PNG data URL (longest side 240 px) so it stays light
+// enough to load with every session and print header
+const LOGO_MAX_PX = 240;
+const readLogo = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onerror = () => reject(new Error('Could not read the image'));
+  reader.onload = () => {
+    const img = new Image();
+    img.onerror = () => reject(new Error('Not a valid image'));
+    img.onload = () => {
+      const scale = Math.min(1, LOGO_MAX_PX / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+});
 
 // ─── Document Type Registry ──────────────────────────────────────────────────
 const DOCUMENT_TYPES = [
@@ -260,6 +283,7 @@ export default function SocietyInfoPage() {
       presidentGender: '', boardMaleCount: 0, boardFemaleCount: 0,
       milkMaleCount: 0, milkFemaleCount: 0,
       boardMeetingDate: null, nextElectionDate: null,
+      logo: '',
     },
     validate: {
       email: (v) => v && !/\S+@\S+\.\S+/.test(v) ? 'Invalid email address' : null,
@@ -333,6 +357,7 @@ export default function SocietyInfoPage() {
     try {
       await societyInfoAPI.upsert(form.getValues());
       localStorage.removeItem(DRAFT_KEY);
+      window.dispatchEvent(new Event(SOCIETY_BRANDING_EVENT));   // logo / names on print headers
       notifications.show({ color: 'green', message: 'Society information saved successfully', icon: <IconCheck size={16} /> });
     } catch (err) {
       notifications.show({ color: 'red', message: err?.message || 'Failed to save' });
@@ -533,6 +558,40 @@ export default function SocietyInfoPage() {
                   {...form.getInputProps('societyName')}
                   {...fromCompany('societyName')}
                 />
+
+                {/* Society Logo — printed on the left of every report / form header */}
+                <Box>
+                  <Text size="sm" fw={500} mb={4}>Society Logo</Text>
+                  <Group gap="sm" align="center" wrap="nowrap">
+                    <Box style={{
+                      width: 72, height: 72, border: '1px dashed #cbd5e1', borderRadius: 8, background: '#f8fafc',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0,
+                    }}>
+                      {form.values.logo
+                        ? <img src={form.values.logo} alt="Society logo" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                        : <IconBuilding size={26} color="#94a3b8" />}
+                    </Box>
+                    <Stack gap={4}>
+                      <Group gap="xs">
+                        <FileButton accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                          onChange={async (file) => {
+                            if (!file) return;
+                            try { form.setFieldValue('logo', await readLogo(file)); }
+                            catch (err) { notifications.show({ color: 'red', message: err.message }); }
+                          }}>
+                          {(props) => <Button {...props} size="xs" variant="light" leftSection={<IconUpload size={14} />}>
+                            {form.values.logo ? 'Change Logo' : 'Upload Logo'}
+                          </Button>}
+                        </FileButton>
+                        {form.values.logo && (
+                          <Button size="xs" variant="subtle" color="red" leftSection={<IconTrash size={14} />}
+                            onClick={() => form.setFieldValue('logo', '')}>Remove</Button>
+                        )}
+                      </Group>
+                      <Text size="xs" c="dimmed">Shown on the left of the header in every print view. Click Save to apply.</Text>
+                    </Stack>
+                  </Group>
+                </Box>
 
                 <TextInput
                   label="Registered Name (with Reg. No.)"

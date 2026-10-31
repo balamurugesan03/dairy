@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import MilkCollection from '../models/MilkCollection.js';
+import MilkSales from '../models/MilkSales.js';
 import UnionSalesSlip from '../models/UnionSalesSlip.js';
 import UnionSaleSettings from '../models/UnionSaleSettings.js';
 import {
@@ -13,7 +14,8 @@ import {
 //
 //  With From Dairy TS Rate Settings enabled, every date + session (AM / PM) of milk
 //  purchase on/after the From Dairy From Date gets one Union Sales slip:
-//    Qty = Σ purchase qty,  FAT / SNF = qty-weighted averages,
+//    Qty = Σ purchase qty − Σ milk sales of that date + session (the qty sent),
+//    FAT / SNF = the purchase's qty-weighted averages,
 //    Rate = (FAT + SNF) × From Dairy TS rate of that date ÷ 100  (the TS formula),
 //    Amount = Qty × Rate — with the same Day Book voucher as a manual slip.
 //  Slips are marked source 'FromDairy' and kept in step with the purchase data
@@ -70,7 +72,7 @@ export async function syncFromDairySlips(companyId, { days, from, to } = {}) {
   const cid = new mongoose.Types.ObjectId(String(companyId));
   const startLocal = new Date(`${lo}T00:00:00+05:30`);
   const endLocal = new Date(`${hi}T23:59:59.999+05:30`);
-  const [groups, slips] = await Promise.all([
+  const [groups, salesGroups, slips] = await Promise.all([
     MilkCollection.aggregate([
       { $match: { companyId: cid, date: { $gte: startLocal, $lte: endLocal } } },
       { $group: {
@@ -80,8 +82,18 @@ export async function syncFromDairySlips(companyId, { days, from, to } = {}) {
         snfQty: { $sum: { $multiply: ['$qty', { $ifNull: ['$snf', 0] }] } },
       } },
     ]),
+    // Milk sold locally (local / sample / credit) the same date + session never
+    // reaches the union — it is taken off the quantity sent (Dairy Register "Send Qty")
+    MilkSales.aggregate([
+      { $match: { companyId: cid, date: { $gte: startLocal, $lte: endLocal } } },
+      { $group: {
+        _id: { day: { $dateToString: { format: '%Y-%m-%d', date: '$date', timezone: 'Asia/Kolkata' } }, shift: '$session' },
+        qty: { $sum: '$litre' },
+      } },
+    ]),
     UnionSalesSlip.find({ companyId: cid, date: { $gte: slipDate(lo), $lt: slipDate(addDays(hi, 1)) } }),
   ]);
+  const soldLocally = new Map(salesGroups.map(g => [`${g._id.day}|${String(g._id.shift || '').toUpperCase()}`, g.qty || 0]));
 
   const purchase = new Map(groups.map(g => [`${g._id.day}|${g._id.shift}`, g]));
   const slipAt = new Map(slips.map(s => [`${s.date.toISOString().slice(0, 10)}|${s.time}`, s]));
@@ -95,11 +107,13 @@ export async function syncFromDairySlips(companyId, { days, from, to } = {}) {
       let want = null;
       const g = purchase.get(key);
       const tsRate = day >= startDay ? rateOn(fd.tsRates, day) : null;
-      if (g && g.qty > 0 && tsRate !== null) {
+      // Qty sent = purchase − milk sales of the session (never below 0); FAT / SNF
+      // stay the purchase's qty-weighted averages
+      const sendQty = g ? r3(Math.max(0, g.qty - (soldLocally.get(key) || 0))) : 0;
+      if (g && g.qty > 0 && sendQty > 0 && tsRate !== null) {
         const fat = g.fatQty / g.qty, snf = g.snfQty / g.qty;
         const rate = r2(((fat + snf) * tsRate) / 100);
-        const qty = r3(g.qty);
-        want = { qty, fat: r2(fat), snf: r2(snf), rate, amount: r2(qty * rate) };
+        want = { qty: sendQty, fat: r2(fat), snf: r2(snf), rate, amount: r2(sendQty * rate) };
       }
 
       if (slip && slip.source !== 'FromDairy') {

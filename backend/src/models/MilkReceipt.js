@@ -23,6 +23,8 @@ const milkReceiptSchema = new mongoose.Schema({
   // Total → one weighment/test for the whole van; Centre → each sub centre's cans tested separately
   entryMode: { type: String, enum: ['Total', 'Centre'], default: 'Total' },
   lines: { type: [receiptLineSchema], default: [] },
+  // Manual → entered on Milk Receipt & Shortage; Cans → built from Milk Purchase can entries
+  source: { type: String, enum: ['Manual', 'Cans'], default: 'Manual' },
 
   // Received totals (for Centre mode these are derived from lines on save)
   qty: { type: Number, default: 0, min: 0 },

@@ -3,7 +3,7 @@
  * Shows amounts paid via Bank Transfer, Pay to Producer (Cash), and Individual Payment
  * for the selected cycle.
  */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box, Group, Text, Select, Button, Badge, Loader,
@@ -13,9 +13,10 @@ import { notifications } from '@mantine/notifications';
 import {
   IconCashBanknote, IconSearch, IconPrinter, IconX, IconArrowLeft,
 } from '@tabler/icons-react';
-import { useReactToPrint } from 'react-to-print';
 import { paymentRegisterAPI, producerPaymentAPI } from '../../services/api';
 import { localDateStr } from '../../utils/dateUtils';
+import { useCompany } from '../../context/CompanyContext';
+import { openA4Print, a4Header, a4Signatures, escapeHtml } from '../../utils/printA4';
 
 const fmt  = (v) => (parseFloat(v) || 0).toFixed(2);
 const fmtD = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '—';
@@ -36,25 +37,28 @@ const TD = ({ children, right, bold, c, bg }) => (
   }}>{children}</td>
 );
 
-const PRINT_STYLE = `
-  @media print {
-    body * { visibility: hidden !important; }
-    .ppr-print-area, .ppr-print-area * { visibility: visible !important; }
-    .ppr-print-area { position: fixed; inset: 0; padding: 10px; }
-    .no-print { display: none !important; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #999; font-size: 8px; padding: 3px 4px; }
-    th { background: #14532d !important; color: #fff !important;
-         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .tot-row td { background: #dcfce7 !important; font-weight: 700;
-                  -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    @page { size: A4 landscape; margin: 6mm; }
-  }
+// A4 portrait print — built from the data (the screen table sits in a scroll
+// area, which used to clip the printout)
+const PRINT_CSS = `
+  @page { size: A4 portrait; margin: 10mm 8mm; }
+  body { font-size: 10.5px; }
+  .a4-header__org { font-size: 16px; }
+  .a4-header__title { font-size: 12.5px; }
+  .a4-header__meta { font-size: 10px; }
+  table.a4 th { font-size: 8.5px; text-transform: none; line-height: 1.2; }
+  table.a4 td { font-size: 10px; padding: 3px 4px; vertical-align: middle; }
 `;
+const COLS = [
+  ['SN', '5%', 'ctr'], ['Prod No', '8%', 'ctr'], ['Producer Name', '21%', ''], ['Center', '12%', ''],
+  ['Net Payable', '9.5%', 'amt'], ['Bank Transfer', '9.5%', 'amt'], ['Pay to Producer', '9%', 'amt'],
+  ['Individual Pay', '8.5%', 'amt'], ['Total Paid', '9%', 'amt'], ['Balance', '8.5%', 'amt'],
+];
+const pAmt = (v) => ((parseFloat(v) || 0) !== 0 ? fmt(v) : '');
 
 export default function PaymentPaidReport() {
   const navigate = useNavigate();
-  const printRef = useRef();
+  const { selectedCompany } = useCompany();
+  const societyName = selectedCompany?.societyName || selectedCompany?.companyName || 'Dairy Society';
 
   const [cycles,     setCycles]     = useState([]);
   const [selCycle,   setSelCycle]   = useState(null);
@@ -62,8 +66,6 @@ export default function PaymentPaidReport() {
   const [generated,  setGenerated]  = useState(false);
   const [generating, setGenerating] = useState(false);
   const [cycleLabel, setCycleLabel] = useState('');
-  const [fromDate,   setFromDate]   = useState('');
-  const [toDate,     setToDate]     = useState('');
 
   useEffect(() => {
     producerPaymentAPI.getCycles().then(res => {
@@ -74,6 +76,8 @@ export default function PaymentPaidReport() {
         toDate:   c.toDate,
       }));
       setCycles(list);
+      // Latest cycle (newest first from the API) is selected by default
+      if (list.length) setSelCycle(prev => prev || list[0].value);
     }).catch(() => {});
   }, []);
 
@@ -85,8 +89,6 @@ export default function PaymentPaidReport() {
     try {
       const res = await paymentRegisterAPI.getPaidReport({ fromDate: fd, toDate: td });
       setRows(res?.data?.rows || []);
-      setFromDate(fd);
-      setToDate(td);
       setCycleLabel(cycleObj?.label || `${fmtD(fd)} — ${fmtD(td)}`);
       setGenerated(true);
     } catch (err) {
@@ -96,10 +98,38 @@ export default function PaymentPaidReport() {
     }
   };
 
-  const handlePrint = useReactToPrint({
-    contentRef: printRef,
-    documentTitle: `PaymentPaidReport_${fromDate}_${toDate}`,
-  });
+  const handlePrint = () => {
+    const body = rows.map((r, i) => `<tr>
+        <td class="ctr">${escapeHtml(r.slNo || i + 1)}</td>
+        <td class="ctr">${escapeHtml(r.producerId || '')}</td>
+        <td>${escapeHtml(r.producerName || '')}</td>
+        <td>${escapeHtml(r.center || '')}</td>
+        <td class="amt">${pAmt(r.netPayable)}</td>
+        <td class="amt">${pAmt(r.bankTransfer)}</td>
+        <td class="amt">${pAmt(r.payToProducer)}</td>
+        <td class="amt">${pAmt(r.individual)}</td>
+        <td class="amt b">${pAmt(r.totalPaid)}</td>
+        <td class="amt">${pAmt(r.balance)}</td>
+      </tr>`).join('');
+    const t = totals;
+    openA4Print({
+      title: `Payment Paid Report ${cycleLabel}`,
+      orientation: 'portrait',
+      css: PRINT_CSS,
+      bodyHtml: a4Header({ orgName: societyName, title: 'Payment Paid Report', period: cycleLabel,
+          extra: `Producers: ${rows.length} · Paid: ${paidCount}` })
+        + `<table class="a4">
+          <colgroup>${COLS.map(([, w]) => `<col style="width:${w}">`).join('')}</colgroup>
+          <thead><tr>${COLS.map(([h]) => `<th>${h}${h === 'SN' || h === 'Prod No' || h === 'Producer Name' || h === 'Center' ? '' : ' (₹)'}</th>`).join('')}</tr></thead>
+          <tbody>${body || '<tr><td colspan="10" class="ctr">No payment data for this cycle</td></tr>'}
+            <tr class="row-grand"><td colspan="4" class="amt">TOTAL (${rows.length} producers)</td>
+              <td class="amt">${fmt(t.netPayable)}</td><td class="amt">${fmt(t.bankTransfer)}</td>
+              <td class="amt">${fmt(t.payToProducer)}</td><td class="amt">${fmt(t.individual)}</td>
+              <td class="amt">${fmt(t.totalPaid)}</td><td class="amt">${fmt(t.balance)}</td></tr>
+          </tbody></table>`
+        + a4Signatures(['Secretary', 'President'], new Date().toLocaleString('en-IN')),
+    });
+  };
 
   const handleCancel = () => { setRows([]); setSelCycle(null); setGenerated(false); };
 
@@ -117,7 +147,6 @@ export default function PaymentPaidReport() {
 
   return (
     <Box style={{ height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#eef4fb' }}>
-      <style>{PRINT_STYLE}</style>
 
       {/* ── HEADER ── */}
       <Box style={{ background: 'white', borderBottom: '1px solid #dbeafe', padding: '8px 20px', flexShrink: 0, boxShadow: '0 1px 6px rgba(37,99,235,0.08)' }}>
@@ -218,7 +247,7 @@ export default function PaymentPaidReport() {
             </Box>
 
             <Box style={{ flex: 1, overflow: 'hidden', background: 'white', borderRadius: '0 0 10px 10px', border: '1px solid #bbf7d0', borderTop: 'none' }}>
-              <div ref={printRef} className="ppr-print-area">
+              <div style={{ height: '100%' }}>
                 <ScrollArea h="100%" type="auto">
                   <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 900 }}>
                     <thead>

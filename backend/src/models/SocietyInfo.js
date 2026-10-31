@@ -19,6 +19,8 @@ const societyInfoSchema = new mongoose.Schema({
   financialYearTo:   { type: Date },
   welfareCode:       { type: String, default: '' },
   noOfStaff:         { type: Number, default: 0 },
+  // Society logo (small image as a data: URL) — shown on the left of every print header
+  logo:              { type: String, default: '' },
 
   // ── Audit & Board Details ──────────────────────────────────────
   auditedYear:           { type: String, default: '' },

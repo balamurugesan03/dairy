@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   getSocietyInfo,
+  getSocietyBranding,
   upsertSocietyInfo,
   upsertDocument,
   deleteDocument,
@@ -9,6 +10,7 @@ import {
 const router = express.Router();
 
 router.get('/',                          getSocietyInfo);
+router.get('/branding',                  getSocietyBranding);
 router.put('/',                          upsertSocietyInfo);
 router.put('/documents/:documentKey',    upsertDocument);
 router.delete('/documents/:documentKey', deleteDocument);

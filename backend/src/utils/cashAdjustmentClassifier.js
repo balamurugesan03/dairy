@@ -5,11 +5,16 @@ import Ledger from '../models/Ledger.js';
  * driving leg as a real cash movement ("cash" column) vs a non-cash book
  * entry ("adjustment" column) across the Accounts reports.
  */
+const CASH_TYPES = ['Cash', 'Cash in Hand'];
+const BANK_TYPES = ['Bank', 'Bank Accounts'];
+
 export async function getCashBankLedgerIds(companyId) {
+  // Every cash / bank ledger, active or not — an entry posted to an inactive or
+  // 'Cash in Hand'-typed cash ledger is still cash (it used to fall through to
+  // Adjustment, so the General Ledger disagreed with Cash Book / Day Book)
   const cashBankLedgers = await Ledger.find({
     companyId,
-    ledgerType: { $in: ['Cash', 'Bank'] },
-    status: 'Active'
+    ledgerType: { $in: [...CASH_TYPES, ...BANK_TYPES] }
   }).select('_id ledgerType');
 
   const cashIds = new Set();
@@ -21,8 +26,8 @@ export async function getCashBankLedgerIds(companyId) {
     const id = l._id.toString();
     allIds.add(id);
     allObjectIds.push(l._id);
-    if (l.ledgerType === 'Cash') cashIds.add(id);
-    else if (l.ledgerType === 'Bank') bankIds.add(id);
+    if (CASH_TYPES.includes(l.ledgerType)) cashIds.add(id);
+    else bankIds.add(id);
   }
 
   return { cashIds, bankIds, allIds, allObjectIds };
@@ -45,7 +50,11 @@ function entryLedgerId(entry) {
  * a bare ObjectId). Returns the driving cash/bank leg and its contra leg.
  */
 export function classifyVoucherEntry(entries, cashBankIds) {
+  // A cash leg wins over a bank leg (cash deposited to / withdrawn from bank is cash)
   const drivingEntry = entries.find(e => {
+    const id = entryLedgerId(e);
+    return id && cashBankIds.cashIds.has(id);
+  }) || entries.find(e => {
     const id = entryLedgerId(e);
     return id && cashBankIds.allIds.has(id);
   });

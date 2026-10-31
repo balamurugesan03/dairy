@@ -23,6 +23,7 @@ import A4PrintPreview from './shared/A4PrintPreview';
 import { buildCashBookPrintHtml } from './cashBookPrint';
 import useSocietyHeader from './shared/useSocietyHeader';
 import { RPT, RPT_FONT } from './shared/reportTypography';
+import { useAuth } from '../../context/AuthContext';
 
 // Display order within a day (stable): Producer Due / Milk Purchase / producer
 // payments first, then other automatic entries, then manual voucher entries.
@@ -69,6 +70,8 @@ const getPresetRange = (preset) => {
 };
 
 const CashBook = () => {
+  // Delete entry: Super Admin only (the server refuses it for everybody else too)
+  const { isSuperAdminLogin } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [preset,     setPreset]    = useState('thisMonth');
@@ -279,7 +282,7 @@ const CashBook = () => {
                   <td style={{ ...cell, textAlign: 'center', color: '#555' }}>{entry.voucherNumber}</td>
                   <td style={{ ...cell, ...num, fontWeight: 600 }}>{fmt(entry.amount)}</td>
                   <td className="cb-no-print" style={{ ...cell, textAlign: 'center', padding: 2 }}>
-                    <ActionIcon
+                    {isSuperAdminLogin && <ActionIcon
                       size="xs"
                       color="red"
                       variant="light"
@@ -288,7 +291,7 @@ const CashBook = () => {
                       title="Delete entry"
                     >
                       <IconTrash size={13} />
-                    </ActionIcon>
+                    </ActionIcon>}
                   </td>
                 </tr>
               ))

@@ -24,6 +24,7 @@ import A4PrintPreview from './shared/A4PrintPreview';
 import { buildDayBookPrintHtml } from './dayBookPrint';
 import useSocietyHeader from './shared/useSocietyHeader';
 import './DayBook.css';
+import { useAuth } from '../../context/AuthContext';
 
 const PRESETS = [
   { value: 'today',         label: 'Today' },
@@ -52,6 +53,8 @@ const getPresetRange = (preset) => {
 };
 
 const DayBook = () => {
+  // Delete entry: Super Admin only (the server refuses it for everybody else too)
+  const { isSuperAdminLogin } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [preset,    setPreset]    = useState('thisMonth');
@@ -175,8 +178,15 @@ const DayBook = () => {
         // Cash column = transactions that actually moved cash (Receipt/Payment vouchers).
         // Adjustment column = non-cash bookkeeping (Journal vouchers, credit sales,
         // and synthetic aggregated rows like MilkPurchase / UnionSales).
-        const mapEntry = (entry) => {
-          const isAdjustment =
+        // Producer Dues (the Receipt-side line of the day's milk purchase) is a
+        // cash transaction — Cash column (user rule 2026-10-31); its Milk
+        // Purchase counterpart on the Payment side stays in Adjustment.
+        const mapEntry = (side) => (entry) => {
+          const isProducerDuesCash = side === 'receipt' && entry.voucherType === 'MilkPurchase';
+          // Voucher rows carry the backend's column (shared Cash / Adjustment rule
+          // with the General Ledger): manual Receipt / Payment / Cash Book Entry
+          // vouchers → Cash; Adjustment Entries and Bank Transfer → Adjustment.
+          const isAdjustment = entry.column ? entry.column === 'adjustment' : !isProducerDuesCash && (
             entry.voucherType === 'Journal' ||
             entry.voucherType === 'MilkPurchase' ||
             entry.voucherType === 'MilkCreditSales' ||
@@ -184,7 +194,7 @@ const DayBook = () => {
             entry.voucherType === 'UnionSales' ||
             entry.voucherType === 'InventoryPurchase' ||
             entry.voucherType === 'InventorySale' ||
-            entry.voucherType === 'BankTransfer';
+            entry.voucherType === 'BankTransfer');
           return {
             description: entry.ledgerName || entry.narration || 'Miscellaneous',
             narration: entry.narration || '',
@@ -192,15 +202,15 @@ const DayBook = () => {
             cash: isAdjustment ? 0 : entry.amount,
             adjustment: isAdjustment ? entry.amount : 0,
             total: entry.amount,
-            isMilkEntry: isAdjustment,
+            isMilkEntry: isAdjustment || isProducerDuesCash,
             voucherId: entry.voucherId || null,
             voucherType: entry.voucherType || null,
             entryDate: entry.date ? new Date(entry.date).toISOString().split('T')[0] : null
           };
         };
 
-        const receipts = dayData.receiptSide.map(mapEntry);
-        const payments = dayData.paymentSide.map(mapEntry);
+        const receipts = dayData.receiptSide.map(mapEntry('receipt'));
+        const payments = dayData.paymentSide.map(mapEntry('payment'));
 
         const rCash = receipts.reduce((s, e) => s + (e.cash || 0), 0);
         const rAdj = receipts.reduce((s, e) => s + (e.adjustment || 0), 0);
@@ -287,7 +297,7 @@ const DayBook = () => {
                     <td className="db-cell-amt">{fmt(entry.adjustment)}</td>
                     <td className="db-cell-total">{fmt(entry.total)}</td>
                     <td className="db-cell-del db-no-print">
-                      <ActionIcon
+                      {isSuperAdminLogin && <ActionIcon
                         size="xs"
                         color="red"
                         variant="light"
@@ -296,7 +306,7 @@ const DayBook = () => {
                         title="Delete entry"
                       >
                         <IconTrash size={12} />
-                      </ActionIcon>
+                      </ActionIcon>}
                     </td>
                   </tr>
                 ))

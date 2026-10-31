@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import Company from '../models/Company.js';
 import CollectionCenter from '../models/CollectionCenter.js';
+import { enforceModulePermission } from './modulePermission.js';
 
 // Protect routes - verify JWT token
 export const protect = async (req, res, next) => {
@@ -195,7 +196,8 @@ export const addCompanyFilter = (req, res, next) => {
   // Alias for controllers that use req.companyId
   req.companyId = req.userCompany;
 
-  next();
+  // Module permissions from User Management (writes) + Super Admin-only options
+  enforceModulePermission(req, res, next);
 };
 
 // Optional auth - doesn't require auth but attaches user if token present

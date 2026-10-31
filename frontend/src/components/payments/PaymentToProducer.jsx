@@ -235,12 +235,13 @@ export default function PaymentToProducer() {
       const res = await producerPaymentAPI.getBankTransferPaid({
         cycleFromDate: dayjs(selectedCycle.fromDate).format('YYYY-MM-DD'),
         cycleToDate:   dayjs(selectedCycle.toDate).format('YYYY-MM-DD'),
+        centerId:      centerId || undefined,
       });
       setBankTransferRows(res?.data || []);
     } catch {
       setBankTransferRows([]);
     }
-  }, [formActive, selectedCycle]);
+  }, [formActive, selectedCycle, centerId]);
 
   useEffect(() => {
     if (formActive) {
@@ -255,6 +256,8 @@ export default function PaymentToProducer() {
       notifications.show({ title: 'Validation', message: 'Please select a payment cycle', color: 'orange' });
       return;
     }
+    // A page left over from an earlier cycle / centre would show an empty table
+    setPage(1);
     setPeriodConfirmed(true);
     // Move cursor to Producer ID field after confirming
     setTimeout(() => producerIdRef.current?.focus(), 150);
@@ -1091,11 +1094,11 @@ export default function PaymentToProducer() {
                         </Table.Td>
                         <Table.Td><Text size="xs">{row.producerNumber || '-'}</Text></Table.Td>
                         <Table.Td><Text size="xs">{row.producerName || '-'}</Text></Table.Td>
-                        <Table.Td><Text size="xs" c="dimmed">—</Text></Table.Td>
+                        <Table.Td><Text size="xs" c="dimmed">{row.refNo || '—'}</Text></Table.Td>
                         <Table.Td ta="right"><Text size="xs">₹ {fmt(row.amountPaid)}</Text></Table.Td>
                         <Table.Td>
                           <Badge size="xs" color="indigo" variant="filled" leftSection={<IconBuildingBank size={9} />}>
-                            Bank Transfer
+                            {row.paymentMode || 'Bank Transfer'}
                           </Badge>
                         </Table.Td>
                         <Table.Td><Text size="xs">{fmtDate(row.paymentDate)}</Text></Table.Td>

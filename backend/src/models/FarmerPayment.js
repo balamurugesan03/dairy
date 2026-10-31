@@ -250,6 +250,12 @@ const farmerPaymentSchema = new mongoose.Schema({
     enum: ['Ledger', 'PaymentRegister', 'BankTransfer'],
     default: 'Ledger'
   },
+  // The Bank Transfer that paid this record — Cancel / Delete reverse only its own payments
+  bankTransferId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'BankTransfer',
+    default: null
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'

@@ -34,23 +34,33 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
 ));
 
-// ── Shared print CSS ──────────────────────────────────────────────────────────
+// ── Shared print CSS — A4 portrait, readable sizes, aligned columns ──────────
 const PRINT_BASE_STYLE = `
-  *{box-sizing:border-box}
-  body{font-family:Arial,sans-serif;margin:14px;color:#000;font-size:12px}
-  h2{margin:0 0 4px;text-align:center}
-  .meta{font-size:11px;color:#444;margin-bottom:8px;display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
-  table{width:100%;border-collapse:collapse;font-size:10px}
-  th,td{border:1px solid #888;padding:4px 5px;text-align:left;vertical-align:top}
-  thead th{background:#1a365d;color:#fff}
-  .bank-head td{background:#1a365d;color:#fff;font-weight:700;font-size:11px;padding:5px 8px;border:1px solid #2d4a7a}
-  .date-head td{background:#dbeafe;font-weight:700;font-size:11px;padding:5px 8px;border:1px solid #bfdbfe;border-left:4px solid #2563eb}
-  .sub-tot td{background:#dbeafe;font-weight:700}
-  .tot-row td{background:#f0fdf4;font-weight:700}
-  tfoot th{background:#f3f3f3;font-weight:700}
-  .right{text-align:right}
-  @page{size:A4 landscape;margin:10mm}
+  *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  @page{size:A4 portrait;margin:12mm 10mm}
+  body{font-family:Arial,Helvetica,sans-serif;margin:0;color:#000;font-size:12.5px}
+  .soc{text-align:center;font-size:18px;font-weight:700;text-transform:uppercase;margin-bottom:2px}
+  h2{margin:2px 0 4px;text-align:center;font-size:15px;text-decoration:underline}
+  .meta{font-size:12px;margin-bottom:10px;display:flex;gap:22px;flex-wrap:wrap;justify-content:center}
+  table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
+  th,td{border:1px solid #555;padding:5px 6px;text-align:left;vertical-align:middle;overflow-wrap:anywhere}
+  thead th{background:#e5e7eb;font-weight:700;font-size:11.5px}
+  thead{display:table-header-group}
+  tr{page-break-inside:avoid;break-inside:avoid}
+  .bank-head td{background:#f1f5f9;font-weight:700;font-size:12.5px;padding:6px 8px}
+  .date-head td{background:#f1f5f9;font-weight:700;font-size:12.5px;padding:6px 8px}
+  .sub-tot td,.tot-row td{font-weight:700}
+  tfoot th{background:#e5e7eb;font-weight:700;font-size:12.5px}
+  .right{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .ctr{text-align:center}
+  .sn{width:38px;text-align:center}
+  .pno{width:70px}
+  .amt{width:105px}
+  .sig{width:120px}
+  td.sigc{height:30px}
+  .gen{margin-top:14px;font-size:10.5px;color:#444;text-align:right}
 `;
+const printedOn = () => `<div class="gen">Printed on ${new Date().toLocaleString('en-IN')}</div>`;
 
 // ── iframe print ──────────────────────────────────────────────────────────────
 function printHtml(html) {
@@ -100,7 +110,7 @@ function buildBankListHtml(groups, societyName, fromDate, toDate, isML, selected
       bg.rows.forEach(r => {
         sn++;
         rows += `<tr>
-          <td>${sn}</td>
+          <td class="ctr">${sn}</td>
           <td>${esc(r.producerId)}</td>
           <td>${esc(r.producerName)}</td>
           <td>${esc(r.center)}</td>
@@ -121,7 +131,7 @@ function buildBankListHtml(groups, societyName, fromDate, toDate, isML, selected
 
     return `<!doctype html><html><head><meta charset="utf-8"><title>Bank Transfer List</title>
 <style>${PRINT_BASE_STYLE}</style></head><body>
-<div style="text-align:center;font-size:16px;font-weight:700;margin-bottom:2px">${esc(societyName)}</div>
+<div class="soc">${esc(societyName)}</div>
 <h2>${isML ? 'ബാങ്ക് ട്രാൻസ്ഫർ ലിസ്റ്റ്' : 'Bank Transfer Statement — All Banks'}</h2>
 <div class="meta">
   <span>${isML ? 'തീയതി' : 'From'}: <strong>${fmtDate(fromDate)}</strong></span>
@@ -130,21 +140,21 @@ function buildBankListHtml(groups, societyName, fromDate, toDate, isML, selected
 </div>
 <table>
   <thead><tr>
-    <th style="width:36px">SN</th>
-    <th style="width:80px">${isML ? 'ഉൽ. നം.' : 'Prod No'}</th>
+    <th class="sn">SN</th>
+    <th class="pno">${isML ? 'ഉൽ. നം.' : 'Prod No'}</th>
     <th>${isML ? 'ഉൽ. പേര്' : 'Producer Name'}</th>
     <th>${isML ? 'കേന്ദ്രം' : 'Center'}</th>
     <th>${isML ? 'A/C നം.' : 'Account No'}</th>
     <th>IFSC</th>
     <th>${isML ? 'ശാഖ' : 'Branch'}</th>
-    <th class="right">${isML ? 'തുക (₹)' : 'Amount (₹)'}</th>
+    <th class="right amt">${isML ? 'തുക (₹)' : 'Amount (₹)'}</th>
   </tr></thead>
   <tbody>${rows}</tbody>
   <tfoot><tr>
     <th colspan="7" style="text-align:right">${isML ? 'ആകെ' : 'GRAND TOTAL'} (${sn} ${isML ? 'ഉൽ.' : 'producers'})</th>
     <th class="right">₹${esc(fmt(grandTotal))}</th>
   </tr></tfoot>
-</table></body></html>`;
+</table>${printedOn()}</body></html>`;
   }
 
   // ── Specific bank: existing date-grouped layout ───────────────────────────
@@ -159,7 +169,7 @@ function buildBankListHtml(groups, societyName, fromDate, toDate, isML, selected
       sn++;
       grandTotal += r.amount || 0;
       rows += `<tr>
-        <td>${sn}</td>
+        <td class="ctr">${sn}</td>
         <td>${esc(r.producerId)}</td>
         <td>${esc(r.producerName)}</td>
         <td>${esc(r.center)}</td>
@@ -177,7 +187,7 @@ function buildBankListHtml(groups, societyName, fromDate, toDate, isML, selected
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>Bank Transfer List</title>
 <style>${PRINT_BASE_STYLE}</style></head><body>
-<div style="text-align:center;font-size:16px;font-weight:700;margin-bottom:2px">${esc(societyName)}</div>
+<div class="soc">${esc(societyName)}</div>
 <h2>${isML ? 'ബാങ്ക് ട്രാൻസ്ഫർ ലിസ്റ്റ്' : `Bank Transfer Statement — ${selectedBank}`}</h2>
 <div class="meta">
   <span>${isML ? 'തീയതി' : 'From'}: <strong>${fmtDate(fromDate)}</strong></span>
@@ -186,21 +196,21 @@ function buildBankListHtml(groups, societyName, fromDate, toDate, isML, selected
 </div>
 <table>
   <thead><tr>
-    <th style="width:36px">SN</th>
-    <th style="width:80px">${isML ? 'ഉൽ. നം.' : 'Prod No'}</th>
+    <th class="sn">SN</th>
+    <th class="pno">${isML ? 'ഉൽ. നം.' : 'Prod No'}</th>
     <th>${isML ? 'ഉൽ. പേര്' : 'Producer Name'}</th>
     <th>${isML ? 'കേന്ദ്രം' : 'Center'}</th>
     <th>${isML ? 'A/C നം.' : 'Account No'}</th>
     <th>IFSC</th>
     <th>${isML ? 'ബാങ്ക്' : 'Bank'}</th>
-    <th class="right">${isML ? 'തുക (₹)' : 'Amount (₹)'}</th>
+    <th class="right amt">${isML ? 'തുക (₹)' : 'Amount (₹)'}</th>
   </tr></thead>
   <tbody>${rows}</tbody>
   <tfoot><tr>
     <th colspan="7" style="text-align:right">${isML ? 'ആകെ' : 'GRAND TOTAL'}</th>
     <th class="right">₹${esc(fmt(grandTotal))}</th>
   </tr></tfoot>
-</table></body></html>`;
+</table>${printedOn()}</body></html>`;
 }
 
 // ── Print: Detail Report ──────────────────────────────────────────────────────
@@ -217,7 +227,7 @@ function buildDetailHtml(groups, societyName, fromDate, toDate, isBankMode, isML
 
     allRows.forEach((r, i) => {
       rows += `<tr>
-        <td>${i + 1}</td>
+        <td class="ctr">${i + 1}</td>
         <td>${esc(r.producerId)}</td>
         <td>${esc(r.producerName)}</td>
         <td>${esc(r.center)}</td>
@@ -240,7 +250,7 @@ function buildDetailHtml(groups, societyName, fromDate, toDate, isBankMode, isML
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
 <style>${PRINT_BASE_STYLE}</style></head><body>
-<div style="text-align:center;font-size:16px;font-weight:700;margin-bottom:2px">${esc(societyName)}</div>
+<div class="soc">${esc(societyName)}</div>
 <h2>${esc(isML ? 'പേമെന്‍റ് റിപ്പോർട്ട്' : title)}</h2>
 <div class="meta">
   <span>${isML ? 'തീയതി' : 'From'}: <strong>${fmtDate(fromDate)}</strong></span>
@@ -248,12 +258,12 @@ function buildDetailHtml(groups, societyName, fromDate, toDate, isBankMode, isML
 </div>
 <table>
   <thead><tr>
-    <th style="width:36px">SN</th>
-    <th style="width:80px">${isML ? 'ഉൽ. നം.' : 'Prod No'}</th>
+    <th class="sn">SN</th>
+    <th class="pno">${isML ? 'ഉൽ. നം.' : 'Prod No'}</th>
     <th>${isML ? 'ഉൽ. പേര്' : 'Producer Name'}</th>
     <th>${isML ? 'കേന്ദ്രം' : 'Center'}</th>
     ${isBankMode ? `<th>${isML ? 'ബാങ്ക്' : 'Bank'}</th><th>${isML ? 'A/C' : 'Account No'}</th>` : ''}
-    <th class="right">${isML ? 'തുക' : 'Amount (₹)'}</th>
+    <th class="right amt">${isML ? 'തുക' : 'Amount (₹)'}</th>
     <th>${isML ? 'രീതി' : 'Mode'}</th>
   </tr></thead>
   <tbody>${rows}</tbody>
@@ -262,13 +272,13 @@ function buildDetailHtml(groups, societyName, fromDate, toDate, isBankMode, isML
     <th class="right">₹${esc(fmt(grandTotal))}</th>
     <th style="font-size:9px">Bank:₹${esc(fmt(grandBank))} Cash:₹${esc(fmt(grandCash))}</th>
   </tr></tfoot>
-</table></body></html>`;
+</table>${printedOn()}</body></html>`;
 }
 
 // ── Print: Summary ────────────────────────────────────────────────────────────
 function buildSummaryHtml(groups, societyName, fromDate, toDate, isML) {
   const rows = groups.map((g, i) => `<tr>
-    <td>${i + 1}</td>
+    <td class="ctr">${i + 1}</td>
     <td>${fmtDateShort(g.date)}</td>
     <td class="right">${g.bankRows.length}</td>
     <td class="right">₹${esc(fmt(g.totalBank))}</td>
@@ -285,7 +295,7 @@ function buildSummaryHtml(groups, societyName, fromDate, toDate, isML) {
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>Payment Summary</title>
 <style>${PRINT_BASE_STYLE}</style></head><body>
-<div style="text-align:center;font-size:16px;font-weight:700;margin-bottom:2px">${esc(societyName)}</div>
+<div class="soc">${esc(societyName)}</div>
 <h2>${isML ? 'പേമെന്‍റ് സംഗ്രഹം' : 'Payment Report — Date-wise Summary'}</h2>
 <div class="meta">
   <span>${isML ? 'തീയതി' : 'From'}: <strong>${fmtDate(fromDate)}</strong></span>
@@ -293,7 +303,7 @@ function buildSummaryHtml(groups, societyName, fromDate, toDate, isML) {
 </div>
 <table>
   <thead><tr>
-    <th>SN</th><th>${isML ? 'തീയതി' : 'Date'}</th>
+    <th class="sn">SN</th><th>${isML ? 'തീയതി' : 'Date'}</th>
     <th class="right">${isML ? 'ബാങ്ക് (എണ്ണം)' : 'Bank Count'}</th>
     <th class="right">${isML ? 'ബാങ്ക് (₹)' : 'Bank Amount'}</th>
     <th class="right">${isML ? 'ക്യാഷ് (എണ്ണം)' : 'Cash Count'}</th>
@@ -307,7 +317,7 @@ function buildSummaryHtml(groups, societyName, fromDate, toDate, isML) {
     <th class="right">${cntCash}</th><th class="right">₹${esc(fmt(totCash))}</th>
     <th class="right">₹${esc(fmt(totAll))}</th>
   </tr></tfoot>
-</table></body></html>`;
+</table>${printedOn()}</body></html>`;
 }
 
 // ── Print: Cash List ──────────────────────────────────────────────────────────
@@ -323,8 +333,8 @@ function buildCashListHtml(groups, societyName, fromDate, toDate, isML) {
       sn++;
       grandTotal += r.amount || 0;
       rows += `<tr>
-        <td>${sn}</td><td>${esc(r.producerId)}</td><td>${esc(r.producerName)}</td>
-        <td>${esc(r.center)}</td><td class="right">₹${esc(fmt(r.amount))}</td><td></td>
+        <td class="ctr">${sn}</td><td>${esc(r.producerId)}</td><td>${esc(r.producerName)}</td>
+        <td>${esc(r.center)}</td><td class="right">₹${esc(fmt(r.amount))}</td><td class="sigc"></td>
       </tr>`;
     });
     rows += `<tr class="tot-row">
@@ -335,7 +345,7 @@ function buildCashListHtml(groups, societyName, fromDate, toDate, isML) {
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>Cash Payment List</title>
 <style>${PRINT_BASE_STYLE}</style></head><body>
-<div style="text-align:center;font-size:16px;font-weight:700;margin-bottom:2px">${esc(societyName)}</div>
+<div class="soc">${esc(societyName)}</div>
 <h2>${isML ? 'ക്യാഷ് പേമെന്‍റ് ലിസ്റ്റ്' : 'Cash Payment List'}</h2>
 <div class="meta">
   <span>${isML ? 'തീയതി' : 'From'}: <strong>${fmtDate(fromDate)}</strong></span>
@@ -344,18 +354,18 @@ function buildCashListHtml(groups, societyName, fromDate, toDate, isML) {
 </div>
 <table>
   <thead><tr>
-    <th>SN</th><th>${isML ? 'ഉൽ. നം.' : 'Prod No'}</th>
+    <th class="sn">SN</th><th class="pno">${isML ? 'ഉൽ. നം.' : 'Prod No'}</th>
     <th>${isML ? 'ഉൽ. പേര്' : 'Producer Name'}</th>
     <th>${isML ? 'കേന്ദ്രം' : 'Center'}</th>
-    <th class="right">${isML ? 'തുക (₹)' : 'Amount (₹)'}</th>
-    <th>${isML ? 'ഒപ്പ്' : 'Signature'}</th>
+    <th class="right amt">${isML ? 'തുക (₹)' : 'Amount (₹)'}</th>
+    <th class="sig">${isML ? 'ഒപ്പ്' : 'Signature'}</th>
   </tr></thead>
   <tbody>${rows}</tbody>
   <tfoot><tr>
     <th colspan="4" style="text-align:right">${isML ? 'ആകെ' : 'GRAND TOTAL'}</th>
     <th class="right">₹${esc(fmt(grandTotal))}</th><th></th>
   </tr></tfoot>
-</table></body></html>`;
+</table>${printedOn()}</body></html>`;
 }
 
 // ── Mantine table helpers ─────────────────────────────────────────────────────
@@ -408,10 +418,14 @@ export default function PaymentReport() {
       setCenters([{ value: 'all', label: 'All Centers' }, ...list]);
     }).catch(() => {});
     producerPaymentAPI.getCycles().then(res => {
-      setCycles((res?.data || []).map(c => ({
+      const list = (res?.data || []).map(c => ({
         value: `${localDateStr(new Date(c.fromDate))}|${localDateStr(new Date(c.toDate))}`,
         label: c.label,
-      })));
+      }));
+      setCycles(list);
+      // Latest cycle (the API lists newest first) is selected by default,
+      // unless the user already picked a cycle or a date range
+      if (list.length) setCycle(prev => prev || list[0].value);
     }).catch(() => {});
   }, []);
 
@@ -436,6 +450,18 @@ export default function PaymentReport() {
       });
 
       let grps = res?.data?.groups || [];
+      // Bank Transfer Statement → Cash or Bank: keep ONLY that side's rows, so the
+      // screen, every print and the Excel export show the selected method alone
+      if (bankTransferStatement) {
+        const keepCash = statementMethod === 'Cash';
+        grps = grps.map(g => {
+          const bankRows = keepCash ? [] : g.bankRows;
+          const cashRows = keepCash ? g.cashRows : [];
+          const totalBank = bankRows.reduce((s, r) => s + (r.amount || 0), 0);
+          const totalCash = cashRows.reduce((s, r) => s + (r.amount || 0), 0);
+          return { ...g, bankRows, cashRows, totalBank, totalCash, grandTotal: totalBank + totalCash };
+        }).filter(g => g.bankRows.length || g.cashRows.length);
+      }
       if (orderByProdNo) {
         grps = grps.map(g => ({
           ...g,
@@ -445,7 +471,15 @@ export default function PaymentReport() {
       }
 
       setGroups(grps);
-      setSummary(res?.data?.summary || null);
+      // Totals from the rows actually shown (after the Cash / Bank filter)
+      const sum = (k) => grps.reduce((s, g) => s + (g[k] || 0), 0);
+      setSummary({
+        ...(res?.data?.summary || {}),
+        dateCount: grps.length,
+        totalBank: sum('totalBank'), totalCash: sum('totalCash'), grandTotal: sum('grandTotal'),
+        bankCount: grps.reduce((s, g) => s + g.bankRows.length, 0),
+        cashCount: grps.reduce((s, g) => s + g.cashRows.length, 0),
+      });
       setGenerated(true);
       setAppliedFilters({
         fromDate: fd, toDate: td, cycleLabel: cycle ? cycles.find(c => c.value === cycle)?.label : '',
@@ -478,7 +512,7 @@ export default function PaymentReport() {
 
   // ── Export (xlsx) ───────────────────────────────────────────────────────────
   const doExport = () => {
-    const title    = isBankMode ? 'Bank Transfer Statement' : 'Payment Report';
+    const title    = isBankMode ? 'Bank Transfer Statement' : isCashStmt ? 'Cash Payment Statement' : 'Payment Report';
     const fileName = `${title.replace(/\s+/g, '_')}_${appliedFilters.fromDate}_${appliedFilters.toDate}.xlsx`;
 
     const HDRS = ['SN', 'Prod No', 'Producer Name', 'Center', 'Account No', 'IFSC', 'Bank / Branch', 'Amount (₹)'];
@@ -507,6 +541,21 @@ export default function PaymentReport() {
       }
 
       aoa.push(['', '', '', '', '', '', 'GRAND TOTAL:', parseFloat(fmt(grandTotal))]);
+    } else if (isCashStmt) {
+      // Cash statement: cash rows only, no bank / account columns
+      let sn = 0;
+      aoa.push(['SN', 'Prod No', 'Producer Name', 'Center', 'Mode', 'Amount (₹)']);
+      for (const g of groups) {
+        if (!g.cashRows.length) continue;
+        aoa.push([`Date of Payment: ${fmtDate(g.date)}`]);
+        g.cashRows.forEach(r => {
+          sn++;
+          aoa.push([sn, r.producerId, r.producerName, r.center, r.paymentMode || 'Cash', parseFloat(fmt(r.amount))]);
+        });
+        aoa.push(['', '', '', '', 'Date Total:', parseFloat(fmt(g.totalCash))]);
+        aoa.push([]);
+      }
+      aoa.push(['', '', '', '', 'GRAND TOTAL:', parseFloat(fmt(groups.reduce((s, g) => s + g.totalCash, 0)))]);
     } else {
       // Date-wise export
       let sn = 0;

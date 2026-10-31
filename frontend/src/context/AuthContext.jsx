@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { authAPI } from '../services/api';
+import { isSuperAdminAccount, isAdminTierAccount, canManageUsersAccount, hasModulePermission } from '../utils/modulePermissions';
 
 const AuthContext = createContext();
 const OFFLINE_SESSION_KEY = 'dairy_offline_session';
@@ -162,22 +163,9 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Check if user has permission for a module action
-  const hasPermission = (moduleName, action) => {
-    if (!user) return false;
-
-    // Superadmin and admin have all permissions
-    if (user.role === 'superadmin' || user.role === 'admin') {
-      return true;
-    }
-
-    // Check permissions object
-    if (user.permissionsObject && user.permissionsObject[moduleName]) {
-      return user.permissionsObject[moduleName][action] === true;
-    }
-
-    return false;
-  };
+  // Module permission for an action — Super Admin has all; others what User Management assigned
+  // (a sub-screen is also granted by its whole module, see utils/modulePermissions.js)
+  const hasPermission = (moduleName, action) => hasModulePermission(user, moduleName, action);
 
   // Check if user can read a module
   const canRead = (moduleName) => hasPermission(moduleName, 'read');
@@ -192,16 +180,7 @@ export const AuthProvider = ({ children }) => {
   const canDelete = (moduleName) => hasPermission(moduleName, 'delete');
 
   // Check if user has any access to a module
-  const hasModuleAccess = (moduleName) => {
-    if (!user) return false;
-    if (user.role === 'superadmin' || user.role === 'admin') return true;
-
-    if (user.permissionsObject && user.permissionsObject[moduleName]) {
-      const perms = user.permissionsObject[moduleName];
-      return perms.read || perms.write || perms.edit || perms.delete;
-    }
-    return false;
-  };
+  const hasModuleAccess = (moduleName) => hasModulePermission(user, moduleName, 'any');
 
   const value = {
     user,
@@ -209,6 +188,13 @@ export const AuthProvider = ({ children }) => {
     loading,
     isAuthenticated: !!token && !!user,
     isSuperAdmin: user?.role === 'superadmin',
+    // Super Admin tier (company login / superadmin / admin account / "Super Admin" user type):
+    // the only one who sees the Super Admin-only options
+    isSuperAdminLogin: isSuperAdminAccount(user),
+    // "Admin" user type from User Management
+    isAdminTier: isAdminTierAccount(user),
+    // Super Admin + Admin: User Management, create users, assign permissions
+    canManageUsers: canManageUsersAccount(user),
     isCompanyAdmin: user?.loginType === 'company',  // logged in via Company credentials
     isCentreLogin: user?.loginType === 'centre',     // logged in as a sub-centre
     isAdmin: user?.role === 'admin' || user?.role === 'superadmin',
