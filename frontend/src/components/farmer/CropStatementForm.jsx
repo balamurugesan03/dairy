@@ -7,7 +7,10 @@ import {
 import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
-import { cropStatementAPI, farmerAPI } from '../../services/api';
+import { cropStatementAPI, bankMasterAPI } from '../../services/api';
+import {
+  useFarmerFormData, YearSelect, PanchayatInput, FarmerNumberLookup
+} from './FarmerReportSelectors';
 
 const EMPTY_ROW = () => ({
   cropCultivated: '',
@@ -23,12 +26,20 @@ const EMPTY_ROW = () => ({
 const DEFAULT_FORM = {
   farmerName: '',
   farmerId: null,
+  farmerNumber: '',
   surveyNumber: '',
+  ward: '',
   bankName: '',
+  branch: '',
+  ifsc: '',
+  accountNumber: '',
+  bankLedgerId: null,      // from Farmer Bank Details; saved to the farmer with the bank
   loanAccountNumber: '',
   aadhaarNumber: '',
   mobileNumber: '',
   statementDate: new Date(),
+  year: new Date().getFullYear(),
+  panchayat: '',
   status: 'Draft',
   cropRows: [EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW()],
   descriptionOfDamagesOccurred: '',
@@ -38,23 +49,11 @@ const DEFAULT_FORM = {
 
 export default function CropStatementForm({ statementId, onClose }) {
   const [form, setForm]           = useState(DEFAULT_FORM);
-  const [farmers, setFarmers]     = useState([]);
   const [saving, setSaving]       = useState(false);
   const [loading, setLoading]     = useState(!!statementId);
 
-  // Load farmers for autocomplete
-  useEffect(() => {
-    farmerAPI.getAll({ limit: 500 }).then(res => {
-      if (res?.success) {
-        setFarmers(
-          (res.data.farmers || res.data || []).map(f => ({
-            value: f._id,
-            label: `${f.personalDetails?.name || ''} (${f.farmerNumber || ''})`
-          }))
-        );
-      }
-    });
-  }, []);
+  // Panchayats + farmers (with the details this form fills in) from Farmer Management
+  const { panchayats, farmers } = useFarmerFormData();
 
   // Load existing statement for edit
   useEffect(() => {
@@ -65,12 +64,20 @@ export default function CropStatementForm({ statementId, onClose }) {
         setForm({
           farmerName:   d.farmerName || '',
           farmerId:     d.farmerId?._id || d.farmerId || null,
+          farmerNumber: d.farmerNumber || d.farmerId?.farmerNumber || '',
           surveyNumber: d.surveyNumber || '',
+          ward:         d.ward || '',
           bankName:     d.bankName || '',
+          branch:       d.branch || '',
+          ifsc:         d.ifsc || '',
+          accountNumber: d.accountNumber || '',
+          bankLedgerId: null,
           loanAccountNumber: d.loanAccountNumber || '',
           aadhaarNumber:     d.aadhaarNumber || '',
           mobileNumber:      d.mobileNumber || '',
           statementDate:     d.statementDate ? new Date(d.statementDate) : new Date(),
+          year:              d.year || (d.statementDate ? new Date(d.statementDate).getFullYear() : new Date().getFullYear()),
+          panchayat:         d.panchayat || '',
           status:       d.status || 'Draft',
           cropRows:     d.cropRows?.length ? d.cropRows : [EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW()],
           descriptionOfDamagesOccurred: d.descriptionOfDamagesOccurred || '',
@@ -104,17 +111,44 @@ export default function CropStatementForm({ statementId, onClose }) {
     cropRows: prev.cropRows.filter((_, i) => i !== idx)
   }));
 
-  const handleFarmerSelect = (val) => {
-    set('farmerId', val);
-    // Auto-fill farmerName from the select label
-    const found = farmers.find(f => f.value === val);
-    if (found) {
-      const name = found.label.replace(/\s*\(.*\)\s*$/, '').trim();
-      set('farmerName', name);
-    }
+  // Farmer Number → what Farmer Management already has; the rest stays editable.
+  // Missing details typed here are saved back to the farmer on Save.
+  const handleFarmerPick = (f) => {
+    setForm(prev => ({
+      ...prev,
+      farmerId:      f._id,
+      farmerNumber:  f.farmerNumber || '',
+      farmerName:    f.name || prev.farmerName,
+      aadhaarNumber: f.aadhaar || '',
+      mobileNumber:  f.phone || '',
+      bankName:      f.bankName || '',
+      branch:        f.branch || '',
+      ifsc:          f.ifsc || '',
+      accountNumber: f.accountNumber || '',
+      bankLedgerId:  null,
+      ward:          f.ward || '',
+      panchayat:     f.panchayat || prev.panchayat,
+    }));
   };
+  const selectedFarmer = farmers.find(x => x._id === form.farmerId);
+
+  // Farmers Management → Farmer Bank Details: pick a bank to fill its name, branch and IFSC
+  const [banks, setBanks] = useState([]);
+  useEffect(() => { bankMasterAPI.getAll().then(r => setBanks(r?.data || [])).catch(() => {}); }, []);
+  const pickBank = (id) => {
+    const b = banks.find(x => x._id === id);
+    if (!b) return;
+    setForm(prev => ({ ...prev, bankName: b.bankName || '', branch: b.branch || '', ifsc: b.ifsc || '', bankLedgerId: b.bankLedgerId || null }));
+  };
+  const bankPicked = banks.find(b => (b.bankName || '').trim().toUpperCase() === form.bankName.trim().toUpperCase()
+    && (!form.ifsc || (b.ifsc || '').toUpperCase() === form.ifsc.toUpperCase()));
 
   const handleSubmit = async () => {
+    // New statements are made for a Farmer Number (older ones may have only a name)
+    if (!form.farmerId && !statementId) {
+      notifications.show({ message: 'Enter the Farmer Number and press Enter', color: 'red' });
+      return;
+    }
     if (!form.farmerName.trim()) {
       notifications.show({ message: 'Farmer name is required', color: 'red' });
       return;
@@ -131,6 +165,9 @@ export default function CropStatementForm({ statementId, onClose }) {
 
       if (res?.success) {
         notifications.show({ message: statementId ? 'Statement updated' : 'Statement created', color: 'green' });
+        if (res.synced?.length) {
+          notifications.show({ message: `Saved to Farmers Management: ${res.synced.join(', ')}`, color: 'teal', autoClose: 6000 });
+        }
         onClose();
       } else {
         notifications.show({ message: res?.message || 'Save failed', color: 'red' });
@@ -151,29 +188,40 @@ export default function CropStatementForm({ statementId, onClose }) {
 
   return (
     <ScrollArea h="80vh" px="md" pb="md">
+      {/* ── Year + Panchayat ─────────────────────────────────────────── */}
+      <Paper withBorder p="md" mt="md" mb="md" bg="#f8fafc">
+        <Grid gutter="sm">
+          <Grid.Col span={3}>
+            <YearSelect value={form.year} onChange={v => set('year', v)} size="sm" />
+          </Grid.Col>
+          <Grid.Col span={9}>
+            <PanchayatInput value={form.panchayat} onChange={v => set('panchayat', v)} panchayats={panchayats} size="sm" />
+          </Grid.Col>
+        </Grid>
+      </Paper>
+
       {/* ── Header info ──────────────────────────────────────────────── */}
-      <Paper withBorder p="md" mt="md" mb="md">
+      <Paper withBorder p="md" mb="md">
         <Text fw={700} mb="xs" size="sm" tt="uppercase" c="dimmed">Farmer & Bank Details</Text>
         <Grid gutter="sm">
           <Grid.Col span={6}>
-            <Select
-              label="Select Farmer"
-              placeholder="Search farmer..."
-              data={farmers}
-              searchable
-              clearable
-              value={form.farmerId}
-              onChange={handleFarmerSelect}
-              size="sm"
-            />
+            <FarmerNumberLookup farmers={farmers} farmer={selectedFarmer} onPick={handleFarmerPick} size="sm" required />
           </Grid.Col>
           <Grid.Col span={6}>
             <TextInput
               label="Name of the Farmer"
-              placeholder="Full name"
+              placeholder="Filled from the Farmer Number"
               value={form.farmerName}
               onChange={e => set('farmerName', e.target.value)}
               required
+              size="sm"
+            />
+            <TextInput
+              mt="sm"
+              label="Ward"
+              placeholder="Ward number / name"
+              value={form.ward}
+              onChange={e => set('ward', e.target.value)}
               size="sm"
             />
           </Grid.Col>
@@ -194,12 +242,52 @@ export default function CropStatementForm({ statementId, onClose }) {
               size="sm"
             />
           </Grid.Col>
+          <Grid.Col span={12}>
+            <Text fw={700} size="xs" tt="uppercase" c="dimmed" mt={4}>Bank Details</Text>
+          </Grid.Col>
+          <Grid.Col span={6}>
+            <Select
+              label="Bank (Farmer Bank Details)"
+              placeholder={banks.length ? 'Select bank to fill name, branch, IFSC' : 'No banks in Farmer Bank Details'}
+              data={banks.map(b => ({ value: b._id, label: [b.bankName, b.branch, b.ifsc].filter(Boolean).join(' · ') }))}
+              value={bankPicked?._id || null}
+              onChange={pickBank}
+              searchable
+              size="sm"
+            />
+          </Grid.Col>
           <Grid.Col span={6}>
             <TextInput
               label="Name of the Bank"
               placeholder="Bank name"
               value={form.bankName}
-              onChange={e => set('bankName', e.target.value)}
+              onChange={e => setForm(prev => ({ ...prev, bankName: e.target.value, bankLedgerId: null }))}
+              size="sm"
+            />
+          </Grid.Col>
+          <Grid.Col span={4}>
+            <TextInput
+              label="Branch"
+              value={form.branch}
+              onChange={e => set('branch', e.target.value)}
+              size="sm"
+            />
+          </Grid.Col>
+          <Grid.Col span={4}>
+            <TextInput
+              label="IFSC Code"
+              value={form.ifsc}
+              onChange={e => set('ifsc', e.target.value.toUpperCase())}
+              size="sm"
+              maxLength={11}
+            />
+          </Grid.Col>
+          <Grid.Col span={4}>
+            <TextInput
+              label="Account Number"
+              placeholder="Bank account number"
+              value={form.accountNumber}
+              onChange={e => set('accountNumber', e.target.value)}
               size="sm"
             />
           </Grid.Col>

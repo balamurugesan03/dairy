@@ -11,7 +11,7 @@ import {
   Box, Group, Text, TextInput, NumberInput, Select, Button,
   Table, ScrollArea, ActionIcon, Badge, Divider, Center,
   Loader, Avatar, Card, SimpleGrid, Stack, Checkbox,
-  Modal,
+  Modal, SegmentedControl,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { modals } from '@mantine/modals';
@@ -41,6 +41,7 @@ import { resolveDefaultCentreAgent } from '../../utils/defaultCentreAgent';
 import DairyRouteButtons from './DairyRouteButtons';
 import { openMilkPopup, POPUP_CHILD_Z } from '../../utils/milkPopup';
 import MilkDaySummary from './MilkDaySummary';
+import CanEntryPanel from './CanEntryPanel';
 import { findTsPeriod, tsRateValue } from '../../utils/rateChart';
 
 // ── Rate Calculation ─────────────────────────────────────────────────────────
@@ -247,7 +248,7 @@ const toDate = (d) => {
 // asPopup: rendered inside the global F2 popup (MainLayout) instead of as a
 // routed page — Close / P-S swap then go through onClose / onSwap.
 const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
-  const { user, isSuperAdmin, isCompanyAdmin, isUser, isCentreLogin, isAgentLogin, isStaffUser, centreInfo, userCenter } = useAuth();
+  const { user, isSuperAdminLogin, isUser, isCentreLogin, isAgentLogin, isStaffUser, centreInfo, userCenter } = useAuth();
   const [centersData, setCentersData] = useState([]);
   const [centreSummary, setCentreSummary] = useState([]);
   // From Dairy (Society Info) / To Dairy (Machine Configuration) shown next to Session
@@ -345,6 +346,17 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
     } catch { /* ignore */ }
   }, [shift, center, agent, memberInput, producer, ltr, water, fat, clr, snf, billNo]); // eslint-disable-line
 
+  // Closing the popup (any path) unmounts it — the next open must be a fresh
+  // blank form, so drop the saved fields. Swapping with Sales keeps both
+  // popups mounted, so in-progress entry still survives a swap.
+  useEffect(() => () => {
+    if (!asPopup) return;
+    try {
+      sessionStorage.removeItem('milkPurchase_date');
+      sessionStorage.removeItem('milkPurchase_form');
+    } catch { /* ignore */ }
+  }, [asPopup]);
+
   const [calcResult,       setCalcResult]       = useState({ snf: 0, incentive: 0, rate: 0, amount: 0 });
   const [activeChart,      setActiveChart]      = useState('ApplyFormula');
   const [chartRows,        setChartRows]        = useState([]);
@@ -424,6 +436,16 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
   }, [inFront]); // eslint-disable-line
 
   // ── Control Panel State ────────────────────────────────────────────────────
+  // 'farmer' = bill by Farmer No; 'can' = sub-centre cans by Can No (main centre only)
+  const [entryBy, setEntryBy] = useState('farmer');
+  const entryByRef = useRef(entryBy);
+  entryByRef.current = entryBy;
+  const canEntryAllowed = !isCentreLogin && !isAgentLogin;
+  // Cans come from sub centres; fall back to every centre if none is marked Sub Centre
+  const canCentres = useMemo(() => {
+    const subs = centersData.filter(c => c.centerType !== 'Head Office');
+    return (subs.length ? subs : centersData).map(({ value, label }) => ({ value, label }));
+  }, [centersData]);
   const [dupBlocked,  setDupBlocked]  = useState(false);
   const [dupInfo,     setDupInfo]     = useState(null); // { name, billNo, amount, center }
   const [speakEnabled, setSpeakEnabled] = useState(false);
@@ -962,7 +984,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
           agentAPI.getAllActive(),
           milkPurchaseSettingsAPI.getSummary(),
         ]);
-        const cl = (centerRes.data || []).map(c => ({ value: c._id, label: c.centerName }));
+        const cl = (centerRes.data || []).map(c => ({ value: c._id, label: c.centerName, centerType: c.centerType }));
         setCentersData(cl);
         // Sub-centre login: lock to own centre; user with assigned centre: auto-select; else default to first
         if (isCentreLogin && centreInfo?.centreId) {
@@ -1279,6 +1301,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
       if (e.key !== 'Enter') return;
       if (formRef.current.dupBlocked) return;
       if (isCovered()) return;
+      if (entryByRef.current === 'can') return;   // Can No panel handles its own keys
       const ae = document.activeElement;
       const tag = ae?.tagName;
       const isFormEl = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || ae?.isContentEditable;
@@ -2184,6 +2207,15 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
               styles={{ input: { fontWeight: 600, border: isAgentLogin ? '1.5px solid #86efac' : '1.5px solid #bfdbfe', background: isAgentLogin ? '#f0fdf4' : undefined } }}
             />
           </Group>
+          {canEntryAllowed && (
+            <SegmentedControl
+              value={entryBy} onChange={setEntryBy}
+              data={[{ value: 'farmer', label: 'Farmer No' }, { value: 'can', label: 'Can No' }]}
+              size="xs" radius="md" color={entryBy === 'can' ? 'cyan' : 'blue'}
+              title="Can No: milk brought in cans from sub centres"
+              styles={{ label: { fontWeight: 700 } }}
+            />
+          )}
           <Button
             onClick={async () => {
               setMonthMode(false);
@@ -2221,7 +2253,10 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
       </Box>
 
       {/* ══ MAIN CONTENT (Card Row + Table + Right Panel) ═══════════════════ */}
-      <Box className="mp-main-row" style={{ flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden', minHeight: 0 }}>
+      {entryBy === 'can' && (
+        <CanEntryPanel date={date} shift={shift} centres={canCentres} active={formEnabled} />
+      )}
+      <Box className="mp-main-row" style={{ flex: 1, display: entryBy === 'can' ? 'none' : 'flex', flexDirection: 'row', overflow: 'hidden', minHeight: 0 }}>
 
       {/* ── Left column (Card Row + Table) ── */}
       <Box className="mp-left-col" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
@@ -2749,8 +2784,8 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
                 {showAdminPanel ? 'Hide Administrator' : 'Administrator'}
               </Button>
 
-              {/* EXPORT to Excel — not available to restricted users */}
-              {!isUser && (
+              {/* EXPORT to Excel — Super Admin only */}
+              {isSuperAdminLogin && (
                 <Button leftSection={<IconDownload size={12} />} onClick={() => setExportOpen(true)}
                   size="compact-xs" radius="sm"
                   style={{ background: '#15803d', border: '1px solid #4ade80', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>
@@ -2758,8 +2793,8 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
                 </Button>
               )}
 
-              {/* IMPORT ZIBITT — superadmin / company-admin only */}
-              {(isSuperAdmin || isCompanyAdmin) && (
+              {/* IMPORT ZIBITT / OpenLyssa / DairySoft — Super Admin only */}
+              {isSuperAdminLogin && (
                 <>
                   <input
                     ref={zibittFileRef}
@@ -2811,8 +2846,8 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
                 </>
               )}
 
-              {/* IMPORT LinZA — superadmin / company-admin only */}
-              {(isSuperAdmin || isCompanyAdmin) && (
+              {/* IMPORT LinZA — Super Admin only */}
+              {isSuperAdminLogin && (
                 <Button leftSection={<IconUpload size={12} />} onClick={() => setLinzaImportOpen(true)}
                   size="compact-xs" radius="sm"
                   style={{ background: '#0e7490', border: '1px solid #67e8f9', fontWeight: 700, fontSize: 10, height: 24, color: 'white' }}>

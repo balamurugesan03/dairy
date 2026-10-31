@@ -15,6 +15,9 @@ const cropRowSchema = new mongoose.Schema({
 const cropStatementSchema = new mongoose.Schema({
   statementNo: { type: String, trim: true, default: '' },
   statementDate: { type: Date, default: Date.now },
+  // Selection at the top of the form (Panchayat-wise / year-wise lists)
+  year:      { type: Number, default: () => new Date().getFullYear() },
+  panchayat: { type: String, trim: true, default: '' },
 
   // Farmer info
   farmerName:   { type: String, trim: true, required: [true, 'Farmer name is required'] },
@@ -23,10 +26,15 @@ const cropStatementSchema = new mongoose.Schema({
     ref: 'Farmer',
     default: null
   },
+  farmerNumber: { type: String, trim: true, default: '' },
   surveyNumber: { type: String, trim: true, default: '' },
+  ward:         { type: String, trim: true, default: '' },
 
   // Bank info
   bankName:          { type: String, trim: true, default: '' },
+  branch:            { type: String, trim: true, default: '' },
+  ifsc:              { type: String, trim: true, uppercase: true, default: '' },
+  accountNumber:     { type: String, trim: true, default: '' },
   loanAccountNumber: { type: String, trim: true, default: '' },
   aadhaarNumber:     { type: String, trim: true, default: '' },
   mobileNumber:      { type: String, trim: true, default: '' },

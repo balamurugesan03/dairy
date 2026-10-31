@@ -309,6 +309,7 @@ import transportRouteRoutes from './routes/transportRouteRoutes.js';
 
 // Milk Receipt (main centre) / Shortage routes
 import milkReceiptRoutes from './routes/milkReceiptRoutes.js';
+import milkCanRoutes from './routes/milkCanRoutes.js';
 
 // Shift Incentive routes
 import shiftIncentiveRoutes from './routes/shiftIncentiveRoutes.js';
@@ -373,6 +374,7 @@ import producerOpeningRoutes from './routes/producerOpeningRoutes.js';
 // Cattle Feed Advance routes
 import cattleFeedAdvanceRoutes from './routes/cattleFeedAdvanceRoutes.js';
 import cropStatementRoutes from './routes/cropStatementRoutes.js';
+import farmerFormRoutes from './routes/farmerFormRoutes.js';
 import agriStatsRoutes from './routes/agriStatsRoutes.js';
 import inspectionReportRoutes from './routes/inspectionReportRoutes.js';
 
@@ -540,6 +542,7 @@ app.use('/api/transport-routes', protect, addCompanyFilter, transportRouteRoutes
 
 // Milk Receipt (main centre) / Shortage routes
 app.use('/api/milk-receipts', protect, addCompanyFilter, milkReceiptRoutes);
+app.use('/api/milk-cans', protect, addCompanyFilter, milkCanRoutes);
 
 // Shift Incentive routes
 app.use('/api/shift-incentives', protect, addCompanyFilter, shiftIncentiveRoutes);
@@ -598,6 +601,7 @@ app.use('/api', protect, addCompanyFilter, producerOpeningRoutes);
 // Cattle Feed Advance routes
 app.use('/api/cattle-feed-advance', protect, addCompanyFilter, cattleFeedAdvanceRoutes);
 app.use('/api/crop-statements',    protect, addCompanyFilter, cropStatementRoutes);
+app.use('/api/farmer-forms',       protect, addCompanyFilter, farmerFormRoutes);
 app.use('/api/agri-stats',         protect, addCompanyFilter, agriStatsRoutes);
 app.use('/api/inspection-report',    protect, addCompanyFilter, inspectionReportRoutes);
 app.use('/api/bmcc-operating-cost', protect, addCompanyFilter, bmccReportRoutes);

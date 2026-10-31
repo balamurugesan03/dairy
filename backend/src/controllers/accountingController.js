@@ -273,7 +273,10 @@ export const getCashBookEntry = async (req, res) => {
 
     const totalReceipts = rows.reduce((s, r) => s + r.cashIn, 0);
     const totalPayments = rows.reduce((s, r) => s + r.cashOut, 0);
-    const primaryCash = cashLedgers.find(l => l.ledgerType === 'Cash' && l.status !== 'Inactive') || cashLedgers[0] || null;
+    // Same cash ledger the Cash Book report picks: the one named "Cash in Hand" first
+    const activeCash = cashLedgers.filter(l => l.ledgerType === 'Cash' && l.status !== 'Inactive');
+    const primaryCash = activeCash.find(l => /^cash\s*in\s*hand$/i.test(l.ledgerName || ''))
+      || activeCash[0] || cashLedgers[0] || null;
 
     res.status(200).json({
       success: true,

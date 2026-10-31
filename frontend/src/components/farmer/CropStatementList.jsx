@@ -10,6 +10,7 @@ import { IconPlus, IconSearch, IconEdit, IconTrash, IconEye, IconPrinter } from 
 import { cropStatementAPI } from '../../services/api';
 import CropStatementForm from './CropStatementForm';
 import CropStatementPrint from './CropStatementPrint';
+import { YearSelect, PanchayatInput, useFarmerFormData } from './FarmerReportSelectors';
 
 const STATUS_COLORS = { Draft: 'gray', Submitted: 'blue', Approved: 'green' };
 
@@ -19,6 +20,10 @@ export default function CropStatementList() {
   const [page, setPage]               = useState(1);
   const [search, setSearch]           = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  // Year / Panchayat-wise list
+  const [yearFilter, setYearFilter]   = useState(new Date().getFullYear());
+  const [panchayatFilter, setPanchayatFilter] = useState('');
+  const { panchayats } = useFarmerFormData();
   const [loading, setLoading]         = useState(false);
   const [formOpen, setFormOpen]       = useState(false);
   const [printOpen, setPrintOpen]     = useState(false);
@@ -29,7 +34,7 @@ export default function CropStatementList() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await cropStatementAPI.getAll({ search, status: statusFilter, page, limit: LIMIT });
+      const res = await cropStatementAPI.getAll({ search, status: statusFilter, year: yearFilter || '', panchayat: panchayatFilter.trim(), page, limit: LIMIT });
       if (res?.success) {
         setStatements(res.data.statements || []);
         setTotal(res.data.total || 0);
@@ -37,7 +42,7 @@ export default function CropStatementList() {
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, page]);
+  }, [search, statusFilter, yearFilter, panchayatFilter, page]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -67,6 +72,7 @@ export default function CropStatementList() {
     <Table.Tr key={s._id}>
       <Table.Td>{s.statementNo}</Table.Td>
       <Table.Td>{s.farmerName}</Table.Td>
+      <Table.Td>{s.panchayat || '—'}</Table.Td>
       <Table.Td>{s.bankName || '—'}</Table.Td>
       <Table.Td>{s.loanAccountNumber || '—'}</Table.Td>
       <Table.Td>{s.mobileNumber || '—'}</Table.Td>
@@ -105,7 +111,9 @@ export default function CropStatementList() {
       </Group>
 
       <Paper withBorder p="sm" mb="md">
-        <Group>
+        <Group align="flex-end">
+          <YearSelect value={yearFilter} onChange={v => { setYearFilter(v); setPage(1); }} size="sm" w={110} />
+          <PanchayatInput value={panchayatFilter} onChange={v => { setPanchayatFilter(v); setPage(1); }} panchayats={panchayats} description={null} placeholder="All Panchayats" size="sm" w={220} />
           <TextInput
             placeholder="Search farmer, statement no, bank..."
             leftSection={<IconSearch size={14} />}
@@ -147,6 +155,7 @@ export default function CropStatementList() {
               <Table.Tr>
                 <Table.Th>Statement No</Table.Th>
                 <Table.Th>Farmer Name</Table.Th>
+                <Table.Th>Panchayat</Table.Th>
                 <Table.Th>Bank Name</Table.Th>
                 <Table.Th>Loan A/C No</Table.Th>
                 <Table.Th>Mobile</Table.Th>

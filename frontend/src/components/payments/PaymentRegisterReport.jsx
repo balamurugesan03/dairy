@@ -3,7 +3,7 @@
  * Select Cycle → Generate → Print / Cancel / Close
  * Shows the saved Ledger-type PaymentRegister for the chosen cycle.
  */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box, Group, Text, Select, Button, Badge, Loader,
@@ -13,9 +13,10 @@ import { notifications } from '@mantine/notifications';
 import {
   IconReportMoney, IconSearch, IconPrinter, IconX, IconArrowLeft,
 } from '@tabler/icons-react';
-import { useReactToPrint } from 'react-to-print';
 import { paymentRegisterAPI, producerPaymentAPI } from '../../services/api';
 import { localDateStr } from '../../utils/dateUtils';
+import { useCompany } from '../../context/CompanyContext';
+import { openA4Print, a4Header, a4Signatures, escapeHtml } from '../../utils/printA4';
 
 const fmt   = (v) => (parseFloat(v) || 0).toFixed(2);
 const fmtD  = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '—';
@@ -167,25 +168,45 @@ const RegisterTable = ({ reg }) => {
   );
 };
 
-// ── print styles ──────────────────────────────────────────────────────────────
-const PRINT_STYLE = `
-  @media print {
-    body * { visibility: hidden !important; }
-    .pr-print-area, .pr-print-area * { visibility: visible !important; }
-    .pr-print-area { position: fixed; inset: 0; padding: 10px; }
-    .no-print { display: none !important; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #999; font-size: 8px; padding: 3px 4px; }
-    th { background: #1a365d !important; color: #fff !important;
-         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    @page { size: A4 landscape; margin: 6mm; }
-  }
+// ── A4 LANDSCAPE print, built from the data (the screen table sits in a scroll
+// area, which used to clip the printout). [heading, width %, value, total key]
+const num = (k) => (e) => parseFloat(e[k]) || 0;
+const PRINT_COLS = {
+  Ledger: [
+    ['SN', 3, (e, i) => e.slNo || i + 1], ['ID', 4.5, (e) => e.producerId || e.productId || ''],
+    ['Name', 13, (e) => e.producerName || e.productName || ''],
+    ['Qty', 5, num('qty'), 'qty'], ['Milk Val', 6, num('milkValue'), 'milk'], ['Prev Bal', 5.5, num('previousBalance'), 'prev'],
+    ['Other Earn', 5, num('otherEarnings'), 'otherEarn'], ['Total Earn', 6, num('totalEarnings'), 'earn'],
+    ['Welfare', 4.5, num('welfare'), 'welfare'], ['CF Adv', 4.5, num('cfAdv'), 'cfAdv'], ['CF Rec', 4.5, num('cfRec'), 'cfRec'],
+    ['Cash Adv', 4.5, num('cashAdv'), 'cashAdv'], ['Cash Rec', 4.5, num('cashRec'), 'cashRec'],
+    ['Loan Adv', 4.5, num('loanAdv'), 'loanAdv'], ['Loan Rec', 4.5, num('loanRec'), 'loanRec'],
+    ['Other Ded', 4.5, num('otherDed'), 'other'], ['Total Ded', 5, num('totalDed'), 'ded'],
+    ['Net Pay', 6, num('netPay'), 'net'], ['Paid Amt', 6, num('paidAmount'), 'paid'],
+  ],
+  Producers: [
+    ['SN', 3.5, (e, i) => e.slNo || i + 1], ['ID', 5.5, (e) => e.producerId || e.productId || ''],
+    ['Name', 18, (e) => e.producerName || e.productName || ''], ['Center', 11, (e) => e.center || ''],
+    ['Qty', 6.5, num('qty'), 'qty'], ['Milk Val', 7.5, num('milkValue'), 'milk'], ['Prev Bal', 7, num('previousBalance'), 'prev'],
+    ['Welfare', 6, num('welfare'), 'welfare'], ['CF Rec', 6, num('cfRec'), 'cfRec'], ['Loan Adv', 6, num('loanAdv'), 'loanAdv'],
+    ['Cash Pocket', 6.5, num('cashPocket'), 'cashPocket'], ['Net Pay', 8, num('netPay'), 'net'], ['Paid Amt', 8.5, num('paidAmount'), 'paid'],
+  ],
+};
+const PRINT_CSS = `
+  @page { size: A4 landscape; margin: 8mm 7mm; }
+  body { font-size: 9.5px; }
+  .a4-header__org { font-size: 16px; }
+  .a4-header__title { font-size: 12.5px; }
+  .a4-header__meta { font-size: 10px; }
+  table.a4 th { font-size: 8.5px; text-transform: none; line-height: 1.15; }
+  table.a4 td { font-size: 9.5px; padding: 2.5px 3px; vertical-align: middle; }
 `;
+const pAmt = (v) => (v ? fmt(v) : '');
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function PaymentRegisterReport() {
   const navigate = useNavigate();
-  const printRef = useRef();
+  const { selectedCompany } = useCompany();
+  const societyName = selectedCompany?.societyName || selectedCompany?.companyName || 'Dairy Society';
 
   const [cycles,     setCycles]     = useState([]);     // available cycles
   const [selCycle,   setSelCycle]   = useState(null);   // selected cycle key "fromDate|toDate"
@@ -203,6 +224,8 @@ export default function PaymentRegisterReport() {
         toDate:   c.toDate,
       }));
       setCycles(list);
+      // Latest cycle (newest first from the API) is selected by default
+      if (list.length) setSelCycle(prev => prev || list[0].value);
     }).catch(() => {});
   }, []);
 
@@ -236,10 +259,33 @@ export default function PaymentRegisterReport() {
     }
   };
 
-  const handlePrint = useReactToPrint({
-    contentRef: printRef,
-    documentTitle: register ? `PaymentRegister_${fmtD(register.fromDate)}_${fmtD(register.toDate)}` : 'PaymentRegister',
-  });
+  const handlePrint = () => {
+    if (!register) return;
+    const cols = PRINT_COLS[register.registerType === 'Ledger' ? 'Ledger' : 'Producers'];
+    const entries = register.entries || [];
+    const totals = {};
+    const isAmt = (c) => !!c[3];
+    const body = entries.map((e, i) => `<tr>${cols.map(c => {
+      const v = c[2](e, i);
+      if (isAmt(c)) totals[c[3]] = (totals[c[3]] || 0) + v;
+      return isAmt(c) ? `<td class="amt${c[3] === 'net' || c[3] === 'paid' ? ' b' : ''}">${pAmt(v)}</td>`
+        : `<td${c[0] === 'Name' || c[0] === 'Center' ? '' : ' class="ctr"'}>${escapeHtml(v)}</td>`;
+    }).join('')}</tr>`).join('');
+    const labelCols = cols.filter(c => !isAmt(c)).length;
+    const totalRow = `<tr class="row-grand"><td colspan="${labelCols}" class="amt">TOTAL (${entries.length} producers)</td>${
+      cols.filter(isAmt).map(c => `<td class="amt">${fmt(totals[c[3]] || 0)}</td>`).join('')}</tr>`;
+    openA4Print({
+      title: `Payment Register ${cycleInfo}`,
+      orientation: 'landscape',
+      css: PRINT_CSS,
+      bodyHtml: a4Header({ orgName: societyName, title: 'Payment Register', period: cycleInfo,
+          extra: `${escapeHtml(register.registerType)} · ${entries.length} producers` })
+        + `<table class="a4"><colgroup>${cols.map(c => `<col style="width:${c[1]}%">`).join('')}</colgroup>
+          <thead><tr>${cols.map(c => `<th>${c[0]}</th>`).join('')}</tr></thead>
+          <tbody>${body}${totalRow}</tbody></table>`
+        + a4Signatures(['Secretary', 'President'], new Date().toLocaleString('en-IN')),
+    });
+  };
 
   const handleCancel = () => { setRegister(null); setSelCycle(null); };
 
@@ -250,7 +296,6 @@ export default function PaymentRegisterReport() {
 
   return (
     <Box style={{ height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#eef4fb' }}>
-      <style>{PRINT_STYLE}</style>
 
       {/* ── HEADER ── */}
       <Box style={{ background: 'white', borderBottom: '1px solid #dbeafe', padding: '8px 20px', flexShrink: 0, boxShadow: '0 1px 6px rgba(37,99,235,0.08)' }}>
@@ -353,13 +398,7 @@ export default function PaymentRegisterReport() {
             </Box>
 
             <Box style={{ flex: 1, overflow: 'hidden', background: 'white', borderRadius: '0 0 10px 10px', border: '1px solid #bfdbfe', borderTop: 'none' }}>
-              <div ref={printRef} className="pr-print-area">
-                {/* print header */}
-                <Box style={{ display: 'none' }} className="print-header-only"
-                  sx={{ '@media print': { display: 'block', textAlign: 'center', marginBottom: 8 } }}>
-                  <Text fw={900} size="14px">PAYMENT REGISTER — {cycleInfo}</Text>
-                </Box>
-
+              <div style={{ height: '100%' }}>
                 <ScrollArea h="100%" type="auto">
                   <RegisterTable reg={register} />
                 </ScrollArea>

@@ -22,6 +22,10 @@ import { ModalsProvider } from '@mantine/modals';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { getMantineTheme } from './config/themes';
 import App from './App.jsx';
+import { installPrintLogoHook } from './utils/printLogo';
+
+// Society logo on every print header (Settings → Society Information)
+installPrintLogoHook();
 
 /**
  * MantineWrapper Component

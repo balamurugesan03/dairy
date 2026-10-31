@@ -7,6 +7,7 @@ import CollectionCenter from '../models/CollectionCenter.js';
 import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances, findOrCreateLedger } from '../utils/accountingHelper.js';
 import { resolveCenterFromAgent } from '../utils/resolveAgentCenter.js';
 import { healMilkAssignments, healAfterImport, staffScope } from '../utils/milkScope.js';
+import { queueFromDairySync } from '../utils/unionFromDairySync.js';
 
 // Mobile-app milk-sale submissions are entered agent-wise and may omit
 // centerId — derive it (and its display name) from the agent so the sale
@@ -319,6 +320,8 @@ export const createMilkSale = async (req, res) => {
     } catch (vErr) {
       console.warn('[MilkSales] Voucher creation failed (non-fatal):', vErr.message);
     }
+    // Union Sales → From Dairy: milk sold locally is taken off the qty sent
+    queueFromDairySync(req.companyId, [sale.date]);
 
     res.status(201).json({ success: true, data: sale });
   } catch (err) {
@@ -332,6 +335,7 @@ export const createMilkSale = async (req, res) => {
 export const updateMilkSale = async (req, res) => {
   try {
     const body = await resolveSaleCenter(req.body);
+    const before = await MilkSales.findOne({ _id: req.params.id, companyId: req.companyId }).select('date').lean();
     const sale = await MilkSales.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId },
       body,
@@ -348,6 +352,7 @@ export const updateMilkSale = async (req, res) => {
     } catch (vErr) {
       console.warn('[MilkSales] Voucher refresh failed (non-fatal):', vErr.message);
     }
+    queueFromDairySync(req.companyId, [before?.date, sale.date]);   // Union Sales → From Dairy
 
     res.json({ success: true, data: sale });
   } catch (err) {
@@ -375,6 +380,7 @@ export const deleteMilkSale = async (req, res) => {
         console.warn('[MilkSales] Voucher reversal failed (non-fatal):', vErr.message);
       }
     }
+    queueFromDairySync(req.companyId, [sale.date]);   // Union Sales → From Dairy
 
     res.json({ success: true, message: 'Deleted successfully' });
   } catch (err) {
@@ -498,6 +504,7 @@ export const zibittRawImport = async (req, res) => {
     const totalSkipped = skipped.length + (docs.length - inserted);
     // Imports carry no centre/agent — assign them before the next read
     await healAfterImport(req.companyId);
+    queueFromDairySync(req.companyId, insertedDocs.map(d => d.date));   // Union Sales → From Dairy qty sent
     res.status(201).json({
       success: true,
       data: {
@@ -555,6 +562,7 @@ export const bulkImportMilkSales = async (req, res) => {
 
     // Imports carry no centre/agent — assign them before the next read
     await healAfterImport(req.companyId);
+    queueFromDairySync(req.companyId, insertedDocs.map(d => d.date));   // Union Sales → From Dairy qty sent
     res.status(201).json({
       success: true,
       data: {
@@ -676,6 +684,7 @@ export const openLyssaImport = async (req, res) => {
     const totalSkipped = skipped.length + (docs.length - inserted);
     // Imports carry no centre/agent — assign them before the next read
     await healAfterImport(req.companyId);
+    queueFromDairySync(req.companyId, insertedDocs.map(d => d.date));   // Union Sales → From Dairy qty sent
     res.status(201).json({
       success: true,
       data: {

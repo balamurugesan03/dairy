@@ -561,9 +561,12 @@ export const unionSalesSlipAPI = {
   getSettings:      ()       => api.get('/union-sales-slips/settings').then(res => res.data).catch(handleError),
   saveSettings:     (data)   => api.put('/union-sales-slips/settings', data).then(res => res.data).catch(handleError),
   getToDairyRate:   (date)   => api.get('/union-sales-slips/settings/to-dairy-rate', { params: { date } }).then(res => res.data).catch(handleError),
+  getSendQty:       (date, time) => api.get('/union-sales-slips/send-qty', { params: { date, time } }).then(res => res.data).catch(handleError),
   // From Dairy TS rates — own periods, separate from the Milk Purchase TS rate
   applyFromDairyRate:  (data) => api.post('/union-sales-slips/settings/from-dairy-rates', data).then(res => res.data).catch(handleError),
   deleteFromDairyRate: (id)   => api.delete(`/union-sales-slips/settings/from-dairy-rates/${id}`).then(res => res.data).catch(handleError),
+  applyToDairyRate:    (data) => api.post('/union-sales-slips/settings/to-dairy-rates', data).then(res => res.data).catch(handleError),
+  deleteToDairyRate:   (id)   => api.delete(`/union-sales-slips/settings/to-dairy-rates/${id}`).then(res => res.data).catch(handleError),
   syncFromDairy:       (data) => api.post('/union-sales-slips/settings/from-dairy-sync', data || {}).then(res => res.data).catch(handleError),
   fileImport: (file, onUploadProgress) => {
     const form = new FormData();
@@ -970,6 +973,14 @@ export const milkReceiptAPI = {
   getShortageReport: (params) => api.get('/milk-receipts/shortage-report', { params }).then(res => res.data).catch(handleError),
 };
 
+export const milkCanAPI = {
+  getAll: (params) => api.get('/milk-cans', { params }).then(res => res.data).catch(handleError),
+  lookup: (canNumber) => api.get('/milk-cans/lookup', { params: { canNumber } }).then(res => res.data).catch(handleError),
+  create: (data) => api.post('/milk-cans', data).then(res => res.data).catch(handleError),
+  update: (id, data) => api.put(`/milk-cans/${id}`, data).then(res => res.data).catch(handleError),
+  delete: (id) => api.delete(`/milk-cans/${id}`).then(res => res.data).catch(handleError),
+};
+
 export const milkSalesRateAPI = {
   // Get all rates with optional pagination/search/filter
   getAll: (params = {}) =>
@@ -1149,6 +1160,7 @@ export const machineConfigAPI = {
 // ── Society Info & Document Management API ────────────────────────────────────
 export const societyInfoAPI = {
   get:            ()           => api.get('/society-info').then(r => r.data).catch(handleError),
+  getBranding:    ()           => api.get('/society-info/branding').then(r => r.data).catch(handleError),
   upsert:         (data)       => api.put('/society-info', data).then(r => r.data).catch(handleError),
   upsertDocument: (key, data)  => api.put(`/society-info/documents/${key}`, data).then(r => r.data).catch(handleError),
   deleteDocument: (key)        => api.delete(`/society-info/documents/${key}`).then(r => r.data).catch(handleError),
@@ -1160,6 +1172,8 @@ export const milkBillAPI = {
     api.get(`/milk-bill/${farmerId}`, { params }).then(r => r.data).catch(handleError),
   getByCycle: (farmerId, params) =>
     api.get(`/milk-bill/${farmerId}/cycle`, { params }).then(r => r.data).catch(handleError),
+  getAllByCycle: (params) =>
+    api.get('/milk-bill/all/cycle', { params }).then(r => r.data).catch(handleError),
 };
 
 // ── Payment Register API ───────────────────────────────────────────────────────
@@ -1253,6 +1267,15 @@ export const agriStatsAPI = {
   create:  (data)     => api.post('/agri-stats', data).then(r => r.data).catch(handleError),
   update:  (id, data) => api.put(`/agri-stats/${id}`, data).then(r => r.data).catch(handleError),
   delete:  (id)       => api.delete(`/agri-stats/${id}`).then(r => r.data).catch(handleError),
+  // Figures from Farmer Management + milk purchase (params: panchayat, month, year)
+  prefill: (params)   => api.get('/agri-stats/prefill', { params }).then(r => r.data).catch(handleError),
+};
+
+// Lookups for the farmer report forms (Crop Damage Statement, Agri Statistics)
+export const farmerFormAPI = {
+  getPanchayats: ()          => api.get('/farmer-forms/panchayats').then(r => r.data).catch(handleError),
+  getFarmers:    (panchayat) => api.get('/farmer-forms/farmers', { params: panchayat ? { panchayat } : {} }).then(r => r.data).catch(handleError),
+  getDocuments:  (farmerId)  => api.get(`/farmer-forms/documents/${farmerId}`).then(r => r.data).catch(handleError),
 };
 
 // ── Crop Statement API ─────────────────────────────────────────────────────────

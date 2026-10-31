@@ -1,5 +1,18 @@
 import User from '../models/User.js';
 import Company from '../models/Company.js';
+import { isSuperAdminReq, NON_ASSIGNABLE_PERMS } from '../utils/userTier.js';
+
+// Super Admin-only options and User Management are never stored as assigned permissions
+const cleanPermissions = (perms) => (Array.isArray(perms)
+  ? perms.filter(p => p && p.module && !NON_ASSIGNABLE_PERMS.includes(p.module))
+  : perms);
+
+// Only a Super Admin may create a Super Admin, or change / reset / deactivate one
+const superAdminOnly = (req, res, userType) => {
+  if (userType !== 'superuser' || isSuperAdminReq(req)) return false;
+  res.status(403).json({ success: false, message: 'Only the Super Admin can create or change a Super Admin user' });
+  return true;
+};
 
 // Get all users for a company (company admin)
 export const getCompanyUsers = async (req, res) => {
@@ -105,6 +118,8 @@ export const createCompanyUser = async (req, res) => {
       agentId
     } = req.body;
 
+    if (superAdminOnly(req, res, userType)) return;
+
     // Validate required fields
     if (!username || !password || !displayName) {
       return res.status(400).json({
@@ -132,7 +147,7 @@ export const createCompanyUser = async (req, res) => {
     }
 
     // Set default permissions if not provided
-    const userPermissions = permissions || User.getDefaultPermissions();
+    const userPermissions = cleanPermissions(permissions) || User.getDefaultPermissions();
 
     const newUser = await User.create({
       username,
@@ -203,6 +218,8 @@ export const updateCompanyUser = async (req, res) => {
       agentId
     } = req.body;
 
+    if (superAdminOnly(req, res, user.userType) || superAdminOnly(req, res, userType)) return;
+
     // Check if new username already exists
     if (username && username.toLowerCase() !== user.username) {
       const existingUser = await User.findOne({
@@ -233,7 +250,7 @@ export const updateCompanyUser = async (req, res) => {
     if (designation) user.designation = designation;
     if (phone !== undefined) user.phone = phone;
     if (email !== undefined) user.email = email;
-    if (permissions) user.permissions = permissions;
+    if (permissions) user.permissions = cleanPermissions(permissions);
     if (status) user.status = status;
     if (joiningDate !== undefined) user.joiningDate = joiningDate || null;
     if (expireDate !== undefined) user.expireDate = expireDate || null;
@@ -274,6 +291,8 @@ export const resetCompanyUserPassword = async (req, res) => {
         message: 'User not found'
       });
     }
+
+    if (superAdminOnly(req, res, user.userType)) return;
 
     const { newPassword } = req.body;
 
@@ -318,6 +337,8 @@ export const deleteCompanyUser = async (req, res) => {
         message: 'User not found'
       });
     }
+
+    if (superAdminOnly(req, res, user.userType)) return;
 
     // Soft delete - set status to inactive
     user.status = 'inactive';
@@ -407,16 +428,18 @@ export const getDesignationsList = async (req, res) => {
 // Get user types list
 export const getUserTypesList = async (req, res) => {
   try {
+    // Super Admin / Admin / Ordinary User, then the other user types. Super Admin is
+    // the company-setup login; another one can only be created by a Super Admin.
     const userTypes = [
-      { value: 'auditor', label: 'Auditor' },
-      { value: 'dairy_department', label: 'Dairy Department' },
-      { value: 'society', label: 'Society' },
-      { value: 'milma', label: 'Milma' },
-      { value: 'president', label: 'President' },
-      { value: 'superuser', label: 'Superuser' },
-      { value: 'admin', label: 'Admin' },
-      { value: 'ordinary', label: 'Ordinary' },
-      { value: 'agent', label: 'Agent' }
+      ...(isSuperAdminReq(req) ? [{ value: 'superuser', label: 'Super Admin', group: 'Main' }] : []),
+      { value: 'admin', label: 'Admin', group: 'Main' },
+      { value: 'ordinary', label: 'Ordinary User', group: 'Main' },
+      { value: 'agent', label: 'Agent', group: 'Other Users' },
+      { value: 'auditor', label: 'Auditor', group: 'Other Users' },
+      { value: 'dairy_department', label: 'Dairy Department', group: 'Other Users' },
+      { value: 'society', label: 'Society', group: 'Other Users' },
+      { value: 'milma', label: 'Milma', group: 'Other Users' },
+      { value: 'president', label: 'President', group: 'Other Users' }
     ];
 
     res.status(200).json({

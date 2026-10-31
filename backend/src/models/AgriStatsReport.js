@@ -47,6 +47,10 @@ const agriStatsReportSchema = new mongoose.Schema({
   district:  { type: String, trim: true, default: '' },
   month:     { type: String, trim: true, default: '' },
   year:      { type: Number, default: () => new Date().getFullYear() },
+  // Panchayat the figures are for; farmer whose uploaded documents are printed after the report
+  panchayat:  { type: String, trim: true, default: '' },
+  farmerId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Farmer', default: null },
+  farmerName: { type: String, trim: true, default: '' },
 
   // Section 1
   generalInfo: {

@@ -378,7 +378,9 @@ export default function MilkReceiptShortage() {
                       {expected.centres.map((c) => c.centreName).join(' → ')} → {expected.route.destinationName || 'Main Centre'}
                     </Text>
                   </Group>
-                  {expected.receipt
+                  {expected.receipt?.source === 'Cans'
+                    ? <Badge color="cyan" variant="light">From Milk Purchase → Can No (edit the cans there)</Badge>
+                    : expected.receipt
                     ? <Badge color="teal" variant="light">Receipt entered — editing</Badge>
                     : <Badge color="orange" variant="light">New receipt</Badge>}
                 </Group>
@@ -561,14 +563,14 @@ export default function MilkReceiptShortage() {
 
                 <Textarea label="Remarks" autosize minRows={1} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
 
-                <Group justify="flex-end">
+                {expected.receipt?.source !== 'Cans' && <Group justify="flex-end">
                   {expected.receipt && (
                     <Button variant="light" color="red" leftSection={<IconTrash size={16} />} onClick={deleteReceipt}>Delete</Button>
                   )}
                   <Button color="teal" leftSection={<IconDeviceFloppy size={16} />} onClick={saveReceipt} loading={saving}>
                     {expected.receipt ? 'Update Receipt' : 'Save Receipt'}
                   </Button>
-                </Group>
+                </Group>}
               </Stack>
             )}
 

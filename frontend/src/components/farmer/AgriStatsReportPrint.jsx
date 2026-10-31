@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Box, Button, Group, Loader, Center, Text } from '@mantine/core';
 import { IconPrinter, IconDownload } from '@tabler/icons-react';
 import { agriStatsAPI } from '../../services/api';
+import { notifications } from '@mantine/notifications';
+import { printWithFarmerDocuments, DOCUMENT_PAGE_CSS } from '../../utils/farmerDocumentsPrint';
 
 /* ─── colour tokens (also used inline in print HTML) ──────────────────────── */
 const BLUE  = '#1a5276';
@@ -23,13 +25,19 @@ export default function AgriStatsReportPrint({ reportId }) {
     });
   }, [reportId]);
 
-  const triggerPrint = () => {
+  // Report first, then the chosen farmer's uploaded Bank Statement / Aadhaar / Ration Card pages
+  const [printing, setPrinting] = useState(false);
+  const triggerPrint = async () => {
     const content = printRef.current.innerHTML;
-    const win = window.open('', '_blank', 'width=900,height=700');
-    win.document.write(getPrintHTML(content));
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); win.close(); }, 600);
+    setPrinting(true);
+    const r = await printWithFarmerDocuments({
+      farmerId: data?.farmerId?._id || data?.farmerId,
+      features: 'width=900,height=700',
+      buildHtml: (docPages) => getPrintHTML(content + docPages),
+    });
+    setPrinting(false);
+    if (!r.ok) notifications.show({ color: 'red', message: r.message });
+    else if (r.skipped?.length) notifications.show({ color: 'orange', message: `Could not read: ${r.skipped.join(', ')}` });
   };
 
   if (loading) return <Center h={200}><Loader /></Center>;
@@ -82,7 +90,7 @@ export default function AgriStatsReportPrint({ reportId }) {
   return (
     <Box>
       <Group justify="flex-end" mb="md">
-        <Button leftSection={<IconPrinter size={14} />} onClick={triggerPrint} size="sm">
+        <Button leftSection={<IconPrinter size={14} />} onClick={triggerPrint} loading={printing} size="sm">
           Print / PDF
         </Button>
       </Group>
@@ -361,6 +369,7 @@ function getPrintHTML(body) {
     #agri-doc { width: 100%; padding: 0; }
     table { border-collapse: collapse; width: 100%; }
     th, td { border: 1px solid #d5d8dc; padding: 4px 6px; font-size: 10px; }
+    ${DOCUMENT_PAGE_CSS}
     @media print {
       body { margin: 0; }
       .no-print { display: none !important; }

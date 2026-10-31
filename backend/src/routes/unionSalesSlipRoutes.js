@@ -19,8 +19,11 @@ import {
   getToDairyRate,
   applyFromDairyRate,
   deleteFromDairyRate,
+  applyToDairyRate,
+  deleteToDairyRate,
   syncFromDairyEntries,
   getQualityComparison,
+  getSendQty,
 } from '../controllers/unionSaleQualityController.js';
 
 const router = express.Router();
@@ -41,6 +44,9 @@ router.get('/report', getUnionSalesReport);
 // Union Sale Quality Comparison (procurement vs To Dairy) — before /:id
 router.get('/quality-comparison', getQualityComparison);
 
+// Qty sent to the union for a date + session (purchase − milk sales) — before /:id
+router.get('/send-qty', getSendQty);
+
 // Settings: From Dairy / To Dairy TS Rate Settings — before /:id
 router.get('/settings',                  getUnionSaleSettings);
 router.put('/settings',                  saveUnionSaleSettings);
@@ -48,6 +54,9 @@ router.get('/settings/to-dairy-rate',    getToDairyRate);
 // From Dairy TS rates — own periods, separate from the Milk Purchase TS rate
 router.post('/settings/from-dairy-rates',           applyFromDairyRate);
 router.delete('/settings/from-dairy-rates/:rateId', deleteFromDairyRate);
+// To Dairy TS rates — same Apply / Delete form
+router.post('/settings/to-dairy-rates',             applyToDairyRate);
+router.delete('/settings/to-dairy-rates/:rateId',   deleteToDairyRate);
 // Generate / refresh the automatic From Dairy Union Sales entries from the purchase data
 router.post('/settings/from-dairy-sync',            syncFromDairyEntries);
 

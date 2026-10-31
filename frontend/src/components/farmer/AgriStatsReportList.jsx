@@ -10,6 +10,7 @@ import { IconPlus, IconSearch, IconEdit, IconTrash, IconPrinter } from '@tabler/
 import { agriStatsAPI } from '../../services/api';
 import AgriStatsReportForm from './AgriStatsReportForm';
 import AgriStatsReportPrint from './AgriStatsReportPrint';
+import { YearSelect, PanchayatInput, useFarmerFormData } from './FarmerReportSelectors';
 
 const STATUS_COLORS = { Draft: 'gray', Submitted: 'blue', Approved: 'green' };
 
@@ -25,6 +26,10 @@ export default function AgriStatsReportList() {
   const [search, setSearch]           = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [monthFilter, setMonthFilter] = useState('');
+  // Year / Panchayat-wise list
+  const [yearFilter, setYearFilter]   = useState(new Date().getFullYear());
+  const [panchayatFilter, setPanchayatFilter] = useState('');
+  const { panchayats } = useFarmerFormData();
   const [loading, setLoading]         = useState(false);
   const [formOpen, setFormOpen]       = useState(false);
   const [printOpen, setPrintOpen]     = useState(false);
@@ -36,7 +41,7 @@ export default function AgriStatsReportList() {
     setLoading(true);
     try {
       const res = await agriStatsAPI.getAll({
-        search, status: statusFilter, month: monthFilter, page, limit: LIMIT
+        search, status: statusFilter, month: monthFilter, year: yearFilter || '', panchayat: panchayatFilter.trim(), page, limit: LIMIT
       });
       if (res?.success) {
         setReports(res.data.reports || []);
@@ -45,7 +50,7 @@ export default function AgriStatsReportList() {
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, monthFilter, page]);
+  }, [search, statusFilter, monthFilter, yearFilter, panchayatFilter, page]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -73,6 +78,7 @@ export default function AgriStatsReportList() {
     <Table.Tr key={r._id}>
       <Table.Td>{r.reportNo}</Table.Td>
       <Table.Td>{r.district || '—'}</Table.Td>
+      <Table.Td>{r.panchayat || '—'}</Table.Td>
       <Table.Td>{r.month}</Table.Td>
       <Table.Td>{r.year}</Table.Td>
       <Table.Td>
@@ -110,7 +116,9 @@ export default function AgriStatsReportList() {
       </Group>
 
       <Paper withBorder p="sm" mb="md">
-        <Group>
+        <Group align="flex-end">
+          <YearSelect value={yearFilter} onChange={v => { setYearFilter(v); setPage(1); }} size="sm" w={110} />
+          <PanchayatInput value={panchayatFilter} onChange={v => { setPanchayatFilter(v); setPage(1); }} panchayats={panchayats} description={null} placeholder="All Panchayats" size="sm" w={220} />
           <TextInput
             placeholder="Search district, report no..."
             leftSection={<IconSearch size={14} />}
@@ -156,6 +164,7 @@ export default function AgriStatsReportList() {
               <Table.Tr>
                 <Table.Th>Report No</Table.Th>
                 <Table.Th>District</Table.Th>
+                <Table.Th>Panchayat</Table.Th>
                 <Table.Th>Month</Table.Th>
                 <Table.Th>Year</Table.Th>
                 <Table.Th>Status</Table.Th>

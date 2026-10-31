@@ -14,8 +14,8 @@ import MilkCollection from '../models/MilkCollection.js';
 // ════════════════════════════════════════════════════════════════
 
 const toObjectId = (id) => new mongoose.Types.ObjectId(String(id));
-const dayStart = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
-const dayEnd = (d) => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
+export const dayStart = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+export const dayEnd = (d) => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
 const ymd = (d) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 const r2 = (n) => Number((Number(n) || 0).toFixed(2));
 const r3 = (n) => Number((Number(n) || 0).toFixed(3));
@@ -24,7 +24,7 @@ const r3 = (n) => Number((Number(n) || 0).toFixed(3));
 const autoSnf = (fat, clr) => (clr ? r2(clr / 4 + 0.20 * fat + 0.50) : 0);
 
 // Sum of { qty, fatQty, snfQty, clrQty } → display figures
-const finalise = (a) => {
+export const finalise = (a) => {
   const qty = a.qty || 0;
   return {
     qty: r2(qty),
@@ -37,10 +37,10 @@ const finalise = (a) => {
   };
 };
 
-const fromReading = ({ qty = 0, fat = 0, snf = 0, clr = 0 }) =>
+export const fromReading = ({ qty = 0, fat = 0, snf = 0, clr = 0 }) =>
   finalise({ qty, fatQty: qty * fat, snfQty: qty * snf, clrQty: qty * clr });
 
-const diffOf = (received, expected) => ({
+export const diffOf = (received, expected) => ({
   qty: r2(received.qty - expected.qty),
   fatKg: r3(received.fatKg - expected.fatKg),
   snfKg: r3(received.snfKg - expected.snfKg),
@@ -49,16 +49,16 @@ const diffOf = (received, expected) => ({
 });
 
 // Main-centre receipt entered, but the sub centre Excel (Daily Collection List) isn't imported yet
-const AWAITING = 'Awaiting Data';
+export const AWAITING = 'Awaiting Data';
 
-const statusOf = (diff, tol) => {
+export const statusOf = (diff, tol) => {
   if (diff.qty < -tol.qty || diff.fatKg < -tol.kg || diff.snfKg < -tol.kg) return 'Shortage';
   if (diff.qty > tol.qty || diff.fatKg > tol.kg || diff.snfKg > tol.kg) return 'Excess';
   return 'OK';
 };
 
 // Collections grouped by day + shift + centre
-const aggregateCollections = (companyId, start, end, centreIds, shift) => {
+export const aggregateCollections = (companyId, start, end, centreIds, shift) => {
   const match = {
     companyId: toObjectId(companyId),
     collectionCenter: { $in: centreIds.map(toObjectId) },
@@ -87,7 +87,7 @@ const aggregateCollections = (companyId, start, end, centreIds, shift) => {
 };
 
 // Clean incoming readings; fill SNF from CLR when blank
-const cleanReading = (src = {}) => {
+export const cleanReading = (src = {}) => {
   const qty = Number(src.qty) || 0;
   const fat = Number(src.fat) || 0;
   const clr = Number(src.clr) || 0;
@@ -173,6 +173,9 @@ export const getExpected = async (req, res) => {
 // ════════════════════════════════════════════════════════════════
 //  CRUD
 // ════════════════════════════════════════════════════════════════
+// Receipts built from Milk Purchase can entries change only through the cans
+const CANS_LOCKED = 'This receipt is made from the Can No entries in Milk Purchase — edit or delete the cans there';
+
 export const getMilkReceipts = async (req, res) => {
   try {
     const { fromDate, toDate, shift, routeId } = req.query;
@@ -206,6 +209,7 @@ export const updateMilkReceipt = async (req, res) => {
   try {
     const receipt = await MilkReceipt.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!receipt) return res.status(404).json({ success: false, message: 'Receipt not found' });
+    if (receipt.source === 'Cans') return res.status(400).json({ success: false, message: CANS_LOCKED });
     const body = await buildReceiptBody(req.body, req.companyId);
     receipt.set(body);
     await receipt.save(); // save so Centre-mode totals are recomputed
@@ -218,8 +222,10 @@ export const updateMilkReceipt = async (req, res) => {
 
 export const deleteMilkReceipt = async (req, res) => {
   try {
-    const receipt = await MilkReceipt.findOneAndDelete({ _id: req.params.id, companyId: req.companyId });
+    const receipt = await MilkReceipt.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!receipt) return res.status(404).json({ success: false, message: 'Receipt not found' });
+    if (receipt.source === 'Cans') return res.status(400).json({ success: false, message: CANS_LOCKED });
+    await receipt.deleteOne();
     res.json({ success: true, message: 'Receipt deleted' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

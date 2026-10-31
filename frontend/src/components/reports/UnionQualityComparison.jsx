@@ -15,9 +15,10 @@ import { openA4Print, a4Header, a4Signatures, escapeHtml } from '../../utils/pri
 
 // ────────────────────────────────────────────────────────────────
 //  Union Sale Quality Comparison
-//    Procurement Data (From Dairy) — Daily Collection List, per date + centre
-//    To Dairy                       — Union Sales slips (society-level), per date
-//    Comparison                     — To Dairy − Procurement, per date
+//    Procurement Data — Daily Collection List, per date + centre
+//    From Dairy       — procurement total per date, From Dairy TS rates
+//    To Dairy         — Union Sales slips (society-level), per date
+//    Comparison       — To Dairy − From Dairy, per date
 // ────────────────────────────────────────────────────────────────
 const f2 = (n) => (n === null || n === undefined ? '-' : Number(n).toFixed(2));
 const fmtD = (d) => dayjs(d).format('DD/MM/YYYY');
@@ -27,8 +28,10 @@ const centreText = (r) => (r.centreCode ? `${r.centreCode} - ${r.centreName}` : 
 
 const COLS = ['Date', 'Center Code', 'Total Quantity', 'Avg FAT', 'Avg SNF', 'Avg TS', 'Avg Rate'];
 // Days with only one side (e.g. union slip not entered yet) are left out of the Comparison total
-const unmatchedNote = (d) => `${d.totals.comparison.unmatchedDays} day(s) with only Procurement or only To Dairy data are not included in the Comparison total.`;
+const unmatchedNote = (d) => `${d.totals.comparison.unmatchedDays} day(s) with only From Dairy or only To Dairy data are not included in the Comparison total.`;
 const tsTitle = (s) => `TS Rate Settings${s?.label ? ` (${s.label})` : ''}`;
+const TABLE_STYLE = { tableLayout: 'fixed', width: '100%', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
+const HEAD_STYLE = { background: '#f1f5f9' };
 
 export default function UnionQualityComparison() {
   const { selectedCompany } = useCompany();
@@ -90,12 +93,13 @@ export default function UnionQualityComparison() {
         ${['qty', 'fat', 'snf', 'ts', 'rate'].map((k) => `<td class="amt">${a ? f2(a[k]) : '-'}</td><td class="amt">${t ? f2(t[k]) : '-'}</td><td class="amt b">${d ? signed(d[k]) : '-'}</td>`).join('')}
       </tr>`;
     const cmpHead = `<tr><th rowspan="2">Date</th>${['Total Quantity', 'Avg FAT', 'Avg SNF', 'Avg TS', 'Avg Rate'].map((c) => `<th colspan="3">${c}</th>`).join('')}</tr>
-      <tr>${['qty', 'fat', 'snf', 'ts', 'rate'].map(() => '<th>Actual</th><th>To Dairy</th><th>Diff</th>').join('')}</tr>`;
+      <tr>${['qty', 'fat', 'snf', 'ts', 'rate'].map(() => '<th>From Dairy</th><th>To Dairy</th><th>Diff</th>').join('')}</tr>`;
     const body = a4Header({ orgName: companyName, title: 'Union Sale Quality Comparison', period: periodText,
       extra: `Center: ${escapeHtml(data.filters.centreLabel)}` })
       + qualityTable(`Procurement Data${data.names?.fromDairy?.name ? ` — ${data.names.fromDairy.name}` : ''}`, rateNote(data.settings.fromDairy, 'From Dairy settings'), data.procurement, data.totals.actual)
-      + qualityTable(`To Diary${data.names?.toDairy?.name ? ` — ${data.names.toDairy.name}` : ''}`, rateNote(data.settings.toDairy, 'manual'), data.toDairy, data.totals.toDairy)
-      + `<div class="sec">Comparison <span class="note">Actual / Procurement vs To Dairy · Diff = To Dairy − Actual</span></div>
+      + qualityTable(`From Dairy${data.names?.fromDairy?.name ? ` — ${data.names.fromDairy.name}` : ''}`, `${rateNote(data.settings.fromDairy, 'From Dairy settings')} · procurement total per date`, data.fromDairy || [], data.totals.fromDairy || data.totals.actual)
+      + qualityTable(`To Dairy${data.names?.toDairy?.name ? ` — ${data.names.toDairy.name}` : ''}`, rateNote(data.settings.toDairy, 'manual'), data.toDairy, data.totals.toDairy)
+      + `<div class="sec">Comparison <span class="note">From Dairy vs To Dairy · Diff = To Dairy − From Dairy</span></div>
          <table class="a4 cmp"><thead>${cmpHead}</thead><tbody>
          ${data.comparison.map((c) => cmpRow(fmtD(c.date), c.actual, c.toDairy, c.diff)).join('')}
          ${cmpRow('Total', data.totals.comparison.actual, data.totals.comparison.toDairy, data.totals.comparison.diff, 'row-grand')}
@@ -129,11 +133,12 @@ export default function UnionQualityComparison() {
       ['Total', '', total.qty, total.fat, total.snf, total.ts, total.rate],
     ];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(quality(data.procurement, data.totals.actual)), 'Procurement Data');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(quality(data.toDairy, data.totals.toDairy)), 'To Diary');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(quality(data.fromDairy || [], data.totals.fromDairy || data.totals.actual)), 'From Dairy');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(quality(data.toDairy, data.totals.toDairy)), 'To Dairy');
     const keys = ['qty', 'fat', 'snf', 'ts', 'rate'];
     const cmp = [
       ...head,
-      ['Date', ...['Total Quantity', 'Avg FAT', 'Avg SNF', 'Avg TS', 'Avg Rate'].flatMap((c) => [`${c} Actual`, `${c} To Dairy`, `${c} Diff`])],
+      ['Date', ...['Total Quantity', 'Avg FAT', 'Avg SNF', 'Avg TS', 'Avg Rate'].flatMap((c) => [`${c} From Dairy`, `${c} To Dairy`, `${c} Diff`])],
       ...data.comparison.map((c) => [fmtD(c.date), ...keys.flatMap((k) => [c.actual?.[k] ?? '', c.toDairy?.[k] ?? '', c.diff?.[k] ?? ''])]),
       ['Total', ...keys.flatMap((k) => [data.totals.comparison.actual[k], data.totals.comparison.toDairy[k], data.totals.comparison.diff[k]])],
       ...(data.totals.comparison.unmatchedDays ? [[unmatchedNote(data)]] : []),
@@ -143,10 +148,16 @@ export default function UnionQualityComparison() {
   };
 
   // ── Screen ──────────────────────────────────────────────────
+  // Compact, fixed column widths so every section lines up the same way
   const QualityTable = ({ rows, total, emptyText }) => (
     <Box style={{ overflowX: 'auto' }}>
-      <Table striped withTableBorder withColumnBorders fz="sm">
-        <Table.Thead>
+      <Table striped withTableBorder withColumnBorders fz="xs" verticalSpacing={4} horizontalSpacing={8}
+        style={{ ...TABLE_STYLE, maxWidth: 860 }}>
+        <colgroup>
+          <col style={{ width: 92 }} /><col /><col style={{ width: 104 }} />
+          <col style={{ width: 80 }} /><col style={{ width: 80 }} /><col style={{ width: 80 }} /><col style={{ width: 96 }} />
+        </colgroup>
+        <Table.Thead style={HEAD_STYLE}>
           <Table.Tr>{COLS.map((c, i) => <Table.Th key={c} ta={i >= 2 ? 'right' : undefined}>{c}</Table.Th>)}</Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -155,7 +166,7 @@ export default function UnionQualityComparison() {
           ) : rows.map((r, i) => (
             <Table.Tr key={`${r.date}-${r.centreName}-${i}`}>
               <Table.Td>{fmtD(r.date)}</Table.Td>
-              <Table.Td>{centreText(r)}</Table.Td>
+              <Table.Td title={centreText(r)} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{centreText(r)}</Table.Td>
               <Table.Td ta="right">{f2(r.qty)}</Table.Td>
               <Table.Td ta="right">{f2(r.fat)}</Table.Td>
               <Table.Td ta="right">{f2(r.snf)}</Table.Td>
@@ -191,14 +202,14 @@ export default function UnionQualityComparison() {
   ]);
 
   return (
-    <Container size="xl" py="md" fluid>
+    <Container size={1200} py="md">
       <Paper shadow="sm" radius="md" p="lg" withBorder>
         <Group justify="space-between" mb="md" align="flex-start">
           <Group gap="sm">
             <ThemeIcon size={40} radius="md" color="teal" variant="light"><IconScaleOutline size={22} /></ThemeIcon>
             <Box>
               <Title order={3} lh={1}>Union Sale Quality Comparison</Title>
-              <Text size="xs" c="dimmed">Procurement (From Dairy) vs To Dairy — quantity, FAT, SNF, TS and rate</Text>
+              <Text size="xs" c="dimmed">Procurement, From Dairy and To Dairy — quantity, FAT, SNF, TS and rate</Text>
             </Box>
           </Group>
           <Group gap="xs">
@@ -244,7 +255,15 @@ export default function UnionQualityComparison() {
 
             <Box>
               <Group gap="xs" mb={6}>
-                <Title order={5}>To Diary{data.names?.toDairy?.name ? ` — ${data.names.toDairy.name}` : ''}</Title>
+                <Title order={5}>From Dairy{data.names?.fromDairy?.name ? ` — ${data.names.fromDairy.name}` : ''}</Title>
+                <Text size="xs" c="dimmed">{rateNote(data.settings.fromDairy, 'From Dairy settings')} · procurement total per date</Text>
+              </Group>
+              <QualityTable rows={data.fromDairy || []} total={data.totals.fromDairy || data.totals.actual} emptyText="No milk collection in this period." />
+            </Box>
+
+            <Box>
+              <Group gap="xs" mb={6}>
+                <Title order={5}>To Dairy{data.names?.toDairy?.name ? ` — ${data.names.toDairy.name}` : ''}</Title>
                 <Text size="xs" c="dimmed">{rateNote(data.settings.toDairy, 'manual')} · from Union Sales slips</Text>
               </Group>
               <QualityTable rows={data.toDairy} total={data.totals.toDairy} emptyText="No Union Sales slips in this period." />
@@ -253,19 +272,24 @@ export default function UnionQualityComparison() {
             <Box>
               <Group gap="xs" mb={6}>
                 <Title order={5}>Comparison</Title>
-                <Text size="xs" c="dimmed">Actual / Procurement vs To Dairy · Diff = To Dairy − Actual (red = To Dairy lower)</Text>
+                <Text size="xs" c="dimmed">From = From Dairy, To = To Dairy · Diff = To Dairy − From Dairy (red = To Dairy lower)</Text>
               </Group>
               <Box style={{ overflowX: 'auto' }}>
-                <Table withTableBorder withColumnBorders fz="xs" highlightOnHover>
-                  <Table.Thead>
+                <Table withTableBorder withColumnBorders fz="xs" highlightOnHover verticalSpacing={4} horizontalSpacing={6}
+                  style={{ ...TABLE_STYLE, minWidth: 1000 }}>
+                  <colgroup>
+                    <col style={{ width: 88 }} />
+                    {CMP_KEYS.flatMap(([k]) => [<col key={`${k}a`} />, <col key={`${k}t`} />, <col key={`${k}d`} />])}
+                  </colgroup>
+                  <Table.Thead style={HEAD_STYLE}>
                     <Table.Tr>
                       <Table.Th rowSpan={2}>Date</Table.Th>
                       {CMP_KEYS.map(([k, label]) => <Table.Th key={k} colSpan={3} ta="center">{label}</Table.Th>)}
                     </Table.Tr>
                     <Table.Tr>
                       {CMP_KEYS.flatMap(([k]) => [
-                        <Table.Th key={`${k}a`} ta="right">Actual</Table.Th>,
-                        <Table.Th key={`${k}t`} ta="right">To Dairy</Table.Th>,
+                        <Table.Th key={`${k}a`} ta="right" title="From Dairy">From</Table.Th>,
+                        <Table.Th key={`${k}t`} ta="right" title="To Dairy">To</Table.Th>,
                         <Table.Th key={`${k}d`} ta="right" bg="gray.1">Diff</Table.Th>,
                       ])}
                     </Table.Tr>

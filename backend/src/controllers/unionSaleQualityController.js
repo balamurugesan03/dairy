@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import UnionSaleSettings from '../models/UnionSaleSettings.js';
 import UnionSalesSlip from '../models/UnionSalesSlip.js';
 import MilkCollection from '../models/MilkCollection.js';
+import MilkSales from '../models/MilkSales.js';
 import CollectionCenter from '../models/CollectionCenter.js';
 import Company from '../models/Company.js';
 import MilkPurchaseSettings from '../models/MilkPurchaseSettings.js';
@@ -10,8 +11,10 @@ import { syncFromDairySlips } from '../utils/unionFromDairySync.js';
 // ════════════════════════════════════════════════════════════════
 //  Union Sale Quality Comparison + Union Sales Settings
 //
-//  Procurement (From Dairy) = Daily Collection List, per date + centre.
-//  To Dairy                  = Union Sales slips (society-level), per date.
+//  Procurement = Daily Collection List, per date + centre.
+//  From Dairy  = procurement total per date (society-level), From Dairy TS rate.
+//  To Dairy    = Union Sales slips (society-level), per date.
+//  Comparison  = From Dairy vs To Dairy, per date.
 //  TS = FAT + SNF.  TS-based rate = TS × TS rate / 100.
 //  Average Rate:
 //    From Dairy — TS enabled & date ≥ its From Date → the From Dairy TS rate
@@ -144,7 +147,8 @@ export const saveUnionSaleSettings = async (req, res) => {
       // From Dairy TS rates are kept unless sent — they are normally changed one at a
       // time through Apply / Delete (applyFromDairyRate / deleteFromDairyRate)
       fromDairy: side(fromDairy, normalisePeriods(Array.isArray(fromDairy.tsRates) ? fromDairy.tsRates : plainPeriods(current.fromDairy?.tsRates), 'From Dairy')),
-      toDairy: side(toDairy, normalisePeriods(toDairy.tsRates))
+      // To Dairy rates likewise: Apply / Delete one at a time; only an Excel upload sends the list
+      toDairy: side(toDairy, normalisePeriods(Array.isArray(toDairy.tsRates) ? toDairy.tsRates : plainPeriods(current.toDairy?.tsRates), 'To Dairy'))
     };
     if (update.fromDairy.tsEnabled && !update.fromDairy.tsRates.length) {
       return res.status(400).json({ success: false, message: 'From Dairy: apply at least one TS rate' });
@@ -221,6 +225,57 @@ export const deleteFromDairyRate = async (req, res) => {
   }
 };
 
+// ── To Dairy TS rates: same Apply / Delete form as From Dairy ──
+// POST /union-sales-slips/settings/to-dairy-rates  { fromDate, useToDate, toDate, tsRate, remarks }
+// No automatic slips on this side — the rate only fills the slip entry form and the report.
+export const applyToDairyRate = async (req, res) => {
+  try {
+    const { fromDate, toDate, useToDate, tsRate, remarks } = req.body || {};
+    if (!fromDate) return res.status(400).json({ success: false, message: 'From Date is required' });
+    if (tsRate === '' || tsRate === null || tsRate === undefined || Number.isNaN(Number(tsRate)) || Number(tsRate) < 0) {
+      return res.status(400).json({ success: false, message: 'Enter a valid TS Rate' });
+    }
+    if (useToDate && !toDate) return res.status(400).json({ success: false, message: 'Select the To Date, or untick "Use To Date"' });
+
+    const settings = await UnionSaleSettings.getOrCreate(req.companyId);
+    const day = ymd(dayStart(fromDate));
+    const kept = plainPeriods(settings.toDairy?.tsRates).filter(p => ymd(p.fromDate) !== day);
+    const tsRates = normalisePeriods([...kept, { fromDate, toDate, useToDate: !!useToDate, tsRate, remarks }], 'To Dairy');
+
+    const saved = await UnionSaleSettings.findOneAndUpdate(
+      { companyId: req.companyId },
+      { $set: { 'toDairy.tsRates': tsRates, 'toDairy.fromDate': firstFrom(tsRates), ...(req.user?._id ? { lastUpdatedBy: req.user._id } : {}) } },
+      { new: true, runValidators: true }
+    );
+    res.json({ success: true, data: saved, message: 'To Dairy TS rate applied' });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+// DELETE /union-sales-slips/settings/to-dairy-rates/:rateId
+export const deleteToDairyRate = async (req, res) => {
+  try {
+    const settings = await UnionSaleSettings.getOrCreate(req.companyId);
+    const all = settings.toDairy?.tsRates || [];
+    if (!all.some(p => String(p._id) === req.params.rateId)) {
+      return res.status(404).json({ success: false, message: 'TS rate not found' });
+    }
+    const tsRates = normalisePeriods(plainPeriods(all.filter(p => String(p._id) !== req.params.rateId)), 'To Dairy');
+    const set = { 'toDairy.tsRates': tsRates, 'toDairy.fromDate': firstFrom(tsRates) };
+    // The last rate gone → the TS rule can't stay on
+    if (!tsRates.length) set['toDairy.tsEnabled'] = false;
+    const saved = await UnionSaleSettings.findOneAndUpdate(
+      { companyId: req.companyId },
+      { $set: set },
+      { new: true, runValidators: true }
+    );
+    res.json({ success: true, data: saved, message: 'To Dairy TS rate deleted' });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
 // POST /union-sales-slips/settings/from-dairy-sync  { fromDate?, toDate? }
 // Generate / refresh the automatic From Dairy entries on demand (safe to repeat).
 export const syncFromDairyEntries = async (req, res) => {
@@ -249,6 +304,36 @@ export const getToDairyRate = async (req, res) => {
     const active = td.tsEnabled && td.fromDate && ymd(td.fromDate) <= day;
     const period = active ? periodOn(td.tsRates || [], day) : null;
     res.json({ success: true, data: { enabled: !!active, tsRate: period ? period.tsRate : null } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /union-sales-slips/send-qty?date=YYYY-MM-DD&time=AM|PM — for the slip entry form:
+// milk purchased that date + session minus the milk sold locally (local / sample /
+// credit) = the quantity sent to the union, same rule as the Dairy Register Send Qty
+export const getSendQty = async (req, res) => {
+  try {
+    const { date, time } = req.query;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '') || !['AM', 'PM'].includes(time)) {
+      return res.status(400).json({ success: false, message: 'date (YYYY-MM-DD) and time (AM/PM) are required' });
+    }
+    const cid = toObjectId(req.companyId);
+    const from = new Date(`${date}T00:00:00+05:30`);
+    const to = new Date(`${date}T23:59:59.999+05:30`);
+    const [[p], [s]] = await Promise.all([
+      MilkCollection.aggregate([
+        { $match: { companyId: cid, date: { $gte: from, $lte: to }, shift: time } },
+        { $group: { _id: null, qty: { $sum: '$qty' } } },
+      ]),
+      MilkSales.aggregate([
+        { $match: { companyId: cid, date: { $gte: from, $lte: to }, session: time } },
+        { $group: { _id: null, qty: { $sum: '$litre' } } },
+      ]),
+    ]);
+    const purchaseQty = p?.qty || 0;
+    const salesQty = s?.qty || 0;
+    res.json({ success: true, data: { purchaseQty: r2(purchaseQty), salesQty: r2(salesQty), sendQty: r2(Math.max(0, purchaseQty - salesQty)) } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -355,7 +440,17 @@ export const getQualityComparison = async (req, res) => {
       return { date: day, ...centreLabel(centreById[String(g._id.centre)]), ...figures(g, fromTsRate(day)) };
     }).sort((a, b) => a.date.localeCompare(b.date) || a.centreName.localeCompare(b.centreName));
 
-    // ── Section 2: To Dairy (union slips, per date) ──────────────
+    // ── Section 2: From Dairy (society total per date) ───────────
+    // The same per-day figures the comparison uses: procurement of all (or the
+    // selected) centres, priced with the From Dairy TS rates of Union Sales Settings
+    const fromDairyRow = { centreCode: names.fromDairy.code || '', centreName: names.fromDairy.name || 'From Dairy' };
+    const fromDairy = Object.keys(procByDay).sort().map(day => ({
+      date: day,
+      ...fromDairyRow,
+      ...figures(procByDay[day], fromTsRate(day))
+    }));
+
+    // ── Section 3: To Dairy (union slips, per date) ──────────────
     const slipByDay = Object.fromEntries(slipGroups.map(g => [g._id, g]));
     const toDairy = slipGroups.map(g => ({
       date: g._id,
@@ -364,7 +459,7 @@ export const getQualityComparison = async (req, res) => {
       ...figures(g, toTsRate(g._id))
     })).sort((a, b) => a.date.localeCompare(b.date));
 
-    // ── Section 3: Comparison (per date) ─────────────────────────
+    // ── Section 4: Comparison (per date): From Dairy vs To Dairy ─
     const days = [...new Set([...Object.keys(procByDay), ...Object.keys(slipByDay)])].sort();
     const comparison = days.map(day => {
       const actual = procByDay[day] ? figures(procByDay[day], fromTsRate(day)) : null;
@@ -396,6 +491,7 @@ export const getQualityComparison = async (req, res) => {
       actual: totalOf(procAll, actualDays),
       toDairy: totalOf(slipAll, unionDays)
     };
+    totals.fromDairy = totals.actual;   // From Dairy section = the procurement total per day
     // Comparison total: only days present on BOTH sides, so a day whose union slip
     // isn't entered yet doesn't show up as a false shortage
     const matched = comparison.filter(c => c.actual && c.toDairy);
@@ -422,6 +518,7 @@ export const getQualityComparison = async (req, res) => {
       success: true,
       data: {
         procurement,
+        fromDairy,
         toDairy,
         comparison,
         totals,

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Box, Button, Group, Loader, Center, Text } from '@mantine/core';
 import { IconPrinter } from '@tabler/icons-react';
 import { cropStatementAPI } from '../../services/api';
+import { notifications } from '@mantine/notifications';
+import { printWithFarmerDocuments, DOCUMENT_PAGE_CSS } from '../../utils/farmerDocumentsPrint';
 
 export default function CropStatementPrint({ statementId }) {
   const [data, setData]     = useState(null);
@@ -15,10 +17,14 @@ export default function CropStatementPrint({ statementId }) {
     });
   }, [statementId]);
 
-  const handlePrint = () => {
+  // Statement first, then the farmer's uploaded Bank Statement / Aadhaar / Ration Card pages
+  const [printing, setPrinting] = useState(false);
+  const handlePrint = async () => {
     const content = printRef.current.innerHTML;
-    const win = window.open('', '_blank');
-    win.document.write(`
+    setPrinting(true);
+    const r = await printWithFarmerDocuments({
+      farmerId: data?.farmerId?._id || data?.farmerId,
+      buildHtml: (docPages) => `
       <!DOCTYPE html>
       <html>
       <head>
@@ -46,14 +52,16 @@ export default function CropStatementPrint({ statementId }) {
           .signature-box { text-align: center; width: 45%; border-top: 1.5px solid #000; padding-top: 5px; font-size: 11px; font-weight: 700; }
           .divider { border-top: 1.5px solid #000; margin: 14px 0; }
           .no-print { display: none; }
+          ${DOCUMENT_PAGE_CSS}
         </style>
       </head>
-      <body>${content}</body>
+      <body>${content}${docPages}</body>
       </html>
-    `);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); win.close(); }, 400);
+    `,
+    });
+    setPrinting(false);
+    if (!r.ok) notifications.show({ color: 'red', message: r.message });
+    else if (r.skipped?.length) notifications.show({ color: 'orange', message: `Could not read: ${r.skipped.join(', ')}` });
   };
 
   if (loading) return <Center h={200}><Loader /></Center>;
@@ -68,7 +76,7 @@ export default function CropStatementPrint({ statementId }) {
   return (
     <Box>
       <Group justify="flex-end" mb="md">
-        <Button leftSection={<IconPrinter size={14} />} onClick={handlePrint} variant="filled">
+        <Button leftSection={<IconPrinter size={14} />} onClick={handlePrint} loading={printing} variant="filled">
           Print / Download
         </Button>
       </Group>
@@ -124,7 +132,10 @@ export default function CropStatementPrint({ statementId }) {
                 {/* RIGHT */}
                 <td style={{ width: '50%', verticalAlign: 'top', paddingLeft: 12, borderLeft: '1px dashed #aaa' }}>
                   {[
-                    ['Name of the Bank', data.bankName],
+                    ['Name of the Bank', [data.bankName, data.branch].filter(Boolean).join(', ')],
+                    // Bank details from Farmers Management (shown when present, older statements unchanged)
+                    ...(data.accountNumber ? [['Account Number', data.accountNumber]] : []),
+                    ...(data.ifsc ? [['IFSC Code', data.ifsc]] : []),
                     ['Loan Account Number', data.loanAccountNumber],
                     ['Farmer Aadhaar Number', data.aadhaarNumber],
                     ['Farmer Mobile Number', data.mobileNumber]

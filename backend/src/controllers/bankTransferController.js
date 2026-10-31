@@ -363,6 +363,7 @@ export const applyBankTransfer = async (req, res) => {
               balanceAmount,
               status:        newStatus,
               paymentDate:   new Date(applyDate),
+              bankTransferId: bankTransfer._id,
             },
           }
         );
@@ -731,6 +732,44 @@ export const getBankTransferById = async (req, res) => {
   }
 };
 
+// Put the FarmerPayment records paid by one Bank Transfer back to Pending.
+// balanceAmount is restored to the full netPayable so the next-cycle prevBalance
+// carry picks the amount up via $sum: '$balanceAmount'. Records are matched by
+// bankTransferId; older records (applied before that link existed) by the
+// transfer's apply day, which Apply stamps as their paymentDate — never every
+// paid record of the farmer, which used to re-open earlier cycles too.
+const reverseTransferPayments = async (bankTransfer, companyId) => {
+  const day = bankTransfer.applyDate ? new Date(bankTransfer.applyDate) : null;
+  const dayFrom = day ? new Date(day.getTime() - 24 * 60 * 60 * 1000) : null;
+  const dayTo   = day ? new Date(day.getTime() + 24 * 60 * 60 * 1000) : null;
+  for (const d of bankTransfer.transferDetails) {
+    try {
+      await FarmerPayment.updateMany(
+        {
+          companyId,
+          farmerId:      d.farmerId,
+          paymentSource: 'BankTransfer',
+          status:        { $in: ['Paid', 'Partial'] },
+          $or: [
+            { bankTransferId: bankTransfer._id },
+            ...(day ? [{ bankTransferId: null, paymentDate: { $gte: dayFrom, $lte: dayTo } }] : []),
+          ],
+        },
+        {
+          $set: {
+            paidAmount:    0,
+            balanceAmount: d.netPayable || 0,
+            status:        'Pending',
+            bankTransferId: null,
+          },
+        }
+      );
+    } catch (reverseErr) {
+      console.error('Reverse FarmerPayment failed for farmer', d.farmerId, reverseErr.message);
+    }
+  }
+};
+
 // Cancel bank transfer
 export const cancelBankTransfer = async (req, res) => {
   try {
@@ -751,36 +790,16 @@ export const cancelBankTransfer = async (req, res) => {
       throw new Error('Transfer is already cancelled');
     }
 
-    // Update status
+    // Cancel only backs the transfer out of the payment process: the record and
+    // every producer row (amounts, bank details, row status) stay exactly as they
+    // were, so the details remain available in the Transfer Log. Delete & Reverse
+    // is the one that removes the record.
     bankTransfer.status = 'Cancelled';
-    bankTransfer.transferDetails.forEach(detail => {
-      detail.transferStatus = 'Cancelled';
-    });
+    bankTransfer.cancelledAt = new Date();
+    if (req.user?._id) bankTransfer.cancelledBy = req.user._id;
 
-    // Reverse FarmerPayment records back to Pending. balanceAmount must be
-    // restored to the full netPayable so the next-cycle prevBalance carry
-    // picks the amount up via $sum: '$balanceAmount'.
-    for (const d of bankTransfer.transferDetails) {
-      try {
-        await FarmerPayment.updateMany(
-          {
-            companyId:     req.userCompany,
-            farmerId:      d.farmerId,
-            paymentSource: 'BankTransfer',
-            status:        { $in: ['Paid', 'Partial'] },
-          },
-          {
-            $set: {
-              paidAmount:    0,
-              balanceAmount: d.netPayable || 0,
-              status:        'Pending',
-            },
-          }
-        );
-      } catch (reverseErr) {
-        console.error('Reverse FarmerPayment failed for farmer', d.farmerId, reverseErr.message);
-      }
-    }
+    // Only THIS transfer's payments go back to Pending (other cycles stay paid)
+    await reverseTransferPayments(bankTransfer, req.userCompany);
 
     // Remove the auto-posted Day Book / Cash Book vouchers (covers all bank
     // groups + cash voucher, not just bankTransfer.voucherId).
@@ -989,28 +1008,11 @@ export const deleteBankTransfer = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Bank transfer not found' });
     }
 
-    // Reverse each farmer's FarmerPayment back to BankTransfer-pending so the
-    // balance carries forward into the next cycle's previousBalance.
-    for (const d of bankTransfer.transferDetails) {
-      try {
-        await FarmerPayment.updateMany(
-          {
-            companyId:     req.userCompany,
-            farmerId:      d.farmerId,
-            paymentSource: 'BankTransfer',
-            status:        { $in: ['Paid', 'Partial'] },
-          },
-          {
-            $set: {
-              paidAmount:    0,
-              balanceAmount: d.netPayable || 0,
-              status:        'Pending',
-            },
-          }
-        );
-      } catch (reverseErr) {
-        console.error('Reverse FarmerPayment failed for farmer', d.farmerId, reverseErr.message);
-      }
+    // Reverse this transfer's FarmerPayments back to BankTransfer-pending so the
+    // balance carries forward into the next cycle's previousBalance. A transfer
+    // already cancelled was reversed then — don't touch payments again.
+    if (bankTransfer.status !== 'Cancelled') {
+      await reverseTransferPayments(bankTransfer, req.userCompany);
     }
 
     // Remove all auto-posted Day Book / Cash Book vouchers (one per bank-ledger

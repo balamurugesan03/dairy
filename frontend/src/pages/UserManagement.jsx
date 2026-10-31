@@ -44,184 +44,12 @@ import { userManagementAPI, agentAPI, collectionCenterAPI } from '../services/ap
 import { message } from '../utils/toast';
 import PageHeader from '../components/common/PageHeader';
 
-// Full grouped module structure — main modules + sub-modules
-const MODULE_GROUPS = [
-  {
-    key: 'dashboard', label: 'Dashboard', color: '#4dabf7',
-    subModules: []
-  },
-  {
-    key: 'farmers', label: 'Farmers Management', color: '#51cf66',
-    subModules: [
-      { key: 'farmers.producers',          label: 'Producer Management'   },
-      { key: 'farmers.collectionCenters',  label: 'Collection Centre'     },
-      { key: 'farmers.agents',             label: 'Agent Management'      },
-      { key: 'farmers.milkSalesCustomers', label: 'Customer (Milk Sales)' },
-    ]
-  },
-  {
-    key: 'milkCollection', label: 'Milk Purchase & Sales', color: '#74c0fc',
-    subModules: [
-      { key: 'milkCollection.purchase',        label: 'Milk Purchase'         },
-      { key: 'milkCollection.dailyList',        label: 'Daily Collection List' },
-      { key: 'milkCollection.sales',            label: 'Milk Sales'            },
-      { key: 'milkCollection.unionSales',       label: 'Union Sales'           },
-      { key: 'milkCollection.farmerSummary',    label: 'Farmer-Wise Summary'   },
-      { key: 'milkCollection.rateChart',        label: 'Rate Chart Settings'   },
-      { key: 'milkCollection.machineConfig',    label: 'Machine Configuration' },
-      { key: 'milkCollection.milkSalesRate',    label: 'Milk Sales Rate'       },
-      { key: 'milkCollection.shiftIncentive',   label: 'Shift Incentive'       },
-      { key: 'milkCollection.timeIncentive',    label: 'Time Incentive'        },
-      { key: 'milkCollection.producerOpenings', label: 'Producer Openings'     },
-    ]
-  },
-  {
-    key: 'inventory', label: 'Dairy Inventory', color: '#ffa94d',
-    subModules: [
-      { key: 'inventory.suppliers',        label: 'Supplier'                        },
-      { key: 'inventory.items',            label: 'Items'                           },
-      { key: 'inventory.stockIn',          label: 'Inventory Purchase'              },
-      { key: 'inventory.sales',            label: 'Inventory Sales'                 },
-      { key: 'inventory.stockOut',         label: 'Stock Returns'                   },
-      { key: 'inventory.purchaseReturns',  label: 'Purchase Return (Debit Note)'    },
-      { key: 'inventory.salesReturns',     label: 'Sales Return'                    },
-      { key: 'inventory.subsidies',        label: 'Subsidy'                         },
-    ]
-  },
-  {
-    key: 'payments', label: 'Producers Dues', color: '#69db7c',
-    subModules: [
-      { key: 'payments.receipts',           label: 'Producer Receipts'      },
-      { key: 'payments.register',           label: 'Payment Register'       },
-      { key: 'payments.bankTransfer',       label: 'Bank Transfer'          },
-      { key: 'payments.paymentToProducer',  label: 'Payment to Producer'    },
-      { key: 'payments.loans',              label: 'Loans'                  },
-      { key: 'payments.cashAdvance',        label: 'Cash Advance'           },
-      { key: 'payments.cattleFeed',         label: 'Cattle Feed Advance'    },
-      { key: 'payments.earningDeduction',   label: 'Earnings / Deductions'  },
-      { key: 'payments.producerRegister',   label: 'Producer Register'      },
-      { key: 'payments.farmerLedger',       label: 'Producer Ledger'        },
-    ]
-  },
-  {
-    key: 'accounting', label: 'Accounts', color: '#a9e34b',
-    subModules: [
-      { key: 'accounting.ledgers',   label: 'Ledgers'                  },
-      { key: 'accounting.receipt',   label: 'Receipt Voucher'          },
-      { key: 'accounting.payment',   label: 'Payment Voucher'          },
-      { key: 'accounting.journal',   label: 'Adjustment / Journal'     },
-      { key: 'accounting.vouchers',  label: 'Vouchers Management'      },
-      { key: 'accounting.cashBook',  label: 'Cash Book'                },
-      { key: 'accounting.dayBook',   label: 'Day Book'                 },
-      { key: 'accounting.generalLedger', label: 'General Ledger'       },
-      { key: 'accounting.finalAccounts', label: 'Final Accounts'       },
-      { key: 'accounting.outstanding',   label: 'Outstanding Report'   },
-    ]
-  },
-  {
-    key: 'reports', label: 'Dairy Reports', color: '#f783ac',
-    subModules: [
-      { key: 'reports.dairyAbstract',   label: 'Dairy Abstract'           },
-      { key: 'reports.dairyRegister',   label: 'Dairy Register'           },
-      { key: 'reports.misReport',       label: 'MIS Report'               },
-      { key: 'reports.monthlyMIS',      label: 'Monthly MIS Report'       },
-      { key: 'reports.milkPurchase',    label: 'Milk Purchase Report'     },
-      { key: 'reports.milkStatement',   label: 'Milk Statement'           },
-      { key: 'reports.milkBillAbstract',label: 'Milk Bill Abstract'       },
-      { key: 'reports.rdStatement',     label: 'Receipt and Disbursements' },
-      { key: 'reports.inspectionReport',label: 'Inspection Report'        },
-      { key: 'reports.cropStatements',  label: 'Crop Damage Statements'   },
-      { key: 'reports.agriStats',       label: 'Monthly Agri Statistics'  },
-    ]
-  },
-  {
-    key: 'businessInventory', label: 'Business Inventory', color: '#da77f2',
-    subModules: [
-      { key: 'businessInventory.suppliers',       label: 'Supplier'            },
-      { key: 'businessInventory.items',           label: 'Item Master'         },
-      { key: 'businessInventory.stockIn',         label: 'Purchase / Stock In' },
-      { key: 'businessInventory.sales',           label: 'Sales Invoices'      },
-      { key: 'businessInventory.stockOut',        label: 'Stock Out / Returns' },
-      { key: 'businessInventory.purchaseReturns', label: 'Purchase Return'     },
-      { key: 'businessInventory.salesReturns',    label: 'Sales Return'        },
-    ]
-  },
-  {
-    key: 'businessReports', label: 'Business Reports', color: '#4cc9f0',
-    subModules: [
-      { key: 'businessReports.saleReport',     label: 'Sale Report'       },
-      { key: 'businessReports.purchaseReport', label: 'Purchase Report'   },
-      { key: 'businessReports.partyStatement', label: 'Party Statement'   },
-      { key: 'businessReports.allParties',     label: 'All Parties'       },
-      { key: 'businessReports.gstr1',          label: 'GSTR-1'            },
-      { key: 'businessReports.gstr2',          label: 'GSTR-2'            },
-      { key: 'businessReports.profitLoss',     label: 'Profit & Loss'     },
-      { key: 'businessReports.tradingAccount', label: 'Trading Account'   },
-      { key: 'businessReports.balanceSheet',   label: 'Balance Sheet'     },
-      { key: 'businessReports.trialBalance',   label: 'Trial Balance'     },
-    ]
-  },
-  {
-    key: 'quotations', label: 'Quotations', color: '#63e6be',
-    subModules: [
-      { key: 'quotations.add',  label: 'Add Quotation'   },
-      { key: 'quotations.list', label: 'Quotation List'  },
-    ]
-  },
-  {
-    key: 'machines', label: 'Machines', color: '#ffd43b',
-    subModules: [
-      { key: 'machines.add',  label: 'Add Machine'  },
-      { key: 'machines.list', label: 'Machine List' },
-    ]
-  },
-  {
-    key: 'warranty', label: 'Warranty', color: '#ff8787',
-    subModules: [
-      { key: 'warranty.add',  label: 'Add Warranty'   },
-      { key: 'warranty.list', label: 'Warranty List'  },
-    ]
-  },
-  {
-    key: 'promotions', label: 'Promotions', color: '#f08c00',
-    subModules: [
-      { key: 'promotions.dashboard', label: 'Dashboard'        },
-      { key: 'promotions.coupons',   label: 'Discount Coupons' },
-      { key: 'promotions.offers',    label: 'Offers & Schemes' },
-      { key: 'promotions.campaigns', label: 'Campaigns'        },
-    ]
-  },
-  {
-    key: 'hrm', label: 'Human Resources', color: '#748ffc',
-    subModules: [
-      { key: 'hrm.employees',   label: 'Employees'         },
-      { key: 'hrm.attendance',  label: 'Attendance'        },
-      { key: 'hrm.leaves',      label: 'Leave Management'  },
-      { key: 'hrm.salary',      label: 'Payroll'           },
-      { key: 'hrm.loans',       label: 'Loans / Advance'   },
-    ]
-  },
-  {
-    key: 'settings', label: 'Settings', color: '#94d82d',
-    subModules: [
-      { key: 'settings.societyInfo',      label: 'Society Info'        },
-      { key: 'settings.financialYear',    label: 'Financial Year'      },
-      { key: 'settings.paymentSettings',  label: 'Payment Settings'    },
-      { key: 'settings.userManagement',   label: 'User Management'     },
-      { key: 'settings.openLyssaMerge',   label: 'OpenLyssa Merge Tool'},
-    ]
-  },
-];
-
-const BUSINESS_ONLY_GROUPS = new Set(['businessInventory', 'businessReports', 'quotations', 'machines', 'warranty', 'promotions']);
-
-// Flat list of ALL module keys (main + sub) for permission initialisation
-const MODULES = MODULE_GROUPS.flatMap(g => [g.key, ...g.subModules.map(s => s.key)]);
+import { MODULE_GROUPS, BUSINESS_ONLY_GROUPS, MODULES } from '../utils/modulePermissions';
 
 const UserManagement = () => {
-  const { isAdminLogin, hasModuleAccess, companyInfo } = useAuth();
-  // Admins, or users granted User Management in User Management → Settings
-  const isAdmin = isAdminLogin || hasModuleAccess('settings.userManagement');
+  const { canManageUsers, isSuperAdminLogin, companyInfo } = useAuth();
+  // Only Super Admin and Admin may open User Management, create users and assign permissions
+  const isAdmin = canManageUsers;
   const isDairy = companyInfo?.businessTypes?.includes('Dairy Cooperative Society');
   const visibleGroups = isDairy ? MODULE_GROUPS.filter(g => !BUSINESS_ONLY_GROUPS.has(g.key)) : MODULE_GROUPS;
   const navigate = useNavigate();
@@ -629,7 +457,7 @@ const UserManagement = () => {
                       <Table.Td>{user.username}</Table.Td>
                       <Table.Td>
                         <Badge variant="light" color="grape">
-                          {userTypes.find(t => t.value === user.userType)?.label || user.userType || '-'}
+                          {userTypes.find(t => t.value === user.userType)?.label || (user.userType === 'superuser' ? 'Super Admin' : user.userType) || '-'}
                         </Badge>
                       </Table.Td>
                       <Table.Td>
@@ -655,7 +483,8 @@ const UserManagement = () => {
                       </Table.Td>
                       <Table.Td>
                         <Group gap="xs" justify="center">
-                          <Menu shadow="md" width={160}>
+                          {/* A Super Admin account can only be changed by a Super Admin */}
+                          {(isSuperAdminLogin || user.userType !== 'superuser') && <Menu shadow="md" width={160}>
                             <Menu.Target>
                               <ActionIcon variant="subtle">
                                 <IconDots size={16} />
@@ -692,7 +521,7 @@ const UserManagement = () => {
                                 Deactivate
                               </Menu.Item>
                             </Menu.Dropdown>
-                          </Menu>
+                          </Menu>}
                         </Group>
                       </Table.Td>
                     </Table.Tr>
@@ -740,7 +569,7 @@ const UserManagement = () => {
             <Select
               label="User Type"
               placeholder="Select user type"
-              data={userTypes}
+              data={['Main', 'Other Users'].map(group => ({ group, items: userTypes.filter(t => (t.group || 'Other Users') === group).map(({ value, label }) => ({ value, label })) })).filter(g => g.items.length)}
               value={formData.userType}
               onChange={(value) => {
                 setFormData({ ...formData, userType: value });
@@ -818,8 +647,13 @@ const UserManagement = () => {
             />
           </SimpleGrid>
 
-          {/* Permissions Section */}
-          <Paper p="md" withBorder>
+          {formData.userType === 'superuser' && (
+            <Alert icon={<IconShieldCheck size={16} />} color="grape">
+              Super Admin has every module and the Super Admin-only options (Import / Export in Milk Purchase, Milk Sales and Union Sales, Rate Chart Settings, OpenLyssa Merge Tool, Day Book / Cash Book delete). No module permissions are needed.
+            </Alert>
+          )}
+          {/* Permissions Section — only the modules assigned here appear in this user's menu */}
+          {formData.userType !== 'superuser' && <Paper p="md" withBorder>
             <Group justify="space-between" mb="md">
               <Title order={5}>Module Permissions</Title>
               <Group gap="xs">
@@ -842,7 +676,8 @@ const UserManagement = () => {
             </Group>
 
             <Alert icon={<IconAlertCircle size={16} />} color="blue" mb="md">
-              Select which operations each user can perform in each module
+              Only the modules ticked here appear in this user's menu and can be opened.
+              {formData.userType === 'admin' ? ' Admin also gets User Management and Collection Centre.' : ''}
             </Alert>
 
             <ScrollArea h={500}>
@@ -925,7 +760,7 @@ const UserManagement = () => {
                 </Table.Tbody>
               </Table>
             </ScrollArea>
-          </Paper>
+          </Paper>}
 
           <Group justify="flex-end" mt="md">
             <Button variant="light" onClick={() => setModalOpen(false)}>

@@ -163,6 +163,165 @@ const fmt = (d) => new Date(d).toISOString().split('T')[0];
  * GET /api/milk-bill/:farmerId/cycle?fromDate=&toDate=
  * Full cycle-based milk bill: milk collections + cattle feed + deductions + payments
  */
+// ── Cycle data, loaded once for one farmer or for every farmer of the cycle ──
+// Five bulk queries (+ the previous register) instead of five per farmer, so
+// "All Farmers" stays fast. `farmerIds` = ObjectId[] to restrict, or null = all.
+const loadCycleData = async (companyId, start, end, farmerIds) => {
+  const only = (field) => (farmerIds ? { [field]: { $in: farmerIds } } : {});
+  const [collections, cattleSales, deductionDocs, paymentDocs, prevCycle] = await Promise.all([
+    MilkCollection.find({ companyId, date: { $gte: start, $lte: end }, ...only('farmer') })
+      .sort({ date: 1, shift: 1 }).lean(),
+    Sales.find({ companyId, customerType: 'Farmer', billDate: { $gte: start, $lte: end }, ...only('customerId') })
+      .sort({ billDate: 1 }).lean(),
+    IndividualDeductionEarning.find({ companyId, type: 'DEDUCTION', date: { $gte: start, $lte: end }, ...only('producerId') })
+      .sort({ date: 1 }).lean(),
+    ProducerPayment.find({ companyId, status: { $ne: 'Cancelled' }, paymentDate: { $gte: start, $lte: end }, ...only('farmerId') })
+      .sort({ paymentDate: 1 }).lean(),
+    PaymentRegister.findOne({
+      companyId, registerType: 'Producers', status: { $in: ['Saved', 'Printed'] }, toDate: { $lt: start },
+    }).sort({ toDate: -1 }).lean(),
+  ]);
+  const group = (docs, key) => {
+    const m = new Map();
+    docs.forEach((d) => {
+      const k = d[key] ? String(d[key]) : '';
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push(d);
+    });
+    return m;
+  };
+  // Previous balance — last saved cycle's entry, else the producer's opening due
+  const prevNet = new Map();
+  (prevCycle?.entries || []).forEach((e) => { if (e.farmerId) prevNet.set(String(e.farmerId), e.netPay || 0); });
+  const openings = prevCycle ? new Map() : new Map(
+    (await ProducerOpening.find({ companyId, ...only('farmerId') }).lean()).map((o) => [String(o.farmerId), o.dueAmount || 0])
+  );
+  return {
+    collections: group(collections, 'farmer'),
+    sales: group(cattleSales, 'customerId'),
+    deductions: group(deductionDocs, 'producerId'),
+    payments: group(paymentDocs, 'farmerId'),
+    previousBalanceOf: (id) => (prevCycle ? (prevNet.get(id) || 0) : (openings.get(id) || 0)),
+  };
+};
+
+// One producer's bill from the loaded cycle data (same response shape as before)
+const buildBill = (farmer, data, start, end, centreName = '') => {
+  const id = String(farmer._id);
+
+  // ── Milk Collections ─────────────────────────────────────────────────────
+  const dayMap = {};
+  (data.collections.get(id) || []).forEach((c) => {
+    const key = fmt(c.date);
+    if (!dayMap[key]) dayMap[key] = { date: key, am: null, pm: null };
+    const entry = {
+      qty:    +(c.qty    || 0),
+      clr:    +(c.clr    || 0),
+      fat:    +(c.fat    || 0),
+      snf:    +(c.snf    || 0),
+      rate:   +(c.rate   || 0),
+      amount: +(c.amount || 0),
+    };
+    if (c.shift === 'AM') dayMap[key].am = entry;
+    else                   dayMap[key].pm = entry;
+  });
+  const days = Object.values(dayMap).sort((a, b) => a.date.localeCompare(b.date));
+
+  // ── Cattle Feed Sales (Sales model, customerType=Farmer) ─────────────────
+  const cattleFeedRows = [];
+  let totalCattleFeed = 0;
+  (data.sales.get(id) || []).forEach((sale) => {
+    (sale.items || []).forEach((item) => {
+      cattleFeedRows.push({
+        date:       fmt(sale.billDate),
+        billNumber: sale.billNumber || '',
+        itemName:   item.itemName   || '',
+        quantity:   item.quantity   || 0,
+        rate:       item.rate       || 0,
+        amount:     item.amount     || 0,
+      });
+      totalCattleFeed += item.amount || 0;
+    });
+  });
+
+  const previousBalance = data.previousBalanceOf(id);
+
+  // ── Individual Deductions for this period ────────────────────────────────
+  const deductionDocs = data.deductions.get(id) || [];
+  const deductionRows = deductionDocs.map((d) => ({
+    date:     fmt(d.date),
+    itemName: d.itemName   || d.description || '',
+    amount:   d.amount     || 0,
+  }));
+  const totalDeductions = deductionDocs.reduce((s, d) => s + (d.amount || 0), 0);
+
+  // ── Producer Payments (Bank/Cash) for this period ────────────────────────
+  const paymentDocs = data.payments.get(id) || [];
+  const paymentRows = paymentDocs.map((p) => ({
+    date:   fmt(p.paymentDate),
+    mode:   p.paymentMode || 'Cash',
+    refNo:  p.refNo       || p.paymentNumber || '',
+    amount: p.amountPaid  || 0,
+  }));
+  const totalBankPay = paymentDocs.filter((p) => p.paymentMode !== 'Cash').reduce((s, p) => s + (p.amountPaid || 0), 0);
+  const totalCashPay = paymentDocs.filter((p) => p.paymentMode === 'Cash').reduce((s, p) => s + (p.amountPaid || 0), 0);
+  const totalPayments = totalBankPay + totalCashPay;
+
+  // ── Milk totals ───────────────────────────────────────────────────────────
+  let amQty = 0, amAmt = 0, pmQty = 0, pmAmt = 0;
+  days.forEach(({ am, pm }) => {
+    if (am) { amQty += am.qty; amAmt += am.amount; }
+    if (pm) { pmQty += pm.qty; pmAmt += pm.amount; }
+  });
+  const totalMilkQty = amQty + pmQty;
+  const totalMilkAmt = amAmt + pmAmt;
+
+  // ── Net payable = milkAmt + previousBalance - cattleFeed - deductions - payments ──
+  const netAmount = totalMilkAmt + previousBalance - totalCattleFeed - totalDeductions - totalPayments;
+
+  return {
+    success: true,
+    farmer: {
+      _id:      farmer._id,
+      number:   farmer.farmerNumber,
+      name:     farmer.personalDetails?.name || '',
+      memberId: farmer.memberId || farmer.farmerNumber,
+      village:  farmer.address?.village || '',
+      ward:     farmer.address?.ward    || '',
+      phone:    farmer.personalDetails?.phone || '',
+      centre:   centreName,
+    },
+    period: { fromDate: start.toISOString(), toDate: end.toISOString() },
+    days,
+    cattleFeedRows,
+    deductionRows,
+    paymentRows,
+    summary: {
+      amQty:            r2(amQty),
+      amAmt:            r2(amAmt),
+      pmQty:            r2(pmQty),
+      pmAmt:            r2(pmAmt),
+      totalMilkQty:     r2(totalMilkQty),
+      totalMilkAmt:     r2(totalMilkAmt),
+      previousBalance:  r2(previousBalance),
+      totalCattleFeed:  r2(totalCattleFeed),
+      totalDeductions:  r2(totalDeductions),
+      totalBankPay:     r2(totalBankPay),
+      totalCashPay:     r2(totalCashPay),
+      totalPayments:    r2(totalPayments),
+      netAmount:        r2(netAmount),
+    },
+  };
+};
+
+const cycleRange = (fromDate, toDate) => {
+  const start = new Date(fromDate);
+  const end   = new Date(toDate);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+};
+
+// GET /api/milk-bill/:farmerId/cycle?fromDate=&toDate=
 export const getMilkBillByCycle = async (req, res) => {
   try {
     const { farmerId } = req.params;
@@ -172,163 +331,48 @@ export const getMilkBillByCycle = async (req, res) => {
     if (!fromDate || !toDate) {
       return res.status(400).json({ success: false, message: 'fromDate and toDate are required' });
     }
+    const { start, end } = cycleRange(fromDate, toDate);
 
-    const start = new Date(fromDate);
-    const end   = new Date(toDate);
-    end.setHours(23, 59, 59, 999);
-
-    const farmerObjId = new mongoose.Types.ObjectId(farmerId);
-
-    // ── Farmer ────────────────────────────────────────────────────────────────
-    const farmer = await Farmer.findOne({ _id: farmerId, companyId }).lean();
+    const farmer = await Farmer.findOne({ _id: farmerId, companyId }).populate('collectionCenter', 'centerName').lean();
     if (!farmer) return res.status(404).json({ success: false, message: 'Farmer not found' });
 
-    // ── Milk Collections ─────────────────────────────────────────────────────
-    const collections = await MilkCollection.find({
-      farmer: farmerObjId,
-      companyId,
-      date: { $gte: start, $lte: end },
-    }).sort({ date: 1, shift: 1 }).lean();
-
-    const dayMap = {};
-    collections.forEach((c) => {
-      const key = fmt(c.date);
-      if (!dayMap[key]) dayMap[key] = { date: key, am: null, pm: null };
-      const entry = {
-        qty:    +(c.qty    || 0),
-        clr:    +(c.clr    || 0),
-        fat:    +(c.fat    || 0),
-        snf:    +(c.snf    || 0),
-        rate:   +(c.rate   || 0),
-        amount: +(c.amount || 0),
-      };
-      if (c.shift === 'AM') dayMap[key].am = entry;
-      else                   dayMap[key].pm = entry;
-    });
-    const days = Object.values(dayMap).sort((a, b) => a.date.localeCompare(b.date));
-
-    // ── Cattle Feed Sales (Sales model, customerType=Farmer) ─────────────────
-    const cattleSales = await Sales.find({
-      companyId,
-      customerId:   farmerObjId,
-      customerType: 'Farmer',
-      billDate:     { $gte: start, $lte: end },
-    }).sort({ billDate: 1 }).lean();
-
-    const cattleFeedRows = [];
-    let totalCattleFeed = 0;
-    cattleSales.forEach((sale) => {
-      (sale.items || []).forEach((item) => {
-        cattleFeedRows.push({
-          date:       fmt(sale.billDate),
-          billNumber: sale.billNumber || '',
-          itemName:   item.itemName   || '',
-          quantity:   item.quantity   || 0,
-          rate:       item.rate       || 0,
-          amount:     item.amount     || 0,
-        });
-        totalCattleFeed += item.amount || 0;
-      });
-    });
-
-    // ── Previous Balance — from last saved cycle's entry ──────────────────────
-    let previousBalance = 0;
-    const prevCycle = await PaymentRegister.findOne({
-      companyId,
-      registerType: 'Producers',
-      status:       { $in: ['Saved', 'Printed'] },
-      toDate:       { $lt: start },
-    }).sort({ toDate: -1 }).lean();
-
-    if (prevCycle) {
-      const prevEntry = (prevCycle.entries || []).find(
-        (e) => e.farmerId?.toString() === farmerId
-      );
-      if (prevEntry) previousBalance = prevEntry.netPay || 0;
-    } else {
-      const opening = await ProducerOpening.findOne({ companyId, farmerId: farmerObjId }).lean();
-      previousBalance = opening?.dueAmount || 0;
-    }
-
-    // ── Individual Deductions for this period ────────────────────────────────
-    const deductionDocs = await IndividualDeductionEarning.find({
-      companyId,
-      producerId: farmerObjId,
-      type:       'DEDUCTION',
-      date:       { $gte: start, $lte: end },
-    }).sort({ date: 1 }).lean();
-
-    const deductionRows = deductionDocs.map((d) => ({
-      date:     fmt(d.date),
-      itemName: d.itemName   || d.description || '',
-      amount:   d.amount     || 0,
-    }));
-    const totalDeductions = deductionDocs.reduce((s, d) => s + (d.amount || 0), 0);
-
-    // ── Producer Payments (Bank/Cash) for this period ────────────────────────
-    const paymentDocs = await ProducerPayment.find({
-      companyId,
-      farmerId:    farmerObjId,
-      status:      { $ne: 'Cancelled' },
-      paymentDate: { $gte: start, $lte: end },
-    }).sort({ paymentDate: 1 }).lean();
-
-    const paymentRows = paymentDocs.map((p) => ({
-      date:   fmt(p.paymentDate),
-      mode:   p.paymentMode || 'Cash',
-      refNo:  p.refNo       || p.paymentNumber || '',
-      amount: p.amountPaid  || 0,
-    }));
-    const totalBankPay = paymentDocs.filter((p) => p.paymentMode !== 'Cash').reduce((s, p) => s + (p.amountPaid || 0), 0);
-    const totalCashPay = paymentDocs.filter((p) => p.paymentMode === 'Cash').reduce((s, p) => s + (p.amountPaid || 0), 0);
-    const totalPayments = totalBankPay + totalCashPay;
-
-    // ── Milk totals ───────────────────────────────────────────────────────────
-    let amQty = 0, amAmt = 0, pmQty = 0, pmAmt = 0;
-    days.forEach(({ am, pm }) => {
-      if (am) { amQty += am.qty; amAmt += am.amount; }
-      if (pm) { pmQty += pm.qty; pmAmt += pm.amount; }
-    });
-    const totalMilkQty = amQty + pmQty;
-    const totalMilkAmt = amAmt + pmAmt;
-
-    // ── Net payable = milkAmt + previousBalance - cattleFeed - deductions - payments ──
-    const netAmount = totalMilkAmt + previousBalance - totalCattleFeed - totalDeductions - totalPayments;
-
-    res.json({
-      success: true,
-      farmer: {
-        _id:      farmer._id,
-        number:   farmer.farmerNumber,
-        name:     farmer.personalDetails?.name || '',
-        memberId: farmer.memberId || farmer.farmerNumber,
-        village:  farmer.address?.village || '',
-        ward:     farmer.address?.ward    || '',
-        phone:    farmer.personalDetails?.phone || '',
-      },
-      period: { fromDate: start.toISOString(), toDate: end.toISOString() },
-      days,
-      cattleFeedRows,
-      deductionRows,
-      paymentRows,
-      summary: {
-        amQty:            r2(amQty),
-        amAmt:            r2(amAmt),
-        pmQty:            r2(pmQty),
-        pmAmt:            r2(pmAmt),
-        totalMilkQty:     r2(totalMilkQty),
-        totalMilkAmt:     r2(totalMilkAmt),
-        previousBalance:  r2(previousBalance),
-        totalCattleFeed:  r2(totalCattleFeed),
-        totalDeductions:  r2(totalDeductions),
-        totalBankPay:     r2(totalBankPay),
-        totalCashPay:     r2(totalCashPay),
-        totalPayments:    r2(totalPayments),
-        netAmount:        r2(netAmount),
-      },
-    });
+    const data = await loadCycleData(companyId, start, end, [new mongoose.Types.ObjectId(farmerId)]);
+    res.json(buildBill(farmer, data, start, end, farmer.collectionCenter?.centerName || ''));
   } catch (err) {
     console.error('getMilkBillByCycle error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/milk-bill/all/cycle?fromDate=&toDate=&centerId=
+// Every producer who poured milk in the cycle, one bill each, ordered by centre
+// then producer number (producer numbers repeat per centre).
+export const getAllMilkBillsByCycle = async (req, res) => {
+  try {
+    const { fromDate, toDate, centerId } = req.query;
+    const companyId = req.companyId;
+    if (!fromDate || !toDate) {
+      return res.status(400).json({ success: false, message: 'fromDate and toDate are required' });
+    }
+    const { start, end } = cycleRange(fromDate, toDate);
+
+    const ids = await MilkCollection.distinct('farmer', { companyId, date: { $gte: start, $lte: end } });
+    const farmerFilter = { companyId, _id: { $in: ids } };
+    if (centerId && centerId !== 'all') farmerFilter.collectionCenter = new mongoose.Types.ObjectId(centerId);
+    const farmers = await Farmer.find(farmerFilter).populate('collectionCenter', 'centerName').lean();
+    if (!farmers.length) return res.json({ success: true, bills: [] });
+
+    const data = await loadCycleData(companyId, start, end, farmers.map((f) => f._id));
+    const num = (v) => { const n = parseInt(v, 10); return Number.isNaN(n) ? Infinity : n; };
+    farmers.sort((a, b) =>
+      String(a.collectionCenter?.centerName || '').localeCompare(String(b.collectionCenter?.centerName || ''))
+      || (num(a.farmerNumber) - num(b.farmerNumber))
+      || String(a.farmerNumber).localeCompare(String(b.farmerNumber)));
+
+    const bills = farmers.map((f) => buildBill(f, data, start, end, f.collectionCenter?.centerName || ''));
+    res.json({ success: true, bills });
+  } catch (err) {
+    console.error('getAllMilkBillsByCycle error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
