@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { useNavigate, Outlet, useLocation } from 'react-router-dom';
 import {
   AppShell,
@@ -118,9 +118,17 @@ const MainLayout = () => {
   const [purchasePopupOpen, setPurchasePopupOpen] = useState(false);
   const [salesPopupOpen,    setSalesPopupOpen]    = useState(false);
   const [milkFront,         setMilkFront]         = useState('purchase');
+  // Milk Sales gets a new key on every open (closed → open), so it always
+  // mounts as a fresh blank form — even if reopened during the close fade.
+  const [salesKey, setSalesKey] = useState(0);
+  const salesOpenRef = useRef(false);
   const setMilkPopup = useCallback((which) => {
     if (!canOpenScreen(which === 'sales' ? '/daily-collections/milk-sales' : '/daily-collections/milk-purchase', 'milkCollection')) return;
-    if (which === 'sales') setSalesPopupOpen(true);
+    if (which === 'sales') {
+      if (!salesOpenRef.current) setSalesKey(k => k + 1);
+      salesOpenRef.current = true;
+      setSalesPopupOpen(true);
+    }
     else                   setPurchasePopupOpen(true);
     setMilkFront(which === 'sales' ? 'sales' : 'purchase');
   }, [canOpenScreen]);
@@ -129,6 +137,7 @@ const MainLayout = () => {
     setMilkFront('sales');
   }, []);
   const closeSalesPopup = useCallback(() => {
+    salesOpenRef.current = false;
     setSalesPopupOpen(false);
     setMilkFront('purchase');
   }, []);
@@ -1296,7 +1305,7 @@ const MainLayout = () => {
       >
         <Box data-milk-popup="sales" data-milk-front={salesInFront || undefined} style={{ height: '100%' }}>
           <Suspense fallback={<Center h="100%"><Loader /></Center>}>
-            <MilkSales asPopup inFront={salesInFront} onSwap={setMilkPopup} onClose={closeSalesPopup} />
+            <MilkSales key={salesKey} asPopup inFront={salesInFront} onSwap={setMilkPopup} onClose={closeSalesPopup} />
           </Suspense>
         </Box>
       </Modal>

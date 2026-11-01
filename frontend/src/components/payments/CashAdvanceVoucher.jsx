@@ -492,8 +492,8 @@ const CashAdvanceVoucher = () => {
         }}
         onEnterTransitionEnd={() => farmerFieldRef.current?.focus()}
       >
-        {/* Keyboard flow: Producer —Enter/Tab/click→ Advance Amount —Enter→ Save.
-            Tab from Advance Amount follows the normal field order. */}
+        {/* Keyboard flow: Producer —Enter/click→ Advance Amount —Enter→ Save.
+            Tab follows the normal field order (Producer → Date → Amount …). */}
         <Stack gap="md">
 
           {/* ── Balance Summary Cards ── always shown (zeros until a producer
@@ -562,8 +562,6 @@ const CashAdvanceVoucher = () => {
                 if (v) setTimeout(() => amountRef.current?.focus(), 50);
               }}
               onKeyDown={e => {
-                // Tab skips the locked Date / Advance Type fields and lands on Amount
-                if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); amountRef.current?.focus(); return; }
                 // Enter with a producer already picked (dropdown closed) → Amount.
                 // Enter that picks an option is handled by onChange above.
                 if (e.key === 'Enter') {
@@ -579,11 +577,9 @@ const CashAdvanceVoucher = () => {
             <DatePickerInput
               label="Advance Date"
               value={form.advanceDate}
-              onChange={() => {}}
+              onChange={v => setField('advanceDate', v || new Date())}
               leftSection={<IconCalendar size={16} color="#666" />}
               valueFormat="DD/MM/YYYY"
-              disabled
-              description="Locked to today"
               styles={{ input: { borderRadius: 8 } }}
             />
           </SimpleGrid>
@@ -594,6 +590,7 @@ const CashAdvanceVoucher = () => {
               label="Advance Type"
               value="Cash"
               readOnly
+              tabIndex={-1}
               styles={{ input: { borderRadius: 8, background: '#f5f5f5', cursor: 'default' } }}
             />
             <NumberInput

@@ -203,11 +203,14 @@ export default function MilkSales({ asPopup = false, inFront = true, onSwap, onC
   }, [navigate, asPopup, onSwap]);
 
   // Saved form fields helper (lazy — only parsed once per mount)
-  const _msf = () => { try { return JSON.parse(sessionStorage.getItem('milkSales_form') || 'null') || {}; } catch { return {}; } };
+  // The popup always opens as a fresh blank form — it stays mounted across
+  // P/S swaps, so it never needs to restore anything from storage.
+  const _msf = () => { if (asPopup) return {}; try { return JSON.parse(sessionStorage.getItem('milkSales_form') || 'null') || {}; } catch { return {}; } };
 
   const [mode,    setMode]    = useState('LOCAL');
   const [session, setSession] = useState(() => _msf().session || (new Date().getHours() < 12 ? 'AM' : 'PM'));
   const [date,    setDate]    = useState(() => {
+    if (asPopup) return new Date();
     try {
       const saved = sessionStorage.getItem('milkSales_date');
       if (saved) { const d = new Date(saved); if (!isNaN(d)) return d; }
