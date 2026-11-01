@@ -1391,7 +1391,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
   }, [nameInput]); // eslint-disable-line
 
   const selectProducer = async (farmer) => {
-    const base = { _id: farmer._id, no: farmer.farmerNumber, memberId: farmer.memberId || '', name: farmer.personalDetails?.name || '', phone: farmer.personalDetails?.phone || '', avg: { qty: 0, clr: 0, fat: 0 } };
+    const base = { _id: farmer._id, no: farmer.farmerNumber, memberId: farmer.memberId || '', name: farmer.personalDetails?.name || '', phone: farmer.personalDetails?.phone || '', photo: farmer.personalDetails?.photo || '', avg: { qty: 0, clr: 0, fat: 0 } };
 
     // Check if this member already has an entry today
     const existing = formRef.current.entries?.find(e => (e.farmerId && farmer._id)
@@ -1601,7 +1601,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
       const farmers = res?.data || [];
       const match = (selectedRow.farmerId && farmers.find(f => String(f._id) === String(selectedRow.farmerId)))
         || farmers.find(f => f.farmerNumber === selectedRow.producerNo);
-      if (match) { setProducer(prev => ({ ...prev, _id: match._id, memberId: match.memberId || '', phone: match.personalDetails?.phone || '' })); setMemberInput(match.farmerNumber); }
+      if (match) { setProducer(prev => ({ ...prev, _id: match._id, memberId: match.memberId || '', phone: match.personalDetails?.phone || '', photo: match.personalDetails?.photo || '' })); setMemberInput(match.farmerNumber); }
     }).catch(() => {});
     setTimeout(() => ltrRef.current?.focus({ preventScroll: true }), 60);
     notifications.show({ message: `Editing: ${selectedRow.billNo} — modify values and press Save`, color: 'blue', autoClose: 3000 });
@@ -1932,7 +1932,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       const q = memberInput.trim().toLowerCase();
-      if (!q) { nameRef.current?.focus(); return; }   // no number → search by name instead
+      if (!q) return;   // empty Farmer No → Enter keeps the cursor here (a number is required)
       // Use already-loaded results first (instant, no extra API call)
       const cached =
         searchResults.find(f => f.farmerNumber?.toLowerCase() === q) ||
@@ -1943,6 +1943,15 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
     }
   };
   const focusNext = (ref) => (e) => { if (e.key === 'Enter') { e.preventDefault(); ref.current?.focus(); } };
+  // Required field: Enter moves on only when the field holds a value > 0;
+  // empty → the cursor stays put until a value is entered.
+  const hasValue = (v) => String(v ?? '').trim() !== '' && (parseFloat(v) || 0) > 0;
+  const requiredNext = (value, go) => (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (!hasValue(value)) return;
+    go();
+  };
   const onLastEnter = (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
@@ -2343,8 +2352,8 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
               <Text size="12px" fw={800} c="#1e3a8a" tt="uppercase" style={{ letterSpacing: '0.5px' }}>Bill Information</Text>
             </Group>
 
-            {/* Bill No | Farmer No | Farmer Name / Search — one row keeps this card short */}
-            <Group gap={8} wrap="nowrap" align="flex-start">
+            {/* Row 1: Bill No | Farmer No | Farmer Photo   ·   Row 2: Farmer Name / Search */}
+            <Group gap={8} wrap="nowrap" align="flex-end" mb={6}>
             <Box style={{ flex: '0 0 88px' }}>
               <Text size="10px" fw={700} c="#64748b" mb={4} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Bill No</Text>
               <TextInput
@@ -2379,7 +2388,25 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
               )}
             </Box>
 
+            {/* Farmer Photo — from the farmer master (personalDetails.photo) */}
+            <Box style={{ flex: '0 0 auto', marginLeft: 'auto' }}>
+              <Box
+                title={producer ? producer.name : 'Farmer photo'}
+                style={{
+                  width: 56, height: 56, borderRadius: 8, overflow: 'hidden',
+                  border: '1.5px solid #bfdbfe', background: '#f8fafc',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                {producer?.photo
+                  ? <img src={producer.photo} alt={producer.name || 'Farmer'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : <IconUser size={26} color="#cbd5e1" />}
+              </Box>
+            </Box>
+            </Group>
+
             {/* Farmer Name / Search — the only free-text field; shows the name once a farmer is picked */}
+            <Group gap={8} wrap="nowrap" align="flex-start">
             <Box style={{ position: 'relative', flex: 1, minWidth: 0 }}>
               <Text size="10px" fw={700} c="#64748b" mb={4} tt="uppercase" style={{ letterSpacing: '0.4px' }}>Farmer Name / Search</Text>
               <TextInput
@@ -2536,9 +2563,12 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
                     onChange={v => setter(String(v ?? ''))}
                     onKeyDown={
                       // LTR: in analyzer mode jump straight to save; otherwise go to FAT
-                      label === 'LTR'
-                        ? (e) => { if (e.key === 'Enter') { e.preventDefault(); analyzerDataCapturedRef.current ? handleSave() : fatRef.current?.focus(); } }
-                        : (next ? focusNext(next) : onLastEnter)
+                      // LTR/KG and FAT are required: empty + Enter keeps the cursor in place
+                      iRef === ltrRef
+                        ? requiredNext(value, () => { analyzerDataCapturedRef.current ? handleSave() : fatRef.current?.focus(); })
+                        : iRef === fatRef
+                          ? requiredNext(value, () => next?.current?.focus())
+                          : (next ? focusNext(next) : onLastEnter)
                     }
                     step={step} decimalScale={dec} min={0}
                     size="sm" radius="md" hideControls
