@@ -53,6 +53,18 @@ export const getFormFarmers = async (req, res) => {
           panchayat: '$address.panchayat',
           village: '$address.village',
           ward: '$address.ward',
+          // Application forms (Panchayat subsidy / incentive)
+          houseName: '$address.houseName',
+          houseNumber: '$address.houseNumber',
+          place: '$address.place',
+          post: '$address.post',
+          pin: '$address.pin',
+          gender: '$personalDetails.gender',
+          caste: '$personalDetails.caste',
+          rationCardNo: '$identityDetails.rationCardNo',
+          voterId: '$identityDetails.voterId',
+          memberId: 1,
+          isMembership: 1,
           collectionCenter: 1,
           // which documents are uploaded (not the files themselves)
           docs: Object.fromEntries(FORM_DOCUMENTS.map((k) => [k, { $gt: [{ $strLenCP: { $ifNull: [`$documents.${k}`, ''] } }, 0] }]))
@@ -171,7 +183,16 @@ const SYNC_FIELDS = [
   ['panchayat',     'address.panchayat',         'Panchayat'],
   ['aadhaarNumber', 'identityDetails.aadhaar',   'Aadhaar'],
   ['mobileNumber',  'personalDetails.phone',     'Mobile'],
+  // Farmer Application forms
+  ['pincode',       'address.pin',               'PIN Code'],
+  ['houseNumber',   'address.houseNumber',       'House Number'],
+  ['rationCardNo',  'identityDetails.rationCardNo', 'Ration Card No'],
+  ['electionId',    'identityDetails.voterId',   'Election ID'],
+  ['category',      'personalDetails.caste',     'Category'],
+  ['gender',        'personalDetails.gender',    'Gender'],
+  ['membershipNo',  'memberId',                  'Membership No'],
 ];
+const ADDRESS_PARTS = ['address.houseName', 'address.place', 'address.post'];
 
 const pathGet = (o, path) => path.split('.').reduce((v, k) => (v == null ? v : v[k]), o);
 
@@ -179,7 +200,7 @@ const pathGet = (o, path) => path.split('.').reduce((v, k) => (v == null ? v : v
 export const syncFarmerFromForm = async (companyId, farmerId, form = {}) => {
   if (!farmerId || !mongoose.isValidObjectId(String(farmerId))) return [];
   const farmer = await Farmer.findOne({ _id: farmerId, companyId })
-    .select(SYNC_FIELDS.map(([, path]) => path).join(' ') + ' bankDetails.bankLedgerId').lean();
+    .select([...SYNC_FIELDS.map(([, path]) => path), ...ADDRESS_PARTS].join(' ') + ' bankDetails.bankLedgerId').lean();
   if (!farmer) return [];
   const $set = {};
   const added = [];
@@ -192,8 +213,15 @@ export const syncFarmerFromForm = async (companyId, farmerId, form = {}) => {
     if (path.startsWith('bankDetails.') && !sameBank) continue;
     const v = String(form[field] ?? '').trim();
     if (!v || String(pathGet(farmer, path) ?? '').trim()) continue;
-    $set[path] = path === 'bankDetails.ifsc' ? v.toUpperCase() : v;
+    if (path === 'personalDetails.gender' && !['Male', 'Female', 'Other'].includes(v)) continue;
+    $set[path] = path === 'bankDetails.ifsc' || path === 'identityDetails.voterId' ? v.toUpperCase() : v;
     added.push(label);
+  }
+  // Address typed on a form: only when the farmer has no address at all (it can't be split into parts)
+  const addressText = String(form.address ?? '').trim();
+  if (typeof form.address === 'string' && addressText && ADDRESS_PARTS.every((p) => !String(pathGet(farmer, p) ?? '').trim())) {
+    $set['address.place'] = addressText;
+    added.push('Address');
   }
   // Bank from Farmer Bank Details: carry its ledger too, when the farmer has none
   if ($set['bankDetails.bankName'] && !farmer.bankDetails?.bankLedgerId && form.bankLedgerId && mongoose.isValidObjectId(String(form.bankLedgerId))) {

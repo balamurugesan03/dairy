@@ -58,6 +58,10 @@ const farmerSchema = new mongoose.Schema({
       type: String,
       trim: true
     },
+    houseNumber: {
+      type: String,
+      trim: true
+    },
     ward: {
       type: String,
       trim: true
@@ -93,6 +97,14 @@ const farmerSchema = new mongoose.Schema({
       trim: true
     },
     welfareNo: {
+      type: String,
+      trim: true
+    },
+    rationCardNo: {
+      type: String,
+      trim: true
+    },
+    voterId: {
       type: String,
       trim: true
     },

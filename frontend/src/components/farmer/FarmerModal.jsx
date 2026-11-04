@@ -75,6 +75,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
       },
       address: {
         houseName: '',
+        houseNumber: '',
         ward: '',
         place: '',
         post: '',
@@ -86,6 +87,8 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
         aadhaar: '',
         pan: '',
         welfareNo: '',
+        rationCardNo: '',
+        voterId: '',
         ksheerasreeId: '',
         idCardNumber: '',
         issueDate: null
@@ -301,6 +304,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
         },
         address: {
           houseName: farmer.address?.houseName || '',
+          houseNumber: farmer.address?.houseNumber || '',
           ward: farmer.address?.ward || '',
           place: farmer.address?.place || '',
           post: farmer.address?.post || '',
@@ -312,6 +316,8 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
           aadhaar: farmer.identityDetails?.aadhaar || '',
           pan: farmer.identityDetails?.pan || '',
           welfareNo: farmer.identityDetails?.welfareNo || '',
+          rationCardNo: farmer.identityDetails?.rationCardNo || '',
+          voterId: farmer.identityDetails?.voterId || '',
           ksheerasreeId: farmer.identityDetails?.ksheerasreeId || '',
           idCardNumber: farmer.identityDetails?.idCardNumber || '',
           issueDate: farmer.identityDetails?.issueDate ? new Date(farmer.identityDetails.issueDate) : null
@@ -467,6 +473,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
         },
         address: {
           houseName: values.address.houseName,
+          houseNumber: values.address.houseNumber,
           ward: values.address.ward,
           place: values.address.place,
           post: values.address.post,
@@ -478,6 +485,8 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
           aadhaar: values.identityDetails.aadhaar,
           pan: values.identityDetails.pan,
           welfareNo: values.identityDetails.welfareNo,
+          rationCardNo: values.identityDetails.rationCardNo,
+          voterId: values.identityDetails.voterId,
           ksheerasreeId: values.identityDetails.ksheerasreeId,
           idCardNumber: values.identityDetails.idCardNumber,
           issueDate: toISOString(values.identityDetails.issueDate)
@@ -931,6 +940,14 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
                 </Grid.Col>
                 <Grid.Col span={6}>
                   <TextInput
+                    label="House Number"
+                    placeholder="Enter house number"
+                    {...form.getInputProps('address.houseNumber')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <TextInput
                     label="Ward"
                     placeholder="Enter ward"
                     {...form.getInputProps('address.ward')}
@@ -1023,6 +1040,23 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
                     label="Welfare Number"
                     placeholder="Enter welfare number"
                     {...form.getInputProps('identityDetails.welfareNo')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="Ration Card Number"
+                    placeholder="Enter ration card number"
+                    {...form.getInputProps('identityDetails.rationCardNo')}
+                    onKeyDown={focusNext}
+                  />
+                </Grid.Col>
+                <Grid.Col span={6}>
+                  <TextInput
+                    label="Election ID Number"
+                    placeholder="Enter voter ID number"
+                    {...form.getInputProps('identityDetails.voterId')}
+                    onChange={(e) => form.setFieldValue('identityDetails.voterId', e.target.value.toUpperCase())}
                     onKeyDown={focusNext}
                   />
                 </Grid.Col>

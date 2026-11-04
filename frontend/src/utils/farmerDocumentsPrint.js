@@ -95,6 +95,8 @@ export const printWithFarmerDocuments = async ({ farmerId, buildHtml, features }
   win.document.close();
   const imgs = [...win.document.images];
   await Promise.all(imgs.map((im) => (im.complete ? null : new Promise((r) => { im.onload = r; im.onerror = r; }))));
+  // Web fonts (e.g. Malayalam forms) — give up after a few seconds when offline
+  try { await Promise.race([win.document.fonts?.ready, new Promise((r) => setTimeout(r, 4000))]); } catch { /* print anyway */ }
   win.focus();
   setTimeout(() => { win.print(); win.close(); }, 300);
   return { ok: true, ...pages };

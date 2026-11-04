@@ -143,6 +143,8 @@ export const ROUTE_PERM = {
   '/reports/milk-statement': 'reports.milkStatement',
   '/farmers/crop-statements': 'reports.cropStatements',
   '/farmers/agri-stats': 'reports.agriStats',
+  '/farmers/lsgd/milk-subsidy': 'reports.lsgdMilkSubsidy',
+  '/farmers/lsgd/milk-incentive': 'reports.lsgdMilkIncentive',
 
   '/hrm/employees': 'hrm.employees',
   '/hrm/attendance': 'hrm.attendance',
@@ -305,6 +307,8 @@ export const MODULE_GROUPS = [
       { key: 'reports.inspectionReport',label: 'Inspection Report'        },
       { key: 'reports.cropStatements',  label: 'Crop Damage Statements'   },
       { key: 'reports.agriStats',       label: 'Monthly Agri Statistics'  },
+      { key: 'reports.lsgdMilkSubsidy',   label: "LSGD: Panchayath People's Planning Milk Subsidy" },
+      { key: 'reports.lsgdMilkIncentive', label: 'LSGD: Panchayath Annual Plan Milk Incentive' },
     ]
   },
   {

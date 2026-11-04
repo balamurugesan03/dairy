@@ -176,6 +176,8 @@ const MainLayout = () => {
   }, [location.pathname, location.search, navigate, setMilkPopup, canOpenScreen]);
 
   // ── Global hotkeys ──────────────────────────────────────────────────────
+  const pathRef = useRef(location.pathname);
+  pathRef.current = location.pathname;
   useEffect(() => {
     const handleKey = (e) => {
       // F2 / F3 work everywhere (even inside inputs)
@@ -183,11 +185,18 @@ const MainLayout = () => {
       if (e.key === 'F2') { e.preventDefault(); setMilkPopup('purchase'); return; }
       if (e.key === 'F3') { e.preventDefault(); setMilkPopup('sales'); return; }
       if (e.key === 'F4') { e.preventDefault(); navigate('/sales/new'); return; }
-      // F5 also carries a one-shot "open the New Cash Advance form" signal via
-      // navigation state, so a single press opens the form directly instead
-      // of needing a first F5 to land on the page and a second F5 (now
-      // caught by that page's own listener) to actually open it.
-      if (e.key === 'F5') { e.preventDefault(); navigate('/payments/cash-advance'); return; }
+      // F5: Cash Advance page (grid) + a one-shot "open the New Cash Advance
+      // popup" signal in navigation state. Already on the page → same route,
+      // so the grid stays mounted behind the popup (replace: no extra history).
+      if (e.key === 'F5') {
+        e.preventDefault();
+        if (e.repeat) return;
+        navigate('/payments/cash-advance', {
+          state: { openNewAdvance: Date.now() },
+          replace: pathRef.current === '/payments/cash-advance',
+        });
+        return;
+      }
 
       // Other shortcuts: ignore when typing inside an input / textarea / select
       const ae  = document.activeElement;
@@ -552,6 +561,14 @@ const MainLayout = () => {
         { key: '/farmers/agri-stats',        label: 'Monthly Agri Statistics' },
         { key: '/daily-collections/incentive-register', label: 'Incentive Register' },
         { key: '/daily-collections/bonus-register',     label: 'Bonus Register' },
+        {
+          key: 'lsgd-reports',
+          label: 'LSGD Reports',
+          children: [
+            { key: '/farmers/lsgd/milk-subsidy',   label: "Panchayath People's Planning Milk Subsidy" },
+            { key: '/farmers/lsgd/milk-incentive', label: 'Panchayath Annual Plan Milk Incentive' },
+          ]
+        },
 
       ]
     }] : []),

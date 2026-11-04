@@ -1289,6 +1289,16 @@ export const farmerFormAPI = {
   getDocuments:  (farmerId)  => api.get(`/farmer-forms/documents/${farmerId}`).then(r => r.data).catch(handleError),
 };
 
+// ── Farmer Applications (Panchayat milk subsidy / incentive forms) ──────────────
+export const farmerApplicationAPI = {
+  getAll:   (params)   => api.get('/farmer-applications', { params }).then(r => r.data).catch(handleError),
+  getById:  (id)       => api.get(`/farmer-applications/${id}`).then(r => r.data).catch(handleError),
+  create:   (data)     => api.post('/farmer-applications', data).then(r => r.data).catch(handleError),
+  update:   (id, data) => api.put(`/farmer-applications/${id}`, data).then(r => r.data).catch(handleError),
+  delete:   (id)       => api.delete(`/farmer-applications/${id}`).then(r => r.data).catch(handleError),
+  prefill:  (params)   => api.get('/farmer-applications/prefill', { params }).then(r => r.data).catch(handleError),
+};
+
 // ── Crop Statement API ─────────────────────────────────────────────────────────
 export const cropStatementAPI = {
   getAll:   (params)   => api.get('/crop-statements', { params }).then(r => r.data).catch(handleError),

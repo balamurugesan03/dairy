@@ -375,6 +375,7 @@ import producerOpeningRoutes from './routes/producerOpeningRoutes.js';
 import cattleFeedAdvanceRoutes from './routes/cattleFeedAdvanceRoutes.js';
 import cropStatementRoutes from './routes/cropStatementRoutes.js';
 import farmerFormRoutes from './routes/farmerFormRoutes.js';
+import farmerApplicationRoutes from './routes/farmerApplicationRoutes.js';
 import agriStatsRoutes from './routes/agriStatsRoutes.js';
 import inspectionReportRoutes from './routes/inspectionReportRoutes.js';
 
@@ -602,6 +603,7 @@ app.use('/api', protect, addCompanyFilter, producerOpeningRoutes);
 app.use('/api/cattle-feed-advance', protect, addCompanyFilter, cattleFeedAdvanceRoutes);
 app.use('/api/crop-statements',    protect, addCompanyFilter, cropStatementRoutes);
 app.use('/api/farmer-forms',       protect, addCompanyFilter, farmerFormRoutes);
+app.use('/api/farmer-applications', protect, addCompanyFilter, farmerApplicationRoutes);
 app.use('/api/agri-stats',         protect, addCompanyFilter, agriStatsRoutes);
 app.use('/api/inspection-report',    protect, addCompanyFilter, inspectionReportRoutes);
 app.use('/api/bmcc-operating-cost', protect, addCompanyFilter, bmccReportRoutes);
