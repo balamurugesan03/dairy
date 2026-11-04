@@ -11,6 +11,7 @@ import {
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { advanceAPI, farmerAPI } from '../../services/api';
+import { POPUP_CHILD_Z } from '../../utils/milkPopup';
 
 /* ─── Style tokens (matches the spec's clean enterprise look) ─────────── */
 const BORDER     = '1px solid #E5E7EB';
@@ -212,6 +213,7 @@ const CashAdvanceFormModal = ({ opened, onClose, onSaved, editData }) => {
     <Modal
       opened={opened}
       onClose={onClose}
+      zIndex={POPUP_CHILD_Z}   /* in front of an open Milk Purchase/Sales popup (F5 from there) */
       withCloseButton={false}
       centered
       size="lg"

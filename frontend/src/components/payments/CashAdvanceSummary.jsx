@@ -17,6 +17,7 @@ import * as XLSX from 'xlsx';
 import { cashAdvanceAPI, cattleFeedAdvanceAPI, advanceAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 import CashAdvanceFormModal from './CashAdvanceFormModal';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 /* ─── helpers ─── */
 const n   = (v) => parseFloat(v) || 0;
@@ -180,6 +181,17 @@ const CashAdvanceSummary = () => {
   useEffect(() => { fetchTransactions(); }, [txnDate]); // eslint-disable-line
 
   const openNewAdvance  = () => { setEditAdvance(null); setNewOpen(true); };
+
+  // F5 (MainLayout) → open the New Cash Advance popup over this grid. The
+  // signal is consumed once (state cleared) so Back / reload don't reopen it.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const f5Signal = location.state?.openNewAdvance;
+  useEffect(() => {
+    if (!f5Signal) return;
+    if (!newOpen) openNewAdvance(); // keep an open form (and its typing) as it is
+    navigate(location.pathname + location.search, { replace: true, state: null });
+  }, [f5Signal]); // eslint-disable-line react-hooks/exhaustive-deps
   const openEditAdvance = (row) => { setEditAdvance(row); setNewOpen(true); };
 
   const handleAdvanceSaved = () => {

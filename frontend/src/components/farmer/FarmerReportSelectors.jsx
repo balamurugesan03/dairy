@@ -76,7 +76,7 @@ export function FarmerDocumentsStatus({ farmer }) {
  * Numbers repeat per centre, so "15" may match several farmers (pick the
  * centre) and "C2/15" picks one directly. The farmer's details show below.
  */
-export function FarmerNumberLookup({ farmers, farmer, onPick, label = 'Farmer Number', ...rest }) {
+export function FarmerNumberLookup({ farmers, farmer, onPick, label = 'Farmer Number', notFoundHint, hideDetails = false, ...rest }) {
   // "C2/15" when the number is in more than one centre, else just "15"
   const display = (f) => (f
     ? (f.centreCode && matchesFor(farmers, f.farmerNumber).length > 1 ? `${f.centreCode}/${f.farmerNumber}` : f.farmerNumber || '')
@@ -108,7 +108,9 @@ export function FarmerNumberLookup({ farmers, farmer, onPick, label = 'Farmer Nu
         rightSection={<IconSearch size={14} style={{ cursor: 'pointer' }} onClick={find} />}
         {...rest}
       />
-      {matches && matches.length === 0 && <Text size="xs" c="red" mt={4}>No farmer with number {text}</Text>}
+      {matches && matches.length === 0 && (
+        <Text size="xs" c="red" mt={4}>No farmer with number {text}{notFoundHint ? ` — ${notFoundHint}` : ''}</Text>
+      )}
       {matches && matches.length > 1 && (
         <Group gap={6} mt={6}>
           <Text size="xs" c="dimmed">Number {text} is in {matches.length} centres:</Text>
@@ -120,8 +122,47 @@ export function FarmerNumberLookup({ farmers, farmer, onPick, label = 'Farmer Nu
           ))}
         </Group>
       )}
-      <FarmerDetailsCard farmer={farmer} />
+      {!hideDetails && <FarmerDetailsCard farmer={farmer} />}
     </div>
+  );
+}
+
+/**
+ * Other way to find the farmer when the number isn't known: type part of the
+ * name, mobile, Aadhaar, account number or farmer number.
+ */
+export function FarmerSearchSelect({ farmers, farmer, onPick, label = 'Or search farmer by name / mobile / Aadhaar', ...rest }) {
+  const [query, setQuery] = useState('');
+  const q = query.trim().toUpperCase();
+  const digits = q.replace(/\D/g, '');
+  const found = !q ? [] : farmers.filter((f) => {
+    if (String(f.name || '').toUpperCase().includes(q)) return true;
+    if (String(f.farmerNumber || '').toUpperCase() === q) return true;
+    if (digits.length >= 4 && [f.phone, f.aadhaar, f.accountNumber].some((v) => String(v || '').includes(digits))) return true;
+    return false;
+  }).slice(0, 50);
+  // Keep the chosen farmer in the list so its label shows
+  const list = farmer && !found.some((f) => f._id === farmer._id) ? [farmer, ...found] : found;
+  const data = list.map((f) => ({
+    value: f._id,
+    label: [`${f.centreCode ? `${f.centreCode}/` : ''}${f.farmerNumber || ''}`, f.name, f.phone, f.panchayat].filter(Boolean).join(' · '),
+  }));
+  return (
+    <Select
+      label={label}
+      placeholder="Type at least 2 letters of the name, or 4+ digits"
+      data={data}
+      value={farmer?._id || null}
+      searchable
+      searchValue={query}
+      onSearchChange={setQuery}
+      filter={({ options }) => options}
+      nothingFoundMessage={q.length >= 2 ? 'No farmer found in Farmer Management' : 'Keep typing…'}
+      onChange={(id) => { const f = farmers.find((x) => x._id === id); if (f) onPick(f); }}
+      leftSection={<IconSearch size={14} />}
+      clearable={false}
+      {...rest}
+    />
   );
 }
 

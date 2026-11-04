@@ -297,10 +297,14 @@ const CashBookEntry = ({ asPopup = false, onClose }) => {
   const today = dayjs().format('YYYY-MM-DD');
   const isToday = date === today;
   const canGoNext = date < today;
-  const shiftDate = (days) => setDate(d => {
-    const next = dayjs(d).add(days, 'day').format('YYYY-MM-DD');
-    return next > today ? today : next;
-  });
+  const shiftDate = (days) => {
+    setDate(d => {
+      const next = dayjs(d).add(days, 'day').format('YYYY-MM-DD');
+      return next > today ? today : next;
+    });
+    // Back / Next → straight back to the Receipt entry line
+    setTimeout(() => refs.Receipt.ledger.current?.focus(), 60);
+  };
 
   // Head of Account options — the same def_voucher_type rule as the
   // Receipt (no 'P' ledgers) and Payment (no 'R' ledgers) screens. Cash
@@ -322,6 +326,14 @@ const CashBookEntry = ({ asPopup = false, onClose }) => {
   }, [ledgers]);
 
   const focus = (ref) => setTimeout(() => ref.current?.focus(), 30);
+
+  // Opened → cursor in the Receipt (Cash side) Head of Account. The popup's
+  // focus trap would otherwise land on the first button (Back), so the user
+  // had to click into the Receipt line before typing.
+  useEffect(() => {
+    const t = setTimeout(() => refs.Receipt.ledger.current?.focus(), 250);
+    return () => clearTimeout(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setDraftField = (side) => (field, value) =>
     setDrafts(d => ({ ...d, [side]: { ...d[side], [field]: value } }));

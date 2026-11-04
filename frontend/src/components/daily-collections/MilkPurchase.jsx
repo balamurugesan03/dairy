@@ -427,7 +427,21 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
       { ref: ltrRef,    value: f.ltr   },
     ];
     const lastFilled = sequence.find(field => field.value !== '' && field.value != null);
-    (lastFilled ? lastFilled.ref : memberRef).current?.focus({ preventScroll: true });
+    // Farmer already picked but no quantity yet → LTR/KG is the next field, not Farmer No
+    const target = lastFilled ? lastFilled.ref : (f.producer ? ltrRef : memberRef);
+    target.current?.focus({ preventScroll: true });
+  };
+
+  // "Already Entered Today" warning closed:
+  //   OK / Enter      → carry on with this farmer → LTR/KG
+  //   Cancel / Escape → drop the farmer           → Farmer No for the next one
+  const closeDupWarning = (proceed) => {
+    setDupBlocked(false);
+    setDupInfo(null);
+    if (!proceed) {
+      setMemberInput(''); setNameInput(''); setProducer(null); setSearchResults([]); setShowDropdown(false);
+    }
+    setTimeout(() => (proceed ? ltrRef : memberRef).current?.focus({ preventScroll: true }), 60);
   };
 
   // Brought back in front of the other milk popup → resume where the user was
@@ -1313,7 +1327,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
         setFormEnabled(true);
         setTimeout(() => memberRef.current?.focus(), 60);
       } else {
-        memberRef.current?.focus();
+        focusLastActiveField();
       }
     };
     document.addEventListener('keydown', onEnter);
@@ -1327,9 +1341,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
       if (e.key === 'Enter' || e.key === 'Escape') {
         e.stopPropagation();
         e.preventDefault();
-        setDupBlocked(false);
-        setDupInfo(null);
-        setTimeout(() => ltrRef.current?.focus({ preventScroll: true }), 60);
+        closeDupWarning(e.key === 'Enter');
         return;
       }
       if (e.key === 'Tab') return;
@@ -1407,7 +1419,8 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
     setMemberInput(farmer.farmerNumber);
     setNameInput('');
     setShowDropdown(false);
-    setTimeout(() => ltrRef.current?.focus({ preventScroll: true }), 50);
+    // Duplicate → the warning owns the keyboard; closeDupWarning places the cursor
+    if (!existing) setTimeout(() => ltrRef.current?.focus({ preventScroll: true }), 50);
     try {
       const statsRes = await milkCollectionAPI.getFarmerStats(farmer.farmerNumber, { days: 10, farmerId: farmer._id });
       const s = statsRes?.data;
@@ -2286,7 +2299,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
               justifyContent: 'center',
               zIndex: 9999,
             }}
-            onClick={() => { setDupBlocked(false); setDupInfo(null); }}
+            onClick={() => closeDupWarning(true)}
           >
             <Box
               onClick={(e) => e.stopPropagation()}
@@ -2318,7 +2331,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
                 color="orange"
                 variant="filled"
                 mt={4}
-                onClick={() => { setDupBlocked(false); setDupInfo(null); }}
+                onClick={() => closeDupWarning(true)}
               >
                 OK
               </Button> <Button
@@ -2327,7 +2340,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
                 color="orange"
                 variant="filled"
                 mt={4}
-                onClick={() => { setDupBlocked(false); setDupInfo(null); }}
+                onClick={() => closeDupWarning(false)}
               >
                 cancel
               </Button>
