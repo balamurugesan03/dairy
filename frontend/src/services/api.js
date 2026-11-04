@@ -593,7 +593,9 @@ export const employeeAPI = {
     return api.get('/employees/search', { params: { query: query.trim() } }).then(res => res.data).catch(handleError);
   },
   getStatistics: () => api.get('/employees/statistics').then(res => res.data).catch(handleError),
-  updateStatus: (id, status) => api.patch(`/employees/${id}/status`, { status }).then(res => res.data).catch(handleError)
+  getProfile: (id, params) => api.get(`/employees/${id}/profile`, { params }).then(res => res.data).catch(handleError),
+  getNextCode: () => api.get('/employees/next-code').then(res => res.data).catch(handleError),
+  updateStatus: (id, status, extra = {}) => api.patch(`/employees/${id}/status`, { status, ...extra }).then(res => res.data).catch(handleError)
 };
 
 // DEPARTMENT APIs
@@ -626,7 +628,8 @@ export const attendanceAPI = {
   delete: (id) => api.delete(`/attendance/${id}`).then(res => res.data).catch(handleError),
   getByDate: (date) => api.get('/attendance/by-date', { params: { date } }).then(res => res.data).catch(handleError),
   getMonthlySummary: (employeeId, month, year) => api.get(`/attendance/${employeeId}/summary`, { params: { month, year } }).then(res => res.data).catch(handleError),
-  getReport: (params) => api.get('/attendance/report', { params }).then(res => res.data).catch(handleError)
+  getReport: (params) => api.get('/attendance/report', { params }).then(res => res.data).catch(handleError),
+  getRegister: (params) => api.get('/attendance/register', { params }).then(res => res.data).catch(handleError)
 };
 
 // SALARY APIs
@@ -636,6 +639,10 @@ export const salaryAPI = {
   create: (data) => api.post('/salary', data).then(res => res.data).catch(handleError),
   process: (data) => api.post('/salary/process', data).then(res => res.data).catch(handleError),
   bulkProcess: (data) => api.post('/salary/bulk-process', data).then(res => res.data).catch(handleError),
+  preview: (data) => api.post('/salary/preview', data).then(res => res.data).catch(handleError),
+  bulkApprove: (data) => api.post('/salary/bulk-approve', data).then(res => res.data).catch(handleError),
+  bulkPay: (data) => api.post('/salary/bulk-pay', data).then(res => res.data).catch(handleError),
+  revertPayment: (id) => api.patch(`/salary/${id}/revert-payment`).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/salary/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/salary/${id}`).then(res => res.data).catch(handleError),
   approve: (id, approvedBy) => api.patch(`/salary/${id}/approve`, { approvedBy }).then(res => res.data).catch(handleError),
@@ -655,7 +662,9 @@ export const leaveAPI = {
   delete: (id) => api.delete(`/leaves/${id}`).then(res => res.data).catch(handleError),
   approve: (id, data) => api.patch(`/leaves/${id}/approve`, data).then(res => res.data).catch(handleError),
   reject: (id, data) => api.patch(`/leaves/${id}/reject`, data).then(res => res.data).catch(handleError),
-  getSummary: (employeeId, params) => api.get(`/leaves/${employeeId}/summary`, { params }).then(res => res.data).catch(handleError)
+  getSummary: (employeeId, params) => api.get(`/leaves/${employeeId}/summary`, { params }).then(res => res.data).catch(handleError),
+  cancel: (id, data) => api.patch(`/leaves/${id}/cancel`, data).then(res => res.data).catch(handleError),
+  getBalance: (employeeId, year) => api.get(`/leaves/balance/${employeeId}`, { params: { year } }).then(res => res.data).catch(handleError)
 };
 
 // LOAN APIs (Employee Loans / Advances)
@@ -665,7 +674,9 @@ export const loanAPI = {
   create: (data) => api.post('/loans', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/loans/${id}`, data).then(res => res.data).catch(handleError),
   delete: (id) => api.delete(`/loans/${id}`).then(res => res.data).catch(handleError),
-  makePayment: (id, amount) => api.post(`/loans/${id}/payment`, { amount }).then(res => res.data).catch(handleError)
+  // makePayment(id, amount) or makePayment(id, { amount, date, mode, bankLedgerId, remarks })
+  makePayment: (id, data) => api.post(`/loans/${id}/payment`, typeof data === 'object' ? data : { amount: data }).then(res => res.data).catch(handleError),
+  deleteRepayment: (id, repaymentId) => api.delete(`/loans/${id}/repayments/${repaymentId}`).then(res => res.data).catch(handleError)
 };
 
 // COMPANY APIs

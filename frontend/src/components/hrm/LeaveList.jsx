@@ -1,31 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Container, Title, Text, Paper, Group, Stack, Button, Select, Badge,
-  Table, ActionIcon, SimpleGrid, Card, LoadingOverlay, Tooltip, ThemeIcon, Modal
+  Container, Title, Text, Paper, Group, Stack, Button, Select, Badge, Table, ActionIcon,
+  SimpleGrid, LoadingOverlay, Tooltip, ThemeIcon, Modal, Textarea, SegmentedControl
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { useDisclosure } from '@mantine/hooks';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import {
-  IconCalendarEvent, IconPlus, IconCheck, IconX, IconTrash,
-  IconClockHour4, IconCalendarOff, IconCalendarCheck, IconFilter,
-  IconFilterOff, IconEye, IconCalendarPlus
+  IconCalendarEvent, IconPlus, IconCheck, IconX, IconTrash, IconClockHour4, IconCalendarOff,
+  IconCalendarCheck, IconEye, IconCalendarPlus, IconBan
 } from '@tabler/icons-react';
 import { leaveAPI, employeeAPI } from '../../services/api';
 import { localDateStr } from '../../utils/dateUtils';
-
-const getStatusColor = (s) => ({ Pending: 'yellow', Approved: 'green', Rejected: 'red' }[s] || 'gray');
-const getLeaveTypeColor = (t) => ({
-  Casual: 'blue', Sick: 'red', Earned: 'green', Maternity: 'grape',
-  Paternity: 'indigo', Unpaid: 'gray', Compensatory: 'orange'
-}[t] || 'gray');
-const formatDate = (d) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-const daysDiff = (from, to) => {
-  const diff = new Date(to) - new Date(from);
-  return Math.max(1, Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1);
-};
+import {
+  LEAVE_TYPES, fmtDate, leaveStatusColor, leaveTypeColor
+} from './hrmShared';
+import StatCard from './HrmStatCard';
 
 const LeaveList = () => {
   const navigate = useNavigate();
@@ -34,20 +26,13 @@ const LeaveList = () => {
   const [employees, setEmployees] = useState([]);
   const [viewLeave, setViewLeave] = useState(null);
   const [viewOpened, { open: openView, close: closeView }] = useDisclosure(false);
-  const [dateRange, setDateRange] = useState([
-    new Date(new Date().setMonth(new Date().getMonth() - 1)), new Date()
-  ]);
-  const [filters, setFilters] = useState({ employee: null, status: null, leaveType: null });
+  const [dateRange, setDateRange] = useState([new Date(new Date().getFullYear(), 0, 1), new Date(new Date().getFullYear(), 11, 31)]);
+  const [statusTab, setStatusTab] = useState('Pending');
+  const [filters, setFilters] = useState({ employee: null, leaveType: null });
+  const noteRef = useRef('');
 
-  useEffect(() => { fetchEmployees(); }, []);
+  useEffect(() => { employeeAPI.getAll({ limit: 1000 }).then(r => setEmployees(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { fetchLeaves(); }, [dateRange, filters]);
-
-  const fetchEmployees = async () => {
-    try {
-      const res = await employeeAPI.getAll({ status: 'Active', limit: 500 });
-      setEmployees(res.data || []);
-    } catch {}
-  };
 
   const fetchLeaves = async () => {
     setLoading(true);
@@ -56,27 +41,38 @@ const LeaveList = () => {
       if (dateRange[0]) params.startDate = localDateStr(dateRange[0]);
       if (dateRange[1]) params.endDate = localDateStr(dateRange[1]);
       if (filters.employee) params.employee = filters.employee;
-      if (filters.status) params.status = filters.status;
       if (filters.leaveType) params.leaveType = filters.leaveType;
       const res = await leaveAPI.getAll(params);
       setLeaves(res.data || []);
-    } catch (err) {
+    } catch {
       notifications.show({ title: 'Error', message: 'Failed to load leaves', color: 'red' });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleApprove = (leave) => {
+  /** Confirm dialog with an optional note; runs action(note). */
+  const confirmWithNote = ({ title, text, label, color, notePlaceholder, required, action, success }) => {
+    noteRef.current = '';
     modals.openConfirmModal({
-      title: 'Approve Leave',
-      children: <Text size="sm">Approve leave for <b>{leave.employeeId?.name}</b>?</Text>,
-      labels: { confirm: 'Approve', cancel: 'Cancel' },
-      confirmProps: { color: 'green' },
+      title,
+      children: (
+        <Stack gap="xs">
+          <Text size="sm">{text}</Text>
+          <Textarea placeholder={notePlaceholder} autosize minRows={2} onChange={(e) => { noteRef.current = e.target.value; }} data-autofocus />
+        </Stack>
+      ),
+      labels: { confirm: label, cancel: 'Close' },
+      confirmProps: { color },
       onConfirm: async () => {
+        if (required && !noteRef.current.trim()) {
+          notifications.show({ title: 'Reason required', message: 'Please enter a reason', color: 'orange' });
+          return;
+        }
         try {
-          await leaveAPI.approve(leave._id, { remarks: 'Approved' });
-          notifications.show({ title: 'Approved', message: 'Leave approved', color: 'green' });
+          await action(noteRef.current.trim());
+          notifications.show({ title: success, message: '', color: 'green' });
+          closeView();
           fetchLeaves();
         } catch (err) {
           notifications.show({ title: 'Error', message: err.message, color: 'red' });
@@ -85,33 +81,31 @@ const LeaveList = () => {
     });
   };
 
-  const handleReject = (leave) => {
-    modals.openConfirmModal({
-      title: 'Reject Leave',
-      children: <Text size="sm">Reject leave for <b>{leave.employeeId?.name}</b>?</Text>,
-      labels: { confirm: 'Reject', cancel: 'Cancel' },
-      confirmProps: { color: 'red' },
-      onConfirm: async () => {
-        try {
-          await leaveAPI.reject(leave._id, { rejectionReason: 'Rejected by admin' });
-          notifications.show({ title: 'Rejected', message: 'Leave rejected', color: 'orange' });
-          fetchLeaves();
-        } catch (err) {
-          notifications.show({ title: 'Error', message: err.message, color: 'red' });
-        }
-      }
-    });
-  };
-
-  const handleDelete = (leave) => {
+  const name = (l) => l.employeeId?.name || 'employee';
+  const handleApprove = (l) => confirmWithNote({
+    title: 'Approve Leave', color: 'green', label: 'Approve', success: 'Leave approved — attendance marked',
+    text: <>Approve {l.days} day(s) {l.leaveType} leave for <b>{name(l)}</b> ({fmtDate(l.fromDate)} – {fmtDate(l.toDate)})?</>,
+    notePlaceholder: 'Remarks (optional)', action: (n) => leaveAPI.approve(l._id, { remarks: n })
+  });
+  const handleReject = (l) => confirmWithNote({
+    title: 'Reject Leave', color: 'red', label: 'Reject', success: 'Leave rejected', required: true,
+    text: <>Reject leave for <b>{name(l)}</b>?</>,
+    notePlaceholder: 'Reason for rejection', action: (n) => leaveAPI.reject(l._id, { rejectionReason: n })
+  });
+  const handleCancel = (l) => confirmWithNote({
+    title: 'Cancel Leave', color: 'orange', label: 'Cancel Leave', success: 'Leave cancelled',
+    text: <>Cancel this {l.status.toLowerCase()} leave for <b>{name(l)}</b>?{l.status === 'Approved' && ' The Leave marks are removed from attendance.'}</>,
+    notePlaceholder: 'Remarks (optional)', action: (n) => leaveAPI.cancel(l._id, { remarks: n })
+  });
+  const handleDelete = (l) => {
     modals.openConfirmModal({
       title: 'Delete Leave',
-      children: <Text size="sm">Delete leave for <b>{leave.employeeId?.name}</b>?</Text>,
-      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      children: <Text size="sm">Delete leave record for <b>{name(l)}</b>?{l.status === 'Approved' && ' Its attendance marks are removed too.'}</Text>,
+      labels: { confirm: 'Delete', cancel: 'Close' },
       confirmProps: { color: 'red' },
       onConfirm: async () => {
         try {
-          await leaveAPI.delete(leave._id);
+          await leaveAPI.delete(l._id);
           notifications.show({ title: 'Deleted', color: 'green', message: 'Leave removed' });
           fetchLeaves();
         } catch (err) {
@@ -121,22 +115,22 @@ const LeaveList = () => {
     });
   };
 
-  const pending = leaves.filter(l => l.status === 'Pending').length;
-  const approved = leaves.filter(l => l.status === 'Approved').length;
-  const rejected = leaves.filter(l => l.status === 'Rejected').length;
-  const totalDays = leaves.filter(l => l.status === 'Approved').reduce((s, l) => s + daysDiff(l.fromDate, l.toDate), 0);
-  const hasFilters = filters.employee || filters.status || filters.leaveType;
+  const count = (s) => leaves.filter(l => l.status === s).length;
+  const approvedDays = leaves.filter(l => l.status === 'Approved').reduce((s, l) => s + (l.days || 0), 0);
+  const shown = statusTab === 'All' ? leaves : leaves.filter(l => l.status === statusTab);
 
-  const StatCard = ({ icon, label, value, color }) => (
-    <Card shadow="sm" padding="md" radius="md" withBorder>
-      <Group>
-        <ThemeIcon size={44} radius="md" variant="light" color={color}>{icon}</ThemeIcon>
-        <div>
-          <Text fw={700} size="xl">{value}</Text>
-          <Text size="sm" c="dimmed">{label}</Text>
-        </div>
-      </Group>
-    </Card>
+  const renderActions = (l, withView = true) => (
+    <Group gap={4} justify="center" wrap="nowrap">
+      {l.status === 'Pending' && <>
+        <Tooltip label="Approve"><ActionIcon variant="light" color="green" size="sm" onClick={() => handleApprove(l)}><IconCheck size={16} /></ActionIcon></Tooltip>
+        <Tooltip label="Reject"><ActionIcon variant="light" color="red" size="sm" onClick={() => handleReject(l)}><IconX size={16} /></ActionIcon></Tooltip>
+      </>}
+      {['Pending', 'Approved'].includes(l.status) && (
+        <Tooltip label="Cancel leave"><ActionIcon variant="light" color="orange" size="sm" onClick={() => handleCancel(l)}><IconBan size={16} /></ActionIcon></Tooltip>
+      )}
+      {withView && <Tooltip label="View"><ActionIcon variant="light" color="blue" size="sm" onClick={() => { setViewLeave(l); openView(); }}><IconEye size={16} /></ActionIcon></Tooltip>}
+      <Tooltip label="Delete"><ActionIcon variant="light" color="red" size="sm" onClick={() => handleDelete(l)}><IconTrash size={16} /></ActionIcon></Tooltip>
+    </Group>
   );
 
   return (
@@ -144,56 +138,39 @@ const LeaveList = () => {
       <Group justify="space-between" mb="lg">
         <div>
           <Title order={2}>Leave Management</Title>
-          <Text c="dimmed" size="sm">Manage employee leave requests and approvals</Text>
+          <Text c="dimmed" size="sm">Approve requests — approved days flow into attendance and payroll</Text>
         </div>
-        <Button leftSection={<IconPlus size={18} />} onClick={() => navigate('/hrm/leaves/apply')}>
-          Apply Leave
-        </Button>
+        <Button leftSection={<IconPlus size={18} />} onClick={() => navigate('/hrm/leaves/apply')}>Apply Leave</Button>
       </Group>
 
       <SimpleGrid cols={{ base: 2, sm: 4 }} mb="lg">
-        <StatCard icon={<IconClockHour4 size={22} />} label="Pending" value={pending} color="yellow" />
-        <StatCard icon={<IconCalendarCheck size={22} />} label="Approved" value={approved} color="green" />
-        <StatCard icon={<IconCalendarOff size={22} />} label="Rejected" value={rejected} color="red" />
-        <StatCard icon={<IconCalendarEvent size={22} />} label="Total Leave Days" value={totalDays} color="blue" />
+        <StatCard icon={<IconClockHour4 size={22} />} label="Pending Approval" value={count('Pending')} color="yellow" />
+        <StatCard icon={<IconCalendarCheck size={22} />} label="Approved" value={count('Approved')} color="green" />
+        <StatCard icon={<IconCalendarOff size={22} />} label="Rejected / Cancelled" value={count('Rejected') + count('Cancelled')} color="red" />
+        <StatCard icon={<IconCalendarEvent size={22} />} label="Approved Leave Days" value={approvedDays} color="blue" />
       </SimpleGrid>
 
-      <Paper shadow="xs" p="md" radius="md" withBorder mb="lg">
-        <Group justify="space-between" mb="sm">
-          <Group gap="xs"><IconFilter size={16} /><Text fw={600} size="sm">Filters</Text></Group>
-          {hasFilters && (
-            <Button variant="subtle" size="xs" leftSection={<IconFilterOff size={14} />}
-              onClick={() => setFilters({ employee: null, status: null, leaveType: null })}>
-              Clear
-            </Button>
-          )}
-        </Group>
-        <SimpleGrid cols={{ base: 1, sm: 4 }}>
-          <DatePickerInput type="range" label="Date Range" placeholder="Select range"
-            value={dateRange} onChange={setDateRange} clearable />
-          <Select label="Employee" placeholder="All Employees"
-            data={employees.map(e => ({ value: e._id, label: e.name }))}
-            value={filters.employee} onChange={(v) => setFilters({ ...filters, employee: v })}
-            clearable searchable />
-          <Select label="Leave Type" placeholder="All Types"
-            data={['Casual', 'Sick', 'Earned', 'Maternity', 'Paternity', 'Unpaid', 'Compensatory']}
-            value={filters.leaveType} onChange={(v) => setFilters({ ...filters, leaveType: v })}
-            clearable />
-          <Select label="Status" placeholder="All Status"
-            data={['Pending', 'Approved', 'Rejected']}
-            value={filters.status} onChange={(v) => setFilters({ ...filters, status: v })}
-            clearable />
+      <Paper shadow="xs" p="md" radius="md" withBorder mb="md">
+        <SimpleGrid cols={{ base: 1, sm: 3 }}>
+          <DatePickerInput type="range" label="Period" value={dateRange} onChange={setDateRange} clearable valueFormat="DD/MM/YYYY" />
+          <Select label="Employee" placeholder="All Employees" searchable clearable
+            data={employees.map(e => ({ value: e._id, label: `${e.employeeCode ? e.employeeCode + ' · ' : ''}${e.name}` }))}
+            value={filters.employee} onChange={(v) => setFilters({ ...filters, employee: v })} />
+          <Select label="Leave Type" placeholder="All Types" data={LEAVE_TYPES} clearable
+            value={filters.leaveType} onChange={(v) => setFilters({ ...filters, leaveType: v })} />
         </SimpleGrid>
       </Paper>
 
+      <SegmentedControl mb="sm" value={statusTab} onChange={setStatusTab}
+        data={['Pending', 'Approved', 'Rejected', 'Cancelled', 'All'].map(s => ({ value: s, label: s === 'All' ? `All (${leaves.length})` : `${s} (${count(s)})` }))} />
+
       <Paper shadow="xs" radius="md" withBorder pos="relative">
         <LoadingOverlay visible={loading} zIndex={10} overlayProps={{ blur: 2 }} />
-        {leaves.length === 0 && !loading ? (
+        {shown.length === 0 && !loading ? (
           <Stack align="center" py={60} gap="md">
             <ThemeIcon size={64} radius="xl" variant="light" color="gray"><IconCalendarOff size={32} /></ThemeIcon>
-            <Title order={4} c="dimmed">No leave records found</Title>
-            <Button variant="light" leftSection={<IconCalendarPlus size={16} />}
-              onClick={() => navigate('/hrm/leaves/apply')}>Apply Leave</Button>
+            <Title order={4} c="dimmed">No {statusTab === 'All' ? '' : statusTab.toLowerCase()} leaves</Title>
+            <Button variant="light" leftSection={<IconCalendarPlus size={16} />} onClick={() => navigate('/hrm/leaves/apply')}>Apply Leave</Button>
           </Stack>
         ) : (
           <Table.ScrollContainer minWidth={900}>
@@ -212,62 +189,20 @@ const LeaveList = () => {
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {leaves.map((leave) => (
-                  <Table.Tr key={leave._id}>
+                {shown.map((l) => (
+                  <Table.Tr key={l._id}>
                     <Table.Td>
-                      <Text size="sm" fw={600}>{leave.employeeId?.name || '-'}</Text>
-                      <Text size="xs" c="dimmed">{leave.employeeId?.department || ''}</Text>
+                      <Text size="sm" fw={600}>{l.employeeId?.name || '-'}</Text>
+                      <Text size="xs" c="dimmed">{[l.employeeId?.employeeCode, l.employeeId?.department].filter(Boolean).join(' · ')}</Text>
                     </Table.Td>
-                    <Table.Td>
-                      <Badge variant="light" color={getLeaveTypeColor(leave.leaveType)} size="sm">
-                        {leave.leaveType}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td><Text size="sm">{formatDate(leave.fromDate)}</Text></Table.Td>
-                    <Table.Td><Text size="sm">{formatDate(leave.toDate)}</Text></Table.Td>
-                    <Table.Td ta="center">
-                      <Badge variant="filled" color="gray" size="sm" radius="sm">
-                        {daysDiff(leave.fromDate, leave.toDate)}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm" c="dimmed" lineClamp={1} maw={150}>{leave.reason || '-'}</Text>
-                    </Table.Td>
-                    <Table.Td><Text size="sm">{formatDate(leave.createdAt)}</Text></Table.Td>
-                    <Table.Td>
-                      <Badge variant="light" color={getStatusColor(leave.status)} size="sm">
-                        {leave.status}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td>
-                      <Group gap={4} justify="center">
-                        {leave.status === 'Pending' && (
-                          <>
-                            <Tooltip label="Approve">
-                              <ActionIcon variant="light" color="green" size="sm" onClick={() => handleApprove(leave)}>
-                                <IconCheck size={16} />
-                              </ActionIcon>
-                            </Tooltip>
-                            <Tooltip label="Reject">
-                              <ActionIcon variant="light" color="red" size="sm" onClick={() => handleReject(leave)}>
-                                <IconX size={16} />
-                              </ActionIcon>
-                            </Tooltip>
-                          </>
-                        )}
-                        <Tooltip label="View">
-                          <ActionIcon variant="light" color="blue" size="sm"
-                            onClick={() => { setViewLeave(leave); openView(); }}>
-                            <IconEye size={16} />
-                          </ActionIcon>
-                        </Tooltip>
-                        <Tooltip label="Delete">
-                          <ActionIcon variant="light" color="red" size="sm" onClick={() => handleDelete(leave)}>
-                            <IconTrash size={16} />
-                          </ActionIcon>
-                        </Tooltip>
-                      </Group>
-                    </Table.Td>
+                    <Table.Td><Badge variant="light" color={leaveTypeColor(l.leaveType)} size="sm">{l.leaveType}</Badge></Table.Td>
+                    <Table.Td><Text size="sm">{fmtDate(l.fromDate)}</Text></Table.Td>
+                    <Table.Td><Text size="sm">{fmtDate(l.toDate)}</Text></Table.Td>
+                    <Table.Td ta="center"><Badge variant="filled" color="gray" size="sm" radius="sm">{l.days}</Badge></Table.Td>
+                    <Table.Td><Text size="sm" c="dimmed" lineClamp={1} maw={180}>{l.reason || '-'}</Text></Table.Td>
+                    <Table.Td><Text size="sm">{fmtDate(l.createdAt)}</Text></Table.Td>
+                    <Table.Td><Badge variant="light" color={leaveStatusColor(l.status)} size="sm">{l.status}</Badge></Table.Td>
+                    <Table.Td>{renderActions(l)}</Table.Td>
                   </Table.Tr>
                 ))}
               </Table.Tbody>
@@ -276,52 +211,26 @@ const LeaveList = () => {
         )}
       </Paper>
 
-      {/* View Modal */}
       <Modal opened={viewOpened} onClose={closeView} title={<Text fw={600}>Leave Details</Text>} size="md">
         {viewLeave && (
           <Stack gap="sm">
+            {[
+              ['Employee', `${viewLeave.employeeId?.name || ''} ${viewLeave.employeeId?.employeeCode ? `(${viewLeave.employeeId.employeeCode})` : ''}`],
+              ['Department', viewLeave.employeeId?.department || '-'],
+              ['Period', `${fmtDate(viewLeave.fromDate)} – ${fmtDate(viewLeave.toDate)} · ${viewLeave.days} day(s)`],
+              ['Applied on', fmtDate(viewLeave.createdAt)],
+              ['Actioned on', viewLeave.actionedAt ? fmtDate(viewLeave.actionedAt) : '-']
+            ].map(([k, v]) => (
+              <Group key={k} justify="space-between"><Text size="sm" c="dimmed">{k}</Text><Text size="sm" fw={500}>{v}</Text></Group>
+            ))}
             <Group justify="space-between">
-              <Text size="sm" c="dimmed">Employee</Text>
-              <Text size="sm" fw={600}>{viewLeave.employeeId?.name}</Text>
+              <Badge variant="light" color={leaveTypeColor(viewLeave.leaveType)}>{viewLeave.leaveType}</Badge>
+              <Badge variant="light" color={leaveStatusColor(viewLeave.status)}>{viewLeave.status}</Badge>
             </Group>
-            <Group justify="space-between">
-              <Text size="sm" c="dimmed">Department</Text>
-              <Text size="sm">{viewLeave.employeeId?.department || '-'}</Text>
-            </Group>
-            <Group justify="space-between">
-              <Text size="sm" c="dimmed">Leave Type</Text>
-              <Badge variant="light" color={getLeaveTypeColor(viewLeave.leaveType)}>{viewLeave.leaveType}</Badge>
-            </Group>
-            <Group justify="space-between">
-              <Text size="sm" c="dimmed">From</Text>
-              <Text size="sm">{formatDate(viewLeave.fromDate)}</Text>
-            </Group>
-            <Group justify="space-between">
-              <Text size="sm" c="dimmed">To</Text>
-              <Text size="sm">{formatDate(viewLeave.toDate)}</Text>
-            </Group>
-            <Group justify="space-between">
-              <Text size="sm" c="dimmed">Days</Text>
-              <Badge variant="filled" color="gray">{daysDiff(viewLeave.fromDate, viewLeave.toDate)}</Badge>
-            </Group>
-            <Group justify="space-between">
-              <Text size="sm" c="dimmed">Status</Text>
-              <Badge variant="light" color={getStatusColor(viewLeave.status)}>{viewLeave.status}</Badge>
-            </Group>
-            <div>
-              <Text size="sm" c="dimmed" mb={4}>Reason</Text>
-              <Paper p="sm" bg="gray.0" radius="sm">
-                <Text size="sm">{viewLeave.reason || '-'}</Text>
-              </Paper>
-            </div>
-            {viewLeave.rejectionReason && (
-              <div>
-                <Text size="sm" c="dimmed" mb={4}>Rejection Reason</Text>
-                <Paper p="sm" bg="red.0" radius="sm">
-                  <Text size="sm" c="red">{viewLeave.rejectionReason}</Text>
-                </Paper>
-              </div>
-            )}
+            <Paper p="sm" bg="gray.0" radius="sm"><Text size="xs" c="dimmed">Reason</Text><Text size="sm">{viewLeave.reason || '-'}</Text></Paper>
+            {viewLeave.remarks && <Paper p="sm" bg="blue.0" radius="sm"><Text size="xs" c="dimmed">Remarks</Text><Text size="sm">{viewLeave.remarks}</Text></Paper>}
+            {viewLeave.rejectionReason && <Paper p="sm" bg="red.0" radius="sm"><Text size="xs" c="dimmed">Rejection Reason</Text><Text size="sm" c="red">{viewLeave.rejectionReason}</Text></Paper>}
+            {renderActions(viewLeave, false)}
           </Stack>
         )}
       </Modal>

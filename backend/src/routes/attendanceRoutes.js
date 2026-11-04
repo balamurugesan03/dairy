@@ -8,12 +8,14 @@ import {
   deleteAttendance,
   getAttendanceByDate,
   getMonthlySummary,
+  getMonthlyRegister,
   getAttendanceReport
 } from '../controllers/attendanceController.js';
 
 const router = express.Router();
 
 router.get('/report', getAttendanceReport);
+router.get('/register', getMonthlyRegister);
 router.get('/by-date', getAttendanceByDate);
 router.get('/:employeeId/summary', getMonthlySummary);
 router.post('/bulk', bulkMarkAttendance);
