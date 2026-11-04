@@ -138,7 +138,7 @@ const CattleFeedAdvance = lazy(() => import('./components/payments/CattleFeedAdv
 const ProducerLoanManagement = lazy(() => import('./components/payments/ProducerLoanManagement'));
 const LoanAdvanceSummary = lazy(() => import('./components/payments/LoanAdvanceSummary'));
 const ProducerLoanView = lazy(() => import('./components/payments/ProducerLoanView'));
-const CashAdvanceVoucher = lazy(() => import('./components/payments/CashAdvanceVoucher'));
+const CashAdvanceSummary = lazy(() => import('./components/payments/CashAdvanceSummary'));
 const EarningDeductionMaster = lazy(() => import('./components/payments/EarningDeductionMaster'));
 const IndividualDeductionEarning = lazy(() => import('./components/payments/IndividualDeductionEarning'));
 const HistoricalDeductionEarning  = lazy(() => import('./components/payments/HistoricalDeductionEarning'));
@@ -483,8 +483,9 @@ const AppContent = () => {
                 <Route path="loans" element={<LoanAdvanceSummary />} />
                 <Route path="loans/manage" element={<ProducerLoanManagement />} />
                 <Route path="loans/:id" element={<ProducerLoanView />} />
-                <Route path="cash-advance" element={<CashAdvanceVoucher />} />
-                <Route path="cash-advance/voucher" element={<CashAdvanceVoucher />} />
+                <Route path="cash-advance" element={<CashAdvanceSummary />} />
+                {/* F5 and old links land on the same Recoveries → Cash Advance page */}
+                <Route path="cash-advance/voucher" element={<Navigate to="/payments/cash-advance" replace />} />
                 <Route path="receipts" element={<ProducerReceiptManagement />} />
                 <Route path="farmer-ledger" element={<FarmerLedgerView />} />
                 <Route path="producer-register" element={<ProducerRegister />} />

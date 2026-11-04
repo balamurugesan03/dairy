@@ -1,3 +1,4 @@
+import { ensureCashOpeningSynced } from '../utils/cashInHandOpening.js';
 import express from 'express';
 import {
   getDDDMISReport,
@@ -71,13 +72,13 @@ const router = express.Router();
 
 // Existing routes
 router.get('/receipts-disbursement', getReceiptsDisbursementReport);
-router.get('/trading-account', getTradingAccount);
-router.get('/profit-loss', getProfitLoss);
-router.get('/balance-sheet', getBalanceSheet);
+router.get('/trading-account', ensureCashOpeningSynced, getTradingAccount);
+router.get('/profit-loss', ensureCashOpeningSynced, getProfitLoss);
+router.get('/balance-sheet', ensureCashOpeningSynced, getBalanceSheet);
 router.get('/sales', getSalesReport);
 router.get('/stock', getStockReport);
 router.get('/subsidy', getSubsidyReport);
-router.get('/day-book', getDayBook);
+router.get('/day-book', ensureCashOpeningSynced, getDayBook);
 router.delete('/day-book-entry', deleteDayBookEntry);
 router.get('/stock-register', getStockRegister);
 router.get('/inventory-purchase-register', getInventoryPurchaseRegister);
@@ -100,20 +101,20 @@ router.post('/ddd-mis-report', saveDDDMISReport);
 router.put('/ddd-mis-report/:id', updateDDDMISReport);
 
 // New accounting reports routes
-router.get('/cash-book', getCashBook);
-router.get('/general-ledger', getGeneralLedger);
-router.get('/ledger-abstract', getGeneralLedgerAbstract);
+router.get('/cash-book', ensureCashOpeningSynced, getCashBook);
+router.get('/general-ledger', ensureCashOpeningSynced, getGeneralLedger);
+router.get('/ledger-abstract', ensureCashOpeningSynced, getGeneralLedgerAbstract);
 router.get('/rd-enhanced', getReceiptsDisbursementEnhanced);
 router.get('/ledgers-dropdown', getLedgersForDropdown);
 router.get('/receipts-payments', getReceiptsPayments);
 // Dynamic (ac_ledgers-driven) accounting reports
-router.get('/ledger-abstract-grouped', getLedgerAbstractGrouped);
-router.get('/rd-statement', getRDStatementDynamic);
-router.get('/rd-statement-unified', getRDStatementUnified);
+router.get('/ledger-abstract-grouped', ensureCashOpeningSynced, getLedgerAbstractGrouped);
+router.get('/rd-statement', ensureCashOpeningSynced, getRDStatementDynamic);
+router.get('/rd-statement-unified', ensureCashOpeningSynced, getRDStatementUnified);
 router.get('/receipts-payments-statement', getReceiptsPaymentsDynamic);
-router.get('/trading-account-v2', getTradingAccountV2);
-router.get('/profit-loss-v2', getProfitLossV2);
-router.get('/balance-sheet-v2', getBalanceSheetV2);
+router.get('/trading-account-v2', ensureCashOpeningSynced, getTradingAccountV2);
+router.get('/profit-loss-v2', ensureCashOpeningSynced, getProfitLossV2);
+router.get('/balance-sheet-v2', ensureCashOpeningSynced, getBalanceSheetV2);
 // Dairy Cooperative Trial Balance (distinct from /vyapar/trial-balance below)
 router.get('/trial-balance', getDairyTrialBalance);
 

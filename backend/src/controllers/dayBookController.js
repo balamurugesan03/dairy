@@ -83,6 +83,7 @@ export const getDayBook = async (req, res) => {
     const paymentSide = []; // All debit entries (flat list for backward compat)
 
     const cashBankTypes = new Set(['Cash', 'Cash in Hand', 'Bank', 'Bank Accounts']);
+    const cashTypes = new Set(['Cash', 'Cash in Hand']);
     // Cash vs Adjustment column of each voucher — the same shared rule as the
     // General Ledger: a Cash leg → Cash, a Bank leg or no cash/bank leg → Adjustment
     const cashBankIds = await getCashBankLedgerIds(companyId);
@@ -198,13 +199,28 @@ export const getDayBook = async (req, res) => {
       const isPaymentVoucher  = voucher.voucherType === 'Payment';
       const isPurchaseVoucher = voucher.voucherType === 'Purchase';
       const { column } = classifyVoucherEntry(voucher.entries, cashBankIds);
+      const isCashLeg = (e) => {
+        const id = e.ledgerId?._id ? e.ledgerId._id.toString() : e.ledgerId?.toString();
+        return (id && cashBankIds.cashIds.has(id)) || cashTypes.has(e.ledgerId?.ledgerType);
+      };
+      const hasCashLeg = voucher.entries.some(isCashLeg);
 
       for (const entry of voucher.entries) {
         const ledgerType = entry.ledgerId?.ledgerType;
         const isCashBank = cashBankTypes.has(ledgerType);
 
-        // Always skip Cash/Bank legs — the cash movement is implied in the day book
-        if (isCashBank) continue;
+        // Skip the cash side — the cash movement is implied in the day book.
+        // A bank ledger that is the HEAD of a cash voucher (cash withdrawn from
+        // Union Bank → Receipt; cash deposited → Payment; Contra) is a real
+        // Day Book line, e.g. Cash Book Entry receipts from bank ledgers.
+        if (isCashBank) {
+          const bankHead = !isCashLeg(entry) && hasCashLeg && (
+            (isReceiptVoucher && entry.creditAmount > 0) ||
+            (isPaymentVoucher && entry.debitAmount > 0) ||
+            voucher.voucherType === 'Contra'
+          );
+          if (!bankHead) continue;
+        }
 
         const entryData = {
           date: voucher.voucherDate,

@@ -214,9 +214,31 @@ function buildBankListHtml(groups, societyName, fromDate, toDate, isML, selected
 }
 
 // ── Print: Detail Report ──────────────────────────────────────────────────────
+// Detail print layout: every column has a fixed width adding up to 100% (only
+// SN/Prod No/Amount were sized before, so Name/Center/Mode split the rest evenly),
+// slim header + date rows, and the Bank/Cash split sits on the total label.
+const DETAIL_STYLE = `
+  .soc{font-size:16px;margin-bottom:0}
+  h2{font-size:13.5px;margin:2px 0 3px}
+  .meta{font-size:11.5px;margin-bottom:6px;gap:16px}
+  table.detail{font-size:11.5px}
+  table.detail th,table.detail td{padding:3px 5px;line-height:1.25}
+  table.detail thead th{font-size:11px;padding:4px 5px;text-align:center}
+  table.detail .date-head td{font-size:11.5px;padding:3px 6px}
+  table.detail .acct{display:block;font-size:9px;color:#555}
+  table.detail .split{font-weight:400;font-size:10px;color:#333}
+`;
+
 function buildDetailHtml(groups, societyName, fromDate, toDate, isBankMode, isML) {
   const title = isBankMode ? 'Bank Transfer Statement' : 'Payment Report';
-  const cols   = isBankMode ? 8 : 7;
+  // Real column count: SN, Prod No, Name, Center, [Bank, A/c], Amount, Mode.
+  // (Cash mode used 7 for its 6 columns — the date / total rows spanned a
+  // phantom column, so they ran wider than the table and Amount fell out of line.)
+  const cols   = isBankMode ? 8 : 6;
+  const widths = isBankMode ? [5, 8, 24, 13, 16, 14, 11, 9] : [6, 10, 38, 18, 15, 13];
+  const colgroup = `<colgroup>${widths.map(w => `<col style="width:${w}%">`).join('')}</colgroup>`;
+  const splitTxt = (bank, cash) => (bank && cash)
+    ? ` <span class="split">(Bank ₹${esc(fmt(bank))} · Cash ₹${esc(fmt(cash))})</span>` : '';
   let rows = '';
 
   for (const g of groups) {
@@ -228,19 +250,19 @@ function buildDetailHtml(groups, societyName, fromDate, toDate, isBankMode, isML
     allRows.forEach((r, i) => {
       rows += `<tr>
         <td class="ctr">${i + 1}</td>
-        <td>${esc(r.producerId)}</td>
+        <td class="ctr">${esc(r.producerId)}</td>
         <td>${esc(r.producerName)}</td>
         <td>${esc(r.center)}</td>
         ${isBankMode ? `<td>${esc(r.bankName)}</td><td>${esc(r.accountNumber)}</td>` : ''}
         <td class="right">₹${esc(fmt(r.amount))}</td>
-        <td>${esc(r.paymentMode)}${r.account ? `<br><span style="font-size:8px;color:#555">${esc(r.account)}</span>` : ''}</td>
+        <td class="ctr">${esc(r.paymentMode)}${r.account ? `<span class="acct">${esc(r.account)}</span>` : ''}</td>
       </tr>`;
     });
 
     rows += `<tr class="tot-row">
-      <td colspan="${cols - 2}" style="text-align:right">${isML ? 'ദിവസ ആകെ' : 'Date Total'}:</td>
+      <td colspan="${cols - 2}" style="text-align:right">${isML ? 'ദിവസ ആകെ' : 'Date Total'}${splitTxt(g.totalBank, g.totalCash)}:</td>
       <td class="right">₹${esc(fmt(g.grandTotal))}</td>
-      <td style="font-size:9px">Bank:₹${esc(fmt(g.totalBank))} Cash:₹${esc(fmt(g.totalCash))}</td>
+      <td></td>
     </tr>`;
   }
 
@@ -249,28 +271,29 @@ function buildDetailHtml(groups, societyName, fromDate, toDate, isBankMode, isML
   const grandCash  = groups.reduce((s, g) => s + g.totalCash, 0);
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
-<style>${PRINT_BASE_STYLE}</style></head><body>
+<style>${PRINT_BASE_STYLE}${DETAIL_STYLE}</style></head><body>
 <div class="soc">${esc(societyName)}</div>
 <h2>${esc(isML ? 'പേമെന്‍റ് റിപ്പോർട്ട്' : title)}</h2>
 <div class="meta">
   <span>${isML ? 'തീയതി' : 'From'}: <strong>${fmtDate(fromDate)}</strong></span>
   <span>${isML ? 'വരെ' : 'To'}: <strong>${fmtDate(toDate)}</strong></span>
 </div>
-<table>
+<table class="detail">
+  ${colgroup}
   <thead><tr>
-    <th class="sn">SN</th>
-    <th class="pno">${isML ? 'ഉൽ. നം.' : 'Prod No'}</th>
+    <th>SN</th>
+    <th>${isML ? 'ഉൽ. നം.' : 'Prod No'}</th>
     <th>${isML ? 'ഉൽ. പേര്' : 'Producer Name'}</th>
     <th>${isML ? 'കേന്ദ്രം' : 'Center'}</th>
     ${isBankMode ? `<th>${isML ? 'ബാങ്ക്' : 'Bank'}</th><th>${isML ? 'A/C' : 'Account No'}</th>` : ''}
-    <th class="right amt">${isML ? 'തുക' : 'Amount (₹)'}</th>
+    <th>${isML ? 'തുക' : 'Amount (₹)'}</th>
     <th>${isML ? 'രീതി' : 'Mode'}</th>
   </tr></thead>
   <tbody>${rows}</tbody>
   <tfoot><tr>
-    <th colspan="${cols - 2}" style="text-align:right">${isML ? 'ആകെ' : 'GRAND TOTAL'}</th>
+    <th colspan="${cols - 2}" style="text-align:right">${isML ? 'ആകെ' : 'GRAND TOTAL'}${splitTxt(grandBank, grandCash)}</th>
     <th class="right">₹${esc(fmt(grandTotal))}</th>
-    <th style="font-size:9px">Bank:₹${esc(fmt(grandBank))} Cash:₹${esc(fmt(grandCash))}</th>
+    <th></th>
   </tr></tfoot>
 </table>${printedOn()}</body></html>`;
 }

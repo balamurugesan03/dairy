@@ -137,22 +137,28 @@ export const getBankTransferPaid = async (req, res) => {
     if (!cycleFromDate || !cycleToDate) return res.json({ success: true, data: [] });
 
     const dayMs = 24 * 60 * 60 * 1000;
+    const cycleStart = new Date(cycleFromDate);
     const cycleEnd = new Date(cycleToDate);
+    // A Transfer Log entry belongs to this cycle when its "as on" date falls in
+    // the cycle (up to 2 days after its end). It used to need ±2 days of the
+    // cycle END only, so a transfer "as on" a date inside the cycle never showed.
+    // The lower bound starts 1.5 days in, clear of the previous cycle's +2 day
+    // tolerance, so one transfer is never listed under two cycles.
+    const asOnWindow = {
+      $gte: new Date(Math.min(cycleStart.getTime() + 1.5 * dayMs, cycleEnd.getTime() - 2 * dayMs)),
+      $lte: new Date(cycleEnd.getTime() + 2 * dayMs),
+    };
     const [bankTransfers, fps] = await Promise.all([
       BankTransfer.find({
         companyId,
         status: { $in: ['Applied', 'Completed'] },
-        asOnDate: {
-          $gte: new Date(cycleEnd.getTime() - 2 * dayMs),
-          $lte: new Date(cycleEnd.getTime() + 2 * dayMs),
-        },
+        asOnDate: asOnWindow,
       }).select('applyDate transferNumber paymentMethod collectionCenter transferDetails').lean(),
       FarmerPayment.find({
         companyId,
         paymentSource: 'BankTransfer',
         status: { $in: ['Paid', 'Partial'] },
-        'paymentPeriod.fromDate': cycleDateRange(cycleFromDate),
-        'paymentPeriod.toDate':   cycleDateRange(cycleToDate),
+        'paymentPeriod.toDate': asOnWindow,
       }).select('farmerId farmerName paidAmount netPayable paymentDate').lean(),
     ]);
 
@@ -201,7 +207,9 @@ export const getBankTransferPaid = async (req, res) => {
     for (const [id, r] of rows) {
       const f = farmerById.get(id);
       const centre = r._centre || (f?.collectionCenter ? String(f.collectionCenter) : null);
-      if (centerId && centerId !== 'all' && centre !== String(centerId)) continue;
+      // Centre filter: a transfer for "All" centres to a farmer with no centre on
+      // record has no known centre — keep it rather than hide a real payment.
+      if (centerId && centerId !== 'all' && centre && centre !== String(centerId)) continue;
       const { _centre, ...row } = r;
       data.push({
         ...row,

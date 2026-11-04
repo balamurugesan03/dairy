@@ -187,7 +187,7 @@ const MainLayout = () => {
       // navigation state, so a single press opens the form directly instead
       // of needing a first F5 to land on the page and a second F5 (now
       // caught by that page's own listener) to actually open it.
-      if (e.key === 'F5') { e.preventDefault(); navigate('/payments/cash-advance/voucher', { state: { openNewCashAdvance: true } }); return; }
+      if (e.key === 'F5') { e.preventDefault(); navigate('/payments/cash-advance'); return; }
 
       // Other shortcuts: ignore when typing inside an input / textarea / select
       const ae  = document.activeElement;

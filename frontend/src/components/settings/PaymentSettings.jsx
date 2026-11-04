@@ -392,7 +392,8 @@ export default function PaymentSettings() {
                   </Grid.Col>
                 </Grid>
                 <Text size="xs" c="dimmed" mt="xs">
-                  This is the actual cash-in-hand / bank balance when accounts were first set up.
+                  Cash in Hand opening balance — used by Cash Book Entry, Day Book, Cash Book, General Ledger,
+                  Ledger Abstract, Receipt &amp; Disbursement, Final Accounts and Balance Sheet.
                 </Text>
               </Paper>
             </Grid.Col>
