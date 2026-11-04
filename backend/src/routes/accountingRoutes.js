@@ -1,3 +1,4 @@
+import { ensureCashOpeningSynced } from '../utils/cashInHandOpening.js';
 import express from 'express';
 import {
   createVoucher,
@@ -21,7 +22,7 @@ router.use(protect, addCompanyFilter);
 // Voucher routes
 router.post('/vouchers', createVoucher);
 router.get('/vouchers', getAllVouchers);
-router.get('/vouchers/cash-book-entry', getCashBookEntry);
+router.get('/vouchers/cash-book-entry', ensureCashOpeningSynced, getCashBookEntry);
 router.get('/vouchers/:id', getVoucherById);
 router.put('/vouchers/:id', updateVoucher);
 router.delete('/vouchers/:id', deleteVoucher);

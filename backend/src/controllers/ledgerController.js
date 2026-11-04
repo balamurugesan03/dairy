@@ -1,5 +1,6 @@
 import Ledger from '../models/Ledger.js';
 import Voucher from '../models/Voucher.js';
+import { syncSettingsFromCashLedger } from '../utils/cashInHandOpening.js';
 import Supplier from '../models/Supplier.js';
 import Customer from '../models/Customer.js';
 import MilkSales from '../models/MilkSales.js';
@@ -141,6 +142,11 @@ export const updateLedger = async (req, res) => {
         success: false,
         message: 'Ledger not found'
       });
+    }
+
+    // Cash in Hand opening edited here → keep Account Settings (the source) in step
+    if (req.body.openingBalance !== undefined || req.body.openingBalanceType !== undefined) {
+      await syncSettingsFromCashLedger(ledger).catch(e => console.error('Cash opening → settings:', e.message));
     }
 
     res.status(200).json({

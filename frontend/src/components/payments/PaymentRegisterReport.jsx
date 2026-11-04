@@ -171,35 +171,44 @@ const RegisterTable = ({ reg }) => {
 // ── A4 LANDSCAPE print, built from the data (the screen table sits in a scroll
 // area, which used to clip the printout). [heading, width %, value, total key]
 const num = (k) => (e) => parseFloat(e[k]) || 0;
+// Widths add up to 100%; a blank Signature column follows Paid Amt.
 const PRINT_COLS = {
   Ledger: [
-    ['SN', 3, (e, i) => e.slNo || i + 1], ['ID', 4.5, (e) => e.producerId || e.productId || ''],
-    ['Name', 13, (e) => e.producerName || e.productName || ''],
-    ['Qty', 5, num('qty'), 'qty'], ['Milk Val', 6, num('milkValue'), 'milk'], ['Prev Bal', 5.5, num('previousBalance'), 'prev'],
-    ['Other Earn', 5, num('otherEarnings'), 'otherEarn'], ['Total Earn', 6, num('totalEarnings'), 'earn'],
-    ['Welfare', 4.5, num('welfare'), 'welfare'], ['CF Adv', 4.5, num('cfAdv'), 'cfAdv'], ['CF Rec', 4.5, num('cfRec'), 'cfRec'],
-    ['Cash Adv', 4.5, num('cashAdv'), 'cashAdv'], ['Cash Rec', 4.5, num('cashRec'), 'cashRec'],
-    ['Loan Adv', 4.5, num('loanAdv'), 'loanAdv'], ['Loan Rec', 4.5, num('loanRec'), 'loanRec'],
-    ['Other Ded', 4.5, num('otherDed'), 'other'], ['Total Ded', 5, num('totalDed'), 'ded'],
-    ['Net Pay', 6, num('netPay'), 'net'], ['Paid Amt', 6, num('paidAmount'), 'paid'],
+    ['SN', 2.4, (e, i) => e.slNo || i + 1], ['ID', 3.8, (e) => e.producerId || e.productId || ''],
+    ['Name', 10.4, (e) => e.producerName || e.productName || ''],
+    ['Qty', 4.4, num('qty'), 'qty'], ['Milk Val', 5.6, num('milkValue'), 'milk'], ['Prev Bal', 5.2, num('previousBalance'), 'prev'],
+    ['Other Earn', 4.6, num('otherEarnings'), 'otherEarn'], ['Total Earn', 5.6, num('totalEarnings'), 'earn'],
+    ['Welfare', 4.3, num('welfare'), 'welfare'], ['CF Adv', 4.3, num('cfAdv'), 'cfAdv'], ['CF Rec', 4.3, num('cfRec'), 'cfRec'],
+    ['Cash Adv', 4.3, num('cashAdv'), 'cashAdv'], ['Cash Rec', 4.3, num('cashRec'), 'cashRec'],
+    ['Loan Adv', 4.3, num('loanAdv'), 'loanAdv'], ['Loan Rec', 4.3, num('loanRec'), 'loanRec'],
+    ['Other Ded', 4.3, num('otherDed'), 'other'], ['Total Ded', 4.8, num('totalDed'), 'ded'],
+    ['Net Pay', 5.6, num('netPay'), 'net'], ['Paid Amt', 5.6, num('paidAmount'), 'paid'],
   ],
   Producers: [
-    ['SN', 3.5, (e, i) => e.slNo || i + 1], ['ID', 5.5, (e) => e.producerId || e.productId || ''],
-    ['Name', 18, (e) => e.producerName || e.productName || ''], ['Center', 11, (e) => e.center || ''],
-    ['Qty', 6.5, num('qty'), 'qty'], ['Milk Val', 7.5, num('milkValue'), 'milk'], ['Prev Bal', 7, num('previousBalance'), 'prev'],
-    ['Welfare', 6, num('welfare'), 'welfare'], ['CF Rec', 6, num('cfRec'), 'cfRec'], ['Loan Adv', 6, num('loanAdv'), 'loanAdv'],
-    ['Cash Pocket', 6.5, num('cashPocket'), 'cashPocket'], ['Net Pay', 8, num('netPay'), 'net'], ['Paid Amt', 8.5, num('paidAmount'), 'paid'],
+    ['SN', 3, (e, i) => e.slNo || i + 1], ['ID', 5, (e) => e.producerId || e.productId || ''],
+    ['Name', 16, (e) => e.producerName || e.productName || ''], ['Center', 9.5, (e) => e.center || ''],
+    ['Qty', 6, num('qty'), 'qty'], ['Milk Val', 7, num('milkValue'), 'milk'], ['Prev Bal', 6.5, num('previousBalance'), 'prev'],
+    ['Welfare', 5.5, num('welfare'), 'welfare'], ['CF Rec', 5.5, num('cfRec'), 'cfRec'], ['Loan Adv', 5.5, num('loanAdv'), 'loanAdv'],
+    ['Cash Pocket', 6, num('cashPocket'), 'cashPocket'], ['Net Pay', 7.5, num('netPay'), 'net'], ['Paid Amt', 7.5, num('paidAmount'), 'paid'],
   ],
 };
-const PRINT_CSS = `
+const SIGNATURE_WIDTH = { Ledger: 7.6, Producers: 9.5 };
+// Ledger has 20 columns, so its font grows less than the 14-column Producers register.
+const PRINT_CSS = (type) => {
+  const td = type === 'Ledger' ? 10 : 11;
+  return `
   @page { size: A4 landscape; margin: 8mm 7mm; }
-  body { font-size: 9.5px; }
-  .a4-header__org { font-size: 16px; }
-  .a4-header__title { font-size: 12.5px; }
-  .a4-header__meta { font-size: 10px; }
-  table.a4 th { font-size: 8.5px; text-transform: none; line-height: 1.15; }
-  table.a4 td { font-size: 9.5px; padding: 2.5px 3px; vertical-align: middle; }
+  body { font-size: ${td}px; }
+  .a4-header__org { font-size: 17px; }
+  .a4-header__title { font-size: 13px; }
+  .a4-header__meta { font-size: 10.5px; }
+  table.a4 th, table.a4 td { border: 1px solid #222; }
+  table.a4 th { font-size: ${td - 1}px; text-transform: none; line-height: 1.15; padding: 3px 2px; }
+  table.a4 td { font-size: ${td}px; padding: 4px 3px; vertical-align: middle; height: 26px; }
+  table.a4 td.sig { padding: 0; }
+  table.a4 tr.row-grand td { font-size: ${td - 1}px; height: auto; }
 `;
+};
 const pAmt = (v) => (v ? fmt(v) : '');
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
@@ -261,7 +270,8 @@ export default function PaymentRegisterReport() {
 
   const handlePrint = () => {
     if (!register) return;
-    const cols = PRINT_COLS[register.registerType === 'Ledger' ? 'Ledger' : 'Producers'];
+    const type = register.registerType === 'Ledger' ? 'Ledger' : 'Producers';
+    const cols = PRINT_COLS[type];
     const entries = register.entries || [];
     const totals = {};
     const isAmt = (c) => !!c[3];
@@ -270,18 +280,18 @@ export default function PaymentRegisterReport() {
       if (isAmt(c)) totals[c[3]] = (totals[c[3]] || 0) + v;
       return isAmt(c) ? `<td class="amt${c[3] === 'net' || c[3] === 'paid' ? ' b' : ''}">${pAmt(v)}</td>`
         : `<td${c[0] === 'Name' || c[0] === 'Center' ? '' : ' class="ctr"'}>${escapeHtml(v)}</td>`;
-    }).join('')}</tr>`).join('');
+    }).join('')}<td class="sig"></td></tr>`).join('');
     const labelCols = cols.filter(c => !isAmt(c)).length;
     const totalRow = `<tr class="row-grand"><td colspan="${labelCols}" class="amt">TOTAL (${entries.length} producers)</td>${
-      cols.filter(isAmt).map(c => `<td class="amt">${fmt(totals[c[3]] || 0)}</td>`).join('')}</tr>`;
+      cols.filter(isAmt).map(c => `<td class="amt">${fmt(totals[c[3]] || 0)}</td>`).join('')}<td></td></tr>`;
     openA4Print({
       title: `Payment Register ${cycleInfo}`,
       orientation: 'landscape',
-      css: PRINT_CSS,
+      css: PRINT_CSS(type),
       bodyHtml: a4Header({ orgName: societyName, title: 'Payment Register', period: cycleInfo,
           extra: `${escapeHtml(register.registerType)} · ${entries.length} producers` })
-        + `<table class="a4"><colgroup>${cols.map(c => `<col style="width:${c[1]}%">`).join('')}</colgroup>
-          <thead><tr>${cols.map(c => `<th>${c[0]}</th>`).join('')}</tr></thead>
+        + `<table class="a4"><colgroup>${cols.map(c => `<col style="width:${c[1]}%">`).join('')}<col style="width:${SIGNATURE_WIDTH[type]}%"></colgroup>
+          <thead><tr>${cols.map(c => `<th>${c[0]}</th>`).join('')}<th>Signature</th></tr></thead>
           <tbody>${body}${totalRow}</tbody></table>`
         + a4Signatures(['Secretary', 'President'], new Date().toLocaleString('en-IN')),
     });
