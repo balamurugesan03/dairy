@@ -76,6 +76,14 @@ const voucherSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // Adjustment Entry (manual Journal) side convention. 'v2' = Receipt section
+  // saved as Credit, Payment section as Debit — the polarity every report uses
+  // for non-cash ledgers (Cr = Receipt, Dr = Payment). Manual Journals without
+  // it were saved the old, swapped way and are flipped once at startup
+  // (utils/adjustmentSideFix.js).
+  adjSides: {
+    type: String
+  },
   status: {
     type: String,
     enum: ['Draft', 'Posted', 'Cancelled'],

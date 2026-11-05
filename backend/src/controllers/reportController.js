@@ -1059,8 +1059,9 @@ export const getStockRegister = async (req, res) => {
 
 // ── Milk Bill Abstract Report ──────────────────────────────────────────
 // Built only from Adjustment (Journal) Entries saved with "Milk Bill"
-// ticked. Receipt = the entry's Dr legs, Payment = its Cr legs (the same
-// sides as the Adjustment Entry screen). Each section is a date-wise grid:
+// ticked. Receipt = the entry's Cr legs, Payment = its Dr legs — the
+// Adjustment Entry screen saves its Receipt section as Cr and Payment as Dr
+// (2026-11-06; same polarity as Day Book / GL for non-cash ledgers). Each section is a date-wise grid:
 // one row per date, one column per Head of Account, row and column totals.
 export const getMilkBillAbstractReport = async (req, res) => {
   try {
@@ -1113,8 +1114,8 @@ export const getMilkBillAbstractReport = async (req, res) => {
     res.status(200).json({
       success: true,
       data: {
-        receipt: buildSection('debit'),
-        payment: buildSection('credit'),
+        receipt: buildSection('credit'),
+        payment: buildSection('debit'),
         voucherCount: vouchers.length,
         startDate: start,
         endDate: end

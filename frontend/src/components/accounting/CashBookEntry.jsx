@@ -664,7 +664,7 @@ const CashBookEntry = ({ asPopup = false, onClose }) => {
                       <Text size="xs" fw={600} ff="monospace" c={row.balance < 0 ? 'red.7' : 'dark.6'}>{fmtBal(row.balance)}</Text>
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'center' }}>
-                      <Badge size="xs" variant="light" color={isManual ? 'grape' : 'gray'}>{isManual ? 'Manual' : (v.referenceType || 'Auto')}</Badge>
+                      <Badge size="xs" variant="light" color={isManual ? 'grape' : 'gray'}>{isManual ? 'Manual' : v.isVirtual ? 'Cash Advance' : (v.referenceType || 'Auto')}</Badge>
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'center', padding: '4px 6px' }}>
                       <Group gap={2} justify="center" wrap="nowrap">
@@ -749,7 +749,7 @@ const CashBookEntry = ({ asPopup = false, onClose }) => {
                 </Grid.Col>
                 <Grid.Col span={4}>
                   <Text size="xs" c="dimmed">Source</Text>
-                  <Text fw={500} size="sm">{v.referenceType === 'Manual' ? 'Manual entry' : (v.referenceType || 'Auto')}</Text>
+                  <Text fw={500} size="sm">{v.referenceType === 'Manual' ? 'Manual entry' : v.isVirtual ? 'Cash Advance (Producer Dues → Recoveries)' : (v.referenceType || 'Auto')}</Text>
                 </Grid.Col>
                 <Grid.Col span={4}>
                   <Text size="xs" c="dimmed">Cash Effect</Text>

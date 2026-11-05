@@ -2,6 +2,7 @@ import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
 import { generateVoucherNumber, updateLedgerBalances } from '../utils/accountingHelper.js';
 import mongoose from 'mongoose';
+import { getCashAdvanceVoucherRows } from '../utils/cashAdvanceVoucherRows.js';
 
 // Create manual voucher
 export const createVoucher = async (req, res) => {
@@ -152,7 +153,8 @@ export const getAllVouchers = async (req, res) => {
       limit = 10,
       voucherType = '',
       startDate = '',
-      endDate = ''
+      endDate = '',
+      includeCashAdvance = ''
     } = req.query;
 
     const query = { companyId: req.companyId };
@@ -180,9 +182,23 @@ export const getAllVouchers = async (req, res) => {
 
     const total = await Voucher.countDocuments(query);
 
+    // Receipt / Payment Voucher and Adjustment Entry screens also list the
+    // Cash Advance module's entries (read-only, never stored as Vouchers — Day
+    // Book / Cash Book read them from Advance directly). First page only.
+    let data = vouchers;
+    if (['1', 'true'].includes(String(includeCashAdvance)) && parseInt(page) === 1
+      && (!voucherType || ['Payment', 'Receipt', 'Journal'].includes(voucherType))) {
+      const extra = await getCashAdvanceVoucherRows(req.companyId, {
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+        voucherTypes: voucherType ? [voucherType] : undefined
+      });
+      if (extra.length) data = [...vouchers.map(v => v.toObject()), ...extra];
+    }
+
     res.status(200).json({
       success: true,
-      data: vouchers,
+      data,
       pagination: {
         total,
         page: parseInt(page),
@@ -242,11 +258,17 @@ export const getCashBookEntry = async (req, res) => {
       .populate('entries.ledgerId', 'ledgerName ledgerType')
       .lean() : [];
 
-    const rows = vouchers.map(v => {
+    // Cash Advance module entries paid / received in cash (read-only rows;
+    // Day Book and Cash Book list the same advances, so the day's closing matches)
+    const cashAdvRows = await getCashAdvanceVoucherRows(companyId, {
+      startDate: dayStart, endDate: dayEnd, voucherTypes: ['Payment', 'Receipt']
+    });
+
+    const rows = [...vouchers, ...cashAdvRows].map(v => {
       let cashIn = 0, cashOut = 0;
       const heads = [];
       (v.entries || []).forEach(e => {
-        if (isCash(e.ledgerId)) {
+        if (v.isVirtual ? e.isCashLeg : isCash(e.ledgerId)) {
           cashIn += e.debitAmount || 0;
           cashOut += e.creditAmount || 0;
         } else {
@@ -266,7 +288,7 @@ export const getCashBookEntry = async (req, res) => {
         heads,
         // Only plain manual Receipt/Payment vouchers are edited here —
         // everything else belongs to the module that posted it
-        editable: v.referenceType === 'Manual' && ['Receipt', 'Payment'].includes(v.voucherType)
+        editable: !v.isVirtual && v.referenceType === 'Manual' && ['Receipt', 'Payment'].includes(v.voucherType)
           && (v.entries || []).length === 2 && heads.length === 1
       };
     });
@@ -415,6 +437,8 @@ export const updateVoucher = async (req, res) => {
     voucher.totalCredit = totalCredit;
     if (narration !== undefined) voucher.narration = narration;
     if (isMilkBill !== undefined) voucher.isMilkBill = !!isMilkBill;
+    // Adjustment Entry now saves Receipt = Cr / Payment = Dr (see Voucher.adjSides)
+    if (req.body.adjSides === 'v2') voucher.adjSides = 'v2';
 
     await voucher.save();
     await updateLedgerBalances(entries, null, req.companyId);

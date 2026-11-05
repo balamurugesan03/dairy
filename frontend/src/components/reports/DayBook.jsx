@@ -178,15 +178,14 @@ const DayBook = () => {
         // Cash column = transactions that actually moved cash (Receipt/Payment vouchers).
         // Adjustment column = non-cash bookkeeping (Journal vouchers, credit sales,
         // and synthetic aggregated rows like MilkPurchase / UnionSales).
-        // Producer Dues (the Receipt-side line of the day's milk purchase) is a
-        // cash transaction — Cash column (user rule 2026-10-31); its Milk
-        // Purchase counterpart on the Payment side stays in Adjustment.
-        const mapEntry = (side) => (entry) => {
-          const isProducerDuesCash = side === 'receipt' && entry.voucherType === 'MilkPurchase';
+        // Milk purchase posts Receipt → PRODUCERS DUES and Payment → MILK
+        // PURCHASE; both are Adjustment, never Cash (user rule 2026-11-06,
+        // replaces the 2026-10-31 Cash rule for Producer Dues).
+        const mapEntry = () => (entry) => {
           // Voucher rows carry the backend's column (shared Cash / Adjustment rule
           // with the General Ledger): manual Receipt / Payment / Cash Book Entry
           // vouchers → Cash; Adjustment Entries and Bank Transfer → Adjustment.
-          const isAdjustment = entry.column ? entry.column === 'adjustment' : !isProducerDuesCash && (
+          const isAdjustment = entry.column ? entry.column === 'adjustment' : (
             entry.voucherType === 'Journal' ||
             entry.voucherType === 'MilkPurchase' ||
             entry.voucherType === 'MilkCreditSales' ||
@@ -202,7 +201,7 @@ const DayBook = () => {
             cash: isAdjustment ? 0 : entry.amount,
             adjustment: isAdjustment ? entry.amount : 0,
             total: entry.amount,
-            isMilkEntry: isAdjustment || isProducerDuesCash,
+            isMilkEntry: isAdjustment,
             voucherId: entry.voucherId || null,
             voucherType: entry.voucherType || null,
             entryDate: entry.date ? new Date(entry.date).toISOString().split('T')[0] : null
