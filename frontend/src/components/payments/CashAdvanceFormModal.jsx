@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Modal, Stack, Group, Text, Title, Box, Grid, Select, NumberInput, TextInput,
   Textarea, Button, ActionIcon, Divider, SegmentedControl, Badge,
@@ -75,12 +75,65 @@ const emptyForm = {
   remarks:        '',
 };
 
+/* Producer search: an exact Producer Number first, then numbers starting with
+   the typed digits, then any label (name) match — so typing "12" + Enter picks
+   producer 12, not 112 or 120. */
+const producerFilter = ({ options, search }) => {
+  const q = String(search || '').trim().toLowerCase();
+  if (!q) return options;
+  const exact = [], starts = [], rest = [];
+  options.forEach((o) => {
+    const label = String(o.label || '').toLowerCase();
+    const no = label.split(' — ')[0].trim();
+    if (no === q) exact.push(o);
+    else if (no.startsWith(q)) starts.push(o);
+    else if (label.includes(q)) rest.push(o);
+  });
+  return [...exact, ...starts, ...rest];
+};
+
 const CashAdvanceFormModal = ({ opened, onClose, onSaved, editData }) => {
   const isEdit = !!editData?._id;
   const [farmers,     setFarmers]    = useState([]);
   const [form,        setForm]       = useState(emptyForm);
   const [errors,      setErrors]     = useState({});
   const [submitting,  setSubmitting] = useState(false);
+
+  /* Keyboard flow: Producer No → Advance Amount → Save (Enter or Tab) */
+  const amountRef       = useRef(null);
+  const saveRef         = useRef(null);
+  const farmerIdRef     = useRef(null);
+  const optionPickedRef = useRef(false);
+  farmerIdRef.current = form.farmerId;
+  const focusAmount = () => setTimeout(() => { amountRef.current?.focus(); amountRef.current?.select?.(); }, 0);
+
+  const handleProducerKeyDown = (e) => {
+    if (e.key === 'Tab' && !e.shiftKey) {
+      e.preventDefault();
+      const text = e.currentTarget.value;
+      const current = farmers.find(f => f.value === farmerIdRef.current);
+      let pick = current && current.label === text ? current.value : null;
+      if (!pick && text.trim()) pick = producerFilter({ options: farmers, search: text })[0]?.value || null;
+      if (!pick) return;                         // nothing matches — stay here
+      if (pick !== farmerIdRef.current) setField('farmerId', pick);
+      focusAmount();
+      return;
+    }
+    if (e.key === 'Enter') {
+      // The highlighted option is picked by the Select itself (onOptionSubmit);
+      // if none was, an already-chosen producer still moves on to Amount.
+      optionPickedRef.current = false;
+      setTimeout(() => { if (!optionPickedRef.current && farmerIdRef.current) focusAmount(); }, 0);
+    }
+  };
+
+  const handleAmountKeyDown = (e) => {
+    if (e.key !== 'Enter' && !(e.key === 'Tab' && !e.shiftKey)) return;
+    e.preventDefault();
+    const amt = parseFloat(String(e.currentTarget.value || '').replace(/,/g, '')) || 0;
+    if (amt <= 0) return;                        // amount required — stay here
+    saveRef.current?.focus();
+  };
 
   /* Reset (or prefill for edit) whenever the modal opens */
   useEffect(() => {
@@ -258,6 +311,12 @@ const CashAdvanceFormModal = ({ opened, onClose, onSaved, editData }) => {
               data={farmers}
               value={form.farmerId}
               onChange={v => setField('farmerId', v)}
+              onOptionSubmit={() => { optionPickedRef.current = true; focusAmount(); }}
+              onKeyDown={handleProducerKeyDown}
+              filter={producerFilter}
+              selectFirstOptionOnChange
+              allowDeselect={false}
+              data-autofocus
               searchable clearable
               nothingFoundMessage="No producers found"
               leftSection={<IconUser size={15} color={TEXT_MUTED} />}
@@ -294,6 +353,8 @@ const CashAdvanceFormModal = ({ opened, onClose, onSaved, editData }) => {
               placeholder="0.00"
               value={form.advanceAmount}
               onChange={v => setField('advanceAmount', v)}
+              ref={amountRef}
+              onKeyDown={handleAmountKeyDown}
               min={0}
               decimalScale={2}
               thousandSeparator=","
@@ -462,6 +523,7 @@ const CashAdvanceFormModal = ({ opened, onClose, onSaved, editData }) => {
           Cancel
         </Button>
         <Button
+          ref={saveRef}
           leftSection={<IconCheck size={16} />}
           radius="md"
           onClick={handleSubmit}

@@ -23,7 +23,7 @@ import {
   IconDroplet, IconFlame, IconChartBar,
   IconPlus, IconEdit, IconBan, IconHistory,
   IconPlugConnected, IconPlugConnectedX, IconScale, IconUpload, IconFilter, IconDownload, IconSettings,
-  IconChevronLeft, IconChevronRight,
+  IconChevronLeft, IconChevronRight, IconBrandWhatsapp,
 } from '@tabler/icons-react';
 import {
   agentAPI, collectionCenterAPI, farmerAPI,
@@ -477,6 +477,7 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
   const whatsAppSettingsRef = useRef({ enabled: false });
   const [waStatus,       setWaStatus]       = useState({ connected: false, initializing: false, qr: null });
   const [waBulkSending,  setWaBulkSending]  = useState(false);
+  const [waFarmer,       setWaFarmer]       = useState({ open: false, msg: '', sending: false });
   const [waBulkProgress, setWaBulkProgress] = useState({ done: 0, total: 0 });
   const [waSendType,     setWaSendType]     = useState('individual'); // 'individual' | 'group'
   const [waGroupId,      setWaGroupId]      = useState('');
@@ -1449,6 +1450,12 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
     const { producer: p, ltr: q, water: w, fat: f, clr: c, snf: s, date: d, shift: sh, center: ct, agent: ag, calcResult: cr, editingId: eid, entryMode: em, manualRate: mr, manualAmount: ma, activeTimeIncentive: ati, activeShiftIncentives: asi, milmaLookedUpRate: milmaRateRef, paramCombo: combo, activeChart: chart } = formRef.current;
     if (formRef.current.dupBlocked) return;
     if (!p || !q || !f) { notifications.show({ message: 'Member, Litres and FAT are required', color: 'red', autoClose: 2500 }); return; }
+    // SNF is required in FAT-SNF mode — never save a bill without it
+    if (combo !== 'CLR-FAT' && !((parseFloat(s) || 0) > 0)) {
+      notifications.show({ message: 'SNF is required', color: 'red', autoClose: 2500 });
+      snfRef.current?.focus();
+      return;
+    }
     setSaving(true);
     const grossLtr = parseFloat(q) || 0;
     const waterLtr = parseFloat(w) || 0;
@@ -1990,6 +1997,57 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
 
   const WA_DEFAULT_TEMPLATE = '🐄 Milk Bill\nDate: {date} {shift}\nBill No: {billNo}\nFarmer: {name} ({farmerNo})\nQty: {qty} Ltr\nFat: {fat} | CLR: {clr} | SNF: {snf}\nRate: ₹{rate}/Ltr\nAmount: ₹{amount}';
 
+  // WhatsApp — single farmer (button beside the Farmer Photo). Prefills the bill
+  // message when the farmer already has an entry in this session, else a greeting.
+  const waDigits = (ph) => { const d = String(ph || '').replace(/\D/g, ''); return d.length === 10 ? `91${d}` : d; };
+  const openFarmerWhatsApp = () => {
+    const p = producer;
+    if (!p) return;
+    if (!String(p.phone || '').replace(/\D/g, '')) {
+      notifications.show({ message: `No mobile number for ${p.name || 'this farmer'} — add it in the Farmer master`, color: 'orange', autoClose: 3500 });
+      return;
+    }
+    const entry = entries.find(e => (e.farmerId && p._id) ? String(e.farmerId) === String(p._id) : String(e.producerNo) === String(p.no));
+    let msg = `Dear ${p.name || 'Member'},\n`;
+    if (entry) {
+      const tpl = whatsAppSettingsRef.current?.messageTemplate || WA_DEFAULT_TEMPLATE;
+      msg = tpl
+        .replace(/{name}/g,     entry.producerName || p.name || '')
+        .replace(/{farmerNo}/g, entry.producerNo   || p.no   || '')
+        .replace(/{date}/g,     toDate(formRef.current.date).toLocaleDateString('en-IN'))
+        .replace(/{shift}/g,    formRef.current.shift)
+        .replace(/{billNo}/g,   entry.billNo       || '')
+        .replace(/{qty}/g,      Number(entry.qty).toFixed(3))
+        .replace(/{fat}/g,      Number(entry.fat).toFixed(1))
+        .replace(/{clr}/g,      Number(entry.clr).toFixed(0))
+        .replace(/{snf}/g,      Number(entry.snf).toFixed(2))
+        .replace(/{rate}/g,     Number(entry.rate).toFixed(2))
+        .replace(/{amount}/g,   Number(entry.amount).toFixed(2));
+    }
+    setWaFarmer({ open: true, msg, sending: false });
+  };
+  const sendFarmerWhatsApp = async (via) => {
+    const p = producer;
+    const msg = waFarmer.msg.trim();
+    if (!p || !msg) return;
+    if (via === 'web') {
+      // Opens WhatsApp (app / web) with the farmer's chat and message ready to send
+      window.open(`https://wa.me/${waDigits(p.phone)}?text=${encodeURIComponent(msg)}`, '_blank');
+      setWaFarmer(s => ({ ...s, open: false }));
+      return;
+    }
+    setWaFarmer(s => ({ ...s, sending: true }));
+    try {
+      const res = await whatsappAPI.send(p.phone, msg);
+      if (res?.success === false) throw res;
+      notifications.show({ message: `WhatsApp sent to ${p.name || ''} (${p.phone})`, color: 'green', autoClose: 2500 });
+      setWaFarmer({ open: false, msg: '', sending: false });
+    } catch (err) {
+      notifications.show({ message: err?.message || 'WhatsApp send failed — connect WhatsApp (Mode → WhatsApp) or use "Open WhatsApp"', color: 'red', autoClose: 4000 });
+      setWaFarmer(s => ({ ...s, sending: false }));
+    }
+  };
+
   // WhatsApp bulk send — sends today's bill message to all farmers in the current table
   const handleWaBulkSend = async () => {
     const wa = whatsAppSettingsRef.current;
@@ -2198,7 +2256,10 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
             size="sm" radius="md" style={{ width: 110 }}
             styles={{ input: { fontWeight: 700, border: '1.5px solid #bfdbfe' } }}
           />
-          <DairyRouteButtons fromDairy={dairies.fromDairy} toDairy={dairies.toDairy} />
+          {/* From/To Dairy kept mounted (data still loaded & used) but hidden so OK stays on one row */}
+          <Box style={{ display: 'none' }}>
+            <DairyRouteButtons fromDairy={dairies.fromDairy} toDairy={dairies.toDairy} />
+          </Box>
           <Group gap={4} align="center" wrap="nowrap">
             <Text size="11px" fw={700} c="#1e3a8a" style={{ whiteSpace: 'nowrap' }}>Center</Text>
             <Select
@@ -2401,21 +2462,30 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
               )}
             </Box>
 
-            {/* Farmer Photo — from the farmer master (personalDetails.photo) */}
-            <Box style={{ flex: '0 0 auto', marginLeft: 'auto' }}>
+            {/* Farmer Photo — from the farmer master (personalDetails.photo) + WhatsApp action */}
+            <Group gap={6} wrap="nowrap" align="flex-end" style={{ flex: '0 0 auto', marginLeft: 'auto' }}>
+              <ActionIcon
+                size={30} radius="md" variant="filled" color="green" tabIndex={-1}
+                disabled={!producer}
+                onClick={openFarmerWhatsApp}
+                title={producer ? `WhatsApp ${producer.name}${producer.phone ? ` (${producer.phone})` : ' — no mobile number'}` : 'Select a farmer to send WhatsApp'}
+              >
+                <IconBrandWhatsapp size={18} />
+              </ActionIcon>
               <Box
                 title={producer ? producer.name : 'Farmer photo'}
                 style={{
-                  width: 56, height: 56, borderRadius: 8, overflow: 'hidden',
-                  border: '1.5px solid #bfdbfe', background: '#f8fafc',
+                  width: 76, height: 76, borderRadius: 10, overflow: 'hidden',
+                  border: '2px solid #93c5fd', background: '#f8fafc',
+                  boxShadow: '0 1px 4px rgba(37,99,235,0.15)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}
               >
                 {producer?.photo
-                  ? <img src={producer.photo} alt={producer.name || 'Farmer'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  : <IconUser size={26} color="#cbd5e1" />}
+                  ? <img src={producer.photo} alt={producer.name || 'Farmer'} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
+                  : <IconUser size={34} color="#cbd5e1" />}
               </Box>
-            </Box>
+            </Group>
             </Group>
 
             {/* Farmer Name / Search — the only free-text field; shows the name once a farmer is picked */}
@@ -2581,7 +2651,11 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
                         ? requiredNext(value, () => { analyzerDataCapturedRef.current ? handleSave() : fatRef.current?.focus(); })
                         : iRef === fatRef
                           ? requiredNext(value, () => next?.current?.focus())
-                          : (next ? focusNext(next) : onLastEnter)
+                          // SNF (FAT-SNF) / CLR (CLR-FAT) are required too: empty + Enter
+                          // keeps the cursor here; a value + Enter saves (same as Save button)
+                          : (iRef === snfRef || iRef === clrRef)
+                            ? (e) => { if (e.key !== 'Enter') return; if (!hasValue(e.currentTarget.value)) { e.preventDefault(); return; } onLastEnter(e); }
+                            : (next ? focusNext(next) : onLastEnter)
                     }
                     step={step} decimalScale={dec} min={0}
                     size="sm" radius="md" hideControls
@@ -3451,6 +3525,45 @@ const MilkPurchase = ({ asPopup = false, inFront = true, onSwap, onClose }) => {
       {/* ══ END MAIN CONTENT ══ */}
 
     </Box>
+
+      {/* ── WhatsApp to selected farmer ─────────────────────────────────── */}
+      <Modal
+        opened={waFarmer.open}
+        onClose={() => setWaFarmer(s => ({ ...s, open: false }))}
+        title={
+          <Group gap={6}>
+            <IconBrandWhatsapp size={18} color="#16a34a" />
+            <Text fw={800} size="sm">WhatsApp — {producer?.name || ''} {producer?.phone ? `(${producer.phone})` : ''}</Text>
+          </Group>
+        }
+        size="md" centered
+        zIndex={POPUP_CHILD_Z}
+      >
+        <Stack gap={10}>
+          <textarea
+            value={waFarmer.msg}
+            onChange={e => { const v = e.target.value; setWaFarmer(s => ({ ...s, msg: v })); }}
+            rows={9}
+            autoFocus
+            style={{ width: '100%', boxSizing: 'border-box', fontSize: 13, padding: 8, borderRadius: 6, border: '1.5px solid #86efac', fontFamily: 'inherit', resize: 'vertical' }}
+          />
+          <Group justify="flex-end" gap={8}>
+            <Button size="xs" variant="default" onClick={() => setWaFarmer(s => ({ ...s, open: false }))}>Cancel</Button>
+            <Button size="xs" variant="light" color="green" leftSection={<IconBrandWhatsapp size={14} />}
+              disabled={!waFarmer.msg.trim()} onClick={() => sendFarmerWhatsApp('web')}
+              title="Open WhatsApp with this farmer's chat and the message ready">
+              Open WhatsApp
+            </Button>
+            {waStatus.connected && (
+              <Button size="xs" color="green" leftSection={<IconBrandWhatsapp size={14} />}
+                loading={waFarmer.sending} disabled={!waFarmer.msg.trim()} onClick={() => sendFarmerWhatsApp('direct')}
+                title="Send directly through the connected WhatsApp session">
+                Send Now
+              </Button>
+            )}
+          </Group>
+        </Stack>
+      </Modal>
 
       {/* ── Export Modal ──────────────────────────────────────────────────── */}
       <Modal

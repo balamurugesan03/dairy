@@ -163,7 +163,9 @@ const ReceiptVoucher = () => {
         startDate: filterDate,
         endDate: filterDate,
         // The API defaults to 10 per page — show the whole day (Cash Book Entry adds here too)
-        limit: 1000
+        limit: 1000,
+        // Cash Advance module entries (paid / recovered in cash) — read-only rows
+        includeCashAdvance: 1
       });
       setVouchers(response.data || []);
     } catch (error) {
@@ -776,7 +778,7 @@ const ReceiptVoucher = () => {
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <Badge size="sm" variant="light" color={isManual ? 'grape' : 'gray'}>
-                          {isManual ? 'Manual' : (voucher.referenceType || 'Auto')}
+                          {isManual ? 'Manual' : voucher.isVirtual ? 'Cash Advance' : (voucher.referenceType || 'Auto')}
                         </Badge>
                       </td>
                       <td>

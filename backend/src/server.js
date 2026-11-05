@@ -183,6 +183,16 @@ mongoose.connect(process.env.MONGODB_URI, {
       console.warn('PaymentRegister opening-balance fix skipped:', e.message);
     }
 
+    // Adjustment Entry Receipt/Payment sides: flip manual Journals saved the
+    // old (swapped) way once — see utils/adjustmentSideFix.js
+    try {
+      const { fixAdjustmentEntrySides } = await import('./utils/adjustmentSideFix.js');
+      const n = await fixAdjustmentEntrySides();
+      if (n > 0) console.log(`Adjustment Entry side fix: corrected ${n} voucher(s)`);
+    } catch (e) {
+      console.warn('Adjustment Entry side fix skipped:', e.message);
+    }
+
     // Centre codes C1, C2 … for every company's existing centres (new ones get theirs on create),
     // then make sure the centre-scoped farmer number index exists now the old one is gone.
     try {

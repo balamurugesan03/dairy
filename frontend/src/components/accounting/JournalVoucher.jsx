@@ -264,7 +264,8 @@ const JournalVoucher = () => {
       // Adjustment (Journal) entries drive the form; the same date's
       // Receipt/Payment vouchers are fetched too — only the bank ones (Bank
       // Transfer etc., no Cash in Hand leg) are listed, view only.
-      const params = { startDate: voucherDate, endDate: voucherDate, limit: 1000 };
+      // includeCashAdvance: Cash Advance module entries come back as read-only rows
+      const params = { startDate: voucherDate, endDate: voucherDate, limit: 1000, includeCashAdvance: 1 };
       const [journalRes, receiptRes, paymentRes] = await Promise.all([
         voucherAPI.getAll({ ...params, voucherType: 'Journal' }),
         voucherAPI.getAll({ ...params, voucherType: 'Receipt' }),
@@ -348,8 +349,9 @@ const JournalVoucher = () => {
   const isBalanced = receiptTotal > 0 && paymentTotal > 0 && difference < 0.01;
 
   // Next voucher number
-  const nextVoucherNo = vouchers.length > 0
-    ? `JV-${String(vouchers.length + 1).padStart(4, '0')}`
+  const realJournalCount = vouchers.filter(v => !v.isVirtual).length;
+  const nextVoucherNo = realJournalCount > 0
+    ? `JV-${String(realJournalCount + 1).padStart(4, '0')}`
     : 'JV-0001';
 
   // Clear just the entry rows — used after a successful save so the grid's
@@ -379,10 +381,11 @@ const JournalVoucher = () => {
       amount: e.debitAmount > 0 ? e.debitAmount : e.creditAmount,
       narration: e.narration || ''
     });
+    // Receipt section = Cr legs, Payment section = Dr legs (same as the reports)
     const debits = (voucher.entries || []).filter(e => e.debitAmount > 0).map(toRow);
     const credits = (voucher.entries || []).filter(e => e.creditAmount > 0).map(toRow);
-    setReceiptEntries(debits);
-    setPaymentEntries(credits);
+    setReceiptEntries(credits);
+    setPaymentEntries(debits);
     setReceiptDraft(EMPTY_ROW);
     setPaymentDraft(EMPTY_ROW);
     setIsMilkBill(!!voucher.isMilkBill);
@@ -407,16 +410,19 @@ const JournalVoucher = () => {
     const validPayments = paymentEntries.filter(e => e.ledgerId && parseFloat(e.amount) > 0);
 
     if (validReceipts.length === 0) {
-      message.error('Please add at least one Receipt (Dr) entry');
+      message.error('Please add at least one Receipt (Cr) entry');
       return;
     }
     if (validPayments.length === 0) {
-      message.error('Please add at least one Payment (Cr) entry');
+      message.error('Please add at least one Payment (Dr) entry');
       return;
     }
 
-    const totalDebit = validReceipts.reduce((s, e) => s + parseFloat(e.amount), 0);
-    const totalCredit = validPayments.reduce((s, e) => s + parseFloat(e.amount), 0);
+    // Receipt section → Credit, Payment section → Debit: every report reads a
+    // non-cash ledger as Cr = Receipt, Dr = Payment (Day Book, General Ledger,
+    // Ledger Abstract, R&D), so entries land on the side they were typed in.
+    const totalCredit = validReceipts.reduce((s, e) => s + parseFloat(e.amount), 0);
+    const totalDebit = validPayments.reduce((s, e) => s + parseFloat(e.amount), 0);
 
     if (Math.abs(totalDebit - totalCredit) > 0.01) {
       message.error('Receipt and Payment totals must be equal');
@@ -431,8 +437,8 @@ const JournalVoucher = () => {
           return {
             ledgerId: e.ledgerId,
             ledgerName: ledger?.ledgerName || '',
-            debitAmount: parseFloat(e.amount),
-            creditAmount: 0,
+            debitAmount: 0,
+            creditAmount: parseFloat(e.amount),
             narration: e.narration || ''
           };
         }),
@@ -441,8 +447,8 @@ const JournalVoucher = () => {
           return {
             ledgerId: e.ledgerId,
             ledgerName: ledger?.ledgerName || '',
-            debitAmount: 0,
-            creditAmount: parseFloat(e.amount),
+            debitAmount: parseFloat(e.amount),
+            creditAmount: 0,
             narration: e.narration || ''
           };
         })
@@ -456,6 +462,7 @@ const JournalVoucher = () => {
         totalCredit,
         referenceType: 'Manual',
         isMilkBill,
+        adjSides: 'v2',
         narration: entries.map(e => e.narration).filter(Boolean).join('; ') || 'Journal Entry'
       };
 
@@ -501,17 +508,21 @@ const JournalVoucher = () => {
   const cashLedgerIds = useMemo(() => new Set(
     ledgers.filter(l => CASH_LEDGER_TYPES.includes(l.ledgerType)).map(l => String(l._id))
   ), [ledgers]);
-  const bankAdjVouchers = useMemo(() => cashVouchers.filter(v => !(v.entries || []).some(e => {
+  const bankAdjVouchers = useMemo(() => cashVouchers.filter(v => !v.isVirtual && !(v.entries || []).some(e => {
     const id = String(e.ledgerId?._id || e.ledgerId || '');
     const name = e.ledgerName || e.ledgerId?.ledgerName || '';
     return CASH_LEDGER_TYPES.includes(e.ledgerId?.ledgerType) || cashLedgerIds.has(id)
       || /^cash(\s+in\s+hand)?$/i.test(name.trim());
   })), [cashVouchers, cashLedgerIds]);
-  const adjustmentVouchers = useMemo(() => [...vouchers, ...bankAdjVouchers], [vouchers, bankAdjVouchers]);
+  // Cash Advance module entries paid / received in cash (Bank / UPI / Cheque
+  // ones already come back with the Journal list). Listed view-only.
+  const cashAdvVouchers = useMemo(() => cashVouchers.filter(v => v.isVirtual), [cashVouchers]);
+  const adjustmentVouchers = useMemo(() => [...vouchers, ...bankAdjVouchers, ...cashAdvVouchers], [vouchers, bankAdjVouchers, cashAdvVouchers]);
   const gridRows = useMemo(() => [
     ...vouchers.map(voucher => ({ voucher, kind: 'adjustment' })),
-    ...bankAdjVouchers.map(voucher => ({ voucher, kind: voucher.voucherType === 'Receipt' ? 'receipt' : 'payment', bank: true }))
-  ], [vouchers, bankAdjVouchers]);
+    ...bankAdjVouchers.map(voucher => ({ voucher, kind: voucher.voucherType === 'Receipt' ? 'receipt' : 'payment', bank: true })),
+    ...cashAdvVouchers.map(voucher => ({ voucher, kind: voucher.voucherType === 'Receipt' ? 'receipt' : 'payment' }))
+  ], [vouchers, bankAdjVouchers, cashAdvVouchers]);
 
   // Each ledger on one side of a voucher as its own line — "Head (narration)"
   // with that head's own amount, never a comma-joined list. Cash vouchers
@@ -603,10 +614,10 @@ const JournalVoucher = () => {
 
       {/* =============== MAIN ENTRY AREA - SPLIT PANELS =============== */}
       <Grid gutter="sm" mb="sm">
-        {/* LEFT PANEL - RECEIPT (Debit) */}
+        {/* LEFT PANEL - RECEIPT (Credit) */}
         <Grid.Col span={6}>
           <EntryPanel
-            title="Receipt (Dr)"
+            title="Receipt (Cr)"
             icon={<IconReceipt size={16} color="#e65100" />}
             color="orange"
             entries={receiptEntries}
@@ -619,10 +630,10 @@ const JournalVoucher = () => {
           />
         </Grid.Col>
 
-        {/* RIGHT PANEL - PAYMENT (Credit) */}
+        {/* RIGHT PANEL - PAYMENT (Debit) */}
         <Grid.Col span={6}>
           <EntryPanel
-            title="Payment (Cr)"
+            title="Payment (Dr)"
             icon={<IconCreditCard size={16} color="#2e7d32" />}
             color="green"
             entries={paymentEntries}
@@ -739,6 +750,11 @@ const JournalVoucher = () => {
               <Badge variant="filled" color="indigo" size="sm" radius="sm">
                 {bankAdjVouchers.length} Bank Transfer / Bank
               </Badge>
+              {cashAdvVouchers.length > 0 && (
+                <Badge variant="filled" color="orange" size="sm" radius="sm">
+                  {cashAdvVouchers.length} Cash Advance
+                </Badge>
+              )}
             </Group>
           </Group>
         </Box>
@@ -765,16 +781,16 @@ const JournalVoucher = () => {
                     Voucher No
                   </Table.Th>
                   <Table.Th style={{ padding: '8px 10px', fontSize: '11px', fontWeight: 700 }}>
-                    Debit Account
+                    Receipt (Cr) Account
                   </Table.Th>
                   <Table.Th style={{ width: '120px', padding: '8px 10px', fontSize: '11px', fontWeight: 700, textAlign: 'right' }}>
-                    Debit Amt
+                    Receipt Amt
                   </Table.Th>
                   <Table.Th style={{ padding: '8px 10px', fontSize: '11px', fontWeight: 700 }}>
-                    Credit Account
+                    Payment (Dr) Account
                   </Table.Th>
                   <Table.Th style={{ width: '120px', padding: '8px 10px', fontSize: '11px', fontWeight: 700, textAlign: 'right' }}>
-                    Credit Amt
+                    Payment Amt
                   </Table.Th>
                   <Table.Th style={{ width: '80px', padding: '8px 10px', fontSize: '11px', fontWeight: 700, textAlign: 'center' }}>
                     Source
@@ -792,7 +808,9 @@ const JournalVoucher = () => {
                   const isAdj = kind === 'adjustment';
                   const isManual = voucher.referenceType === 'Manual';
                   // Bank-ledger Receipt / Payment (e.g. Bank Transfer) = an Adjustment entry too
-                  const typeBadge = isAdj
+                  const typeBadge = voucher.isVirtual
+                    ? { label: voucher.voucherType === 'Receipt' ? 'Cash Advance Recovery' : 'Cash Advance', color: 'orange' }
+                    : isAdj
                     ? { label: 'Adjustment', color: 'blue' }
                     : { label: voucher.referenceType === 'BankTransfer' ? 'Adj · Bank Transfer' : 'Adj · Bank', color: 'indigo' };
                   // One table row per account line; the voucher-level cells
@@ -828,14 +846,6 @@ const JournalVoucher = () => {
                           </>
                         )}
                         <Table.Td style={{ padding: '5px 10px', fontSize: '12px' }}>
-                          {dr ? dr.label : (li === 0 ? '-' : '')}
-                        </Table.Td>
-                        <Table.Td style={{ textAlign: 'right', padding: '5px 10px' }}>
-                          {dr && (
-                            <Text size="xs" fw={600} c="red.7" ff="monospace">{fmtAmt(dr.amount)}</Text>
-                          )}
-                        </Table.Td>
-                        <Table.Td style={{ padding: '5px 10px', fontSize: '12px' }}>
                           {cr ? cr.label : (li === 0 ? '-' : '')}
                         </Table.Td>
                         <Table.Td style={{ textAlign: 'right', padding: '5px 10px' }}>
@@ -843,11 +853,19 @@ const JournalVoucher = () => {
                             <Text size="xs" fw={600} c="green.7" ff="monospace">{fmtAmt(cr.amount)}</Text>
                           )}
                         </Table.Td>
+                        <Table.Td style={{ padding: '5px 10px', fontSize: '12px' }}>
+                          {dr ? dr.label : (li === 0 ? '-' : '')}
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right', padding: '5px 10px' }}>
+                          {dr && (
+                            <Text size="xs" fw={600} c="red.7" ff="monospace">{fmtAmt(dr.amount)}</Text>
+                          )}
+                        </Table.Td>
                         {li === 0 && (
                           <>
                             <Table.Td rowSpan={lineCount} style={{ textAlign: 'center', padding: '6px 10px' }}>
                               <Badge size="xs" variant="light" color={isManual ? 'grape' : 'gray'}>
-                                {isManual ? 'Manual' : (voucher.referenceType || 'Auto')}
+                                {isManual ? 'Manual' : voucher.isVirtual ? 'Cash Advance' : (voucher.referenceType || 'Auto')}
                               </Badge>
                             </Table.Td>
                             <Table.Td rowSpan={lineCount} style={{ textAlign: 'center', padding: '6px 6px' }}>
@@ -872,7 +890,9 @@ const JournalVoucher = () => {
                                   </>
                                 ) : (
                                   <Tooltip
-                                    label={isAdj
+                                    label={voucher.isVirtual
+                                      ? 'From Producer Dues → Recoveries → Cash Advance — change it there'
+                                      : isAdj
                                       ? 'Auto-generated — edit/delete from its originating module'
                                       : bank && voucher.referenceType === 'BankTransfer'
                                         ? 'Posted by Producer Dues → Bank Transfer — change it there'
@@ -898,14 +918,14 @@ const JournalVoucher = () => {
                     <Text size="xs" fw={700} c="dark.6">ADJUSTMENT TOTAL</Text>
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'right', padding: '8px 10px' }}>
-                    <Text size="sm" fw={700} c="red.7" ff="monospace">
-                      {'₹'} {adjustmentVouchers.reduce((sum, v) => sum + (v.totalDebit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    <Text size="sm" fw={700} c="green.7" ff="monospace">
+                      {'₹'} {adjustmentVouchers.reduce((sum, v) => sum + (v.totalCredit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Text>
                   </Table.Td>
                   <Table.Td style={{ padding: '8px 10px' }}></Table.Td>
                   <Table.Td style={{ textAlign: 'right', padding: '8px 10px' }}>
-                    <Text size="sm" fw={700} c="green.7" ff="monospace">
-                      {'₹'} {adjustmentVouchers.reduce((sum, v) => sum + (v.totalCredit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    <Text size="sm" fw={700} c="red.7" ff="monospace">
+                      {'₹'} {adjustmentVouchers.reduce((sum, v) => sum + (v.totalDebit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Text>
                   </Table.Td>
                   <Table.Td colSpan={2} style={{ textAlign: 'center', padding: '8px 10px' }}>
