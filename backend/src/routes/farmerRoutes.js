@@ -22,10 +22,15 @@ import {
   getProducerReport,
   getProducerReportOptions
 } from '../controllers/farmerController.js';
+import { dpFarmerImport, dpImportSuggestMappings } from '../controllers/dpFarmerImportController.js';
 import { protect, addCompanyFilter } from '../middleware/auth.js';
 
 const router = express.Router();
 router.use(protect, addCompanyFilter);
+
+// DP system Excel import: VillageCode → Collection Centre mapping, preview (dryRun), import
+router.post('/dp-import/suggest', dpImportSuggestMappings);
+router.post('/dp-import', dpFarmerImport);
 
 // Bulk import farmers (must be before other routes)
 router.post('/bulk-import', bulkImportFarmers);

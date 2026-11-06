@@ -88,8 +88,15 @@ const collectionCenterSchema = new mongoose.Schema({
     type: [String],
     default: ['milkCollection', 'milkSales']
   },
-  // System-generated centre code C1, C2, C3 … (utils/centreCode.js) — never entered by the user
+  // Centre code C<number> (utils/centreCode.js): auto-numbered from the company's starting
+  // number, numeric part editable, unique per company. Farmers and all modules link by _id,
+  // so changing the code never breaks a relationship.
   centerCode: {
+    type: String,
+    trim: true
+  },
+  // DP system Village Code mapped to this centre (DP Excel farmer import 'VillageCode')
+  dpVillageCode: {
     type: String,
     trim: true
   }
