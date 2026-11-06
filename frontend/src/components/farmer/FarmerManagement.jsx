@@ -60,6 +60,7 @@ import FarmerModal from './FarmerModal';
 import AddShareModal from './AddShareModal';
 import TerminateModal from './TerminateModal';
 import ImportModal from '../common/ImportModal';
+import DpFarmerImportModal from './DpFarmerImportModal';
 import { generateFarmerImportTemplate } from '../../utils/excelTemplate';
 import { useAuth } from '../../context/AuthContext';
 
@@ -113,6 +114,7 @@ const FarmerManagement = () => {
   const [modalAutoCheckMembership, setModalAutoCheckMembership] = useState(false);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showDpImportModal, setShowDpImportModal] = useState(false);
   const [showShareImportModal, setShowShareImportModal] = useState(false);
   const [showOpenLyssaShareImportModal, setShowOpenLyssaShareImportModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -1123,6 +1125,16 @@ const FarmerManagement = () => {
               </Button>
               <Button
                 variant="light"
+                color="indigo"
+                leftSection={<IconUpload size={18} />}
+                onClick={() => setShowDpImportModal(true)}
+                disabled={!canWrite('farmers')}
+                title="DP system Excel: VillageCode → Collection Centre mapping"
+              >
+                Import Farmers (DP)
+              </Button>
+              <Button
+                variant="light"
                 color="teal"
                 leftSection={<IconCoin size={18} />}
                 onClick={() => setShowShareImportModal(true)}
@@ -1459,6 +1471,12 @@ const FarmerManagement = () => {
           if (s?.membershipFunction) setMembershipFunction(s.membershipFunction);
           if (s?.numberSeries) { setCentreWise(s.numberSeries === 'Centre'); fetchFarmers(); }
         }}
+      />
+
+      <DpFarmerImportModal
+        opened={showDpImportModal}
+        onClose={() => setShowDpImportModal(false)}
+        onImported={() => { fetchFarmers(); }}
       />
 
       <ImportModal

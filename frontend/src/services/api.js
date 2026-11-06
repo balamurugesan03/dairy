@@ -110,6 +110,9 @@ export const farmerAPI = {
   bulkImport: (farmers) => api.post('/farmers/bulk-import', { farmers }).then(res => res.data).catch(handleError),
   bulkImportShares: (shares) => api.post('/farmers/bulk-import-shares', { shares }).then(res => res.data).catch(handleError),
   bulkDelete: (ids) => api.post('/farmers/bulk-delete', { ids }).then(res => res.data).catch(handleError),
+  // DP system Excel import (VillageCode → Collection Centre mapping)
+  dpImportSuggest: (villages) => api.post('/farmers/dp-import/suggest', { villages }).then(res => res.data).catch(handleError),
+  dpImport: (payload) => api.post('/farmers/dp-import', payload).then(res => res.data).catch(handleError),
   getReport: () => api.get('/farmers/report').then(res => res.data).catch(handleError),
   getProducerReport: (params) => api.get('/farmers/producer-report', { params }).then(res => res.data).catch(handleError),
   getProducerReportOptions: () => api.get('/farmers/producer-report/options').then(res => res.data).catch(handleError)
@@ -483,7 +486,9 @@ export const collectionCenterAPI = {
   toggleStatus: (id) => api.patch(`/collection-centers/${id}/status`).then(res => res.data).catch(handleError),
   bulkImport: (centers) => api.post('/collection-centers/bulk-import', { centers }).then(res => res.data).catch(handleError),
   setCredentials: (id, data) => api.put(`/collection-centers/${id}/credentials`, data).then(res => res.data).catch(handleError),
-  getCredentials: (id) => api.get(`/collection-centers/${id}/credentials`).then(res => res.data).catch(handleError)
+  getCredentials: (id) => api.get(`/collection-centers/${id}/credentials`).then(res => res.data).catch(handleError),
+  getCodeSettings: () => api.get('/collection-centers/code-settings').then(res => res.data).catch(handleError),
+  updateCodeSettings: (data) => api.put('/collection-centers/code-settings', data).then(res => res.data).catch(handleError)
 };
 
 // MILK COLLECTION APIs

@@ -46,6 +46,8 @@ import { notifications } from '@mantine/notifications';
 import { collectionCenterAPI } from '../../services/api';
 import { localDateStr } from '../../utils/dateUtils';
 import CollectionCenterModal from './CollectionCenterModal';
+import CentreCodeSettingsModal from './CentreCodeSettingsModal';
+import { IconSettings } from '@tabler/icons-react';
 import ImportModal from '../common/ImportModal';
 import { useAuth } from '../../context/AuthContext';
 
@@ -88,6 +90,7 @@ const CollectionCenterManagement = () => {
   const [showCenterModal, setShowCenterModal] = useState(false);
   const [selectedCenterId, setSelectedCenterId] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showCodeSettings, setShowCodeSettings] = useState(false);
   const [sortStatus, setSortStatus] = useState({ columnAccessor: '', direction: 'asc' });
   const [credModal, setCredModal] = useState({ open: false, centreId: null, centreName: '' });
   const [credForm, setCredForm] = useState({ username: '', password: '', isLoginEnabled: false });
@@ -430,6 +433,12 @@ const CollectionCenterManagement = () => {
       title: 'Center Name',
       sortable: true
     },
+    visibleColumns.centerCode && {
+      accessor: 'dpVillageCode',
+      title: 'DP Village',
+      width: 90,
+      render: (c) => c.dpVillageCode || '-'
+    },
     visibleColumns.centerType && {
       accessor: 'centerType',
       title: 'Type',
@@ -546,6 +555,14 @@ const CollectionCenterManagement = () => {
               disabled={!canWrite('collectionCenters')}
             >
               Import (OpenLyssa)
+            </Button>
+            <Button
+              variant="light"
+              leftSection={<IconSettings size={16} />}
+              onClick={() => setShowCodeSettings(true)}
+              disabled={!canWrite('collectionCenters')}
+            >
+              Code Settings
             </Button>
             <Button
               variant="default"
@@ -758,6 +775,11 @@ const CollectionCenterManagement = () => {
         onClose={handleCloseModal}
         onSuccess={handleModalSuccess}
         centerId={selectedCenterId}
+      />
+
+      <CentreCodeSettingsModal
+        opened={showCodeSettings}
+        onClose={() => setShowCodeSettings(false)}
       />
 
       <ImportModal

@@ -132,6 +132,15 @@ const farmerSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'CollectionCenter'
   },
+  // DP system farmer import columns RateType / ImportType
+  rateType: {
+    type: String,
+    trim: true
+  },
+  importType: {
+    type: String,
+    trim: true
+  },
   admissionDate: {
     type: Date
   },

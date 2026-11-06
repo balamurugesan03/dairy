@@ -24,6 +24,7 @@ import {
 import { DateInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import { collectionCenterAPI } from '../../services/api';
+import { showConfirmDialog } from '../common/ConfirmDialog';
 
 const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) => {
   const isEditMode = Boolean(centerId);
@@ -52,6 +53,9 @@ const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) 
 
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  // Numeric part of the centre code — the 'C' prefix is fixed
+  const [codeNumber, setCodeNumber] = useState('');
+  const [originalCode, setOriginalCode] = useState('');
 
   useEffect(() => {
     if (isOpen) {
@@ -60,9 +64,19 @@ const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) 
         fetchCenter();
       } else {
         resetForm();
+        suggestNextCode();
       }
     }
   }, [isOpen, centerId]);
+
+  const suggestNextCode = async () => {
+    try {
+      const res = await collectionCenterAPI.getCodeSettings();
+      setCodeNumber(String(res.data?.nextCode || '').replace(/^C/i, ''));
+    } catch {
+      // leave blank — the server numbers it automatically
+    }
+  };
 
   const checkHeadOffice = async () => {
     try {
@@ -100,15 +114,20 @@ const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) 
         email: '',
         incharge: ''
       },
-      description: ''
+      description: '',
+      dpVillageCode: ''
     });
     setErrors({});
+    setCodeNumber('');
+    setOriginalCode('');
   };
 
   const fetchCenter = async () => {
     try {
       const response = await collectionCenterAPI.getById(centerId);
       const center = response.data;
+      setOriginalCode(center.centerCode || '');
+      setCodeNumber(String(center.centerCode || '').replace(/^C/i, ''));
       setFormData({
         ...center,
         startDate: center.startDate ? new Date(center.startDate) : new Date(),
@@ -177,6 +196,10 @@ const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) 
       newErrors.centerType = 'Center type is required';
     }
 
+    if (!/^\d{1,6}$/.test(codeNumber) || parseInt(codeNumber, 10) < 1) {
+      newErrors.centerCode = 'Enter the number after C (e.g. 100)';
+    }
+
     if (formData.contactDetails.phone && !/^[0-9]{10}$/.test(formData.contactDetails.phone)) {
       newErrors['contactDetails.phone'] = 'Phone number must be 10 digits';
     }
@@ -203,18 +226,31 @@ const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) 
       return;
     }
 
+    const centerCode = `C${parseInt(codeNumber, 10)}`;
+    if (isEditMode && originalCode && centerCode !== originalCode) {
+      const ok = await showConfirmDialog({
+        title: `Change Center Code ${originalCode} → ${centerCode}?`,
+        content: 'All farmers of this centre stay linked and keep their Farmer Numbers. ' +
+          'The new code shows everywhere — Farmers, Farmer Reports, Milk Purchase, Milk Sales, Producer Dues — ' +
+          'and farmer ledger names are updated.',
+        okText: 'Change Code'
+      });
+      if (!ok) return;
+    }
+
     setLoading(true);
 
     try {
+      const payload = { ...formData, centerCode };
       if (isEditMode) {
-        await collectionCenterAPI.update(centerId, formData);
+        const res = await collectionCenterAPI.update(centerId, payload);
         notifications.show({
           title: 'Success',
-          message: 'Collection center updated successfully',
+          message: res?.message || 'Collection center updated successfully',
           color: 'green'
         });
       } else {
-        await collectionCenterAPI.create(formData);
+        await collectionCenterAPI.create(payload);
         notifications.show({
           title: 'Success',
           message: 'Collection center created successfully',
@@ -311,13 +347,28 @@ const CollectionCenterModal = ({ isOpen, onClose, onSuccess, centerId = null }) 
               ]}
             />
           </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 6 }}>
+          <Grid.Col span={{ base: 12, sm: 3 }}>
             <TextInput
               label="Center Code"
-              description="Generated automatically (C1, C2, C3 …)"
-              value={formData.centerCode || (centerId ? '' : 'Auto on create')}
-              readOnly
-              variant="filled"
+              description={isEditMode ? 'Farmers stay linked when changed' : 'Next free number suggested'}
+              leftSection={<Text fw={700} size="sm">C</Text>}
+              placeholder="100"
+              value={codeNumber}
+              onChange={(e) => {
+                setCodeNumber(e.target.value.replace(/\D/g, '').slice(0, 6));
+                if (errors.centerCode) setErrors(prev => ({ ...prev, centerCode: '' }));
+              }}
+              error={errors.centerCode}
+              required
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 3 }}>
+            <TextInput
+              label="DP Village Code"
+              description="Village Code in the DP system"
+              placeholder="e.g. 208"
+              value={formData.dpVillageCode || ''}
+              onChange={(e) => handleChange('dpVillageCode', e.target.value.trim())}
             />
           </Grid.Col>
           <Grid.Col span={12}>

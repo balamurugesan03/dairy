@@ -8,13 +8,19 @@ import {
   toggleStatus,
   bulkImportCollectionCenters,
   setCentreCredentials,
-  getCentreCredentials
+  getCentreCredentials,
+  getCentreCodeSettings,
+  updateCentreCodeSettings
 } from '../controllers/collectionCenterController.js';
 
 const router = express.Router();
 
 // Bulk import from OpenLyssa (must be before /:id routes)
 router.post('/bulk-import', bulkImportCollectionCenters);
+
+// Centre code settings — starting number / next code (before /:id)
+router.get('/code-settings', getCentreCodeSettings);
+router.put('/code-settings', updateCentreCodeSettings);
 
 // Create new collection center
 router.post('/', createCollectionCenter);

@@ -42,6 +42,14 @@ const farmerSettingsSchema = new mongoose.Schema(
       default: 'Existing',
     },
 
+    // Collection Centre codes: the 'C' prefix is fixed, numbering starts here (100 → C100,
+    // C101 …) and continues after the highest code at/above it (utils/centreCode.js).
+    centreCodeStart: {
+      type:    Number,
+      min:     1,
+      default: 1,
+    },
+
     // Default Centre / Agent now come from the logged-in user (User Management), not here.
 
     lastUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
