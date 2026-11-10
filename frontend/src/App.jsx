@@ -49,6 +49,7 @@ const MemberList = lazy(() => import('./components/farmer/MemberList'));
 const MemberRegister = lazy(() => import('./components/farmer/MemberRegister'));
 const CropStatementList = lazy(() => import('./components/farmer/CropStatementList'));
 const FarmerApplicationList = lazy(() => import('./components/farmer/FarmerApplicationList'));
+const LsgdMithramStatement = lazy(() => import('./components/farmer/LsgdMithramStatement'));
 const AgriStatsReportList = lazy(() => import('./components/farmer/AgriStatsReportList'));
 const BankMasterList = lazy(() => import('./components/farmer/BankMasterList'));
 const FarmerReport = lazy(() => import('./components/farmer/FarmerReport'));
@@ -348,6 +349,7 @@ const AppContent = () => {
                 {/* LSGD Dairy Reports — Panchayath milk subsidy / incentive applications */}
                 <Route path="lsgd/milk-subsidy" element={<FarmerApplicationList key="SUBSIDY" formType="SUBSIDY" />} />
                 <Route path="lsgd/milk-incentive" element={<FarmerApplicationList key="INCENTIVE" formType="INCENTIVE" />} />
+                <Route path="lsgd/mithram-statement" element={<LsgdMithramStatement />} />
                 <Route path="applications" element={<Navigate to="/farmers/lsgd/milk-subsidy" replace />} />
                 <Route path="agri-stats" element={<AgriStatsReportList />} />
                 <Route path="report" element={<FarmerReport />} />

@@ -1304,6 +1304,17 @@ export const farmerApplicationAPI = {
   prefill:  (params)   => api.get('/farmer-applications/prefill', { params }).then(r => r.data).catch(handleError),
 };
 
+// ── LSGD Mithram Statement (LSGD Reports) ──────────────────────────────────────
+export const lsgdMithramAPI = {
+  getWards:       (panchayat) => api.get('/lsgd-mithram/wards', { params: { panchayat } }).then(r => r.data).catch(handleError),
+  getWardMembers: (params)    => api.get('/lsgd-mithram/ward-members', { params }).then(r => r.data).catch(handleError),
+  saveWardMember: (data)      => api.post('/lsgd-mithram/ward-members', data).then(r => r.data).catch(handleError),
+  // params: fromDate, toDate (YYYY-MM-DD), panchayat, ward, rate, onlySuppliers
+  getStatement:   (params)    => api.get('/lsgd-mithram/statement', { params }).then(r => r.data).catch(handleError),
+  // { to, cc, subject, message, attachments: [{ filename, contentType, contentBase64 }] }
+  email:          (data)      => api.post('/lsgd-mithram/email', data, { timeout: 180000 }).then(r => r.data).catch(handleError),
+};
+
 // ── Crop Statement API ─────────────────────────────────────────────────────────
 export const cropStatementAPI = {
   getAll:   (params)   => api.get('/crop-statements', { params }).then(r => r.data).catch(handleError),

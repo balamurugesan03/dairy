@@ -47,12 +47,16 @@ export const DOCUMENT_PAGE_CSS = `
   .farmer-doc-page img { max-width: 100%; max-height: 245mm; object-fit: contain; }
 `;
 
-/** HTML pages for the farmer's uploaded documents ('' when none or no farmer). */
-export const buildFarmerDocumentPages = async (farmerId) => {
-  if (!farmerId) return { html: '', count: 0, skipped: [] };
+/**
+ * The farmer's uploaded documents as images, in print order:
+ * { pages: [{ label, title, img }], count, skipped }. PDF documents give one image per page;
+ * documents that are not uploaded are left out.
+ */
+export const getFarmerDocumentImages = async (farmerId) => {
+  if (!farmerId) return { pages: [], count: 0, skipped: [] };
   const res = await farmerFormAPI.getDocuments(farmerId);
   const docs = res?.data || {};
-  let html = '';
+  const pages = [];
   let count = 0;
   const skipped = [];
   for (const { key, label } of FARMER_DOCUMENTS) {
@@ -67,12 +71,22 @@ export const buildFarmerDocumentPages = async (farmerId) => {
     }
     if (!images.length) { skipped.push(label); continue; }
     images.forEach((img, i) => {
-      const title = images.length > 1 ? `${label} (${i + 1}/${images.length})` : label;
-      html += `<div class="farmer-doc-page"><div class="farmer-doc-title">${esc(title)}</div><img src="${img}" alt="${esc(label)}" /></div>`;
+      pages.push({ label, img, title: images.length > 1 ? `${label} (${i + 1}/${images.length})` : label });
     });
     count += 1;
   }
-  return { html, count, skipped };
+  return { pages, count, skipped };
+};
+
+/** HTML for document pages; titlePrefix (e.g. "15 - Ravi") goes before each page title. */
+export const documentPagesHtml = (pages, titlePrefix = '') => pages.map(({ label, title, img }) =>
+  `<div class="farmer-doc-page"><div class="farmer-doc-title">${esc(titlePrefix ? `${titlePrefix} — ${title}` : title)}</div><img src="${img}" alt="${esc(label)}" /></div>`
+).join('');
+
+/** HTML pages for the farmer's uploaded documents ('' when none or no farmer). */
+export const buildFarmerDocumentPages = async (farmerId) => {
+  const { pages, count, skipped } = await getFarmerDocumentImages(farmerId);
+  return { html: documentPagesHtml(pages), count, skipped };
 };
 
 /**
