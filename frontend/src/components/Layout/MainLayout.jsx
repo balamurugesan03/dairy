@@ -567,6 +567,7 @@ const MainLayout = () => {
           children: [
             { key: '/farmers/lsgd/milk-subsidy',   label: "Panchayath People's Planning Milk Subsidy" },
             { key: '/farmers/lsgd/milk-incentive', label: 'Panchayath Annual Plan Milk Incentive' },
+            { key: '/farmers/lsgd/mithram-statement', label: 'LSGD Mithram Statement' },
           ]
         },
 

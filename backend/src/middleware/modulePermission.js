@@ -39,7 +39,7 @@ const MODULE_OF = {
 
   ledgers: 'accounting', vouchers: 'accounting', 'business-accounting': 'accounting',
 
-  'incentive-register': 'reports', 'bonus-register': 'reports', 'crop-statements': 'reports', 'farmer-applications': 'reports',
+  'incentive-register': 'reports', 'bonus-register': 'reports', 'crop-statements': 'reports', 'farmer-applications': 'reports', 'lsgd-mithram': 'reports',
   'agri-stats': 'reports', 'inspection-report': 'reports', 'bmcc-operating-cost': 'reports',
 
   employees: 'hrm', attendance: 'hrm', salary: 'hrm', leaves: 'hrm', loans: 'hrm',
