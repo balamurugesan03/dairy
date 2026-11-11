@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import PaymentRegister from '../models/PaymentRegister.js';
+import KarurPaymentRegister from '../models/KarurPaymentRegister.js';
 import MilkCollection from '../models/MilkCollection.js';
 import FarmerPayment from '../models/FarmerPayment.js';
 import Voucher from '../models/Voucher.js';
@@ -751,6 +752,17 @@ export const reversePaymentRegister = async (req, res) => {
   try {
     const reg = await PaymentRegister.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!reg) return res.status(404).json({ success: false, message: 'Register not found' });
+
+    // Payments already made from this cycle in Payment Register (Karur) must be
+    // cancelled first — otherwise their vouchers would be left without a cycle.
+    const karurRuns = await KarurPaymentRegister.find({ companyId: req.companyId, sourceRegisterId: reg._id, status: 'Saved' })
+      .select('registerNumber').lean();
+    if (karurRuns.length) {
+      return res.status(409).json({
+        success: false,
+        message: `This cycle is paid in Payment Register (Karur): ${karurRuns.map(k => k.registerNumber).join(', ')}. Cancel those payments in its Payment Log first.`,
+      });
+    }
 
     const from = new Date(reg.fromDate);
     const to   = new Date(reg.toDate);

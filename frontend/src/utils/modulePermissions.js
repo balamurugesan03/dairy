@@ -108,6 +108,7 @@ export const ROUTE_PERM = {
   '/payments/creditor-bill': 'payments.register',
   '/payments/register-ledger': 'payments.register',
   '/payments/producer-payment': 'payments.register',
+  '/payments/payment-register-karur': 'payments.register',
   '/payments/payment-register-report': 'payments.register',
   '/payments/bank-transfer': 'payments.bankTransfer',
   '/payments/payment-to-producer': 'payments.paymentToProducer',

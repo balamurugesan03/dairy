@@ -7,6 +7,7 @@ import PaymentRegister from '../models/PaymentRegister.js';
 import Voucher from '../models/Voucher.js';
 import { saveWithUniqueNumber } from '../models/Counter.js';
 import { createProducerDuesPaymentVoucher } from '../utils/accountingHelper.js';
+import { karurPaidFarmerIds } from './karurPaymentRegisterController.js';
 
 function fmtDateDMY(d) {
   const dt = new Date(d);
@@ -294,6 +295,16 @@ export const createPayment = async (req, res) => {
         success: false,
         message: 'This producer has already been paid via Bank Transfer for this cycle.',
         data: { bankTransferPaid: true },
+      });
+    }
+
+    // …or through Payment Register (Karur, Tamil Nadu)
+    const karurPaid = await karurPaidFarmerIds(req.userCompany, processingPeriod.fromDate, processingPeriod.toDate);
+    if (karurPaid.has(String(farmerId))) {
+      return res.status(409).json({
+        success: false,
+        message: 'This producer has already been paid via Payment Register (Karur) for this cycle.',
+        data: { karurPaid: true },
       });
     }
 

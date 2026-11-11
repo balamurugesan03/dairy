@@ -434,6 +434,7 @@ const MainLayout = () => {
             { key: '/payments/creditor-bill', label: 'Payment Register ' },
             { key: '/payments/register-ledger', label: 'Payment Register Detailed' },
             { key: '/payments/producer-payment', label: 'Payment Register (setteled)' },
+            { key: '/payments/payment-register-karur', label: 'Payment Register (Karur, Tamil Nadu)' },
             // { key: '/payments/register', label: 'Individual Payment' },
            
             { key: '/payments/bank-transfer', label: 'Bank Transfer' },
@@ -474,6 +475,13 @@ const MainLayout = () => {
             { key: '/payments/payment-register-report',    label: 'Payment Register' },
             { key: '/payments/payment-paid-report',        label: 'Payment Paid Report' },
             { key: '/payments/payment-report',             label: 'Payment Report' },
+          ]
+        },
+        {
+          key: 'regional-reports-sub',
+          label: 'Regional Reports',
+          children: [
+            { key: '/reports/milk-bill-karur', label: 'Milk Bill (Karur, Tamil Nadu)' },
           ]
         },
       ]

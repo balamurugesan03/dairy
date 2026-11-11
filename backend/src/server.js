@@ -365,6 +365,7 @@ import societyInfoRoutes from './routes/societyInfoRoutes.js';
 
 // Payment Register (Creditor Bill) routes
 import paymentRegisterRoutes from './routes/paymentRegisterRoutes.js';
+import karurPaymentRegisterRoutes from './routes/karurPaymentRegisterRoutes.js';
 
 // Milk Bill Report routes
 import milkBillRoutes from './routes/milkBillRoutes.js';
@@ -594,6 +595,7 @@ app.use('/api/society-info', protect, addCompanyFilter, societyInfoRoutes);
 
 // Payment Register (Creditor Bill) routes
 app.use('/api/payment-register', protect, addCompanyFilter, paymentRegisterRoutes);
+app.use('/api/karur-payment-register', protect, addCompanyFilter, karurPaymentRegisterRoutes);
 
 // Milk Bill Report routes
 app.use('/api/milk-bill', protect, addCompanyFilter, milkBillRoutes);
