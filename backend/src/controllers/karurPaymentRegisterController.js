@@ -1,5 +1,5 @@
 /**
- * Producer Dues → Payments → Payment Register (Karur, Tamil Nadu)
+ * Producer Dues → Payment Bar Reports → Payment Register (Karur, Tamil Nadu)
  * ─────────────────────────────────────────────────────────────────────────────
  * Pays a SETTLED payment cycle in Cash or through a Bank ledger.
  *
@@ -31,6 +31,7 @@ import Voucher from '../models/Voucher.js';
 import DairySettings from '../models/DairySettings.js';
 import { generateCode } from '../models/Counter.js';
 import { createProducerDuesPaymentVoucher, updateLedgerBalances } from '../utils/accountingHelper.js';
+import { computeCycleFromMilkPurchase } from './milkBillController.js';
 
 const DAY = 86400000;
 const BANK_LEDGER_TYPES = ['Bank', 'Bank Accounts', 'Bank Account'];
@@ -106,7 +107,10 @@ const paidElsewhere = async (companyId, source, excludeRegisterId) => {
   const karur = await KarurPaymentRegister.find({
     companyId,
     status: 'Saved',
-    $or: [{ sourceRegisterId: source._id }, { fromDate: around(source.fromDate), toDate: around(source.toDate) }],
+    $or: [
+      ...(source._id ? [{ sourceRegisterId: source._id }] : []),
+      { fromDate: around(source.fromDate), toDate: around(source.toDate) },
+    ],
     ...(excludeRegisterId ? { _id: { $ne: excludeRegisterId } } : {}),
   }).select('registerNumber paymentType entries.farmerId').lean();
   karur.forEach((k) => k.entries.forEach((e) => paid.set(String(e.farmerId), `Payment Register (Karur) ${k.registerNumber} — ${k.paymentType}`)));
@@ -138,10 +142,28 @@ const buildRows = async (companyId, { fromDate, toDate, paymentType, centerId, b
   if (!fromDate || !toDate) throw new HttpError(400, 'Payment cycle From Date and To Date are required');
   if (!['Cash', 'Bank'].includes(paymentType)) throw new HttpError(400, 'Select the Payment Type (Cash or Bank)');
 
-  const source = await findSourceRegister(companyId, fromDate, toDate);
+  let source = await findSourceRegister(companyId, fromDate, toDate);
   if (!source) {
-    throw new HttpError(404,
-      `No settled Payment Register found for ${fmtD(fromDate)} – ${fmtD(toDate)}. Save this cycle in Producer Dues → Payments → Payment Register (settled) first.`);
+    // Not settled yet → provisional figures straight from Milk Purchase (every
+    // entry dated inside the cycle). Preview / print only: paying waits for the
+    // settled register, which creates the FarmerPayments this register pays.
+    const live = await computeCycleFromMilkPurchase(companyId, fromDate, toDate);
+    source = {
+      _id: null,
+      registerType: 'MilkPurchase',
+      provisional: true,
+      fromDate: new Date(fromDate),
+      toDate: new Date(toDate),
+      entries: live.map(({ farmer, summary: s }) => ({
+        farmerId: farmer._id,
+        previousBalance: s.previousBalance,
+        qty: s.totalMilkQty,
+        milkValue: s.totalMilkAmt,
+        cashPocket: s.totalPayments,                       // paid during the cycle
+        deductions: r2(s.totalCattleFeed + s.totalDeductions),
+        netPay: s.netAmount,
+      })),
+    };
   }
 
   const farmerIds = [...new Set(source.entries.filter((e) => e.farmerId).map((e) => String(e.farmerId)))];
@@ -202,7 +224,10 @@ const buildRows = async (companyId, { fromDate, toDate, paymentType, centerId, b
   rows.sort(cmpRows);
   alreadyPaid.sort((a, b) => a.producerId.localeCompare(b.producerId, undefined, { numeric: true }));
   return {
-    source: { _id: source._id, registerType: source.registerType, fromDate: source.fromDate, toDate: source.toDate },
+    source: {
+      _id: source._id, registerType: source.registerType, fromDate: source.fromDate, toDate: source.toDate,
+      provisional: !!source.provisional,
+    },
     rows,
     alreadyPaid,
     skipped,
@@ -376,6 +401,25 @@ export const getOptions = async (req, res) => {
       const f = new Date(settings.paymentFromDate);
       settingsCycle = { fromDate: f, toDate: new Date(f.getTime() + (paymentDays - 1) * DAY) };
     }
+    // Cycles not settled yet: after the newest settled cycle (or from Payment
+    // Settings) in steps of the cycle length, up to the cycle running today.
+    // Generate reads these straight from Milk Purchase.
+    const pendingCycles = [];
+    {
+      const dayStart = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+      let f = cycles[0] ? dayStart(new Date(cycles[0].toDate).getTime() + DAY) : settingsCycle ? dayStart(settingsCycle.fromDate) : null;
+      if (f && settingsCycle && dayStart(settingsCycle.fromDate) > f) f = dayStart(settingsCycle.fromDate);
+      const today = dayStart(new Date());
+      while (f && f <= today && pendingCycles.length < 12) {
+        const t = dayStart(f.getTime() + (paymentDays - 1) * DAY + DAY / 2);
+        if (!cycles.some((c) => Math.abs(keyOf(c.fromDate) - keyOf(f)) <= 2 && Math.abs(keyOf(c.toDate) - keyOf(t)) <= 2)) {
+          pendingCycles.push({ fromDate: f, toDate: t });
+        }
+        f = dayStart(t.getTime() + DAY + DAY / 2);
+      }
+      pendingCycles.reverse();                    // newest first
+    }
+
     const activeCycle = cycles[0]
       ? { fromDate: cycles[0].fromDate, toDate: cycles[0].toDate, source: 'settled' }
       : settingsCycle ? { ...settingsCycle, source: 'settings' } : null;
@@ -388,6 +432,7 @@ export const getOptions = async (req, res) => {
         settingsCycle,
         activeCycle,
         cycles,
+        pendingCycles,
         centres: centres.map((c) => ({ _id: c._id, centerCode: c.centerCode || '', centerName: c.centerName || '' })),
         bankLedgers: bankLedgers.map((l) => ({ _id: l._id, ledgerName: l.ledgerName })),
         banks: [...banks.reduce((m, b) => (m.has(norm(b)) ? m : m.set(norm(b), String(b).trim())), new Map()).values()]
@@ -419,6 +464,11 @@ export const createRegister = async (req, res) => {
     validateHeader(b);
     const ledger = await resolveBankLedger(companyId, b.paymentType, b.bankLedgerId);
     const built = await buildRows(companyId, b);
+    if (built.source.provisional) {
+      throw new HttpError(400,
+        `${fmtD(b.fromDate)} – ${fmtD(b.toDate)} is not settled yet — the figures shown are provisional from Milk Purchase. `
+        + 'Save the cycle in Producer Dues → Payments → Payment Register (settled), then Generate and Save here.');
+    }
     const rows = pickRows(built.rows, b.farmerIds);
     if (!rows.length) throw new HttpError(400, 'No payable producers to save for this selection');
     if (Array.isArray(b.farmerIds) && rows.length < new Set(b.farmerIds.map(String)).size) {
