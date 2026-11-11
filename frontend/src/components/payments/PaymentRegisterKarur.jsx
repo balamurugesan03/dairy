@@ -1,5 +1,5 @@
 /**
- * Producer Dues → Payments → Payment Register (Karur, Tamil Nadu)
+ * Producer Dues → Payment Bar Reports → Payment Register (Karur, Tamil Nadu)
  *
  * Pays a settled payment cycle in Cash or through a Bank ledger. The cycle and
  * every amount come from the saved Payment Register (settled); producers are
@@ -80,16 +80,25 @@ export default function PaymentRegisterKarur() {
   useEffect(() => {
     loadOptions().then((d) => {
       if (!d) return;
-      setCycleKey(d.cycles.length ? String(d.cycles[0].sourceRegisterId) : d.settingsCycle ? 'settings' : null);
+      // Latest unsettled cycle that has ended (read from Milk Purchase), else the newest settled one
+      const pend = d.pendingCycles || [];
+      const ended = pend.findIndex((c) => dayjs(c.toDate).isBefore(dayjs(), 'day'));
+      setCycleKey(pend.length ? `pending:${ended >= 0 ? ended : 0}`
+        : d.cycles.length ? String(d.cycles[0].sourceRegisterId) : d.settingsCycle ? 'settings' : null);
     });
   }, [loadOptions]);
 
   const cycleOptions = useMemo(() => {
     if (!opts) return [];
+    const pending = (opts.pendingCycles || []).map((c, i) => ({
+      value: `pending:${i}`,
+      label: `${cycleText(c.fromDate, c.toDate)}  · Not settled (from Milk Purchase)`,
+    }));
     const list = opts.cycles.map((c, i) => ({
       value: String(c.sourceRegisterId),
       label: `${cycleText(c.fromDate, c.toDate)}${i === 0 ? '  · Active' : ''}  · Paid ${c.paidProducers}/${c.producers}`,
     }));
+    if (pending.length) return [...pending, ...list];
     if (!list.length && opts.settingsCycle) {
       list.push({ value: 'settings', label: `${cycleText(opts.settingsCycle.fromDate, opts.settingsCycle.toDate)}  · Payment Settings (not settled)` });
     }
@@ -99,6 +108,7 @@ export default function PaymentRegisterKarur() {
   const cycle = useMemo(() => {
     if (!opts || !cycleKey) return null;
     if (cycleKey === 'settings') return opts.settingsCycle;
+    if (cycleKey.startsWith('pending:')) return (opts.pendingCycles || [])[Number(cycleKey.slice(8))] || null;
     return opts.cycles.find((c) => String(c.sourceRegisterId) === cycleKey)
       || (editing && String(editing.sourceRegisterId) === cycleKey ? { fromDate: editing.fromDate, toDate: editing.toDate } : null);
   }, [opts, cycleKey, editing]);
@@ -390,7 +400,7 @@ export default function PaymentRegisterKarur() {
         {opts && (
           <Text size="xs" c="dimmed" mt={6}>
             Payment Settings: {opts.paymentDays === 30 ? '1 month' : `${opts.paymentDays} days`} cycle
-            {opts.settingsCycle ? `, from ${dmy(opts.settingsCycle.fromDate)}` : ''}. Cycles listed are the ones saved in Payment Register (settled) — newest is the active cycle. Generate loads every centre; Center and Bank then filter the preview, totals, Print, PDF, Excel and Email straight away.
+            {opts.settingsCycle ? `, from ${dmy(opts.settingsCycle.fromDate)}` : ''}. Settled cycles come from Payment Register (settled); cycles not settled yet are read straight from Milk Purchase (preview only). Generate loads every centre; Center and Bank then filter the preview, totals, Print, PDF, Excel and Email straight away.
           </Text>
         )}
 
@@ -412,7 +422,7 @@ export default function PaymentRegisterKarur() {
       {/* ── Actions ─────────────────────────────────────────── */}
       <Group gap="xs" mb="sm" wrap="wrap">
         <Button leftSection={<IconDeviceFloppy size={16} />} color="green" loading={busy === 'save'}
-          disabled={!result || !included.length || (editing ? !mayEdit : !mayWrite) || (!editing && !!savedReg)} onClick={save}>
+          disabled={!result || result.source?.provisional || !included.length || (editing ? !mayEdit : !mayWrite) || (!editing && !!savedReg)} onClick={save}>
           {editing ? 'Update' : 'Save'}
         </Button>
         {editing && <Button variant="default" leftSection={<IconX size={16} />} onClick={cancelEdit}>Cancel Edit</Button>}
@@ -424,6 +434,16 @@ export default function PaymentRegisterKarur() {
         <Button variant="light" color="grape" leftSection={<IconMail size={16} />} disabled={!canExport} onClick={() => setEmailOpen(true)}>Share by Email</Button>
       </Group>
 
+      {result?.source?.provisional && (
+        <Alert color="orange" variant="light" mb="sm" icon={<IconAlertTriangle size={16} />} p="xs">
+          <Text size="xs">
+            <b>This cycle is not settled yet.</b> The figures are calculated live from Milk Purchase — every milk entry dated{' '}
+            {dmy(result.source.fromDate)} to {dmy(result.source.toDate)} (including late entries), previous balance from the last settled cycle,
+            less cattle feed, deductions and payments in the cycle. Preview, Print, PDF and Excel work now; to pay, save the cycle in
+            Producer Dues → Payments → Payment Register (settled) first.
+          </Text>
+        </Alert>
+      )}
       {result && <GenerateNotes result={result} paymentType={paymentType} cashScope={cashScope} />}
 
       {/* ── Grid ────────────────────────────────────────────── */}

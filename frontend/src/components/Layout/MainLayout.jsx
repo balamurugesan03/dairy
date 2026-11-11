@@ -434,7 +434,6 @@ const MainLayout = () => {
             { key: '/payments/creditor-bill', label: 'Payment Register ' },
             { key: '/payments/register-ledger', label: 'Payment Register Detailed' },
             { key: '/payments/producer-payment', label: 'Payment Register (setteled)' },
-            { key: '/payments/payment-register-karur', label: 'Payment Register (Karur, Tamil Nadu)' },
             // { key: '/payments/register', label: 'Individual Payment' },
            
             { key: '/payments/bank-transfer', label: 'Bank Transfer' },
@@ -470,18 +469,21 @@ const MainLayout = () => {
           children: [
             { key: '/payments/producer-register',          label: 'Producer Register' },
             { key: '/payments/producer-register-summary',  label: 'Producer Summary' },
-            { key: '/reports/milk-bill-report',            label: 'Milk Bill (Producer)' },
             { key: '/payments/farmer-ledger',              label: 'Producer Ledger' },
-            { key: '/payments/payment-register-report',    label: 'Payment Register' },
-            { key: '/payments/payment-paid-report',        label: 'Payment Paid Report' },
-            { key: '/payments/payment-report',             label: 'Payment Report' },
           ]
         },
         {
-          key: 'regional-reports-sub',
-          label: 'Regional Reports',
+          // Payment Register (Karur) + Milk Bill (Karur), then the related payment / milk
+          // bill reports moved from Registers / Reports — same pages and routes, only the menu moved
+          key: 'payment-bar-reports-sub',
+          label: 'Payment Bar Reports',
           children: [
-            { key: '/reports/milk-bill-karur', label: 'Milk Bill (Karur, Tamil Nadu)' },
+            { key: '/payments/payment-register-karur',  label: 'Payment Register' },
+            { key: '/reports/milk-bill-karur',          label: 'Milk Bill' },
+            { key: '/payments/payment-register-report', label: 'Payment Register Report' },
+            { key: '/payments/payment-paid-report',     label: 'Payment Paid Report' },
+            { key: '/payments/payment-report',          label: 'Payment Report' },
+            { key: '/reports/milk-bill-report',         label: 'Milk Bill (Producer)' },
           ]
         },
       ]

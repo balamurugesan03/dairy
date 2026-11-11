@@ -1,5 +1,5 @@
 /**
- * Producer Dues → Regional Reports → Milk Bill (Karur, Tamil Nadu)
+ * Producer Dues → Payment Bar Reports → Milk Bill (Karur, Tamil Nadu)
  *
  * Built on Milk Bill (Producers): same bill heading, info bar and day-wise milk
  * collection table, but without the deduction detail. Previous balance and Net
@@ -42,13 +42,23 @@ export default function MilkBillKarur() {
       .then((res) => {
         const d = res.data || {};
         setCentres((d.centres || []).map((c) => ({ value: String(c._id), label: [c.centerCode, c.centerName].filter(Boolean).join(' - ') })));
-        const list = (d.cycles || []).map((c) => ({
+        const days = (c) => dayjs(c.toDate).diff(dayjs(c.fromDate), 'day') + 1;
+        // Cycles not settled yet are read straight from Milk Purchase
+        const pending = (d.pendingCycles || []).map((c, i) => ({
+          value: `pending:${i}`,
+          label: `${fD(c.fromDate)} – ${fD(c.toDate)}  (${days(c)} days, not settled)`,
+          fromDate: c.fromDate, toDate: c.toDate,
+        }));
+        const settledList = (d.cycles || []).map((c) => ({
           value: String(c.sourceRegisterId),
           label: `${fD(c.fromDate)} – ${fD(c.toDate)}  (${dayjs(c.toDate).diff(dayjs(c.fromDate), 'day') + 1} days)`,
           fromDate: c.fromDate, toDate: c.toDate,
         }));
+        const list = [...pending, ...settledList];
         setCycles(list);
-        if (list.length) setCycleId((p) => p || list[0].value);
+        // Default: latest unsettled cycle that has ended, else the newest one
+        const ended = pending.find((c) => dayjs(c.toDate).isBefore(dayjs(), 'day'));
+        if (list.length) setCycleId((p) => p || (ended || list[0]).value);
       })
       .catch((err) => notifications.show({ color: 'red', message: err?.message || 'Could not load centres / cycles' }))
       .finally(() => setLoadingOpts(false));
@@ -142,7 +152,7 @@ export default function MilkBillKarur() {
           {bills && <Badge size="lg" variant="light" ml="auto">{bills.length} bill{bills.length !== 1 ? 's' : ''}</Badge>}
         </Group>
         <Text size="xs" c="dimmed" mt={6}>
-          Leave Producer empty for all producers of the center. Cycles are the ones saved in Payment Register (settled); Net Payable is as settled there.
+          Leave Producer empty for all producers of the center. Milk is fetched from Milk Purchase for every entry dated inside the cycle. Settled cycles show Net Payable as settled in Payment Register (settled); cycles not settled yet are calculated live (previous balance − cattle feed, deductions and payments).
           Print: A4 portrait, two bills per page when they fit.
         </Text>
       </Paper>

@@ -157,7 +157,12 @@ export const getMilkBill = async (req, res) => {
 };
 
 const r2 = (v) => Math.round((+(v || 0)) * 100) / 100;
-const fmt = (d) => new Date(d).toISOString().split('T')[0];
+// Calendar date in server time (IST) — milk entries are stored at IST midnight,
+// so toISOString() would show them one day early.
+const fmt = (d) => {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+};
 
 /**
  * GET /api/milk-bill/:farmerId/cycle?fromDate=&toDate=
@@ -202,6 +207,7 @@ const loadCycleData = async (companyId, start, end, farmerIds) => {
     deductions: group(deductionDocs, 'producerId'),
     payments: group(paymentDocs, 'farmerId'),
     previousBalanceOf: (id) => (prevCycle ? (prevNet.get(id) || 0) : (openings.get(id) || 0)),
+    previousIds: () => [...(prevCycle ? prevNet : openings).entries()].filter(([, v]) => Math.abs(v) > 0.005).map(([k]) => k),
   };
 };
 
@@ -314,8 +320,11 @@ const buildBill = (farmer, data, start, end, centreName = '') => {
   };
 };
 
+// Whole cycle by the milk purchase DATE (never createdAt): From Date 00:00 to
+// To Date 23:59:59 IST, so the first day's entries (stored at IST midnight) count.
 const cycleRange = (fromDate, toDate) => {
   const start = new Date(fromDate);
+  start.setHours(0, 0, 0, 0);
   const end   = new Date(toDate);
   end.setHours(23, 59, 59, 999);
   return { start, end };
@@ -378,7 +387,7 @@ export const getAllMilkBillsByCycle = async (req, res) => {
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  Milk Bill (Karur, Tamil Nadu) — Producer Dues → Regional Reports
+//  Milk Bill (Karur, Tamil Nadu) — Producer Dues → Payment Bar Reports
 //  Same bill data as Milk Bill (Producers) (loadCycleData / buildBill above),
 //  without the deduction detail. Previous balance and Net Payable come from the
 //  cycle's saved Payment Register (settled) entry — the Producer Dues figures —
@@ -491,4 +500,25 @@ export const getKarurMilkBills = async (req, res) => {
     console.error('getKarurMilkBills error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Cycle figures straight from Milk Purchase — for a cycle NOT yet saved in
+//  Payment Register (settled). Every MilkCollection dated inside the cycle
+//  (by its milk purchase date, whenever it was entered), amounts as saved on
+//  the entries, previous balance from the last settled cycle (else the producer
+//  opening due), less cattle feed, individual deductions and payments made in
+//  the cycle — the Milk Bill (Producers) calculation.
+//  @returns [{ farmer, summary }] — producers with milk or a previous balance
+// ═════════════════════════════════════════════════════════════════════════════
+export const computeCycleFromMilkPurchase = async (companyId, fromDate, toDate) => {
+  const cid = new mongoose.Types.ObjectId(String(companyId));
+  const { start, end } = cycleRange(fromDate, toDate);
+  const data = await loadCycleData(cid, start, end, null);
+  const ids = [...new Set([...data.collections.keys(), ...data.previousIds()])].filter((k) => mongoose.isValidObjectId(k));
+  if (!ids.length) return [];
+  const farmers = await Farmer.find({ companyId: cid, _id: { $in: ids } })
+    .select('farmerNumber personalDetails.name memberId address bankDetails collectionCenter')
+    .populate('collectionCenter', 'centerCode centerName').lean();
+  return farmers.map((f) => ({ farmer: f, summary: buildBill(f, data, start, end).summary }));
 };

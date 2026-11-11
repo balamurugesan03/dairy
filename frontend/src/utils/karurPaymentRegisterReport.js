@@ -1,5 +1,5 @@
 /**
- * Producer Dues → Payments → Payment Register (Karur, Tamil Nadu)
+ * Producer Dues → Payment Bar Reports → Payment Register (Karur, Tamil Nadu)
  *
  * The Cash and Bank registers each have their own simplified layout. Print,
  * PDF and Excel are all built here from the SAME rows + columns, so the three

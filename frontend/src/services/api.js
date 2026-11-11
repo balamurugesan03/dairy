@@ -1321,7 +1321,7 @@ export const lsgdMithramAPI = {
   email:          (data)      => api.post('/lsgd-mithram/email', data, { timeout: 180000 }).then(r => r.data).catch(handleError),
 };
 
-// ── Payment Register (Karur, Tamil Nadu) — Producer Dues → Payments ───────────
+// ── Payment Register (Karur, Tamil Nadu) — Producer Dues → Payment Bar Reports ───────────
 export const karurPaymentRegisterAPI = {
   getOptions: ()         => api.get('/karur-payment-register/options').then(r => r.data).catch(handleError),
   // { fromDate, toDate, paymentType, centerId, bank, cashScope, editId }
