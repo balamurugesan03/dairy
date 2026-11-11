@@ -1190,6 +1190,12 @@ export const milkBillAPI = {
     api.get(`/milk-bill/${farmerId}/cycle`, { params }).then(r => r.data).catch(handleError),
   getAllByCycle: (params) =>
     api.get('/milk-bill/all/cycle', { params }).then(r => r.data).catch(handleError),
+  // Milk Bill (Karur, Tamil Nadu)
+  getKarurProducers: (centerId) =>
+    api.get('/milk-bill/karur/producers', { params: { centerId } }).then(r => r.data).catch(handleError),
+  // params: fromDate, toDate, centerId, farmerIds ('' = all producers of the centre)
+  getKarurBills: (params) =>
+    api.get('/milk-bill/karur/bills', { params }).then(r => r.data).catch(handleError),
 };
 
 // ── Payment Register API ───────────────────────────────────────────────────────
@@ -1313,6 +1319,19 @@ export const lsgdMithramAPI = {
   getStatement:   (params)    => api.get('/lsgd-mithram/statement', { params }).then(r => r.data).catch(handleError),
   // { to, cc, subject, message, attachments: [{ filename, contentType, contentBase64 }] }
   email:          (data)      => api.post('/lsgd-mithram/email', data, { timeout: 180000 }).then(r => r.data).catch(handleError),
+};
+
+// ── Payment Register (Karur, Tamil Nadu) — Producer Dues → Payments ───────────
+export const karurPaymentRegisterAPI = {
+  getOptions: ()         => api.get('/karur-payment-register/options').then(r => r.data).catch(handleError),
+  // { fromDate, toDate, paymentType, centerId, bank, cashScope, editId }
+  generate:   (data)     => api.post('/karur-payment-register/generate', data).then(r => r.data).catch(handleError),
+  getAll:     (params)   => api.get('/karur-payment-register', { params }).then(r => r.data).catch(handleError),
+  getById:    (id)       => api.get(`/karur-payment-register/${id}`).then(r => r.data).catch(handleError),
+  create:     (data)     => api.post('/karur-payment-register', data).then(r => r.data).catch(handleError),
+  update:     (id, data) => api.put(`/karur-payment-register/${id}`, data).then(r => r.data).catch(handleError),
+  cancel:     (id, data) => api.post(`/karur-payment-register/${id}/cancel`, data).then(r => r.data).catch(handleError),
+  email:      (data)     => api.post('/karur-payment-register/email', data, { timeout: 180000 }).then(r => r.data).catch(handleError),
 };
 
 // ── Crop Statement API ─────────────────────────────────────────────────────────

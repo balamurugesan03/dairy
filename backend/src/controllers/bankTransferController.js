@@ -9,6 +9,7 @@ import ProducerPayment from '../models/ProducerPayment.js';
 import { saveWithUniqueNumber } from '../models/Counter.js';
 import mongoose from 'mongoose';
 import { generateVoucherNumber, updateLedgerBalances } from '../utils/accountingHelper.js';
+import { karurPaidFarmerIds } from './karurPaymentRegisterController.js';
 
 // Retrieve producer balances for bank transfer
 export const retrieveBalances = async (req, res) => {
@@ -107,6 +108,9 @@ export const retrieveBalances = async (req, res) => {
         'paymentPeriod.toDate':   range(toMid),
       }).select('farmerId').lean();
       bankPaid.forEach(p => p.farmerId && alreadyPaidSet.add(p.farmerId.toString()));
+
+      //   • paid through Payment Register (Karur, Tamil Nadu)
+      (await karurPaidFarmerIds(companyId, fromMid, toMid)).forEach(id => alreadyPaidSet.add(id));
     }
 
     for (const farmer of farmers) {

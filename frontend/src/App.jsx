@@ -156,6 +156,7 @@ const PaymentToProducer = lazy(() => import('./components/payments/PaymentToProd
 const PaymentRegisterReport = lazy(() => import('./components/payments/PaymentRegisterReport'));
 const PaymentPaidReport     = lazy(() => import('./components/payments/PaymentPaidReport'));
 const PaymentReport         = lazy(() => import('./components/payments/PaymentReport'));
+const PaymentRegisterKarur  = lazy(() => import('./components/payments/PaymentRegisterKarur'));
 
 // Report Components
 const ReportsDashboard = lazy(() => import('./components/reports/ReportsDashboard'));
@@ -181,6 +182,7 @@ const DairyRegisterReport = lazy(() => import('./components/reports/DairyRegiste
 const SalesmanBalanceReport = lazy(() => import('./components/reports/SalesmanBalanceReport'));
 const CooperativeRDReport = lazy(() => import('./components/reports/CooperativeRDReport'));
 const MilkBillReport      = lazy(() => import('./components/reports/MilkBillReport'));
+const MilkBillKarur = lazy(() => import('./components/reports/MilkBillKarur'));
 const MISReport           = lazy(() => import('./components/reports/MISReport'));
 const DairyMISReport      = lazy(() => import('./components/reports/DairyMISReport'));
 const DDDMISReport        = lazy(() => import('./components/reports/DDDMISReport'));
@@ -504,6 +506,7 @@ const AppContent = () => {
                 <Route path="periodical-deduction-earning" element={<PeriodicalDeductionEarning />} />
                 <Route path="creditor-bill"       element={<PaymentRegisterCreditor />} />
                 <Route path="producer-payment"    element={<PaymentRegisterProducers />} />
+                <Route path="payment-register-karur" element={<PaymentRegisterKarur />} />
                 <Route path="payment-to-producer"    element={<PaymentToProducer />} />
                 <Route path="cattle-feed-advance"    element={<CattleFeedAdvance />} />
                 <Route path="payment-register-report" element={<PaymentRegisterReport />} />
@@ -566,6 +569,7 @@ const AppContent = () => {
                 <Route path="salesman-balance"      element={<SalesmanBalanceReport />} />
                 <Route path="cooperative-rd"        element={<CooperativeRDReport />} />
                 <Route path="milk-bill-report"      element={<MilkBillReport />} />
+                <Route path="milk-bill-karur"       element={<MilkBillKarur />} />
                 <Route path="mis-report"            element={<MISReport />} />
                 <Route path="dairy-mis-report"      element={<DairyMISReport />} />
                 <Route path="ddd-mis-report"        element={<DDDMISReport />} />

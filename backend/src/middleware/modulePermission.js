@@ -32,7 +32,7 @@ const MODULE_OF = {
   'business-sales': 'businessInventory', 'purchase-returns': 'businessInventory', 'sales-returns': 'businessInventory',
 
   advances: 'payments', 'farmer-payments': 'payments', 'producer-loans': 'payments', 'producer-receipts': 'payments',
-  'bank-transfers': 'payments', 'producer-payments': 'payments', 'payment-register': 'payments',
+  'bank-transfers': 'payments', 'producer-payments': 'payments', 'payment-register': 'payments', 'karur-payment-register': 'payments',
   'milk-bill': 'payments', 'earning-deductions': 'payments', 'individual-transactions': 'payments',
   'historical-rules': 'payments', 'periodical-rules': 'payments', 'cattle-feed-advance': 'payments',
   'producer-register': 'payments',

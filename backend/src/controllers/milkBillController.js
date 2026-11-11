@@ -376,3 +376,119 @@ export const getAllMilkBillsByCycle = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Milk Bill (Karur, Tamil Nadu) — Producer Dues → Regional Reports
+//  Same bill data as Milk Bill (Producers) (loadCycleData / buildBill above),
+//  without the deduction detail. Previous balance and Net Payable come from the
+//  cycle's saved Payment Register (settled) entry — the Producer Dues figures —
+//  so the bill agrees with the settled register and Payment Register (Karur).
+// ═════════════════════════════════════════════════════════════════════════════
+const DAY_MS = 86400000;
+const around = (d) => { const t = new Date(d).getTime(); return { $gte: new Date(t - 2 * DAY_MS), $lte: new Date(t + 2 * DAY_MS) }; };
+const karurProducerId = (centerCode, farmerNumber) => {
+  const num = String(farmerNumber || '').trim();
+  const padded = /^\d+$/.test(num) ? num.padStart(3, '0') : num;
+  return centerCode ? `${centerCode}-${padded}` : padded;
+};
+const byFarmerNumber = (a, b) => String(a.farmerNumber || '').localeCompare(String(b.farmerNumber || ''), undefined, { numeric: true });
+
+// GET /api/milk-bill/karur/producers?centerId=  — producers of one centre (search list)
+export const getKarurProducers = async (req, res) => {
+  try {
+    const { centerId } = req.query;
+    if (!mongoose.isValidObjectId(centerId)) return res.status(400).json({ success: false, message: 'Select a center' });
+    const farmers = await Farmer.find({ companyId: req.companyId, collectionCenter: centerId })
+      .select('farmerNumber personalDetails.name status collectionCenter')
+      .populate('collectionCenter', 'centerCode centerName').lean();
+    farmers.sort(byFarmerNumber);
+    res.json({
+      success: true,
+      data: farmers.map((f) => ({
+        _id: f._id,
+        farmerNumber: f.farmerNumber || '',
+        producerId: karurProducerId(f.collectionCenter?.centerCode, f.farmerNumber),
+        name: f.personalDetails?.name || '',
+        status: f.status || '',
+      })),
+    });
+  } catch (err) {
+    console.error('getKarurProducers error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/milk-bill/karur/bills?fromDate=&toDate=&centerId=&farmerIds=id1,id2
+//   farmerIds empty → every producer of the centre in the cycle (settled or poured milk)
+export const getKarurMilkBills = async (req, res) => {
+  try {
+    const { fromDate, toDate, centerId } = req.query;
+    const companyId = req.companyId;
+    if (!fromDate || !toDate) return res.status(400).json({ success: false, message: 'Select the payment cycle' });
+    if (!mongoose.isValidObjectId(centerId)) return res.status(400).json({ success: false, message: 'Select a center' });
+    const wanted = String(req.query.farmerIds || '').split(',').map((s) => s.trim()).filter((s) => mongoose.isValidObjectId(s));
+    const { start, end } = cycleRange(fromDate, toDate);
+
+    const settled = await PaymentRegister.findOne({
+      companyId, registerType: { $in: ['Producers', 'Ledger'] }, status: { $in: ['Saved', 'Printed'] },
+      fromDate: around(fromDate), toDate: around(toDate),
+    }).sort({ updatedAt: -1 }).lean();
+    const entryOf = new Map((settled?.entries || []).filter((e) => e.farmerId).map((e) => [String(e.farmerId), e]));
+
+    let ids;
+    if (wanted.length) {
+      ids = wanted.map((s) => new mongoose.Types.ObjectId(s));
+    } else {
+      const poured = await MilkCollection.distinct('farmer', { companyId, date: { $gte: start, $lte: end } });
+      ids = [...new Set([...poured.map(String), ...entryOf.keys()])].map((s) => new mongoose.Types.ObjectId(s));
+    }
+    // Only producers of the selected centre — never another centre's
+    const farmers = await Farmer.find({ companyId, _id: { $in: ids }, collectionCenter: centerId })
+      .populate('collectionCenter', 'centerCode centerName').lean();
+    if (!farmers.length) return res.json({ success: true, settled: !!settled, bills: [] });
+    farmers.sort(byFarmerNumber);
+
+    const data = await loadCycleData(companyId, start, end, farmers.map((f) => f._id));
+    const bills = farmers.map((f) => {
+      const bill = buildBill(f, data, start, end, f.collectionCenter?.centerName || '');
+      const s = bill.summary;
+      const e = entryOf.get(String(f._id));
+      let karur;
+      if (e) {
+        const prev = r2(e.previousBalance);
+        const net = r2(e.netPay);
+        karur = {
+          source: 'settled',
+          previousBalance: prev,
+          recoveries: r2((e.milkValue || 0) + prev - net),
+          netPayable: net,
+          milkChanged: Math.abs(r2(e.milkValue) - s.totalMilkAmt) > 0.01,
+        };
+      } else {
+        // Not in the settled register — same figures as Milk Bill (Producers)
+        karur = {
+          source: 'milkBill',
+          previousBalance: s.previousBalance,
+          recoveries: r2(s.totalMilkAmt + s.previousBalance - s.netAmount),
+          netPayable: s.netAmount,
+          milkChanged: false,
+        };
+      }
+      return {
+        ...bill,
+        cattleFeedRows: undefined, deductionRows: undefined, paymentRows: undefined,
+        farmer: {
+          ...bill.farmer,
+          producerId: karurProducerId(f.collectionCenter?.centerCode, f.farmerNumber),
+          centerCode: f.collectionCenter?.centerCode || '',
+          centerName: f.collectionCenter?.centerName || '',
+        },
+        karur,
+      };
+    });
+    res.json({ success: true, settled: !!settled, bills });
+  } catch (err) {
+    console.error('getKarurMilkBills error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
