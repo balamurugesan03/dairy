@@ -1,5 +1,5 @@
 /**
- * Producer Dues → Payment Bar Reports → Payment Register (Karur, Tamil Nadu)
+ * Producer Dues → Regional Payment Bar Report → Payment Register (Karur, Tamil Nadu)
  *
  * Pays a settled payment cycle in Cash or through a Bank ledger. The cycle and
  * every amount come from the saved Payment Register (settled); producers are
@@ -35,6 +35,8 @@ const errMsg = (e, fallback) => e?.message || fallback;
 const norm = (s) => String(s || '').trim().toLowerCase();
 
 const DEDUCTION_KEYS = ['welfare', 'loanRec', 'advance', 'cashAdvance', 'otherRec', 'totalDeductions'];
+// Saved register differs from Milk Purchase for this producer
+const MISMATCH = { background: '#ffe3e3', color: '#c92a2a', fontWeight: 600 };
 const SUM_KEYS = ['previousBalance', 'qty', 'milkValue', ...DEDUCTION_KEYS, 'netPayable'];
 const sumRows = (rows) => Object.fromEntries(SUM_KEYS.map((k) => [k, r2(rows.reduce((s, r) => s + (Number(r[k]) || 0), 0))]));
 
@@ -434,6 +436,17 @@ export default function PaymentRegisterKarur() {
         <Button variant="light" color="grape" leftSection={<IconMail size={16} />} disabled={!canExport} onClick={() => setEmailOpen(true)}>Share by Email</Button>
       </Group>
 
+      {!result?.source?.provisional && result?.milkCheck?.mismatches > 0 && (
+        <Alert color="red" variant="light" mb="sm" icon={<IconAlertTriangle size={16} />} p="xs">
+          <Text size="xs">
+            <b>{result.milkCheck.mismatches} producer(s): Milk Purchase differs from the saved Payment Register</b> for{' '}
+            {dmy(result.source.fromDate)} to {dmy(result.source.toDate)} (rows marked in red — hover the quantity for the Milk Purchase figures).
+            Milk entries were added or changed after the register was saved. Open Producer Dues → Payments → Payment Register for this cycle
+            and save it again, then Generate here, so the amounts paid match Milk Purchase.
+          </Text>
+        </Alert>
+      )}
+
       {result?.source?.provisional && (
         <Alert color="orange" variant="light" mb="sm" icon={<IconAlertTriangle size={16} />} p="xs">
           <Text size="xs">
@@ -498,12 +511,14 @@ export default function PaymentRegisterKarur() {
                           <td style={{ ...TDC, fontWeight: 600 }}>{r.producerId}</td>
                           <td style={TD}>{r.producerName}</td>
                           <td style={TDR}>{fmtAmt(r.previousBalance)}</td>
-                          <td style={TDR}>{fmtAmt(r.qty)}</td>
-                          <td style={TDR}>{fmtAmt(r.milkValue)}</td>
+                          <td style={{ ...TDR, ...(r.milkMismatch ? MISMATCH : {}) }}
+                            title={r.milkMismatch ? `Milk Purchase: ${fmtAmt(r.purchaseQty)} L` : undefined}>{fmtAmt(r.qty)}</td>
+                          <td style={{ ...TDR, ...(r.milkMismatch ? MISMATCH : {}) }}
+                            title={r.milkMismatch ? `Milk Purchase: ₹ ${fmtAmt(r.purchaseAmount)}` : undefined}>{fmtAmt(r.milkValue)}</td>
                           {DEDUCTION_KEYS.map((k) => <td key={k} style={{ ...TDR, color: '#8a3b12', fontWeight: k === 'totalDeductions' ? 600 : 400 }}>{fmtAmt(r[k])}</td>)}
                           <td style={{ ...TDR, fontWeight: 700, color: '#0b6b3a' }}>{fmtAmt(r.netPayable)}</td>
                           <td style={TD}>{r.bankName}</td>
-                          <td style={TD}>{r.accountNumber}</td>
+                          <td style={TD}>{r.accountNumber}{r.viaParent && <div style={{ fontSize: 10, color: "#0b7285" }}>A/c of {r.holderNumber} – {r.holderName}</div>}{!r.viaParent && r.bankAccount === "Secondary" && <div style={{ fontSize: 10, color: "#0b7285" }}>Secondary a/c</div>}</td>
                           <td style={TD}>{r.ifsc}</td>
                           <td style={TD}>{r.branch}</td>
                         </tr>

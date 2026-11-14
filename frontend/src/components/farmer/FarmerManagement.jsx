@@ -49,7 +49,8 @@ import {
   IconX,
   IconEye,
   IconFileText,
-  IconSettings
+  IconSettings,
+  IconDownload
 } from '@tabler/icons-react';
 import { DataTable } from 'mantine-datatable';
 import { farmerAPI, farmerSettingsAPI, collectionCenterAPI } from '../../services/api';
@@ -67,7 +68,30 @@ import { useAuth } from '../../context/AuthContext';
 const FarmerManagement = () => {
   const navigate = useNavigate();
   const theme = useMantineTheme();
-  const { canWrite, canEdit, canDelete } = useAuth();
+  const { canWrite, canEdit, canDelete, isSuperAdminLogin } = useAuth();
+  const [exporting, setExporting] = useState(false);
+
+  // Export Farmer (Super Admin only — the API refuses anyone else too)
+  const handleExportFarmers = async () => {
+    setExporting(true);
+    try {
+      const res = await farmerAPI.exportFarmers({ status: filters.status || undefined, collectionCenter: filters.collectionCenter || undefined });
+      const rows = res?.data || [];
+      if (!rows.length) { message.warning('No farmers to export'); return; }
+      const XLSX = await import('xlsx');
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = Object.keys(rows[0]).map((k) => ({ wch: Math.min(32, Math.max(10, k.length + 2)) }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Farmers');
+      const stamp = new Date().toLocaleDateString('en-CA');
+      XLSX.writeFile(wb, `Farmers_Export_${stamp}.xlsx`);
+      message.success(`${rows.length} farmers exported`);
+    } catch (err) {
+      message.error(err?.message || 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
   const [farmers, setFarmers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({
@@ -1113,6 +1137,18 @@ const FarmerManagement = () => {
               >
                 View Members
               </Button>
+              {/* Import / Export Farmer — Super Admin only (hidden for Admin and other users) */}
+              {isSuperAdminLogin && (<>
+              <Button
+                variant="light"
+                color="cyan"
+                leftSection={<IconDownload size={18} />}
+                onClick={handleExportFarmers}
+                loading={exporting}
+                title="Download all farmers (current Status / Centre filter) as Excel"
+              >
+                Export Farmers
+              </Button>
               <Button
                 variant="light"
                 color="gray"
@@ -1151,6 +1187,7 @@ const FarmerManagement = () => {
               >
                 Import Shares (OpenLyssa)
               </Button>
+              </>)}
             </Group>
           </Group>
         </Paper>

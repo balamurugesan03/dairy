@@ -275,6 +275,7 @@ const BonusRegister = () => {
       ...(dividendEnabled ? { 'Dividend': r.dividendAmount, 'Total Amt': r.totalAmount } : {}),
       ...(paymentMode === 'Bank' ? {
         'Account Number': r.bankAccountNumber,
+        'Paid To (Parent)': r.paidVia || '',
         'Bank Name': r.bankName,
         'Branch': r.bankBranch,
         'IFSC': r.bankIfsc,
@@ -672,7 +673,7 @@ const BonusRegister = () => {
                 <td style={tdStyle}>{r.farmerName}</td>
                 {paymentMode === 'Bank' ? (
                   <>
-                    <td style={tdStyle}>{r.bankAccountNumber}</td>
+                    <td style={tdStyle}>{r.bankAccountNumber}{r.paidVia && <div style={{ fontSize: 10, color: "#0b7285" }}>A/c of {r.paidVia}</div>}</td>
                     <td style={tdStyle}>{r.bankName}</td>
                     <td style={tdStyle}>{r.bankBranch}</td>
                     <td style={tdStyle}>{r.bankIfsc}</td>

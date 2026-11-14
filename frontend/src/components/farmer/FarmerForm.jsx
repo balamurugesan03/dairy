@@ -23,13 +23,24 @@ import {
 import { DatePickerInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { IconX, IconDeviceFloppy, IconUpload, IconTrash, IconCamera } from '@tabler/icons-react';
-import { farmerAPI, collectionCenterAPI, bankMasterAPI } from '../../services/api';
+import { farmerAPI, collectionCenterAPI, bankMasterAPI, farmerSettingsAPI } from '../../services/api';
 import { message } from '../../utils/toast';
+import { applyPostOffice } from '../../utils/keralaPanchayat';
+import PanchayatWardFields from './PanchayatWardFields';
+import FarmerPayoutFields from './FarmerPayoutFields';
 
 const FarmerForm = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const [loading, setLoading] = useState(false);
+  // Farmer Settings → Parent Grouping / Secondary Bank; farmers linked under this one
+  const [payoutSettings, setPayoutSettings] = useState({ parentGrouping: false, secondaryBank: false });
+  const [farmerChildren, setFarmerChildren] = useState([]);
+  useEffect(() => {
+    farmerSettingsAPI.getSettings()
+      .then((res) => setPayoutSettings({ parentGrouping: !!res?.data?.parentGrouping, secondaryBank: !!res?.data?.secondaryBank }))
+      .catch(() => {});
+  }, []);
   const [active, setActive] = useState(0);
   const [collectionCenters, setCollectionCenters] = useState([]);
   const [additionalDocs, setAdditionalDocs] = useState([]);
@@ -60,10 +71,12 @@ const FarmerForm = () => {
       },
       address: {
         ward: '',
+        wardNumber: '',
         place: '',
         post: '',
         village: '',
         panchayat: '',
+        taluk: '',
         pin: ''
       },
       identityDetails: {
@@ -82,6 +95,9 @@ const FarmerForm = () => {
         micr: '',
         bankLedgerId: ''
       },
+      secondaryBankDetails: { accountNumber: '', bankName: '', branch: '', ifsc: '', micr: '', bankLedgerId: '' },
+      payTo: 'Primary',
+      parentFarmer: '',
       financialDetails: {
         numberOfShares: 0,
         shareValue: 0,
@@ -171,6 +187,7 @@ const FarmerForm = () => {
     try {
       const response = await farmerAPI.getById(id);
       const farmer = response.data;
+      setFarmerChildren(farmer.children || []);
 
       form.setValues({
         farmerNumber: farmer.farmerNumber,
@@ -192,10 +209,12 @@ const FarmerForm = () => {
         },
         address: {
           ward: farmer.address?.ward || '',
+          wardNumber: farmer.address?.wardNumber || '',
           place: farmer.address?.place || '',
           post: farmer.address?.post || '',
           village: farmer.address?.village || '',
           panchayat: farmer.address?.panchayat || '',
+          taluk: farmer.address?.taluk || '',
           pin: farmer.address?.pin || ''
         },
         identityDetails: {
@@ -222,6 +241,16 @@ const FarmerForm = () => {
           micr: farmer.bankDetails?.micr || '',
           bankLedgerId: farmer.bankDetails?.bankLedgerId?._id || farmer.bankDetails?.bankLedgerId || ''
         },
+        secondaryBankDetails: {
+          accountNumber: farmer.secondaryBankDetails?.accountNumber || '',
+          bankName: farmer.secondaryBankDetails?.bankName || '',
+          branch: farmer.secondaryBankDetails?.branch || '',
+          ifsc: farmer.secondaryBankDetails?.ifsc || '',
+          micr: farmer.secondaryBankDetails?.micr || '',
+          bankLedgerId: farmer.secondaryBankDetails?.bankLedgerId?._id || farmer.secondaryBankDetails?.bankLedgerId || ''
+        },
+        payTo: farmer.payTo || 'Primary',
+        parentFarmer: farmer.parentFarmer?._id || farmer.parentFarmer || '',
         financialDetails: {
           numberOfShares: farmer.financialDetails?.numberOfShares || 0,
           shareValue: farmer.financialDetails?.shareValue || 0,
@@ -300,10 +329,12 @@ const FarmerForm = () => {
         },
         address: {
           ward: values.address.ward,
+          wardNumber: values.address.wardNumber,
           place: values.address.place,
           post: values.address.post,
           village: values.address.village,
           panchayat: values.address.panchayat,
+          taluk: values.address.taluk,
           pin: values.address.pin
         },
         identityDetails: {
@@ -336,6 +367,18 @@ const FarmerForm = () => {
           micr: values.bankDetails.micr,
           bankLedgerId: values.bankDetails.bankLedgerId || null
         },
+        ...(payoutSettings.secondaryBank ? {
+          secondaryBankDetails: {
+            accountNumber: values.secondaryBankDetails.accountNumber,
+            bankName: values.secondaryBankDetails.bankName,
+            branch: values.secondaryBankDetails.branch,
+            ifsc: values.secondaryBankDetails.ifsc,
+            micr: values.secondaryBankDetails.micr,
+            bankLedgerId: values.secondaryBankDetails.bankLedgerId || null
+          },
+          payTo: values.payTo === 'Secondary' ? 'Secondary' : 'Primary',
+        } : {}),
+        ...(payoutSettings.parentGrouping && !farmerChildren.length ? { parentFarmer: values.parentFarmer || null } : {}),
         financialDetails: {
           numberOfShares: parseFloat(values.financialDetails.numberOfShares) || 0,
           shareValue: parseFloat(values.financialDetails.shareValue) || 0,
@@ -391,7 +434,7 @@ const FarmerForm = () => {
         const data = await res.json();
         if (data[0].Status === 'Success' && data[0].PostOffice?.length > 0) {
           const offices = data[0].PostOffice;
-          form.setFieldValue('address.panchayat', offices[0].Block || offices[0].Taluk || '');
+          applyPostOffice(form, offices[0]);
           if (offices.length === 1) {
             form.setFieldValue('address.village', offices[0].Name);
           } else {
@@ -413,7 +456,7 @@ const FarmerForm = () => {
     form.setFieldValue('address.village', officeName);
     const office = pincodeOptions.find(o => o.Name === officeName);
     if (office) {
-      form.setFieldValue('address.panchayat', office.Block || office.Taluk || '');
+      applyPostOffice(form, office);
     }
   };
 
@@ -641,14 +684,8 @@ const FarmerForm = () => {
             <Stepper.Step label="Address" description="Location details">
               <Stack gap="md" mt="md">
                 <Grid>
-                  <Grid.Col span={6}>
-                    <TextInput
-                      label="Ward"
-                      placeholder="Enter ward"
-                      {...form.getInputProps('address.ward')}
-                      onKeyDown={focusNext}
-                    />
-                  </Grid.Col>
+                  {/* Panchayat → Ward (list of that Panchayat) → Ward Number */}
+                  <PanchayatWardFields form={form} onKeyDown={focusNext} />
                   <Grid.Col span={6}>
                     <TextInput
                       label="Place"
@@ -686,9 +723,9 @@ const FarmerForm = () => {
                   </Grid.Col>
                   <Grid.Col span={6}>
                     <TextInput
-                      label="Taluk"
+                      label="Block / Taluk"
                       placeholder="Auto-filled from PIN code"
-                      {...form.getInputProps('address.panchayat')}
+                      {...form.getInputProps('address.taluk')}
                       onKeyDown={focusNext}
                     />
                   </Grid.Col>
@@ -859,6 +896,8 @@ const FarmerForm = () => {
                       {...form.getInputProps('bankDetails.bankLedgerId')}
                     />
                   </Grid.Col>
+                  <FarmerPayoutFields form={form} settings={payoutSettings} bankMasterList={bankMasters}
+                    farmerId={id || null} children={farmerChildren} />
                 </Grid>
               </Stack>
             </Stepper.Step>

@@ -1,4 +1,5 @@
 import IncentiveRegister from '../models/IncentiveRegister.js';
+import { loadPayees, PAYEE_SELECT } from '../utils/farmerPayee.js';
 import Farmer from '../models/Farmer.js';
 import MilkCollection from '../models/MilkCollection.js';
 import Ledger from '../models/Ledger.js';
@@ -73,9 +74,11 @@ export const generatePreview = async (req, res) => {
     const farmerIds = agg.map((a) => a._id);
     const farmers = await Farmer.find({ _id: { $in: farmerIds }, companyId })
       .populate('collectionCenter', 'centerName')
-      .select('farmerNumber memberId personalDetails isMembership membershipDate collectionCenter bankDetails')
+      .select(PAYEE_SELECT + ' memberId personalDetails isMembership membershipDate collectionCenter')
       .lean();
     const farmerMap = new Map(farmers.map((f) => [f._id.toString(), f]));
+    // Bank columns show the account the payout goes to (own Primary / Secondary, or the parent's)
+    const { payeeOf } = await loadPayees(companyId, farmers);
 
     let rows = agg
       .map((a) => {
@@ -92,10 +95,17 @@ export const generatePreview = async (req, res) => {
           centerIdStr: f.collectionCenter?._id ? f.collectionCenter._id.toString() : '',
           milkQty: round2(a.milkQty),
           milkAmount: round2(a.milkAmount),
-          bankAccountNumber: f.bankDetails?.accountNumber || '',
-          bankName: f.bankDetails?.bankName || '',
-          bankBranch: f.bankDetails?.branch || '',
-          bankIfsc: f.bankDetails?.ifsc || '',
+          ...(() => {
+            const payee = payeeOf(f);
+            return {
+              bankAccountNumber: payee.bank.accountNumber,
+              bankName: payee.bank.bankName,
+              bankBranch: payee.bank.branch,
+              bankIfsc: payee.bank.ifsc,
+              bankAccount: payee.account,
+              paidVia: payee.viaParent ? `${payee.holderNumber} - ${payee.holderName}` : '',
+            };
+          })(),
         };
       })
       .filter(Boolean);

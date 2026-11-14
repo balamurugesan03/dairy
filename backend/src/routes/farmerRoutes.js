@@ -24,19 +24,25 @@ import {
 } from '../controllers/farmerController.js';
 import { dpFarmerImport, dpImportSuggestMappings } from '../controllers/dpFarmerImportController.js';
 import { protect, addCompanyFilter } from '../middleware/auth.js';
+import { requireSuperAdmin } from '../utils/userTier.js';
+import { exportFarmers } from '../controllers/farmerExportController.js';
 
 const router = express.Router();
 router.use(protect, addCompanyFilter);
 
 // DP system Excel import: VillageCode → Collection Centre mapping, preview (dryRun), import
-router.post('/dp-import/suggest', dpImportSuggestMappings);
-router.post('/dp-import', dpFarmerImport);
+// Import / Export Farmer: Super Admin only (the buttons are hidden for everyone else too)
+router.post('/dp-import/suggest', requireSuperAdmin, dpImportSuggestMappings);
+router.post('/dp-import', requireSuperAdmin, dpFarmerImport);
 
 // Bulk import farmers (must be before other routes)
-router.post('/bulk-import', bulkImportFarmers);
+router.post('/bulk-import', requireSuperAdmin, bulkImportFarmers);
 
 // Bulk import share transactions
-router.post('/bulk-import-shares', bulkImportShares);
+router.post('/bulk-import-shares', requireSuperAdmin, bulkImportShares);
+
+// Export Farmer → Excel rows (must be before '/:id')
+router.get('/export', requireSuperAdmin, exportFarmers);
 
 // Bulk delete farmers
 router.post('/bulk-delete', bulkDeleteFarmers);

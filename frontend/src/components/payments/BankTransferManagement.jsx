@@ -46,6 +46,13 @@ const fmt = (v) =>
 const fmtDate = (d) =>
   d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
 
+// Whose account a payment goes into: the parent's (Parent Grouping) or the farmer's Secondary account
+const payeeNote = (bd) => {
+  if (!bd) return '';
+  if (bd.viaParent) return `A/c of ${bd.holderNumber || ''} – ${bd.holderName || ''}${bd.account === 'Secondary' ? ' (Secondary)' : ''}`;
+  return bd.account === 'Secondary' ? 'Secondary a/c' : '';
+};
+
 const STATUS_COLOR = { Draft: 'gray', Retrieved: 'blue', Applied: 'yellow', Completed: 'green', Cancelled: 'red' };
 
 const PAYMENT_MODES = [
@@ -626,7 +633,7 @@ const BankTransferManagement = () => {
         `<td>${esc(r.producerId)}</td>`,
         `<td>${esc(r.producerName)}</td>`,
         ...(showBankCols ? [
-          `<td>${esc(r.bankDetails?.accountNumber || '—')}</td>`,
+          `<td>${esc(r.bankDetails?.accountNumber || '—')}${payeeNote(r.bankDetails) ? `<br/><small>${esc(payeeNote(r.bankDetails))}</small>` : ''}</td>`,
           `<td>${esc(r.bankDetails?.ifscCode || '—')}</td>`,
           `<td>${esc(r.bankDetails?.bankName || '—')}</td>`,
           `<td>${esc(r.bankDetails?.branch && r.bankDetails.branch !== '-' ? r.bankDetails.branch : '—')}</td>`,
@@ -732,7 +739,7 @@ const BankTransferManagement = () => {
         r.producerId || '',
         r.producerName || '',
         ...(showBankCols ? [
-          r.bankDetails?.accountNumber || '—',
+          (r.bankDetails?.accountNumber || '—') + (payeeNote(r.bankDetails) ? ` (${payeeNote(r.bankDetails)})` : ''),
           r.bankDetails?.ifscCode || '—',
           r.bankDetails?.bankName || '—',
           (r.bankDetails?.branch && r.bankDetails.branch !== '-') ? r.bankDetails.branch : '—',
@@ -1226,6 +1233,7 @@ const BankTransferManagement = () => {
                               <Text size="xs" c={row.bankDetails?.accountNumber && row.bankDetails.accountNumber !== '-' ? 'inherit' : 'dimmed'}>
                                 {row.bankDetails?.accountNumber || '—'}
                               </Text>
+                              {payeeNote(row.bankDetails) && <Text size="10px" c="teal">{payeeNote(row.bankDetails)}</Text>}
                             </Table.Td>
                             <Table.Td>
                               <Text size="xs" c="dimmed">{row.bankDetails?.ifscCode || '—'}</Text>
@@ -1816,7 +1824,10 @@ const BankTransferManagement = () => {
                       <Table.Td><Text size="xs">{r.producerName}</Text></Table.Td>
                       {showBankCols && (
                         <>
-                          <Table.Td><Text size="xs">{r.bankDetails?.accountNumber || '—'}</Text></Table.Td>
+                          <Table.Td>
+                            <Text size="xs">{r.bankDetails?.accountNumber || '—'}</Text>
+                            {payeeNote(r.bankDetails) && <Text size="10px" c="teal">{payeeNote(r.bankDetails)}</Text>}
+                          </Table.Td>
                           <Table.Td><Text size="xs">{r.bankDetails?.ifscCode || '—'}</Text></Table.Td>
                           <Table.Td><Text size="xs">{r.bankDetails?.bankName || '—'}</Text></Table.Td>
                           <Table.Td>

@@ -4,12 +4,14 @@ import Farmer from '../models/Farmer.js';
 import MilkCollection from '../models/MilkCollection.js';
 import SocietyInfo from '../models/SocietyInfo.js';
 import Company from '../models/Company.js';
-import { panchayatRegex, syncFarmerFromForm } from './farmerFormController.js';
+import { syncFarmerFromForm, SYNC_FIELD_NAMES } from './farmerFormController.js';
+import { placeKey } from '../utils/panchayatMatch.js';
 
 // ════════════════════════════════════════════════════════════════
 //  Farmer Applications — Panchayat milk subsidy / incentive forms.
-//  Farmer details come from Farmer Management; missing ones typed
-//  on the form are saved back to the same farmer (never a new one).
+//  Farmer details come from Farmer Management; on save, missing ones
+//  typed on the form are added and the ones the user changed
+//  (body.changedFields) are updated on the same farmer (never a new one).
 // ════════════════════════════════════════════════════════════════
 
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
@@ -38,9 +40,11 @@ const validate = (b) => {
 const clean = (b) => {
   const out = { ...b };
   delete out._id; delete out.companyId; delete out.applicationNo; delete out.createdAt; delete out.updatedAt;
+  delete out.changedFields;
   out.year = Number(b.year);
   out.panchayat = String(b.panchayat || '').trim();
   out.ifsc = String(b.ifsc || '').trim().toUpperCase();
+  out.bankSource = b.bankSource === 'Secondary' ? 'Secondary' : 'Primary';
   out.accountNumber = digits(b.accountNumber);
   out.aadhaarNumber = digits(b.aadhaarNumber);
   out.mobileNumber = digits(b.mobileNumber);
@@ -50,16 +54,31 @@ const clean = (b) => {
   return out;
 };
 
-// Membership No is saved to the farmer only when the form says "member"
-const syncPayload = (a) => ({ ...a, membershipNo: a.isMember ? a.membershipNo : '' });
+// Membership No is saved to the farmer only when the form says "member".
+// A form printing the farmer's Secondary account never writes those bank details into the
+// farmer's Primary bank (sync only knows the Primary bank fields).
+const BANK_FIELDS = ['bankName', 'branch', 'accountNumber', 'ifsc', 'bankLedgerId'];
+const syncPayload = (a) => {
+  const out = { ...a, membershipNo: a.isMember ? a.membershipNo : '' };
+  if (a.bankSource === 'Secondary') BANK_FIELDS.forEach((k) => delete out[k]);
+  return out;
+};
+// Fields the user edited on the form → these also replace values Farmers Management already has
+const changedOf = (b) => (Array.isArray(b?.changedFields) ? b.changedFields : [])
+  .filter((f) => SYNC_FIELD_NAMES.includes(f) && !(b.bankSource === 'Secondary' && BANK_FIELDS.includes(f)));
 
-// ── GET ALL ── ?year&panchayat&formType&status&search&page&limit
+// ── GET ALL ── ?year&panchayat&aliases&formType&status&search&page&limit
+//   Panchayat matches loosely (spelling / suffix / Malayalam alias), like the LSGD Milk Statement
 export const getApplications = async (req, res) => {
   try {
     const { year, panchayat, formType, status, search = '', page = 1, limit = 20 } = req.query;
     const q = { companyId: req.companyId };
     if (year) q.year = Number(year);
-    if (panchayat) q.panchayat = panchayatRegex(panchayat);
+    if (String(panchayat || '').trim()) {
+      const keys = new Set([panchayat, ...String(req.query.aliases || '').split(',')].map(placeKey).filter(Boolean));
+      const names = await FarmerApplication.distinct('panchayat', { companyId: req.companyId });
+      q.panchayat = { $in: names.filter((n) => keys.has(placeKey(n))) };
+    }
     if (formType) q.formType = formType;
     if (status) q.status = status;
     if (search.trim()) {
@@ -127,7 +146,7 @@ export const createApplication = async (req, res) => {
       applicationNo: await nextApplicationNo(req.companyId, body.year),
       companyId: req.companyId,
     });
-    const synced = await syncFarmerFromForm(req.companyId, app.farmerId, syncPayload(body));
+    const synced = await syncFarmerFromForm(req.companyId, app.farmerId, syncPayload(body), { changed: changedOf(req.body) });
     res.status(201).json({ success: true, data: app, synced });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -145,7 +164,7 @@ export const updateApplication = async (req, res) => {
       { new: true, runValidators: true }
     );
     if (!app) return res.status(404).json({ success: false, message: 'Application not found' });
-    const synced = await syncFarmerFromForm(req.companyId, app.farmerId, syncPayload(body));
+    const synced = await syncFarmerFromForm(req.companyId, app.farmerId, syncPayload(body), { changed: changedOf(req.body) });
     res.json({ success: true, data: app, synced });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });

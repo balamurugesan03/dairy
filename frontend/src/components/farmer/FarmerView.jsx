@@ -329,11 +329,13 @@ const FarmerView = () => {
               <Paper p="md" withBorder>
                 <Title order={4} mb="md">Address</Title>
                 <Stack gap="xs">
+                  <InfoRow label="Panchayat" value={farmer.address?.panchayat} />
                   <InfoRow label="Ward"      value={farmer.address?.ward} />
+                  <InfoRow label="Ward No"   value={farmer.address?.wardNumber} />
                   <InfoRow label="Place"     value={farmer.address?.place} />
                   <InfoRow label="Post"      value={farmer.address?.post} />
                   <InfoRow label="Village"   value={farmer.address?.village} />
-                  <InfoRow label="Panchayat" value={farmer.address?.panchayat} />
+                  <InfoRow label="Block / Taluk" value={farmer.address?.taluk} />
                   <InfoRow label="PIN Code"  value={farmer.address?.pin} />
                 </Stack>
               </Paper>
@@ -362,6 +364,24 @@ const FarmerView = () => {
                   <InfoRow label="IFSC Code"      value={farmer.bankDetails?.ifsc} />
                   <InfoRow label="MICR Code"      value={farmer.bankDetails?.micr} />
                   <InfoRow label="Bank Ledger"    value={farmer.bankDetails?.bankLedgerId?.ledgerName || farmer.bankDetails?.bankLedgerId} />
+                  {farmer.secondaryBankDetails?.accountNumber && (
+                    <>
+                      <Text size="xs" fw={700} c="dimmed" tt="uppercase" mt="xs">Secondary Bank</Text>
+                      <InfoRow label="Account Number" value={farmer.secondaryBankDetails.accountNumber} />
+                      <InfoRow label="Bank Name"      value={farmer.secondaryBankDetails.bankName} />
+                      <InfoRow label="Branch"         value={farmer.secondaryBankDetails.branch} />
+                      <InfoRow label="IFSC Code"      value={farmer.secondaryBankDetails.ifsc} />
+                      <InfoRow label="Pay To"         value={farmer.payTo === 'Secondary' ? 'Secondary bank' : 'Primary bank'} />
+                    </>
+                  )}
+                  {farmer.parentFarmer?.farmerNumber && (
+                    <InfoRow label="Parent Farmer (paid to)"
+                      value={`${farmer.parentFarmer.farmerNumber} – ${farmer.parentFarmer.personalDetails?.name || ''}`} />
+                  )}
+                  {farmer.children?.length > 0 && (
+                    <InfoRow label={`Linked farmers (${farmer.children.length})`}
+                      value={farmer.children.map((c) => `${c.farmerNumber} – ${c.personalDetails?.name || ''}`).join(', ')} />
+                  )}
                 </Stack>
               </Paper>
 

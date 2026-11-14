@@ -1,5 +1,5 @@
 /**
- * Producer Dues → Payment Bar Reports → Milk Bill (Karur, Tamil Nadu)
+ * Producer Dues → Regional Payment Bar Report → Milk Bill (Karur, Tamil Nadu)
  *
  * Built on Milk Bill (Producers): same bill heading, info bar and day-wise milk
  * collection table, but without the deduction detail. Previous balance and Net

@@ -108,6 +108,8 @@ export const farmerAPI = {
   getShareHistory: (id) => api.get(`/farmers/${id}/shares`).then(res => res.data).catch(handleError),
   terminate: (id, data) => api.post(`/farmers/${id}/terminate`, data).then(res => res.data).catch(handleError),
   bulkImport: (farmers) => api.post('/farmers/bulk-import', { farmers }).then(res => res.data).catch(handleError),
+  // Export Farmer (Super Admin only) → flat rows for Excel
+  exportFarmers: (params) => api.get('/farmers/export', { params, timeout: 120000 }).then(res => res.data).catch(handleError),
   bulkImportShares: (shares) => api.post('/farmers/bulk-import-shares', { shares }).then(res => res.data).catch(handleError),
   bulkDelete: (ids) => api.post('/farmers/bulk-delete', { ids }).then(res => res.data).catch(handleError),
   // DP system Excel import (VillageCode → Collection Centre mapping)
@@ -501,6 +503,8 @@ export const milkCollectionAPI = {
   delete: (id) => api.delete(`/milk-collections/${id}`).then(res => res.data).catch(handleError),
   dateSummary: (params) => api.get('/milk-collections/date-summary', { params }).then(res => res.data).catch(handleError),
   bulkDelete:  (slots)  => api.post('/milk-collections/bulk-delete', { slots }).then(res => res.data).catch(handleError),
+  // Daily Collection List → Bulk Delete (Super Admin): { ids } or { fromDate, toDate, shift?, collectionCenter?, agent? }, dryRun → count only
+  bulkDeleteRecords: (data) => api.post('/milk-collections/bulk-delete-records', data, { timeout: 300000 }).then(res => res.data).catch(handleError),
   bulkImport:      (records, opts = {}) => api.post('/milk-collections/bulk-import', { records, ...opts }).then(res => res.data).catch(handleError),
   zibittImport:    (records) => api.post('/milk-collections/zibitt-import',    { records }).then(res => res.data).catch(handleError),
   linzaImport:     (records) => api.post('/milk-collections/linza-import',     { records }).then(res => res.data).catch(handleError),
@@ -1298,6 +1302,14 @@ export const farmerFormAPI = {
   getPanchayats: ()          => api.get('/farmer-forms/panchayats').then(r => r.data).catch(handleError),
   getFarmers:    (panchayat) => api.get('/farmer-forms/farmers', { params: panchayat ? { panchayat } : {} }).then(r => r.data).catch(handleError),
   getDocuments:  (farmerId)  => api.get(`/farmer-forms/documents/${farmerId}`).then(r => r.data).catch(handleError),
+  // Wards recorded for a Panchayat's farmers: [{ ward, wardNumber, farmers }]
+  getWards:      (panchayat, aliases = []) => api.get('/farmer-forms/wards', { params: { panchayat, aliases: aliases.join(',') } }).then(r => r.data).catch(handleError),
+  // Farmer details edited on a report → Farmers Management. data: { ...fields, changed: [field] }
+  updateDetails: (farmerId, data) => api.put(`/farmer-forms/farmers/${farmerId}/details`, data).then(r => r.data).catch(handleError),
+  // Documents uploaded on a report → the farmer's Documents. type: bankPassbook | aadhaar | rationCard | incomeProof | other
+  getDocumentSummary: (farmerId) => api.get(`/farmer-forms/documents/${farmerId}/summary`).then(r => r.data).catch(handleError),
+  uploadDocument: (farmerId, data) => api.post(`/farmer-forms/documents/${farmerId}`, data, { timeout: 120000 }).then(r => r.data).catch(handleError),
+  deleteDocument: (farmerId, type, index) => api.delete(`/farmer-forms/documents/${farmerId}/${type}`, { params: index != null ? { index } : {} }).then(r => r.data).catch(handleError),
 };
 
 // ── Farmer Applications (Panchayat milk subsidy / incentive forms) ──────────────
@@ -1310,18 +1322,24 @@ export const farmerApplicationAPI = {
   prefill:  (params)   => api.get('/farmer-applications/prefill', { params }).then(r => r.data).catch(handleError),
 };
 
-// ── LSGD Mithram Statement (LSGD Reports) ──────────────────────────────────────
+// ── LSGD Milk Statement (LSGD Reports; API path keeps the old "mithram" name) ──
 export const lsgdMithramAPI = {
-  getWards:       (panchayat) => api.get('/lsgd-mithram/wards', { params: { panchayat } }).then(r => r.data).catch(handleError),
+  getWards:       (panchayat, aliases = []) => api.get('/lsgd-mithram/wards', { params: { panchayat, aliases: aliases.join(',') } }).then(r => r.data).catch(handleError),
   getWardMembers: (params)    => api.get('/lsgd-mithram/ward-members', { params }).then(r => r.data).catch(handleError),
   saveWardMember: (data)      => api.post('/lsgd-mithram/ward-members', data).then(r => r.data).catch(handleError),
-  // params: fromDate, toDate (YYYY-MM-DD), panchayat, ward, rate, onlySuppliers
+  // params: fromDate, toDate (YYYY-MM-DD), panchayat, aliases, ward, wardNumber, rate, onlySuppliers, scope ('panchayat'|'all'), excludeId
   getStatement:   (params)    => api.get('/lsgd-mithram/statement', { params }).then(r => r.data).catch(handleError),
+  // Saved statements
+  listSaved:      (params)    => api.get('/lsgd-mithram/saved', { params }).then(r => r.data).catch(handleError),
+  getSaved:       (id)        => api.get(`/lsgd-mithram/saved/${id}`).then(r => r.data).catch(handleError),
+  createSaved:    (data)      => api.post('/lsgd-mithram/saved', data, { timeout: 120000 }).then(r => r.data).catch(handleError),
+  updateSaved:    (id, data)  => api.put(`/lsgd-mithram/saved/${id}`, data, { timeout: 120000 }).then(r => r.data).catch(handleError),
+  deleteSaved:    (id)        => api.delete(`/lsgd-mithram/saved/${id}`).then(r => r.data).catch(handleError),
   // { to, cc, subject, message, attachments: [{ filename, contentType, contentBase64 }] }
   email:          (data)      => api.post('/lsgd-mithram/email', data, { timeout: 180000 }).then(r => r.data).catch(handleError),
 };
 
-// ── Payment Register (Karur, Tamil Nadu) — Producer Dues → Payment Bar Reports ───────────
+// ── Payment Register (Karur, Tamil Nadu) — Producer Dues → Regional Payment Bar Report ───────────
 export const karurPaymentRegisterAPI = {
   getOptions: ()         => api.get('/karur-payment-register/options').then(r => r.data).catch(handleError),
   // { fromDate, toDate, paymentType, centerId, bank, cashScope, editId }

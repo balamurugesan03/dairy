@@ -10,6 +10,7 @@ import { saveWithUniqueNumber } from '../models/Counter.js';
 import mongoose from 'mongoose';
 import { generateVoucherNumber, updateLedgerBalances } from '../utils/accountingHelper.js';
 import { karurPaidFarmerIds } from './karurPaymentRegisterController.js';
+import { loadPayees, PAYEE_SELECT, transferBankDetails } from '../utils/farmerPayee.js';
 
 // Retrieve producer balances for bank transfer
 export const retrieveBalances = async (req, res) => {
@@ -40,8 +41,10 @@ export const retrieveBalances = async (req, res) => {
 
     // Get all active farmers
     const farmers = await Farmer.find(farmerFilter)
-      .select('farmerNumber personalDetails bankDetails collectionCenter')
+      .select(PAYEE_SELECT + ' collectionCenter')
       .lean();
+    // Account each farmer is paid into: own Primary / Secondary, or the parent's (Parent Grouping)
+    const { payeeOf } = await loadPayees(companyId, farmers);
 
     const balances = [];
     const roundDown = parseInt(roundDownAmount) || 10;
@@ -176,9 +179,9 @@ export const retrieveBalances = async (req, res) => {
         continue;
       }
 
-      // Filter by bank if specified
-      const bankDetails = farmer.bankDetails || {};
-      if (bank && bank !== 'all' && bankDetails.bankName !== bank) {
+      // Filter by bank if specified (the bank the payment goes to)
+      const payee = payeeOf(farmer);
+      if (bank && bank !== 'all' && payee.bank.bankName !== bank) {
         continue;
       }
 
@@ -201,15 +204,7 @@ export const retrieveBalances = async (req, res) => {
         transferAmount,
         paymentMode,           // Cash / Bank Transfer / Cheque from Payment Register
         approved: transferAmount > 0,
-        bankDetails: {
-          accountNumber: bankDetails.accountNumber || '-',
-          bankName: bankDetails.bankName || '-',
-          branch: bankDetails.branch || '-',
-          ifscCode: bankDetails.ifsc || bankDetails.ifscCode || '-',
-          micr: bankDetails.micr || '-',
-          bankLedgerId: bankDetails.bankLedgerId || null,
-          bankCode: bankDetails.branchCode || '-'
-        }
+        bankDetails: transferBankDetails(payee, farmer)
       });
     }
 
@@ -296,9 +291,22 @@ export const applyBankTransfer = async (req, res) => {
     // Filter only approved transfers
     // Payment Method Cash (Finalize Payment popup) pays every approved producer in
     // cash → one Cash in Hand voucher (Cash Book / Day Book cash column), never the bank side
-    const approvedTransfers = transferDetails
+    let approvedTransfers = transferDetails
       .filter(d => d.approved && d.transferAmount > 0)
       .map(d => (method === 'Cash' ? { ...d, paymentMode: 'Cash', mode: 'Cash' } : d));
+
+    // The account each farmer is paid into, as it is in Farmers Management now
+    // (Primary / Secondary, or the parent's account under Parent Grouping)
+    {
+      const ids = approvedTransfers.map(d => d.farmerId).filter(id => mongoose.isValidObjectId(String(id)));
+      const docs = await Farmer.find({ companyId, _id: { $in: ids } }).select(PAYEE_SELECT).lean();
+      const byId = new Map(docs.map(f => [String(f._id), f]));
+      const { payeeOf } = await loadPayees(companyId, docs);
+      approvedTransfers = approvedTransfers.map(d => {
+        const f = byId.get(String(d.farmerId));
+        return f ? { ...d, bankDetails: transferBankDetails(payeeOf(f), f) } : d;
+      });
+    }
 
     if (approvedTransfers.length === 0) {
       throw new Error('No approved transfers to process');
@@ -907,15 +915,17 @@ export const createFromLedger = async (req, res) => {
 
     // Fetch bank details for each farmer from DB
     const farmerIds = farmers.map(f => f.farmerId);
-    const farmerDocs = await Farmer.find({ _id: { $in: farmerIds } })
-      .select('farmerNumber personalDetails bankDetails')
+    const farmerDocs = await Farmer.find({ _id: { $in: farmerIds }, companyId })
+      .select(PAYEE_SELECT)
       .lean();
     const farmerMap = {};
     farmerDocs.forEach(f => { farmerMap[f._id.toString()] = f; });
+    const { payeeOf } = await loadPayees(companyId, farmerDocs);
 
     const transferDetails = farmers.map(f => {
       const doc = farmerMap[f.farmerId?.toString()] || {};
-      const bd  = doc.bankDetails || {};
+      const bankDetails = doc._id ? transferBankDetails(payeeOf(doc), doc) : null;
+      const bd  = bankDetails ? { accountNumber: bankDetails.accountNumber === '-' ? '' : bankDetails.accountNumber } : {};
       return {
         farmerId:       f.farmerId,
         producerId:     f.farmerNumber || doc.farmerNumber || '',
@@ -924,14 +934,8 @@ export const createFromLedger = async (req, res) => {
         transferAmount: f.paidAmount   || 0,
         paymentMode:    bd.accountNumber ? 'Bank Transfer' : 'Cash',
         approved:       true,
-        bankDetails: {
-          accountNumber: bd.accountNumber || '-',
-          bankName:      bd.bankName      || '-',
-          branch:        bd.branch        || '-',
-          ifscCode:      bd.ifsc || bd.ifscCode || '-',
-          micr:          bd.micr          || '-',
-          bankLedgerId:  bd.bankLedgerId  || null,
-          bankCode:      bd.branchCode    || '-',
+        bankDetails: bankDetails || {
+          accountNumber: '-', bankName: '-', branch: '-', ifscCode: '-', micr: '-', bankLedgerId: null, bankCode: '-',
         },
         transferStatus: 'Pending',
       };
@@ -1121,21 +1125,16 @@ export const getPendingPeriods = async (req, res) => {
 // Get banks for dropdown
 export const getBanks = async (req, res) => {
   try {
-    // Get unique banks from farmer bank details
-    const banks = await Farmer.aggregate([
+    // Unique banks from the farmers' Primary and Secondary bank details
+    const byBank = (path) => Farmer.aggregate([
       { $match: { companyId: new mongoose.Types.ObjectId(req.userCompany) } },
-      { $group: {
-        _id: '$bankDetails.bankName',
-        count: { $sum: 1 }
-      }},
+      { $group: { _id: path, count: { $sum: 1 } } },
       { $match: { _id: { $type: 'string', $ne: '' } } },
-      { $project: {
-        name: '$_id',
-        count: 1,
-        _id: 0
-      }},
-      { $sort: { name: 1 } }
     ]);
+    const [primary, secondary] = await Promise.all([byBank('$bankDetails.bankName'), byBank('$secondaryBankDetails.bankName')]);
+    const counts = new Map();
+    [...primary, ...secondary].forEach(b => counts.set(b._id, (counts.get(b._id) || 0) + b.count));
+    const banks = [...counts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name));
 
     res.json({
       success: true,
@@ -1234,6 +1233,10 @@ export const getPaymentReport = async (req, res) => {
           accountNumber: det.bankDetails?.accountNumber || '',
           ifscCode: det.bankDetails?.ifscCode || '',
           branch: det.bankDetails?.branch || '',
+          bankAccount: det.bankDetails?.account || 'Primary',
+          viaParent: !!det.bankDetails?.viaParent,
+          holderNumber: det.bankDetails?.holderNumber || '',
+          holderName: det.bankDetails?.holderName || '',
           account: det.paymentMode === 'Cash' ? 'Cash in Hand' : 'Adjustment (Bank)',
         };
         if (det.paymentMode === 'Cash') group.cashRows.push(row);

@@ -8,6 +8,7 @@ import { getNumberSeries, nextFarmerNumber, nextFarmerNumbersByCentre, farmerNum
 import { ensureCentreCodes } from '../utils/centreCode.js';
 import mongoose from 'mongoose';
 import { createShareCapitalVoucher, createAdmissionFeeVoucher } from '../utils/accountingHelper.js';
+import { validateParentLink } from '../utils/farmerPayee.js';
 
 // Create new farmer with auto ledger creation
 export const createFarmer = async (req, res) => {
@@ -15,6 +16,12 @@ export const createFarmer = async (req, res) => {
     const companyId = req.companyId;
     const farmerData = { ...req.body, companyId };
     if (!farmerData.collectionCenter) farmerData.collectionCenter = null;
+    // Parent Grouping: one level, same society
+    try {
+      farmerData.parentFarmer = (await validateParentLink(companyId, null, farmerData.parentFarmer)) ?? null;
+    } catch (e) {
+      return res.status(e.status || 400).json({ success: false, message: e.message });
+    }
 
     const series = await getNumberSeries(companyId);
     if (series === 'Centre') {
@@ -319,7 +326,8 @@ export const getFarmerById = async (req, res) => {
     const farmer = await Farmer.findOne({ _id: req.params.id, companyId: req.companyId })
       .populate('ledgerId', 'ledgerName currentBalance balanceType')
       .populate('collectionCenter', 'centerName centerType centerCode')
-      .populate('bankDetails.bankLedgerId', 'ledgerName');
+      .populate('bankDetails.bankLedgerId', 'ledgerName')
+      .populate('parentFarmer', 'farmerNumber personalDetails.name bankDetails.bankName bankDetails.accountNumber secondaryBankDetails.bankName secondaryBankDetails.accountNumber payTo');
 
     if (!farmer) {
       return res.status(404).json({
@@ -328,9 +336,13 @@ export const getFarmerById = async (req, res) => {
       });
     }
 
+    // Parent Grouping: the farmers linked under this one
+    const children = await Farmer.find({ companyId: req.companyId, parentFarmer: farmer._id })
+      .select('farmerNumber personalDetails.name status').sort({ farmerNumber: 1 }).lean();
+
     res.status(200).json({
       success: true,
-      data: farmer
+      data: { ...farmer.toObject(), children }
     });
   } catch (error) {
     console.error('Error fetching farmer:', error);
@@ -372,6 +384,15 @@ export const updateFarmer = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Farmer Number already exists' });
     }
     if (updates.collectionCenter === '') updates.collectionCenter = null;
+    // Parent Grouping: one level, same society, not itself
+    if (updates.parentFarmer !== undefined) {
+      try {
+        updates.parentFarmer = await validateParentLink(req.companyId, current._id, updates.parentFarmer);
+      } catch (e) {
+        return res.status(e.status || 400).json({ success: false, message: e.message });
+      }
+    }
+    if (updates.payTo !== undefined && !['Primary', 'Secondary'].includes(updates.payTo)) updates.payTo = 'Primary';
 
     const farmer = await Farmer.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId },
@@ -1372,6 +1393,8 @@ export const bulkDeleteFarmers = async (req, res) => {
     }
 
     const result = await Farmer.deleteMany({ _id: { $in: ids }, companyId: req.companyId });
+    // Children of deleted parents are paid to their own account again
+    await Farmer.updateMany({ companyId: req.companyId, parentFarmer: { $in: ids } }, { $set: { parentFarmer: null } });
 
     res.status(200).json({
       success: true,
@@ -1608,6 +1631,10 @@ export const getProducerReport = async (req, res) => {
       { $unwind: { path: '$_center', preserveNullAndEmptyArrays: true } },
       { $addFields: { _ccNum: { $convert: { input: { $substrCP: [{ $ifNull: ['$_center.centerCode', 'C999999'] }, 1, 9] }, to: 'int', onError: 999999, onNull: 999999 } } } },
       { $sort: centreWise ? { _ccNum: 1, _farmerNum: 1 } : { _farmerNum: 1 } },
+      // Parent Grouping: the parent farmer (number + name) of each child
+      { $lookup: { from: 'farmers', let: { pid: '$parentFarmer' }, as: '_parent',
+        pipeline: [{ $match: { $expr: { $eq: ['$_id', '$pid'] } } }, { $project: { farmerNumber: 1, 'personalDetails.name': 1 } }] } },
+      { $unwind: { path: '$_parent', preserveNullAndEmptyArrays: true } },
       { $project: { _farmerNum: 0, _ccNum: 0, '_center.password': 0 } }
     );
 

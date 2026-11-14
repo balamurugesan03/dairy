@@ -1,3 +1,4 @@
+import { loadPayees, PAYEE_SELECT } from '../utils/farmerPayee.js';
 import mongoose from 'mongoose';
 import ProducerPayment from '../models/ProducerPayment.js';
 import Farmer from '../models/Farmer.js';
@@ -533,7 +534,7 @@ export const getProducerBalance = async (req, res) => {
       _id: new mongoose.Types.ObjectId(farmerId),
       companyId: new mongoose.Types.ObjectId(companyId)
     })
-      .select('farmerNumber personalDetails bankDetails')
+      .select(PAYEE_SELECT)
       .lean();
 
     if (!farmer) {
@@ -628,6 +629,8 @@ export const getProducerBalance = async (req, res) => {
         .lean();
     }
 
+    // Account the payment goes to (own Primary / Secondary, or the parent's under Parent Grouping)
+    const payee = (await loadPayees(companyId, [farmer])).payeeOf(farmer);
     return res.json({
       success: true,
       data: {
@@ -639,8 +642,13 @@ export const getProducerBalance = async (req, res) => {
           _id: farmer._id,
           number: farmer.farmerNumber,
           name: farmer.personalDetails?.name || '',
-          bankName: farmer.bankDetails?.bankName || '',
-          accountNumber: farmer.bankDetails?.accountNumber || ''
+          bankName: payee.bank.bankName || '',
+          accountNumber: payee.bank.accountNumber || '',
+          ifsc: payee.bank.ifsc || '',
+          bankAccount: payee.account,
+          viaParent: payee.viaParent,
+          holderNumber: payee.holderNumber,
+          holderName: payee.holderName
         }
       }
     });

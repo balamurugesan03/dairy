@@ -29,7 +29,7 @@ const INIT_FILTERS = {
 const TICKABLE = ['gender', 'caste', 'occupation', 'category', 'dbtHas', 'welfareHas', 'mobileHas', 'bankHas', 'localBody', 'wards'];
 const INIT_TICKED = TICKABLE.reduce((a, k) => ({ ...a, [k]: false }), {});
 
-const COLUMNS = [
+const BASE_COLUMNS = [
   { key: 'farmerNumber', label: 'Pro ID',            get: r => r.farmerNumber, numeric: true },
   { key: 'memberId',     label: 'Mem No',            get: r => r.memberId },
   { key: 'name',         label: 'Name',              get: r => r.personalDetails?.name },
@@ -41,6 +41,18 @@ const COLUMNS = [
   { key: 'phone',        label: 'Mobile No',         get: r => r.personalDetails?.phone },
   { key: 'dbt',          label: 'DBT Enroll No',     get: r => r.identityDetails?.ksheerasreeId },
   { key: 'welfare',      label: 'Welfare Enroll No', get: r => r.identityDetails?.welfareNo },
+];
+
+// Include Primary / Secondary Bank Details — extra columns (screen, Excel, CSV, PDF)
+const PRIMARY_BANK_COLS = [
+  { key: 'bankName',   label: 'Bank',         get: r => r.bankDetails?.bankName },
+  { key: 'bankAc',     label: 'Bank A/C',     get: r => r.bankDetails?.accountNumber },
+  { key: 'bankIfsc',   label: 'IFSC',         get: r => r.bankDetails?.ifsc },
+];
+const SECONDARY_BANK_COLS = [
+  { key: 'secBank',    label: 'Sec. Bank',    get: r => r.secondaryBankDetails?.bankName },
+  { key: 'secAc',      label: 'Sec. A/C',     get: r => r.secondaryBankDetails?.accountNumber },
+  { key: 'secIfsc',    label: 'Sec. IFSC',    get: r => r.secondaryBankDetails?.ifsc },
 ];
 
 // Fields that don't fit on screen — shown in the (+) detail row
@@ -57,6 +69,10 @@ const DETAIL_FIELDS = [
   ['Category',          r => r.cowType],
   ['Bank A/C',          r => r.bankDetails?.accountNumber],
   ['Bank / IFSC',       r => [r.bankDetails?.bankName, r.bankDetails?.ifsc].filter(Boolean).join(' / ')],
+  ['Secondary A/C',     r => r.secondaryBankDetails?.accountNumber],
+  ['Secondary Bank / IFSC', r => [r.secondaryBankDetails?.bankName, r.secondaryBankDetails?.ifsc].filter(Boolean).join(' / ')],
+  ['Pay To',            r => (r.secondaryBankDetails?.accountNumber ? (r.payTo || 'Primary') : '')],
+  ['Parent Farmer',     r => (r._parent ? `${r._parent.farmerNumber} - ${r._parent.personalDetails?.name || ''}` : '')],
   ['Pouring Days',      r => (r._pouringDays != null ? String(r._pouringDays) : '')],
   ['Quantity (L)',      r => (r._totalQty != null ? Number(r._totalQty).toFixed(2) : '')],
 ];
@@ -178,6 +194,13 @@ export default function ProducerReport() {
   const [search, setSearch]   = useState('');
   const [sort, setSort]       = useState({ key: 'farmerNumber', dir: 'asc' });
   const [page, setPage]       = useState(1);
+  // Include Primary / Secondary Bank Details in the report (columns + exports)
+  const [bankCols, setBankCols] = useState({ primary: false, secondary: false });
+  const COLUMNS = useMemo(() => [
+    ...BASE_COLUMNS,
+    ...(bankCols.primary ? PRIMARY_BANK_COLS : []),
+    ...(bankCols.secondary ? SECONDARY_BANK_COLS : []),
+  ], [bankCols]);
   const [expanded, setExpanded] = useState(() => new Set());
 
   useEffect(() => {
@@ -271,7 +294,7 @@ export default function ProducerReport() {
       });
     }
     return list;
-  }, [data, search, sort]);
+  }, [data, search, sort, COLUMNS]);
 
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const curPage = Math.min(page, pages);
@@ -459,6 +482,12 @@ export default function ProducerReport() {
               <button type="button" className="pr-btn pr-btn-def" onClick={handleDownload} title="Download as Excel (.xlsx)">Download</button>
               <button type="button" className="pr-btn pr-btn-def" onClick={handleExport} title="Export as CSV">Export</button>
               <button type="button" className="pr-btn pr-btn-def" onClick={handleExportPDF} title="Export as PDF">Export PDF</button>
+            </div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <label className="pr-chk"><input type="checkbox" checked={bankCols.primary}
+                onChange={e => setBankCols(b => ({ ...b, primary: e.target.checked }))} />Primary bank details</label>
+              <label className="pr-chk"><input type="checkbox" checked={bankCols.secondary}
+                onChange={e => setBankCols(b => ({ ...b, secondary: e.target.checked }))} />Secondary bank details</label>
             </div>
             <label className="pr-search">Search:
               <input className="pr-in" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />

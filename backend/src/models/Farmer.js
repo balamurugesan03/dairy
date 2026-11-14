@@ -66,6 +66,11 @@ const farmerSchema = new mongoose.Schema({
       type: String,
       trim: true
     },
+    // Ward number of the Panchayat ward (ward above may be a name, "Ward 5", …)
+    wardNumber: {
+      type: String,
+      trim: true
+    },
     place: {
       type: String,
       trim: true
@@ -78,7 +83,14 @@ const farmerSchema = new mongoose.Schema({
       type: String,
       trim: true
     },
+    // Grama Panchayat (local body). Older records may hold the PIN-code Block /
+    // Taluk here — LSGD lookups therefore also match village / place / taluk.
     panchayat: {
+      type: String,
+      trim: true
+    },
+    // Block / Taluk auto-filled from the PIN code
+    taluk: {
       type: String,
       trim: true
     },
@@ -169,6 +181,30 @@ const farmerSchema = new mongoose.Schema({
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Ledger'
     }
+  },
+  // Secondary bank account (Farmer Settings → Secondary Bank). bankDetails above is the Primary.
+  secondaryBankDetails: {
+    accountNumber: { type: String, trim: true },
+    bankName:      { type: String, trim: true },
+    branch:        { type: String, trim: true },
+    ifsc:          { type: String, trim: true },
+    micr:          { type: String, trim: true },
+    bankLedgerId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Ledger' }
+  },
+  // Which account this farmer's payments go to (only when Secondary Bank is enabled)
+  payTo: {
+    type: String,
+    enum: ['Primary', 'Secondary'],
+    default: 'Primary'
+  },
+  // Parent Grouping (Farmer Settings → Parent Grouping): this farmer is a child of another
+  // farmer of the same company. One level only — a parent cannot itself have a parent.
+  // The child's payments go to the parent's chosen bank account (utils/farmerPayee.js).
+  parentFarmer: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Farmer',
+    default: null,
+    index: true
   },
   financialDetails: {
     oldShares: {

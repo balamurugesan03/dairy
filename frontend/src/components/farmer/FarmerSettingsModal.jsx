@@ -19,6 +19,8 @@ export default function FarmerSettingsModal({ opened, onClose, onSaved }) {
   const [membershipFunction, setMembershipFunction] = useState('SubmitLinks');
   const [numberSeries, setNumberSeries] = useState('Existing');
   const [preview, setPreview] = useState(null);
+  const [parentGrouping, setParentGrouping] = useState(false);
+  const [secondaryBank, setSecondaryBank] = useState(false);
 
   useEffect(() => {
     if (!opened) return;
@@ -30,6 +32,8 @@ export default function FarmerSettingsModal({ opened, onClose, onSaved }) {
       const d = s?.data || {};
       setMembershipFunction(d.membershipFunction || 'SubmitLinks');
       setNumberSeries(d.numberSeries || 'Existing');
+      setParentGrouping(!!d.parentGrouping);
+      setSecondaryBank(!!d.secondaryBank);
       setPreview(p?.data || null);
     }).finally(() => setLoading(false));
   }, [opened]);
@@ -37,7 +41,7 @@ export default function FarmerSettingsModal({ opened, onClose, onSaved }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await farmerSettingsAPI.saveSettings({ membershipFunction, numberSeries });
+      const res = await farmerSettingsAPI.saveSettings({ membershipFunction, numberSeries, parentGrouping, secondaryBank });
       notifications.show({ title: 'Saved', message: 'Settings saved successfully', color: 'teal' });
       onSaved?.(res?.data);
       onClose();
@@ -123,6 +127,40 @@ export default function FarmerSettingsModal({ opened, onClose, onSaved }) {
                     </Alert>
                   </Stack>
                 )}
+              </Paper>
+            </Stack>
+          </Box>
+
+          <Divider />
+
+          {/* ── Payments: Parent Grouping / Secondary Bank ── */}
+          <Box>
+            <Text fw={600} mb={4}>Payments</Text>
+            <Stack gap="xs">
+              <Paper withBorder radius="md" p="sm">
+                <Group justify="space-between" wrap="nowrap">
+                  <Box>
+                    <Text fw={600} size="sm">Parent Grouping</Text>
+                    <Text size="xs" c="dimmed">
+                      Link farmers under a parent farmer (Add / Edit Farmer → Bank Details → Parent Farmer).
+                      Each child keeps its own milk, bills and dues, but its payments and bank transfers go to the
+                      parent&apos;s bank account. Turning this off keeps the links but pays every farmer to its own account.
+                    </Text>
+                  </Box>
+                  <Switch label="Enable" checked={parentGrouping} onChange={(e) => setParentGrouping(e.currentTarget.checked)} />
+                </Group>
+              </Paper>
+              <Paper withBorder radius="md" p="sm">
+                <Group justify="space-between" wrap="nowrap">
+                  <Box>
+                    <Text fw={600} size="sm">Primary &amp; Secondary Bank Details</Text>
+                    <Text size="xs" c="dimmed">
+                      Keep a second bank account per farmer and choose which one payments go to (Pay to: Primary / Secondary).
+                      Turning this off keeps the secondary accounts but pays every farmer to the Primary account.
+                    </Text>
+                  </Box>
+                  <Switch label="Enable" checked={secondaryBank} onChange={(e) => setSecondaryBank(e.currentTarget.checked)} />
+                </Group>
               </Paper>
             </Stack>
           </Box>
