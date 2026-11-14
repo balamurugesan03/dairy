@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Container, Title, Text, Button, Group, Paper, TextInput, Select,
   Badge, ActionIcon, Box, Card, ThemeIcon, Tooltip,
-  Pagination, Divider, SimpleGrid, Menu,
+  Pagination, Divider, SimpleGrid, Menu, Modal, SegmentedControl, Alert, Checkbox, Stack, Loader,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { DataTable } from 'mantine-datatable';
@@ -23,6 +23,7 @@ import { milkCollectionAPI, collectionCenterAPI, milkSalesAPI, agentAPI } from '
 import { useCompany } from '../../context/CompanyContext';
 import dayjs from 'dayjs';
 import { openMilkPopup } from '../../utils/milkPopup';
+import { useAuth } from '../../context/AuthContext';
 
 const PAGE_SIZE = 50;
 
@@ -50,18 +51,35 @@ const readImportRows = async (file) => {
   return lines.map(l => l.split(sep).map(c => c.trim()));
 };
 
+// Everest DPO columns that are never imported: Last Name (and its spellings) — it must not end up
+// in the farmer name or any other field. Its column is blanked out before any field is read.
+const EXCLUDED_COLUMNS = new Set(['lastname', 'surname', 'lname', 'familyname', 'secondname']);
+// Farmer name: the first of these columns present (never Last Name)
+const NAME_COLUMNS = ['farmername', 'firstname', 'producername', 'name'];
+
 const buildImportRecords = (rows) => {
   const hIdx = rows.findIndex(r => r.some(c => normHeader(c) === 'producercode'));
   if (hIdx === -1) throw new Error('Header row with "ProducerCode" not found');
-  const header = rows[hIdx].map(normHeader);
+  const header = rows[hIdx].map((h) => { const k = normHeader(h); return EXCLUDED_COLUMNS.has(k) ? '' : k; });
   const at = (row, name) => { const i = header.indexOf(name); return i === -1 ? '' : row[i]; };
   const num = (v) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+  const nameCol = NAME_COLUMNS.find((c) => header.includes(c));
 
   const records = [];
-  for (const row of rows.slice(hIdx + 1)) {
+  const rejected = [];
+  for (const [i, row] of rows.slice(hIdx + 1).entries()) {
     const producer = String(at(row, 'producercode') ?? '').trim();
     const date = toIsoDate(at(row, 'date'));
     if (!producer || !date) continue;
+    // A row whose values have shifted (e.g. a text file with an empty Last Name) has text / out-of-range
+    // numbers in the milk columns — reject it instead of saving wrong figures
+    const qtyV = num(at(row, 'qtyltr')) || num(at(row, 'qtykg'));
+    const fatV = num(at(row, 'fat'));
+    const snfV = num(at(row, 'snf'));
+    if (!/^[A-Za-z0-9/_-]{1,20}$/.test(producer) || !(qtyV > 0 && qtyV < 10000) || fatV < 0 || fatV > 15 || snfV < 0 || snfV > 15) {
+      rejected.push(`row ${hIdx + i + 2} (${producer})`);
+      continue;
+    }
 
     const s = String(at(row, 'shift') ?? '').trim().toUpperCase();
     const shift = s === 'E' || s === 'PM' ? 'PM' : 'AM';
@@ -73,7 +91,7 @@ const buildImportRecords = (rows) => {
       date,
       shift,
       farmerNumber: producer,
-      farmerName:   String(at(row, 'farmername') ?? '').trim(),
+      farmerName:   nameCol ? String(at(row, nameCol) ?? '').trim() : '',
       qty:          num(at(row, 'qtyltr')) || num(at(row, 'qtykg')),
       fat:          num(at(row, 'fat')),
       snf:          num(at(row, 'snf')),
@@ -83,6 +101,7 @@ const buildImportRecords = (rows) => {
       addedWater:   num(at(row, 'water')),
     });
   }
+  records.rejected = rejected;
   return records;
 };
 
@@ -108,6 +127,10 @@ const DailyCollectionList = () => {
   const [loading,    setLoading]    = useState(false);
   const [importing,  setImporting]  = useState(false);
   const importInputRef = useRef(null);
+  // Super Admin only: Import from Everest DPO, Bulk Delete (the API refuses others too)
+  const { isSuperAdminLogin } = useAuth();
+  const [selectedRows, setSelectedRows] = useState([]);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [records,    setRecords]    = useState([]);   // ALL records for current filters
   const [centers,    setCenters]    = useState([]);
   const [agents,     setAgents]     = useState([]);
@@ -187,6 +210,8 @@ const DailyCollectionList = () => {
   }, [fromDate, toDate, shift, center, agent]);
 
   useEffect(() => { fetchRecords(); }, [fetchRecords]);
+  // A new date / shift / centre / agent → a new list: forget the ticked rows
+  useEffect(() => { setSelectedRows([]); }, [date, shift, center, agent]);
 
   // ── Client-side search filter ──────────────────────────────────────────────
   const filteredRecords = search.trim()
@@ -704,6 +729,13 @@ const DailyCollectionList = () => {
       notifications.show({ title: 'Import failed', message: err.message, color: 'red' });
       return;
     }
+    const rejected = records.rejected || [];
+    if (rejected.length) {
+      notifications.show({
+        title: `${rejected.length} row(s) not imported`, color: 'orange', autoClose: false,
+        message: `Values in the wrong columns (quantity / fat / SNF out of range): ${rejected.slice(0, 8).join(', ')}${rejected.length > 8 ? '…' : ''}`,
+      });
+    }
     if (!records.length) {
       notifications.show({ title: 'Import', message: 'No rows found in file', color: 'orange' });
       return;
@@ -781,21 +813,29 @@ const DailyCollectionList = () => {
             </Menu.Dropdown>
           </Menu>
 
-          <input
+          {isSuperAdminLogin && <input
             ref={importInputRef}
             type="file"
             accept=".txt,.csv,.tsv,.xls,.xlsx"
             style={{ display: 'none' }}
             onChange={handleImportFile}
-          />
-          <Button
-            variant="default"
-            leftSection={<IconUpload size={16} />}
-            loading={importing}
-            onClick={() => importInputRef.current?.click()}
-          >
-            Import From Everest DPU
-          </Button>
+          />}
+          {isSuperAdminLogin && (
+            <Button
+              variant="default"
+              leftSection={<IconUpload size={16} />}
+              loading={importing}
+              onClick={() => importInputRef.current?.click()}
+              title="Everest DPO export (.xls / .xlsx / .txt). The Last Name column is not imported."
+            >
+              Import from Everest DPO
+            </Button>
+          )}
+          {isSuperAdminLogin && (
+            <Button color="red" variant="light" leftSection={<IconTrash size={16} />} onClick={() => setBulkOpen(true)}>
+              Bulk Delete{selectedRows.length ? ` (${selectedRows.length})` : ''}
+            </Button>
+          )}
 
           <Button leftSection={<IconPlus size={16} />} onClick={() => openMilkPopup('purchase')}>
             New Entry
@@ -883,6 +923,11 @@ const DailyCollectionList = () => {
         <DataTable
           records={pagedRecords}
           fetching={loading}
+          {...(isSuperAdminLogin ? {
+            selectedRecords: selectedRows,
+            onSelectedRecordsChange: setSelectedRows,
+            idAccessor: '_id',
+          } : {})}
           minHeight={300}
           noRecordsText="No collection entries found for this date/shift"
           striped
@@ -1007,8 +1052,144 @@ const DailyCollectionList = () => {
         </Box>
       )}
 
+      {isSuperAdminLogin && bulkOpen && (
+        <BulkDeleteModal
+          selected={selectedRows}
+          listDate={date}
+          filters={{
+            shift,
+            center,
+            agent,
+            centerName: centers.find((c) => c.value === center)?.label || '',
+            agentName: agents.find((a) => a.value === agent)?.label || '',
+          }}
+          onClose={() => setBulkOpen(false)}
+          onDone={() => { setBulkOpen(false); setSelectedRows([]); fetchRecords(); }}
+        />
+      )}
     </Container>
   );
 };
+
+// ── Bulk Delete (Super Admin) ──────────────────────────────────────────────────
+// Method 1: the ticked records. Method 2: every record From–To (optionally only the list's
+// Shift / Centre / Agent). The server counts first (dry run); the delete button shows that
+// count, and exactly the counted records are deleted.
+const fmtN = (n) => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+function BulkDeleteModal({ selected, listDate, filters, onClose, onDone }) {
+  const [mode, setMode] = useState(selected.length ? 'selected' : 'range');
+  const [from, setFrom] = useState(listDate || new Date());
+  const [to, setTo] = useState(listDate || new Date());
+  const [useFilters, setUseFilters] = useState(true);
+  const [preview, setPreview] = useState(null);       // { count, qty, amount }
+  const [checking, setChecking] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const hasFilters = !!(filters.shift || filters.center || filters.agent);
+
+  const body = () => {
+    if (mode === 'selected') return { ids: selected.map((r) => r._id) };
+    const b = { fromDate: dayjs(from).format('YYYY-MM-DD'), toDate: dayjs(to).format('YYYY-MM-DD') };
+    if (useFilters) {
+      if (filters.shift) b.shift = filters.shift;
+      if (filters.center) b.collectionCenter = filters.center;
+      if (filters.agent) b.agent = filters.agent;
+    }
+    return b;
+  };
+
+  // Count what would be deleted whenever the choice changes
+  useEffect(() => {
+    setPreview(null);
+    setConfirmed(false);
+    if (mode === 'selected' && !selected.length) return undefined;
+    if (mode === 'range' && (!from || !to || dayjs(from).isAfter(dayjs(to), 'day'))) return undefined;
+    let alive = true;
+    setChecking(true);
+    const t = setTimeout(() => {
+      milkCollectionAPI.bulkDeleteRecords({ ...body(), dryRun: true })
+        .then((r) => { if (alive) setPreview(r?.data || { count: 0 }); })
+        .catch((err) => { if (alive) { setPreview(null); notifications.show({ color: 'red', message: err?.message || 'Could not count the records' }); } })
+        .finally(() => { if (alive) setChecking(false); });
+    }, 250);
+    return () => { alive = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, from, to, useFilters]);
+
+  const doDelete = async () => {
+    setDeleting(true);
+    try {
+      const res = await milkCollectionAPI.bulkDeleteRecords(body());
+      notifications.show({ color: 'red', message: res?.message || `${res?.deleted || 0} records deleted`, autoClose: 5000 });
+      onDone();
+    } catch (err) {
+      notifications.show({ color: 'red', message: err?.message || 'Bulk delete failed' });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const filterText = [
+    filters.shift && `Shift ${filters.shift}`,
+    filters.centerName && `Centre ${filters.centerName}`,
+    filters.agentName && `Agent ${filters.agentName}`,
+  ].filter(Boolean).join(', ');
+
+  return (
+    <Modal opened onClose={deleting ? () => {} : onClose} centered size="lg"
+      title={<Text fw={700} c="red">Bulk Delete — Daily Collection List</Text>}>
+      <Stack gap="sm">
+        <SegmentedControl fullWidth value={mode} onChange={setMode}
+          data={[
+            { value: 'selected', label: `Selected records (${selected.length})`, disabled: !selected.length },
+            { value: 'range', label: 'Date range' },
+          ]} />
+
+        {mode === 'selected' ? (
+          <Text size="sm">Deletes the <b>{selected.length}</b> record(s) ticked in the list.</Text>
+        ) : (
+          <>
+            <Group grow>
+              <DatePickerInput label="From Date" value={from} onChange={setFrom} valueFormat="DD-MM-YYYY" maxDate={to || undefined} />
+              <DatePickerInput label="To Date" value={to} onChange={setTo} valueFormat="DD-MM-YYYY" minDate={from || undefined} />
+            </Group>
+            {hasFilters && (
+              <Checkbox checked={useFilters} onChange={(e) => setUseFilters(e.currentTarget.checked)}
+                label={`Only records matching the list filters (${filterText})`} />
+            )}
+            <Text size="xs" c="dimmed">
+              {useFilters && hasFilters ? `Every milk collection record from the From Date to the To Date for ${filterText}.`
+                : 'Every milk collection record from the From Date to the To Date (all shifts, centres and agents).'}
+            </Text>
+          </>
+        )}
+
+        {checking ? (
+          <Group gap="xs"><Loader size="xs" /><Text size="sm" c="dimmed">Counting records…</Text></Group>
+        ) : preview && (
+          <Alert color={preview.count ? 'red' : 'gray'} variant="light">
+            {preview.count
+              ? <Text size="sm"><b>{preview.count} record(s)</b> will be deleted — {fmtN(preview.qty)} L, ₹ {fmtN(preview.amount)}.
+                  Their accounting entries are reversed. This cannot be undone.</Text>
+              : <Text size="sm">No records to delete.</Text>}
+          </Alert>
+        )}
+
+        {preview?.count > 0 && (
+          <Checkbox checked={confirmed} onChange={(e) => setConfirmed(e.currentTarget.checked)}
+            label={`I understand that ${preview.count} record(s) will be permanently deleted`} />
+        )}
+
+        <Group justify="flex-end">
+          <Button variant="default" onClick={onClose} disabled={deleting}>Cancel</Button>
+          <Button color="red" leftSection={<IconTrash size={16} />} loading={deleting}
+            disabled={!preview?.count || !confirmed || checking} onClick={doDelete}>
+            Delete {preview?.count || 0} record(s)
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
+  );
+}
 
 export default DailyCollectionList;

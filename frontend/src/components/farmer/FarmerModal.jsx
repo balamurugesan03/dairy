@@ -26,6 +26,9 @@ import { useForm } from '@mantine/form';
 import { IconUpload, IconTrash } from '@tabler/icons-react';
 import { farmerAPI, collectionCenterAPI, ledgerAPI, bankMasterAPI, farmerSettingsAPI } from '../../services/api';
 import { message } from '../../utils/toast';
+import { applyPostOffice } from '../../utils/keralaPanchayat';
+import PanchayatWardFields from './PanchayatWardFields';
+import FarmerPayoutFields from './FarmerPayoutFields';
 import { useAuth } from '../../context/AuthContext';
 import useDefaultCentreAgent from '../../utils/defaultCentreAgent';
 
@@ -45,6 +48,9 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
   // Producer Management → Settings → Farmer Number Series. Center-wise: Center is the
   // first field and the number is generated from it (never typed or edited).
   const [centreWise, setCentreWise] = useState(false);
+  // Farmer Settings → Parent Grouping / Secondary Bank; farmers linked under this one
+  const [payoutSettings, setPayoutSettings] = useState({ parentGrouping: false, secondaryBank: false });
+  const [farmerChildren, setFarmerChildren] = useState([]);
   const centreWiseRef = useRef(false);
   centreWiseRef.current = centreWise;
   const [savedCentre, setSavedCentre] = useState('');   // edit mode: the farmer's centre as loaded
@@ -77,10 +83,12 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
         houseName: '',
         houseNumber: '',
         ward: '',
+        wardNumber: '',
         place: '',
         post: '',
         village: '',
         panchayat: '',
+        taluk: '',
         pin: ''
       },
       identityDetails: {
@@ -101,6 +109,10 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
         micr: '',
         bankLedgerId: ''
       },
+      // Farmer Settings → Secondary Bank / Parent Grouping
+      secondaryBankDetails: { accountNumber: '', bankName: '', branch: '', ifsc: '', micr: '', bankLedgerId: '' },
+      payTo: 'Primary',
+      parentFarmer: '',
       financialDetails: {
         memberNumber: '',
         numberOfShares: 0,
@@ -143,6 +155,8 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
       if (active === 4) {
         return {
           'bankDetails.ifsc': values.bankDetails.ifsc && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(values.bankDetails.ifsc)
+            ? 'Please enter valid IFSC code' : null,
+          'secondaryBankDetails.ifsc': values.secondaryBankDetails?.ifsc && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(values.secondaryBankDetails.ifsc)
             ? 'Please enter valid IFSC code' : null
         };
       }
@@ -154,7 +168,10 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
     if (isOpen) {
       setActive(initialStep || 0);
       farmerSettingsAPI.getSettings()
-        .then((res) => setCentreWise(res?.data?.numberSeries === 'Centre'))
+        .then((res) => {
+          setCentreWise(res?.data?.numberSeries === 'Centre');
+          setPayoutSettings({ parentGrouping: !!res?.data?.parentGrouping, secondaryBank: !!res?.data?.secondaryBank });
+        })
         .catch(() => {});
       fetchCollectionCenters();
       fetchBankLedgers();
@@ -188,6 +205,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
     setAdditionalDocs([]);
     setSelectedBankMasterId('');
     setSavedCentre('');
+    setFarmerChildren([]);
   };
 
   // Next number from Producer Management → Settings → Farmer Number Series
@@ -267,6 +285,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
 
       setInitialIsMembership(farmer.isMembership || false);
       setSavedCentre(farmer.collectionCenter?._id || '');
+      setFarmerChildren(farmer.children || []);
       const shouldAutoCheck = autoCheckMembership && !farmer.isMembership;
 
       // Non-members get the next available Member Number (continuing from the
@@ -306,10 +325,12 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
           houseName: farmer.address?.houseName || '',
           houseNumber: farmer.address?.houseNumber || '',
           ward: farmer.address?.ward || '',
+          wardNumber: farmer.address?.wardNumber || '',
           place: farmer.address?.place || '',
           post: farmer.address?.post || '',
           village: farmer.address?.village || '',
           panchayat: farmer.address?.panchayat || '',
+          taluk: farmer.address?.taluk || '',
           pin: farmer.address?.pin || ''
         },
         identityDetails: {
@@ -330,6 +351,16 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
           micr: farmer.bankDetails?.micr || '',
           bankLedgerId: farmer.bankDetails?.bankLedgerId?._id || farmer.bankDetails?.bankLedgerId || ''
         },
+        secondaryBankDetails: {
+          accountNumber: farmer.secondaryBankDetails?.accountNumber || '',
+          bankName: farmer.secondaryBankDetails?.bankName || '',
+          branch: farmer.secondaryBankDetails?.branch || '',
+          ifsc: farmer.secondaryBankDetails?.ifsc || '',
+          micr: farmer.secondaryBankDetails?.micr || '',
+          bankLedgerId: farmer.secondaryBankDetails?.bankLedgerId?._id || farmer.secondaryBankDetails?.bankLedgerId || ''
+        },
+        payTo: farmer.payTo || 'Primary',
+        parentFarmer: farmer.parentFarmer?._id || farmer.parentFarmer || '',
         financialDetails: {
           memberNumber: defaultMemberNumber,
           numberOfShares: farmer.financialDetails?.totalShares || farmer.financialDetails?.oldShares || 0,
@@ -475,10 +506,12 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
           houseName: values.address.houseName,
           houseNumber: values.address.houseNumber,
           ward: values.address.ward,
+          wardNumber: values.address.wardNumber,
           place: values.address.place,
           post: values.address.post,
           village: values.address.village,
           panchayat: values.address.panchayat,
+          taluk: values.address.taluk,
           pin: values.address.pin
         },
         identityDetails: {
@@ -507,6 +540,19 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
           micr: values.bankDetails.micr,
           bankLedgerId: values.bankDetails.bankLedgerId || null
         },
+        ...(payoutSettings.secondaryBank ? {
+          secondaryBankDetails: {
+            accountNumber: values.secondaryBankDetails.accountNumber,
+            bankName: values.secondaryBankDetails.bankName,
+            branch: values.secondaryBankDetails.branch,
+            ifsc: values.secondaryBankDetails.ifsc,
+            micr: values.secondaryBankDetails.micr,
+            bankLedgerId: values.secondaryBankDetails.bankLedgerId || null
+          },
+          payTo: values.payTo === 'Secondary' ? 'Secondary' : 'Primary',
+        } : {}),
+        // a parent with children is never linked under another parent (the server checks too)
+        ...(payoutSettings.parentGrouping && !farmerChildren.length ? { parentFarmer: values.parentFarmer || null } : {}),
         documents: {
           ...documents,
           additionalDocuments: additionalDocs
@@ -581,7 +627,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
         const data = await res.json();
         if (data[0].Status === 'Success' && data[0].PostOffice?.length > 0) {
           const offices = data[0].PostOffice;
-          form.setFieldValue('address.panchayat', offices[0].Block || offices[0].Taluk || '');
+          applyPostOffice(form, offices[0]);
           if (offices.length === 1) {
             form.setFieldValue('address.village', offices[0].Name);
           } else {
@@ -602,7 +648,7 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
   const handleVillageSelect = (officeName) => {
     form.setFieldValue('address.village', officeName);
     const office = pincodeOptions.find(o => o.Name === officeName);
-    if (office) form.setFieldValue('address.panchayat', office.Block || office.Taluk || '');
+    applyPostOffice(form, office);
   };
 
   const addAdditionalDocument = () => {
@@ -946,14 +992,8 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
                     onKeyDown={focusNext}
                   />
                 </Grid.Col>
-                <Grid.Col span={6}>
-                  <TextInput
-                    label="Ward"
-                    placeholder="Enter ward"
-                    {...form.getInputProps('address.ward')}
-                    onKeyDown={focusNext}
-                  />
-                </Grid.Col>
+                {/* Panchayat → Ward (list of that Panchayat) → Ward Number */}
+                <PanchayatWardFields form={form} onKeyDown={focusNext} />
                 <Grid.Col span={6}>
                   <TextInput
                     label="Place"
@@ -991,9 +1031,9 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
                 </Grid.Col>
                 <Grid.Col span={6}>
                   <TextInput
-                    label="Taluk"
+                    label="Block / Taluk"
                     placeholder="Auto-filled from PIN code"
-                    {...form.getInputProps('address.panchayat')}
+                    {...form.getInputProps('address.taluk')}
                     onKeyDown={focusNext}
                   />
                 </Grid.Col>
@@ -1175,6 +1215,8 @@ const FarmerModal = ({ isOpen, onClose, onSuccess, farmerId = null, initialStep 
                     {...form.getInputProps('bankDetails.bankLedgerId')}
                   />
                 </Grid.Col>
+                <FarmerPayoutFields form={form} settings={payoutSettings} bankMasterList={bankMasterList}
+                  farmerId={isEditMode ? farmerId : null} children={farmerChildren} />
               </Grid>
             </Stack>
           </Stepper.Step>

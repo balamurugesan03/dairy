@@ -315,8 +315,16 @@ export default function PaymentToProducer() {
           _id:           farmer._id,
           farmerNumber:  farmer.farmerNumber,
           name:          farmer.personalDetails?.name || '',
-          bankName:      balanceRes.data?.farmer?.bankName || farmer.bankDetails?.bankName || '',
-          accountNumber: balanceRes.data?.farmer?.accountNumber || farmer.bankDetails?.accountNumber || '',
+          // the account the payment goes to (own Primary / Secondary, or the parent's — Parent Grouping)
+          ...(balanceRes.data?.farmer
+            ? {
+              bankName:      balanceRes.data.farmer.bankName || '',
+              accountNumber: balanceRes.data.farmer.accountNumber || '',
+              payeeNote:     balanceRes.data.farmer.viaParent
+                ? `paid to A/c of ${balanceRes.data.farmer.holderNumber} – ${balanceRes.data.farmer.holderName}`
+                : (balanceRes.data.farmer.bankAccount === 'Secondary' ? 'Secondary a/c' : ''),
+            }
+            : { bankName: farmer.bankDetails?.bankName || '', accountNumber: farmer.bankDetails?.accountNumber || '', payeeNote: '' }),
         });
         setBankTransferPaid(isBT);
         setAlreadyPaidCash(isCashPaid);
@@ -816,6 +824,7 @@ export default function PaymentToProducer() {
                       <IconUser size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />
                       {selectedFarmer.name}
                       {selectedFarmer.bankName ? ` — ${selectedFarmer.bankName}` : ''}
+                      {selectedFarmer.payeeNote ? ` (${selectedFarmer.payeeNote})` : ''}
                     </Text>
                   )}
                   {bankTransferPaid && (

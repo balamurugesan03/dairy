@@ -4,7 +4,7 @@ import {
   updateRegister, cancelRegister, emailReport,
 } from '../controllers/karurPaymentRegisterController.js';
 
-// Producer Dues → Payment Bar Reports → Payment Register (Karur, Tamil Nadu)
+// Producer Dues → Regional Payment Bar Report → Payment Register (Karur, Tamil Nadu)
 const router = express.Router();
 
 router.get('/options',     getOptions);

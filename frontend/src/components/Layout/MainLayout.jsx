@@ -470,20 +470,21 @@ const MainLayout = () => {
             { key: '/payments/producer-register',          label: 'Producer Register' },
             { key: '/payments/producer-register-summary',  label: 'Producer Summary' },
             { key: '/payments/farmer-ledger',              label: 'Producer Ledger' },
-          ]
-        },
-        {
-          // Payment Register (Karur) + Milk Bill (Karur), then the related payment / milk
-          // bill reports moved from Registers / Reports — same pages and routes, only the menu moved
-          key: 'payment-bar-reports-sub',
-          label: 'Payment Bar Reports',
-          children: [
-            { key: '/payments/payment-register-karur',  label: 'Payment Register' },
-            { key: '/reports/milk-bill-karur',          label: 'Milk Bill' },
+            // back from Payment Bar Reports — same pages and routes
             { key: '/payments/payment-register-report', label: 'Payment Register Report' },
             { key: '/payments/payment-paid-report',     label: 'Payment Paid Report' },
             { key: '/payments/payment-report',          label: 'Payment Report' },
             { key: '/reports/milk-bill-report',         label: 'Milk Bill (Producer)' },
+          ]
+        },
+        {
+          // Regional Payment Bar Report: only Payment Register (Karur) + Milk Bill (Karur);
+          // the other payment / milk bill reports are back under Registers / Reports
+          key: 'payment-bar-reports-sub',
+          label: 'Regional Payment Bar Report',
+          children: [
+            { key: '/payments/payment-register-karur',  label: 'Payment Register' },
+            { key: '/reports/milk-bill-karur',          label: 'Milk Bill' },
           ]
         },
       ]
@@ -577,7 +578,7 @@ const MainLayout = () => {
           children: [
             { key: '/farmers/lsgd/milk-subsidy',   label: "Panchayath People's Planning Milk Subsidy" },
             { key: '/farmers/lsgd/milk-incentive', label: 'Panchayath Annual Plan Milk Incentive' },
-            { key: '/farmers/lsgd/mithram-statement', label: 'LSGD Mithram Statement' },
+            { key: '/farmers/lsgd/mithram-statement', label: 'LSGD Milk Statement' },
           ]
         },
 

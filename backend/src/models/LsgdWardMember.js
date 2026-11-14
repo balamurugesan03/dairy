@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 /**
- * Ward member of a Panchayat ward, remembered for the LSGD Mithram Statement
+ * Ward member of a Panchayat ward, remembered for the LSGD Milk Statement
  * (the ward member signs the statement). Farmer Management keeps the ward
  * itself as text on the farmer (address.ward); this only adds who the member
  * is, so the next statement for the same ward fills it in.

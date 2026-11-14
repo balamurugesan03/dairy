@@ -4,33 +4,41 @@
  * Farmer Management; a name not in the list can be typed), the farmer list
  * with the details a form fills in, and which documents will be printed.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Autocomplete, Select, Group, Badge, Text, TextInput, Paper, SimpleGrid, Button } from '@mantine/core';
 import { IconSearch } from '@tabler/icons-react';
 import { farmerFormAPI } from '../../services/api';
 import { FARMER_DOCUMENTS } from '../../utils/farmerDocumentsPrint';
+import {
+  placeKey, findKeralaPanchayat, panchayatAliases, panchayatOptions, wardOptions, wardNumberFor
+} from '../../utils/keralaPanchayat';
 
 const thisYear = new Date().getFullYear();
 export const YEAR_OPTIONS = Array.from({ length: 12 }, (_, i) => String(thisYear + 1 - i));
 
-const norm = (s) => String(s || '').trim().toUpperCase();
 
 /** Panchayats in Farmer Management + every farmer with the auto-fill fields. */
 export const useFarmerFormData = () => {
   const [panchayats, setPanchayats] = useState([]);
   const [farmers, setFarmers] = useState([]);
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     farmerFormAPI.getPanchayats().then(r => setPanchayats(r?.data || [])).catch(() => {});
     farmerFormAPI.getFarmers().then(r => setFarmers(r?.data || [])).catch(() => {});
-  }, []);
-  return { panchayats, farmers };
+  }, [tick]);
+  // reload: after details were saved back to Farmers Management;
+  // patchFarmer: update one farmer in place (e.g. its document flags after an upload)
+  const reload = () => setTick(t => t + 1);
+  const patchFarmer = (id, patch) => setFarmers(list => list.map(f => (f._id === id ? { ...f, ...patch } : f)));
+  return { panchayats, farmers, reload, patchFarmer };
 };
 
-/** Farmer options, limited to the Panchayat when it is one of the known ones (the chosen farmer always stays). */
+/** Farmer options, limited to the Panchayat when farmers have it (loose match; the chosen farmer always stays). */
 export const farmerOptions = (farmers, panchayat, panchayats, selectedId) => {
-  const known = panchayat && panchayats.some(p => norm(p) === norm(panchayat));
+  const keys = new Set([panchayat, ...panchayatAliases(panchayat)].map(placeKey).filter(Boolean));
+  const known = keys.size > 0 && panchayats.some(p => keys.has(placeKey(p)));
   return farmers
-    .filter(f => !known || f._id === selectedId || norm(f.panchayat) === norm(panchayat))
+    .filter(f => !known || f._id === selectedId || keys.has(placeKey(f.panchayat)))
     .map(f => ({ value: f._id, label: `${f.name || ''} (${f.farmerNumber || ''})` }));
 };
 
@@ -40,25 +48,77 @@ export function YearSelect({ value, onChange, ...rest }) {
   return <Select label="Year" data={data} value={v} onChange={x => onChange(x ? +x : null)} allowDeselect={false} {...rest} />;
 }
 
-export function PanchayatInput({ value, onChange, panchayats, onPick, ...rest }) {
+/**
+ * Panchayat: names used in Farmer Management first, then every Kerala Grama Panchayat
+ * by district; any other name can be typed (reports match it loosely).
+ */
+export function PanchayatInput({ value, onChange, panchayats, onPick, description, ...rest }) {
+  const data = useMemo(() => panchayatOptions(panchayats), [panchayats]);
+  const known = findKeralaPanchayat(value);
   return (
     <Autocomplete
       label="Panchayat"
-      placeholder={panchayats.length ? 'Select or type Panchayat' : 'Type Panchayat'}
-      description="From Farmer Management — or type a new name"
-      data={panchayats}
+      placeholder="Select or type the Panchayat"
+      description={description !== undefined ? description : (String(value || '').trim()
+        ? (known ? `${known.district} district · ${known.ml}` : 'Typed name — matched loosely')
+        : 'Kerala Panchayats / Farmer Management — or type a name')}
+      data={data}
       value={value || ''}
       onChange={onChange}
       onOptionSubmit={onPick}
-      limit={50}
+      limit={60}
+      maxDropdownHeight={300}
       {...rest}
     />
+  );
+}
+
+/** Wards recorded for the Panchayat's farmers (+ Ward 1…24); returns [{ ward, wardNumber, farmers }] */
+export const usePanchayatWards = (panchayat) => {
+  const [wards, setWards] = useState([]);
+  useEffect(() => {
+    const p = String(panchayat || '').trim();
+    if (!p) { setWards([]); return undefined; }
+    let alive = true;
+    const t = setTimeout(() => {
+      farmerFormAPI.getWards(p, panchayatAliases(p))
+        .then(r => { if (alive) setWards(r?.data || []); })
+        .catch(() => { if (alive) setWards([]); });
+    }, 300);
+    return () => { alive = false; clearTimeout(t); };
+  }, [panchayat]);
+  return wards;
+};
+
+/** Ward (select or type) + Ward Number (auto from the ward) for a Panchayat */
+/** wrap(node, key) puts each input in its own layout cell, e.g. a Grid.Col */
+export function WardInputs({ panchayat, ward, wardNumber, onWard, onWardNumber, wardProps = {}, numberProps = {}, wrap = (n) => n }) {
+  const wards = usePanchayatWards(panchayat);
+  const data = useMemo(() => wardOptions(wards), [wards]);
+  return (
+    <>
+      {wrap(
+        <Autocomplete
+          label="Ward"
+          placeholder={String(panchayat || '').trim() ? 'Select or type the ward' : 'Select Panchayat first'}
+          data={data} limit={60} maxDropdownHeight={280}
+          value={ward || ''}
+          onChange={v => { onWard(v); const n = wardNumberFor(v, wards); if (n) onWardNumber(n); }}
+          {...wardProps}
+        />, 'ward'
+      )}
+      {wrap(
+        <TextInput label="Ward Number" placeholder="Auto from ward" value={wardNumber || ''}
+          onChange={e => onWardNumber(e.currentTarget.value)} {...numberProps} />, 'wardNumber'
+      )}
+    </>
   );
 }
 
 /** Which uploaded documents will follow the report in print. */
 export function FarmerDocumentsStatus({ farmer }) {
   if (!farmer) return null;
+  const other = farmer.docs?.otherCount || 0;
   return (
     <Group gap={6} mt={6} wrap="wrap">
       <Text size="xs" c="dimmed">Printed after the report:</Text>
@@ -67,6 +127,7 @@ export function FarmerDocumentsStatus({ farmer }) {
           {d.label}{farmer.docs?.[d.key] ? '' : ' — not uploaded'}
         </Badge>
       ))}
+      {other > 0 && <Badge size="sm" variant="light" color="green">{other} other document{other > 1 ? 's' : ''}</Badge>}
     </Group>
   );
 }

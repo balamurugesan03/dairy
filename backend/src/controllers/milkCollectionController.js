@@ -345,6 +345,73 @@ export const bulkDeleteCollections = async (req, res) => {
   }
 };
 
+// ── BULK DELETE RECORDS (Daily Collection List) ───────────────────────────────
+// POST /milk-collections/bulk-delete-records   (Super Admin only — see routes)
+//   { ids: [id…] }                                    → Method 1: the ticked records
+//   { fromDate, toDate, shift?, collectionCenter?, agent? } → Method 2: date range (+ the list's filters)
+//   dryRun: true → only count, for the confirmation ("N records will be deleted")
+// Linked vouchers are reversed exactly as for a single delete.
+export const bulkDeleteRecords = async (req, res) => {
+  try {
+    const { ids, fromDate, toDate, shift, collectionCenter, agent, dryRun } = req.body || {};
+    const companyId = new mongoose.Types.ObjectId(String(req.companyId));
+    const filter = { companyId };
+
+    if (Array.isArray(ids) && ids.length) {
+      const valid = ids.filter((id) => mongoose.isValidObjectId(String(id)));
+      if (valid.length !== ids.length) return res.status(400).json({ success: false, message: 'Invalid record id in the selection' });
+      if (valid.length > 20000) return res.status(400).json({ success: false, message: 'Select at most 20,000 records at a time' });
+      filter._id = { $in: valid.map((id) => new mongoose.Types.ObjectId(String(id))) };
+    } else {
+      const isYmd = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+      if (!isYmd(fromDate) || !isYmd(toDate)) return res.status(400).json({ success: false, message: 'Select the records, or a From Date and To Date' });
+      if (fromDate > toDate) return res.status(400).json({ success: false, message: 'From Date must be on or before To Date' });
+      const start = new Date(fromDate); start.setHours(0, 0, 0, 0);
+      const end = new Date(toDate); end.setHours(23, 59, 59, 999);
+      filter.date = { $gte: start, $lte: end };
+      if (shift) {
+        if (!['AM', 'PM'].includes(shift)) return res.status(400).json({ success: false, message: 'Invalid shift' });
+        filter.shift = shift;
+      }
+      if (collectionCenter) {
+        if (!mongoose.isValidObjectId(String(collectionCenter))) return res.status(400).json({ success: false, message: 'Invalid centre' });
+        filter.collectionCenter = new mongoose.Types.ObjectId(String(collectionCenter));
+      }
+      if (agent) {
+        if (!mongoose.isValidObjectId(String(agent))) return res.status(400).json({ success: false, message: 'Invalid agent' });
+        filter.agent = new mongoose.Types.ObjectId(String(agent));
+      }
+    }
+
+    const records = await MilkCollection.find(filter, { _id: 1, voucherId: 1, date: 1, qty: 1, amount: 1 }).lean();
+    const summary = {
+      count: records.length,
+      qty: Math.round(records.reduce((t, r) => t + (r.qty || 0), 0) * 100) / 100,
+      amount: Math.round(records.reduce((t, r) => t + (r.amount || 0), 0) * 100) / 100,
+    };
+    if (dryRun) return res.json({ success: true, data: summary });
+    if (!records.length) return res.json({ success: true, deleted: 0, data: summary, message: 'No records to delete' });
+
+    for (const vid of records.map((r) => r.voucherId).filter(Boolean)) {
+      try {
+        const voucher = await Voucher.findById(vid);
+        if (voucher) {
+          await reverseLedgerBalances(voucher.entries);
+          await voucher.deleteOne();
+        }
+      } catch (vErr) {
+        console.warn('[BulkDeleteRecords] Voucher reversal failed (non-fatal):', vErr.message);
+      }
+    }
+    // Delete exactly the records counted above — nothing added since then is touched
+    const result = await MilkCollection.deleteMany({ companyId, _id: { $in: records.map((r) => r._id) } });
+    queueFromDairySync(companyId, records.map((r) => r.date));   // Union Sales → From Dairy
+    res.json({ success: true, deleted: result.deletedCount, data: summary, message: `${result.deletedCount} records deleted` });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // ── ZIBITT BROWSER IMPORT ─────────────────────────────────────────────────────
 // Accepts raw Zibitt DailyCollection rows parsed in the browser (any file size).
 // Uses mapDailyCollectionRow so all Zibitt columns (Collection_Id, Supplier_ID,
@@ -643,7 +710,7 @@ export const bulkImportCollections = async (req, res) => {
         skipped.push(fn);
         if (!allowUnlinked) continue;
       }
-      docs.push({ ...r, date: parseAnyDate(r.date), farmer: fm ? fm.id : null, farmerName: r.farmerName || fm?.name || '', farmerNumber: fn, companyId: req.companyId });
+      docs.push({ ...r, date: parseAnyDate(r.date), farmer: fm ? fm.id : null, farmerName: fm?.name || r.farmerName || '', farmerNumber: fn, companyId: req.companyId });
     }
 
     if (docs.length === 0) {

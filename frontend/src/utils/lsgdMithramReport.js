@@ -1,14 +1,18 @@
 /**
- * LSGD Reports → LSGD Mithram Statement: columns, totals, and the three
+ * LSGD Reports → LSGD Milk Statement: columns, totals, and the three
  * outputs built from the SAME rows / visible columns — print HTML (also the
  * preview), PDF (jsPDF + autotable) and Excel (SheetJS).
  *
- * Rows come from /lsgd-mithram/statement; the screen keeps two edits on top:
- * removed farmers and manually changed Subsidy Allotted amounts. Calculations
- * never depend on which columns are shown.
+ * Rows come from /lsgd-mithram/statement; the screen keeps edits on top:
+ * removed farmers and manually changed Subsidy Allotted / Last Subsidy Allotted
+ * amounts. Calculations never depend on which columns are shown.
+ *
+ * The Malayalam footer note is printed as text in Print / Preview (Malayalam
+ * web font + system fallbacks), as an image in the PDF (jsPDF cannot shape
+ * Malayalam conjuncts, the browser canvas can) and as text in Excel.
  */
 import { escapeHtml } from './printA4';
-import { getFarmerDocumentImages, documentPagesHtml, DOCUMENT_PAGE_CSS } from './farmerDocumentsPrint';
+import { getFarmerDocumentImages, documentPagesHtml, DOCUMENT_PAGE_CSS, hasAnyDocument } from './farmerDocumentsPrint';
 
 export const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -25,17 +29,39 @@ export const DETAIL_COLUMNS = [
   { key: 'sl',            label: 'Sl No',          type: 'text', width: 5,  align: 'center' },
   { key: 'producerNo',    label: 'Producer No',    type: 'text', width: 8,  align: 'center' },
   { key: 'name',          label: 'Name',           type: 'text', width: 22 },
+  { key: 'ward',          label: 'Ward',           type: 'text', width: 9 },
   { key: 'listNo',        label: 'List No',        type: 'text', width: 7,  align: 'center' },
+  // Primary bank (Farmers Management → Bank Details)
+  { key: 'bankName',      label: 'Bank Name',      type: 'text', width: 14 },
   { key: 'accountNumber', label: 'Account Number', type: 'text', width: 17 },
   { key: 'ifsc',          label: 'IFSC Code',      type: 'text', width: 12 },
+  // Secondary bank (Farmer Settings → Secondary Bank)
+  { key: 'secBankName',      label: 'Secondary Bank',       type: 'text', width: 14 },
+  { key: 'secAccountNumber', label: 'Secondary Account No', type: 'text', width: 17 },
+  { key: 'secIfsc',          label: 'Secondary IFSC',       type: 'text', width: 12 },
   { key: 'aadhaar',       label: 'Aadhaar Number', type: 'text', width: 15 },
+  // Parent Grouping: the parent farmer a child is paid through
+  { key: 'parentNo',      label: 'Parent Farmer',  type: 'text', width: 14 },
 ];
+/** Column groups switched together by the Include Primary / Secondary Bank Details options */
+export const PRIMARY_BANK_COLUMNS = ['bankName', 'accountNumber', 'ifsc'];
+export const SECONDARY_BANK_COLUMNS = ['secBankName', 'secAccountNumber', 'secIfsc'];
 export const AMOUNT_COLUMNS = [
   { key: 'totalMilk',       label: 'Total Milk (Litre)',         type: 'qty',  width: 11 },
   { key: 'rate',            label: 'Incentive Amount (₹/Litre)', type: 'rate', width: 10 },
   { key: 'totalAmount',     label: 'Total Amount (₹)',           type: 'amt',  width: 12 },
+  { key: 'lastSubsidy',     label: 'Last Subsidy Allotted (₹)',  type: 'amt',  width: 12 },
   { key: 'subsidyAllotted', label: 'Subsidy Allotted (₹)',       type: 'amt',  width: 12 },
 ];
+/** Columns hidden until the user turns them on in Column Settings */
+export const DEFAULT_HIDDEN = ['ward', 'bankName', 'secBankName', 'secAccountNumber', 'secIfsc', 'parentNo'];
+
+/** Malayalam certificate printed above the signatures; editable on the screen and saved with the statement */
+export const DEFAULT_FOOTER_NOTE =
+  'മേൽ പറഞ്ഞിരിക്കുന്ന ക്ഷീരകർഷകർ ഈ ക്ഷീരസംഘത്തിൽ മേൽ കാലയളവിൽ പാൽ അളന്നിട്ടുള്ളവരാണെന്നും, ' +
+  'കാണിച്ചിരിക്കുന്ന പാലിന്റെ അളവ് സംഘത്തിലെ രേഖകൾ പ്രകാരം ശരിയാണെന്നും സാക്ഷ്യപ്പെടുത്തുന്നു.';
+export const MALAYALAM_FONT_STACK = "'Noto Sans Malayalam', 'Manjari', 'Nirmala UI', 'Kartika', 'Rachana', sans-serif";
+const MALAYALAM_FONT_LINK = '<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Malayalam:wght@400;700&display=block" rel="stylesheet">';
 export const MONTH_GROUP = 'Milk Quantity (Litre)';
 export const monthColumns = (months = []) => months.map((m) => ({
   key: `m:${m.key}`, monthKey: m.key, label: m.label, type: 'qty', width: 9, group: MONTH_GROUP,
@@ -49,14 +75,25 @@ export const visibleColumns = (months, hidden) => allColumns(months).filter((c) 
  * @param rate      subsidy ₹ per litre
  * @param overrides { farmerId: amount } — manual Subsidy Allotted
  * @param removed   Set of farmerIds dropped from this statement
+ * @param lastEdits { farmerId: amount } — manual Last Subsidy Allotted
  */
-export const computeRows = (baseRows = [], rate = 0, overrides = {}, removed = new Set()) => {
+export const computeRows = (baseRows = [], rate = 0, overrides = {}, removed = new Set(), lastEdits = {}) => {
   const out = [];
+  const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   for (const r of baseRows) {
     if (removed.has(r.farmerId)) continue;
     const totalAmount = r2(r.totalMilk * (Number(rate) || 0));
-    const manual = Object.prototype.hasOwnProperty.call(overrides, r.farmerId);
-    out.push({ ...r, rate: Number(rate) || 0, totalAmount, subsidyAllotted: manual ? r2(overrides[r.farmerId]) : totalAmount, manual });
+    const manual = has(overrides, r.farmerId);
+    const lastManual = has(lastEdits, r.farmerId);
+    out.push({
+      ...r,
+      rate: Number(rate) || 0,
+      totalAmount,
+      subsidyAllotted: manual ? r2(overrides[r.farmerId]) : totalAmount,
+      manual,
+      lastSubsidy: lastManual ? r2(lastEdits[r.farmerId]) : r2(r.lastSubsidy),
+      lastManual,
+    });
   }
   return out;
 };
@@ -65,6 +102,7 @@ export const computeTotals = (rows, months = []) => ({
   monthly: Object.fromEntries(months.map((m) => [m.key, r2(rows.reduce((s, r) => s + (r.monthly?.[m.key] || 0), 0))])),
   totalMilk: r2(rows.reduce((s, r) => s + r.totalMilk, 0)),
   totalAmount: r2(rows.reduce((s, r) => s + r.totalAmount, 0)),
+  lastSubsidy: r2(rows.reduce((s, r) => s + (r.lastSubsidy || 0), 0)),
   subsidyAllotted: r2(rows.reduce((s, r) => s + r.subsidyAllotted, 0)),
 });
 
@@ -84,11 +122,12 @@ export const totalValue = (totals, col) => {
 const formatCell = (v, col) => (col.type === 'text' ? v : (col.type === 'qty' ? fmtQty(v) : fmtAmt(v)));
 
 // ── Header facts shared by every output ──────────────────────────
-/** @param opts { meta, wardNumber, wardMember, rate } */
-export const headerFacts = ({ meta = {}, ward, wardNumber, wardMember, rate }) => ({
+/** @param opts { meta, wardNumber, wardMember, rate, footerNote } */
+export const headerFacts = ({ meta = {}, ward, wardNumber, wardMember, rate, footerNote = '' }) => ({
+  footerNote: String(footerNote || '').trim(),
   panchayat: String(meta.panchayat || '').toUpperCase(),
   society: String(meta.societyName || '').toUpperCase(),
-  title: 'LSGD MITHRAM STATEMENT',
+  title: 'LSGD MILK STATEMENT',
   financialYear: meta.financialYear || '',
   period: `${dmy(meta.fromDate)} to ${dmy(meta.toDate)}`,
   ward: ward ?? meta.ward ?? '',
@@ -112,7 +151,7 @@ const printFontPx = (n, paper) => {
 };
 
 export const reportFileName = (facts, ext) =>
-  `LSGD_Mithram_Statement_${facts.panchayat || 'Panchayat'}${facts.ward ? `_${facts.ward}` : ''}_${facts.period.replace(/ to /, '_')}`
+  `LSGD_Milk_Statement_${facts.panchayat || 'Panchayat'}${facts.ward ? `_${facts.ward}` : ''}_${facts.period.replace(/ to /, '_')}`
     .replace(/[^\w-]+/g, '_').replace(/_+/g, '_') + ext;
 
 // ════════════════════════════════════════════════════════════════
@@ -178,6 +217,8 @@ const STATEMENT_CSS = `
   .st-sign div { text-align: center; border-top: 1px solid #000; padding-top: 3px; font-weight: 700; font-size: 1.05em; }
   .st-sign small { display: block; font-weight: 400; font-size: 0.9em; min-height: 1em; }
   .st-gen { margin-top: 6px; font-size: 0.85em; color: #333; }
+  .st-note { margin-top: 10px; font-family: ${MALAYALAM_FONT_STACK}; font-size: 1.15em; line-height: 1.6;
+    text-align: justify; white-space: pre-wrap; page-break-inside: avoid; break-inside: avoid; }
   .doc-owner { font-size: 13px; }
 `;
 
@@ -203,6 +244,7 @@ export const statementBodyHtml = ({ facts, columns, rows, totals }) => {
     <tbody>${tableBodyHtml(columns, rows) || `<tr><td colspan="${columns.length}" class="ctr">No producers</td></tr>`}</tbody>
     ${totalRowHtml(columns, totals)}
   </table>
+  ${facts.footerNote ? `<div class="st-note" lang="ml">${escapeHtml(facts.footerNote)}</div>` : ''}
   <div class="st-sign">
     ${sig.map((s) => `<div>${escapeHtml(s.title)}<small>${escapeHtml(s.name || '')}</small></div>`).join('')}
   </div>
@@ -214,6 +256,7 @@ export const buildStatementHtml = ({ facts, columns, rows, totals, documentsHtml
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8" />
 <title>${escapeHtml(reportFileName(facts, ''))}</title>
+${facts.footerNote ? MALAYALAM_FONT_LINK : ''}
 <style>
   @page { size: ${paper.toUpperCase()} landscape; margin: 8mm 7mm; }
   @page docs { size: A4 portrait; margin: 10mm; }
@@ -226,7 +269,7 @@ export const buildStatementHtml = ({ facts, columns, rows, totals, documentsHtml
 };
 
 // ── Attached documents, farmer-wise ──────────────────────────────
-const hasAnyDoc = (r) => !!(r.docs && (r.docs.bankPassbook || r.docs.aadhaar || r.docs.rationCard));
+const hasAnyDoc = (r) => hasAnyDocument(r.docs);
 
 /**
  * Document images for every row that has an upload (4 at a time).
@@ -269,7 +312,7 @@ export const documentsHtmlOf = (groups) => groups
 export const printStatement = async ({ facts, columns, rows, totals, withDocuments, onProgress }) => {
   const win = window.open('', '_blank');
   if (!win) return { ok: false, message: 'Allow pop-ups to print' };
-  win.document.write('<p style="font:14px Arial;padding:24px">Preparing LSGD Mithram Statement…</p>');
+  win.document.write('<p style="font:14px Arial;padding:24px">Preparing LSGD Milk Statement…</p>');
   let docs = { groups: [], failed: [] };
   if (withDocuments) {
     try { docs = await collectDocuments(rows, onProgress); } catch { /* print the statement anyway */ }
@@ -279,6 +322,10 @@ export const printStatement = async ({ facts, columns, rows, totals, withDocumen
   win.document.close();
   const imgs = [...win.document.images];
   await Promise.all(imgs.map((im) => (im.complete ? null : new Promise((r) => { im.onload = r; im.onerror = r; }))));
+  // Malayalam web font: wait for it (max 4 s) so the note does not print in a fallback / boxes
+  if (facts.footerNote && win.document.fonts?.ready) {
+    await Promise.race([win.document.fonts.ready, new Promise((r) => setTimeout(r, 4000))]);
+  }
   win.focus();
   setTimeout(() => { win.print(); }, 300);
   return { ok: true, docCount: docs.groups.length, failed: docs.failed };
@@ -308,6 +355,42 @@ const toJpeg = (src, maxSide = 1700) => new Promise((resolve, reject) => {
   img.onerror = () => reject(new Error('image'));
   img.src = src;
 });
+
+/**
+ * Malayalam (or any) text → PNG image through a canvas, which shapes complex scripts
+ * correctly. Wraps to widthMm; returns { data, wMm, hMm } or null.
+ */
+export const textToImage = async (text, widthMm, fontPt = 10) => {
+  const t = String(text || '').trim();
+  if (!t || typeof document === 'undefined') return null;
+  const PX_PER_MM = 8;                                   // ~200 dpi
+  const fontPx = Math.round(fontPt * 0.3528 * PX_PER_MM);
+  const font = `${fontPx}px ${MALAYALAM_FONT_STACK}`;
+  try { await document.fonts?.load?.(font, t); } catch { /* system font */ }
+  const width = Math.round(widthMm * PX_PER_MM);
+  const c = document.createElement('canvas');
+  const ctx = c.getContext('2d');
+  ctx.font = font;
+  const lines = [];
+  for (const para of t.split(/\r?\n/)) {
+    let line = '';
+    for (const word of para.split(/\s+/).filter(Boolean)) {
+      const next = line ? `${line} ${word}` : word;
+      if (line && ctx.measureText(next).width > width) { lines.push(line); line = word; } else line = next;
+    }
+    lines.push(line);
+  }
+  const lineH = Math.round(fontPx * 1.6);
+  c.width = width;
+  c.height = lineH * lines.length + Math.round(fontPx * 0.4);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = '#000';
+  ctx.font = font;
+  ctx.textBaseline = 'top';
+  lines.forEach((l, i) => ctx.fillText(l, 0, i * lineH + Math.round(fontPx * 0.2)));
+  return { data: c.toDataURL('image/png'), wMm: widthMm, hMm: c.height / PX_PER_MM };
+};
 
 /**
  * Build the PDF (jsPDF document) — statement in landscape, then documents
@@ -390,9 +473,16 @@ export const buildStatementPdf = async ({ facts, columns, rows, totals, docGroup
     columnStyles,
   });
 
-  // Signatures (new page if they don't fit)
-  let sy = (doc.lastAutoTable?.finalY || y) + 20;
+  // Malayalam footer note (image), then signatures — new page if they don't fit
   const pageH = doc.internal.pageSize.getHeight();
+  let ny = (doc.lastAutoTable?.finalY || y) + 4;
+  const note = facts.footerNote ? await textToImage(facts.footerNote, pageW - margin * 2, 10) : null;
+  if (note) {
+    if (ny + note.hMm > pageH - 30) { doc.addPage(paper, 'landscape'); ny = 14; }
+    doc.addImage(note.data, 'PNG', margin, ny, note.wMm, note.hMm);
+    ny += note.hMm;
+  }
+  let sy = ny + 16;
   if (sy > pageH - 14) { doc.addPage(paper, 'landscape'); sy = 30; }
   const sig = SIGNATURES(facts);
   const w = (pageW - margin * 2) / sig.length;
@@ -490,6 +580,12 @@ export const buildStatementWorkbook = async ({ facts, columns, rows, totals }) =
   const totalRow = aoa.length;
   aoa.push(columns.map(() => ''));
   aoa.push([]);
+  if (facts.footerNote) {
+    for (const line of facts.footerNote.split(/\r?\n/)) {
+      mergeRow(aoa.length);
+      aoa.push([line]);
+    }
+  }
   aoa.push([]);
   const signRow = aoa.length;
   const sig = SIGNATURES(facts);
@@ -527,7 +623,7 @@ export const buildStatementWorkbook = async ({ facts, columns, rows, totals }) =
   if (!ws['!rows']) ws['!rows'] = [];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Mithram Statement');
+  XLSX.utils.book_append_sheet(wb, ws, 'Milk Statement');
   return { XLSX, wb };
 };
 

@@ -311,7 +311,7 @@ export const MODULE_GROUPS = [
       { key: 'reports.agriStats',       label: 'Monthly Agri Statistics'  },
       { key: 'reports.lsgdMilkSubsidy',   label: "LSGD: Panchayath People's Planning Milk Subsidy" },
       { key: 'reports.lsgdMilkIncentive', label: 'LSGD: Panchayath Annual Plan Milk Incentive' },
-      { key: 'reports.lsgdMithram',      label: 'LSGD: Mithram Statement' },
+      { key: 'reports.lsgdMithram',      label: 'LSGD: Milk Statement' },
     ]
   },
   {

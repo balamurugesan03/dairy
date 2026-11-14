@@ -52,6 +52,9 @@ export const upsertSettings = async (req, res) => {
     const update = {};
     if (membershipFunction !== undefined) update.membershipFunction = membershipFunction;
     if (numberSeries !== undefined) update.numberSeries = numberSeries;
+    // Parent Grouping / Secondary Bank switches (see utils/farmerPayee.js for what they do)
+    if (req.body.parentGrouping !== undefined) update.parentGrouping = !!req.body.parentGrouping;
+    if (req.body.secondaryBank !== undefined) update.secondaryBank = !!req.body.secondaryBank;
     if (req.user?._id) update.lastUpdatedBy = req.user._id;
 
     const settings = await FarmerSettings.findOneAndUpdate(

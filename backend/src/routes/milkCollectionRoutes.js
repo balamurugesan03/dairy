@@ -8,6 +8,7 @@ import {
   updateCollection,
   deleteCollection,
   bulkDeleteCollections,
+  bulkDeleteRecords,
   getDateSummary,
   getFarmerHistory,
   getFarmerStats,
@@ -27,6 +28,8 @@ import {
   getSocietyReport,
 } from '../controllers/milkCollectionController.js';
 
+import { requireSuperAdmin } from '../utils/userTier.js';
+
 const router = express.Router();
 const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 500 * 1024 * 1024 } }); // 500 MB
 
@@ -44,16 +47,17 @@ router.get('/farmer/:farmerNumber',        getFarmerHistory);
 
 // Date summary (for bulk delete date picker)
 router.get('/date-summary', getDateSummary);
-// Bulk delete selected date+shift slots
-router.post('/bulk-delete', bulkDeleteCollections);
+// Bulk delete (Super Admin only): date+shift slots, or Daily Collection List records (ticked / date range)
+router.post('/bulk-delete',         requireSuperAdmin, bulkDeleteCollections);
+router.post('/bulk-delete-records', requireSuperAdmin, bulkDeleteRecords);
 
-// Import routes
-router.post('/file-import',    upload.single('file'), fileUploadImportCollections);
-router.post('/bulk-import',    bulkImportCollections);
-router.post('/zibitt-import',    zibittBrowserImportCollections);
-router.post('/linza-import',     linzaImportCollections);
-router.post('/openlyssa-import', openLyssaImportCollections);
-router.post('/dairysoft-import', dairysoftImportCollections);
+// Import routes — Super Admin only (Import from Everest DPO, Zibitt, LinZA, OpenLyssa, DairySoft)
+router.post('/file-import',      requireSuperAdmin, upload.single('file'), fileUploadImportCollections);
+router.post('/bulk-import',      requireSuperAdmin, bulkImportCollections);
+router.post('/zibitt-import',    requireSuperAdmin, zibittBrowserImportCollections);
+router.post('/linza-import',     requireSuperAdmin, linzaImportCollections);
+router.post('/openlyssa-import', requireSuperAdmin, openLyssaImportCollections);
+router.post('/dairysoft-import', requireSuperAdmin, dairysoftImportCollections);
 
 // Main CRUD
 router.post('/',      createCollection);

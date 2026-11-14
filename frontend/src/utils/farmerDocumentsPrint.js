@@ -1,9 +1,9 @@
 /**
  * Farmer report prints (Crop Damage Statement, Monthly Agri Statistics):
  * the report first, then the farmer's uploaded documents from Farmer Details —
- * Bank Statement, Aadhaar Card Copy, Ration Card Copy — one A4 portrait page
- * each (a PDF document gives one page per PDF page). Documents that are not
- * uploaded are skipped, so no blank pages.
+ * Bank Statement, Aadhaar Card Copy, Ration Card Copy, other supporting documents —
+ * one A4 portrait page each (a PDF document gives one page per PDF page). Documents
+ * that are not uploaded are skipped, so no blank pages.
  */
 import { farmerFormAPI } from '../services/api';
 
@@ -11,7 +11,12 @@ export const FARMER_DOCUMENTS = [
   { key: 'bankPassbook', label: 'Bank Statement' },
   { key: 'aadhaar',      label: 'Aadhaar Card Copy' },
   { key: 'rationCard',   label: 'Ration Card Copy' },
+  { key: 'incomeProof',  label: 'Income Proof' },
 ];
+/** documents.additionalDocuments → "Other Document 1…5" */
+export const OTHER_DOCUMENT_LABEL = 'Other Document';
+/** Does a farmer / row docs-flag object have any document? */
+export const hasAnyDocument = (docs) => !!docs && (FARMER_DOCUMENTS.some((d) => docs[d.key]) || (docs.otherCount || 0) > 0);
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const isPdf = (src) => /^data:application\/pdf/i.test(src) || /\.pdf(\?|$)/i.test(src);
@@ -59,8 +64,12 @@ export const getFarmerDocumentImages = async (farmerId) => {
   const pages = [];
   let count = 0;
   const skipped = [];
-  for (const { key, label } of FARMER_DOCUMENTS) {
-    const src = docs[key];
+  const list = [
+    ...FARMER_DOCUMENTS.map(({ key, label }) => ({ label, src: docs[key] })),
+    ...(Array.isArray(docs.additionalDocuments) ? docs.additionalDocuments : [])
+      .map((src, i, all) => ({ label: all.length > 1 ? `${OTHER_DOCUMENT_LABEL} ${i + 1}` : OTHER_DOCUMENT_LABEL, src })),
+  ];
+  for (const { label, src } of list) {
     if (!src) continue;
     let images = [];
     try {

@@ -33,6 +33,7 @@ const farmerApplicationSchema = new mongoose.Schema({
   category:      { type: String, enum: ['', 'General', 'SC', 'ST', 'OBC'], default: '' },
   gender:        { type: String, enum: ['', 'Male', 'Female', 'Other'], default: '' },
   ward:          { type: String, trim: true, default: '' },
+  wardNumber:    { type: String, trim: true, default: '' },
   houseNumber:   { type: String, trim: true, default: '' },
   rationCardNo:  { type: String, trim: true, default: '' },
   electionId:    { type: String, trim: true, uppercase: true, default: '' },
@@ -41,6 +42,8 @@ const farmerApplicationSchema = new mongoose.Schema({
   branch:        { type: String, trim: true, default: '' },
   accountNumber: { type: String, trim: true, default: '' },
   ifsc:          { type: String, trim: true, uppercase: true, default: '' },
+  // Which of the farmer's accounts (Farmers Management) is printed on the form
+  bankSource:    { type: String, enum: ['Primary', 'Secondary'], default: 'Primary' },
 
   // 12 dairy society membership
   isMember:     { type: Boolean, default: true },

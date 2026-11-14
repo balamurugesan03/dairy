@@ -50,6 +50,15 @@ const farmerSettingsSchema = new mongoose.Schema(
       default: 1,
     },
 
+    // Parent Grouping: a farmer can be linked to a parent farmer (Farmer.parentFarmer).
+    // Children keep their own milk, bills and dues, but their payments / bank transfers
+    // are made to the parent's bank account. Off → links are kept but ignored.
+    parentGrouping: { type: Boolean, default: false },
+
+    // Secondary Bank: a farmer can keep a second bank account (Farmer.secondaryBankDetails)
+    // and choose which one payments go to (Farmer.payTo). Off → Primary is always used.
+    secondaryBank: { type: Boolean, default: false },
+
     // Default Centre / Agent now come from the logged-in user (User Management), not here.
 
     lastUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

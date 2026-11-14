@@ -1,5 +1,5 @@
 /**
- * Producer Dues → Payment Bar Reports → Payment Register (Karur, Tamil Nadu)
+ * Producer Dues → Regional Payment Bar Report → Payment Register (Karur, Tamil Nadu)
  * ─────────────────────────────────────────────────────────────────────────────
  * Pays a SETTLED payment cycle in Cash or through a Bank ledger.
  *
@@ -18,9 +18,11 @@
  *  • Duplicates — a producer already paid for the cycle (here, by Bank
  *                Transfer or by Payment to Producer) is never paid again.
  */
+import { loadPayees, PAYEE_SELECT } from '../utils/farmerPayee.js';
 import mongoose from 'mongoose';
 import nodemailer from 'nodemailer';
 import KarurPaymentRegister from '../models/KarurPaymentRegister.js';
+import MilkCollection from '../models/MilkCollection.js';
 import PaymentRegister from '../models/PaymentRegister.js';
 import FarmerPayment from '../models/FarmerPayment.js';
 import ProducerPayment from '../models/ProducerPayment.js';
@@ -71,22 +73,44 @@ const producerIdOf = (centerCode, farmerNumber) => {
   return centerCode ? `${centerCode}-${padded}` : padded;
 };
 
-// Saved register entry → the deduction columns of this report
+// Saved register entry → the deduction columns of this report.
+// Total Deductions = Milk Value + Previous Balance − Net Payable, i.e. exactly what the
+// register deducted, so every row adds up. The named columns come from the register; "Other"
+// is the rest. (A Producers register does not deduct its 'deductions' field from Net Pay, so
+// adding it — as before — overstated Total Deductions; Ledger registers net their earnings.)
 const entryAmounts = (e, type) => {
   const isLedger = type === 'Ledger';
   const welfare     = r2(e.welfare);
   const loanRec     = r2(isLedger ? e.loanRec : e.loanAdv);
   const advance     = r2(e.cfRec);
   const cashAdvance = r2(isLedger ? e.cashRec : e.cashPocket);
-  const otherRec    = r2(isLedger ? e.otherDed : e.deductions);
+  const milkValue       = r2(e.milkValue);
+  const previousBalance = r2(e.previousBalance);
+  const netPayable      = r2(e.netPay);
+  const totalDeductions = r2(milkValue + previousBalance - netPayable);
+  const otherRec        = r2(totalDeductions - (welfare + loanRec + advance + cashAdvance));
   return {
-    previousBalance: r2(e.previousBalance),
+    previousBalance,
     qty:             r2(e.qty),
-    milkValue:       r2(e.milkValue),
+    milkValue,
     welfare, loanRec, advance, cashAdvance, otherRec,
-    totalDeductions: r2(welfare + loanRec + advance + cashAdvance + otherRec),
-    netPayable:      r2(e.netPay),
+    totalDeductions,
+    netPayable,
   };
+};
+
+/**
+ * Milk Purchase quantity / value per farmer for the cycle (IST days, as Milk Purchase saves them).
+ * @returns Map<farmerId, { qty, amount }>
+ */
+const milkPurchaseOf = async (companyId, fromDate, toDate, farmerIds) => {
+  const start = new Date(fromDate); start.setHours(0, 0, 0, 0);
+  const end = new Date(toDate); end.setHours(23, 59, 59, 999);
+  const agg = await MilkCollection.aggregate([
+    { $match: { companyId, farmer: { $in: farmerIds.map(oid) }, date: { $gte: start, $lte: end } } },
+    { $group: { _id: '$farmer', qty: { $sum: '$qty' }, amount: { $sum: '$amount' } } },
+  ]);
+  return new Map(agg.map((a) => [String(a._id), { qty: r2(a.qty), amount: r2(a.amount) }]));
 };
 
 // Saved settled register of a cycle (newest update wins — same as Bank Transfer)
@@ -159,8 +183,9 @@ const buildRows = async (companyId, { fromDate, toDate, paymentType, centerId, b
         previousBalance: s.previousBalance,
         qty: s.totalMilkQty,
         milkValue: s.totalMilkAmt,
+        cfRec: r2(s.totalCattleFeed),                      // cattle feed sold in the cycle
         cashPocket: s.totalPayments,                       // paid during the cycle
-        deductions: r2(s.totalCattleFeed + s.totalDeductions),
+        deductions: r2(s.totalDeductions),                 // individual deductions
         netPay: s.netAmount,
       })),
     };
@@ -168,11 +193,17 @@ const buildRows = async (companyId, { fromDate, toDate, paymentType, centerId, b
 
   const farmerIds = [...new Set(source.entries.filter((e) => e.farmerId).map((e) => String(e.farmerId)))];
   const farmers = await Farmer.find({ companyId, _id: { $in: farmerIds.map(oid) } })
-    .select('farmerNumber personalDetails.name bankDetails collectionCenter')
+    .select(PAYEE_SELECT + ' collectionCenter')
     .populate('collectionCenter', 'centerCode centerName')
     .lean();
   const farmerMap = new Map(farmers.map((f) => [String(f._id), f]));
+  // Account each farmer is paid into: own Primary / Secondary, or the parent's (Parent Grouping)
+  const { payeeOf } = await loadPayees(companyId, farmers);
   const paid = await paidElsewhere(companyId, source, excludeRegisterId);
+  // Milk Purchase for the cycle — a settled register saved before later milk entries / rate
+  // changes would otherwise show stale quantities without anyone noticing
+  const purchase = await milkPurchaseOf(companyId, source.fromDate, source.toDate, farmerIds);
+
 
   const rows = [];
   const alreadyPaid = [];
@@ -189,7 +220,8 @@ const buildRows = async (companyId, { fromDate, toDate, paymentType, centerId, b
 
     const centre = f.collectionCenter || null;
     const centerCode = centre?.centerCode || '';
-    const bd = f.bankDetails || {};
+    const payee = payeeOf(f);
+    const bd = payee.bank;
     const row = {
       farmerId:      fid,
       payKey:        `${fid}|${source._id}`,
@@ -200,10 +232,20 @@ const buildRows = async (companyId, { fromDate, toDate, paymentType, centerId, b
       producerId:    producerIdOf(centerCode, f.farmerNumber || e.productId || e.producerId),
       producerName:  f.personalDetails?.name || e.productName || e.producerName || '',
       ...entryAmounts(e, source.registerType),
+      ...(() => {
+        const mp = purchase.get(fid) || { qty: 0, amount: 0 };
+        const mismatch = Math.abs(mp.qty - r2(e.qty)) > 0.01 || Math.abs(mp.amount - r2(e.milkValue)) > 0.5;
+
+        return { purchaseQty: mp.qty, purchaseAmount: mp.amount, milkMismatch: mismatch };
+      })(),
       bankName:      (bd.bankName || '').trim(),
       accountNumber: (bd.accountNumber || '').trim(),
       ifsc:          (bd.ifsc || '').trim().toUpperCase(),
       branch:        (bd.branch || '').trim(),
+      bankAccount:   payee.account,
+      viaParent:     payee.viaParent,
+      holderNumber:  payee.viaParent ? payee.holderNumber : '',
+      holderName:    payee.viaParent ? payee.holderName : '',
     };
 
     if (centerId && centerId !== 'all' && row.centerId !== String(centerId)) { skipped.otherCentre += 1; continue; }
@@ -232,6 +274,7 @@ const buildRows = async (companyId, { fromDate, toDate, paymentType, centerId, b
     alreadyPaid,
     skipped,
     banks: [...bankNames.values()].sort((a, b) => a.localeCompare(b)),
+    milkCheck: { mismatches: rows.filter((r) => r.milkMismatch).length },
   };
 };
 
@@ -373,7 +416,10 @@ export const getOptions = async (req, res) => {
         .select('fromDate toDate registerType updatedAt totalNetPay entries.farmerId').sort({ fromDate: -1, updatedAt: -1 }).limit(120).lean(),
       CollectionCenter.find({ companyId }).select('centerCode centerName').lean(),
       Ledger.find({ companyId, ledgerType: { $in: BANK_LEDGER_TYPES }, status: { $ne: 'Inactive' } }).select('ledgerName').sort({ ledgerName: 1 }).lean(),
-      Farmer.distinct('bankDetails.bankName', { companyId, 'bankDetails.bankName': { $nin: [null, ''] } }),
+      Promise.all([
+        Farmer.distinct('bankDetails.bankName', { companyId, 'bankDetails.bankName': { $nin: [null, ''] } }),
+        Farmer.distinct('secondaryBankDetails.bankName', { companyId, 'secondaryBankDetails.bankName': { $nin: [null, ''] } }),
+      ]).then(([a, b]) => [...new Set([...a, ...b])]),
       KarurPaymentRegister.find({ companyId, status: 'Saved' }).select('sourceRegisterId producerCount').lean(),
     ]);
 

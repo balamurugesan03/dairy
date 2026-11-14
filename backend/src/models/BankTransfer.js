@@ -20,7 +20,13 @@ const transferDetailSchema = new mongoose.Schema({
     ifscCode: String,
     micr: String,
     bankLedgerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ledger' },
-    bankCode: String
+    bankCode: String,
+    // Whose account this is (utils/farmerPayee.js): the farmer's own Primary / Secondary,
+    // or the parent farmer's under Parent Grouping
+    account: { type: String, enum: ['Primary', 'Secondary'], default: 'Primary' },
+    viaParent: { type: Boolean, default: false },
+    holderNumber: String,
+    holderName: String
   },
   paymentMode: {
     type: String,

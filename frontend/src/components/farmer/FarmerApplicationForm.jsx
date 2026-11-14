@@ -1,8 +1,10 @@
 /**
  * Farmer Application form (Panchayat milk subsidy / incentive).
  * Year + Panchayat + Farmer Number at the top; the farmer's details come from
- * Farmer Management and stay editable. On Save, details the farmer record is
- * missing are written back to that same farmer (never a new farmer).
+ * Farmer Management and stay editable. On Save the details go back to that same
+ * farmer (never a new farmer): missing ones are added, and the ones changed on
+ * this form replace what Farmers Management had. Documents uploaded here are
+ * saved to the farmer at once.
  */
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -14,7 +16,11 @@ import { notifications } from '@mantine/notifications';
 import { IconDeviceFloppy, IconEye, IconPrinter, IconRefresh, IconInfoCircle } from '@tabler/icons-react';
 import { farmerApplicationAPI, bankMasterAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
-import { useFarmerFormData, PanchayatInput, FarmerNumberLookup, FarmerSearchSelect, FarmerDetailsCard } from './FarmerReportSelectors';
+import {
+  useFarmerFormData, PanchayatInput, FarmerNumberLookup, FarmerSearchSelect, FarmerDetailsCard, WardInputs
+} from './FarmerReportSelectors';
+import FarmerDocumentsUpload from './FarmerDocumentsUpload';
+import { placeKey, wardNumberOf } from '../../utils/keralaPanchayat';
 import {
   FORM_TYPES, CATEGORIES, DEFAULT_SCHEME, fyLabel, printApplications, currentSchemeYear, SCHEME_YEAR_OPTIONS
 } from '../../utils/farmerApplicationPrint';
@@ -39,6 +45,7 @@ const EMPTY = {
   category: '',
   gender: '',
   ward: '',
+  wardNumber: '',
   houseNumber: '',
   rationCardNo: '',
   electionId: '',
@@ -47,6 +54,7 @@ const EMPTY = {
   branch: '',
   accountNumber: '',
   ifsc: '',
+  bankSource: 'Primary',   // which of the farmer's accounts is printed on the form
   bankLedgerId: null,
   isMember: true,
   membershipNo: '',
@@ -69,6 +77,11 @@ const casteToCategory = (c) => {
   if (['GENERAL', 'GEN', 'OC', 'FC'].includes(v)) return 'General';
   return '';
 };
+
+/** Bank fields of the form from the farmer's Primary or Secondary account (Farmers Management) */
+const bankFieldsOf = (f, source) => (source === 'Secondary'
+  ? { bankSource: 'Secondary', bankName: f.secBankName || '', branch: f.secBranch || '', accountNumber: f.secAccountNumber || '', ifsc: (f.secIfsc || '').toUpperCase(), bankLedgerId: null }
+  : { bankSource: 'Primary', bankName: f.bankName || '', branch: f.branch || '', accountNumber: f.accountNumber || '', ifsc: f.ifsc || '', bankLedgerId: null });
 
 const composeAddress = (f) => [f.houseName, f.place, f.post].map(x => String(x || '').trim()).filter(Boolean).join(', ');
 
@@ -101,11 +114,15 @@ export default function FarmerApplicationForm({ applicationId, onClose, onOpenEx
   const [milkInfo, setMilkInfo] = useState(null);
   const { selectedCompany } = useCompany() || {};
 
-  const { panchayats, farmers } = useFarmerFormData();
+  const { panchayats, farmers, reload: reloadFarmers, patchFarmer } = useFarmerFormData();
   const selectedFarmer = farmers.find(x => x._id === form.farmerId);
+  // Fields the user edited here — on Save these also replace values Farmers Management has
+  const [changed, setChanged] = useState(() => new Set());
+  const markChanged = (...fields) => setChanged(prev => new Set([...prev, ...fields]));
 
   const set = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
+    markChanged(field);
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: undefined }));
   };
 
@@ -156,6 +173,9 @@ export default function FarmerApplicationForm({ applicationId, onClose, onOpenEx
   // Farmer Number → everything Farmer Management has; the rest stays editable
   const handleFarmerPick = (f) => {
     setErrors(prev => ({ ...prev, farmerId: undefined, applicantName: undefined }));
+    // A new farmer: nothing on the form is "edited" for that farmer yet, except the
+    // report's own Panchayat when one was chosen (the farmer is applying in that Panchayat)
+    setChanged(new Set(form.panchayat.trim() ? ['panchayat'] : []));
     setForm(prev => ({
       ...prev,
       farmerId: f._id,
@@ -167,34 +187,49 @@ export default function FarmerApplicationForm({ applicationId, onClose, onOpenEx
       category: casteToCategory(f.caste),
       gender: f.gender || '',
       ward: f.ward || '',
+      wardNumber: f.wardNumber || wardNumberOf(f.ward),
       houseNumber: f.houseNumber || '',
       rationCardNo: f.rationCardNo || '',
       electionId: f.voterId || '',
       aadhaarNumber: f.aadhaar || '',
-      bankName: f.bankName || '',
-      branch: f.branch || '',
-      accountNumber: f.accountNumber || '',
-      ifsc: f.ifsc || '',
-      bankLedgerId: null,
+      // the account the farmer is paid into (Pay to: Primary / Secondary), Primary otherwise
+      ...bankFieldsOf(f, f.payTo === 'Secondary' && f.secAccountNumber ? 'Secondary' : 'Primary'),
       isMember: !!(f.isMembership || f.memberId),
       membershipNo: f.memberId || '',
-      panchayat: f.panchayat || prev.panchayat,
+      // keep the Panchayat chosen for the report — the farmer record may hold a Block / Taluk name
+      panchayat: prev.panchayat.trim() ? prev.panchayat : (f.panchayat || ''),
     }));
     fetchMilk(f._id, form.year, form.applicationDate, true);
   };
 
-  // Which fields Farmer Management doesn't have (typed ones are saved back to the farmer)
-  const missing = useMemo(() => {
-    if (!selectedFarmer) return {};
+  // The farmer's current values in Farmers Management, per form field
+  const farmerValues = useMemo(() => {
+    if (!selectedFarmer) return null;
     const f = selectedFarmer;
     return {
-      address: !composeAddress(f), pincode: !f.pin, mobileNumber: !f.phone, category: !casteToCategory(f.caste),
-      gender: !f.gender, ward: !f.ward, houseNumber: !f.houseNumber, rationCardNo: !f.rationCardNo,
-      electionId: !f.voterId, aadhaarNumber: !f.aadhaar, bankName: !f.bankName, branch: !f.branch,
-      accountNumber: !f.accountNumber, ifsc: !f.ifsc, membershipNo: !f.memberId, panchayat: !f.panchayat,
+      address: composeAddress(f), pincode: f.pin, mobileNumber: f.phone, category: casteToCategory(f.caste),
+      gender: f.gender, ward: f.ward, wardNumber: f.wardNumber, houseNumber: f.houseNumber, rationCardNo: f.rationCardNo,
+      electionId: f.voterId, aadhaarNumber: f.aadhaar, bankName: f.bankName, branch: f.branch,
+      accountNumber: f.accountNumber, ifsc: f.ifsc, membershipNo: f.memberId, panchayat: f.panchayat,
     };
   }, [selectedFarmer]);
-  const hint = (field) => (missing[field] ? 'Not in Farmer Management — saved to the farmer on Save' : undefined);
+  const sameValue = (field, a, b) => (field === 'panchayat'
+    ? placeKey(a) === placeKey(b)
+    : String(a ?? '').trim().toUpperCase() === String(b ?? '').trim().toUpperCase());
+  // Missing in Farmers Management → added on Save; changed here → Farmers Management updated on Save
+  const hint = (field) => {
+    if (!farmerValues) return undefined;
+    // the Secondary account is printed as it is — it is never written to the farmer's Primary bank
+    if (form.bankSource === 'Secondary' && ['bankName', 'branch', 'accountNumber', 'ifsc'].includes(field)) return undefined;
+    const cur = String(farmerValues[field] ?? '').trim();
+    if (!cur) return 'Not in Farmers Management — saved to the farmer on Save';
+    if (changed.has(field) && String(form[field] ?? '').trim() && !sameValue(field, form[field], cur)) {
+      return field === 'address'
+        ? undefined   // a typed address is never split over the farmer's address parts
+        : `Farmers Management has “${cur}” — updated on Save`;
+    }
+    return undefined;
+  };
   const hintStyles = { description: { color: 'var(--mantine-color-orange-7)' } };
 
   // Farmers Management → Farmer Bank Details: pick a bank to fill name, branch and IFSC
@@ -204,6 +239,7 @@ export default function FarmerApplicationForm({ applicationId, onClose, onOpenEx
     const b = banks.find(x => x._id === id);
     if (!b) return;
     setForm(prev => ({ ...prev, bankName: b.bankName || '', branch: b.branch || '', ifsc: (b.ifsc || '').toUpperCase(), bankLedgerId: b.bankLedgerId || null }));
+    markChanged('bankName', 'branch', 'ifsc');
     setErrors(prev => ({ ...prev, ifsc: undefined }));
   };
   const bankPicked = banks.find(b => (b.bankName || '').trim().toUpperCase() === form.bankName.trim().toUpperCase()
@@ -221,16 +257,19 @@ export default function FarmerApplicationForm({ applicationId, onClose, onOpenEx
     if (!check()) return null;
     setSaving(true);
     try {
+      const body = { ...form, changedFields: [...changed] };
       const res = savedId
-        ? await farmerApplicationAPI.update(savedId, form)
-        : await farmerApplicationAPI.create(form);
+        ? await farmerApplicationAPI.update(savedId, body)
+        : await farmerApplicationAPI.create(body);
       if (res?.success) {
         setSavedId(res.data._id);
         setForm(prev => ({ ...prev, applicationNo: res.data.applicationNo }));
         notifications.show({ color: 'green', message: `Application ${res.data.applicationNo} saved` });
         if (res.synced?.length) {
           notifications.show({ color: 'teal', autoClose: 7000, title: 'Saved to Farmers Management', message: res.synced.join(', ') });
+          reloadFarmers();
         }
+        setChanged(new Set());
         return res.data;
       }
       notifications.show({ color: 'red', message: res?.message || 'Save failed' });
@@ -300,6 +339,7 @@ export default function FarmerApplicationForm({ applicationId, onClose, onOpenEx
               <PanchayatInput
                 value={form.panchayat} onChange={v => set('panchayat', v)} panchayats={panchayats}
                 required error={errors.panchayat}
+                {...(hint('panchayat') ? { description: hint('panchayat'), styles: hintStyles } : {})}
               />
             </Grid.Col>
             <Grid.Col span={{ base: 12, sm: 4 }}>
@@ -365,11 +405,14 @@ export default function FarmerApplicationForm({ applicationId, onClose, onOpenEx
                 data={CATEGORIES.map(c => ({ value: c.value, label: `${c.en} — ${c.label}` }))}
                 description={hint('category')} styles={hintStyles} />
             </Grid.Col>
-            <Grid.Col span={{ base: 6, sm: 4 }}>
-              <TextInput label="Ward number" value={form.ward} onChange={e => set('ward', e.target.value)}
-                description={hint('ward')} styles={hintStyles} />
-            </Grid.Col>
-            <Grid.Col span={{ base: 6, sm: 4 }}>
+            <WardInputs
+              panchayat={form.panchayat} ward={form.ward} wardNumber={form.wardNumber}
+              onWard={v => set('ward', v)} onWardNumber={v => set('wardNumber', v)}
+              wardProps={{ description: hint('ward'), styles: hintStyles }}
+              numberProps={{ description: hint('wardNumber'), styles: hintStyles }}
+              wrap={(node, key) => <Grid.Col key={key} span={{ base: 6, sm: key === 'ward' ? 3 : 2 }}>{node}</Grid.Col>}
+            />
+            <Grid.Col span={{ base: 12, sm: 3 }}>
               <TextInput label="House number" value={form.houseNumber} onChange={e => set('houseNumber', e.target.value)}
                 description={hint('houseNumber')} styles={hintStyles} />
             </Grid.Col>
@@ -391,7 +434,19 @@ export default function FarmerApplicationForm({ applicationId, onClose, onOpenEx
 
         {/* ── Bank ─────────────────────────────────────────────────────── */}
         <Paper withBorder p="md" mb="md">
-          <Text fw={700} mb="xs" size="sm" tt="uppercase" c="dimmed">Bank details</Text>
+          <Group justify="space-between" mb="xs">
+            <Text fw={700} size="sm" tt="uppercase" c="dimmed">Bank details</Text>
+            {selectedFarmer?.secAccountNumber && (
+              <SegmentedControl
+                size="xs" value={form.bankSource}
+                onChange={v => {
+                  setForm(prev => ({ ...prev, ...bankFieldsOf(selectedFarmer, v) }));
+                  setChanged(prev => { const n = new Set(prev); ['bankName', 'branch', 'accountNumber', 'ifsc'].forEach(k => n.delete(k)); return n; });
+                }}
+                data={[{ value: 'Primary', label: 'Primary bank' }, { value: 'Secondary', label: 'Secondary bank' }]}
+              />
+            )}
+          </Group>
           <Grid gutter="sm">
             <Grid.Col span={{ base: 12, sm: 6 }}>
               <Select
@@ -405,7 +460,7 @@ export default function FarmerApplicationForm({ applicationId, onClose, onOpenEx
             </Grid.Col>
             <Grid.Col span={{ base: 12, sm: 6 }}>
               <TextInput label="Bank name" value={form.bankName}
-                onChange={e => setForm(prev => ({ ...prev, bankName: e.target.value, bankLedgerId: null }))}
+                onChange={e => { setForm(prev => ({ ...prev, bankName: e.target.value, bankLedgerId: null })); markChanged('bankName'); }}
                 description={hint('bankName')} styles={hintStyles} />
             </Grid.Col>
             <Grid.Col span={{ base: 12, sm: 4 }}>
@@ -493,8 +548,19 @@ export default function FarmerApplicationForm({ applicationId, onClose, onOpenEx
           </Grid>
         </Paper>
 
+        {/* ── Documents → the farmer's Documents in Farmers Management ─── */}
+        <Box mb="md">
+          <FarmerDocumentsUpload
+            farmerId={form.farmerId}
+            farmerNumber={selectedFarmer?.farmerNumber || form.farmerNumber}
+            farmerName={form.applicantName}
+            onChange={summary => form.farmerId && patchFarmer(form.farmerId, { docs: summary })}
+          />
+        </Box>
+
         <Alert variant="light" color="blue" icon={<IconInfoCircle size={16} />} mb="md">
-          Print adds the farmer&apos;s uploaded Bank Statement, Aadhaar and Ration Card after the form (only those uploaded).
+          Print adds the farmer&apos;s uploaded documents (Bank Statement, Aadhaar, Ration Card, Income Proof and other documents) after the form — only those uploaded.
+          Details typed or changed here are saved to the farmer in Farmers Management on Save.
           Year shown on the form: <b>{fyLabel(form.year)}</b>.
         </Alert>
 

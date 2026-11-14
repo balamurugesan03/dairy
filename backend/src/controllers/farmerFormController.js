@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import Farmer from '../models/Farmer.js';
 import MilkCollection from '../models/MilkCollection.js';
 import CollectionCenter from '../models/CollectionCenter.js';
+import { farmerWardsOf, wardNumberOf } from '../utils/panchayatMatch.js';
 
 // ════════════════════════════════════════════════════════════════
 //  Lookups for the farmer report forms (Crop Damage Statement,
@@ -10,8 +11,13 @@ import CollectionCenter from '../models/CollectionCenter.js';
 //  and Agri Statistics figures taken from Farmer + Milk records.
 // ════════════════════════════════════════════════════════════════
 
-// Documents attached after the report, in print order
-export const FORM_DOCUMENTS = ['bankPassbook', 'aadhaar', 'rationCard'];
+// Documents attached after the report, in print order (incomeProof = "Income Proof";
+// documents.additionalDocuments holds further "Other" documents)
+export const FORM_DOCUMENTS = ['bankPassbook', 'aadhaar', 'rationCard', 'incomeProof'];
+const docFlags = () => ({
+  ...Object.fromEntries(FORM_DOCUMENTS.map((k) => [k, { $gt: [{ $strLenCP: { $ifNull: [`$documents.${k}`, ''] } }, 0] }])),
+  otherCount: { $size: { $ifNull: ['$documents.additionalDocuments', []] } }
+});
 
 const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // Same Panchayat whatever the case / surrounding spaces
@@ -50,9 +56,18 @@ export const getFormFarmers = async (req, res) => {
           accountNumber: '$bankDetails.accountNumber',
           branch: '$bankDetails.branch',
           ifsc: '$bankDetails.ifsc',
+          // Secondary bank + which one payments use; Parent Grouping link
+          secBankName: '$secondaryBankDetails.bankName',
+          secAccountNumber: '$secondaryBankDetails.accountNumber',
+          secBranch: '$secondaryBankDetails.branch',
+          secIfsc: '$secondaryBankDetails.ifsc',
+          payTo: 1,
+          parentFarmer: 1,
           panchayat: '$address.panchayat',
           village: '$address.village',
           ward: '$address.ward',
+          wardNumber: '$address.wardNumber',
+          taluk: '$address.taluk',
           // Application forms (Panchayat subsidy / incentive)
           houseName: '$address.houseName',
           houseNumber: '$address.houseNumber',
@@ -67,7 +82,7 @@ export const getFormFarmers = async (req, res) => {
           isMembership: 1,
           collectionCenter: 1,
           // which documents are uploaded (not the files themselves)
-          docs: Object.fromEntries(FORM_DOCUMENTS.map((k) => [k, { $gt: [{ $strLenCP: { $ifNull: [`$documents.${k}`, ''] } }, 0] }]))
+          docs: docFlags()
         }
       },
       { $sort: { name: 1 } }
@@ -91,10 +106,12 @@ export const getFormFarmers = async (req, res) => {
 export const getFarmerDocuments = async (req, res) => {
   try {
     const farmer = await Farmer.findOne({ _id: req.params.farmerId, companyId: req.companyId })
-      .select(FORM_DOCUMENTS.map((k) => `documents.${k}`).join(' ')).lean();
+      .select([...FORM_DOCUMENTS.map((k) => `documents.${k}`), 'documents.additionalDocuments'].join(' ')).lean();
     if (!farmer) return res.status(404).json({ success: false, message: 'Farmer not found' });
     const docs = {};
     for (const k of FORM_DOCUMENTS) if (farmer.documents?.[k]) docs[k] = farmer.documents[k];
+    const other = (farmer.documents?.additionalDocuments || []).filter(Boolean);
+    if (other.length) docs.additionalDocuments = other;
     res.json({ success: true, data: docs });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -168,10 +185,13 @@ export const getAgriPrefill = async (req, res) => {
 };
 
 // ════════════════════════════════════════════════════════════════
-//  Save-back: details typed on a report form that Farmer Management
-//  does not have yet are written to the farmer, so the next report
-//  (and every other screen) gets them. Existing values are never
-//  overwritten — Farmer Management stays the source of truth.
+//  Save-back: details typed on an LSGD / farmer report go to the same
+//  farmer in Farmers Management (never a new farmer), so the next report
+//  and every other screen gets them.
+//   • A detail the farmer does not have yet is always filled in.
+//   • A detail the farmer already has is replaced only when the user
+//     changed that field on the report (`changed`), so a stale value on
+//     an old application never overwrites a newer farmer record.
 // ════════════════════════════════════════════════════════════════
 const SYNC_FIELDS = [
   // [form field, farmer path, label]
@@ -180,6 +200,7 @@ const SYNC_FIELDS = [
   ['ifsc',          'bankDetails.ifsc',          'IFSC Code'],
   ['branch',        'bankDetails.branch',        'Branch'],
   ['ward',          'address.ward',              'Ward'],
+  ['wardNumber',    'address.wardNumber',        'Ward No'],
   ['panchayat',     'address.panchayat',         'Panchayat'],
   ['aadhaarNumber', 'identityDetails.aadhaar',   'Aadhaar'],
   ['mobileNumber',  'personalDetails.phone',     'Mobile'],
@@ -192,41 +213,213 @@ const SYNC_FIELDS = [
   ['gender',        'personalDetails.gender',    'Gender'],
   ['membershipNo',  'memberId',                  'Membership No'],
 ];
+export const SYNC_FIELD_NAMES = SYNC_FIELDS.map(([f]) => f);
 const ADDRESS_PARTS = ['address.houseName', 'address.place', 'address.post'];
 
 const pathGet = (o, path) => path.split('.').reduce((v, k) => (v == null ? v : v[k]), o);
 
-/** Fill the farmer's missing details from a saved form; returns the labels that were added. */
-export const syncFarmerFromForm = async (companyId, farmerId, form = {}) => {
+/**
+ * Save a report's farmer details to the farmer.
+ * @param form     report fields (bankName, accountNumber, ifsc, ward, wardNumber, panchayat, …)
+ * @param changed  form fields the user edited on the report — these replace existing values
+ * @returns labels saved, e.g. ['Account Number', 'Ward (updated)']
+ */
+export const syncFarmerFromForm = async (companyId, farmerId, form = {}, { changed = [] } = {}) => {
   if (!farmerId || !mongoose.isValidObjectId(String(farmerId))) return [];
   const farmer = await Farmer.findOne({ _id: farmerId, companyId })
     .select([...SYNC_FIELDS.map(([, path]) => path), ...ADDRESS_PARTS].join(' ') + ' bankDetails.bankLedgerId').lean();
   if (!farmer) return [];
+  const edited = new Set((Array.isArray(changed) ? changed : []).map(String));
+  const data = { ...form };
+  // Ward picked without a number → number from the ward ("Ward 5" → 5)
+  if (edited.has('ward') && !String(data.wardNumber ?? '').trim() && wardNumberOf(data.ward)) {
+    data.wardNumber = wardNumberOf(data.ward);
+    edited.add('wardNumber');
+  }
   const $set = {};
   const added = [];
-  // Bank fields go together: only when the farmer has no bank yet, or it is the same bank —
-  // never another bank's account / IFSC under the farmer's bank name
+  // Bank fields go together: without an edit, only when the farmer has no bank yet or it is the
+  // same bank — never another bank's account / IFSC under the farmer's bank name
   const norm = (s) => String(s ?? '').trim().toUpperCase();
   const farmerBank = norm(farmer.bankDetails?.bankName);
-  const sameBank = !farmerBank || !norm(form.bankName) || farmerBank === norm(form.bankName);
+  const bankEdited = ['bankName', 'accountNumber', 'ifsc', 'branch'].some((f) => edited.has(f));
+  const sameBank = bankEdited || !farmerBank || !norm(data.bankName) || farmerBank === norm(data.bankName);
   for (const [field, path, label] of SYNC_FIELDS) {
     if (path.startsWith('bankDetails.') && !sameBank) continue;
-    const v = String(form[field] ?? '').trim();
-    if (!v || String(pathGet(farmer, path) ?? '').trim()) continue;
+    const v = String(data[field] ?? '').trim();
+    if (!v) continue;
+    const cur = String(pathGet(farmer, path) ?? '').trim();
+    if (cur && !edited.has(field)) continue;          // keep Farmers Management's value
+    if (cur && norm(cur) === norm(v)) continue;       // nothing to change
     if (path === 'personalDetails.gender' && !['Male', 'Female', 'Other'].includes(v)) continue;
     $set[path] = path === 'bankDetails.ifsc' || path === 'identityDetails.voterId' ? v.toUpperCase() : v;
-    added.push(label);
+    added.push(cur ? `${label} (updated)` : label);
   }
   // Address typed on a form: only when the farmer has no address at all (it can't be split into parts)
-  const addressText = String(form.address ?? '').trim();
-  if (typeof form.address === 'string' && addressText && ADDRESS_PARTS.every((p) => !String(pathGet(farmer, p) ?? '').trim())) {
+  const addressText = String(data.address ?? '').trim();
+  if (typeof data.address === 'string' && addressText && ADDRESS_PARTS.every((p) => !String(pathGet(farmer, p) ?? '').trim())) {
     $set['address.place'] = addressText;
     added.push('Address');
   }
-  // Bank from Farmer Bank Details: carry its ledger too, when the farmer has none
-  if ($set['bankDetails.bankName'] && !farmer.bankDetails?.bankLedgerId && form.bankLedgerId && mongoose.isValidObjectId(String(form.bankLedgerId))) {
-    $set['bankDetails.bankLedgerId'] = form.bankLedgerId;
+  // Bank from Farmer Bank Details: carry its ledger too
+  if ($set['bankDetails.bankName'] && (!farmer.bankDetails?.bankLedgerId || edited.has('bankName'))
+    && data.bankLedgerId && mongoose.isValidObjectId(String(data.bankLedgerId))) {
+    $set['bankDetails.bankLedgerId'] = data.bankLedgerId;
   }
   if (added.length) await Farmer.updateOne({ _id: farmer._id }, { $set });
   return added;
+};
+
+// Same checks as the application forms
+const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+const nospace = (s) => String(s ?? '').replace(/\s+/g, '');
+export const validateFarmerDetails = (b) => {
+  const errors = [];
+  const ifsc = String(b.ifsc || '').trim().toUpperCase();
+  if (ifsc && !IFSC_RE.test(ifsc)) errors.push('IFSC Code must be 11 characters like SBIN0001234');
+  const ac = nospace(b.accountNumber);
+  if (ac && !/^\d{6,18}$/.test(ac)) errors.push('Bank Account Number must be 6–18 digits');
+  const aadhaar = nospace(b.aadhaarNumber);
+  if (aadhaar && !/^\d{12}$/.test(aadhaar)) errors.push('Aadhaar Number must be 12 digits');
+  const mobile = nospace(b.mobileNumber);
+  if (mobile && !/^\d{10}$/.test(mobile)) errors.push('Mobile Number must be 10 digits');
+  return errors;
+};
+
+// PUT /farmer-forms/farmers/:farmerId/details { ...fields, changed: [field] }
+//   Farmer details edited on an LSGD report (e.g. a Milk Statement row) → Farmers Management
+export const updateFarmerDetails = async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.farmerId)) return res.status(404).json({ success: false, message: 'Farmer not found' });
+    const errors = validateFarmerDetails(req.body || {});
+    if (errors.length) return res.status(400).json({ success: false, message: errors.join('; '), errors });
+    const body = { ...req.body };
+    ['accountNumber', 'aadhaarNumber', 'mobileNumber'].forEach((k) => { if (body[k] != null) body[k] = nospace(body[k]); });
+    const changed = (Array.isArray(body.changed) ? body.changed : []).filter((f) => SYNC_FIELD_NAMES.includes(f));
+    const exists = await Farmer.exists({ _id: req.params.farmerId, companyId: req.companyId });
+    if (!exists) return res.status(404).json({ success: false, message: 'Farmer not found in Farmers Management' });
+    const synced = await syncFarmerFromForm(req.companyId, req.params.farmerId, body, { changed });
+    const f = await Farmer.findById(req.params.farmerId)
+      .select('farmerNumber personalDetails.name personalDetails.phone bankDetails identityDetails.aadhaar address').lean();
+    res.json({
+      success: true,
+      synced,
+      data: {
+        _id: f._id, farmerNumber: f.farmerNumber, name: f.personalDetails?.name || '', phone: f.personalDetails?.phone || '',
+        bankName: f.bankDetails?.bankName || '', branch: f.bankDetails?.branch || '', accountNumber: f.bankDetails?.accountNumber || '',
+        ifsc: (f.bankDetails?.ifsc || '').toUpperCase(), aadhaar: f.identityDetails?.aadhaar || '',
+        panchayat: f.address?.panchayat || '', ward: f.address?.ward || '', wardNumber: f.address?.wardNumber || ''
+      },
+      message: synced.length ? `Saved to Farmers Management: ${synced.join(', ')}` : 'No change — Farmers Management already has these details'
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ── Documents uploaded from a report → the farmer's Documents in Farmers Management ──
+// Slots: bankPassbook (Bank Statement), aadhaar, rationCard, incomeProof (Income Proof
+// — as in Add Farmer) — one file each, a new upload replaces it. "other" adds to
+// documents.additionalDocuments (max 5, an identical file is not added twice).
+const DOC_LABELS = { bankPassbook: 'Bank Statement', aadhaar: 'Aadhaar Card Copy', rationCard: 'Ration Card Copy', incomeProof: 'Income Proof', other: 'Other Document' };
+const MAX_DOC_BYTES = 5 * 1024 * 1024;           // per file, after the browser has shrunk images
+const MAX_OTHER = 5;
+const DATA_URL_HEAD = /^data:(image\/(png|jpe?g|webp|gif|bmp)|application\/pdf);base64,/i;
+
+const documentSummary = async (companyId, farmerId) => {
+  const [d] = await Farmer.aggregate([
+    { $match: { _id: new mongoose.Types.ObjectId(String(farmerId)), companyId: new mongoose.Types.ObjectId(String(companyId)) } },
+    { $project: { farmerNumber: 1, docs: docFlags() } }
+  ]);
+  return d ? { farmerId: d._id, farmerNumber: d.farmerNumber, ...d.docs } : null;
+};
+
+// GET /farmer-forms/documents/:farmerId/summary — which documents are uploaded (no files)
+export const getFarmerDocumentSummary = async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.farmerId)) return res.status(404).json({ success: false, message: 'Farmer not found' });
+    const data = await documentSummary(req.companyId, req.params.farmerId);
+    if (!data) return res.status(404).json({ success: false, message: 'Farmer not found' });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// POST /farmer-forms/documents/:farmerId { type, data: 'data:…;base64,…', farmerNumber? }
+export const uploadFarmerDocument = async (req, res) => {
+  try {
+    const { type, data } = req.body || {};
+    if (!mongoose.isValidObjectId(req.params.farmerId)) return res.status(404).json({ success: false, message: 'Farmer not found' });
+    if (!DOC_LABELS[type]) return res.status(400).json({ success: false, message: 'Unknown document type' });
+    if (typeof data !== 'string' || !DATA_URL_HEAD.test(data) || !/^[A-Za-z0-9+/=\r\n]*$/.test(data.slice(data.indexOf(',') + 1, data.indexOf(',') + 2001))) {
+      return res.status(400).json({ success: false, message: 'Upload an image (JPG / PNG) or a PDF' });
+    }
+    const bytes = Math.floor((data.length - data.indexOf(',') - 1) * 0.75);
+    if (bytes > MAX_DOC_BYTES) return res.status(413).json({ success: false, message: 'File is larger than 5 MB' });
+
+    const farmer = await Farmer.findOne({ _id: req.params.farmerId, companyId: req.companyId })
+      .select('farmerNumber documents.additionalDocuments');
+    if (!farmer) return res.status(404).json({ success: false, message: 'Farmer not found in Farmers Management' });
+    // The report names the farmer by number — refuse if it is a different farmer
+    if (req.body.farmerNumber && String(req.body.farmerNumber).trim() !== String(farmer.farmerNumber || '').trim()) {
+      return res.status(409).json({ success: false, message: `Farmer Number ${req.body.farmerNumber} does not match this farmer (${farmer.farmerNumber})` });
+    }
+
+    let message;
+    if (type === 'other') {
+      const list = (farmer.documents?.additionalDocuments || []).filter(Boolean);
+      if (list.includes(data)) {
+        message = 'This document is already saved for the farmer';
+      } else {
+        if (list.length >= MAX_OTHER) return res.status(400).json({ success: false, message: `Up to ${MAX_OTHER} other documents — remove one first` });
+        await Farmer.updateOne({ _id: farmer._id }, { $set: { 'documents.additionalDocuments': [...list, data] } });
+        message = `${DOC_LABELS.other} saved to Farmers Management`;
+      }
+    } else {
+      await Farmer.updateOne({ _id: farmer._id }, { $set: { [`documents.${type}`]: data } });
+      message = `${DOC_LABELS[type]} saved to Farmers Management`;
+    }
+    res.json({ success: true, message, data: await documentSummary(req.companyId, farmer._id) });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// DELETE /farmer-forms/documents/:farmerId/:type[?index=n] — remove a document from the farmer
+export const deleteFarmerDocument = async (req, res) => {
+  try {
+    const { farmerId, type } = req.params;
+    if (!mongoose.isValidObjectId(farmerId)) return res.status(404).json({ success: false, message: 'Farmer not found' });
+    if (!DOC_LABELS[type]) return res.status(400).json({ success: false, message: 'Unknown document type' });
+    const farmer = await Farmer.findOne({ _id: farmerId, companyId: req.companyId }).select('documents.additionalDocuments');
+    if (!farmer) return res.status(404).json({ success: false, message: 'Farmer not found' });
+    if (type === 'other') {
+      const list = (farmer.documents?.additionalDocuments || []).filter(Boolean);
+      const i = Number(req.query.index);
+      if (!Number.isInteger(i) || i < 0 || i >= list.length) return res.status(400).json({ success: false, message: 'Document not found' });
+      list.splice(i, 1);
+      await Farmer.updateOne({ _id: farmer._id }, { $set: { 'documents.additionalDocuments': list } });
+    } else {
+      await Farmer.updateOne({ _id: farmer._id }, { $unset: { [`documents.${type}`]: 1 } });
+    }
+    res.json({ success: true, message: `${DOC_LABELS[type]} removed`, data: await documentSummary(req.companyId, farmer._id) });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /farmer-forms/wards?panchayat=&aliases= — wards already recorded for the Panchayat's
+// farmers (name + ward number), for the Add / Edit Farmer address and the LSGD reports
+export const getPanchayatWards = async (req, res) => {
+  try {
+    const panchayat = String(req.query.panchayat || '').trim();
+    if (!panchayat) return res.json({ success: true, data: [] });
+    const aliases = String(req.query.aliases || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 5);
+    const data = await farmerWardsOf(req.companyId, panchayat, aliases);
+    data.sort((a, b) => (Number(a.wardNumber) || 9999) - (Number(b.wardNumber) || 9999) || a.ward.localeCompare(b.ward));
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 };

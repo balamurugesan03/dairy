@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 /**
- * Producer Dues → Payment Bar Reports → Payment Register (Karur, Tamil Nadu)
+ * Producer Dues → Regional Payment Bar Report → Payment Register (Karur, Tamil Nadu)
  * ─────────────────────────────────────────────────────────────────────────────
  * One saved Cash or Bank payment run for a settled payment cycle. The amounts
  * are a snapshot of the cycle's saved Payment Register (settled) entries —

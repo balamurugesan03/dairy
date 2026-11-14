@@ -16,6 +16,7 @@ import FarmerApplicationForm from './FarmerApplicationForm';
 import FarmerApplicationPreview from './FarmerApplicationPreview';
 import { PanchayatInput, useFarmerFormData } from './FarmerReportSelectors';
 import { FORM_TYPES, fyLabel, printApplications, SCHEME_YEAR_OPTIONS, currentSchemeYear } from '../../utils/farmerApplicationPrint';
+import { panchayatAliases } from '../../utils/keralaPanchayat';
 
 const STATUS_COLORS = { Draft: 'gray', Submitted: 'blue', Approved: 'green' };
 const LIMIT = 15;
@@ -41,7 +42,8 @@ export default function FarmerApplicationList({ formType = 'SUBSIDY' }) {
   const [bulkPrinting, setBulkPrinting] = useState(false);
   const [withDocs, setWithDocs] = useState(true);
 
-  const filters = { year, panchayat: panchayat.trim(), formType, status, search };
+  // Panchayat matches loosely on the server; the Malayalam / English alias goes along
+  const filters = { year, panchayat: panchayat.trim(), aliases: panchayatAliases(panchayat).join(','), formType, status, search };
 
   const fetchData = useCallback(async () => {
     setLoading(true);

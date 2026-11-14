@@ -116,7 +116,9 @@ const subsidyPages = (a) => {
   const rowNoColon = (label, value, cls) =>
     `<tr><td class="${cls}">${label}</td><td class="c"></td><td class="v">${value}</td></tr>`;
   const cat = CATEGORIES.map((c) => `<span class="opt${a.category === c.value ? ' on' : ''}">${c.label}</span>`).join('/');
-  const wardHouse = [a.ward, a.houseNumber].filter((x) => String(x || '').trim()).join(' / ');
+  // Ward number (from Ward Number, else the ward itself) / house number
+  const wardNo = String(a.wardNumber || '').trim() || String(a.ward || '').trim();
+  const wardHouse = [wardNo, a.houseNumber].filter((x) => String(x || '').trim()).join(' / ');
   const bankBranch = [a.bankName, a.branch].filter((x) => String(x || '').trim()).join(', ');
   const panchayatTitle = esc(a.panchayatLabel || a.panchayat);
 
@@ -227,7 +229,7 @@ const incentivePage = (a) => {
       <div class="form">അപേക്ഷാ ഫോറം</div>
     </div>
     <div class="line"><span style="width:36mm">പദ്ധതിയുടെ പേര്</span><span>${esc(a.schemeName || DEFAULT_SCHEME.INCENTIVE)}</span></div>
-    <div class="line"><span class="grow">ക്ഷീരസംഘത്തിന്റെ പേര് : <span class="v">${esc(a.societyName)}</span></span><span style="width:52mm">വാർഡ് നം. <span class="v">${esc(a.ward)}</span></span></div>
+    <div class="line"><span class="grow">ക്ഷീരസംഘത്തിന്റെ പേര് : <span class="v">${esc(a.societyName)}</span></span><span style="width:52mm">വാർഡ് നം. <span class="v">${esc(String(a.wardNumber || "").trim() || a.ward)}</span></span></div>
     <table class="grid">
       ${r(1, 'അപേക്ഷകന്റെ പേര്', esc(a.applicantName), ' style="height:9mm"')}
       ${r(2, 'ഗുണഭോക്തൃ ലിസ്റ്റിലെ നമ്പർ', `<span class="hint" style="font-weight:400">വാർഡ്/നം.</span> ${esc(a.beneficiaryNo)}`, ' style="height:9mm"')}

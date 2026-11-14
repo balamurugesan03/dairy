@@ -387,7 +387,7 @@ export const getAllMilkBillsByCycle = async (req, res) => {
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  Milk Bill (Karur, Tamil Nadu) — Producer Dues → Payment Bar Reports
+//  Milk Bill (Karur, Tamil Nadu) — Producer Dues → Regional Payment Bar Report
 //  Same bill data as Milk Bill (Producers) (loadCycleData / buildBill above),
 //  without the deduction detail. Previous balance and Net Payable come from the
 //  cycle's saved Payment Register (settled) entry — the Producer Dues figures —
