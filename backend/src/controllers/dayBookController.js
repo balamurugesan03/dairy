@@ -899,11 +899,59 @@ export const getDayBook = async (req, res) => {
         voucherType: 'Advance',
         ledgerName: 'Farmers Cash Advance',
         narration: `Cash Advance to ${farmerName}`,
-        amount: adv.advanceAmount
+        amount: adv.advanceAmount,
+        column: 'cash'   // Mode = Cash → Payment side, Cash column only
       };
       dateMap[dateKey].paymentSide.push(entry);
       dateMap[dateKey].totalPayments += adv.advanceAmount;
       paymentSide.push(entry);
+    }
+
+    // --- Cash Advances Given by Bank / UPI / Cheque ---
+    // Mode = Bank never touches cash: Adjustment column only, same pattern as
+    // the other bank-mode postings (Producer Payment, Incentive, Bonus):
+    //   Receipt side (Adjustment): the bank ledger the money went out of
+    //   Payment side (Adjustment): Farmers Cash Advance
+    // These were missing from the Day Book altogether.
+    const bankAdvancesGiven = await Advance.find({
+      companyId,
+      advanceDate: { $gte: start, $lte: end },
+      advanceCategory: 'Cash Advance',
+      paymentMode: { $in: ['Bank', 'UPI', 'Cheque'] },
+      advanceAmount: { $gt: 0 },
+      status: { $ne: 'Cancelled' }
+    }).populate('farmerId', 'farmerNumber personalDetails').lean();
+
+    if (bankAdvancesGiven.length) {
+      const [advLedgerDoc, bankLedgerDoc] = await Promise.all([
+        Ledger.findOne({ companyId, ledgerName: { $regex: /^farmers?\s*cash\s*advance$/i } }).select('ledgerName').lean(),
+        Ledger.findOne({ companyId, ledgerType: { $in: ['Bank', 'Bank Accounts'] }, status: { $ne: 'Inactive' } }).sort({ createdAt: 1 }).select('ledgerName').lean()
+      ]);
+      const advName = advLedgerDoc?.ledgerName || 'Farmers Cash Advance';
+      const bankName = bankLedgerDoc?.ledgerName || 'Bank';
+      for (const adv of bankAdvancesGiven) {
+        const dateKey = adv.advanceDate.toISOString().split('T')[0];
+        if (!dateMap[dateKey]) {
+          dateMap[dateKey] = { date: dateKey, receiptSide: [], paymentSide: [], totalReceipts: 0, totalPayments: 0 };
+        }
+        const farmerName = adv.farmerId?.personalDetails?.name || adv.farmerId?.farmerNumber || 'Farmer';
+        const base = {
+          date: adv.advanceDate,
+          voucherNumber: adv.advanceNumber || `ADV-${String(adv._id).slice(-6)}`,
+          voucherType: 'BankTransfer',
+          narration: `Cash Advance to ${farmerName} (${adv.paymentMode})`,
+          amount: adv.advanceAmount,
+          column: 'adjustment'
+        };
+        const receiptEntry = { ...base, ledgerName: bankName };
+        const paymentEntry = { ...base, ledgerName: advName };
+        dateMap[dateKey].receiptSide.push(receiptEntry);
+        dateMap[dateKey].totalReceipts += adv.advanceAmount;
+        receiptSide.push(receiptEntry);
+        dateMap[dateKey].paymentSide.push(paymentEntry);
+        dateMap[dateKey].totalPayments += adv.advanceAmount;
+        paymentSide.push(paymentEntry);
+      }
     }
 
     // --- Producer Receipts (returns from farmers) ---

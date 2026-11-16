@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { reportAPI } from '../../services/api';
 import { useCompany } from '../../context/CompanyContext';
 import { printRDStatement, rdDocHtml, rdSheetStyle, RD_CSS } from './shared/rdPrint';
+import { GROUP_BY_OPTS, sectionLabel } from './shared/reportViews';
 import {
   Box, Paper, Group, Text, Title, Button, Select,
   Stack, Loader, Center, ThemeIcon, Container
@@ -39,33 +40,14 @@ const getPresetRange = (preset) => {
   }
 };
 
-// ── Report-view (groupBy) options — Account Group Wise is the default ──────
-const GROUP_BY_OPTS = [
-  { value: 'accountGroup', label: 'Account Group Wise' },
-  { value: 'ledger',       label: 'Ledger Wise' },
-  { value: 'category',     label: 'Category Wise' }
-];
-
 const COLUMN_FORMAT_OPTS = [
   { value: 'single', label: 'Single Column' },
   { value: 'two',    label: 'Two Column' },
   { value: 'three',  label: 'Three Column' }
 ];
 
-const CATEGORY_LABELS = {
-  ASSETS: 'Assets', LIABILITIES: 'Liabilities', INCOME: 'Income',
-  EXPENSES: 'Expenses', CAPITAL: 'Capital & Reserves', OTHER: 'Other'
-};
-
 const fz      = (n) => parseFloat(n || 0).toFixed(2);
 const fmtDate = (d) => d ? dayjs(d).format('DD/MM/YYYY') : '';
-
-// Group header text: "Trade Income (INCOME)" for Account Group Wise.
-const sectionLabel = (groupBy, sec) => {
-  if (groupBy === 'category') return CATEGORY_LABELS[sec.sectionName] || sec.sectionName;
-  if (groupBy === 'accountGroup' && sec.parentGroup) return `${sec.sectionName} (${sec.parentGroup})`;
-  return sec.sectionName;
-};
 
 // ═════════════════════════════════════════════════════════════════════════
 // Main component

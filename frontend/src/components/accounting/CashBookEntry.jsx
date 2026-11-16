@@ -381,6 +381,7 @@ const CashBookEntry = ({ asPopup = false, onClose }) => {
         totalDebit: amount,
         totalCredit: amount,
         referenceType: 'Manual',
+        entrySource: 'CashBookEntry',
         narration
       };
 

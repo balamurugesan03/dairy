@@ -17,6 +17,7 @@ import ProducerLoan from '../models/ProducerLoan.js';
 import { getDateRange } from '../utils/dateFilters.js';
 import { findOrCreateLedger } from '../utils/accountingHelper.js';
 import { getCashBankLedgerIds, classifyVoucherEntry } from '../utils/cashAdjustmentClassifier.js';
+import { byNameCI, groupIntoSections } from '../utils/reportSections.js';
 import { getCashInHandOpening, getOrCreateCashLedger, CASH_LEDGER_TYPES } from '../utils/cashInHandOpening.js';
 import {
   calculateOpeningBalance,
@@ -120,8 +121,9 @@ export const getCashBook = async (req, res) => {
     const advancesCash = await Advance.find({
       companyId: req.companyId,
       advanceDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
-      paymentMode: 'Cash',
-      advanceAmount: { $gt: 0 }
+      paymentMode: 'Cash',            // Mode = Bank never enters the Cash Book
+      advanceAmount: { $gt: 0 },
+      status: { $ne: 'Cancelled' }
     }).sort({ advanceDate: 1 }).populate('farmerId', 'farmerName farmerNumber');
 
     // Direct cash payments — Producer Receipts/Loans (Cash)
@@ -585,10 +587,11 @@ export const getGeneralLedger = async (req, res) => {
           date:          new Date(day + 'T00:00:00.000Z'),
           voucherNumber: `MKP-${day.replace(/-/g, '')}-${shift}`,
           voucherType:   'MilkPurchase',
-          // Dairy cooperative: Milk Purchase → Payment (Cr) side; Producers Dues → Receipt (Dr) side
+          // True accounting sides (Day Book: Receipt → PRODUCERS DUES, Payment → MILK PURCHASE):
+          // Dr Milk Purchase (expense → Payment) / Cr Producers Dues (liability → Receipt)
           particulars:   isMilkPurchaseLedger ? 'PRODUCERS DUES' : 'MILK PURCHASE',
-          debit:         isProducersDuesLedger ? c.totalAmount : 0,
-          credit:        isMilkPurchaseLedger  ? c.totalAmount : 0,
+          debit:         isMilkPurchaseLedger  ? c.totalAmount : 0,
+          credit:        isProducersDuesLedger ? c.totalAmount : 0,
           narration:     `${shift} | Qty: ${c.totalQty.toFixed(2)} L | ${c.farmerCount} farmers`,
           column:        'adjustment',
         });
@@ -700,7 +703,7 @@ export const getGeneralLedger = async (req, res) => {
       });
     }
 
-    // ── 5. CATTLE FEED ADVANCE ledger → receipt (debit) side ──
+    // ── 5. CATTLE FEED ADVANCE ledger → advance given: Dr → Payment ──
     // Asset ledger — advance given to farmer increases asset (Dr)
     const isCfAdvanceLedger =
       /cattle\s*feed\s*adv|cf\s*adv/i.test(ledger.ledgerName) ||
@@ -732,7 +735,7 @@ export const getGeneralLedger = async (req, res) => {
       });
     }
 
-    // ── 6. PRODUCER RECEIPT ledger → receipt (debit) side ──
+    // ── 6. PRODUCER RECEIPT ledger → money received from producers: Cr → Receipt ──
     const isProducerReceiptLedger =
       /producer\s*receipt|farmer\s*receipt/i.test(ledger.ledgerName) ||
       (/receipt/i.test(ledger.ledgerName) && /producer|farmer/i.test(ledger.ledgerName));
@@ -750,15 +753,15 @@ export const getGeneralLedger = async (req, res) => {
           voucherNumber: t.receiptNumber || `PR-${new Date(t.receiptDate).toISOString().slice(0,10)}`,
           voucherType:   'ProducerReceipt',
           particulars:   t.farmerName || 'Producer',
-          debit:         t.amount || 0,
-          credit:        0,
+          debit:         0,
+          credit:        t.amount || 0,
           narration:     'Producer Receipt',
           column:        'adjustment',
         });
       });
     }
 
-    // ── 7. CASH ADVANCE ledger → receipt (debit) side ──
+    // ── 7. CASH ADVANCE ledger → advance given: Dr → Payment ──
     // Asset ledger — advance given to farmer increases asset (Dr)
     const isCashAdvanceLedger =
       /cash\s*advanc|farmer.*cash.*adv|farmers.*cash.*adv/i.test(ledger.ledgerName);
@@ -770,12 +773,14 @@ export const getGeneralLedger = async (req, res) => {
         advanceDate: { $gte: dateFilter.startDate, $lte: dateFilter.endDate },
         status: { $ne: 'Cancelled' }
       })
-        .select('advanceDate advanceAmount advanceNumber farmerId')
+        .select('advanceDate advanceAmount advanceNumber farmerId paymentMode')
         .populate('farmerId', 'personalDetails.name farmerNumber')
         .lean();
 
       cashAdvTxns.forEach(t => {
         const farmerName = t.farmerId?.personalDetails?.name || t.farmerId?.farmerNumber || 'Producer';
+        // Mode decides the column: Cash → Cash column, Bank / UPI / Cheque → Adjustment
+        const isCashMode = (t.paymentMode || 'Cash') === 'Cash';
         rawTxns.push({
           date:          t.advanceDate,
           voucherNumber: t.advanceNumber || `CA-${new Date(t.advanceDate).toISOString().slice(0,10)}`,
@@ -783,13 +788,13 @@ export const getGeneralLedger = async (req, res) => {
           particulars:   farmerName,
           debit:         t.advanceAmount || 0,
           credit:        0,
-          narration:     'Cash Advance',
-          column:        'adjustment',
+          narration:     isCashMode ? 'Cash Advance' : `Cash Advance (${t.paymentMode})`,
+          column:        isCashMode ? 'cash' : 'adjustment',
         });
       });
     }
 
-    // ── 8. LOAN ADVANCE ledger → receipt (debit) side ──
+    // ── 8. LOAN ADVANCE ledger → loan given: Dr → Payment ──
     // Asset ledger — loan given to farmer increases asset (Dr)
     const isLoanAdvanceLedger =
       /loan\s*advanc|producer\s*loan|farmer.*loan/i.test(ledger.ledgerName);
@@ -819,7 +824,7 @@ export const getGeneralLedger = async (req, res) => {
       });
     }
 
-    // ── 9. KDFW WELFARE ledger → receipt (debit) side ──
+    // ── 9. KDFW WELFARE ledger → welfare collected from producers (liability): Cr → Receipt ──
     const isKdwfLedger =
       /kdfw|kdwf|welfare/i.test(ledger.ledgerName);
 
@@ -836,15 +841,15 @@ export const getGeneralLedger = async (req, res) => {
           voucherNumber: t.registerNumber || `WLF-${new Date(t.fromDate).toISOString().slice(0,10)}`,
           voucherType:   'Welfare',
           particulars:   'KDFW Welfare Collection',
-          debit:         t.totalWelfare || 0,
-          credit:        0,
+          debit:         0,
+          credit:        t.totalWelfare || 0,
           narration:     `Period: ${new Date(t.fromDate).toLocaleDateString('en-IN')} - ${new Date(t.toDate).toLocaleDateString('en-IN')}`,
           column:        'adjustment',
         });
       });
     }
 
-    // ── 10. CATTLE FEED COMMISSION ledger → receipt (debit) side ──
+    // ── 10. CATTLE FEED COMMISSION ledger → commission income: Cr → Receipt ──
     const isCfCommissionLedger =
       /cattle\s*feed\s*comm|cf\s*comm/i.test(ledger.ledgerName);
 
@@ -886,20 +891,17 @@ export const getGeneralLedger = async (req, res) => {
     // ── Sort all transactions by date, then compute running balance ────────────
     rawTxns.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    // Receipt/Payment side for real Voucher-sourced rows (t.voucherId set):
-    //   Cash / Bank ledger → Dr = Receipt (money in), Cr = Payment (money out)
-    //   any other ledger   → Cr = Receipt, Dr = Payment — so a Receipt Voucher /
-    //     Cash Book Entry receipt shows on the head's Receipt side and a
-    //     Payment Voucher / cash payment on its Payment side.
-    // Both sides are always shown (2026-10-31): the ledger's R/P/B type used to
-    // blank the "other" side, which hid Adjustment Entry legs from the GL.
-    // Synthetic dairy-flow rows (no voucherId — milk purchase, CF commission,
-    // etc.) keep the original Dr = Receipt / Cr = Payment mapping; their
-    // debit/credit fields already encode the intended display side.
-    // This only affects display; balance math below always uses the true
-    // debit/credit values.
-    const CASH_BANK_TYPES = ['Cash', 'Bank', 'Cash in Hand', 'Bank Accounts'];
-    const isCashBankLedger = CASH_BANK_TYPES.includes(ledger.ledgerType);
+    // Receipt / Payment side — ONE rule for every row (voucher or dairy-flow):
+    //   Cash in Hand → Dr = Receipt (cash in), Cr = Payment (cash out)
+    //   every other ledger, Bank included → Cr = Receipt, Dr = Payment
+    // This is the Day Book's own polarity: a Cash Book Entry receipt from
+    // Union Bank credits the bank and is a Receipt; a deposit debits it and is
+    // a Payment. Bank used to share Cash's Dr = Receipt rule, and the dairy-flow
+    // rows (CF purchase/sales, advances, commission, local sales) were mapped
+    // Dr = Receipt while their debit/credit are true accounting sides — both
+    // printed Receipts under Payment and vice versa. Both sides are always
+    // shown; the balance below uses the true debit/credit values.
+    const isCashLedger = CASH_LEDGER_TYPES.includes(ledger.ledgerType);
 
     let runningBalance = openingBalance;
     const transactions = rawTxns.map(t => {
@@ -907,21 +909,8 @@ export const getGeneralLedger = async (req, res) => {
       if (isDebitNature) runningBalance += netChange;
       else               runningBalance -= netChange;
 
-      let receiptAmount = t.debit;
-      let paymentAmount = t.credit;
-      if (t.voucherId) {
-        if (isCashBankLedger) {
-          receiptAmount = t.debit;
-          paymentAmount = t.credit;
-        } else {
-          // Cr = Receipt, Dr = Payment for every non-cash ledger. The ledger's
-          // R/P/B type used to blank the "other" side (e.g. an Adjustment
-          // Entry debiting an R-only ledger), so the amount vanished from the
-          // General Ledger while Day Book showed it — never drop an amount.
-          receiptAmount = t.credit;
-          paymentAmount = t.debit;
-        }
-      }
+      const receiptAmount = isCashLedger ? t.debit : t.credit;
+      const paymentAmount = isCashLedger ? t.credit : t.debit;
 
       return {
         ...t,
@@ -957,9 +946,6 @@ export const getGeneralLedger = async (req, res) => {
 };
 
 // 3. GENERAL LEDGER ABSTRACT
-// Case-insensitive A→Z name order used by the Ledger Abstract views.
-const byNameCI = (a = '', b = '') =>
-  String(a).localeCompare(String(b), 'en', { sensitivity: 'base', numeric: true });
 
 export const getGeneralLedgerAbstract = async (req, res) => {
   try {
@@ -1052,8 +1038,10 @@ export const getGeneralLedgerAbstract = async (req, res) => {
         // Receipt Voucher only ever credits R/B ledgers and always debits
         // Cash, and a Payment Voucher only ever debits P/B ledgers and always
         // credits Cash — so the two signals can no longer disagree.
-        const CASH_BANK_TYPES = ['Cash', 'Bank', 'Cash in Hand', 'Bank Accounts'];
-        const isCashBankLedger = CASH_BANK_TYPES.includes(ledger.ledgerType);
+        // Receipt / Payment: same single rule as the General Ledger — only Cash
+        // in Hand is Dr = Receipt; every other ledger (Bank included, e.g.
+        // Union Bank) is Cr = Receipt, Dr = Payment, as in the Day Book.
+        const isCashLedger = CASH_LEDGER_TYPES.includes(ledger.ledgerType);
         let totalReceipt = 0, totalPayment = 0;
 
         vouchers.forEach(voucher => {
@@ -1069,14 +1057,8 @@ export const getGeneralLedgerAbstract = async (req, res) => {
                 debitAdj += entry.debitAmount;
                 creditAdj += entry.creditAmount;
               }
-              if (isCashBankLedger) {
-                totalReceipt += entry.debitAmount;
-                totalPayment += entry.creditAmount;
-              } else {
-                // Never drop a side (same rule as getGeneralLedger) — Cr = Receipt, Dr = Payment
-                totalReceipt += entry.creditAmount;
-                totalPayment += entry.debitAmount;
-              }
+              totalReceipt += isCashLedger ? entry.debitAmount : entry.creditAmount;
+              totalPayment += isCashLedger ? entry.creditAmount : entry.debitAmount;
             }
           });
         });
@@ -1107,22 +1089,23 @@ export const getGeneralLedgerAbstract = async (req, res) => {
           const priorMc  = priorMcAgg[0]?.total  || 0;
           const periodMc = periodMcAgg[0]?.total || 0;
 
-          // Same convention as General Ledger's synthetic block: Milk
-          // Purchase → Payment (Cr) side; Producers Dues → Receipt (Dr) side.
+          // Same as General Ledger: Cr Producers Dues (→ Receipt),
+          // Dr Milk Purchase (→ Payment).
           if (isProducersDuesAbstract) {
-            totalDebits += periodMc;
-            totalReceipt += periodMc;
-            debitAdj += periodMc;
-          } else {
             totalCredits += periodMc;
-            totalPayment += periodMc;
+            totalReceipt += periodMc;
             creditAdj += periodMc;
+          } else {
+            totalDebits += periodMc;
+            totalPayment += periodMc;
+            debitAdj += periodMc;
           }
 
+          // Prior milk value moves the opening the same way (Cr for dues, Dr for purchase)
           const isDebitNatureMc = isDebitNatureLedger(ledger.ledgerType);
           const adjustedOpeningBalanceMc = isProducersDuesAbstract
-            ? (isDebitNatureMc ? openingBalance + priorMc : openingBalance - priorMc)
-            : (isDebitNatureMc ? openingBalance - priorMc : openingBalance + priorMc);
+            ? (isDebitNatureMc ? openingBalance - priorMc : openingBalance + priorMc)
+            : (isDebitNatureMc ? openingBalance + priorMc : openingBalance - priorMc);
           const closingBalanceMc = calculateClosingBalance(adjustedOpeningBalanceMc, totalDebits, totalCredits, isDebitNatureMc);
 
           return {
@@ -1184,7 +1167,7 @@ export const getGeneralLedgerAbstract = async (req, res) => {
           // eslint-disable-next-line no-shadow
           const adjustedOpeningBalance = openingBalance + priorSales;
           totalCredits += periodSales;
-          totalPayment += periodSales;
+          totalReceipt += periodSales;   // sales income is credited → Receipt
           // Un-vouchered milk sales never move cash directly through this path —
           // treat as Adjustment, consistent with General Ledger's handling of the
           // same synthetic rows.
@@ -2172,16 +2155,9 @@ export const getLedgerAbstractGrouped = async (req, res) => {
       voucherDate: { $gte: start, $lte: end }
     }).select('entries voucherType').lean();
     const splitMap = {};
-    // Receipt/Payment display: derived from EACH entry's own ledger's
-    // def_voucher_type (ledger.voucherType: R/P/B), not the voucher's own
-    // type — same rule as General Ledger / the flat Ledger Abstract. An
-    // R-only ledger only ever shows its credit side as Receipt, a P-only
-    // ledger only its debit side as Payment, a B ledger shows both — except
-    // Cash/Bank, which is cash itself (Dr = received, Cr = paid out), the
-    // reverse of the generic B polarity used for non-cash B ledgers like
-    // PRODUCERS DUES (which advance-recovery FarmerPayment Journal vouchers
-    // rely on).
-    const CASH_BANK_TYPES = ['Cash', 'Bank', 'Cash in Hand', 'Bank Accounts'];
+    // Receipt / Payment: same single rule as the General Ledger — only Cash
+    // in Hand is Dr = Receipt; every other ledger (Bank included) is
+    // Cr = Receipt, Dr = Payment, the direction it was entered in.
     splitVouchers.forEach(voucher => {
       const { column } = classifyVoucherEntry(voucher.entries, cashBankIds);
       voucher.entries.forEach(entry => {
@@ -2198,15 +2174,9 @@ export const getLedgerAbstractGrouped = async (req, res) => {
           splitMap[lid].creditAdj += entry.creditAmount || 0;
         }
         const entryLedger = ledgerById.get(lid);
-        const isCashBankLedger = entryLedger && CASH_BANK_TYPES.includes(entryLedger.ledgerType);
-        if (isCashBankLedger) {
-          splitMap[lid].receipt += entry.debitAmount || 0;
-          splitMap[lid].payment += entry.creditAmount || 0;
-        } else {
-          // Never drop a side (same rule as getGeneralLedger) — Cr = Receipt, Dr = Payment
-          splitMap[lid].receipt += entry.creditAmount || 0;
-          splitMap[lid].payment += entry.debitAmount || 0;
-        }
+        const isCashLedger = entryLedger && CASH_LEDGER_TYPES.includes(entryLedger.ledgerType);
+        splitMap[lid].receipt += (isCashLedger ? entry.debitAmount : entry.creditAmount) || 0;
+        splitMap[lid].payment += (isCashLedger ? entry.creditAmount : entry.debitAmount) || 0;
       });
     });
 
@@ -2245,20 +2215,51 @@ export const getLedgerAbstractGrouped = async (req, res) => {
         if (!periodMap[lid]) periodMap[lid] = { debit: 0, credit: 0 };
         if (!splitMap[lid])  splitMap[lid]  = { debitCash: 0, debitAdj: 0, creditCash: 0, creditAdj: 0, receipt: 0, payment: 0 };
 
-        // Same convention as General Ledger's synthetic block: Milk Purchase
-        // → Payment (Cr) side; Producers Dues → Receipt (Dr) side.
+        // Same as General Ledger: Cr Producers Dues (→ Receipt),
+        // Dr Milk Purchase (→ Payment).
         if (isDues) {
-          priorMap[lid].debit    += priorMc;
-          periodMap[lid].debit   += periodMc;
-          splitMap[lid].debitAdj += periodMc;
-          splitMap[lid].receipt  += periodMc;
-        } else {
           priorMap[lid].credit    += priorMc;
           periodMap[lid].credit   += periodMc;
           splitMap[lid].creditAdj += periodMc;
-          splitMap[lid].payment   += periodMc;
+          splitMap[lid].receipt   += periodMc;
+        } else {
+          priorMap[lid].debit    += priorMc;
+          periodMap[lid].debit   += periodMc;
+          splitMap[lid].debitAdj += periodMc;
+          splitMap[lid].payment  += periodMc;
         }
       });
+    }
+
+    // ── Un-vouchered MilkSales (Local / Sample / Credit Sales ledgers) — the
+    // flat abstract and General Ledger include these; without them the three
+    // Report Views would disagree. Income credited → Receipt, Adjustment.
+    const msLedgers = ledgers.filter(l =>
+      /local\s*sales?|sample\s*sales?|credit\s*sales?/i.test(l.ledgerName) ||
+      (l.ledgerType === 'Sales' && /milk|local|credit|sample/i.test(l.ledgerName)));
+    for (const l of msLedgers) {
+      const mode = /local/i.test(l.ledgerName) ? 'LOCAL'
+        : /sample/i.test(l.ledgerName) ? 'SAMPLE'
+        : /credit/i.test(l.ledgerName) ? 'CREDIT' : null;
+      const base = {
+        companyId: req.companyId, amount: { $gt: 0 },
+        $or: [{ voucherId: { $exists: false } }, { voucherId: null }],
+        ...(mode ? { saleMode: mode } : {})
+      };
+      const [priorAgg, periodAgg] = await Promise.all([
+        MilkSales.aggregate([{ $match: { ...base, date: { $lt: start } } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+        MilkSales.aggregate([{ $match: { ...base, date: { $gte: start, $lte: end } } }, { $group: { _id: null, total: { $sum: '$amount' } } }])
+      ]);
+      const prior = priorAgg[0]?.total || 0, period = periodAgg[0]?.total || 0;
+      if (!prior && !period) continue;
+      const lid = l._id.toString();
+      if (!priorMap[lid])  priorMap[lid]  = { debit: 0, credit: 0 };
+      if (!periodMap[lid]) periodMap[lid] = { debit: 0, credit: 0 };
+      if (!splitMap[lid])  splitMap[lid]  = { debitCash: 0, debitAdj: 0, creditCash: 0, creditAdj: 0, receipt: 0, payment: 0 };
+      priorMap[lid].credit    += prior;
+      periodMap[lid].credit   += period;
+      splitMap[lid].creditAdj += period;
+      splitMap[lid].receipt   += period;
     }
 
     const results = [];
@@ -2280,6 +2281,7 @@ export const getLedgerAbstractGrouped = async (req, res) => {
           ledgerName: ledger.ledgerName,
           ledgerType: ledger.ledgerType || 'Other',
           parentGroup: pg,
+          category: getLedgerCategory(ledger.ledgerType),
           balanceOnly: true,
           openingBalance: Math.abs(obSigned),
           openingBalanceType: obSigned >= 0 ? (isDebit ? 'Dr' : 'Cr') : (isDebit ? 'Cr' : 'Dr'),
@@ -2296,6 +2298,7 @@ export const getLedgerAbstractGrouped = async (req, res) => {
         ledgerName: ledger.ledgerName,
         ledgerType: ledger.ledgerType || 'Other',
         parentGroup: pg,
+        category: getLedgerCategory(ledger.ledgerType),
         openingBalance: Math.abs(obSigned),
         openingBalanceType: obSigned >= 0 ? (isDebit ? 'Dr' : 'Cr') : (isDebit ? 'Cr' : 'Dr'),
         debit: period.debit,
@@ -2308,22 +2311,10 @@ export const getLedgerAbstractGrouped = async (req, res) => {
       });
     });
 
-    // Group by ledgerType (account_group), sorted by parentGroup then accountGroup
-    const groupMap = {};
-    results.forEach(item => {
-      const key = item.ledgerType;
-      if (!groupMap[key]) groupMap[key] = { accountGroup: key, parentGroup: item.parentGroup, ledgers: [] };
-      groupMap[key].ledgers.push(item);
-    });
-
-    // Ledgers within each Account Group are shown alphabetically — the
-    // report's hierarchy is strictly Account Group → its heads/ledgers.
-    Object.values(groupMap).forEach(g => g.ledgers.sort((a, b) => byNameCI(a.ledgerName, b.ledgerName)));
-
-    const pgOrder = ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE', 'OTHER'];
-    const groups = Object.values(groupMap).map(g => ({
-      ...g,
-      totals: g.ledgers.reduce((acc, l) => ({
+    // Report View — Account Group Wise / Ledger Wise / Category Wise, grouped
+    // and sorted A→Z by the SAME helper Receipts and Disbursements uses.
+    const groupBy = req.query.groupBy || 'accountGroup';
+    const sumTotals = (items) => items.reduce((acc, l) => ({
         debit: acc.debit + l.debit,
         credit: acc.credit + l.credit,
         receipt: acc.receipt + (l.receipt || 0),
@@ -2336,13 +2327,15 @@ export const getLedgerAbstractGrouped = async (req, res) => {
         obCr: acc.obCr + (l.openingBalanceType === 'Cr' ? l.openingBalance : 0),
         clDr: acc.clDr + (l.closingBalanceType === 'Dr' ? l.closingBalance : 0),
         clCr: acc.clCr + (l.closingBalanceType === 'Cr' ? l.closingBalance : 0)
-      }), { debit: 0, credit: 0, receipt: 0, payment: 0, debitCash: 0, debitAdj: 0, creditCash: 0, creditAdj: 0, obDr: 0, obCr: 0, clDr: 0, clCr: 0 })
-    })).sort((a, b) => {
-      const ai = pgOrder.indexOf(a.parentGroup), bi = pgOrder.indexOf(b.parentGroup);
-      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi) || byNameCI(a.accountGroup, b.accountGroup);
-    });
+      }), { debit: 0, credit: 0, receipt: 0, payment: 0, debitCash: 0, debitAdj: 0, creditCash: 0, creditAdj: 0, obDr: 0, obCr: 0, clDr: 0, clCr: 0 });
 
-    res.json({ success: true, data: { startDate: start, endDate: end, groups } });
+    const sections = groupIntoSections(results, groupBy)
+      .map(s => ({ ...s, totals: sumTotals(s.ledgers) }));
+    // `groups` (Account Group Wise, older response shape) kept for existing callers
+    const groups = groupIntoSections(results, 'accountGroup')
+      .map(s => ({ accountGroup: s.sectionName, parentGroup: s.parentGroup, ledgers: s.ledgers, totals: sumTotals(s.ledgers) }));
+
+    res.json({ success: true, data: { startDate: start, endDate: end, groupBy, sections, groups } });
   } catch (err) {
     console.error('getLedgerAbstractGrouped error:', err);
     res.status(500).json({ success: false, message: err.message });
@@ -2675,19 +2668,8 @@ export const getRDStatementUnified = async (req, res) => {
       });
     });
 
-    // ── Group by the requested dimension ────────────────────────────────────
-    const groupKeyOf = (r) => groupBy === 'category' ? r.category
-      : groupBy === 'ledger' ? 'All Ledgers'
-      : r.ledgerType; // accountGroup (default)
-
-    const groupMap = {};
-    records.forEach(r => {
-      const key = groupKeyOf(r);
-      if (!groupMap[key]) groupMap[key] = { sectionName: key, parentGroup: r.parentGroup, ledgers: [] };
-      groupMap[key].ledgers.push(r);
-    });
-    Object.values(groupMap).forEach(g => g.ledgers.sort((a, b) => byNameCI(a.ledgerName, b.ledgerName)));
-
+    // ── Group by the requested dimension — headings A→Z, ledgers A→Z
+    //    (shared with Ledger Abstract, utils/reportSections.js) ──────────────
     const ZERO_TOT = {
       receiptCash: 0, receiptAdj: 0, receiptTotal: 0, paymentCash: 0, paymentAdj: 0, paymentTotal: 0,
       uptoR: 0, duringR: 0, eomR: 0, uptoP: 0, duringP: 0, eomP: 0
@@ -2697,10 +2679,8 @@ export const getRDStatementUnified = async (req, res) => {
       return acc;
     }, { ...ZERO_TOT });
 
-    // Headings A→Z (the ledgers inside each heading are already A→Z above).
-    const sections = Object.values(groupMap)
-      .map(g => ({ ...g, groupTotal: sumFields(g.ledgers) }))
-      .sort((a, b) => byNameCI(a.sectionName, b.sectionName));
+    const sections = groupIntoSections(records, groupBy)
+      .map(g => ({ ...g, groupTotal: sumFields(g.ledgers) }));
 
     const grandTotal = sumFields(records);
 

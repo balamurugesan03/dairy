@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import {
   Box, Paper, Group, Text, Button, Select, ScrollArea, Stack, Loader, Center,
-  Badge, SegmentedControl, Modal, NumberInput
+  Badge, Modal, NumberInput
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import {
@@ -14,6 +14,7 @@ import dayjs from 'dayjs';
 import { reportAPI, ledgerAPI } from '../../services/api';
 import { openA4Print, escapeHtml } from '../../utils/printA4';
 import { useCompany } from '../../context/CompanyContext';
+import { GROUP_BY_OPTS, sectionLabel } from './shared/reportViews';
 
 // General Ledger abstract — laid out exactly as the reference PDF: a
 // 3-line heading, Ledger | Opening Dr./Cr. | Receipt/Payment | Closing
@@ -32,24 +33,12 @@ const financialYearRange = () => {
   return [new Date(fy, 3, 1), new Date(fy + 1, 2, 31)];
 };
 
-// ── Report views ──────────────────────────────────────────────────────────
-// Ledger-wise   = ledgers under their Account Group ("Advance due by Society (LIABILITY)")
-// Category-wise = ledgers under their category (Liabilities, Assets …)
-// All Ledger    = one A→Z list, no headings
-const VIEW_OPTS = [
-  { value: 'accountGroup', label: 'Ledger-wise' },
-  { value: 'grouped',      label: 'Category-wise' },
-  { value: 'flat',         label: 'All Ledger' }
-];
-
-const CATEGORY_LABEL = {
-  LIABILITIES: 'Liabilities', CAPITAL: 'Capital & Reserves', ASSETS: 'Assets',
-  INCOME: 'Income', EXPENSES: 'Expenses', OTHER: 'Other'
-};
-
-// Liability side first, then Asset, then the revenue groups.
-const PG_ORDER  = ['LIABILITY', 'ASSET', 'INCOME', 'EXPENSE', 'OTHER'];
-const CAT_ORDER = ['LIABILITIES', 'CAPITAL', 'ASSETS', 'INCOME', 'EXPENSES', 'OTHER'];
+// ── Report views — the same three as Receipts and Disbursements ───────────
+// Account Group Wise = ledgers under their Account Group ("Advance due by Society (LIABILITY)")
+// Ledger Wise        = one A→Z ledger list, no headings
+// Category Wise      = ledgers under their category (Assets, Liabilities …)
+// Grouping and A→Z ordering (headings and ledgers) come from the server —
+// the same helper Receipts and Disbursements uses.
 
 // ── Opening / Closing Balance visibility ──────────────────────────────────
 // Only balance-sheet groups (Liability, Asset, Grants and Subsidies …) carry
@@ -68,10 +57,10 @@ const rowValues = (item) => {
   return {
     obDr: item.openingBalanceType === 'Dr' ? ob : 0,
     obCr: item.openingBalanceType === 'Cr' ? ob : 0,
-    // grouped endpoint: receipt / payment; flat endpoint: totalReceipt / totalPayment
+    // Receipt = credited, Payment = debited (Cash in Hand aside) — set by the server.
     // Cash in Hand (balanceOnly) shows only its Opening and Closing Balance
-    rec:  item.balanceOnly ? 0 : (item.receipt ?? item.totalReceipt ?? item.debit ?? item.totalDebits),
-    pay:  item.balanceOnly ? 0 : (item.payment ?? item.totalPayment ?? item.credit ?? item.totalCredits),
+    rec:  item.balanceOnly ? 0 : (item.receipt || 0),
+    pay:  item.balanceOnly ? 0 : (item.payment || 0),
     clDr: item.closingBalanceType === 'Dr' ? cl : 0,
     clCr: item.closingBalanceType === 'Cr' ? cl : 0
   };
@@ -123,10 +112,9 @@ const LedgerAbstract = () => {
   const orgName = selectedCompany?.societyName || selectedCompany?.companyName || 'Dairy Co-operative Society';
   const [loading, setLoading]         = useState(false);
   const [reportData, setReportData]   = useState(null);
-  const [groupedData, setGroupedData] = useState(null);
   const [dateRange, setDateRange]     = useState(financialYearRange);
   const [loadedRange, setLoadedRange] = useState(null);
-  const [view, setView]               = useState('accountGroup'); // accountGroup | grouped | flat
+  const [groupBy, setGroupBy]         = useState('accountGroup'); // accountGroup | ledger | category
 
   // Opening balance editor. The abstract's Opening Balance comes straight
   // from the Ledger master (Ledger.openingBalance / openingBalanceType), so
@@ -177,7 +165,7 @@ const LedgerAbstract = () => {
     }
   };
 
-  const fetchReport = async () => {
+  const fetchReport = async (gb = groupBy) => {
     const [start, end] = dateRange;
     if (!start || !end) {
       notifications.show({ title: 'Error', message: 'Select From and To dates', color: 'red' });
@@ -185,16 +173,12 @@ const LedgerAbstract = () => {
     }
     setLoading(true);
     try {
-      const params = {
+      const res = await reportAPI.ledgerAbstractGrouped({
         startDate: dayjs(start).format('YYYY-MM-DD'),
-        endDate:   dayjs(end).format('YYYY-MM-DD')
-      };
-      const [res, resG] = await Promise.all([
-        reportAPI.ledgerAbstract(params),
-        reportAPI.ledgerAbstractGrouped(params)
-      ]);
+        endDate:   dayjs(end).format('YYYY-MM-DD'),
+        groupBy:   gb
+      });
       setReportData(res?.data || res);
-      setGroupedData(resG?.data || resG);
       setLoadedRange([start, end]);
     } catch (err) {
       notifications.show({ title: 'Error', message: err.message || 'Failed to fetch', color: 'red' });
@@ -203,34 +187,23 @@ const LedgerAbstract = () => {
     }
   };
 
-  // ── Report data with Opening / Closing blanked for revenue groups ───────
-  const abstract = useMemo(() =>
-    (reportData?.abstract || []).map(it =>
-      hidesBalance(it.ledgerType, it.parentGroup, it.category) ? stripBalance(it) : it),
-  [reportData]);
+  // Report View change regenerates (grouping is computed server-side), as in Receipts and Disbursements
+  const handleGroupByChange = (val) => {
+    if (!val) return;
+    setGroupBy(val);
+    if (reportData) fetchReport(val);
+  };
 
-  // Account groups — Liability side first, then Asset (A→Z within each).
-  const groups = useMemo(() =>
-    (groupedData?.groups || [])
-      .map(g => hidesBalance(g.accountGroup, g.parentGroup) ? { ...g, ledgers: g.ledgers.map(stripBalance) } : g)
-      .sort((a, b) => {
-        const ai = PG_ORDER.indexOf(a.parentGroup), bi = PG_ORDER.indexOf(b.parentGroup);
-        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-      }),
-  [groupedData]);
-
-  // The view on screen as sections: { title | null, items }.
-  const sections = useMemo(() => {
-    if (view === 'accountGroup') {
-      return groups.map(g => ({ title: `${g.accountGroup} (${g.parentGroup || 'OTHER'})`, items: g.ledgers }));
-    }
-    if (view === 'grouped') {
-      const map = {};
-      abstract.forEach(it => { (map[it.category || 'OTHER'] ||= []).push(it); });
-      return CAT_ORDER.filter(c => map[c]?.length).map(c => ({ title: CATEGORY_LABEL[c], items: map[c] }));
-    }
-    return [{ title: null, items: abstract }];
-  }, [view, groups, abstract]);
+  // The view on screen as sections: { title | null, items } — already grouped
+  // and A→Z ordered by the server. Opening / Closing blanked for revenue ledgers.
+  const loadedView = reportData?.groupBy || groupBy;
+  const sections = useMemo(() =>
+    (reportData?.sections || []).map(sec => ({
+      title: loadedView === 'ledger' ? null : sectionLabel(loadedView, sec),
+      items: sec.ledgers.map(it => hidesBalance(it.ledgerType, it.parentGroup, it.category) ? stripBalance(it) : it)
+    })),
+  [reportData, loadedView]);
+  const abstract = useMemo(() => sections.flatMap(s => s.items), [sections]);
 
   // ── Export — the view on screen, same columns as the grid ──────────────
   const handleExport = () => {
@@ -304,21 +277,23 @@ const LedgerAbstract = () => {
     );
   };
 
-  const groupCount = groups.length;
+  const groupCount = loadedView === 'ledger' ? 0 : sections.length;
+  const groupNoun = loadedView === 'category'
+    ? (groupCount === 1 ? 'Category' : 'Categories')
+    : (groupCount === 1 ? 'Group' : 'Groups');
 
   return (
     <Box p="md">
-      {/* ── Top bar — view selector beside the Ledgers / Groups count ──── */}
+      {/* ── Top bar — Ledgers / Groups count ──── */}
       <Group gap="sm" align="center" wrap="wrap" mb="md" data-no-print>
         <Badge size="lg" variant="light" color="indigo" radius="sm">
           {reportData
-            ? <>{abstract.length} Ledger{abstract.length !== 1 ? 's' : ''} &nbsp;·&nbsp; {groupCount} Group{groupCount !== 1 ? 's' : ''}</>
+            ? <>{abstract.length} Ledger{abstract.length !== 1 ? 's' : ''}{groupCount > 0 && <> &nbsp;·&nbsp; {groupCount} {groupNoun}</>}</>
             : 'Ledgers · Groups'}
         </Badge>
-        <SegmentedControl value={view} onChange={setView} data={VIEW_OPTS} size="xs" />
       </Group>
 
-      {/* ── Filter bar — From Date, To Date, Generate ─────────────────── */}
+      {/* ── Filter bar — From Date, To Date, Report View, Generate ───── */}
       <Paper radius="sm" p="sm" mb="md" withBorder data-no-print>
         <Group gap="sm" wrap="nowrap" align="flex-end">
           <DatePickerInput
@@ -333,7 +308,8 @@ const LedgerAbstract = () => {
             leftSection={<IconCalendar size={12} />} leftSectionWidth={24}
             w={112} size="xs"
           />
-          <Button leftSection={<IconRefresh size={14} />} onClick={fetchReport} loading={loading} size="xs">
+          <Select label="Report View" value={groupBy} onChange={handleGroupByChange} data={GROUP_BY_OPTS} w={170} size="xs" allowDeselect={false} />
+          <Button leftSection={<IconRefresh size={14} />} onClick={() => fetchReport()} loading={loading} size="xs">
             Generate
           </Button>
           {abstract.length > 0 && (

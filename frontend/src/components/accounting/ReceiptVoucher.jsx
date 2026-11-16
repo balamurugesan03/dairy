@@ -212,6 +212,7 @@ const ReceiptVoucher = () => {
         totalDebit: amount,
         totalCredit: amount,
         referenceType: 'Manual',
+        entrySource: 'ReceiptVoucher',
         narration: values.narration
       };
 
@@ -351,6 +352,7 @@ const ReceiptVoucher = () => {
           totalDebit: amount,
           totalCredit: amount,
           referenceType: 'Manual',
+          entrySource: 'ReceiptVoucher',
           narration: entry.narration || ''
         };
 

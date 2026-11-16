@@ -49,8 +49,6 @@ import {
 import DateField from '../common/DateField';
 
 // ─ Module-level styles (prevent remount on every parent re-render) ──────────
-// Ledger types that make a Receipt / Payment a Cash in Hand voucher (kept out of the Adjustment grid)
-const CASH_LEDGER_TYPES = ['Cash', 'Cash in Hand'];
 
 // Full column height + flex column: the Receipt and Payment panels always
 // match heights, so both TOTAL bars sit on the same line whatever the row
@@ -221,7 +219,7 @@ const JournalVoucher = () => {
   const [fetchingVouchers, setFetchingVouchers] = useState(false);
   const [ledgers, setLedgers] = useState([]);
   const [vouchers, setVouchers] = useState([]);
-  const [cashVouchers, setCashVouchers] = useState([]);
+  const [bankVouchers, setBankVouchers] = useState([]); // bank Receipt / Payment vouchers (Adjustment book)
   const [isMilkBill, setIsMilkBill] = useState(false);
   const [voucherDate, setVoucherDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [viewModalOpened, setViewModalOpened] = useState(false);
@@ -261,19 +259,19 @@ const JournalVoucher = () => {
   const fetchVouchers = async () => {
     setFetchingVouchers(true);
     try {
-      // Adjustment (Journal) entries drive the form; the same date's
-      // Receipt/Payment vouchers are fetched too — only the bank ones (Bank
-      // Transfer etc., no Cash in Hand leg) are listed, view only.
-      // includeCashAdvance: Cash Advance module entries come back as read-only rows
-      const params = { startDate: voucherDate, endDate: voucherDate, limit: 1000, includeCashAdvance: 1 };
-      const [journalRes, receiptRes, paymentRes] = await Promise.all([
-        voucherAPI.getAll({ ...params, voucherType: 'Journal' }),
-        voucherAPI.getAll({ ...params, voucherType: 'Receipt' }),
-        voucherAPI.getAll({ ...params, voucherType: 'Payment' })
-      ]);
-      setVouchers(journalRes.data || []);
-      setCashVouchers([...(receiptRes.data || []), ...(paymentRes.data || [])]
-        .filter(v => v.status !== 'Cancelled'));
+      // book=adjustment: the server returns only this date's Adjustment-book
+      // rows — Journal (Adjustment) entries, bank Receipt/Payment vouchers
+      // (Bank Transfer etc.) and Bank-mode Cash Advances. Anything with a
+      // Cash in Hand leg (Cash Book Entry, cash Receipt/Payment vouchers,
+      // Cash-mode Farmer Cash Advance) belongs to Cash Book Entry and is
+      // never sent here.
+      const res = await voucherAPI.getAll({
+        startDate: voucherDate, endDate: voucherDate, limit: 1000,
+        voucherType: 'Journal,Receipt,Payment', includeCashAdvance: 1, book: 'adjustment'
+      });
+      const rows = (res.data || []).filter(v => v.status !== 'Cancelled');
+      setVouchers(rows.filter(v => v.voucherType === 'Journal'));
+      setBankVouchers(rows.filter(v => v.voucherType !== 'Journal'));
     } catch (error) {
       message.error(error.message || 'Failed to fetch vouchers');
     } finally {
@@ -461,6 +459,7 @@ const JournalVoucher = () => {
         totalDebit,
         totalCredit,
         referenceType: 'Manual',
+        entrySource: 'AdjustmentEntry',
         isMilkBill,
         adjSides: 'v2',
         narration: entries.map(e => e.narration).filter(Boolean).join('; ') || 'Journal Entry'
@@ -501,24 +500,10 @@ const JournalVoucher = () => {
     setViewModalOpened(true);
   };
 
-  // Grid = Adjustment entries only: the date's Journal (Adjustment) vouchers,
-  // then its Receipt / Payment vouchers that never touch Cash in Hand — Bank
-  // Transfer and other bank-ledger entries, which post to the Adjustment
-  // column. Cash in Hand vouchers (a Cash-ledger leg) are left out.
-  const cashLedgerIds = useMemo(() => new Set(
-    ledgers.filter(l => CASH_LEDGER_TYPES.includes(l.ledgerType)).map(l => String(l._id))
-  ), [ledgers]);
-  const bankAdjVouchers = useMemo(() => cashVouchers.filter(v => !v.isVirtual && !(v.entries || []).some(e => {
-    const id = String(e.ledgerId?._id || e.ledgerId || '');
-    const name = e.ledgerName || e.ledgerId?.ledgerName || '';
-    return CASH_LEDGER_TYPES.includes(e.ledgerId?.ledgerType) || cashLedgerIds.has(id)
-      || /^cash(\s+in\s+hand)?$/i.test(name.trim());
-  })), [cashVouchers, cashLedgerIds]);
-  // Farmer Cash Advance entries paid / received in CASH are cash transactions
-  // (Dr Farmers Cash Advance / Cr Cash in Hand) — they belong to Cash Book
-  // Entry, not here. Listing them here put Cash in Hand into the Adjustment
-  // grid. Bank / UPI / Cheque advances still come back with the Journal list
-  // under their own Farmer Advance and bank heads.
+  // Grid = Adjustment entries only (already separated by the server, see
+  // fetchVouchers): Journal (Adjustment) vouchers, then bank Receipt /
+  // Payment vouchers (Bank Transfer etc.), which post to the Adjustment column.
+  const bankAdjVouchers = bankVouchers;
   const adjustmentVouchers = useMemo(() => [...vouchers, ...bankAdjVouchers], [vouchers, bankAdjVouchers]);
   const gridRows = useMemo(() => [
     ...vouchers.map(voucher => ({ voucher, kind: 'adjustment' })),
@@ -805,7 +790,7 @@ const JournalVoucher = () => {
                   const isManual = voucher.referenceType === 'Manual';
                   // Bank-ledger Receipt / Payment (e.g. Bank Transfer) = an Adjustment entry too
                   const typeBadge = voucher.isVirtual
-                    ? { label: voucher.voucherType === 'Receipt' ? 'Cash Advance Recovery' : 'Cash Advance', color: 'orange' }
+                    ? { label: String(voucher._id).startsWith('cashadvrec-') ? 'Cash Advance Recovery (Bank)' : 'Cash Advance (Bank)', color: 'orange' }
                     : isAdj
                     ? { label: 'Adjustment', color: 'blue' }
                     : { label: voucher.referenceType === 'BankTransfer' ? 'Adj · Bank Transfer' : 'Adj · Bank', color: 'indigo' };

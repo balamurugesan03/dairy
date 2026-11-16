@@ -76,9 +76,8 @@ export const getAllLedgers = async (req, res) => {
       query.ledgerName = { $regex: search, $options: 'i' };
     }
 
-    const ledgers = await Ledger.find(query)
-      .sort({ ledgerName: 1 })
-      .select('ledgerName ledgerType currentBalance balanceType linkedEntity parentGroup openingBalance openingBalanceType');
+    // Full documents — voucher screens filter on voucherType (R/P/B) and status
+    const ledgers = await Ledger.find(query).sort({ ledgerName: 1 });
 
     res.status(200).json({
       success: true,
@@ -144,6 +143,9 @@ export const createLedger = async (req, res) => {
 // Get ledger by ID
 export const getLedgerById = async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ success: false, message: 'Ledger not found' });
+    }
     const ledger = await Ledger.findOne({ _id: req.params.id, companyId: req.companyId });
 
     if (!ledger) {
@@ -153,9 +155,39 @@ export const getLedgerById = async (req, res) => {
       });
     }
 
+    // Voucher history for Ledger View (opening + running balance, Dr positive)
+    const { startDate, endDate } = req.query;
+    const vq = { companyId: req.companyId, status: { $ne: 'Cancelled' }, 'entries.ledgerId': ledger._id };
+    if (startDate || endDate) {
+      vq.voucherDate = {};
+      if (startDate) vq.voucherDate.$gte = new Date(startDate);
+      if (endDate) vq.voucherDate.$lte = /^\d{4}-\d{2}-\d{2}$/.test(endDate) ? new Date(`${endDate}T23:59:59.999Z`) : new Date(endDate);
+    }
+    const vouchers = await Voucher.find(vq).sort({ voucherDate: 1, createdAt: 1 }).lean();
+    let running = (ledger.openingBalanceType === 'Cr' ? -1 : 1) * (ledger.openingBalance || 0);
+    const transactions = [];
+    for (const v of vouchers) {
+      for (const e of v.entries || []) {
+        if (String(e.ledgerId) !== String(ledger._id)) continue;
+        running += (e.debitAmount || 0) - (e.creditAmount || 0);
+        const contra = (v.entries || []).filter(x => String(x.ledgerId) !== String(ledger._id)).map(x => x.ledgerName).filter(Boolean);
+        transactions.push({
+          date: v.voucherDate,
+          voucherNumber: v.voucherNumber,
+          voucherType: v.voucherType,
+          particulars: contra.join(', ') || v.narration || '',
+          debit: e.debitAmount || 0,
+          credit: e.creditAmount || 0,
+          balance: Math.abs(running),
+          balanceType: running < 0 ? 'Cr' : 'Dr',
+          narration: e.narration || v.narration
+        });
+      }
+    }
+
     res.status(200).json({
       success: true,
-      data: ledger
+      data: { ...ledger.toObject(), transactions }
     });
   } catch (error) {
     console.error('Error fetching ledger:', error);
