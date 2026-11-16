@@ -6,6 +6,7 @@ import Ledger    from '../models/Ledger.js';
 import CollectionCenter from '../models/CollectionCenter.js';
 import { generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances, findOrCreateLedger } from '../utils/accountingHelper.js';
 import { resolveCenterFromAgent } from '../utils/resolveAgentCenter.js';
+import { getOrCreateCashLedger } from '../utils/cashInHandOpening.js';
 import { healMilkAssignments, healAfterImport, staffScope } from '../utils/milkScope.js';
 import { queueFromDairySync } from '../utils/unionFromDairySync.js';
 
@@ -73,11 +74,9 @@ async function createMilkSaleVoucher(sale, companyId) {
     const saleLedgerName = saleMode === 'SAMPLE' ? 'SAMPLE SALES' : 'LOCAL SALES';
 
     // Use ledgerType lookup for Cash/Bank so the cash book tracks the same ledger
-    let payLedger = await Ledger.findOne({
-      ledgerType: isBank ? 'Bank' : 'Cash',
-      status: 'Active',
-      companyId
-    });
+    let payLedger = isBank
+      ? await Ledger.findOne({ ledgerType: 'Bank', status: 'Active', companyId })
+      : await getOrCreateCashLedger(companyId);
     if (!payLedger) {
       payLedger = await findOrCreateLedger(
         isBank ? 'Bank' : 'Cash in Hand',

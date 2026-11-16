@@ -3,6 +3,7 @@ import { loadPayees, PAYEE_SELECT } from '../utils/farmerPayee.js';
 import Farmer from '../models/Farmer.js';
 import MilkCollection from '../models/MilkCollection.js';
 import Ledger from '../models/Ledger.js';
+import { getOrCreateCashLedger } from '../utils/cashInHandOpening.js';
 import Voucher from '../models/Voucher.js';
 import { generateCode } from '../models/Counter.js';
 import { generateVoucherNumber, updateLedgerBalances } from '../utils/accountingHelper.js';
@@ -324,20 +325,7 @@ export const postToDaybook = async (req, res) => {
 
     let payLedger;
     if (paymentMode === 'Cash') {
-      payLedger = await Ledger.findOne({ ledgerType: 'Cash', status: 'Active', companyId });
-      if (!payLedger) {
-        payLedger = await new Ledger({
-          ledgerName: 'Cash in Hand',
-          ledgerType: 'Cash',
-          parentGroup: 'ASSET',
-          openingBalance: 0,
-          currentBalance: 0,
-          balanceType: 'Dr',
-          openingBalanceType: 'Dr',
-          status: 'Active',
-          companyId,
-        }).save();
-      }
+      payLedger = await getOrCreateCashLedger(companyId);
     } else {
       payLedger = await Ledger.findOne({ _id: bankLedgerId, companyId });
       if (!payLedger || !BANK_TYPES.includes(payLedger.ledgerType)) {

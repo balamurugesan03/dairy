@@ -69,8 +69,9 @@ const rowValues = (item) => {
     obDr: item.openingBalanceType === 'Dr' ? ob : 0,
     obCr: item.openingBalanceType === 'Cr' ? ob : 0,
     // grouped endpoint: receipt / payment; flat endpoint: totalReceipt / totalPayment
-    rec:  item.receipt ?? item.totalReceipt ?? item.debit ?? item.totalDebits,
-    pay:  item.payment ?? item.totalPayment ?? item.credit ?? item.totalCredits,
+    // Cash in Hand (balanceOnly) shows only its Opening and Closing Balance
+    rec:  item.balanceOnly ? 0 : (item.receipt ?? item.totalReceipt ?? item.debit ?? item.totalDebits),
+    pay:  item.balanceOnly ? 0 : (item.payment ?? item.totalPayment ?? item.credit ?? item.totalCredits),
     clDr: item.closingBalanceType === 'Dr' ? cl : 0,
     clCr: item.closingBalanceType === 'Cr' ? cl : 0
   };
@@ -138,7 +139,7 @@ const LedgerAbstract = () => {
   const openObEditor = async (item) => {
     if (!item?.ledgerId) return;
     setObEdit({
-      ledgerId: item.ledgerId, ledgerName: item.ledgerName, amount: 0, type: 'Dr',
+      ledgerId: item.ledgerId, ledgerName: item.ledgerName, amount: 0, type: 'Dr', balanceOnly: !!item.balanceOnly,
       periodOpening: item.openingBalance, periodType: item.openingBalanceType
     });
     setObLoading(true);
@@ -429,7 +430,9 @@ const LedgerAbstract = () => {
               />
             </Group>
             <Text size="xs" c="dimmed">
-              This is the same Opening Balance shown in the Ledger. Saving here updates the Ledger, and changes made in the Ledger appear here.
+              {obEdit.balanceOnly
+                ? 'Cash in Hand opening comes from Payment Settings → Account Opening Balance. Saving here updates that setting, so Day Book, Cash Book, Cash Book Entry and this report all show the same figure.'
+                : 'This is the same Opening Balance shown in the Ledger. Saving here updates the Ledger, and changes made in the Ledger appear here.'}
             </Text>
             {(Math.abs((parseFloat(obEdit.amount) || 0) - (obEdit.periodOpening || 0)) > 0.005 || obEdit.type !== obEdit.periodType) && (obEdit.periodOpening || 0) > 0 && (
               <Text size="xs" c="dimmed">

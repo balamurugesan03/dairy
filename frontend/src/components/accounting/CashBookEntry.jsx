@@ -344,13 +344,11 @@ const CashBookEntry = ({ asPopup = false, onClose }) => {
     focus(refs[side].ledger);
   };
 
-  // Cash ledger for the automatic leg — same one the voucher screens use,
-  // auto-created exactly like they do when the company has none yet.
+  // Cash ledger for the automatic leg — the single Cash in Hand ledger the
+  // server resolves (and creates once if the society has none).
   const resolveCashLedger = async () => {
-    const known = book.cashLedger || ledgers.find(l => l.ledgerType === 'Cash');
-    if (known) return known;
-    const res = await ledgerAPI.create({ ledgerName: 'Cash in Hand', ledgerType: 'Cash', openingBalance: 0, openingBalanceType: 'Dr', voucherType: 'B' });
-    if (res?.data) setLedgers(prev => [...prev, res.data]);
+    if (book.cashLedger) return book.cashLedger;
+    const res = await ledgerAPI.getCashInHand();
     return res?.data || null;
   };
 

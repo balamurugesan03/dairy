@@ -2,6 +2,7 @@ import BankTransfer from '../models/BankTransfer.js';
 import Farmer from '../models/Farmer.js';
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
+import { getOrCreateCashLedger } from '../utils/cashInHandOpening.js';
 import CollectionCenter from '../models/CollectionCenter.js';
 import FarmerPayment from '../models/FarmerPayment.js';
 import PaymentRegister from '../models/PaymentRegister.js';
@@ -450,7 +451,7 @@ const createProducerDuesVouchers = async (bankTransfer, transferDetails, company
 
   // ── Cash Payment voucher ──────────────────────────────────────────────────
   if (cashTotal > 0) {
-    const cashLedger = await ensureLedger('Cash in Hand', 'Cash', 'Dr', companyId);
+    const cashLedger = await getOrCreateCashLedger(companyId);
     const entries = [
       // Dr PRODUCERS DUES (reducing liability to producers)
       { ledgerId: producerDuesLedger._id, ledgerName: producerDuesLedger.ledgerName, debitAmount: cashTotal, creditAmount: 0 },

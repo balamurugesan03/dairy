@@ -1,15 +1,48 @@
 import Ledger from '../models/Ledger.js';
 import Voucher from '../models/Voucher.js';
-import { syncSettingsFromCashLedger } from '../utils/cashInHandOpening.js';
+import {
+  syncSettingsFromCashLedger, ensureCashLedgersMerged, isCashInHandName, CASH_LEDGER_TYPES,
+  getOrCreateCashLedger
+} from '../utils/cashInHandOpening.js';
 import Supplier from '../models/Supplier.js';
 import Customer from '../models/Customer.js';
 import MilkSales from '../models/MilkSales.js';
 import mongoose from 'mongoose';
 import { seedDairyLedgersForCompany } from '../scripts/seedDairyLedgers.js';
 
+const CASH_DUP_MSG = 'A Cash in Hand ledger already exists. Only one is allowed — its opening balance is set in Payment Settings → Account Opening Balance.';
+
+// True when `data` would be a second Cash in Hand ledger for the company.
+const cashInHandAlreadyExists = async (data, companyId, excludeId = null) => {
+  if (!isCashInHandName(data?.ledgerName)) return false;
+  const others = await Ledger.find({
+    companyId,
+    ledgerType: { $in: CASH_LEDGER_TYPES },
+    ...(excludeId ? { _id: { $ne: excludeId } } : {})
+  }).select('ledgerName').lean();
+  return others.some(l => isCashInHandName(l.ledgerName));
+};
+
+// GET /ledgers/cash-in-hand — the society's single Cash in Hand ledger
+// (created once if the society has none). Voucher screens use this for
+// their automatic cash leg instead of guessing from the ledger list.
+export const getCashInHandLedger = async (req, res) => {
+  try {
+    await ensureCashLedgersMerged(req.companyId).catch(e => console.error('Cash in Hand merge:', e.message));
+    const ledger = await getOrCreateCashLedger(req.companyId);
+    res.status(200).json({ success: true, data: ledger });
+  } catch (error) {
+    console.error('Error resolving Cash in Hand ledger:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error resolving Cash in Hand ledger' });
+  }
+};
+
 // Get all ledgers
 export const getAllLedgers = async (req, res) => {
   try {
+    // Fold any duplicate Cash in Hand ledgers before listing (once per company)
+    await ensureCashLedgersMerged(req.companyId).catch(e => console.error('Cash in Hand merge:', e.message));
+
     const {
       ledgerType = '',
       status = 'Active',
@@ -81,6 +114,11 @@ export const createLedger = async (req, res) => {
       });
     }
 
+    // Only one Cash in Hand ledger per society (any spelling / case / cash type)
+    if (await cashInHandAlreadyExists(ledgerData, companyId)) {
+      return res.status(400).json({ success: false, message: CASH_DUP_MSG });
+    }
+
     // Set current balance same as opening balance
     ledgerData.currentBalance = ledgerData.openingBalance || 0;
     ledgerData.balanceType = ledgerData.openingBalanceType || 'Dr';
@@ -131,6 +169,14 @@ export const getLedgerById = async (req, res) => {
 // Update ledger
 export const updateLedger = async (req, res) => {
   try {
+    // Renaming / retyping a ledger into a second Cash in Hand is blocked too
+    if (req.body.ledgerName !== undefined || req.body.ledgerType !== undefined) {
+      const current = await Ledger.findOne({ _id: req.params.id, companyId: req.companyId }).lean();
+      if (current && await cashInHandAlreadyExists({ ...current, ...req.body }, req.companyId, current._id)) {
+        return res.status(400).json({ success: false, message: CASH_DUP_MSG });
+      }
+    }
+
     const ledger = await Ledger.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId },
       req.body,

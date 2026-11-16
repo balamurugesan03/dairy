@@ -17,6 +17,7 @@ import Attendance from '../models/Attendance.js';
 import Leave from '../models/Leave.js';
 import Loan from '../models/Loan.js';
 import Ledger from '../models/Ledger.js';
+import { getOrCreateCashLedger } from './cashInHandOpening.js';
 import Voucher from '../models/Voucher.js';
 import {
   findOrCreateLedger, generateVoucherNumber, updateLedgerBalances, reverseLedgerBalances
@@ -77,9 +78,7 @@ export const getPayLedger = async (mode, bankLedgerId, companyId) => {
     if (!bank) bank = await findOrCreateLedger('Bank Account', 'Bank', 'Bank Accounts', 'Dr', companyId);
     return bank;
   }
-  let cash = await Ledger.findOne({ companyId, ledgerType: { $in: ['Cash', 'Cash in Hand'] }, status: 'Active' });
-  if (!cash) cash = await findOrCreateLedger('Cash in Hand', 'Cash', 'Cash', 'Dr', companyId);
-  return cash;
+  return getOrCreateCashLedger(companyId);
 };
 
 /** Save a balanced voucher and apply ledger balances. Zero lines are dropped. */
