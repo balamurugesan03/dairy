@@ -5,6 +5,7 @@ import CollectionCenter from '../models/CollectionCenter.js';
 import MilkCollection from '../models/MilkCollection.js';
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
+import { getOrCreateCashLedger } from '../utils/cashInHandOpening.js';
 import {
   generateVoucherNumber,
   updateLedgerBalances,
@@ -288,8 +289,7 @@ async function resolveCreditLedger(payMode, bankLedgerId, companyId) {
     if (!bank) throw new Error('Select a bank ledger');
     return bank;
   }
-  const cash = await Ledger.findOne({ ledgerType: 'Cash', companyId });
-  return cash || findOrCreateLedger('Cash in Hand', 'Cash', 'Cash', 'Dr', companyId);
+  return getOrCreateCashLedger(companyId);
 }
 
 const fmtD = (d) => new Date(d).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' });

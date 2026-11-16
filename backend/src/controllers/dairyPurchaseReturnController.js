@@ -3,6 +3,7 @@ import Item from '../models/Item.js';
 import StockTransaction from '../models/StockTransaction.js';
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
+import { getOrCreateCashLedger } from '../utils/cashInHandOpening.js';
 import { getNextSequence } from '../models/Counter.js';
 import {
   generateVoucherNumber,
@@ -45,7 +46,9 @@ const createPurchaseReturnAccountingVoucher = async (purchaseReturn, companyId) 
     if (isCash) {
       if (received > 0) {
         const isBank = paymentMode === 'Bank' || paymentMode === 'Cheque';
-        let cashLedger = await Ledger.findOne({ ledgerType: isBank ? 'Bank' : 'Cash', companyId });
+        let cashLedger = isBank
+          ? await Ledger.findOne({ ledgerType: 'Bank', companyId })
+          : await getOrCreateCashLedger(companyId);
         if (!cashLedger) {
           cashLedger = await findOrCreateLedger(
             isBank ? 'Bank Account' : 'Cash in Hand',

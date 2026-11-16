@@ -1,6 +1,7 @@
 import ProducerLoan from '../models/ProducerLoan.js';
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
+import { getOrCreateCashLedger } from '../utils/cashInHandOpening.js';
 import EarningDeduction from '../models/EarningDeduction.js';
 import mongoose from 'mongoose';
 import { generateVoucherNumber, updateLedgerBalances } from '../utils/accountingHelper.js';
@@ -88,7 +89,7 @@ const createLoanDisbursementVoucher = async (loan, companyId) => {
   let paymentLedger = null;
 
   if (isCash) {
-    paymentLedger = await Ledger.findOne({ ledgerType: { $in: ['Cash', 'Cash in Hand'] }, status: 'Active', companyId });
+    paymentLedger = await getOrCreateCashLedger(companyId);
   } else if (loan.bankLedgerId) {
     paymentLedger = await Ledger.findById(loan.bankLedgerId);
   } else {

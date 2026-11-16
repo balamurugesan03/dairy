@@ -17,7 +17,7 @@ import ProducerLoan from '../models/ProducerLoan.js';
 import { getDateRange } from '../utils/dateFilters.js';
 import { findOrCreateLedger } from '../utils/accountingHelper.js';
 import { getCashBankLedgerIds, classifyVoucherEntry } from '../utils/cashAdjustmentClassifier.js';
-import { getCashInHandOpening } from '../utils/cashInHandOpening.js';
+import { getCashInHandOpening, getOrCreateCashLedger, CASH_LEDGER_TYPES } from '../utils/cashInHandOpening.js';
 import {
   calculateOpeningBalance,
   calculateClosingBalance,
@@ -64,20 +64,7 @@ export const getCashBook = async (req, res) => {
     const cfAdvanceLedgerName = cfAdvLedgerDoc?.ledgerName   || 'CATTLE FEED ADVANCE';
 
     // Find cash ledger (the one named Cash in Hand first) — auto-create if missing
-    let cashLedger =
-      await Ledger.findOne({ ledgerType: 'Cash', status: 'Active', companyId: req.companyId, ledgerName: { $regex: /^cash\s*in\s*hand$/i } }) ||
-      await Ledger.findOne({ ledgerType: 'Cash', status: 'Active', companyId: req.companyId });
-    if (!cashLedger) {
-      cashLedger = new Ledger({
-        ledgerName: 'Cash in Hand',
-        ledgerType: 'Cash',
-        openingBalance: 0,
-        currentBalance: 0,
-        balanceType: 'Dr',
-        companyId: req.companyId
-      });
-      await cashLedger.save();
-    }
+    const cashLedger = await getOrCreateCashLedger(req.companyId);
 
     // Opening balance — Cash in Hand ledger opening + cash legs before the period
     // (same source as Day Book and Cash Book Entry; cancelled vouchers excluded)
@@ -1225,6 +1212,27 @@ export const getGeneralLedgerAbstract = async (req, res) => {
         const isDebitNature = isDebitNatureLedger(ledger.ledgerType);
         const closingBalance = calculateClosingBalance(openingBalance, totalDebits, totalCredits, isDebitNature);
 
+        // Cash in Hand: balance-only row. Opening = balance as of the From
+        // Date, Closing = balance as of the To Date (opening + the period's
+        // cash legs). The period's movements themselves belong to the other
+        // ledger heads (Farmer Advance, Sales …) and are not repeated here.
+        if (CASH_LEDGER_TYPES.includes(ledger.ledgerType)) {
+          return {
+            ledgerId: ledger._id,
+            ledgerName: ledger.ledgerName,
+            ledgerType: ledger.ledgerType,
+            category: getLedgerCategory(ledger.ledgerType),
+            balanceOnly: true,
+            openingBalance: Math.abs(openingBalance),
+            openingBalanceType: getBalanceType(openingBalance, isDebitNature),
+            totalDebits, totalCredits,
+            totalReceipt: 0, totalPayment: 0,
+            debitCash: 0, debitAdj: 0, creditCash: 0, creditAdj: 0,
+            closingBalance: Math.abs(closingBalance),
+            closingBalanceType: getBalanceType(closingBalance, isDebitNature)
+          };
+        }
+
         return {
           ledgerId: ledger._id,
           ledgerName: ledger.ledgerName,
@@ -2263,6 +2271,25 @@ export const getLedgerAbstractGrouped = async (req, res) => {
       if (obSigned === 0 && period.debit === 0 && period.credit === 0) return;
 
       const closingSigned = obSigned + (isDebit ? (period.debit - period.credit) : -(period.debit - period.credit));
+
+      // Cash in Hand: Opening (as of From Date) and Closing (as of To Date)
+      // only — its period movements are shown under their own ledger heads.
+      if (CASH_LEDGER_TYPES.includes(ledger.ledgerType)) {
+        results.push({
+          ledgerId: ledger._id,
+          ledgerName: ledger.ledgerName,
+          ledgerType: ledger.ledgerType || 'Other',
+          parentGroup: pg,
+          balanceOnly: true,
+          openingBalance: Math.abs(obSigned),
+          openingBalanceType: obSigned >= 0 ? (isDebit ? 'Dr' : 'Cr') : (isDebit ? 'Cr' : 'Dr'),
+          debit: 0, credit: 0, receipt: 0, payment: 0,
+          debitCash: 0, debitAdj: 0, creditCash: 0, creditAdj: 0,
+          closingBalance: Math.abs(closingSigned),
+          closingBalanceType: closingSigned >= 0 ? (isDebit ? 'Dr' : 'Cr') : (isDebit ? 'Cr' : 'Dr')
+        });
+        return;
+      }
 
       results.push({
         ledgerId: ledger._id,

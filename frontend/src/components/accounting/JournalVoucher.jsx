@@ -514,15 +514,16 @@ const JournalVoucher = () => {
     return CASH_LEDGER_TYPES.includes(e.ledgerId?.ledgerType) || cashLedgerIds.has(id)
       || /^cash(\s+in\s+hand)?$/i.test(name.trim());
   })), [cashVouchers, cashLedgerIds]);
-  // Cash Advance module entries paid / received in cash (Bank / UPI / Cheque
-  // ones already come back with the Journal list). Listed view-only.
-  const cashAdvVouchers = useMemo(() => cashVouchers.filter(v => v.isVirtual), [cashVouchers]);
-  const adjustmentVouchers = useMemo(() => [...vouchers, ...bankAdjVouchers, ...cashAdvVouchers], [vouchers, bankAdjVouchers, cashAdvVouchers]);
+  // Farmer Cash Advance entries paid / received in CASH are cash transactions
+  // (Dr Farmers Cash Advance / Cr Cash in Hand) — they belong to Cash Book
+  // Entry, not here. Listing them here put Cash in Hand into the Adjustment
+  // grid. Bank / UPI / Cheque advances still come back with the Journal list
+  // under their own Farmer Advance and bank heads.
+  const adjustmentVouchers = useMemo(() => [...vouchers, ...bankAdjVouchers], [vouchers, bankAdjVouchers]);
   const gridRows = useMemo(() => [
     ...vouchers.map(voucher => ({ voucher, kind: 'adjustment' })),
-    ...bankAdjVouchers.map(voucher => ({ voucher, kind: voucher.voucherType === 'Receipt' ? 'receipt' : 'payment', bank: true })),
-    ...cashAdvVouchers.map(voucher => ({ voucher, kind: voucher.voucherType === 'Receipt' ? 'receipt' : 'payment' }))
-  ], [vouchers, bankAdjVouchers, cashAdvVouchers]);
+    ...bankAdjVouchers.map(voucher => ({ voucher, kind: voucher.voucherType === 'Receipt' ? 'receipt' : 'payment', bank: true }))
+  ], [vouchers, bankAdjVouchers]);
 
   // Each ledger on one side of a voucher as its own line — "Head (narration)"
   // with that head's own amount, never a comma-joined list. Cash vouchers
@@ -750,11 +751,6 @@ const JournalVoucher = () => {
               <Badge variant="filled" color="indigo" size="sm" radius="sm">
                 {bankAdjVouchers.length} Bank Transfer / Bank
               </Badge>
-              {cashAdvVouchers.length > 0 && (
-                <Badge variant="filled" color="orange" size="sm" radius="sm">
-                  {cashAdvVouchers.length} Cash Advance
-                </Badge>
-              )}
             </Group>
           </Group>
         </Box>

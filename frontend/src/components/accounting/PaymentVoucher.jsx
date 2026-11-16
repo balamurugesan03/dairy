@@ -181,17 +181,9 @@ const PaymentVoucher = () => {
       const selectedLedger = ledgers.find(l => l._id === values.ledgerId);
       const amount = parseFloat(values.amount);
 
-      let cashLedger = ledgers.find(l => l.ledgerType === 'Cash');
-      if (!cashLedger) {
-        // Auto-create Cash ledger if missing.
-        // voucherType: 'B' — matches the "Cash in Hand" Account Group's
-        // def_voucher_type (B = Both), so Cash is never mistaken for a
-        // Payment-only or Receipt-only ledger in the R/P reports.
-        const res = await ledgerAPI.create({ ledgerName: 'Cash in Hand', ledgerType: 'Cash', openingBalance: 0, openingBalanceType: 'Dr', voucherType: 'B' });
-        cashLedger = res?.data;
-        if (cashLedger) setLedgers(prev => [...prev, cashLedger]);
-      }
-      if (!cashLedger) { message.error('Could not create Cash ledger. Please try again.'); setLoading(false); return; }
+      // The single Cash in Hand ledger, resolved by the server (never a new copy)
+      const cashLedger = (await ledgerAPI.getCashInHand())?.data;
+      if (!cashLedger) { message.error('Could not find the Cash in Hand ledger. Please try again.'); setLoading(false); return; }
 
       const payload = {
         voucherType: 'Payment',
@@ -307,14 +299,9 @@ const PaymentVoucher = () => {
   };
 
   const handleSaveMultiple = async () => {
-    let cashLedger = ledgers.find(l => l.ledgerType === 'Cash');
-    if (!cashLedger) {
-      // voucherType: 'B' — see handleSubmit's Cash auto-create for rationale.
-      const res = await ledgerAPI.create({ ledgerName: 'Cash in Hand', ledgerType: 'Cash', openingBalance: 0, openingBalanceType: 'Dr', voucherType: 'B' });
-      cashLedger = res?.data;
-      if (cashLedger) setLedgers(prev => [...prev, cashLedger]);
-    }
-    if (!cashLedger) { message.error('Could not create Cash ledger. Please try again.'); return; }
+    let cashLedger = null;
+    try { cashLedger = (await ledgerAPI.getCashInHand())?.data; } catch { /* handled below */ }
+    if (!cashLedger) { message.error('Could not find the Cash in Hand ledger. Please try again.'); return; }
 
     const validEntries = multipleEntries.filter(entry => {
       const amount = parseFloat(entry.amount) || 0;

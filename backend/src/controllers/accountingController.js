@@ -3,6 +3,7 @@ import Ledger from '../models/Ledger.js';
 import { generateVoucherNumber, updateLedgerBalances } from '../utils/accountingHelper.js';
 import mongoose from 'mongoose';
 import { getCashAdvanceVoucherRows } from '../utils/cashAdvanceVoucherRows.js';
+import { getCashInHandOpening, getPrimaryCashLedger } from '../utils/cashInHandOpening.js';
 
 // Create manual voucher
 export const createVoucher = async (req, res) => {
@@ -230,24 +231,12 @@ export const getCashBookEntry = async (req, res) => {
     const dayEnd = new Date(`${date}T23:59:59.999Z`);
     const companyId = new mongoose.Types.ObjectId(String(req.companyId));
 
-    const cashLedgers = await Ledger.find({ companyId, ledgerType: { $in: ['Cash', 'Cash in Hand'] } })
-      .select('ledgerName ledgerType openingBalance openingBalanceType status')
-      .lean();
-    const cashIds = cashLedgers.map(l => l._id);
+    // Opening: the SAME shared calculation Day Book and Cash Book use —
+    // Payment Settings → Account Opening Balance (held on the Cash in Hand
+    // ledger) + every cash leg before the date.
+    const { openingBalance, cashIds } = await getCashInHandOpening(companyId, dayStart);
     const isCash = (id) => cashIds.some(c => c.equals(id?._id || id));
-
-    // Cash is a debit-nature account: Dr opening adds, Cr opening subtracts
-    const ledgerOpening = cashLedgers.reduce((s, l) =>
-      s + ((l.openingBalanceType === 'Cr' ? -1 : 1) * (l.openingBalance || 0)), 0);
-
     const notCancelled = { status: { $ne: 'Cancelled' } };
-    const [prior] = cashIds.length ? await Voucher.aggregate([
-      { $match: { companyId, ...notCancelled, voucherDate: { $lt: dayStart }, 'entries.ledgerId': { $in: cashIds } } },
-      { $unwind: '$entries' },
-      { $match: { 'entries.ledgerId': { $in: cashIds } } },
-      { $group: { _id: null, dr: { $sum: '$entries.debitAmount' }, cr: { $sum: '$entries.creditAmount' } } }
-    ]) : [];
-    const openingBalance = ledgerOpening + (prior?.dr || 0) - (prior?.cr || 0);
 
     const vouchers = cashIds.length ? await Voucher.find({
       companyId, ...notCancelled,
@@ -295,10 +284,8 @@ export const getCashBookEntry = async (req, res) => {
 
     const totalReceipts = rows.reduce((s, r) => s + r.cashIn, 0);
     const totalPayments = rows.reduce((s, r) => s + r.cashOut, 0);
-    // Same cash ledger the Cash Book report picks: the one named "Cash in Hand" first
-    const activeCash = cashLedgers.filter(l => l.ledgerType === 'Cash' && l.status !== 'Inactive');
-    const primaryCash = activeCash.find(l => /^cash\s*in\s*hand$/i.test(l.ledgerName || ''))
-      || activeCash[0] || cashLedgers[0] || null;
+    // Same cash ledger every posting and report uses
+    const primaryCash = await getPrimaryCashLedger(companyId);
 
     res.status(200).json({
       success: true,

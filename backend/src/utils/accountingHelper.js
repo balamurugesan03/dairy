@@ -4,6 +4,7 @@ import Item from '../models/Item.js';
 import Subsidy from '../models/Subsidy.js';
 import { getNextSequence } from '../models/Counter.js';
 import { getDefaultVoucherType } from './balanceCalculator.js';
+import { getOrCreateCashLedger, isCashInHandName } from './cashInHandOpening.js';
 
 const VOUCHER_PREFIX_MAP = {
   'Receipt':         'RV',
@@ -215,10 +216,13 @@ export const createSalesVoucher = async (saleData, session = null) => {
   // ── Debit: Cash/Bank for the paid portion ────────────────────────────────
   if (paidAmount > 0) {
     const paymentLedgerType = saleData.paymentMode === 'Cash' ? 'Cash' : 'Bank';
-    let paymentLedger = await Ledger.findOne({
-      ledgerType: paymentLedgerType,
-      ...(companyId && { companyId })
-    });
+    // Cash → the single Cash in Hand ledger (any cash ledger type, never a new duplicate)
+    let paymentLedger = paymentLedgerType === 'Cash' && companyId
+      ? await getOrCreateCashLedger(companyId, session)
+      : await Ledger.findOne({
+        ledgerType: paymentLedgerType,
+        ...(companyId && { companyId })
+      });
     if (!paymentLedger) {
       paymentLedger = await saveLedger(new Ledger({
         ledgerName: paymentLedgerType === 'Cash' ? 'Cash in Hand' : 'Bank Account',
@@ -526,7 +530,7 @@ export const createPurchaseVoucher = async (purchaseData, session = null) => {
     const isBank = paymentMode === 'Bank' || paymentMode === 'NEFT' || paymentMode === 'RTGS' || paymentMode === 'Cheque';
     const payLedger = isBank
       ? await Ledger.findOne({ ledgerType: 'Bank', ...(companyId && { companyId }) })
-      : await Ledger.findOne({ ledgerType: 'Cash', ...(companyId && { companyId }) });
+      : (companyId ? await getOrCreateCashLedger(companyId) : null);
     if (payLedger) {
       entries.push({ ledgerId: payLedger._id, ledgerName: payLedger.ledgerName, debitAmount: 0, creditAmount: paidAmount });
     }
@@ -584,6 +588,8 @@ export const createPurchaseVoucher = async (purchaseData, session = null) => {
 
 // Find or create a ledger by name and type
 export const findOrCreateLedger = async (ledgerName, ledgerType, parentGroup, balanceType, companyId, session) => {
+  // Cash in Hand has exactly one ledger per society — resolve it centrally
+  if (companyId && isCashInHandName(ledgerName)) return getOrCreateCashLedger(companyId, session);
   let ledger = await Ledger.findOne({ ledgerName, companyId });
   if (!ledger) {
     ledger = new Ledger({
@@ -627,10 +633,7 @@ export const createProducerDuesPaymentVoucher = async ({
   const isCash = (paymentMode || 'Cash') === 'Cash';
   let payLedger;
   if (isCash) {
-    payLedger = await Ledger.findOne({ ledgerType: 'Cash', companyId });
-    if (!payLedger) {
-      payLedger = await findOrCreateLedger('Cash in Hand', 'Cash', 'Cash', 'Dr', companyId, session);
-    }
+    payLedger = await getOrCreateCashLedger(companyId, session);
   } else {
     if (bankLedgerId) {
       payLedger = await Ledger.findById(bankLedgerId);
@@ -681,10 +684,7 @@ export const createShareCapitalVoucher = async (data, session = null) => {
   );
 
   // Cash ledger — debit on allotment (cash received), credit on redemption (cash paid out)
-  let cashLedger = await Ledger.findOne({ ledgerType: 'Cash', companyId });
-  if (!cashLedger) {
-    cashLedger = await findOrCreateLedger('Cash in Hand', 'Cash', 'Cash', 'Dr', companyId, session);
-  }
+  const cashLedger = await getOrCreateCashLedger(companyId, session);
 
   const isRedemption = transactionType === 'Redemption';
   // Allotment:  Dr Cash  /  Cr Share Capital
@@ -734,10 +734,7 @@ export const createAdmissionFeeVoucher = async (data, session = null) => {
   );
 
   // Cash received for admission fee
-  let cashLedger = await Ledger.findOne({ ledgerType: 'Cash', companyId });
-  if (!cashLedger) {
-    cashLedger = await findOrCreateLedger('Cash in Hand', 'Cash', 'Cash', 'Dr', companyId, session);
-  }
+  const cashLedger = await getOrCreateCashLedger(companyId, session);
 
   // Dr: Cash  /  Cr: Admission Fee
   const entries = [

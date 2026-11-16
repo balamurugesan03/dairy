@@ -247,6 +247,8 @@ export const voucherAPI = {
 // LEDGER APIs
 export const ledgerAPI = {
   getAll: (params) => api.get('/ledgers', { params }).then(res => res.data).catch(handleError),
+  // The society's single Cash in Hand ledger (server creates it once if missing)
+  getCashInHand: () => api.get('/ledgers/cash-in-hand').then(res => res.data).catch(handleError),
   getById: (id, params) => api.get(`/ledgers/${id}`, { params }).then(res => res.data).catch(handleError),
   create: (data) => api.post('/ledgers', data).then(res => res.data).catch(handleError),
   update: (id, data) => api.put(`/ledgers/${id}`, data).then(res => res.data).catch(handleError),

@@ -89,6 +89,18 @@ mongoose.connect(process.env.MONGODB_URI, {
       }
     }
 
+    // Duplicate "Cash in Hand" ledgers (auto-created by posting paths that
+    // missed a 'Cash in Hand'-typed / capitalised cash ledger): fold each
+    // company's duplicates into its single primary Cash in Hand ledger.
+    // References are re-pointed, amounts are untouched. Idempotent.
+    try {
+      const { mergeDuplicateCashLedgersAllCompanies } = await import('./utils/cashInHandOpening.js');
+      const merged = await mergeDuplicateCashLedgersAllCompanies();
+      if (merged > 0) console.log(`Cash in Hand: merged ${merged} duplicate ledger(s)`);
+    } catch (e) {
+      console.warn('Cash in Hand merge skipped:', e.message);
+    }
+
     // One-time dedupe: PaymentRegister had no uniqueness on {companyId, registerType, fromDate, toDate}
     // so duplicate cycles accumulated. Keep the most recent per (company, type, from, to) day.
     try {

@@ -3,6 +3,7 @@ import ProducerLoan from '../models/ProducerLoan.js';
 import Advance from '../models/Advance.js';
 import Voucher from '../models/Voucher.js';
 import Ledger from '../models/Ledger.js';
+import { getOrCreateCashLedger } from '../utils/cashInHandOpening.js';
 import Farmer from '../models/Farmer.js';
 import mongoose from 'mongoose';
 import { generateVoucherNumber, updateLedgerBalances } from '../utils/accountingHelper.js';
@@ -184,7 +185,7 @@ const createReceiptVoucher = async (receipt, receiptType, companyId, bankLedgerI
   // ── Resolve payment ledger (Cash or Bank) ──
   let paymentLedger;
   if (isCash) {
-    paymentLedger = await Ledger.findOne({ companyId, ledgerType: 'Cash' });
+    paymentLedger = await getOrCreateCashLedger(companyId);
   } else if (bankLedgerId) {
     paymentLedger = await Ledger.findById(bankLedgerId);
   }
