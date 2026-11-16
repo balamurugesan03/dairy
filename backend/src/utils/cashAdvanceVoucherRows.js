@@ -109,7 +109,7 @@ export const getCashAdvanceVoucherRows = async (companyIdRaw, { startDate, endDa
 
   for (const a of advances) {
     if (postedSet.has(String(a._id))) continue;
-    const isCash = (a.paymentMode || 'Cash') === 'Cash';
+    const isCash = String(a.paymentMode || 'Cash').toLowerCase() === 'cash';
     const type = isCash ? 'Payment' : 'Journal';
     if (!want.has(type)) continue;
     const amt = Number(a.advanceAmount) || 0;
@@ -139,7 +139,7 @@ export const getCashAdvanceVoucherRows = async (companyIdRaw, { startDate, endDa
   }
 
   for (const r of receipts) {
-    const isCash = (r.paymentMode || 'Cash') === 'Cash';
+    const isCash = String(r.paymentMode || 'Cash').toLowerCase() === 'cash';
     const type = isCash ? 'Receipt' : 'Journal';
     if (!want.has(type)) continue;
     const amt = Number(r.amount) || 0;

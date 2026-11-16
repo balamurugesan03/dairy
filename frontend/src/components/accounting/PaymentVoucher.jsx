@@ -207,6 +207,7 @@ const PaymentVoucher = () => {
         totalDebit: amount,
         totalCredit: amount,
         referenceType: 'Manual',
+        entrySource: 'PaymentVoucher',
         narration: values.narration
       };
 
@@ -345,6 +346,7 @@ const PaymentVoucher = () => {
           totalDebit: amount,
           totalCredit: amount,
           referenceType: 'Manual',
+          entrySource: 'PaymentVoucher',
           narration: entry.narration || ''
         };
 

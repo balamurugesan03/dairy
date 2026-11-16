@@ -103,6 +103,15 @@ const voucherSchema = new mongoose.Schema({
     ],
     default: 'Manual'
   },
+  // Screen that keyed a manual voucher in. Cash Book Entry, Receipt Voucher and
+  // Payment Voucher all post referenceType 'Manual' Receipt/Payment vouchers, so
+  // this is what tells them apart (see utils/voucherSource.js). Empty on
+  // auto-posted and older vouchers — their source is derived instead.
+  entrySource: {
+    type: String,
+    enum: ['CashBookEntry', 'ReceiptVoucher', 'PaymentVoucher', 'AdjustmentEntry', null],
+    default: null
+  },
   referenceId: {
     type: mongoose.Schema.Types.ObjectId
   },

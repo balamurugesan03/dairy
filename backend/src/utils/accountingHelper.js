@@ -358,6 +358,10 @@ export const createPaymentVoucher = async (paymentData, session = null) => {
   // Credit: Cash/Bank — try company-scoped first, then global fallback
   const paymentLedgerType = paymentData.paymentMode === 'Cash' ? 'Cash' : 'Bank';
   const paymentLedger =
+    // Cash → the one Cash in Hand ledger (never whichever 'Cash'-typed copy comes first)
+    (companyId && paymentLedgerType === 'Cash'
+      ? await getOrCreateCashLedger(companyId)
+      : null) ||
     (companyId
       ? await Ledger.findOne({ ledgerType: paymentLedgerType, companyId })
       : null) ||
