@@ -287,7 +287,9 @@ export const collectDocuments = async (rows, onProgress) => {
       const i = next++;
       const row = targets[i];
       try {
-        const res = await getFarmerDocumentImages(row.farmerId);
+        // One retry: a single slow / dropped request shouldn't drop a farmer's documents
+        const res = await getFarmerDocumentImages(row.farmerId)
+          .catch(() => getFarmerDocumentImages(row.farmerId));
         groups[i] = { row, pages: res.pages };
         res.skipped.forEach((s) => skipped.push(`${row.producerNo} ${s}`));
       } catch {
