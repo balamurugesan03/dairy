@@ -1303,7 +1303,8 @@ export const agriStatsAPI = {
 export const farmerFormAPI = {
   getPanchayats: ()          => api.get('/farmer-forms/panchayats').then(r => r.data).catch(handleError),
   getFarmers:    (panchayat) => api.get('/farmer-forms/farmers', { params: panchayat ? { panchayat } : {} }).then(r => r.data).catch(handleError),
-  getDocuments:  (farmerId)  => api.get(`/farmer-forms/documents/${farmerId}`).then(r => r.data).catch(handleError),
+  // Full files (base64, up to 5 MB each) — the 10 s default is too short, same as uploadDocument
+  getDocuments:  (farmerId)  => api.get(`/farmer-forms/documents/${farmerId}`, { timeout: 120000 }).then(r => r.data).catch(handleError),
   // Wards recorded for a Panchayat's farmers: [{ ward, wardNumber, farmers }]
   getWards:      (panchayat, aliases = []) => api.get('/farmer-forms/wards', { params: { panchayat, aliases: aliases.join(',') } }).then(r => r.data).catch(handleError),
   // Farmer details edited on a report → Farmers Management. data: { ...fields, changed: [field] }
