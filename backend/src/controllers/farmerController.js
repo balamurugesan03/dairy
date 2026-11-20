@@ -44,6 +44,7 @@ export const createFarmer = async (req, res) => {
       farmerData.financialDetails?.oldShares
     ) || 0;
     const shareValue = parseFloat(farmerData.financialDetails?.shareValue) || 0;
+    const totalShareValue = numberOfShares * shareValue;
 
     // Map form fields to Farmer model fields
     if (farmerData.financialDetails) {
@@ -610,29 +611,35 @@ export const activateMembership = async (req, res) => {
       if (clash) {
         return res.status(400).json({ success: false, message: 'This Member Number is already in use by another farmer' });
       }
-      const historyClash = await FarmerNumberHistory.findOne({ companyId, newNumber });
-      if (historyClash) {
-        return res.status(400).json({ success: false, message: 'This Member Number was already assigned previously and cannot be reused' });
+      // A number given to ANOTHER farmer that still exists stays reserved. History rows
+      // that belong to this same farmer (e.g. a previous attempt that failed half-way, or
+      // a re-activation after termination) or to a farmer that has since been deleted
+      // must not block the number.
+      const historyRows = await FarmerNumberHistory.find(
+        { companyId, newNumber, farmerId: { $ne: farmer._id } },
+        'farmerId'
+      ).lean();
+      if (historyRows.length) {
+        const stillExists = await Farmer.exists({
+          _id: { $in: historyRows.map(h => h.farmerId) },
+          companyId
+        });
+        if (stillExists) {
+          return res.status(400).json({ success: false, message: 'This Member Number was already assigned previously and cannot be reused' });
+        }
       }
 
       const oldNumber = farmer.farmerNumber;
 
       // No transactions available in this codebase — rename the denormalized copies
-      // first (idempotent, safe to retry), then update the Farmer doc last.
+      // first (idempotent, safe to retry). The history row is written only after the
+      // Farmer doc has saved (below), so a failed save can't leave a row behind that
+      // would block the number on retry.
       await MilkCollection.updateMany(
         { companyId, $or: [{ farmer: farmer._id }, { farmer: null, farmerNumber: oldNumber }] },
         { $set: { farmerNumber: newNumber } }
       );
       await BankTransfer.updateMany({ producerId: oldNumber, companyId }, { $set: { producerId: newNumber } });
-
-      await FarmerNumberHistory.create({
-        farmerId: farmer._id,
-        companyId,
-        oldNumber,
-        newNumber,
-        changedBy: req.user?._id,
-        reason: 'Membership Activation'
-      });
 
       farmer.oldFarmerNumber = oldNumber;
       farmer.farmerNumber = newNumber;
@@ -648,6 +655,7 @@ export const activateMembership = async (req, res) => {
     // recalculation against the number of shares.
     const numberOfShares = parseInt(financialDetails.numberOfShares) || 0;
     const shareValue = parseFloat(financialDetails.shareValue) || 0;
+    const totalShareValue = numberOfShares * shareValue;
 
     farmer.isMembership = true;
     farmer.membershipDate = membershipDate ? new Date(membershipDate) : new Date();
@@ -676,6 +684,21 @@ export const activateMembership = async (req, res) => {
     }
 
     await farmer.save();
+
+    if (numberChanging && numberDecision === 'replace') {
+      try {
+        await FarmerNumberHistory.create({
+          farmerId: farmer._id,
+          companyId,
+          oldNumber: farmer.oldFarmerNumber,
+          newNumber,
+          changedBy: req.user?._id,
+          reason: 'Membership Activation'
+        });
+      } catch (hErr) {
+        console.error('Farmer number history error (non-fatal):', hErr.message);
+      }
+    }
 
     // Keep the farmer's ledger name in sync with the new active number.
     if (numberChanging && numberDecision === 'replace' && farmer.ledgerId) {
