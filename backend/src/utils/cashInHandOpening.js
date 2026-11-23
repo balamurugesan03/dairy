@@ -22,8 +22,18 @@ export const getCashInHandOpening = async (companyIdRaw, beforeDate) => {
   // Book Entry opening ₹3,000). Postings to every cash ledger still count below.
   const ledgerOpening = await getConfiguredCashOpening(companyId);
 
+  // Payment Settings → Account Opening Balance is the cash position ON the
+  // Account Start Date, so it already includes everything before that day.
+  // Adding cash legs dated earlier counted them twice (₹1,500 opening + a
+  // ₹1,500 pre-start cash entry showed ₹3,000 on 01-04-2026).
+  const startDate = await getAccountStartDate(companyId);
+  const voucherDate = startDate && startDate < beforeDate
+    ? { $gte: startDate, $lt: beforeDate }
+    : startDate ? null : { $lt: beforeDate };
+  if (!voucherDate) return { openingBalance: ledgerOpening, ledgerOpening, cashIds };
+
   const [prior] = await Voucher.aggregate([
-    { $match: { companyId, status: { $ne: 'Cancelled' }, voucherDate: { $lt: beforeDate }, 'entries.ledgerId': { $in: cashIds } } },
+    { $match: { companyId, status: { $ne: 'Cancelled' }, voucherDate, 'entries.ledgerId': { $in: cashIds } } },
     { $unwind: '$entries' },
     { $match: { 'entries.ledgerId': { $in: cashIds } } },
     { $group: { _id: null, dr: { $sum: '$entries.debitAmount' }, cr: { $sum: '$entries.creditAmount' } } }
@@ -44,10 +54,13 @@ export const getCashInHandOpening = async (companyIdRaw, beforeDate) => {
 export const CASH_LEDGER_TYPES = ['Cash', 'Cash in Hand'];
 const BANK_LEDGER_TYPES = ['Bank', 'Bank Accounts'];
 // Names that all mean the society's one cash account: "Cash in Hand",
-// "CASH IN HAND", "Cash", "Cash-in-Hand", "Cash in Hand A/c", "Cash Account".
-// The old pattern missed hyphenated / "A/c" spellings, so such a copy was
-// neither merged nor blocked and showed as a second Cash in Hand ledger.
-export const CASH_IN_HAND_NAME_RE = /^cash(?:[\s\-_]*in[\s\-_]*hand)?(?:[\s\-_]*(?:a\/?c|account))?[\s.]*$/i;
+// "CASH IN HAND", "Cash", "Cash-in-Hand", "Cash in Hand A/c", "Cash Account",
+// and any name that CONTAINS "Cash in Hand" / "Cash on Hand" as words —
+// "Cash in Hand (Old)", "Opening Cash in Hand", "Cash in Hand 1". The older
+// whole-name pattern missed those, so such a copy was neither merged nor
+// blocked and searching "Cash in Hand" in Accounts → Ledger listed two.
+// "Petty Cash", "Cash Advance", "Cash Discount" etc. do not match.
+export const CASH_IN_HAND_NAME_RE = /(?:^|[^a-z])cash[\s\-_]*(?:in|on)[\s\-_]*hand(?:[^a-z]|$)|^\s*cash(?:[\s\-_]*(?:a\/?c|account))?[\s.]*$/i;
 export const isCashInHandName = (name) => CASH_IN_HAND_NAME_RE.test(String(name || '').trim());
 
 /**
@@ -64,6 +77,20 @@ export const getConfiguredCashOpening = async (companyIdRaw) => {
   }
   const primary = await getPrimaryCashLedger(companyIdRaw);
   return primary ? signedDr(primary.openingBalance, primary.openingBalanceType) : 0;
+};
+
+/**
+ * Account Start Date from Payment Settings — only once a user has saved the
+ * settings (same rule as the opening itself), as a UTC day start. null if unset.
+ */
+const getAccountStartDate = async (companyIdRaw) => {
+  const { default: DairySettings } = await import('../models/DairySettings.js');
+  const settings = await DairySettings.findOne({ companyId: companyIdRaw })
+    .select('accountStartDate lastUpdatedBy').lean();
+  if (!settings?.lastUpdatedBy || !settings.accountStartDate) return null;
+  const d = new Date(settings.accountStartDate);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 };
 
 /** The society's main cash ledger: named "Cash in Hand" first, then any active cash ledger. */
@@ -147,18 +174,7 @@ const LEDGER_REF_FIELDS = [
 ];
 
 const signedDr = (amount, type) => (type === 'Cr' ? -1 : 1) * (Number(amount) || 0);
-
-/** True when any voucher / stock transaction / payment document points at the ledger. */
-const isLedgerReferenced = async (companyId, ledgerId) => {
-  if (await Voucher.exists({ companyId, 'entries.ledgerId': ledgerId })) return true;
-  const StockTransaction = mongoose.models.StockTransaction;
-  if (StockTransaction && await StockTransaction.exists({ companyId, 'ledgerEntries.ledgerId': ledgerId })) return true;
-  for (const [modelName, path] of LEDGER_REF_FIELDS) {
-    const M = mongoose.models[modelName];
-    if (M && await M.exists({ [path]: ledgerId })) return true;
-  }
-  return false;
-};
+const PARTY_ENTITY_TYPES = ['Farmer', 'Customer', 'Supplier', 'Agent'];
 
 export const mergeDuplicateCashLedgers = async (companyIdRaw) => {
   if (!companyIdRaw) return { merged: 0 };
@@ -167,30 +183,21 @@ export const mergeDuplicateCashLedgers = async (companyIdRaw) => {
   // Only fold into a ledger that is itself the Cash in Hand account
   if (!primary || !isCashInHandName(primary.ledgerName)) return { merged: 0 };
 
-  // A "Cash in Hand"-named ledger saved under a non-cash type (e.g. 'Asset')
-  // still lists as a second Cash in Hand. It is removed only when nothing
-  // references it — re-pointing its postings to cash would re-classify
-  // history, so a referenced one is left in place and reported.
-  const strays = (await Ledger.find({
+  // Every other ledger NAMED Cash in Hand is the same account, whatever type
+  // it was saved under (a copy typed 'Asset' / 'Other Assets' still listed as
+  // a second Cash in Hand, and one with postings used to be left in place).
+  // Its postings are cash movements, so they are re-pointed to the primary.
+  // Party ledgers (farmer / customer / …) and bank ledgers are never touched.
+  const dups = (await Ledger.find({
     companyId,
     _id: { $ne: primary._id },
-    ledgerType: { $nin: [...CASH_LEDGER_TYPES, ...BANK_LEDGER_TYPES] },
-    'linkedEntity.entityType': { $nin: ['Farmer', 'Customer', 'Supplier', 'Agent'] },
-  }).select('ledgerName ledgerType').lean()).filter(l => isCashInHandName(l.ledgerName));
-  let removedStrays = 0;
-  for (const s of strays) {
-    if (await isLedgerReferenced(companyId, s._id)) {
-      console.warn(`Cash in Hand: ledger "${s.ledgerName}" (${s._id}, type ${s.ledgerType}) has postings — left in place; retype it or move its entries manually.`);
-      continue;
-    }
-    await Ledger.deleteOne({ _id: s._id, companyId });
-    removedStrays++;
-  }
-
-  const all = await Ledger.find({ companyId, ledgerType: { $in: CASH_LEDGER_TYPES } }).lean();
-  const dups = all.filter(l => String(l._id) !== String(primary._id) && isCashInHandName(l.ledgerName));
-  if (!dups.length) return { merged: removedStrays, primaryId: primary._id };
+    ledgerType: { $nin: BANK_LEDGER_TYPES },
+    'linkedEntity.entityType': { $nin: PARTY_ENTITY_TYPES },
+  }).lean()).filter(l => isCashInHandName(l.ledgerName));
+  if (!dups.length) return { merged: 0, primaryId: primary._id };
   const dupIds = dups.map(d => d._id);
+  console.log(`Cash in Hand: folding ${dups.length} duplicate(s) into "${primary.ledgerName}" (${primary._id}) for company ${companyId}: `
+    + dups.map(d => `"${d.ledgerName}" [${d.ledgerType}, opening ${d.openingBalance || 0} ${d.openingBalanceType || 'Dr'}]`).join(', '));
 
   // 1. Voucher entries → primary (ledgerId + its denormalised name)
   await Voucher.collection.updateMany(
@@ -245,7 +252,7 @@ export const mergeDuplicateCashLedgers = async (companyIdRaw) => {
     const fresh = await Ledger.findById(primary._id);
     if (fresh) await syncSettingsFromCashLedger(fresh);
   }
-  return { merged: dups.length + removedStrays, primaryId: primary._id };
+  return { merged: dups.length, primaryId: primary._id };
 };
 
 /** Run the merge for every company that has more than one Cash in Hand ledger. */
@@ -305,12 +312,24 @@ export const syncSettingsFromCashLedger = async (ledger) => {
 };
 
 /** Express middleware for the accounting reports — never blocks the report. */
-const mergedCompanies = new Set(); // duplicate check once per company per process
+// Checked on every call (one count query), not once per process: a duplicate
+// created after the first check — import, restore, another module — used to
+// stay listed as a second Cash in Hand until the server restarted.
+const merging = new Map(); // companyId → in-flight merge
 export const ensureCashLedgersMerged = async (companyId) => {
   const key = String(companyId || '');
-  if (!key || mergedCompanies.has(key)) return;
-  await mergeDuplicateCashLedgers(companyId);
-  mergedCompanies.add(key);
+  if (!key) return;
+  if (merging.has(key)) return merging.get(key);
+  const count = await Ledger.countDocuments({
+    companyId: new mongoose.Types.ObjectId(key),
+    ledgerType: { $nin: BANK_LEDGER_TYPES },
+    'linkedEntity.entityType': { $nin: PARTY_ENTITY_TYPES },
+    ledgerName: { $regex: CASH_IN_HAND_NAME_RE },
+  });
+  if (count <= 1) return;
+  const run = mergeDuplicateCashLedgers(companyId).finally(() => merging.delete(key));
+  merging.set(key, run);
+  return run;
 };
 
 export const ensureCashOpeningSynced = async (req, res, next) => {
