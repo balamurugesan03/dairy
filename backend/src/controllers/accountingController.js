@@ -564,11 +564,9 @@ export const getOutstandingReport = async (req, res) => {
 export default {
   createVoucher,
   getAllVouchers,
+  getCashBookEntry,
   getVoucherById,
+  updateVoucher,
   deleteVoucher,
-  createLedger,
-  getAllLedgers,
-  getLedgerById,
-  updateLedger,
   getOutstandingReport
 };
