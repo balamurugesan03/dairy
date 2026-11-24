@@ -269,7 +269,9 @@ const JournalVoucher = () => {
         startDate: voucherDate, endDate: voucherDate, limit: 1000,
         voucherType: 'Journal,Receipt,Payment', includeCashAdvance: 1, book: 'adjustment'
       });
-      const rows = (res.data || []).filter(v => v.status !== 'Cancelled');
+      // Safety net: a row the server classifies as Cash Book (any Cash in Hand
+      // leg, or a Cash-mode Cash Advance) is never shown in Adjustment Entry.
+      const rows = (res.data || []).filter(v => v.status !== 'Cancelled' && v.book !== 'cash');
       setVouchers(rows.filter(v => v.voucherType === 'Journal'));
       setBankVouchers(rows.filter(v => v.voucherType !== 'Journal'));
     } catch (error) {
