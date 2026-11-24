@@ -16,6 +16,9 @@
 import { isCashInHandName } from './cashInHandOpening.js';
 import { CASH_ADVANCE_REF } from './cashAdvanceVoucherRows.js';
 
+// Re-exported so callers can import it alongside tagVoucher
+export { getCashBankLedgerIds } from './cashAdjustmentClassifier.js';
+
 const CASH_TYPES = ['Cash', 'Cash in Hand'];
 const BANK_TYPES = ['Bank', 'Bank Accounts'];
 

@@ -4,7 +4,8 @@ import { generateVoucherNumber, updateLedgerBalances } from '../utils/accounting
 import mongoose from 'mongoose';
 import { getCashAdvanceVoucherRows } from '../utils/cashAdvanceVoucherRows.js';
 import { getCashInHandOpening, getPrimaryCashLedger } from '../utils/cashInHandOpening.js';
-import { getCashBankLedgerIds, tagVoucher } from '../utils/voucherSource.js';
+import { tagVoucher } from '../utils/voucherSource.js';
+import { getCashBankLedgerIds } from '../utils/cashAdjustmentClassifier.js';
 
 // Create manual voucher
 export const createVoucher = async (req, res) => {
