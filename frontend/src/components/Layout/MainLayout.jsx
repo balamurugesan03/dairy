@@ -992,26 +992,25 @@ const MainLayout = () => {
               >
                 Menu
               </Button>
-              <Group gap="sm">
-                <ThemeIcon
-                  size={42}
-                  radius="xl"
+              <Group gap="sm" wrap="nowrap">
+                {/* Fixed product logo (public/dairysoft-logo.jpeg) — the society
+                    name no longer replaces it (user rule 2026-10-31). The logo
+                    art has a white background, so it sits on a white card. */}
+                <Box
                   style={{
-                    background: 'rgba(255,255,255,0.2)',
-                    backdropFilter: 'blur(4px)',
+                    background: '#fff',
+                    borderRadius: 10,
+                    padding: '4px 10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
                   }}
                 >
-                  <IconBuildingStore size={24} color="white" />
-                </ThemeIcon>
-                <Box>
-                  {/* Fixed product name — the society name no longer replaces it (user rule 2026-10-31) */}
-                  <Text fw={700} size="lg" c="white" style={{ lineHeight: 1.2 }}>
-                    Dairy Software
-                  </Text>
-                  <Text size="xs" c="rgba(255,255,255,0.8)">
-                    Dairy Management System
-                  </Text>
+                  <img src="/dairysoft-logo.jpeg" alt="DairySoft" style={{ height: 34, width: 'auto', display: 'block' }} />
                 </Box>
+                <Text size="xs" c="rgba(255,255,255,0.85)" visibleFrom="sm">
+                  Dairy Management System
+                </Text>
               </Group>
             </Group>
 

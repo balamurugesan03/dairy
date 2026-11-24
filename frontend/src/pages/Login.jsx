@@ -100,14 +100,11 @@ const Login = () => {
     <div className="login-container">
       <div className="login-card">
         <div className="login-header">
-          <div className="login-logo">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-              <path d="M2 17l10 5 10-5"/>
-              <path d="M2 12l10 5 10-5"/>
-            </svg>
-          </div>
-          <h1>Dairy Software</h1>
+          <img
+            src="/dairysoft-logo.jpeg"
+            alt="DairySoft"
+            style={{ width: '100%', maxWidth: 260, height: 'auto', display: 'block', margin: '0 auto 8px' }}
+          />
           <p>Company Login</p>
         </div>
 
@@ -200,7 +197,7 @@ const Login = () => {
         </form>
 
         <div className="login-footer">
-          <p>Dairy Software — Dairy Management System</p>
+          <p>DairySoft — Dairy Management System</p>
         </div>
       </div>
     </div>
