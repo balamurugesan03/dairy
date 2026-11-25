@@ -7,12 +7,20 @@ import { Modal, Group, Button, Text, Badge, Loader, Center } from '@mantine/core
 import { notifications } from '@mantine/notifications';
 import { IconPrinter } from '@tabler/icons-react';
 import { buildFarmerDocumentPages, FARMER_DOCUMENTS } from '../../utils/farmerDocumentsPrint';
-import { buildApplicationHtml, printApplications, FORM_TYPES } from '../../utils/farmerApplicationPrint';
+import { buildApplicationHtml, printApplications, FORM_TYPES, loadOfficerNames } from '../../utils/farmerApplicationPrint';
 
 export default function FarmerApplicationPreview({ opened, onClose, application }) {
   const [docs, setDocs] = useState({ html: '', count: 0, skipped: [], loading: false, error: '' });
   const [printing, setPrinting] = useState(false);
   const farmerId = application?.farmerId?._id || application?.farmerId;
+  // President / Secretary names under the signature lines (Settings)
+  const [officers, setOfficers] = useState({});
+  useEffect(() => {
+    if (!opened) return undefined;
+    let live = true;
+    loadOfficerNames().then(o => live && setOfficers(o));
+    return () => { live = false; };
+  }, [opened]);
 
 
   useEffect(() => {
@@ -64,7 +72,7 @@ export default function FarmerApplicationPreview({ opened, onClose, application 
       ) : (
         <iframe
           title="Application preview"
-          srcDoc={buildApplicationHtml(app, docs.html)}
+          srcDoc={buildApplicationHtml(app, docs.html, officers)}
           style={{ width: '100%', height: '75vh', border: '1px solid #dee2e6', background: '#e9ecef' }}
         />
       )}

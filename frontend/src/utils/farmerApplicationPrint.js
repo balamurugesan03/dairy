@@ -13,6 +13,22 @@
  * (utils/farmerDocumentsPrint) follow the form.
  */
 import { DOCUMENT_PAGE_CSS, buildFarmerDocumentPages } from './farmerDocumentsPrint';
+import { farmerApplicationAPI } from '../services/api';
+
+/**
+ * Names printed under the President / Secretary signature lines:
+ *   President — Settings → Society Info → President Name
+ *   Secretary — Settings → User Management → the user with designation Secretary
+ * Read fresh for every print / preview so a change in Settings shows at once.
+ */
+export const loadOfficerNames = async () => {
+  try {
+    const d = (await farmerApplicationAPI.prefill({}))?.data || {};
+    return { presidentName: d.presidentName || '', secretaryName: d.secretaryName || '' };
+  } catch {
+    return { presidentName: '', secretaryName: '' };
+  }
+};
 
 // The two LSGD Dairy Reports — each has its own form, template and menu entry
 export const FORM_TYPES = [
@@ -23,6 +39,22 @@ export const FORM_TYPES = [
 export const DEFAULT_SCHEME = {
   SUBSIDY: 'പാലിന് സബ്സിഡി',
   INCENTIVE: 'ക്ഷീരകർഷകർക്ക് പാലളവിനു ഇൻസെന്റീവ്',
+};
+
+/**
+ * Scheme name dropdown of the LSGD application form. `name` is what is saved and
+ * printed in the form heading; New lets the user type any other scheme name.
+ */
+export const SCHEME_OPTIONS = [
+  { value: 'MILK_INCENTIVE',      label: 'Milk Incentive — ക്ഷീരകർഷകർക്ക് പാലളവിനു ഇൻസെന്റീവ്', name: 'ക്ഷീരകർഷകർക്ക് പാലളവിനു ഇൻസെന്റീവ്' },
+  { value: 'CATTLE_FEED_SUBSIDY', label: 'Cattle Feed Subsidy — കാലിത്തീറ്റ സബ്സിഡി',           name: 'കാലിത്തീറ്റ സബ്സിഡി' },
+  { value: 'NEW',                 label: 'New — type the scheme name' },
+];
+/** Saved scheme name → dropdown value (any other typed name is "New"; blank → none). */
+export const schemeKindOf = (name) => {
+  const n = String(name || '').trim();
+  if (!n) return null;
+  return SCHEME_OPTIONS.find((o) => o.name === n)?.value || 'NEW';
 };
 
 export const CATEGORIES = [
@@ -110,7 +142,7 @@ const SUBSIDY_CSS = `
   .s .seal { margin-top: 40mm; padding-left: 21mm; }
 `;
 
-const subsidyPages = (a) => {
+const subsidyPages = (a, o = {}) => {
   const row = (no, label, value, cls = 'l') =>
     `<tr><td class="${cls}">${no ? `${no}. ` : ''}${label}</td><td class="c">:</td><td class="v">${value}</td></tr>`;
   const rowNoColon = (label, value, cls) =>
@@ -171,6 +203,9 @@ const subsidyPages = (a) => {
     <div class="sign2">
       <div>സംഘം പ്രസിഡന്റിന്റെ</div><div>സംഘം സെക്രട്ടറിയുടെ</div>
       <div class="ind1">പേരും ഒപ്പും</div><div class="ind2">പേരും ഒപ്പും</div>
+      ${o.presidentName || o.secretaryName
+        ? `<div class="ind1 v" style="margin-top:1.5mm">${esc(o.presidentName)}</div><div class="ind2 v" style="margin-top:1.5mm">${esc(o.secretaryName)}</div>`
+        : ''}
     </div>
     <div class="pd">സ്ഥലം : &nbsp;<span class="v">${esc(a.place)}</span></div>
     <div class="pd">തീയതി : &nbsp;<span class="v">${fmtDate(a.applicationDate)}</span></div>
@@ -213,7 +248,7 @@ const INCENTIVE_CSS = `
   .n .note { display: inline-block; margin-top: 2mm; border-bottom: 1px solid #000; font-size: 9.5pt; }
 `;
 
-const incentivePage = (a) => {
+const incentivePage = (a, o = {}) => {
   const yr = Number(a.year);
   const yy = yr ? String(yr + 1).slice(-2) : '';
   const yn = `<span class="yn"><span class="opt${a.isMember === true ? ' on' : ''}">അതെ</span>/<span class="opt${a.isMember === false ? ' on' : ''}">അല്ല</span></span>`;
@@ -257,7 +292,7 @@ const incentivePage = (a) => {
     <div class="rec">അപേക്ഷയിൽ രേഖപ്പെടുത്തിയ വിവരങ്ങൾ വസ്തുതാപരമാണ് . അനുകൂല്യം
       അനുവദിക്കുന്നതിന് ശുപാർശ ചെയ്യുന്നു.</div>
     <div class="officers">
-      <div>ക്ഷീരസംഘം സെക്രട്ടറിയുടെ<div style="margin-top:1.5mm">ഒപ്പും പേരും</div></div>
+      <div>ക്ഷീരസംഘം സെക്രട്ടറിയുടെ<div style="margin-top:1.5mm">ഒപ്പും പേരും</div>${o.secretaryName ? `<div class="v" style="margin-top:1.5mm">${esc(o.secretaryName)}</div>` : ''}</div>
       <div class="r">നിർവഹണ ഉദ്യോഗസ്ഥന്റെ<div class="s2">ഒപ്പും പേരും</div></div>
     </div>
     <div class="seal">സീൽ</div>
@@ -265,10 +300,10 @@ const incentivePage = (a) => {
   </div>`;
 };
 
-/** Form pages of one application (no <html> wrapper). */
-export const buildApplicationBody = (app) => {
+/** Form pages of one application (no <html> wrapper). officers: from loadOfficerNames() */
+export const buildApplicationBody = (app, officers = {}) => {
   const a = app || {};
-  return a.formType === 'INCENTIVE' ? incentivePage(a) : subsidyPages(a);
+  return a.formType === 'INCENTIVE' ? incentivePage(a, officers) : subsidyPages(a, officers);
 };
 
 const wrapDocument = (title, body) => `<!DOCTYPE html>
@@ -282,8 +317,8 @@ ${FONT_LINKS}
  * Complete print document: the application form, then the farmer's uploaded
  * document pages (already-built HTML from buildFarmerDocumentPages, may be '').
  */
-export const buildApplicationHtml = (app, docPagesHtml = '') =>
-  wrapDocument(`${app?.applicationNo || 'Application'} - ${app?.applicantName || ''}`, buildApplicationBody(app) + (docPagesHtml || ''));
+export const buildApplicationHtml = (app, docPagesHtml = '', officers = {}) =>
+  wrapDocument(`${app?.applicationNo || 'Application'} - ${app?.applicantName || ''}`, buildApplicationBody(app, officers) + (docPagesHtml || ''));
 
 /**
  * Print one or many applications as a single A4 output: for each farmer the
@@ -297,8 +332,12 @@ export const printApplications = async (source, { withDocuments = true, title = 
   if (!win) return { ok: false, message: 'Allow pop-ups for this site to print' };
   win.document.write('<p style="font:14px Arial;padding:24px">Preparing print…</p>');
   let apps;
+  let officers;
   try {
-    apps = typeof source === 'function' ? await source() : source;
+    [apps, officers] = await Promise.all([
+      typeof source === 'function' ? source() : source,
+      loadOfficerNames(),
+    ]);
   } catch (err) {
     win.close();
     throw err;
@@ -308,7 +347,7 @@ export const printApplications = async (source, { withDocuments = true, title = 
   let docCount = 0;
   const failed = [];
   for (const app of apps) {
-    body += buildApplicationBody(app);
+    body += buildApplicationBody(app, officers);
     if (!withDocuments || !app.farmerId) continue;
     try {
       const pages = await buildFarmerDocumentPages(app.farmerId?._id || app.farmerId);

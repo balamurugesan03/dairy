@@ -4,6 +4,7 @@ import Farmer from '../models/Farmer.js';
 import MilkCollection from '../models/MilkCollection.js';
 import SocietyInfo from '../models/SocietyInfo.js';
 import Company from '../models/Company.js';
+import User from '../models/User.js';
 import { syncFarmerFromForm, SYNC_FIELD_NAMES } from './farmerFormController.js';
 import { placeKey } from '../utils/panchayatMatch.js';
 
@@ -191,11 +192,17 @@ export const deleteApplication = async (req, res) => {
 export const getApplicationPrefill = async (req, res) => {
   try {
     const { farmerId, year, date } = req.query;
-    const [info, company] = await Promise.all([
-      SocietyInfo.findOne({ companyId: req.companyId }).select('societyName city').lean(),
+    const [info, company, secretary] = await Promise.all([
+      SocietyInfo.findOne({ companyId: req.companyId }).select('societyName city presidentName').lean(),
       Company.findById(req.companyId).select('companyName societyName').lean(),
+      // Settings → User Management: the active user whose designation is Secretary
+      User.findOne({ company: req.companyId, designation: 'Secretary', status: 'active', displayName: { $nin: [null, ''] } })
+        .sort({ createdAt: 1 }).select('displayName').lean(),
     ]);
     const societyName = info?.societyName || company?.societyName || company?.companyName || '';
+    // Printed under the President / Secretary signature lines of the LSGD forms
+    const presidentName = (info?.presidentName || '').trim();   // Settings → Society Info
+    const secretaryName = (secretary?.displayName || '').trim();
 
     let milk = null;
     if (farmerId && mongoose.isValidObjectId(String(farmerId))) {
@@ -220,7 +227,7 @@ export const getApplicationPrefill = async (req, res) => {
         milk = await avgFor(start, end);
       }
     }
-    res.json({ success: true, data: { societyName, place: info?.city || '', milk } });
+    res.json({ success: true, data: { societyName, place: info?.city || '', presidentName, secretaryName, milk } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

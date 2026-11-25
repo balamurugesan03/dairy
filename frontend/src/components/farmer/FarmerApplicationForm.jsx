@@ -22,8 +22,10 @@ import {
 import FarmerDocumentsUpload from './FarmerDocumentsUpload';
 import { placeKey, wardNumberOf } from '../../utils/keralaPanchayat';
 import {
-  FORM_TYPES, CATEGORIES, DEFAULT_SCHEME, fyLabel, printApplications, currentSchemeYear, SCHEME_YEAR_OPTIONS
+  FORM_TYPES, CATEGORIES, DEFAULT_SCHEME, fyLabel, printApplications, currentSchemeYear, SCHEME_YEAR_OPTIONS,
+  SCHEME_OPTIONS, schemeKindOf
 } from '../../utils/farmerApplicationPrint';
+import { modals } from '@mantine/modals';
 import FarmerApplicationPreview from './FarmerApplicationPreview';
 
 const thisFy = currentSchemeYear();
@@ -83,6 +85,11 @@ const bankFieldsOf = (f, source) => (source === 'Secondary'
   ? { bankSource: 'Secondary', bankName: f.secBankName || '', branch: f.secBranch || '', accountNumber: f.secAccountNumber || '', ifsc: (f.secIfsc || '').toUpperCase(), bankLedgerId: null }
   : { bankSource: 'Primary', bankName: f.bankName || '', branch: f.branch || '', accountNumber: f.accountNumber || '', ifsc: f.ifsc || '', bankLedgerId: null });
 
+// The farmer's account the form uses by default: the one they are paid into
+const defaultBankFieldsOf = (f) => bankFieldsOf(f, f.payTo === 'Secondary' && f.secAccountNumber ? 'Secondary' : 'Primary');
+const BANK_FIELDS = ['bankName', 'branch', 'accountNumber', 'ifsc'];
+const BLANK_BANK = { bankSource: 'Primary', bankName: '', branch: '', accountNumber: '', ifsc: '', bankLedgerId: null };
+
 const composeAddress = (f) => [f.houseName, f.place, f.post].map(x => String(x || '').trim()).filter(Boolean).join(', ');
 
 // Same rules as the server
@@ -126,6 +133,51 @@ export default function FarmerApplicationForm({ applicationId, onClose, onOpenEx
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: undefined }));
   };
 
+  // ── Scheme name: Milk Incentive / Cattle Feed Subsidy / New (typed) ──────
+  const [schemeKind, setSchemeKind] = useState(null);
+  // Fill the bank details from the farmer (Farmers Management)? On by default.
+  const [autoBank, setAutoBank] = useState(true);
+  const setFarmerBank = (on) => {
+    setAutoBank(on);
+    // filled / cleared here, not typed — never written back to Farmers Management
+    setChanged(prev => { const n = new Set(prev); BANK_FIELDS.forEach(k => n.delete(k)); return n; });
+    setErrors(prev => ({ ...prev, accountNumber: undefined, ifsc: undefined }));
+    setForm(prev => {
+      if (!on) return { ...prev, ...BLANK_BANK };
+      const f = farmers.find(x => x._id === prev.farmerId);
+      return f ? { ...prev, ...defaultBankFieldsOf(f) } : prev;
+    });
+  };
+  const pickScheme = (kind) => {
+    setSchemeKind(kind);
+    if (kind === 'NEW') {
+      // start blank for typing (keep a name that was already typed)
+      if (SCHEME_OPTIONS.some(o => o.name && o.name === form.schemeName)) set('schemeName', '');
+      return;
+    }
+    set('schemeName', SCHEME_OPTIONS.find(o => o.value === kind)?.name || '');
+    if (kind === 'MILK_INCENTIVE') {
+      if (!autoBank) setFarmerBank(true);   // account details always auto-fetched
+    } else if (kind === 'CATTLE_FEED_SUBSIDY') {
+      modals.openConfirmModal({
+        title: 'Account details',
+        centered: true,
+        zIndex: 1000,
+        closeOnClickOutside: false,
+        closeOnEscape: false,
+        withCloseButton: false,
+        children: (
+          <Text size="sm">
+            Auto-fetch the farmer&apos;s bank account details (bank, branch, account number, IFSC) from Farmers Management?
+          </Text>
+        ),
+        labels: { confirm: 'Yes', cancel: 'No' },
+        onConfirm: () => setFarmerBank(true),
+        onCancel: () => setFarmerBank(false),
+      });
+    }
+  };
+
   // Society name / place for a new form
   useEffect(() => {
     if (applicationId) return;
@@ -154,6 +206,7 @@ export default function FarmerApplicationForm({ applicationId, onClose, onOpenEx
           avgMilkPerDay: d.avgMilkPerDay ?? '',
           farmerId: d.farmerId?._id || d.farmerId || null,
         });
+        setSchemeKind(schemeKindOf(d.schemeName));
       }
     }).catch(err => notifications.show({ color: 'red', message: err?.message || 'Could not load the application' }))
       .finally(() => setLoading(false));
@@ -192,8 +245,9 @@ export default function FarmerApplicationForm({ applicationId, onClose, onOpenEx
       rationCardNo: f.rationCardNo || '',
       electionId: f.voterId || '',
       aadhaarNumber: f.aadhaar || '',
-      // the account the farmer is paid into (Pay to: Primary / Secondary), Primary otherwise
-      ...bankFieldsOf(f, f.payTo === 'Secondary' && f.secAccountNumber ? 'Secondary' : 'Primary'),
+      // the account the farmer is paid into (Pay to: Primary / Secondary), Primary otherwise —
+      // left blank when the user chose not to auto-fetch account details (Cattle Feed Subsidy → No)
+      ...(autoBank ? defaultBankFieldsOf(f) : BLANK_BANK),
       isMember: !!(f.isMembership || f.memberId),
       membershipNo: f.memberId || '',
       // keep the Panchayat chosen for the report — the farmer record may hold a Block / Taluk name
@@ -359,12 +413,29 @@ export default function FarmerApplicationForm({ applicationId, onClose, onOpenEx
               <FarmerDetailsCard farmer={selectedFarmer} />
             </Grid.Col>
             <Grid.Col span={{ base: 12, sm: 6 }}>
-              <TextInput
+              <Select
                 label="Scheme name (പദ്ധതി)"
-                placeholder={DEFAULT_SCHEME[form.formType]}
-                value={form.schemeName}
-                onChange={e => set('schemeName', e.target.value)}
+                placeholder={`Select scheme — blank prints “${DEFAULT_SCHEME[form.formType]}”`}
+                data={SCHEME_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+                value={schemeKind}
+                onChange={v => {
+                  if (v) pickScheme(v);
+                  else { setSchemeKind(null); set('schemeName', ''); }
+                }}
+                clearable
+                comboboxProps={{ zIndex: 1000 }}
               />
+              {schemeKind === 'NEW' && (
+                <TextInput
+                  mt="xs"
+                  label="New scheme name"
+                  placeholder="Type the scheme name"
+                  value={form.schemeName}
+                  onChange={e => set('schemeName', e.target.value)}
+                  data-autofocus
+                  autoFocus
+                />
+              )}
               <DatePickerInput
                 mt="sm" label="Application date" valueFormat="DD-MM-YYYY"
                 value={form.applicationDate}
