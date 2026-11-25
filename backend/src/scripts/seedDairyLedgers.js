@@ -5,7 +5,8 @@ import Ledger from '../models/Ledger.js';
 dotenv.config();
 
 // ── Dairy Cooperative Society — Standard Chart of Accounts ──────────────────
-// voucherType: B=Balance Sheet  P=Profit&Loss  R=Receipt
+// voucherType (from the AC Ledgers sheet's voucher_type column):
+//   B = Both Receipt & Payment   P = Payment Voucher only   R = Receipt Voucher only
 // isFixed: true = system ledger (cannot be deleted by users)
 // balanceType auto-derived from parentGroup: ASSET/EXPENSE→Dr, LIABILITY/INCOME→Cr
 
@@ -239,7 +240,7 @@ const DAIRY_LEDGERS = [
   // ══ INCOME ═════════════════════════════════════════════════════════════════
 
   // Miscellaneous Income
-  { ledgerName: 'INTEREST RECEIVED', ledgerType: 'Miscellaneous Income', parentGroup: 'INCOME', voucherType: 'R', isFixed: false },
+  { ledgerName: 'INTEREST RECEIVED', ledgerType: 'Miscellaneous Income', parentGroup: 'INCOME', voucherType: 'B', isFixed: false },
   { ledgerName: 'VMRP',              ledgerType: 'Miscellaneous Income', parentGroup: 'INCOME', voucherType: 'R', isFixed: false },
 
   // Sales
@@ -281,7 +282,7 @@ const balanceTypeFor = (parentGroup) =>
   ['ASSET', 'EXPENSE'].includes(parentGroup) ? 'Dr' : 'Cr';
 
 export async function seedDairyLedgersForCompany(companyId) {
-  let created = 0, skipped = 0;
+  let created = 0, skipped = 0, voucherTypeUpdated = 0;
 
   for (const def of DAIRY_LEDGERS) {
     const bt = balanceTypeFor(def.parentGroup);
@@ -304,11 +305,20 @@ export async function seedDairyLedgersForCompany(companyId) {
       },
       { upsert: true }
     );
-    if (result.upsertedCount) created++;
-    else skipped++;
+    if (result.upsertedCount) { created++; continue; }
+    skipped++;
+
+    // Existing ledger: the sheet's voucher_type is the source of truth, so
+    // bring voucherType in line. Only that field is touched — _id, name,
+    // account group, balances and posted vouchers are left as they are.
+    const fix = await Ledger.updateMany(
+      { ledgerName: def.ledgerName, companyId, voucherType: { $ne: def.voucherType } },
+      { $set: { voucherType: def.voucherType } }
+    );
+    if (fix.modifiedCount) voucherTypeUpdated += fix.modifiedCount;
   }
 
-  return { created, skipped, total: DAIRY_LEDGERS.length };
+  return { created, skipped, voucherTypeUpdated, total: DAIRY_LEDGERS.length };
 }
 
 // ── CLI entry point ───────────────────────────────────────────────────────────
@@ -322,6 +332,6 @@ if (process.argv[1].includes('seedDairyLedgers')) {
   console.log('Connected to MongoDB');
 
   const result = await seedDairyLedgersForCompany(companyId);
-  console.log(`Done: ${result.created} created, ${result.skipped} already existed`);
+  console.log(`Done: ${result.created} created, ${result.skipped} already existed, ${result.voucherTypeUpdated} voucher types updated`);
   await mongoose.disconnect();
 }

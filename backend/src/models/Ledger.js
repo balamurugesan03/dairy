@@ -114,8 +114,12 @@ const ledgerSchema = new mongoose.Schema({
   },
   voucherType: {
     type: String,
-    enum: ['B', 'P', 'R'],  // B=Balance Sheet, P=Profit&Loss, R=Receipt
-    default: 'P'
+    // Controls which voucher screens list the ledger:
+    //   B = Both (Receipt & Payment)   P = Payment only   R = Receipt only
+    // Default 'B' so a ledger created without an explicit type (party ledgers,
+    // auto-created ledgers, manual entry) is never silently hidden.
+    enum: ['B', 'P', 'R'],
+    default: 'B'
   },
   isFixed: {
     type: Boolean,
