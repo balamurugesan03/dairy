@@ -2,16 +2,16 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Box, Paper, Title, Text, Group, Stack, Badge, Button, Divider,
   Grid, Card, ThemeIcon, NumberInput, SegmentedControl, Alert,
-  Loader, Center, Tooltip
+  Loader, Center, Tooltip, TextInput
 } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import {
   IconCalendarClock, IconCurrencyRupee, IconCheck, IconCalendarEvent,
-  IconRefresh, IconDeviceFloppy, IconInfoCircle, IconClock, IconWallet,
+  IconRefresh, IconDeviceFloppy, IconInfoCircle, IconClock,
   IconBuildingBank
 } from '@tabler/icons-react';
-import { dairySettingsAPI } from '../../services/api';
+import { dairySettingsAPI, financialYearAPI } from '../../services/api';
 import { localDateStr } from '../../utils/dateUtils';
 
 // ── Payment Day option card ───────────────────────────────────────────────────
@@ -78,9 +78,14 @@ export default function PaymentSettings() {
   const [acStartBalanceType, setAcStartBalanceType]     = useState('Dr');
   const [fyOpeningBalance, setFyOpeningBalance]         = useState(0);
   const [fyOpeningBalanceType, setFyOpeningBalanceType] = useState('Dr');
+  // The year the Financial Year Opening Balance stands on: the Active Financial
+  // Year (Settings → Financial Year), else 1 April of the current year — the same
+  // rule the reports use (backend utils/cashInHandOpening.js).
+  const [activeFy, setActiveFy] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    financialYearAPI.getActive().then(r => setActiveFy(r?.data || null)).catch(() => setActiveFy(null));
     const res = await dairySettingsAPI.get();
     if (res?.success && res.data) {
       const d = res.data;
@@ -97,6 +102,15 @@ export default function PaymentSettings() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // "2026-2027 (from 01/04/2026)" — Active Financial Year, else the current April–March year
+  const fyDisplay = (() => {
+    const fmt = (d) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    if (activeFy?.startDate) return `${activeFy.name || 'Financial Year'} (from ${fmt(activeFy.startDate)})`;
+    const now = new Date();
+    const y = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+    return `${y}-${y + 1} (from ${fmt(new Date(y, 3, 1))})`;
+  })();
 
   const handleSave = async () => {
     setSaving(true);
@@ -293,6 +307,37 @@ export default function PaymentSettings() {
                   </Tooltip>
                 </Group>
                 <Grid gutter="sm">
+                  {/* 1. Financial Year — the year this opening balance is for */}
+                  <Grid.Col span={{ base: 12, sm: 6 }}>
+                    <TextInput
+                      label="Financial Year"
+                      value={fyDisplay}
+                      readOnly
+                      leftSection={<IconCalendarEvent size={16} />}
+                      description={activeFy ? 'Active Financial Year (Settings → Financial Year)' : 'No Active Financial Year — 1 April of the current year is used'}
+                    />
+                  </Grid.Col>
+                  {/* 2. Account Start Date */}
+                  <Grid.Col span={{ base: 12, sm: 6 }}>
+                    <DateInput
+                      label={
+                        <Group gap={4} component="span">
+                          <span>Account Start Date</span>
+                          <Tooltip label="The date this society's accounts were first entered in this software" withArrow>
+                            <IconInfoCircle size={13} color="var(--mantine-color-dimmed)" style={{ cursor: 'help' }} />
+                          </Tooltip>
+                        </Group>
+                      }
+                      placeholder="Select start date"
+                      value={accountStartDate}
+                      onChange={setAccountStartDate}
+                      valueFormat="DD/MM/YYYY"
+                      clearable
+                      leftSection={<IconCalendarEvent size={16} />}
+                      description="Reports and ledgers will start from this date."
+                    />
+                  </Grid.Col>
+                  {/* 3. Opening Balance */}
                   <Grid.Col span={{ base: 12, sm: 7 }}>
                     <NumberInput
                       label="Opening Balance Amount (₹)"
@@ -321,117 +366,27 @@ export default function PaymentSettings() {
                   </Grid.Col>
                 </Grid>
                 <Text size="xs" c="dimmed" mt="xs">
-                  Cash in Hand balance at the beginning of the financial year. When entered, it is carried forward as the Cash in Hand opening in the Ledger, Day Book, Cash Book and Cash Book Entry (instead of the Account Start Date opening below).
-                </Text>
-              </Paper>
-            </Grid.Col>
-
-            <Grid.Col span={12}><Divider /></Grid.Col>
-
-            {/* ── Account Start Date ──── */}
-            <Grid.Col span={{ base: 12, sm: 4 }}>
-              <Stack gap={4}>
-                <Group gap={4}>
-                  <Text size="xs" fw={500}>Account Start Date</Text>
-                  <Tooltip label="The date this society's accounts were first entered in this software" withArrow>
-                    <IconInfoCircle size={13} color="var(--mantine-color-dimmed)" style={{ cursor: 'help' }} />
-                  </Tooltip>
-                </Group>
-                <DateInput
-                  placeholder="Select start date"
-                  value={accountStartDate}
-                  onChange={setAccountStartDate}
-                  valueFormat="DD/MM/YYYY"
-                  clearable
-                  leftSection={<IconCalendarEvent size={16} />}
-                />
-                <Text size="xs" c="dimmed">
-                  Reports and ledgers will start from this date.
-                </Text>
-              </Stack>
-            </Grid.Col>
-
-            {/* ── Account Start Date Opening Balance ──── */}
-            <Grid.Col span={{ base: 12, sm: 8 }}>
-              <Paper withBorder radius="sm" p="md">
-                <Group gap="xs" mb="sm">
-                  <ThemeIcon size="sm" color="teal" variant="light" radius="sm">
-                    <IconWallet size={14} />
-                  </ThemeIcon>
-                  <Text fw={600} size="sm">Account Start Date Opening Balance</Text>
-                  <Tooltip label="Cash / Bank balance on the account start date (Day-1 balance)" withArrow>
-                    <IconInfoCircle size={14} color="var(--mantine-color-dimmed)" style={{ cursor: 'help' }} />
-                  </Tooltip>
-                </Group>
-                <Grid gutter="sm">
-                  <Grid.Col span={{ base: 12, sm: 7 }}>
-                    <NumberInput
-                      label="Opening Balance Amount (₹)"
-                      placeholder="0.00"
-                      value={acStartBalance}
-                      onChange={v => setAcStartBalance(Number(v) || 0)}
-                      leftSection={<IconCurrencyRupee size={16} />}
-                      decimalScale={2}
-                      fixedDecimalScale
-                      thousandSeparator=","
-                      min={0}
-                    />
-                  </Grid.Col>
-                  <Grid.Col span={{ base: 12, sm: 5 }}>
-                    <Text size="xs" fw={500} mb={6} c="dimmed">Balance Type</Text>
-                    <SegmentedControl
-                      fullWidth
-                      data={[
-                        { value: 'Dr', label: 'Dr  (Debit)' },
-                        { value: 'Cr', label: 'Cr  (Credit)' },
-                      ]}
-                      value={acStartBalanceType}
-                      onChange={setAcStartBalanceType}
-                      color="teal"
-                    />
-                  </Grid.Col>
-                </Grid>
-                <Text size="xs" c="dimmed" mt="xs">
-                  Cash in Hand opening balance — used by Cash Book Entry, Day Book, Cash Book, General Ledger,
-                  Ledger Abstract, Receipt &amp; Disbursement, Final Accounts and Balance Sheet.
+                  Cash in Hand balance at the beginning of the financial year. It is carried forward as the Cash in Hand opening in the Ledger, Day Book, Cash Book and Cash Book Entry.
                 </Text>
               </Paper>
             </Grid.Col>
           </Grid>
 
           {/* Summary card */}
-          {(acStartBalance > 0 || fyOpeningBalance > 0) && (
+          {fyOpeningBalance > 0 && (
             <>
               <Divider my="md" label="Summary" labelPosition="left" />
               <Grid gutter="sm">
                 {fyOpeningBalance > 0 && (
                   <Grid.Col span={{ base: 12, sm: 6 }}>
                     <Card withBorder radius="sm" p="sm" style={{ borderLeft: '3px solid var(--mantine-color-indigo-6)' }}>
-                      <Text size="xs" c="dimmed" fw={500}>Financial Year Opening Balance</Text>
+                      <Text size="xs" c="dimmed" fw={500}>Financial Year Opening Balance ({fyDisplay})</Text>
                       <Group gap={4} mt={2}>
                         <Text size="lg" fw={700}>
                           ₹{fyOpeningBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </Text>
                         <Badge size="xs" color={fyOpeningBalanceType === 'Dr' ? 'red' : 'green'} variant="light">
                           {fyOpeningBalanceType}
-                        </Badge>
-                      </Group>
-                    </Card>
-                  </Grid.Col>
-                )}
-                {acStartBalance > 0 && (
-                  <Grid.Col span={{ base: 12, sm: 6 }}>
-                    <Card withBorder radius="sm" p="sm" style={{ borderLeft: '3px solid var(--mantine-color-teal-6)' }}>
-                      <Text size="xs" c="dimmed" fw={500}>
-                        Account Start Balance
-                        {accountStartDate && <span> ({new Date(accountStartDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })})</span>}
-                      </Text>
-                      <Group gap={4} mt={2}>
-                        <Text size="lg" fw={700}>
-                          ₹{acStartBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </Text>
-                        <Badge size="xs" color={acStartBalanceType === 'Dr' ? 'red' : 'green'} variant="light">
-                          {acStartBalanceType}
                         </Badge>
                       </Group>
                     </Card>

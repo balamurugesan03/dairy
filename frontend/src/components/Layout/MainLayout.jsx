@@ -38,6 +38,7 @@ import { MILK_POPUP_EVENT, MILK_POPUP_ROUTES } from '../../utils/milkPopup';
 import { societyInfoAPI } from '../../services/api';
 import { setPrintBranding, SOCIETY_BRANDING_EVENT } from '../../utils/printLogo';
 import { filterMenuForUser, canOpenPath, canOpenRoute } from '../../utils/modulePermissions';
+import './BrandLogo.css';
 
 const MilkPurchase = lazy(() => import('../daily-collections/MilkPurchase'));
 const MilkSales    = lazy(() => import('../daily-collections/MilkSales'));
@@ -976,7 +977,7 @@ const MainLayout = () => {
         <Box
           style={{
             background: headerGradient,
-            padding: '6px 20px',
+            padding: '4px 20px',
             boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
           }}
         >
@@ -995,19 +996,11 @@ const MainLayout = () => {
               </Button>
               <Group gap="sm" wrap="nowrap">
                 {/* Fixed product logo (public/dairysoft-logo.jpeg) — the society
-                    name no longer replaces it (user rule 2026-10-31). The logo
-                    art has a white background, so it sits on a white card. */}
-                <Box
-                  style={{
-                    background: '#fff',
-                    borderRadius: 10,
-                    padding: '4px 10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
-                  }}
-                >
-                  <img src="/dairysoft-logo.jpeg" alt="DairySoft" style={{ height: 34, width: 'auto', display: 'block' }} />
+                    name no longer replaces it (user rule 2026-10-31). Badge with
+                    a soft white-shade graphic background, not a flat white card
+                    (BrandLogo.css). */}
+                <Box className="ds-brand">
+                  <img src="/dairysoft-logo.jpeg" alt="DairySoft" />
                 </Box>
                 <Text size="xs" c="rgba(255,255,255,0.85)" visibleFrom="sm">
                   Dairy Management System
