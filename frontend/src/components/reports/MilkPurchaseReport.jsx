@@ -168,7 +168,7 @@ export default function MilkPurchaseReport() {
     const hdrHtml = `
       <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:5px;margin-bottom:8px">
         <div style="font-size:14px;font-weight:900;text-transform:uppercase;letter-spacing:1.5px">${societyName}</div>
-        <div style="font-size:11px;font-weight:800;text-transform:uppercase;margin-top:2px">Milk Purchase Report${tab === 'farmer' ? filterLabel : ''}</div>
+        <div style="font-size:11px;font-weight:800;text-transform:uppercase;margin-top:2px">Milk Purchase Periodical Report${tab === 'farmer' ? filterLabel : ''}</div>
         <div style="display:flex;justify-content:space-between;font-size:8.5px;font-weight:600;margin-top:4px;border-top:1px solid #ccc;padding-top:3px">
           <span>Period: ${periodLabel}</span>
           <span>Mode: ${tab === 'farmer' ? 'Farmer-wise Summary' : 'Date-wise Summary'}</span>
@@ -284,7 +284,7 @@ export default function MilkPurchaseReport() {
         </div>
       </div>`;
 
-    w.document.write(`<!DOCTYPE html><html><head><title>Milk Purchase Report</title>
+    w.document.write(`<!DOCTYPE html><html><head><title>Milk Purchase Periodical Report</title>
       <style>
         *{box-sizing:border-box}
         body{margin:0;padding:5mm 7mm;font-family:Arial,sans-serif;font-size:8px;color:#000}
@@ -313,7 +313,7 @@ export default function MilkPurchaseReport() {
     const blob = new Blob([csv], { type: 'text/csv' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a'); a.href = url;
-    a.download = `MilkPurchaseReport_${fromISO}_${toISO_}.csv`; a.click();
+    a.download = `MilkPurchasePeriodicalReport_${fromISO}_${toISO_}.csv`; a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -325,7 +325,7 @@ export default function MilkPurchaseReport() {
     doc.setFontSize(13); doc.setFont(undefined, 'bold'); doc.setTextColor(28, 61, 110);
     doc.text(societyName.toUpperCase(), pageW / 2, y, { align: 'center' });
     y += 6; doc.setFontSize(11); doc.setTextColor(0);
-    doc.text('MILK PURCHASE REPORT', pageW / 2, y, { align: 'center' });
+    doc.text('MILK PURCHASE PERIODICAL REPORT', pageW / 2, y, { align: 'center' });
     y += 5; doc.setFontSize(8); doc.setFont(undefined, 'normal');
     doc.text(`Period: ${periodLabel}`, 14, y);
     doc.text(`Mode: ${tab === 'farmer' ? 'Farmer-wise' : 'Date-wise'}`, pageW - 14, y, { align: 'right' });
@@ -379,7 +379,7 @@ export default function MilkPurchaseReport() {
         didParseCell: d => { if (d.section==='body' && d.row.index===rows.length) { d.cell.styles.fillColor=H; d.cell.styles.textColor=255; d.cell.styles.fontStyle='bold'; } },
       });
     }
-    doc.save(`MilkPurchaseReport_${fromISO}_${toISO_}.pdf`);
+    doc.save(`MilkPurchasePeriodicalReport_${fromISO}_${toISO_}.pdf`);
   };
 
   // ── Farmer table head & rows ───────────────────────────────────────────────
@@ -435,7 +435,7 @@ export default function MilkPurchaseReport() {
         <Group justify="space-between" wrap="nowrap">
           <Group gap="sm">
             <Stack gap={0}>
-              <Title order={5} style={{ color: '#1c3d6e', lineHeight: 1.2 }}>Milk Purchase Report</Title>
+              <Title order={5} style={{ color: '#1c3d6e', lineHeight: 1.2 }}>Milk Purchase Periodical Report</Title>
               {loaded && <Text size="xs" c="dimmed">{periodLabel} · {tab === 'farmer' ? 'Farmer-wise' : 'Date-wise'}</Text>}
             </Stack>
           </Group>
@@ -557,7 +557,7 @@ export default function MilkPurchaseReport() {
                   </ThemeIcon>
                   <div>
                     <Text fw={900} size="lg" tt="uppercase" style={{ letterSpacing: '1px', lineHeight: 1.1 }}>{societyName}</Text>
-                    <Text fw={700} size="sm" tt="uppercase" style={{ letterSpacing: '1.5px', opacity: 0.85 }}>Milk Purchase Report</Text>
+                    <Text fw={700} size="sm" tt="uppercase" style={{ letterSpacing: '1.5px', opacity: 0.85 }}>Milk Purchase Periodical Report</Text>
                   </div>
                 </Group>
               </Stack>

@@ -322,7 +322,8 @@ const MainLayout = () => {
           children: [
              { key: '/reports/dairy-register',      label: 'Dairy Register' },
              { key: '/reports/dairy-abstract',      label: 'Dairy Abstract' },
-             { key: '/reports/milk-purchase-report', label: 'Milk Purchase Report' },
+             { key: '/reports/milk-purchase-collection-report', label: 'Milk Purchase Report' },
+             { key: '/reports/milk-purchase-report', label: 'Milk Purchase Periodical Report' },
              { key: '/reports/milk-sales-report',    label: 'Milk Sales Report'    },
              { key: '/reports/union-sales-report',   label: 'Union Sales Report'   },
              { key: '/reports/union-sale-quality-comparison', label: 'Union Sale Quality Comparison' },

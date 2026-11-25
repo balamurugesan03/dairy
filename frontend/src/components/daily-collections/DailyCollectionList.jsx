@@ -24,6 +24,8 @@ import { useCompany } from '../../context/CompanyContext';
 import dayjs from 'dayjs';
 import { openMilkPopup } from '../../utils/milkPopup';
 import { useAuth } from '../../context/AuthContext';
+import useSocietyHeader from '../reports/shared/useSocietyHeader';
+import { openMilkPurchasePrint } from '../../utils/milkPurchasePrint';
 
 const PAGE_SIZE = 50;
 
@@ -123,6 +125,7 @@ const StatCard = ({ label, value, sub, color, icon }) => (
 const DailyCollectionList = () => {
   const navigate = useNavigate();
   const { selectedCompany } = useCompany();
+  const societyHeader = useSocietyHeader();
 
   const [loading,    setLoading]    = useState(false);
   const [importing,  setImporting]  = useState(false);
@@ -296,7 +299,8 @@ const DailyCollectionList = () => {
   };
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-  const companyName = selectedCompany?.name || 'Dairy Cooperative Society';
+  // Society name from Settings → Society Info (falls back to the company record)
+  const companyName = societyHeader.societyName;
   const fromLabel   = fromDate ? dayjs(fromDate).format('DD MMM YYYY') : '';
   const toLabel     = toDate   ? dayjs(toDate).format('DD MMM YYYY')   : '';
   const dateLabel   = fromLabel === toLabel ? fromLabel : `${fromLabel} – ${toLabel}`;
@@ -543,177 +547,14 @@ const DailyCollectionList = () => {
       return;
     }
 
-    const printList  = getSortedRecords(records);
-    const members    = printList.filter(r => r.isMembership !== false);
-    const nonMembers = printList.filter(r => r.isMembership === false);
-    const totalLtr   = printList.reduce((s, r) => s + (r.qty || 0), 0);
-    const totalAmt_  = printList.reduce((s, r) => s + (r.amount || 0), 0);
-    const mLtr       = members.reduce((s, r) => s + (r.qty || 0), 0);
-    const mAmt       = members.reduce((s, r) => s + (r.amount || 0), 0);
-    const nmLtr      = nonMembers.reduce((s, r) => s + (r.qty || 0), 0);
-    const nmAmt      = nonMembers.reduce((s, r) => s + (r.amount || 0), 0);
-
-    const buildColRows = (list) => list.map((r, i) => `<tr>
-      <td class="c">${i + 1}</td>
-      <td class="c">${(r.farmerNumber || '')}</td>
-      <td class="l">${(r.farmerName || '').substring(0, 22)}</td>
-      <td class="r">${(r.fat  || 0).toFixed(2)}</td>
-      <td class="r">${(r.clr  || 0).toFixed(1)}</td>
-      <td class="r">${(r.snf  || 0).toFixed(2)}</td>
-      <td class="r">${(r.qty  || 0).toFixed(2)}</td>
-      <td class="r">${(r.rate || 0).toFixed(2)}</td>
-      <td class="r bold">${(r.amount || 0).toFixed(2)}</td>
-    </tr>`).join('');
-
-    const colPanel = (title, list, ltr, amt, isNm) => {
-      if (!list.length) return `
-        <div class="panel">
-          <div class="panel-hdr ${isNm ? 'nm' : ''}">${title} (0)</div>
-          <p style="font-size:8px;text-align:center;padding:4px;color:#888;">No records</p>
-        </div>`;
-      return `
-        <div class="panel">
-          <div class="panel-hdr ${isNm ? 'nm' : ''}">${title} (${list.length})</div>
-          <table>
-            <thead><tr>
-              <th class="c" style="width:20px">Sl</th>
-              <th class="c" style="width:28px">F.No</th>
-              <th class="l" style="width:70px">Name</th>
-              <th class="r" style="width:22px">FAT</th>
-              <th class="r" style="width:20px">CLR</th>
-              <th class="r" style="width:22px">SNF</th>
-              <th class="r" style="width:26px">Ltr</th>
-              <th class="r" style="width:24px">Rate</th>
-              <th class="r" style="width:32px">Amt</th>
-            </tr></thead>
-            <tbody>
-              ${buildColRows(list)}
-              <tr class="sub">
-                <td colspan="6" class="r bold">Sub Total :</td>
-                <td class="r bold">${ltr.toFixed(2)}</td>
-                <td></td>
-                <td class="r bold">${amt.toFixed(2)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>`;
-    };
-
-    const html = `<!DOCTYPE html><html><head>
-<meta charset="utf-8"/>
-<title>Milk Purchase Report</title>
-<style>
-  @page { size: A4 portrait; margin: 8mm; }
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:#fff; padding:6px; }
-  .paper { background:#fff; font-family:'Courier New',monospace; font-size:8px; color:#1a1a1a; width:194mm; }
-  .hdr { text-align:center; margin-bottom:2mm; }
-  .hdr .society { font-size:13px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; }
-  .hdr .addr    { font-size:8px; margin-top:1px; }
-  .dash { border:none; border-top:1.5px dashed #444; margin:1.5mm 0; }
-  .title-line { text-align:center; font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase; text-decoration:underline; margin:1.5mm 0; }
-  .meta { font-size:8px; margin-bottom:2mm; }
-  .meta span { margin-right:5mm; }
-  /* ── Stacked layout ── */
-  .two-col { display:block; }
-  .panel { margin-bottom:3mm; }
-  .panel-hdr { font-weight:700; font-size:9px; letter-spacing:0.8px; text-transform:uppercase;
-               padding:2px 6px; text-align:center; border:1.5px solid #333;
-               background:#dbeafe; color:#1a3c6e; margin-bottom:1px; }
-  .panel-hdr.nm { background:#f3f4f6; color:#374151; }
-  table { width:100%; border-collapse:collapse; font-size:8px; }
-  thead tr th { border-top:1px solid #333; border-bottom:1px solid #555; padding:1.5px 2px;
-                font-weight:700; font-size:7px; letter-spacing:0.2px; text-transform:uppercase; }
-  tbody tr td { padding:1px 2px; border-bottom:1px dotted #ccc; }
-  tbody tr:nth-child(odd) td { background:#f7f7f7; }
-  .sub td { border-top:1px solid #555; font-weight:700; font-size:7.5px; background:#e5e7eb; }
-  /* ── Grand total ── */
-  .grand-row { margin-top:2mm; }
-  .grand-row table { font-size:8.5px; }
-  .grand td { border-top:2px solid #333; border-bottom:1.5px solid #333; font-weight:700; font-size:9px; background:#d1fae5; padding:2px 3px; }
-  /* ── Summary ── */
-  .summary { margin-top:2mm; font-size:8px; }
-  .summary .dash2 { border:none; border-top:1px solid #555; margin:1.5mm 0; }
-  .summary-row { display:flex; justify-content:space-between; padding:1px 0; }
-  .summary-row .lbl { width:55mm; }
-  .summary-row .val  { font-weight:700; text-align:right; width:28mm; }
-  .summary-row .val2 { font-weight:700; text-align:right; width:28mm; }
-  .sig { margin-top:5mm; display:flex; justify-content:space-between; font-size:8px; }
-  .sig div { border-top:1px solid #555; width:55mm; text-align:center; padding-top:1mm; }
-  .printed { text-align:center; font-size:7px; margin-top:3mm; color:#6b7280; }
-  .c { text-align:center; } .r { text-align:right; } .l { text-align:left; } .bold { font-weight:700; }
-  @media print { body { padding:0; } }
-</style>
-</head>
-<body>
-<div class="paper">
-  <div class="hdr">
-    <div class="society">${companyName}</div>
-    ${centerLabel !== 'All Centers' ? `<div class="addr">${centerLabel}</div>` : ''}
-  </div>
-  <hr class="dash"/>
-  <div class="title-line">*** MILK PURCHASE REPORT ***</div>
-  <hr class="dash"/>
-  <div class="meta">
-    <span>Date : ${dateLabel}</span>
-    <span>Shift : ${shiftLabel}</span>
-    <span>Members : ${members.length}</span>
-    <span>Non-Members : ${nonMembers.length}</span>
-    <span>Total : ${printList.length}</span>
-  </div>
-
-  <div class="two-col">
-    ${colPanel('Members', members, mLtr, mAmt, false)}
-    ${colPanel('Non-Members', nonMembers, nmLtr, nmAmt, true)}
-  </div>
-
-  <div class="grand-row">
-    <table>
-      <tbody>
-        <tr class="grand">
-          <td style="width:60%" class="r">TOTAL PURCHASE (${printList.length} entries) :</td>
-          <td style="width:15%" class="r">${totalLtr.toFixed(2)} L</td>
-          <td style="width:25%" class="r bold">Rs. ${totalAmt_.toFixed(2)}</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <div class="summary">
-    <hr class="dash2"/>
-    <div class="summary-row">
-      <span class="lbl">Total Purchase (Litre)</span>
-      <span class="val">${totalLtr.toFixed(3)} L</span>
-      <span class="val2">Rs. ${totalAmt_.toFixed(2)}</span>
-    </div>
-    <div class="summary-row"><span class="lbl">Milk Sales — Local</span><span class="val">${salesSummary.local.qty.toFixed(3)} L</span><span class="val2">Rs. ${salesSummary.local.amt.toFixed(2)}</span></div>
-    <div class="summary-row"><span class="lbl">Milk Sales — School</span><span class="val">${salesSummary.school.qty.toFixed(3)} L</span><span class="val2">Rs. ${salesSummary.school.amt.toFixed(2)}</span></div>
-    <div class="summary-row"><span class="lbl">Milk Sales — Credit</span><span class="val">${salesSummary.credit.qty.toFixed(3)} L</span><span class="val2">Rs. ${salesSummary.credit.amt.toFixed(2)}</span></div>
-    <div class="summary-row"><span class="lbl">Milk Sales — Sample</span><span class="val">${salesSummary.sample.qty.toFixed(3)} L</span><span class="val2">Rs. ${salesSummary.sample.amt.toFixed(2)}</span></div>
-    <hr class="dash2"/>
-    <div class="summary-row bold">
-      <span class="lbl">Send to Dairy (Milma)</span>
-      <span class="val">${(totalLtr - salesSummary.local.qty - salesSummary.sample.qty - salesSummary.school.qty - salesSummary.credit.qty).toFixed(3)} L</span>
-      <span class="val2"></span>
-    </div>
-    <hr class="dash2"/>
-    <div style="font-size:7.5px; color:#444;">
-      Avg FAT: ${avgFat.toFixed(2)} &nbsp;|&nbsp; Avg CLR: ${avgClr.toFixed(1)} &nbsp;|&nbsp; Avg SNF: ${avgSnf.toFixed(2)} &nbsp;|&nbsp; AM: ${amCount} &nbsp;|&nbsp; PM: ${pmCount}
-    </div>
-  </div>
-  <div class="sig">
-    <div>Prepared By</div>
-    <div>Checked By</div>
-    <div>Secretary</div>
-  </div>
-  <div class="printed">Printed: ${dayjs().format('DD/MM/YYYY HH:mm')} &nbsp;|&nbsp; ${companyName}</div>
-</div>
-<script>window.onload=()=>setTimeout(()=>window.print(),400);</script>
-</body></html>`;
-
-    const win = window.open('', '_blank');
-    win.document.write(html);
-    win.document.close();
+    // Shared A4 portrait layout (also used by Reports → Milk Purchase Report).
+    // Header: Society name first (Settings → Society Info), then address / centre.
+    openMilkPurchasePrint({
+      society: societyHeader,
+      title: 'Milk Purchase Report',
+      sections: [{ records: getSortedRecords(records) }],
+      dateLabel, shiftLabel, centerLabel, salesSummary,
+    });
   };
 
   // ─── Import ────────────────────────────────────────────────────────────────
