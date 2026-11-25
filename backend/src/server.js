@@ -205,6 +205,24 @@ mongoose.connect(process.env.MONGODB_URI, {
       console.warn('Adjustment Entry side fix skipped:', e.message);
     }
 
+    // INTEREST RECEIVED is a Receipt-side-only ledger (voucher type R), not Both (B).
+    // Runs once (recorded in appmigrations) so a later deliberate change is kept.
+    try {
+      const db = mongoose.connection.db;
+      const key = 'interest-received-voucher-type-R';
+      if (!(await db.collection('appmigrations').findOne({ _id: key }))) {
+        const { default: Ledger } = await import('./models/Ledger.js');
+        const r = await Ledger.updateMany(
+          { ledgerName: { $regex: /^\s*INTEREST\s+RECEIVED\s*$/i }, voucherType: 'B' },
+          { $set: { voucherType: 'R' } }
+        );
+        await db.collection('appmigrations').insertOne({ _id: key, at: new Date(), modified: r.modifiedCount });
+        if (r.modifiedCount > 0) console.log(`INTEREST RECEIVED voucher type → R: updated ${r.modifiedCount} ledger(s)`);
+      }
+    } catch (e) {
+      console.warn('INTEREST RECEIVED voucher type fix skipped:', e.message);
+    }
+
     // Centre codes C1, C2 … for every company's existing centres (new ones get theirs on create),
     // then make sure the centre-scoped farmer number index exists now the old one is gone.
     try {

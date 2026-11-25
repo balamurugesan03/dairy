@@ -321,7 +321,7 @@ export default function PaymentSettings() {
                   </Grid.Col>
                 </Grid>
                 <Text size="xs" c="dimmed" mt="xs">
-                  This is the total balance at the beginning of the financial year. Used in Balance Sheet and Trial Balance reports.
+                  Cash in Hand balance at the beginning of the financial year. When entered, it is carried forward as the Cash in Hand opening in the Ledger, Day Book, Cash Book and Cash Book Entry (instead of the Account Start Date opening below).
                 </Text>
               </Paper>
             </Grid.Col>

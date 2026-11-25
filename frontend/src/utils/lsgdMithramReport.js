@@ -311,13 +311,17 @@ export const documentsHtmlOf = (groups) => groups
  * Print: open the window inside the click, fetch documents if asked, then print.
  * @returns { ok, message?, docCount, failed }
  */
-export const printStatement = async ({ facts, columns, rows, totals, withDocuments, onProgress }) => {
+export const printStatement = async ({ facts, columns, rows, totals, withDocuments, refreshRows, onProgress }) => {
   const win = window.open('', '_blank');
   if (!win) return { ok: false, message: 'Allow pop-ups to print' };
   win.document.write('<p style="font:14px Arial;padding:24px">Preparing LSGD Milk Statement…</p>');
   let docs = { groups: [], failed: [] };
   if (withDocuments) {
-    try { docs = await collectDocuments(rows, onProgress); } catch { /* print the statement anyway */ }
+    try {
+      // current document flags (a saved statement's may be out of date)
+      const list = refreshRows ? await refreshRows(rows) : rows;
+      docs = await collectDocuments(list, onProgress);
+    } catch { /* print the statement anyway */ }
   }
   win.document.open();
   win.document.write(buildStatementHtml({ facts, columns, rows, totals, documentsHtml: documentsHtmlOf(docs.groups) }));

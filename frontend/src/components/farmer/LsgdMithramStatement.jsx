@@ -346,6 +346,7 @@ export default function LsgdMithramStatement() {
       setWard(d.ward || ''); setWardNumber(d.wardNumber || ''); setWardMember(d.wardMember || '');
       setOnlySuppliers(d.onlySuppliers !== false);
       setReport({ months: d.months || [], rows: d.rows || [], meta: { ...(d.meta || {}), panchayat: d.panchayat, ward: d.ward || '' } });
+      refreshDocFlags(d.rows || []);   // documents uploaded since it was saved
       setOverrides(d.overrides || {}); setLastEdits(d.lastSubsidy || {}); setRemoved(d.removed || []);
       setSelected(new Set());
       if (Array.isArray(d.hiddenColumns)) setHidden(new Set(d.hiddenColumns));
@@ -364,11 +365,30 @@ export default function LsgdMithramStatement() {
   // ── Outputs ────────────────────────────────────────────────────
   const output = { facts, columns, rows, totals };
   const docProgress = (done, total) => notifications.update({ id: 'lsgd-docs', loading: true, autoClose: false, message: `Loading documents ${done}/${total}…` });
-  const loadDocs = async () => {
-    if (!withDocs || !withDocCount) return [];
-    notifications.show({ id: 'lsgd-docs', loading: true, autoClose: false, message: `Loading documents of ${withDocCount} producers…` });
+  // Which producers have documents NOW in Farmers Management. A saved statement
+  // keeps the flags from when it was made, so documents uploaded later were left
+  // out of Print / PDF / Email. Patches the statement rows and returns fresh rows.
+  const refreshDocFlags = async (list) => {
+    const ids = list.map((r) => r.farmerId).filter(Boolean);
+    if (!ids.length) return list;
     try {
-      const res = await collectDocuments(rows, docProgress);
+      const flags = (await farmerFormAPI.getDocumentSummaries(ids))?.data || {};
+      const patch = (x) => (flags[x.farmerId] ? { ...x, docs: flags[x.farmerId] } : x);
+      setReport((rep) => (rep ? { ...rep, rows: rep.rows.map(patch) } : rep));
+      return list.map(patch);
+    } catch {
+      return list;   // keep the flags we have
+    }
+  };
+
+  const loadDocs = async () => {
+    if (!withDocs) return [];
+    const fresh = await refreshDocFlags(rows);
+    const count = fresh.filter((r) => hasAnyDocument(r.docs)).length;
+    if (!count) return [];
+    notifications.show({ id: 'lsgd-docs', loading: true, autoClose: false, message: `Loading documents of ${count} producers…` });
+    try {
+      const res = await collectDocuments(fresh, docProgress);
       notifications.update({ id: 'lsgd-docs', loading: false, autoClose: 3000, color: res.failed.length ? 'orange' : 'green',
         message: res.failed.length ? `Documents could not be loaded for: ${res.failed.join(', ')}` : `${res.groups.length} producers' documents added` });
       return res.groups;
@@ -381,9 +401,10 @@ export default function LsgdMithramStatement() {
   const doPrint = async () => {
     setBusy('print');
     try {
-      if (withDocs && withDocCount) notifications.show({ id: 'lsgd-docs', loading: true, autoClose: false, message: 'Loading documents…' });
-      const r = await printStatement({ ...output, withDocuments: withDocs && withDocCount > 0, onProgress: docProgress });
-      if (withDocs && withDocCount) notifications.hide('lsgd-docs');
+      if (withDocs) notifications.show({ id: 'lsgd-docs', loading: true, autoClose: false, message: 'Loading documents…' });
+      // The print window opens first (inside the click); the flags are re-checked after
+      const r = await printStatement({ ...output, withDocuments: withDocs, refreshRows: refreshDocFlags, onProgress: docProgress });
+      if (withDocs) notifications.hide('lsgd-docs');
       if (!r.ok) notifications.show({ color: 'red', message: r.message });
       else if (r.failed?.length) notifications.show({ color: 'orange', message: `Documents could not be loaded for: ${r.failed.join(', ')}` });
     } catch (err) {

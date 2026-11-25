@@ -7,6 +7,28 @@ import { getCashInHandOpening, getPrimaryCashLedger } from '../utils/cashInHandO
 import { tagVoucher } from '../utils/voucherSource.js';
 import { getCashBankLedgerIds } from '../utils/cashAdjustmentClassifier.js';
 
+// Manual Adjustment Entry: the ledger's voucherType decides the side it may sit on.
+// Receipt section = Credit legs (no 'P' ledgers), Payment section = Debit legs
+// (no 'R' ledgers); 'B' ledgers go on either side. Automatic module Journals
+// are not checked. Returns an error message, or null when every leg is allowed.
+const adjustmentSideError = async (entries, companyId) => {
+  const ids = (entries || []).map(e => e.ledgerId).filter(Boolean);
+  if (!ids.length) return null;
+  const ledgers = await Ledger.find({ _id: { $in: ids }, companyId }).select('ledgerName voucherType').lean();
+  const byId = new Map(ledgers.map(l => [String(l._id), l]));
+  for (const e of entries) {
+    const l = byId.get(String(e.ledgerId));
+    if (!l) continue;
+    if ((e.creditAmount || 0) > 0 && l.voucherType === 'P') {
+      return `"${l.ledgerName}" is a Payment-side ledger (voucher type P) and cannot be entered on the Receipt side of an Adjustment Entry.`;
+    }
+    if ((e.debitAmount || 0) > 0 && l.voucherType === 'R') {
+      return `"${l.ledgerName}" is a Receipt-side ledger (voucher type R) and cannot be entered on the Payment side of an Adjustment Entry.`;
+    }
+  }
+  return null;
+};
+
 // Create manual voucher
 export const createVoucher = async (req, res) => {
   try {
@@ -134,6 +156,11 @@ export const createVoucher = async (req, res) => {
         || (voucherData.referenceType && voucherData.referenceType !== 'Manual')) {
         delete voucherData.entrySource;
       }
+    }
+
+    if (voucherData.voucherType === 'Journal' && voucherData.entrySource === 'AdjustmentEntry') {
+      const sideError = await adjustmentSideError(voucherData.entries, req.companyId);
+      if (sideError) return res.status(400).json({ success: false, message: sideError });
     }
 
     voucherData.totalDebit = totalDebit;
@@ -459,6 +486,10 @@ export const updateVoucher = async (req, res) => {
           success: false,
           message: `"${cashOrBankLedger.ledgerName}" is a Cash/Bank ledger and cannot be used in a Journal Voucher — use Receipt, Payment, or Contra instead.`
         });
+      }
+      if (voucher.entrySource === 'AdjustmentEntry') {
+        const sideError = await adjustmentSideError(entries, req.companyId);
+        if (sideError) return res.status(400).json({ success: false, message: sideError });
       }
     }
 

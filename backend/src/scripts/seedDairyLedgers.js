@@ -239,7 +239,7 @@ const DAIRY_LEDGERS = [
   // ══ INCOME ═════════════════════════════════════════════════════════════════
 
   // Miscellaneous Income
-  { ledgerName: 'INTEREST RECEIVED', ledgerType: 'Miscellaneous Income', parentGroup: 'INCOME', voucherType: 'B', isFixed: false },
+  { ledgerName: 'INTEREST RECEIVED', ledgerType: 'Miscellaneous Income', parentGroup: 'INCOME', voucherType: 'R', isFixed: false },
   { ledgerName: 'VMRP',              ledgerType: 'Miscellaneous Income', parentGroup: 'INCOME', voucherType: 'R', isFixed: false },
 
   // Sales

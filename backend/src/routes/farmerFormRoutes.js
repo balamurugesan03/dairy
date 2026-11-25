@@ -1,7 +1,7 @@
 import express from 'express';
 import {
   getPanchayats, getFormFarmers, getFarmerDocuments, getPanchayatWards, updateFarmerDetails,
-  getFarmerDocumentSummary, uploadFarmerDocument, deleteFarmerDocument
+  getFarmerDocumentSummary, getFarmerDocumentSummaries, uploadFarmerDocument, deleteFarmerDocument
 } from '../controllers/farmerFormController.js';
 
 // Lookups for the farmer report forms (Crop Damage Statement, Monthly Agri Statistics, LSGD reports)
@@ -12,6 +12,7 @@ router.get('/panchayats', getPanchayats);
 router.get('/farmers', getFormFarmers);
 router.put('/farmers/:farmerId/details', updateFarmerDetails);
 router.get('/wards', getPanchayatWards);
+router.post('/documents-summary', getFarmerDocumentSummaries);
 router.get('/documents/:farmerId/summary', getFarmerDocumentSummary);
 router.get('/documents/:farmerId', getFarmerDocuments);
 router.post('/documents/:farmerId', uploadFarmerDocument);

@@ -1311,6 +1311,8 @@ export const farmerFormAPI = {
   updateDetails: (farmerId, data) => api.put(`/farmer-forms/farmers/${farmerId}/details`, data).then(r => r.data).catch(handleError),
   // Documents uploaded on a report → the farmer's Documents. type: bankPassbook | aadhaar | rationCard | incomeProof | other
   getDocumentSummary: (farmerId) => api.get(`/farmer-forms/documents/${farmerId}/summary`).then(r => r.data).catch(handleError),
+  // Current document flags of many farmers: { [farmerId]: { bankPassbook, aadhaar, rationCard, incomeProof, otherCount } }
+  getDocumentSummaries: (farmerIds) => api.post('/farmer-forms/documents-summary', { farmerIds }).then(r => r.data).catch(handleError),
   uploadDocument: (farmerId, data) => api.post(`/farmer-forms/documents/${farmerId}`, data, { timeout: 120000 }).then(r => r.data).catch(handleError),
   deleteDocument: (farmerId, type, index) => api.delete(`/farmer-forms/documents/${farmerId}/${type}`, { params: index != null ? { index } : {} }).then(r => r.data).catch(handleError),
 };

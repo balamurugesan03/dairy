@@ -334,6 +334,25 @@ const documentSummary = async (companyId, farmerId) => {
   return d ? { farmerId: d._id, farmerNumber: d.farmerNumber, ...d.docs } : null;
 };
 
+// POST /farmer-forms/documents-summary { farmerIds } — current document flags of many
+// farmers at once ({ [farmerId]: { bankPassbook, aadhaar, rationCard, incomeProof, otherCount } }).
+// A saved LSGD statement keeps the flags from when it was made; reports re-check before printing.
+export const getFarmerDocumentSummaries = async (req, res) => {
+  try {
+    const ids = (Array.isArray(req.body?.farmerIds) ? req.body.farmerIds : [])
+      .filter((id) => mongoose.isValidObjectId(id)).slice(0, 2000)
+      .map((id) => new mongoose.Types.ObjectId(String(id)));
+    if (!ids.length) return res.json({ success: true, data: {} });
+    const rows = await Farmer.aggregate([
+      { $match: { companyId: new mongoose.Types.ObjectId(String(req.companyId)), _id: { $in: ids } } },
+      { $project: { docs: docFlags() } }
+    ]);
+    res.json({ success: true, data: Object.fromEntries(rows.map((r) => [String(r._id), r.docs])) });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // GET /farmer-forms/documents/:farmerId/summary — which documents are uploaded (no files)
 export const getFarmerDocumentSummary = async (req, res) => {
   try {

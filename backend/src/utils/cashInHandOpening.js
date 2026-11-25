@@ -22,8 +22,9 @@ export const getCashInHandOpening = async (companyIdRaw, beforeDate) => {
   // Book Entry opening ₹3,000). Postings to every cash ledger still count below.
   const ledgerOpening = await getConfiguredCashOpening(companyId);
 
-  // Payment Settings → Account Opening Balance is the cash position ON the
-  // Account Start Date, so it already includes everything before that day.
+  // The Payment Settings opening is the cash position ON its date (financial
+  // year start, or Account Start Date), so it already includes everything
+  // before that day.
   // Adding cash legs dated earlier counted them twice (₹1,500 opening + a
   // ₹1,500 pre-start cash entry showed ₹3,000 on 01-04-2026).
   const startDate = await getAccountStartDate(companyId);
@@ -64,34 +65,72 @@ export const CASH_IN_HAND_NAME_RE = /(?:^|[^a-z])cash[\s\-_]*(?:in|on)[\s\-_]*ha
 export const isCashInHandName = (name) => CASH_IN_HAND_NAME_RE.test(String(name || '').trim());
 
 /**
- * The configured Cash in Hand opening, signed (Dr +, Cr −).
- * Payment Settings → Account Opening Balance is the single source once a user
- * has saved it; before that, the primary Cash in Hand ledger's own opening.
+ * Which Payment Settings opening is THE Cash in Hand opening, and the date it
+ * stands on. Only once a user has saved the settings (lastUpdatedBy).
+ *   • Financial Year Opening Balance, when entered (non-zero): the cash
+ *     carried forward into the current financial year, standing on that
+ *     year's start (Active Financial Year, else 1 April of the current FY).
+ *   • otherwise Account Start Date Opening Balance on the Account Start Date.
+ * Returns { source: 'fy' | 'start', amount, type, date } or null if unsaved.
  */
-export const getConfiguredCashOpening = async (companyIdRaw) => {
+const getCashOpeningBasis = async (companyIdRaw) => {
   const { default: DairySettings } = await import('../models/DairySettings.js');
   const settings = await DairySettings.findOne({ companyId: companyIdRaw })
-    .select('accountStartDateOpeningBalance accountStartDateOpeningBalanceType lastUpdatedBy').lean();
-  if (settings?.lastUpdatedBy) {
-    return signedDr(settings.accountStartDateOpeningBalance, settings.accountStartDateOpeningBalanceType);
+    .select('accountStartDate accountStartDateOpeningBalance accountStartDateOpeningBalanceType '
+      + 'financialYearOpeningBalance financialYearOpeningBalanceType lastUpdatedBy').lean();
+  if (!settings?.lastUpdatedBy) return null;
+  const fyAmount = Number(settings.financialYearOpeningBalance) || 0;
+  if (fyAmount !== 0) {
+    return {
+      source: 'fy',
+      amount: fyAmount,
+      type: settings.financialYearOpeningBalanceType || 'Dr',
+      date: await getFinancialYearStart(companyIdRaw),
+    };
   }
+  return {
+    source: 'start',
+    amount: Number(settings.accountStartDateOpeningBalance) || 0,
+    type: settings.accountStartDateOpeningBalanceType || 'Dr',
+    date: utcDay(settings.accountStartDate),
+  };
+};
+
+const utcDay = (value) => {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+};
+
+/** Start of the current financial year: the Active Financial Year, else 1 April. */
+const getFinancialYearStart = async (companyIdRaw) => {
+  try {
+    const { default: FinancialYear } = await import('../models/FinancialYear.js');
+    const fy = await FinancialYear.findOne({ companyId: companyIdRaw, status: 'Active' }).select('startDate').lean();
+    const d = utcDay(fy?.startDate);
+    if (d) return d;
+  } catch { /* fall back to 1 April */ }
+  const now = new Date();
+  const y = now.getUTCMonth() >= 3 ? now.getUTCFullYear() : now.getUTCFullYear() - 1;
+  return new Date(Date.UTC(y, 3, 1));
+};
+
+/**
+ * The configured Cash in Hand opening, signed (Dr +, Cr −).
+ * Payment Settings (Financial Year opening, else Account Start Date opening)
+ * is the single source once a user has saved it; before that, the primary
+ * Cash in Hand ledger's own opening.
+ */
+export const getConfiguredCashOpening = async (companyIdRaw) => {
+  const basis = await getCashOpeningBasis(companyIdRaw);
+  if (basis) return signedDr(basis.amount, basis.type);
   const primary = await getPrimaryCashLedger(companyIdRaw);
   return primary ? signedDr(primary.openingBalance, primary.openingBalanceType) : 0;
 };
 
-/**
- * Account Start Date from Payment Settings — only once a user has saved the
- * settings (same rule as the opening itself), as a UTC day start. null if unset.
- */
-const getAccountStartDate = async (companyIdRaw) => {
-  const { default: DairySettings } = await import('../models/DairySettings.js');
-  const settings = await DairySettings.findOne({ companyId: companyIdRaw })
-    .select('accountStartDate lastUpdatedBy').lean();
-  if (!settings?.lastUpdatedBy || !settings.accountStartDate) return null;
-  const d = new Date(settings.accountStartDate);
-  if (Number.isNaN(d.getTime())) return null;
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-};
+/** The date the configured opening stands on (UTC day start), or null if unset. */
+const getAccountStartDate = async (companyIdRaw) => (await getCashOpeningBasis(companyIdRaw))?.date || null;
 
 /** The society's main cash ledger: named "Cash in Hand" first, then any active cash ledger. */
 export const getPrimaryCashLedger = async (companyIdRaw, session = null) => {
@@ -281,13 +320,11 @@ export const mergeDuplicateCashLedgersAllCompanies = async () => {
  */
 export const syncCashOpeningFromSettings = async (companyIdRaw) => {
   if (!companyIdRaw) return null;
-  const { default: DairySettings } = await import('../models/DairySettings.js');
-  const settings = await DairySettings.findOne({ companyId: companyIdRaw }).lean();
-  if (!settings?.lastUpdatedBy) return null;
+  const basis = await getCashOpeningBasis(companyIdRaw);
+  if (!basis) return null;
   const ledger = await getPrimaryCashLedger(companyIdRaw);
   if (!ledger) return null;
-  const amount = Number(settings.accountStartDateOpeningBalance) || 0;
-  const type = settings.accountStartDateOpeningBalanceType || 'Dr';
+  const { amount, type } = basis;
   if ((ledger.openingBalance || 0) !== amount || (ledger.openingBalanceType || 'Dr') !== type) {
     await Ledger.updateOne({ _id: ledger._id }, { $set: { openingBalance: amount, openingBalanceType: type } });
   }
@@ -300,11 +337,15 @@ export const syncSettingsFromCashLedger = async (ledger) => {
   const primary = await getPrimaryCashLedger(ledger.companyId);
   if (!primary || String(primary._id) !== String(ledger._id)) return;
   const { default: DairySettings } = await import('../models/DairySettings.js');
+  // Write back to whichever Payment Settings field is the active source, so
+  // the next sync doesn't overwrite the ledger edit with the other value.
+  const basis = await getCashOpeningBasis(ledger.companyId);
+  const prefix = basis?.source === 'fy' ? 'financialYear' : 'accountStartDate';
   await DairySettings.updateOne(
     { companyId: ledger.companyId },
     { $set: {
-      accountStartDateOpeningBalance: Number(ledger.openingBalance) || 0,
-      accountStartDateOpeningBalanceType: ledger.openingBalanceType || 'Dr',
+      [`${prefix}OpeningBalance`]: Number(ledger.openingBalance) || 0,
+      [`${prefix}OpeningBalanceType`]: ledger.openingBalanceType || 'Dr',
       lastUpdatedBy: 'Ledger opening balance'
     } },
     { upsert: true }

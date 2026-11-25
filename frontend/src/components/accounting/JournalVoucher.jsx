@@ -299,9 +299,15 @@ const JournalVoucher = () => {
     return 'Other';
   };
 
-  const ledgerOptions = useMemo(() => {
+  // Per-side options by the ledger's voucherType (def_voucher_type):
+  //   B = Both → listed in Receipt AND Payment
+  //   R = Receipt side only → Receipt panel only
+  //   P = Payment side only → Payment panel only
+  // A ledger with no voucherType recorded yet is treated as Both.
+  const buildLedgerOptions = (side) => {
     const groups = {};
     ledgers
+      .filter(l => l.voucherType !== (side === 'receipt' ? 'P' : 'R'))
       // Journal Voucher is the non-cash adjustment instrument (accruals,
       // provisions, write-offs, inter-ledger transfers) — Cash/Bank ledgers
       // are excluded so it can never be used to simulate a Receipt or
@@ -318,7 +324,9 @@ const JournalVoucher = () => {
         groups[group].push({ value: l._id, label: `${l.ledgerName} (${l.ledgerType})` });
       });
     return Object.entries(groups).map(([group, items]) => ({ group, items }));
-  }, [ledgers]);
+  };
+  const receiptLedgerOptions = useMemo(() => buildLedgerOptions('receipt'), [ledgers]);
+  const paymentLedgerOptions = useMemo(() => buildLedgerOptions('payment'), [ledgers]);
 
   const ledgerName = (id) => ledgers.find(l => l._id === id)?.ledgerName || '-';
 
@@ -612,7 +620,7 @@ const JournalVoucher = () => {
             draft={receiptDraft}
             {...receiptHandlers}
             total={receiptTotal}
-            ledgerOptions={ledgerOptions}
+            ledgerOptions={receiptLedgerOptions}
             ledgerName={ledgerName}
             rowCount={listRowCount}
           />
@@ -628,7 +636,7 @@ const JournalVoucher = () => {
             draft={paymentDraft}
             {...paymentHandlers}
             total={paymentTotal}
-            ledgerOptions={ledgerOptions}
+            ledgerOptions={paymentLedgerOptions}
             ledgerName={ledgerName}
             rowCount={listRowCount}
           />
