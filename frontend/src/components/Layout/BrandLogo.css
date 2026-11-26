@@ -1,10 +1,9 @@
 /* ── DairySoft logo in the top header ────────────────────────────────────────
    No box: no border, no shadow, no rounded card edges. The logo sits on a soft
    light-white glow that fades smoothly into the header gradient, so there is
-   no edge where a box could show. The logo JPEG has a white background baked
-   in; mix-blend-mode multiply melts that white into the glow (white × white =
-   white), so the picture's own rectangle never shows either. The glow stays
-   fully white over the whole picture and fades only in the padding around it.
+   no edge where a box could show. The logo (public/dairysoftFINAL.png) has a
+   transparent background, so no blend is needed. The glow stays fully white
+   over the whole picture and fades only in the padding around it.
    Sized to fit the 120px desktop header (MilkPurchase uses 100vh - 120px). */
 
 .ds-brand {
@@ -25,9 +24,8 @@
 
 .ds-brand img {
   display: block;
-  height: 54px;
+  height: 58px;
   width: auto;
-  mix-blend-mode: multiply;
 }
 
 /* Mobile header is 60px tall */

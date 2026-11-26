@@ -146,7 +146,7 @@ const Login = () => {
       {/* ── Sign-in panel ───────────────────────────────────────── */}
       <main className="lg-main">
         <div className="lg-card">
-          <img src="/dairysoft-logo.jpeg" alt="DairySoft" className="lg-logo" />
+          <img src="/dairysoftFINAL.png" alt="DairySoft" className="lg-logo" />
 
           <div className="lg-heading">
             <h2>Welcome back</h2>

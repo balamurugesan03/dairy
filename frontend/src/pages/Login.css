@@ -172,9 +172,7 @@
   width: 190px;
   height: auto;
   margin: 0 0 28px -6px;
-  /* the JPEG's near-white background → pure white, then melts into the panel */
-  filter: brightness(1.04) contrast(1.06);
-  mix-blend-mode: multiply;
+  /* public/dairysoftFINAL.png has a transparent background: no blend needed */
 }
 
 .lg-heading { margin-bottom: 28px; }
