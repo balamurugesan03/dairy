@@ -1,56 +1,26 @@
-/* ── DairySoft logo badge in the top header ──────────────────────────────────
-   Not a flat white box: a soft white shade (white → pale blue → pale green, the
-   logo's own colours) with faint milk-wave graphics, a glossy sheen and a
-   gentle lift. The logo JPEG has a white background baked in; mix-blend-mode
-   multiply lets that white take on the badge's shading, so no white box shows.
+/* ── DairySoft logo in the top header ────────────────────────────────────────
+   No box: no border, no shadow, no rounded card edges. The logo sits on a soft
+   light-white glow that fades smoothly into the header gradient, so there is
+   no edge where a box could show. The logo JPEG has a white background baked
+   in; mix-blend-mode multiply melts that white into the glow (white × white =
+   white), so the picture's own rectangle never shows either. The glow stays
+   fully white over the whole picture and fades only in the padding around it.
    Sized to fit the 120px desktop header (MilkPurchase uses 100vh - 120px). */
 
 .ds-brand {
-  position: relative;
   display: flex;
   align-items: center;
-  height: 58px;
-  padding: 2px 16px;
-  border-radius: 14px;
-  overflow: hidden;
+  justify-content: center;
+  height: 100px;
+  padding: 20px 56px;
   isolation: isolate;
-  background:
-    radial-gradient(120% 140% at 0% 0%, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0) 55%),
-    radial-gradient(90% 120% at 100% 100%, rgba(220, 252, 231, 0.95) 0%, rgba(220, 252, 231, 0) 60%),
-    linear-gradient(135deg, #ffffff 0%, #f2f7ff 48%, #eefbf1 100%);
-  border: 1px solid rgba(255, 255, 255, 0.85);
-  box-shadow:
-    0 6px 18px rgba(30, 41, 99, 0.28),
-    0 1px 3px rgba(30, 41, 99, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    inset 0 -1px 0 rgba(148, 163, 184, 0.25);
-}
-
-/* Faint flowing milk waves along the bottom */
-.ds-brand::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-repeat: no-repeat;
-  background-position: bottom center;
-  background-size: 100% 100%;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 60' preserveAspectRatio='none'><path d='M0 42 C 50 30, 100 54, 150 42 S 250 28, 300 40 L300 60 L0 60 Z' fill='%23dbeafe' fill-opacity='0.55'/><path d='M0 50 C 60 40, 110 60, 170 50 S 260 40, 300 48 L300 60 L0 60 Z' fill='%23bbf7d0' fill-opacity='0.45'/><circle cx='262' cy='14' r='10' fill='%23e0f2fe' fill-opacity='0.6'/><circle cx='282' cy='26' r='5' fill='%23dcfce7' fill-opacity='0.7'/><circle cx='18' cy='12' r='6' fill='%23e0f2fe' fill-opacity='0.5'/></svg>");
-}
-
-/* Glossy diagonal sheen */
-.ds-brand::after {
-  content: '';
-  position: absolute;
-  top: -40%;
-  left: -30%;
-  width: 45%;
-  height: 180%;
-  z-index: -1;
-  pointer-events: none;
-  transform: rotate(20deg);
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.7) 50%, rgba(255, 255, 255, 0) 100%);
+  background: radial-gradient(
+    ellipse 50% 50% at 50% 50%,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(255, 255, 255, 1) 82%,
+    rgba(255, 255, 255, 0.55) 92%,
+    rgba(255, 255, 255, 0) 100%
+  );
 }
 
 .ds-brand img {
@@ -63,9 +33,8 @@
 /* Mobile header is 60px tall */
 @media (max-width: 61.99em) {
   .ds-brand {
-    height: 44px;
-    padding: 4px 12px;
-    border-radius: 11px;
+    height: 56px;
+    padding: 10px 34px;
   }
-  .ds-brand img { height: 34px; }
+  .ds-brand img { height: 32px; }
 }

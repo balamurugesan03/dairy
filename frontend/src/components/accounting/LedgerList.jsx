@@ -235,7 +235,7 @@ const LedgerList = () => {
   }, [filters.search, filters.ledgerType]);
 
   const handleSeedDefaults = async () => {
-    if (!window.confirm('This will add all standard dairy cooperative ledgers. Existing ledgers keep their ID, name, account group and balances; only their Voucher Type (B/P/R) is set to the standard value. Continue?')) return;
+    if (!window.confirm('This will add all standard dairy cooperative ledgers. Existing ledgers keep their ID, name, balances and vouchers (no duplicates are created); their Account Group and Voucher Type (B/P/R) are corrected to the standard values. Continue?')) return;
     setSeeding(true);
     try {
       const res = await ledgerAPI.seedDefaults();

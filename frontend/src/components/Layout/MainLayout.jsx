@@ -996,9 +996,9 @@ const MainLayout = () => {
               </Button>
               <Group gap="sm" wrap="nowrap">
                 {/* Fixed product logo (public/dairysoft-logo.jpeg) — the society
-                    name no longer replaces it (user rule 2026-10-31). Badge with
-                    a soft white-shade graphic background, not a flat white card
-                    (BrandLogo.css). */}
+                    name no longer replaces it (user rule 2026-10-31). No box: it
+                    sits on a soft light-white glow that fades into the header,
+                    with no border, shadow or card edge (BrandLogo.css). */}
                 <Box className="ds-brand">
                   <img src="/dairysoft-logo.jpeg" alt="DairySoft" />
                 </Box>

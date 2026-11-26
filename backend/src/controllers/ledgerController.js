@@ -454,7 +454,7 @@ export const seedDefaultLedgers = async (req, res) => {
     const result = await seedDairyLedgersForCompany(req.companyId);
     res.json({
       success: true,
-      message: `${result.created} ledgers created, ${result.skipped} already existed, ${result.voucherTypeUpdated} voucher types updated`,
+      message: `${result.created} ledgers created, ${result.skipped} already existed, ${result.groupUpdated} account groups corrected, ${result.voucherTypeUpdated} voucher types updated`,
       data: result
     });
   } catch (err) {

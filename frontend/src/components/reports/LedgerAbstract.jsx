@@ -342,10 +342,16 @@ const LedgerAbstract = () => {
           </Stack>
         </Center>
       ) : (
-        <Paper radius="sm" p="md" withBorder style={{ background: '#fff' }}>
+        // Shown as the actual A4 portrait sheet the print uses (210mm wide,
+        // 10mm × 8mm margins), so the screen matches the paper exactly.
+        <Paper radius="sm" withBorder style={{ background: '#e9ecef' }}>
           <style>{`${GRID_CSS} .gla .gla-ob { cursor: pointer; } .gla .gla-ob:hover { text-decoration: underline; }`}</style>
           <ScrollArea type="auto">
-            <div className="gla" style={{ minWidth: 820 }}>
+            <Box p="md">
+            <div className="gla" style={{
+              width: '210mm', minHeight: '297mm', padding: '10mm 8mm', margin: '0 auto',
+              background: '#fff', boxShadow: '0 1px 6px rgba(0,0,0,0.18)', boxSizing: 'border-box'
+            }}>
               <div dangerouslySetInnerHTML={{ __html: headingHtml(orgName, loadedRange) }} />
               <table>
                 <colgroup>{COLS.map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
@@ -368,6 +374,7 @@ const LedgerAbstract = () => {
                 ))}
               </table>
             </div>
+            </Box>
           </ScrollArea>
         </Paper>
       )}

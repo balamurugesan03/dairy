@@ -119,6 +119,9 @@ const DAIRY_LEDGERS = [
   { ledgerName: 'MILMA ADDL PRICE INCENTIVE TO STAFFS',      ledgerType: 'Advance due by Society', parentGroup: 'LIABILITY', voucherType: 'B', isFixed: false },
   { ledgerName: 'MILMA RELIEF ASSISTANCE',                   ledgerType: 'Advance due by Society', parentGroup: 'LIABILITY', voucherType: 'B', isFixed: false },
   { ledgerName: 'MILMA FARMERS MEETING',                     ledgerType: 'Advance due by Society', parentGroup: 'LIABILITY', voucherType: 'B', isFixed: false },
+  // Was wrongly sitting under Advance due to Society (ASSET); activate: Load
+  // Default also re-activates it, as the client's mapping says Active = Y.
+  { ledgerName: 'MILMA FEED FACTORY',                        ledgerType: 'Advance due by Society', parentGroup: 'LIABILITY', voucherType: 'B', isFixed: false, activate: true },
   { ledgerName: 'MRDF ASSISTANCE',                           ledgerType: 'Advance due by Society', parentGroup: 'LIABILITY', voucherType: 'B', isFixed: false },
   { ledgerName: 'PENSION FUND - KSCEPB',                     ledgerType: 'Advance due by Society', parentGroup: 'LIABILITY', voucherType: 'B', isFixed: true  },
   { ledgerName: 'PRESIDENT ADVANCE',                         ledgerType: 'Advance due by Society', parentGroup: 'LIABILITY', voucherType: 'B', isFixed: false },
@@ -281,11 +284,43 @@ const DAIRY_LEDGERS = [
 const balanceTypeFor = (parentGroup) =>
   ['ASSET', 'EXPENSE'].includes(parentGroup) ? 'Dr' : 'Cr';
 
+// Matches a ledger name ignoring case and extra / surrounding spaces, so an
+// existing "Milma Feed  Factory" is found and corrected, never duplicated.
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export const nameMatcher = (name) =>
+  new RegExp(`^\\s*${name.trim().split(/\s+/).map(escapeRe).join('\\s+')}\\s*$`, 'i');
+
 export async function seedDairyLedgersForCompany(companyId) {
-  let created = 0, skipped = 0, voucherTypeUpdated = 0;
+  let created = 0, skipped = 0, voucherTypeUpdated = 0, groupUpdated = 0;
 
   for (const def of DAIRY_LEDGERS) {
     const bt = balanceTypeFor(def.parentGroup);
+
+    // Existing ledger(s) of this name: keep _id, name, balances and posted
+    // vouchers; bring the account group (ledgerType + parentGroup) and voucher
+    // type in line with the standard chart. Vouchers reference the ledger by
+    // _id, so their figures are unchanged — only the group they report under.
+    const existing = await Ledger.find(
+      { companyId, ledgerName: nameMatcher(def.ledgerName), 'linkedEntity.entityId': { $exists: false } },
+      { ledgerType: 1, parentGroup: 1, voucherType: 1, status: 1 }
+    ).lean();
+
+    if (existing.length) {
+      skipped++;
+      for (const l of existing) {
+        const set = {};
+        if (l.ledgerType !== def.ledgerType || l.parentGroup !== def.parentGroup) {
+          set.ledgerType = def.ledgerType;
+          set.parentGroup = def.parentGroup;
+          groupUpdated++;
+        }
+        if (l.voucherType !== def.voucherType) { set.voucherType = def.voucherType; voucherTypeUpdated++; }
+        if (def.activate && l.status !== 'Active') set.status = 'Active';
+        if (Object.keys(set).length) await Ledger.updateOne({ _id: l._id }, { $set: set });
+      }
+      continue;
+    }
+
     const result = await Ledger.updateOne(
       { ledgerName: def.ledgerName, companyId },
       {
@@ -305,20 +340,10 @@ export async function seedDairyLedgersForCompany(companyId) {
       },
       { upsert: true }
     );
-    if (result.upsertedCount) { created++; continue; }
-    skipped++;
-
-    // Existing ledger: the sheet's voucher_type is the source of truth, so
-    // bring voucherType in line. Only that field is touched — _id, name,
-    // account group, balances and posted vouchers are left as they are.
-    const fix = await Ledger.updateMany(
-      { ledgerName: def.ledgerName, companyId, voucherType: { $ne: def.voucherType } },
-      { $set: { voucherType: def.voucherType } }
-    );
-    if (fix.modifiedCount) voucherTypeUpdated += fix.modifiedCount;
+    if (result.upsertedCount) created++; else skipped++;
   }
 
-  return { created, skipped, voucherTypeUpdated, total: DAIRY_LEDGERS.length };
+  return { created, skipped, voucherTypeUpdated, groupUpdated, total: DAIRY_LEDGERS.length };
 }
 
 // ── CLI entry point ───────────────────────────────────────────────────────────
