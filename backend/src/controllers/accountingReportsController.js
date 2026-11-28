@@ -2530,8 +2530,16 @@ export const getRDStatementUnified = async (req, res) => {
     const ledgers = await Ledger.find({ status: 'Active', companyId: req.companyId }).lean();
     const ledgerMap = Object.fromEntries(ledgers.map(l => [l._id.toString(), l]));
     const cashBankIds = await getCashBankLedgerIds(req.companyId);
-    const CASH_BANK_TYPES = ['Cash', 'Bank', 'Cash in Hand', 'Bank Accounts'];
-    const cashBankLedgers = ledgers.filter(l => CASH_BANK_TYPES.includes(l.ledgerType));
+    // R&D is the Cash Book's summary: the Cash in Hand ledger(s) ARE the
+    // "Cash Balance" row (opening/closing) and must never be listed again as a
+    // receipt/payment line — doing so duplicated every cash voucher (e.g. a
+    // Cash Book Entry receipt from Union Bank showed Union Bank 3000 AND
+    // Cash in Hand 3000). Bank ledgers are ordinary counter ledgers here:
+    // cash withdrawn from bank (bank Cr) is a Receipt, cash deposited into
+    // bank (bank Dr) is a Payment — so Opening + Receipts − Payments = Closing.
+    const CASH_TYPES = ['Cash', 'Cash in Hand'];
+    const BANK_TYPES = ['Bank', 'Bank Accounts'];
+    const cashLedgers = ledgers.filter(l => CASH_TYPES.includes(l.ledgerType));
 
     // "The Month" for Three Column is always the calendar month containing the
     // selected END date (not the selected start) — so a wide range like
@@ -2572,9 +2580,11 @@ export const getRDStatementUnified = async (req, res) => {
           if (!ledger) return;
           const dr = e.debitAmount || 0;
           const cr = e.creditAmount || 0;
-          if (CASH_BANK_TYPES.includes(ledger.ledgerType)) {
-            bump(lid, 'receipt', dr, isCash);
-            bump(lid, 'payment', cr, isCash);
+          // Cash in Hand → only in the Cash Balance row, never a line.
+          if (CASH_TYPES.includes(ledger.ledgerType)) return;
+          if (BANK_TYPES.includes(ledger.ledgerType)) {
+            bump(lid, 'receipt', cr, isCash); // withdrawn from bank
+            bump(lid, 'payment', dr, isCash); // deposited into bank
           } else {
             const vt = ['R', 'P', 'B'].includes(ledger.voucherType)
               ? ledger.voucherType
@@ -2626,7 +2636,7 @@ export const getRDStatementUnified = async (req, res) => {
       buildActivityMaps(Voucher, req.companyId, monthStart, end)
     ]);
     const sumBal = (map1, map2, addPeriod) =>
-      cashBankLedgers.reduce((s, l) => s + computeLedgerBalance(l, map1, map2, addPeriod).signed, 0);
+      cashLedgers.reduce((s, l) => s + computeLedgerBalance(l, map1, map2, addPeriod).signed, 0);
     const openingBalance   = sumBal(rangePriorMap, {}, false);
     const closingBalance   = sumBal(rangePriorMap, rangePeriodMap, true);
     const openingBalanceFY = sumBal(fyPriorMap, {}, false);

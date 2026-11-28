@@ -630,7 +630,7 @@ export default function FarmerApplicationForm({ applicationId, onClose, onOpenEx
         </Box>
 
         <Alert variant="light" color="blue" icon={<IconInfoCircle size={16} />} mb="md">
-          Print adds the farmer&apos;s uploaded documents (Bank Statement, Aadhaar, Ration Card, Income Proof and other documents) after the form — only those uploaded.
+          Print adds the farmer&apos;s uploaded documents (Account Details, Aadhaar, Ration Card, Income Proof and other documents) after the form — only those uploaded.
           Details typed or changed here are saved to the farmer in Farmers Management on Save.
           Year shown on the form: <b>{fyLabel(form.year)}</b>.
         </Alert>

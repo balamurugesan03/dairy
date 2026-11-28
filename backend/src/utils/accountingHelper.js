@@ -542,7 +542,10 @@ export const createPurchaseVoucher = async (purchaseData, session = null) => {
 
   // Credit: supplier ledger or Sundry Creditors for unpaid balance
   if (supplierBalance > 0 || paymentMode === 'Adjustment' || paymentMode === 'Credit') {
-    const creditAmt = paymentMode === 'Adjustment' ? totalAmount : supplierBalance;
+    // Adjustment: supplier gets the Factory Amount (gross − ledger deductions);
+    // crediting the full gross here double-counted the deductions and left
+    // the voucher unbalanced (Cr > Dr).
+    const creditAmt = paymentMode === 'Adjustment' ? balanceAfterDeductions : supplierBalance;
     if (creditAmt > 0) {
       // Try linked supplier ledger first
       const supplierLedger = purchaseData.supplierId

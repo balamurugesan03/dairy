@@ -8,7 +8,7 @@
 import { farmerFormAPI } from '../services/api';
 
 export const FARMER_DOCUMENTS = [
-  { key: 'bankPassbook', label: 'Bank Statement' },
+  { key: 'bankPassbook', label: 'Account Details' },
   { key: 'aadhaar',      label: 'Aadhaar Card Copy' },
   { key: 'rationCard',   label: 'Ration Card Copy' },
   { key: 'incomeProof',  label: 'Income Proof' },

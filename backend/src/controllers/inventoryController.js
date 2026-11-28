@@ -424,20 +424,27 @@ export const stockIn = async (req, res) => {
       ? ledgerEntries.reduce((sum, entry) => sum + (parseFloat(entry.amount || 0) * totalQuantity), 0)
       : 0;
 
-    // Always create accounting voucher for every inventory purchase
+    // Always create accounting voucher for every inventory purchase.
+    // The bill is valued at SALES RATE × qty (that's the Gross Total the
+    // Inventory Purchase screen shows; Gross − ledger deductions such as
+    // Inspection Fee / Commission = Factory Amount). Posting at purchase rate
+    // made the purchase ledger (e.g. Cattle Feed Purchase) Dr side disagree
+    // with the screen. Falls back to purchase rate when no sales rate is set.
+    const voucherItems = items.map(item => {
+      const qty = parseFloat(item.quantity) || 0;
+      const sRate = parseFloat(item.salesRate) || 0;
+      return { itemId: item.itemId, quantity: qty, rate: sRate > 0 ? sRate : (parseFloat(item.rate) || 0) };
+    });
+    const voucherTotal = voucherItems.reduce((s, i) => s + i.quantity * i.rate, 0);
     try {
       voucher = await createPurchaseVoucher({
         companyId: req.companyId,
-        items: items.map(item => ({
-          itemId: item.itemId,
-          quantity: parseFloat(item.quantity),
-          rate: parseFloat(item.rate) || 0
-        })),
+        items: voucherItems,
         supplierId: supplierId || null,
         supplierName: supplierName || '',
         paymentMode: paymentMode || 'Credit',
         paidAmount: parseFloat(paidAmount) || 0,
-        totalAmount,
+        totalAmount: voucherTotal,
         purchaseDate: purchaseDate ? new Date(purchaseDate) : new Date(),
         invoiceNumber,
         referenceId: transactions[0]._id,
