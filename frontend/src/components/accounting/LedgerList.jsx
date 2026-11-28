@@ -81,13 +81,6 @@ const ACCOUNT_GROUP_SELECT_DATA = ACCOUNT_GROUPS.map(g => ({
   items: g.items.map(v => ({ value: v, label: v })),
 }));
 
-// voucherType: which voucher screens list the ledger (B = both, P = Payment only, R = Receipt only)
-const VOUCHER_TYPE_OPTIONS = [
-  { value: 'B', label: 'B – Both (Receipt & Payment)' },
-  { value: 'P', label: 'P – Payment Voucher only' },
-  { value: 'R', label: 'R – Receipt Voucher only' }
-];
-const VOUCHER_TYPE_COLORS = { B: 'blue', P: 'orange', R: 'green' };
 
 const LedgerList = () => {
   const navigate = useNavigate();
@@ -109,8 +102,7 @@ const LedgerList = () => {
       ledgerType: '',
       openingBalance: '',
       openingBalanceType: 'Dr',
-      parentGroup: '',
-      voucherType: 'B'
+      parentGroup: ''
     },
     validate: {
       ledgerName: (value) => value.trim().length === 0 ? 'Ledger name is required' : null,
@@ -147,8 +139,7 @@ const LedgerList = () => {
       ledgerType: ledger.ledgerType || '',
       openingBalance: ledger.openingBalance?.toString() || '',
       openingBalanceType: ledger.openingBalanceType || 'Dr',
-      parentGroup: ledger.parentGroup || '',
-      voucherType: ledger.voucherType || 'B'
+      parentGroup: ledger.parentGroup || ''
     });
     setModalVisible(true);
   };
@@ -268,11 +259,6 @@ const LedgerList = () => {
           {ledger.currentBalance?.toFixed(2) || 0} {ledger.balanceType || ''}
         </Badge>
       </td>
-      <td>
-        <Badge color={VOUCHER_TYPE_COLORS[ledger.voucherType] || 'gray'} variant="light">
-          {ledger.voucherType || 'B'}
-        </Badge>
-      </td>
       <td>{ledger.linkedEntity?.entityType || '-'}</td>
       <td>
         <Group gap="xs">
@@ -374,7 +360,6 @@ const LedgerList = () => {
                     <th>Account Group</th>
                     <th>Opening Balance</th>
                     <th>Current Balance</th>
-                    <th>Voucher Type</th>
                     <th>Linked Entity</th>
                     <th>Actions</th>
                   </tr>
@@ -447,14 +432,6 @@ const LedgerList = () => {
                 />
               </Grid.Col>
             </Grid>
-
-            <Select
-              label="Voucher Type"
-              description="Which voucher screens list this ledger"
-              data={VOUCHER_TYPE_OPTIONS}
-              allowDeselect={false}
-              {...form.getInputProps('voucherType')}
-            />
 
             <TextInput
               label="Parent Group"

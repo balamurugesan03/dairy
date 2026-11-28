@@ -224,7 +224,6 @@ const DAIRY_LEDGERS = [
   { ledgerName: 'BMC TRANSPORTING CHARGES',                ledgerType: 'Trade Expenses', parentGroup: 'EXPENSE', voucherType: 'P', isFixed: true  },
   { ledgerName: 'FUEL CHARGES',                            ledgerType: 'Trade Expenses', parentGroup: 'EXPENSE', voucherType: 'P', isFixed: true  },
   { ledgerName: 'INCENTIVE DCS CONTRIBUTION',              ledgerType: 'Trade Expenses', parentGroup: 'EXPENSE', voucherType: 'P', isFixed: true  },
-  { ledgerName: 'INSPECTION FEE',                          ledgerType: 'Trade Expenses', parentGroup: 'EXPENSE', voucherType: 'P', isFixed: true  },
   { ledgerName: 'LABORATARY EXPENSES',                     ledgerType: 'Trade Expenses', parentGroup: 'EXPENSE', voucherType: 'P', isFixed: true  },
   { ledgerName: 'LOADING & UNLOADING',                     ledgerType: 'Trade Expenses', parentGroup: 'EXPENSE', voucherType: 'P', isFixed: true  },
   { ledgerName: 'MILK INCENTIVE (SHIFT)',                   ledgerType: 'Trade Expenses', parentGroup: 'EXPENSE', voucherType: 'P', isFixed: true  },
@@ -243,7 +242,7 @@ const DAIRY_LEDGERS = [
   // ══ INCOME ═════════════════════════════════════════════════════════════════
 
   // Miscellaneous Income
-  { ledgerName: 'INTEREST RECEIVED', ledgerType: 'Miscellaneous Income', parentGroup: 'INCOME', voucherType: 'B', isFixed: false },
+  { ledgerName: 'INTEREST RECEIVED', ledgerType: 'Miscellaneous Income', parentGroup: 'INCOME', voucherType: 'R', isFixed: false },
   { ledgerName: 'VMRP',              ledgerType: 'Miscellaneous Income', parentGroup: 'INCOME', voucherType: 'R', isFixed: false },
 
   // Sales
@@ -270,6 +269,10 @@ const DAIRY_LEDGERS = [
   { ledgerName: 'GENERAL STORE COMMISSION',                 ledgerType: 'Trade Income', parentGroup: 'INCOME', voucherType: 'R', isFixed: false },
   { ledgerName: 'GREEN FODDER COMMISSION',                  ledgerType: 'Trade Income', parentGroup: 'INCOME', voucherType: 'R', isFixed: false },
   { ledgerName: 'HDP CATTLE FEED COMMISSION',               ledgerType: 'Trade Income', parentGroup: 'INCOME', voucherType: 'R', isFixed: false },
+  // Moved from Trade Expenses (EXPENSE, P) per the client's sheet. Its
+  // voucher_type is blank there → Trade Income's default 'R'; it is credited
+  // as a purchase deduction, which a 'P' ledger is not allowed to be.
+  { ledgerName: 'INSPECTION FEE',                           ledgerType: 'Trade Income', parentGroup: 'INCOME', voucherType: 'R', isFixed: true  },
   { ledgerName: 'MILK VALUE EXTRA PAYMENT',                 ledgerType: 'Trade Income', parentGroup: 'INCOME', voucherType: 'R', isFixed: false },
   { ledgerName: 'MINERALS COMMISSION',                      ledgerType: 'Trade Income', parentGroup: 'INCOME', voucherType: 'R', isFixed: true  },
   { ledgerName: 'ROUNDING DIFFERENCE RECEIPT',              ledgerType: 'Trade Income', parentGroup: 'INCOME', voucherType: 'R', isFixed: false },

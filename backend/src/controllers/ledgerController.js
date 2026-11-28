@@ -9,6 +9,7 @@ import Customer from '../models/Customer.js';
 import MilkSales from '../models/MilkSales.js';
 import mongoose from 'mongoose';
 import { seedDairyLedgersForCompany } from '../scripts/seedDairyLedgers.js';
+import { getDefaultVoucherType } from '../utils/balanceCalculator.js';
 
 const CASH_DUP_MSG = 'A Cash in Hand ledger already exists. Only one is allowed — its opening balance is set in Payment Settings → Account Opening Balance.';
 
@@ -122,6 +123,11 @@ export const createLedger = async (req, res) => {
     ledgerData.currentBalance = ledgerData.openingBalance || 0;
     ledgerData.balanceType = ledgerData.openingBalanceType || 'Dr';
     ledgerData.companyId = companyId;
+    // The Add Ledger form no longer has a Voucher Type field: derive it from
+    // the Account Group (Income → R, Expense → P, others → B).
+    if (!['B', 'P', 'R'].includes(ledgerData.voucherType)) {
+      ledgerData.voucherType = getDefaultVoucherType(ledgerData.ledgerType);
+    }
 
     const ledger = new Ledger(ledgerData);
     await ledger.save();
@@ -206,6 +212,12 @@ export const updateLedger = async (req, res) => {
       const current = await Ledger.findOne({ _id: req.params.id, companyId: req.companyId }).lean();
       if (current && await cashInHandAlreadyExists({ ...current, ...req.body }, req.companyId, current._id)) {
         return res.status(400).json({ success: false, message: CASH_DUP_MSG });
+      }
+      // No Voucher Type field in the form: when the Account Group changes,
+      // follow the new group's default; otherwise the stored type is kept.
+      if (current && req.body.voucherType === undefined &&
+          req.body.ledgerType !== undefined && req.body.ledgerType !== current.ledgerType) {
+        req.body.voucherType = getDefaultVoucherType(req.body.ledgerType);
       }
     }
 
